@@ -173,7 +173,9 @@ static int metadata_matches(int directory, const char *name)
             break;
         }
         if (((number == SYS_stat || number == SYS_lstat || number == SYS_fstat || number == SYS_newfstatat) && size != 144)
-            || (number == SYS_statx && size != 256) || (number == SYS_fstatfs && size != 120)
+            || (number == SYS_statx && size != 256)
+            || ((number == SYS_statfs || number == SYS_fstatfs)
+                && (size != 120 || flags || mask || expected > 0))
             || ((number == SYS_access || number == SYS_faccessat || number == SYS_faccessat2) && size)
             || (number != SYS_getdents && number != SYS_getdents64 && offset))
         {
@@ -216,6 +218,7 @@ static int metadata_matches(int directory, const char *name)
         {
         case SYS_stat:
         case SYS_lstat:
+        case SYS_statfs:
             value = syscall(number, path, buffer);
             break;
         case SYS_fstat:

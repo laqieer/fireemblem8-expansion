@@ -4,6 +4,7 @@
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/filedef.h?h=4.3
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/dep.h?h=4.3
  * https://git.savannah.gnu.org/cgit/make.git/tree/src/commands.h?h=4.3
+ * https://git.savannah.gnu.org/cgit/make.git/tree/src/variable.h?h=4.3
  * No candidate-loadable functions are registered with GNU Make.
  */
 #define _GNU_SOURCE
@@ -16,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "dispatch.h"
@@ -53,6 +55,40 @@ struct FileView
     const char *stem;
     struct DependencyView *also_make;
     struct FileView *previous;
+    struct FileView *last;
+    struct FileView *parent;
+    void *variables;
+};
+
+struct VariableView
+{
+    const char *name;
+    const char *value;
+    const char *filename;
+    unsigned long line;
+    unsigned long offset;
+    unsigned int length;
+    unsigned int flags;
+};
+
+struct ChildView
+{
+    char *command_name;
+    char **environment;
+    struct
+    {
+        int out;
+        int error;
+        unsigned int syncout;
+    } output;
+    struct ChildView *next;
+    struct FileView *file;
+    char *batch_file;
+    char **command_lines;
+    char *command_pointer;
+    unsigned int command_line;
+    pid_t pid;
+    unsigned int flags;
 };
 
 extern struct FileView *lookup_file(const char *);
@@ -61,12 +97,18 @@ extern char *allocated_variable_expand_for_file(const char *, struct FileView *)
 extern void initialize_file_variables(struct FileView *, int);
 extern void set_file_variables(struct FileView *);
 extern void chop_commands(struct CommandsView *);
+extern struct VariableView *lookup_variable(const char *, unsigned int);
+extern void *current_variable_set_list;
 extern int rebuilding_makefiles;
+extern int ignore_errors_flag;
+extern struct ChildView *children;
+extern pid_t shell_function_pid;
 extern char **environ;
 
 #define MAX_NODES 4096
 #define MAX_NAMES 512
 #define MAX_RESULT (16U * 1024U * 1024U)
+#define VARIABLE_APPEND_FLAG (1U << 1)
 
 static char *target;
 static char *names;
@@ -78,6 +120,8 @@ static size_t used;
 static size_t capacity;
 static int finishing;
 static long make_pid;
+static int native_readonly;
+static int observe_reads;
 
 /* The syscall supervisor authorizes control I/O only at this trusted code IP,
  * not at libc IPs reachable from Make's file/include/eval builtins. */
@@ -97,11 +141,63 @@ static _Noreturn void fail(void)
     __builtin_unreachable();
 }
 
+FILE *fopen(const char *path, const char *mode)
+{
+    static FILE *(*original)(const char *, const char *);
+    struct
+    {
+        uintptr_t caller;
+        uintptr_t frame;
+        uintptr_t path;
+        uintptr_t mode;
+        int64_t descriptor;
+        uint32_t phase;
+        uint32_t error;
+    } record;
+    FILE *stream;
+    int incoming = errno;
+    int saved;
+    int observing;
+
+    if (!original)
+        original = dlsym(RTLD_NEXT, "fopen");
+    if (!original)
+        fail();
+    observing = observe_reads && make_pid && getpid() == make_pid;
+    errno = incoming;
+    if (observing)
+    {
+        record.caller = (uintptr_t)__builtin_return_address(0);
+        record.frame = *(uintptr_t *)__builtin_frame_address(0);
+        record.path = (uintptr_t)path;
+        record.mode = (uintptr_t)mode;
+        record.descriptor = -1;
+        record.phase = 0;
+        record.error = 0;
+        saved = errno;
+        raw_call(SYS_getpid, VO_SOURCE_IO, (long)&record, sizeof(record));
+        errno = saved;
+    }
+    stream = original(path, mode);
+    if (observing)
+    {
+        saved = errno;
+        record.descriptor = stream ? fileno(stream) : -1;
+        record.phase = 1;
+        record.error = saved;
+        raw_call(SYS_getpid, VO_SOURCE_IO, (long)&record, sizeof(record));
+        errno = saved;
+    }
+    return stream;
+}
+
 __attribute__((constructor)) static void setup(void)
 {
     const char *goal = getenv("VO_OBSERVE_TARGET");
     const char *variables = getenv("VO_OBSERVE_NAMES");
     const char *limit = getenv("VO_OBSERVE_BYTES");
+    const char *native = getenv("VO_OBSERVE_NATIVE_READONLY");
+    const char *reads = getenv("VO_OBSERVE_READS");
     char *end = NULL;
     unsigned long bound;
 
@@ -111,6 +207,12 @@ __attribute__((constructor)) static void setup(void)
     if (!end || *end || !bound || bound > MAX_RESULT)
         fail();
     capacity = bound;
+    if (native && strcmp(native, "1"))
+        fail();
+    native_readonly = native != NULL;
+    if (reads && (!native_readonly || strcmp(reads, "1")))
+        fail();
+    observe_reads = reads != NULL;
     target = strdup(goal);
     names = strdup(variables);
     parsed_names = strdup(variables);
@@ -130,6 +232,8 @@ __attribute__((constructor)) static void setup(void)
     unsetenv("VO_OBSERVE_TARGET");
     unsetenv("VO_OBSERVE_NAMES");
     unsetenv("VO_OBSERVE_BYTES");
+    unsetenv("VO_OBSERVE_NATIVE_READONLY");
+    unsetenv("VO_OBSERVE_READS");
     unsetenv("LD_PRELOAD");
     make_pid = raw_call(SYS_getpid, VO_READY, 0, 0);
 }
@@ -146,6 +250,10 @@ int execvp(const char *file, char *const argv[])
     snprintf(limit, sizeof(limit), "%zu", capacity);
     if (setenv("VO_OBSERVE_TARGET", target, 1) || setenv("VO_OBSERVE_NAMES", names, 1)
         || setenv("VO_OBSERVE_BYTES", limit, 1) || setenv("LD_PRELOAD", "/lib/vo-observer.so", 1))
+        fail();
+    if (native_readonly && setenv("VO_OBSERVE_NATIVE_READONLY", "1", 1))
+        fail();
+    if (observe_reads && setenv("VO_OBSERVE_READS", "1", 1))
         fail();
     status = raw_call(SYS_execve, (long)file, (long)argv, (long)environ);
     errno = (int)-status;
@@ -202,6 +310,120 @@ static int recursive_graph(void)
     return 0;
 }
 
+static void observe_job_contexts(void)
+{
+    struct ChildView *child;
+    uint64_t record[3];
+    size_t count = 0;
+    if (!native_readonly || !make_pid || raw_call(SYS_getpid, 0, 0, 0) != make_pid)
+        return;
+    for (child = children; child; child = child->next)
+    {
+        if (++count > MAX_NODES)
+            fail();
+        if (child->pid <= 0)
+            continue;
+        if (!child->file || !child->file->name)
+            fail();
+        record[0] = child->pid;
+        record[1] = (uintptr_t)child->file->name;
+        record[2] = child->command_line;
+        raw_call(SYS_getpid, VO_JOB_CONTEXT, (long)record, sizeof(record));
+    }
+    if (shell_function_pid > 0)
+    {
+        record[0] = shell_function_pid;
+        record[1] = 0;
+        record[2] = 0;
+        raw_call(SYS_getpid, VO_JOB_CONTEXT, (long)record, sizeof(record));
+    }
+}
+
+static void observe_job_policy(pid_t pid, const int *status)
+{
+    struct ChildView *child;
+    uint64_t record[3];
+    size_t count = 0;
+    unsigned int flags = ignore_errors_flag ? 1 : 0;
+    if (!native_readonly || pid <= 0 || !status
+        || !(WIFEXITED(*status) || WIFSIGNALED(*status)))
+        return;
+    for (child = children; child; child = child->next)
+    {
+        if (++count > MAX_NODES)
+            fail();
+        if (child->pid == pid)
+        {
+            flags |= 2 | ((child->flags & 2) ? 1 : 0);
+            break;
+        }
+    }
+    record[0] = pid;
+    record[1] = (unsigned int)*status;
+    record[2] = flags;
+    raw_call(SYS_getpid, VO_JOB_POLICY, (long)record, sizeof(record));
+}
+
+ssize_t read(int descriptor, void *buffer, size_t size)
+{
+    static ssize_t (*original)(int, void *, size_t);
+    int saved = errno;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "read");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    errno = saved;
+    return original(descriptor, buffer, size);
+}
+
+ssize_t __read_chk(int descriptor, void *buffer, size_t size, size_t buffer_size)
+{
+    static ssize_t (*original)(int, void *, size_t, size_t);
+    int saved = errno;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "__read_chk");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    errno = saved;
+    return original(descriptor, buffer, size, buffer_size);
+}
+
+pid_t wait(int *status)
+{
+    static pid_t (*original)(int *);
+    pid_t pid;
+    int saved;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "wait");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    pid = original(status);
+    saved = errno;
+    observe_job_policy(pid, status);
+    errno = saved;
+    return pid;
+}
+
+pid_t waitpid(pid_t selected, int *status, int options)
+{
+    static pid_t (*original)(pid_t, int *, int);
+    pid_t pid;
+    int saved;
+    if (!original)
+        original = dlsym(RTLD_NEXT, "waitpid");
+    if (!original)
+        fail();
+    observe_job_contexts();
+    pid = original(selected, status, options);
+    saved = errno;
+    observe_job_policy(pid, status);
+    errno = saved;
+    return pid;
+}
+
 int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *actions,
                 const posix_spawnattr_t *attributes, char *const argv[], char *const envp[])
 {
@@ -212,11 +434,13 @@ int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *
         spawn = dlsym(RTLD_NEXT, "posix_spawn");
     if (!spawn)
         fail();
+    if (native_readonly && finishing)
+        fail();
     /* Redirect execution, never Make's visible variables, origins or flags.
      * The kernel supervisor authenticates this notification and the child's
      * stdout FD. Recursive/remake contexts conservatively require mappings. */
     raw_call(SYS_getpid, VO_DISPATCH, (long)path, recursive_graph());
-    status = spawn(pid, VO_INTERCEPTOR, actions, attributes, argv, envp);
+    status = spawn(pid, native_readonly ? path : VO_INTERCEPTOR, actions, attributes, argv, envp);
     raw_call(SYS_getpid, VO_DISPATCH, 0, 0);
     return status;
 }
@@ -254,11 +478,64 @@ static void string(const char *value)
         bytes(value, count);
 }
 
-static void expanded(struct FileView *file, const char *expression)
+static void name_expression(char *expression, size_t size, const char *form, const char *name)
 {
-    char *value = allocated_variable_expand_for_file(expression, file);
+    int length = snprintf(expression, size, "$(%s%s)", form, name);
+    if (length < 0 || (size_t)length >= size)
+        fail();
+}
+
+static char *domain_value(struct FileView *file, const char *name)
+{
+    char expression[512];
+    char *value;
+    if (native_readonly)
+    {
+        void *previous = current_variable_set_list;
+        struct VariableView *binding;
+        char *flavor;
+        if (file)
+            current_variable_set_list = file->variables;
+        binding = lookup_variable(name, (unsigned int)strlen(name));
+        current_variable_set_list = previous;
+        /* Deferred append can hide an inherited body from $(value NAME). */
+        if (binding && (binding->flags & VARIABLE_APPEND_FLAG))
+        {
+            static const char message[] = "unsupported readonly native append observation\n";
+            raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
+            fail();
+        }
+        name_expression(expression, sizeof(expression), "flavor ", name);
+        flavor = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+        if (!flavor)
+            fail();
+        if (!strcmp(flavor, "recursive"))
+        {
+            char *raw;
+            name_expression(expression, sizeof(expression), "value ", name);
+            raw = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+            if (!raw)
+                fail();
+            if (strchr(raw, '$'))
+            {
+                static const char message[] = "unsupported readonly native recursive observation\n";
+                raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
+                fail();
+            }
+            free(raw);
+        }
+        free(flavor);
+    }
+    name_expression(expression, sizeof(expression), "", name);
+    value = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
     if (!value)
         fail();
+    return value;
+}
+
+static void expanded(struct FileView *file, const char *name)
+{
+    char *value = domain_value(file, name);
     string(value);
     free(value);
 }
@@ -272,11 +549,9 @@ static void variable(struct FileView *file, const char *name)
     for (form = 0; form < 3; ++form)
     {
         char *value;
-        strcpy(expression, "$(");
-        strcat(expression, forms[form]);
-        strcat(expression, name);
-        strcat(expression, ")");
-        value = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+        name_expression(expression, sizeof(expression), forms[form], name);
+        value = form == 0 ? domain_value(file, name)
+                         : file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
         if (!value)
             fail();
         string(value);
@@ -340,8 +615,8 @@ static void observe(void)
         string(file->name);
         string(file->commands ? file->commands->filename : "");
         string(file->commands ? file->commands->text : "");
-        expanded(file, "$(SHELL)");
-        expanded(file, "$(.SHELLFLAGS)");
+        expanded(file, "SHELL");
+        expanded(file, ".SHELLFLAGS");
         for (dependency = file->dependencies; dependency; dependency = dependency->next)
             if (++links > MAX_NODES)
                 fail();

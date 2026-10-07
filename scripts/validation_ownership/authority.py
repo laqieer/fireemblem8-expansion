@@ -30,6 +30,12 @@ ENVIRONMENT = {
     "PYTHONDONTWRITEBYTECODE": "1",
 }
 
+PYTHON_RUNTIME_DIRECTORY = re.compile(
+    r"(?:/usr/lib/python[0-9]+\.[0-9]+(?:/dist-packages)?"
+    r"|/usr/local/lib/python[0-9]+\.[0-9]+/dist-packages"
+    r"|/usr/lib/python3/dist-packages)"
+)
+
 
 def relative_path(value: str) -> str:
     if (

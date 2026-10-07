@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import base64
 import errno
 import hashlib
 import json
@@ -22,6 +23,7 @@ import unittest
 import venv
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
+from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -55,6 +57,14 @@ from scripts.validation_ownership.python_commands import (
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def owned_timezone(method):
+    @wraps(method)
+    def run(self):
+        with self.owned_timezone_fixture():
+            return method(self)
+    return run
+
+
 class FoundationTests(unittest.TestCase):
     def setUp(self):
         self.directory = ROOT / "build/test-artifacts/ownership-foundation-tests" / secrets.token_hex(12)
@@ -86,7 +96,11 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
-        self.assertFalse(session._views)
+        self.assertFalse(session.native_runtimes)
+        self.assertFalse(session.native_runtime_inputs)
+        self.assertIsNone(session.native_selection)
+        self.assertIsNone(session.native_runtime_selection)
+        self.assertEqual(len(session._views), 0)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
         self.assertFalse(session.runtime_dispatch)
@@ -96,6 +110,6987 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertEqual(session.pending_commands, 0)
         self.assertFalse(self.scratch.exists())
+
+    def test_native_readonly_original_shell_and_recipe_without_replay(self):
+        self.add("input.txt", "original\n")
+        self.add("Makefile", (
+            "VALUE := $(shell read -r v < input.txt; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("per-command replay invoked"),
+        ) as replay:
+            completed, semantics, observed = session._native_make_readonly("all", variables=("VALUE",))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(completed.stdout, b"recipe\n")
+            executions = [value for value in observed["accessed"] if value.startswith("native-shell:")]
+            self.assertEqual(len(executions), 2)
+            self.assertTrue(all(value.endswith(":/bin/sh") for value in executions))
+            self.assertEqual(observed["events"], [])
+            self.assertIn("/repo/input.txt", observed["accessed"])
+            self.assertFalse(session.cache)
+            self.assertFalse(session.mappings)
+            replay.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_readonly_inventory_keeps_fixed_file_admission_with_remaining_control(self):
+        self.add("unused.bin", b"\0" * (6 * 1024 * 1024))
+        self.add("Makefile", "VALUE := original\nall: ; @:\n")
+        session = self.session(control_bytes=8 * 1024 * 1024)
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), observe_reads=True,
+                observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            self.assertLess(
+                session.budget.limits.control_bytes - session.budget.bytes["control"],
+                len(session.snapshot.files["unused.bin"]),
+            )
+            self.assertFalse(session.budget.failed)
+            self.assertEqual(
+                [row["bytes"] for row in observed["read_trace"]["sources"]],
+                [len(session.snapshot.files["Makefile"])],
+            )
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_source_keeps_aggregate_control_and_file_limits(self):
+        self.add("Makefile", "# " + "x" * (6 * 1024 * 1024) + "\nall: ; @:\n")
+        for limits, message in (
+            ({"control_bytes": 8 * 1024 * 1024}, "aggregate .*byte budget exhausted"),
+            ({"file_bytes": 5 * 1024 * 1024}, "authority blob exceeds byte bound"),
+        ):
+            session = self.session(**limits)
+            with self.subTest(limits=limits):
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    with session:
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_readonly_exact_kernel_fips_input_matches_actual_capture(self):
+        from scripts.validation_ownership import make_probe
+        path = "/proc/sys/crypto/fips_enabled"
+        actual = Path(path).read_bytes() if Path(path).exists() else None
+        captured = make_probe._capture_runtime_input(path, ProbeBudget())
+        self.assertEqual(captured.data, actual)
+        self.assertEqual(captured.canonical, path)
+        script = (
+            f"if test -e {path}; then read -r mode < {path}; "
+            "printf '%s' \"$mode\"; else printf absent; fi"
+        )
+        self.add("Makefile", "VALUE := $(shell " + script + ")\nall: ; @:\n")
+        session = self.session(runtime_files=(path,))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",),
+            )
+            self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+            self.assertEqual(
+                semantics["domains"]["VALUE"]["value"],
+                actual.decode("ascii").strip() if actual is not None else "absent",
+            )
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_readonly_kernel_fips_input_has_no_neighbor_write_or_executable_authority(self):
+        from scripts.validation_ownership import make_probe
+        path = "/proc/sys/crypto/fips_enabled"
+        for neighbor in (
+            "/proc/sys/kernel/osrelease", path + "/child", path + ".other", "/proc/self/status",
+        ):
+            with self.subTest(neighbor=neighbor), self.assertRaisesRegex(
+                MakeProbeError, "outside the trusted system tool/library roots",
+            ):
+                make_probe._trusted_runtime_path(neighbor, optional=True)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path(path)
+        original_resolve = Path.resolve
+        def redirected(source, *args, **kwargs):
+            if str(source) == path:
+                return Path("/proc/sys/kernel/osrelease")
+            return original_resolve(source, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected), self.assertRaisesRegex(
+            MakeProbeError, "kernel FIPS runtime input must be canonical",
+        ):
+            make_probe._capture_runtime_input(path, ProbeBudget())
+        cases = (
+            (f"VALUE := $(shell test -e {path})\nall: ; @:\n", (), "uncaptured Make runtime access"),
+            (f"all: ; @printf changed > {path}\n", (path,), "filesystem write denied"),
+            ("all: ; @:\n", (path,), "outside the trusted system tool/library roots"),
+            ("all: ; @read -r value < /proc/self/status\n", (path,), "uncaptured Make runtime access"),
+        )
+        for index, (makefile, resources, message) in enumerate(cases):
+            self.add("Makefile", makefile)
+            session = self.session(runtime_files=resources)
+            with self.subTest(index=index), self.assertRaisesRegex(MakeProbeError, message):
+                with session:
+                    session._native_make_readonly(
+                        "all", native_executables=(path,) if index == 2 else (),
+                    )
+            self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_kernel_filesystem_text_capture_preserves_actual_proc_aliases_and_bytes(self):
+        from scripts.validation_ownership import make_probe
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            session_budget = ProbeBudget()
+            source = Path(path)
+            self.assertEqual(source.stat().st_size, 0)
+            actual = source.read_bytes()
+            self.assertGreater(len(actual), 0)
+            with self.subTest(path=path):
+                item = make_probe._capture_runtime_input(path, session_budget)
+                self.assertEqual(item.data, actual)
+                self.assertEqual(item.mode, 0o444)
+                self.assertGreaterEqual(session_budget.bytes["control"], len(actual))
+                if path == "/proc/mounts":
+                    self.assertEqual(item.canonical, f"/proc/{os.getpid()}/mounts")
+                    self.assertIn(("/proc/mounts", "self/mounts"), item.aliases)
+                    self.assertIn(("/proc/self", str(os.getpid())), item.aliases)
+                else:
+                    self.assertEqual(item.canonical, path)
+                    self.assertEqual(item.aliases, ())
+                self.assertEqual(source.read_bytes(), actual)
+
+    def test_native_kernel_filesystem_text_reads_sealed_actual_capture(self):
+        from scripts.validation_ownership import make_probe
+        self.add("native.c", (
+            "#include <stdio.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " char buffer[4096]; size_t size; FILE *f;\n"
+            " if (argc != 2 || !(f = fopen(argv[1], \"rb\"))) return 7;\n"
+            " while ((size = fread(buffer, 1, sizeof(buffer), f)))\n"
+            "  if (fwrite(buffer, 1, size, stdout) != size) return 8;\n"
+            " if (ferror(f)) return 9;\n"
+            " return fclose(f) ? 10 : 0;\n}\n"
+        ))
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session(runtime_files=(path,))
+            with self.subTest(path=path), session:
+                captured, = [item for item in session.runtime_inputs if item.path == path]
+                tool = session.compile_native(("native.c",))
+                with patch.object(
+                    make_probe, "_kernel_filesystem_text_bytes",
+                    side_effect=AssertionError("live kernel recapture"),
+                ):
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertEqual(completed.stdout, captured.data)
+                self.assertGreater(len(completed.stdout), 0)
+                self.assertIn(captured.canonical, observed["accessed"])
+            self.assert_clean(session)
+
+    def test_kernel_filesystem_text_reader_keeps_bounded_complete_reads(self):
+        from scripts.validation_ownership import make_probe
+        source = self.directory / "kernel-text"
+        for data in (b"", b"nodev\tsysfs\n", b"x" * 9000):
+            source.write_bytes(data)
+            expected = make_probe._runtime_input_identity(source.stat())
+            budget = ProbeBudget()
+            self.assertEqual(make_probe._kernel_filesystem_text_bytes(source, budget, expected), data)
+            self.assertGreaterEqual(budget.bytes["control"], 3 * len(data))
+        data = b"x" * 8192
+        source.write_bytes(data)
+        expected = make_probe._runtime_input_identity(source.stat())
+        for limits, message in (
+            (Limits(file_bytes=len(data) - 1), "exceeds bounded"),
+            (Limits(control_bytes=100), "control byte budget"),
+            (Limits(seconds=1), "deadline"),
+        ):
+            budget = ProbeBudget(limits)
+            if limits.seconds == 1:
+                budget.started = time.monotonic() - 2
+            with self.subTest(message=message), self.assertRaisesRegex(MakeProbeError, message):
+                make_probe._kernel_filesystem_text_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+        budget = ProbeBudget()
+        with self.assertRaisesRegex(MakeProbeError, "changed before"):
+            make_probe._kernel_filesystem_text_bytes(source, budget, None)
+        self.assertTrue(budget.failed)
+        open_stream = os.fdopen
+        for action, message in (("blocked", "blocked"), ("changed", "changed during")):
+            budget = ProbeBudget()
+            class ChangedReader:
+                def __init__(self, descriptor, *args, **kwargs):
+                    self.stream = open_stream(descriptor, *args, **kwargs)
+                    self.changed = False
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    self.stream.close()
+                def fileno(self):
+                    return self.stream.fileno()
+                def read(self, size):
+                    if action == "blocked":
+                        return None
+                    result = self.stream.read(size)
+                    if not self.changed:
+                        self.changed = True
+                        os.utime(source, ns=(1, 1))
+                    return result
+            expected = make_probe._runtime_input_identity(source.stat())
+            with self.subTest(action=action), patch.object(make_probe.os, "fdopen", ChangedReader):
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    make_probe._kernel_filesystem_text_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+        for path in ("/proc/mounts-neighbor", "/proc/filesystems/child",
+                     f"/proc/{os.getpid()}/mounts", "/proc/self/mounts", "/proc/1/mounts"):
+            with self.subTest(path=path), self.assertRaisesRegex(MakeProbeError, "outside"):
+                make_probe._trusted_runtime_path(path, optional=True)
+
+    def test_kernel_filesystem_text_exact_alias_and_trust_boundaries(self):
+        from scripts.validation_ownership import make_probe
+        original_resolve, original_link, original_stat = Path.resolve, os.readlink, Path.lstat
+        for path, target in (
+            ("/proc/filesystems", Path("/proc/cpuinfo")),
+            ("/proc/mounts", Path("/proc/1/mounts")),
+        ):
+            def redirected(source, *args, **kwargs):
+                return target if str(source) == path else original_resolve(source, *args, **kwargs)
+            with self.subTest(path=path), patch.object(Path, "resolve", redirected):
+                with self.assertRaisesRegex(MakeProbeError, "canonical|exact current task"):
+                    make_probe._capture_runtime_input(path, ProbeBudget())
+        for path, target in (("/proc/mounts", "1/mounts"), ("/proc/self", "1")):
+            def redirected_link(source, *args, **kwargs):
+                return target if str(source) == path else original_link(source, *args, **kwargs)
+            with self.subTest(path=path), patch.object(make_probe.os, "readlink", redirected_link):
+                with self.assertRaisesRegex(MakeProbeError, "exact current task"):
+                    make_probe._capture_runtime_input("/proc/mounts", ProbeBudget())
+        def missing_target(source, *args, **kwargs):
+            if str(source) == f"/proc/{os.getpid()}/mounts":
+                raise FileNotFoundError(errno.ENOENT, "missing mount alias target", str(source))
+            return original_stat(source, *args, **kwargs)
+        with patch.object(Path, "lstat", missing_target):
+            with self.assertRaisesRegex(MakeProbeError, "runtime file alias has a missing target"):
+                make_probe._capture_runtime_input("/proc/mounts", ProbeBudget())
+        for path in ("/proc/filesystems", "/proc/self", f"/proc/{os.getpid()}",
+                     f"/proc/{os.getpid()}/mounts"):
+            for field, value in ((4, os.getuid() + 1), (0, stat.S_IFREG | 0o666)):
+                def changed_stat(source, *args, **kwargs):
+                    info = original_stat(source, *args, **kwargs)
+                    if str(source) != path:
+                        return info
+                    fields = list(info)
+                    fields[field] = value
+                    return os.stat_result(fields)
+                request = "/proc/filesystems" if path == "/proc/filesystems" else "/proc/mounts"
+                with self.subTest(path=path, field=field), patch.object(Path, "lstat", changed_stat):
+                    with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted|exact current task"):
+                        make_probe._capture_runtime_input(request, ProbeBudget())
+        capture = make_probe._kernel_filesystem_text_bytes
+        replaced = False
+        def after_read(*args):
+            nonlocal replaced
+            result = capture(*args)
+            replaced = True
+            return result
+        def changed_after(source, *args, **kwargs):
+            info = original_stat(source, *args, **kwargs)
+            if replaced and str(source) == f"/proc/{os.getpid()}/mounts":
+                fields = list(info)
+                fields[1] += 1
+                return os.stat_result(fields)
+            return info
+        with patch.object(make_probe, "_kernel_filesystem_text_bytes", after_read):
+            with patch.object(Path, "lstat", changed_after):
+                with self.assertRaisesRegex(MakeProbeError, "changed during capture"):
+                    make_probe._capture_runtime_input("/proc/mounts", ProbeBudget())
+
+    def test_native_kernel_filesystem_text_grants_no_neighbor_write_or_execution(self):
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            for makefile, resources, executable, message in (
+                (f"all: ; @test -e {path}\n", (), (), "uncaptured Make runtime access"),
+                ("all: ; @read -r value < /proc/self/status\n", (path,), (),
+                 "unrequested stock runtime alias spelling" if path == "/proc/mounts"
+                 else "uncaptured Make runtime access"),
+                (f"all: ; @printf changed > {path}\n", (path,), (), "filesystem write denied"),
+                ("all: ; @:\n", (path,), (path,), "outside the trusted system tool/library roots"),
+            ):
+                self.add("Makefile", makefile)
+                session = self.session(runtime_files=resources)
+                with self.subTest(path=path, makefile=makefile):
+                    with self.assertRaisesRegex(MakeProbeError, message), session:
+                        session._native_make_readonly("all", native_executables=executable)
+                    self.assertTrue(session.budget.failed)
+                    self.assert_clean(session)
+
+    def test_kernel_filesystem_text_actual_absence_stays_absent_in_guest(self):
+        from scripts.validation_ownership import make_probe
+        original_resolve, original_stat = Path.resolve, Path.lstat
+        for path in ("/proc/filesystems", "/proc/mounts"):
+            def absent_resolve(source, *args, **kwargs):
+                return Path(path) if str(source) == path else original_resolve(source, *args, **kwargs)
+            def absent_stat(source, *args, **kwargs):
+                if str(source) == path:
+                    raise FileNotFoundError(errno.ENOENT, "absent optional input", path)
+                return original_stat(source, *args, **kwargs)
+            self.add("Makefile", (
+                f"VALUE := $(shell if test -e {path}; then printf present; else printf absent; fi)\n"
+                "all: ; @:\n"
+            ))
+            session = self.session(runtime_files=(path,))
+            with self.subTest(path=path), patch.object(Path, "resolve", absent_resolve):
+                with patch.object(Path, "lstat", absent_stat), session:
+                    item, = [row for row in session.runtime_inputs if row.path == path]
+                    self.assertIsNone(item.data)
+                    self.assertIsNone(item.mode)
+                    self.assertEqual(item.canonical, path)
+                    self.assertEqual(item.aliases, ())
+                    _, semantics, _ = session._native_make_readonly("all", variables=("VALUE",))
+                    self.assertEqual(semantics["domains"]["VALUE"]["value"], "absent")
+            self.assert_clean(session)
+
+    def test_kernel_fips_reader_captures_actual_linux_int_sysctl(self):
+        from scripts.validation_ownership import make_probe
+        source = Path("/proc/sys/kernel/pid_max")
+        before = source.stat()
+        self.assertEqual(before.st_size, 0)
+        actual = source.read_bytes()
+        self.assertGreater(len(actual), 0)
+        with self.assertRaisesRegex(MakeProbeError, "control file changed during bounded read"):
+            ProbeBudget().read_bytes(source, "control")
+        budget = ProbeBudget()
+        captured = make_probe._kernel_fips_bytes(
+            source, budget, make_probe._runtime_input_identity(before),
+        )
+        self.assertEqual(captured, actual)
+        self.assertEqual(source.read_bytes(), actual)
+        self.assertGreaterEqual(budget.bytes["control"], len(captured))
+        self.assertLessEqual(budget.bytes["control"], 64)
+        self.assertFalse(budget.failed)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path(str(source), optional=True)
+
+    def test_native_readonly_openssl_configuration_preserves_actual_alias_and_bytes(self):
+        from scripts.validation_ownership import make_probe
+        alias = "/usr/lib/ssl/openssl.cnf"
+        canonical = "/etc/ssl/openssl.cnf"
+        actual = Path(canonical).read_bytes()
+        captured = make_probe._capture_runtime_input(alias, ProbeBudget())
+        direct = make_probe._capture_runtime_input(canonical, ProbeBudget())
+        self.assertEqual((captured.data, direct.data), (actual, actual))
+        self.assertEqual((captured.canonical, direct.canonical), (canonical, canonical))
+        self.assertEqual(captured.mode, stat.S_IMODE(Path(canonical).stat().st_mode))
+        self.assertEqual(captured.mode, direct.mode)
+        self.assertIn((alias, os.readlink(alias)), captured.aliases)
+        first = actual.splitlines()[0].decode("ascii")
+        self.add("Makefile", (
+            f"VALUE := $(shell read -r first < {alias}; printf '%s' \"$$first\")\n"
+            "all: ; @:\n"
+        ))
+        session = self.session(runtime_files=(alias,))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",),
+            )
+            self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], first)
+            self.assertIn(canonical, observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_readonly_openssl_relative_leaf_is_sealed_and_readable(self):
+        from scripts.validation_ownership import make_probe
+        alias, canonical = "/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"
+        target = "../../../etc/ssl/openssl.cnf"
+        actual = Path(canonical).read_bytes()
+        first = actual.splitlines()[0].decode("ascii")
+        readlink = os.readlink
+        def relative(path, *args, **kwargs):
+            return target if str(path) == alias else readlink(path, *args, **kwargs)
+        self.add("Makefile", (
+            f"VALUE := $(shell read -r first < {alias}; printf '%s' \"$$first\")\n"
+            "all: ; @:\n"
+        ))
+        with patch.object(os, "readlink", relative):
+            captured = make_probe._capture_runtime_input(alias, ProbeBudget())
+            self.assertIn((alias, target), captured.aliases)
+            self.assertEqual(captured.data, actual)
+            session = self.session(runtime_files=(alias,))
+            with session:
+                completed, semantics, observed = session._native_make_readonly("all", variables=("VALUE",))
+                self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], first)
+                self.assertIn(canonical, observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_openssl_capture_has_no_neighbor_write_or_executable_authority(self):
+        from scripts.validation_ownership import make_probe
+        alias, canonical = "/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"
+        for neighbor in (canonical + ".other", canonical + "/child", "/etc/ssl", "/etc/ssl/other.cnf"):
+            with self.subTest(neighbor=neighbor), self.assertRaises(MakeProbeError):
+                make_probe._capture_runtime_input(neighbor, ProbeBudget())
+        for path in (alias, canonical):
+            with self.subTest(executable=path), self.assertRaises(MakeProbeError):
+                make_probe._trusted_runtime_path(path)
+        resolve = Path.resolve
+        def redirected(path, *args, **kwargs):
+            return Path("/etc/ssl/other.cnf") if str(path) in {alias, canonical} else resolve(path, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected), self.assertRaisesRegex(
+            MakeProbeError, "exact canonical input",
+        ):
+            make_probe._capture_runtime_input(alias, ProbeBudget())
+        for command, resources in (
+            (f"read -r first < {alias}", ()),
+            (f"printf changed > {alias}", (alias,)),
+        ):
+            self.add("Makefile", f"VALUE := $(shell {command})\nall: ; @:\n")
+            session = self.session(runtime_files=resources)
+            with self.subTest(command=command), session:
+                with self.assertRaises(MakeProbeError):
+                    session._native_make_readonly("all", variables=("VALUE",))
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        self.add("Makefile", (
+            f"VALUE := $(shell {canonical})\nSTATUS := $(.SHELLSTATUS)\n"
+            "all: ; @v='$(STATUS)'; printf '%s' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        session = self.session(runtime_files=(canonical,))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], ordinary.stdout.decode("ascii"))
+            self.assertEqual(ordinary.stdout, b"127")
+            self.assertIn(b"Permission denied", completed.stderr)
+            jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                    if row.startswith("native-job:")]
+            self.assertTrue(jobs)
+            self.assertNotIn(canonical, {row["executable"] for row in jobs})
+        self.assert_clean(session)
+
+    def test_native_openssl_capture_trust_and_identity_controls(self):
+        from scripts.validation_ownership import make_probe
+        alias, canonical = "/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"
+        lstat = Path.lstat
+        for mutation in ("foreign-owner", "group-write", "world-write"):
+            def untrusted(path):
+                info = lstat(path)
+                if str(path) != canonical:
+                    return info
+                row = list(info)
+                if mutation == "foreign-owner":
+                    row[4] = os.getuid() or 1001
+                else:
+                    row[0] |= stat.S_IWGRP if mutation == "group-write" else stat.S_IWOTH
+                return os.stat_result(row)
+            budget = ProbeBudget()
+            with self.subTest(mutation=mutation), patch.object(Path, "lstat", untrusted), patch.object(
+                budget, "read_bytes", side_effect=AssertionError("untrusted OpenSSL data read"),
+            ) as read:
+                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted runtime input"):
+                    make_probe._capture_runtime_input(alias, budget)
+                read.assert_not_called()
+        budget = ProbeBudget()
+        original_read, captured = budget.read_bytes, False
+        def reading(path, domain):
+            nonlocal captured
+            data = original_read(path, domain)
+            captured = True
+            return data
+        def changed_identity(path):
+            info = lstat(path)
+            if str(path) != canonical or not captured:
+                return info
+            return SimpleNamespace(
+                st_dev=info.st_dev, st_ino=info.st_ino + 1, st_mode=info.st_mode,
+                st_uid=info.st_uid, st_gid=info.st_gid, st_size=info.st_size,
+                st_mtime_ns=info.st_mtime_ns, st_ctime_ns=info.st_ctime_ns,
+            )
+        with patch.object(budget, "read_bytes", reading), patch.object(Path, "lstat", changed_identity):
+            with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                make_probe._capture_runtime_input(alias, budget)
+        def missing(path):
+            if str(path) == canonical:
+                raise FileNotFoundError(path)
+            return lstat(path)
+        with patch.object(Path, "lstat", missing):
+            with self.assertRaisesRegex(MakeProbeError, "alias has a missing target"):
+                make_probe._capture_runtime_input(alias, ProbeBudget())
+            absent = make_probe._capture_runtime_input(canonical, ProbeBudget())
+            self.assertIsNone(absent.data)
+
+    def test_kernel_fips_zero_size_bounded_bytes_and_identity_controls(self):
+        from scripts.validation_ownership import make_probe
+        source = self.directory / "kernel-data"
+        source.write_bytes(b"0\n")
+        inode = source.stat().st_ino
+        real_fstat = os.fstat
+
+        def zero_size(info):
+            return SimpleNamespace(
+                st_dev=info.st_dev, st_ino=info.st_ino, st_mode=info.st_mode,
+                st_uid=info.st_uid, st_gid=info.st_gid, st_size=0,
+                st_mtime_ns=info.st_mtime_ns, st_ctime_ns=info.st_ctime_ns,
+            )
+
+        def kernel_stat(descriptor):
+            info = real_fstat(descriptor)
+            return zero_size(info) if info.st_ino == inode else info
+
+        with patch.object(os, "fstat", kernel_stat):
+            with self.assertRaisesRegex(MakeProbeError, "control file changed during bounded read"):
+                ProbeBudget().read_bytes(source, "control")
+            for data in (b"0\n", b"1\n", b"-2147483648\n", b"2147483647\n"):
+                source.write_bytes(data)
+                expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+                budget = ProbeBudget()
+                self.assertEqual(make_probe._kernel_fips_bytes(source, budget, expected), data)
+                self.assertGreaterEqual(budget.bytes["control"], len(data))
+                self.assertLessEqual(budget.bytes["control"], 64)
+                self.assertFalse(budget.failed)
+            for data, limits, message in (
+                (b"x" * 13, {}, "exceeds bounded kernel-data admission"),
+                (b"0\n", {"file_bytes": 1}, "exceeds bounded kernel-data admission"),
+                (b"0\n", {"control_bytes": 1}, "aggregate control byte budget exhausted"),
+            ):
+                source.write_bytes(data)
+                expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+                budget = ProbeBudget(Limits(**limits))
+                with self.subTest(limits=limits, size=len(data)), self.assertRaisesRegex(MakeProbeError, message):
+                    make_probe._kernel_fips_bytes(source, budget, expected)
+                self.assertTrue(budget.failed)
+                self.assertEqual(source.read_bytes(), data)
+            expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+            wrong = (*expected[:1], expected[1] + 1, *expected[2:])
+            budget = ProbeBudget()
+            with self.assertRaisesRegex(MakeProbeError, "changed before its bounded read"):
+                make_probe._kernel_fips_bytes(source, budget, wrong)
+            self.assertTrue(budget.failed)
+            source.write_bytes(b"0\n")
+            expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+            original_fdopen = os.fdopen
+            class ChangingReader:
+                def __init__(self, stream):
+                    self.stream = stream
+                    self.changed = False
+                def __enter__(self):
+                    self.stream.__enter__()
+                    return self
+                def __exit__(self, *args):
+                    return self.stream.__exit__(*args)
+                def fileno(self):
+                    return self.stream.fileno()
+                def read(self, size):
+                    data = self.stream.read(size)
+                    if not self.changed:
+                        source.write_bytes(b"1\n")
+                        self.changed = True
+                    return data
+            def changing_reader(*args, **kwargs):
+                return ChangingReader(original_fdopen(*args, **kwargs))
+            budget = ProbeBudget()
+            with patch.object(os, "fdopen", changing_reader), self.assertRaisesRegex(
+                MakeProbeError, "changed during its bounded read",
+            ):
+                make_probe._kernel_fips_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+            self.assertEqual(source.read_bytes(), b"1\n")
+            class BlockingReader(ChangingReader):
+                def read(self, size):
+                    return None
+            def blocking_reader(*args, **kwargs):
+                return BlockingReader(original_fdopen(*args, **kwargs))
+            expected = make_probe._runtime_input_identity(zero_size(source.stat()))
+            budget = ProbeBudget()
+            with patch.object(os, "fdopen", blocking_reader), self.assertRaisesRegex(
+                MakeProbeError, "blocked during its bounded read",
+            ):
+                make_probe._kernel_fips_bytes(source, budget, expected)
+            self.assertTrue(budget.failed)
+            self.assertEqual(source.read_bytes(), b"1\n")
+
+    def test_native_readonly_managed_python_directory_preserves_real_namespace(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        source = Path(runtime) / "json/__init__.py"
+        expected = source.read_bytes().splitlines()[0]
+        self.add("Makefile", (
+            f"VALUE := $(shell read -r line < {source}; printf '%s' \"$$line\")\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"].encode(), expected)
+            self.assertEqual(completed.stdout, expected + b"\n")
+            self.assertIn(str(source), observed["accessed"])
+        self.assert_clean(session)
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access"):
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_managed_python_directory_boundaries_refuse(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        for declaration in (
+            ["/usr/lib"], ("/usr",), (runtime, runtime), (runtime + "/json",),
+            ("/usr/local/lib",), ("/usr/lib/python3",),
+            ("/usr/lib/python3/dist-packages",) * 5,
+        ):
+            self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+            session = self.session()
+            with self.subTest(declaration=declaration), session:
+                with self.assertRaisesRegex(MakeProbeError, "native runtime directory"):
+                    session._native_make_readonly("all", native_runtime_directories=declaration)
+            self.assert_clean(session)
+        cases = (
+            (f"printf changed > {runtime}/json/__init__.py", "filesystem write denied"),
+            (f"read -r v < {runtime}/../../include/stdlib.h", "uncaptured Make runtime access"),
+            (f"read -r v < {runtime}/sitecustomize.py", "uncaptured Make runtime access"),
+            (f"{runtime}/pdb.py", "untrusted executable dispatch"),
+        )
+        for command, message in cases:
+            self.add("Makefile", f".PHONY: all\nall: ; @{command}\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    session._native_make_readonly("all", native_runtime_directories=(runtime,))
+            self.assert_clean(session)
+
+    def test_native_readonly_managed_python_make_enumeration_is_complete(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        expected = " ".join(sorted(str(path) for path in (Path(runtime) / "json").glob("*.py")))
+        self.add("Makefile", (
+            f"VALUE := $(wildcard {runtime}/json/*.py)\n"
+            ".PHONY: all\nall: ; @:\n"
+        ))
+        session = self.session()
+        with session:
+            _, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], expected)
+            self.assertIn(runtime + "/json", observed["accessed"])
+        self.assert_clean(session)
+        self.add("Makefile", "VALUE := $(wildcard /usr/lib/*.py)\n.PHONY: all\nall: ; @:\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: metadata /usr/lib"):
+                session._native_make_readonly("all", native_runtime_directories=(runtime,))
+        self.assert_clean(session)
+
+    def test_native_readonly_managed_python_startup_does_not_invent_absence(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/python3 -I -S -c "
+            "'import importlib; print(importlib.import_module(\"json\").dumps([1,2]))')\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: read /usr/pyvenv.cfg"):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+
+    def test_native_readonly_managed_python_mount_and_capture_overlap_refuse(self):
+        runtime = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        session = self.session(runtime_files=(runtime + "/json/__init__.py",))
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "overlaps captured runtime resources"):
+                session._native_make_readonly("all", native_runtime_directories=(runtime,))
+        self.assert_clean(session)
+        body = (
+            "import syscall_guard\n"
+            "original=syscall_guard.os.statvfs\n"
+            "def mutable(path):\n"
+            " row=list(original(path));row[8]=0\n"
+            " return syscall_guard.os.statvfs_result(row)\n"
+            "syscall_guard.os.statvfs=mutable\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "mount backing or readonly flags differ"):
+                session._native_make_readonly("all", native_runtime_directories=(runtime,))
+        self.assert_clean(session)
+
+    def native_python_startup_fixture(self):
+        version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        runtime = "/usr/lib/python" + version
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/python3 -I -S -c "
+            "'import importlib; print(importlib.import_module(\"json\").dumps([1,2]))')\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        return runtime, (
+            "/usr/pyvenv.cfg", "/usr/bin/pyvenv.cfg",
+            "/usr/bin/python3._pth",
+            "/usr/bin/pybuilddir.txt",
+            "/usr/bin/Modules/Setup.local",
+            "/usr/lib/python" + version.replace(".", "") + ".zip",
+            "/usr/bin/lib/python" + version.replace(".", "") + ".zip",
+            "/usr/bin/lib/python" + version + "/os.py",
+            "/usr/bin/lib/python" + version + "/os.pyc",
+            "/usr/bin/lib/python" + version + "/lib-dynload",
+        )
+
+    @contextmanager
+    def owned_timezone_fixture(self):
+        from scripts.validation_ownership import make_probe
+        root = self.directory / "timezone"
+        target = root / "usr/share/zoneinfo/Etc/UTC"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(Path("/usr/share/zoneinfo/Etc/UTC").read_bytes())
+        target.chmod(0o644)
+        (target.parent.parent / "UTC").symlink_to("Etc/UTC")
+        capture = make_probe._capture_runtime_input
+
+        def guest(path):
+            return "/" + str(Path(path).relative_to(root))
+
+        def captured(path, budget):
+            if path not in {"/usr/share/zoneinfo/UTC", "/usr/share/zoneinfo/Etc/UTC"}:
+                return capture(path, budget)
+            owned = root / path.lstrip("/")
+            with patch.object(make_probe, "_trusted_runtime_path", return_value=owned.resolve()):
+                item = capture(str(owned), budget)
+            return replace(
+                item, path=path, canonical=guest(item.canonical),
+                parents=tuple(
+                    (guest(parent), present) for parent, present in item.parents
+                    if root in Path(parent).parents
+                ) + (("/", True),),
+                aliases=tuple((guest(alias), link) for alias, link in item.aliases),
+            )
+
+        with patch.object(make_probe, "_capture_runtime_input", side_effect=captured):
+            yield
+
+    def test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone(self):
+        runtime, resources = self.native_python_startup_fixture()
+        session = self.session(runtime_files=resources)
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: read /usr/share/zoneinfo/UTC",
+            ):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+
+    @owned_timezone
+    def test_native_optional_usr_data_capture_preserves_bytes_and_real_absence(self):
+        from scripts.validation_ownership import make_probe
+        budget = ProbeBudget()
+        resource = "/usr/share/zoneinfo/Etc/UTC"
+        captured = make_probe._capture_runtime_input(resource, budget)
+        self.assertEqual(captured.data, Path(resource).read_bytes())
+        self.assertEqual(
+            captured.mode,
+            stat.S_IMODE((self.directory / "timezone" / resource.lstrip("/")).stat().st_mode),
+        )
+        self.assertEqual(captured.canonical, resource)
+        self.assertGreater(budget.bytes["control"], len(captured.data))
+        absent = make_probe._capture_runtime_input("/usr/pyvenv.cfg", budget)
+        self.assertIsNone(absent.data)
+        self.assertIsNone(absent.mode)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path("/usr/pyvenv.cfg")
+        alias = make_probe._capture_runtime_input("/usr/share/zoneinfo/UTC", budget)
+        self.assertEqual(alias.data, captured.data)
+        self.assertEqual(alias.mode, captured.mode)
+        self.assertEqual(alias.canonical, captured.canonical)
+        self.assertIn(("/usr/share/zoneinfo/UTC", "Etc/UTC"), alias.aliases)
+
+    def test_owned_timezone_capture_ignores_installed_host_mode(self):
+        original_stat = Path.stat
+        def shaped(path, *args, **kwargs):
+            row = original_stat(path, *args, **kwargs)
+            if str(path) == "/usr/share/zoneinfo/Etc/UTC":
+                values = list(row)
+                values[0] = stat.S_IFREG | 0o777
+                return os.stat_result(values)
+            return row
+        with patch.object(Path, "stat", shaped):
+            self.test_native_optional_usr_data_capture_preserves_bytes_and_real_absence()
+
+    def test_native_runtime_system_owner_and_write_permissions_refuse_before_capture(self):
+        from scripts.validation_ownership import make_probe
+        resource = "/usr/share/zoneinfo/Etc/UTC"
+        lstat = Path.lstat
+        for mutation in ("foreign-owner", "group-write", "other-write"):
+            def shaped(path):
+                row = list(lstat(path))
+                row[4] = 0
+                row[0] &= ~(stat.S_IWGRP | stat.S_IWOTH)
+                if str(path) == resource:
+                    if mutation == "foreign-owner":
+                        row[4] = os.getuid() or 1001
+                    else:
+                        row[0] |= stat.S_IWGRP if mutation == "group-write" else stat.S_IWOTH
+                return os.stat_result(row)
+            budget = ProbeBudget()
+            with self.subTest(mutation=mutation), patch.object(Path, "lstat", shaped), patch.object(
+                budget, "read_bytes", side_effect=AssertionError("untrusted system bytes captured"),
+            ) as read:
+                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted runtime input"):
+                    make_probe._capture_runtime_input(resource, budget)
+                read.assert_not_called()
+                self.assertEqual(budget.bytes, {})
+
+    @owned_timezone
+    def test_native_readonly_python_captured_alias_and_dynamic_import(self):
+        runtime, resources = self.native_python_startup_fixture()
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "[1, 2]")
+            self.assertEqual(completed.stdout, b"[1, 2]\n")
+            self.assertTrue(any(path.startswith(runtime + "/json/") for path in observed["accessed"]))
+            self.assertIn("/usr/share/zoneinfo/Etc/UTC", observed["accessed"])
+        self.assert_clean(session)
+
+    @owned_timezone
+    def test_native_readonly_default_python_home_absence_does_not_hide_installed_site(self):
+        runtime, resources = self.native_python_startup_fixture()
+        home_site = (
+            ENVIRONMENT["HOME"] + f"/.local/lib/python{sys.version_info.major}."
+            f"{sys.version_info.minor}/site-packages"
+        )
+        script = 'import importlib; print(importlib.import_module("json").dumps([1,2]))'
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-c", script], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"[1, 2]\n")
+        self.add("Makefile", (
+            f"VALUE := $(shell /usr/bin/python3 -c {shlex.quote(script)})\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC", home_site))
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: metadata /usr/local/lib/python",
+            ):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: metadata /nonexistent/.local/lib/python",
+            ):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                    native_runtime_directories=(runtime,),
+                )
+        self.assert_clean(session)
+
+    def test_native_readonly_session_issued_tool_executes_in_original_make(self):
+        self.add("native.c", "#include <stdio.h>\nint main(void) { puts(\"compiled\"); return 0; }\n")
+        self.add("Makefile", (
+            "VALUE := $(shell /native/tool)\n"
+            "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_tool=tool, observe_reads=True,
+                observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"compiled")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "compiled")
+            jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                    if row.startswith("native-job:")]
+            job = next(job for job in jobs if job["executable"] == "/native/tool")
+            self.assertEqual(job["returncode"], 0)
+            self.assertTrue(job["waited"])
+        self.assert_clean(session)
+
+    def test_native_readonly_declared_cpp_library_resources(self):
+        libraries = tuple("/lib/x86_64-linux-gnu/" + name for name in (
+            "libstdc++.so.6", "libgcc_s.so.1", "libm.so.6",
+        ))
+        self.add("native.cpp", (
+            "#include <iostream>\nint main() { std::cout << \"compiled-cpp\"; return 0; }\n"
+        ))
+        self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.cpp",), cxx=True)
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_tool=tool, native_libraries=libraries,
+                observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"compiled-cpp")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "compiled-cpp")
+            jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                    if row.startswith("native-job:")]
+            self.assertTrue(any(
+                job["executable"] == "/native/tool" and job["returncode"] == 0 and job["waited"]
+                for job in jobs
+            ))
+        self.assert_clean(session)
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access"), session:
+            tool = session.compile_native(("native.cpp",), cxx=True)
+            session._native_make_readonly("all", native_tool=tool, native_libraries=libraries[1:])
+        self.assert_clean(session)
+        self.add("Makefile", f"all: ; @{libraries[0]}\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "untrusted executable dispatch"), session:
+            session._native_make_readonly("all", native_libraries=libraries)
+        self.assert_clean(session)
+        self.add("Makefile", f"all: ; @printf changed > {libraries[0]}\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "filesystem write denied"), session:
+            session._native_make_readonly("all", native_libraries=libraries)
+        self.assert_clean(session)
+        for declaration in (
+            [libraries[0]], (libraries[0], libraries[0]), ("/usr/bin/make",),
+            ("/repo/untrusted.so",), ("/lib/x86_64-linux-gnu/../libstdc++.so.6",),
+            (libraries[0], "/usr" + libraries[0]),
+        ):
+            session = self.session()
+            with self.subTest(declaration=declaration), self.assertRaisesRegex(
+                MakeProbeError, "invalid native library resource declaration",
+            ), session:
+                session._native_make_readonly("all", native_libraries=declaration)
+            self.assert_clean(session)
+
+    def test_native_readonly_session_issued_tool_boundaries(self):
+        self.add("native.c", "#include <stdio.h>\nint main(void) { puts(\"compiled\"); return 0; }\n")
+        self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @:\n")
+        for mutation, message in (
+            ("foreign", "not issued by this exact probe session"),
+            ("bytes", "sealed native tool changed after validation"),
+            ("undeclared", "uncaptured Make runtime access: metadata /native/tool"),
+        ):
+            session = self.session()
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(MakeProbeError, message), session:
+                tool = session.compile_native(("native.c",))
+                if mutation == "foreign":
+                    tool = replace(tool)
+                elif mutation == "bytes":
+                    tool.path.chmod(0o700)
+                    with tool.path.open("ab") as stream:
+                        stream.write(b"changed")
+                session._native_make_readonly(
+                    "all", native_tool=None if mutation == "undeclared" else tool,
+                )
+            self.assert_clean(session)
+        self.add("native.c", (
+            "#include <stdio.h>\nint main(void) { "
+            'FILE *file = fopen("/repo/forbidden", "w"); '
+            "if (file) fclose(file); return 0; }\n"
+        ))
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "filesystem write denied"), session:
+            tool = session.compile_native(("native.c",))
+            session._native_make_readonly("all", native_tool=tool)
+        self.assertFalse((self.root / "forbidden").exists())
+        self.assert_clean(session)
+
+    @owned_timezone
+    def test_native_readonly_default_python_declared_site_startup(self):
+        runtime, resources = self.native_python_startup_fixture()
+        home_site = ENVIRONMENT["HOME"] + f"/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        script = 'import importlib; print(importlib.import_module("json").dumps([1,2]))'
+        self.add("Makefile", (
+            f"VALUE := $(shell /usr/bin/python3 -c {shlex.quote(script)})\n"
+            ".PHONY: all\nall: ; @v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-c", script], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        session = self.session(runtime_files=(
+            *resources, "/usr/share/zoneinfo/UTC", home_site,
+            f"/etc/python{sys.version_info.major}.{sys.version_info.minor}/sitecustomize.py",
+        ))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_executables=("/usr/bin/python3",),
+                native_runtime_directories=(
+                    runtime, f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/dist-packages",
+                    "/usr/lib/python3/dist-packages",
+                ),
+            )
+            self.assertEqual(ordinary.stdout, b"[1, 2]\n")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "[1, 2]")
+            self.assertTrue(any(path.startswith(runtime + "/json/") for path in observed["accessed"]))
+        self.assert_clean(session)
+
+    def test_native_readonly_python_site_resource_boundaries(self):
+        from scripts.validation_ownership import make_probe
+        site = f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/dist-packages"
+        for command, message in (
+            (f"printf changed > {site}/forbidden-new.py", "filesystem write denied"),
+            (f"read -r v < {site}/../../../../../etc/passwd", "uncaptured Make runtime access"),
+            ("/usr/bin/python3", "uncaptured Make runtime access: metadata /usr/bin/python3"),
+        ):
+            self.add("Makefile", f".PHONY: all\nall: ; @{command}\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    session._native_make_readonly("all", native_runtime_directories=(site,))
+            self.assert_clean(session)
+        exact = f"/etc/python{sys.version_info.major}.{sys.version_info.minor}/sitecustomize.py"
+        captured = make_probe._capture_runtime_input(exact, ProbeBudget())
+        self.assertEqual(captured.data, Path(exact).read_bytes())
+        self.assertEqual(captured.mode, stat.S_IMODE(Path(exact).stat().st_mode))
+        for path in (exact, "/etc/passwd", exact + "extra"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                    make_probe._trusted_runtime_path(path)
+        for path in ("/etc/passwd", exact + "extra"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                    make_probe._capture_runtime_input(path, ProbeBudget())
+
+    def test_native_default_home_runtime_capture_requires_actual_absence(self):
+        from scripts.validation_ownership import make_probe
+        path = ENVIRONMENT["HOME"] + (
+            f"/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        )
+        captured = make_probe._capture_runtime_input(path, ProbeBudget())
+        self.assertIsNone(captured.data)
+        self.assertIsNone(captured.mode)
+        self.assertEqual(captured.canonical, path)
+        with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+            make_probe._trusted_runtime_path(path)
+        resource = self.root / "present"
+        resource.write_bytes(b"private")
+        budget = ProbeBudget()
+        with patch.dict(make_probe.ENVIRONMENT, {"HOME": str(self.root)}), patch.object(
+            make_probe, "_trusted_runtime_path", return_value=resource,
+        ), patch.object(budget, "read_bytes", side_effect=AssertionError("present HOME data read")):
+            with self.assertRaisesRegex(MakeProbeError, "default HOME runtime probe is not an actual absence"):
+                make_probe._capture_runtime_input(str(resource), budget)
+
+    def test_native_captured_file_alias_shape_and_identity_refuse(self):
+        from scripts.validation_ownership import make_probe
+        target = self.root / "target"
+        target.write_bytes(b"original")
+        alias = self.root / "alias"
+        alias.symlink_to("target")
+        with patch.object(make_probe, "_trusted_runtime_path", return_value=target):
+            captured = make_probe._capture_runtime_input(str(alias), ProbeBudget())
+            self.assertEqual(captured.data, b"original")
+            budget = ProbeBudget()
+            original_read = budget.read_bytes
+            def replacing(path, domain):
+                data = original_read(path, domain)
+                target.write_bytes(b"changed target")
+                return data
+            with patch.object(budget, "read_bytes", side_effect=replacing):
+                with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                    make_probe._capture_runtime_input(str(alias), budget)
+            budget = ProbeBudget()
+            original_read = budget.read_bytes
+            def relinking(path, domain):
+                data = original_read(path, domain)
+                alias.unlink()
+                alias.symlink_to("./target")
+                return data
+            with patch.object(budget, "read_bytes", side_effect=relinking):
+                with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                    make_probe._capture_runtime_input(str(alias), budget)
+            alias.unlink()
+            alias.symlink_to("middle")
+            (self.root / "middle").symlink_to("target")
+            with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+                make_probe._capture_runtime_input(str(alias), ProbeBudget())
+            alias.unlink()
+            alias.symlink_to("missing")
+        with patch.object(make_probe, "_trusted_runtime_path", return_value=self.root / "missing"):
+            with self.assertRaisesRegex(MakeProbeError, "runtime file alias has a missing target"):
+                make_probe._capture_runtime_input(str(alias), ProbeBudget())
+        alias.unlink()
+        alias.symlink_to("../repo/target")
+        with patch.object(make_probe, "_trusted_runtime_path", return_value=target):
+            with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+                make_probe._capture_runtime_input(str(alias), ProbeBudget())
+
+    def test_captured_file_alias_traversal_refuses_and_direct_spellings_roundtrip(self):
+        from scripts.validation_ownership import make_probe
+        target = self.root / "target"
+        target.write_bytes(b"original")
+        (self.root / "sub").mkdir()
+        alias = self.root / "alias"
+        for spelling in ("sub/../target", str(self.root / "sub/../target")):
+            with self.subTest(spelling=spelling):
+                alias.symlink_to(spelling)
+                self.assertEqual(alias.read_bytes(), b"original")
+                try:
+                    with patch.object(make_probe, "_trusted_runtime_path", return_value=target):
+                        with self.assertRaisesRegex(MakeProbeError, "single canonical target"):
+                            make_probe._capture_runtime_input(str(alias), ProbeBudget())
+                finally:
+                    alias.unlink()
+        nested = self.root / "sub" / "target"
+        nested.write_bytes(b"nested")
+        for spelling, resolved in (("target", target), ("./target", target), ("sub/target", nested)):
+            with self.subTest(spelling=spelling):
+                alias.symlink_to(spelling)
+                with patch.object(make_probe, "_trusted_runtime_path", return_value=resolved):
+                    captured = make_probe._capture_runtime_input(str(alias), ProbeBudget())
+                backing = self.root / ("backing-" + spelling.replace("/", "-"))
+                backing.mkdir()
+                destination = backing / captured.path.lstrip("/")
+                destination.parent.mkdir(parents=True)
+                destination.symlink_to(dict(captured.aliases)[str(alias)])
+                output = backing / captured.canonical.lstrip("/")
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(captured.data)
+                self.assertEqual(os.readlink(destination), spelling)
+                self.assertEqual(destination.read_bytes(), resolved.read_bytes())
+                alias.unlink()
+
+    @owned_timezone
+    def test_native_readonly_captured_alias_metadata_and_overlap(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @/usr/bin/readlink /usr/share/zoneinfo/UTC\n")
+        session = self.session(runtime_files=("/usr/share/zoneinfo/UTC",))
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", native_executables=("/usr/bin/readlink",),
+            )
+            self.assertEqual(completed.stdout, b"Etc/UTC\n")
+            alias = session.runtime_root / "usr/share/zoneinfo/UTC"
+            self.assertTrue(stat.S_ISLNK(alias.lstat().st_mode))
+            self.assertEqual(os.readlink(alias), "Etc/UTC")
+            self.assertEqual(alias.read_bytes(), Path("/usr/share/zoneinfo/UTC").read_bytes())
+        self.assert_clean(session)
+        session = self.session(runtime_files=(
+            "/usr/share/zoneinfo/UTC", "/usr/share/zoneinfo/Etc/UTC",
+        ))
+        with self.assertRaisesRegex(MakeProbeError, "duplicate/overlapping optional runtime inputs"):
+            with session:
+                pass
+        self.assert_clean(session)
+        session = self.session(runtime_files=("/usr/bin/ld.gold",))
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "native runtime image overlaps a captured file alias"):
+                session._native_make_readonly("all", native_executables=("/usr/bin/ld.gold",))
+        self.assert_clean(session)
+
+    def test_native_readonly_declared_direct_executable_preserves_original_jobs(self):
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/printf %s original)\n"
+            "REFERENCES = $(VALUE)\n"
+            ".PHONY: all\nall:\n\t@/usr/bin/printf 'recipe\\n'\n"
+        ))
+        session = self.session()
+        with session, patch.object(
+            session, "command", side_effect=AssertionError("per-command replay invoked"),
+        ) as replay:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                native_executables=("/usr/bin/printf",),
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            jobs = [
+                json.loads(value.removeprefix("native-job:")) for value in observed["accessed"]
+                if value.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 2)
+            self.assertEqual({row["executable"] for row in jobs}, {"/usr/bin/printf"})
+            self.assertEqual({row["context"]["kind"] for row in jobs}, {"expansion", "recipe"})
+            self.assertTrue(all(row["waited"] and row["terminal_status"] == 0 for row in jobs))
+            executed = [
+                (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
+                if row["kind"] == "execute" and not row["make"]
+            ]
+            self.assertEqual(sorted(executed), sorted((row["sequence"], row["pid"]) for row in jobs))
+            replay.assert_not_called()
+        self.assert_clean(session)
+
+    def test_original_compiler_preserves_relative_argv_cwd_and_output(self):
+        self.add("tool/source.cpp", (
+            '#include <stdio.h>\n#include "input.h"\n'
+            'int main() { printf("%s:%d", __FILE__, VALUE); return 0; }\n'
+        ))
+        self.add("tool/input.h", "#define VALUE 7\n")
+        command = Command(
+            ("g++", "-Wall", "-Werror", "-std=c++11", "-O2", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp", "tool/input.h"), outputs=("tool/program",),
+        )
+        ordinary = subprocess.run(
+            command.argv, executable="/usr/bin/g++", cwd=self.root / "tool",
+            env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        expected = subprocess.run(
+            [str(self.root / "tool/program")], env=ENVIRONMENT, capture_output=True, timeout=10,
+        )
+        self.assertEqual((expected.returncode, expected.stdout), (0, b"source.cpp:7"))
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
+            self.assertEqual(session.native(tool).stdout, expected.stdout)
+            self.assertEqual((session.tree / "tool/source.cpp").read_bytes(),
+                             (self.root / "tool/source.cpp").read_bytes())
+            self.assertFalse((session.tree / "tool/program").exists())
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_original_compiler_rejects_unowned_command_and_namespace_requests(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        cases = (
+            (replace(command, argv=()), "tool"),
+            (replace(command, argv=("/usr/bin/uname",)), "tool"),
+            (replace(command, outputs=()), "tool"),
+            (replace(command, outputs=("tool/source.cpp",)), "tool"),
+            (replace(command, outputs=("tool",)), "tool"),
+            (replace(command, outputs=("../program",)), "tool"),
+            (replace(command, outputs=("tool/extra",)), "tool"),
+            (replace(command, argv=("g++", "source.cpp", "-o")), "tool"),
+            (replace(command, argv=("g++", "source.cpp")), "tool"),
+            (replace(command, dependency_only=True), "tool"),
+            (replace(command, directories=("tool",)), "tool"),
+            (replace(command, code=("tool/missing.cpp",)), "tool"),
+            (replace(command, publication_policy="if-content-changed"), "tool"),
+            (command, ".."),
+            (command, "missing"),
+            (command, "tool/source.cpp"),
+        )
+        for candidate, cwd in cases:
+            session = self.session()
+            with self.subTest(command=candidate, cwd=cwd), session:
+                with self.assertRaises(MakeProbeError):
+                    session.compile_native_command(candidate, cwd=cwd)
+                self.assertTrue(session.budget.failed)
+                self.assertFalse(session.native_tools)
+            self.assert_clean(session)
+        session = self.session()
+        with session, self.assertRaisesRegex(MakeProbeError, "typed Command"):
+            session.compile_native_command(command.argv, cwd="tool")
+        self.assert_clean(session)
+
+    def test_original_c_compiler_preserves_relative_inputs(self):
+        self.add("tool/source.c", '#include <stdio.h>\nint main(void) { puts(__FILE__); return 0; }\n')
+        command = Command(
+            ("gcc", "-Wall", "-Werror", "-std=c11", "-O2", "source.c", "-o", "program"),
+            code=("tool/source.c",), outputs=("tool/program",),
+        )
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            self.assertEqual(session.native(tool).stdout, b"source.c\n")
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
+        self.assert_clean(session)
+
+    def test_original_compiler_rejects_malformed_typed_inputs(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        for changes in (
+            {"argv": (["g++"], "source.cpp", "-o", "program")},
+            {"argv": ("g++", [], "-o", "program")},
+            {"code": (["tool/source.cpp"],)},
+            {"outputs": (["tool/program"],)},
+            {"argv": list(command.argv)},
+            {"code": list(command.code)},
+            {"outputs": list(command.outputs)},
+        ):
+            session = self.session()
+            with self.subTest(changes=changes), session:
+                with self.assertRaises(MakeProbeError):
+                    session.compile_native_command(replace(command, **changes), cwd="tool")
+                self.assertTrue(session.budget.failed)
+                self.assertFalse(session.native_tools)
+            self.assert_clean(session)
+
+    def test_original_compiler_layout_is_compile_only_and_snapshot_derived(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        options = {
+            "argv": ["g++", "source.cpp", "-o", "program"], "environment": ENVIRONMENT,
+            "repository_outputs": ("tool/program",), "cwd": "/repo/tool",
+            "initial_executable": "/usr/bin/g++", "executables": ("/usr/bin/g++",),
+        }
+        for changes in (
+            {"mode": "command"}, {"mode": "make"}, {"dependency": {}},
+            {"mapping_entries": (("foreign",),)}, {"metadata_validation": True},
+            {"native_runtime": (("foreign", b""),)}, {"read_abi": {}},
+            {"native_executables": ("/usr/bin/printf",)},
+            {"publication_observer": lambda *args: None},
+            {"mounts": ["/repo/tool"]}, {"mounts": ["/"]},
+        ):
+            session = self.session()
+            with self.subTest(changes=changes), session:
+                mounts = [session._mount(session.tree, "/repo")]
+                mounts.extend(session._mount(self.root, name) for name in changes.get("mounts", ()))
+                kwargs = {**options, "mode": "compile", **changes, "mounts": mounts}
+                with self.assertRaisesRegex(MakeProbeError, "trusted compile route"):
+                    session._sandbox_run(session.base / "not-launched", **kwargs)
+            self.assert_clean(session)
+
+    def test_original_compiler_binds_actual_initial_argv_not_launch_request_alone(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        session = self.session()
+        run = session._sandbox_run
+        def change_argv(*args, **kwargs):
+            kwargs["argv"] = ["/usr/bin/g++", *kwargs["argv"][1:]]
+            return run(*args, **kwargs)
+        with session, patch.object(session, "_sandbox_run", side_effect=change_argv):
+            with self.assertRaisesRegex(MakeProbeError, "actual argv/CWD differs"):
+                session.compile_native_command(command, cwd="tool")
+            self.assertFalse(session.native_tools)
+        self.assert_clean(session)
+
+    def test_original_compiler_refuses_candidate_executable_plugins(self):
+        plugin = self.directory / "attack.so"
+        build = subprocess.run(
+            ["/usr/bin/cc", "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+             str(ROOT / "scripts/validation_ownership/tests/fixtures/original_compiler_attack.c"),
+             "-o", str(plugin)], env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertEqual(build.returncode, 0, build.stderr)
+        self.add("tool/attack.so", plugin.read_bytes())
+        source = "int main() { return 0; }\n"
+        self.add("tool/source.cpp", source)
+        command = Command(
+            ("g++", "-fplugin=./attack.so", "-fsyntax-only", "source.cpp", "-o", "program"),
+            code=("tool/attack.so", "tool/source.cpp"), outputs=("tool/program",),
+        )
+        ordinary_tool = self.directory / "ordinary-plugin/tool"
+        ordinary_tool.mkdir(parents=True)
+        (ordinary_tool / "source.cpp").write_text(source)
+        shutil.copyfile(plugin, ordinary_tool / "attack.so")
+        ordinary = subprocess.run(
+            command.argv, executable="/usr/bin/g++", cwd=ordinary_tool,
+            env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        self.assertEqual((ordinary_tool / "source.cpp").read_bytes(), b"invalid")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "candidate executable mmap denied"):
+                session.compile_native_command(command, cwd="tool")
+            self.assertEqual((session.tree / "tool/source.cpp").read_bytes(), source.encode())
+            self.assertFalse(session.native_tools)
+        self.assert_clean(session)
+
+    def test_original_compiler_real_writes_and_artifact_capture_boundaries(self):
+        self.add("tool/source.cpp", "int main() { return 0; }\n")
+        command = Command(
+            ("g++", "source.cpp", "-o", "program"),
+            code=("tool/source.cpp",), outputs=("tool/program",),
+        )
+        for arguments, error in (
+            (("g++", "source.cpp", "-Wl,-Map=source.cpp", "-o", "program"), "write outside"),
+            (("g++", "source.cpp", "-Wl,-Map=extra", "-o", "program"), "undeclared source metadata"),
+            (("g++", "source.cpp", "-Wl,-Map=../tool", "-o", "program"), "write outside"),
+        ):
+            session = self.session()
+            with self.subTest(arguments=arguments), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session.compile_native_command(replace(command, argv=arguments), cwd="tool")
+                self.assertEqual((session.tree / "tool/source.cpp").read_bytes(),
+                                 (self.root / "tool/source.cpp").read_bytes())
+                self.assertFalse(session.native_tools)
+            self.assert_clean(session)
+        for mutation, error in (
+            ("missing", "did not produce its declared output"),
+            ("directory", "not a regular file"),
+            ("symlink", "not a regular file"),
+            ("invalid", "did not produce a Linux x86-64 ELF"),
+        ):
+            session = self.session()
+            run = session._sandbox_run
+            def mutate_artifact(root, **kwargs):
+                result = run(root, **kwargs)
+                path = root.parent / (root.name + "-sources") / "tool/program"
+                path.unlink()
+                if mutation == "directory":
+                    path.mkdir()
+                elif mutation == "symlink":
+                    path.symlink_to("source.cpp")
+                elif mutation == "invalid":
+                    path.write_bytes(b"invalid")
+                return result
+            with self.subTest(mutation=mutation), session, patch.object(
+                session, "_sandbox_run", side_effect=mutate_artifact,
+            ):
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session.compile_native_command(command, cwd="tool")
+                self.assertFalse(session.native_tools)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        from scripts.validation_ownership.syscall_guard import Process, Violation
+        policy = self.observation_policy(mode="compile")
+        policy.config["repository_outputs"] = ["/repo/tool/program"]
+        for path in ("/repo", "/repo/tool", "/repo/tool/source.cpp", "/repo/tool/extra"):
+            with self.subTest(path=path), self.assertRaisesRegex(Violation, "write outside"):
+                policy.check(Process("compiler"), path, "write")
+        for operation in ("read", "metadata", "write"):
+            policy.check(Process("compiler"), "/repo/tool/program", operation)
+            with self.assertRaisesRegex(Violation, "output operation denied"):
+                policy.check(Process("command"), "/repo/tool/program", operation)
+        with self.assertRaisesRegex(Violation, "output operation denied"):
+            policy.check(Process("compiler"), "/repo/tool/program", "directory")
+        self.assertEqual(policy.config["repository_outputs"], ["/repo/tool/program"])
+
+    def original_scaninc_command(self):
+        names = (
+            "scaninc.cpp", "c_file.cpp", "asm_file.cpp", "source_file.cpp",
+            "scaninc.h", "c_file.h", "asm_file.h", "source_file.h",
+        )
+        for name in names:
+            path = "tools/scaninc/" + name
+            self.add(path, (ROOT / path).read_bytes())
+        self.add("unit.c", '#include "sample.h"\n')
+        self.add("include/sample.h", "#define SAMPLE 1\n")
+        return Command(
+            ("g++", "-Wall", "-Werror", "-std=c++11", "-O2", *names[:4], "-o", "scaninc"),
+            code=tuple("tools/scaninc/" + name for name in names),
+            outputs=("tools/scaninc/scaninc",),
+        )
+
+    def test_original_scaninc_compiles_original_sources_flags_cwd_and_output(self):
+        command = self.original_scaninc_command()
+        ordinary = subprocess.run(
+            command.argv, cwd=self.root / "tools/scaninc", env=ENVIRONMENT,
+            capture_output=True, timeout=30,
+        )
+        self.assertEqual((ordinary.returncode, ordinary.stderr), (0, b""))
+        expected = subprocess.run(
+            [str(self.root / "tools/scaninc/scaninc"), "-I", "include", "unit.c"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10,
+        )
+        self.assertEqual((expected.returncode, expected.stderr), (0, b""))
+        self.assertEqual(set(expected.stdout.split()), {b"include/sample.h"})
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tools/scaninc")
+            result = session.native(
+                tool, ("-I", "include", "unit.c"), sources=("unit.c", "include/sample.h"),
+            )
+            self.assertEqual((result.stdout, result.stderr), (expected.stdout, b""))
+            self.assertFalse((session.tree / "tools/scaninc/scaninc").exists())
+        self.assert_clean(session)
+
+    def test_original_scaninc_executes_original_path_through_unchanged_make(self):
+        command = self.original_scaninc_command()
+        self.add("Makefile", (
+            "VALUE := $(shell tools/scaninc/scaninc -I include unit.c)\n"
+            "REFERENCES = $(VALUE)\n"
+            ".PHONY: all\nall: ; @printf '%s' '$(VALUE)'\n"
+        ))
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tools/scaninc")
+            result, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_tool=tool, original_tool=True,
+                observe_reads=True, observe_runtime_completions=True,
+                native_executables=("/usr/bin/printf",),
+                native_libraries=tuple("/lib/x86_64-linux-gnu/" + name for name in (
+                    "libstdc++.so.6", "libgcc_s.so.1", "libm.so.6",
+                )),
+            )
+            self.assertEqual((result.stdout, result.stderr), (b"include/sample.h", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "include/sample.h")
+            jobs = [
+                json.loads(value.removeprefix("native-job:"))
+                for value in observed["accessed"] if value.startswith("native-job:")
+            ]
+            executable = "/repo/tools/scaninc/scaninc"
+            execs = [
+                row for job in jobs for row in job["tree"]
+                if row["kind"] == "exec" and row["path"] == executable
+            ]
+            self.assertEqual(len(execs), 1)
+            self.assertEqual(execs[0]["argv"], ["tools/scaninc/scaninc", "-I", "include", "unit.c"])
+            self.assertEqual(execs[0]["cwd"], "/repo")
+            self.assertTrue(all(job["waited"] and job["terminal_status"] == 0 for job in jobs))
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(command.code)))
+            self.assertFalse((session.tree / "tools/scaninc/scaninc").exists())
+        self.assert_clean(session)
+
+    def test_original_native_tool_binding_and_readonly_boundaries(self):
+        self.add("tool/source.c", '#include <stdio.h>\nint main(void) { printf("bound"); return 0; }\n')
+        self.add("Makefile", "VALUE := $(shell tool/program)\nall: ; @:\n")
+        command = Command(
+            ("gcc", "source.c", "-o", "program"),
+            code=("tool/source.c",), outputs=("tool/program",),
+        )
+        for label, expected in (
+            ("copy", "not issued by this exact probe session"),
+            ("bytes", "sealed native tool changed after validation"),
+            ("generic", "no issued original output binding"),
+            ("flag", "invalid native read observation request"),
+            ("missing", "invalid native read observation request"),
+        ):
+            session = self.session()
+            with self.subTest(label=label), session:
+                tool = session.compile_native_command(command, cwd="tool")
+                original = True
+                if label == "copy":
+                    tool = replace(tool, original_output="tool/neighbor")
+                elif label == "bytes":
+                    tool.path.chmod(0o700)
+                    tool.path.write_bytes(b"changed")
+                elif label == "generic":
+                    tool = session.compile_native(("tool/source.c",))
+                elif label == "flag":
+                    original = "1"
+                else:
+                    tool = None
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    session._native_make_readonly("all", native_tool=tool, original_tool=original)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for body, error in (
+            ("printf change > tool/program", "filesystem write denied"),
+            ("printf change > tool/source.c", "filesystem write denied"),
+            ("printf change > tool", "filesystem write denied"),
+        ):
+            self.add("Makefile", "all: ; @" + body + "\n")
+            session = self.session()
+            with self.subTest(body=body), session:
+                tool = session.compile_native_command(command, cwd="tool")
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly("all", native_tool=tool, original_tool=True)
+                self.assertEqual((session.tree / "tool/source.c").read_bytes(),
+                                 (self.root / "tool/source.c").read_bytes())
+            self.assert_clean(session)
+        self.add("Makefile", "VALUE := $(shell /native/tool)\nall: ; @:\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            result, semantics, _ = session._native_make_readonly(
+                "all", native_tool=tool, variables=("VALUE",),
+            )
+            self.assertEqual((result.stdout, result.stderr), (b"", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "bound")
+            self.assertEqual(session.native(tool).stdout, b"bound")
+            self.assertFalse((session.tree / "tool/program").exists())
+            binary = tool.path.read_bytes()
+        self.assert_clean(session)
+        self.add("tool/neighbor", binary, mode="100755")
+        (self.root / "tool/neighbor").chmod(0o755)
+        ordinary = subprocess.run(
+            [str(self.root / "tool/neighbor")], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, timeout=10,
+        )
+        self.assertEqual((ordinary.returncode, ordinary.stdout), (0, b"bound"))
+        self.add("Makefile", "all: ; @tool/neighbor\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            with self.assertRaisesRegex(MakeProbeError, "Make source executable lookup denied by noexec view"):
+                session._native_make_readonly("all", native_tool=tool, original_tool=True)
+        self.assert_clean(session)
+
+    def test_original_native_tool_mount_admission_and_actual_readonly_custody(self):
+        self.add("tool/source.c", "int main(void) { return 0; }\n")
+        self.add("Makefile", "VALUE := $(shell tool/program)\nall: ; @:\n")
+        command = Command(
+            ("gcc", "source.c", "-o", "program"),
+            code=("tool/source.c",), outputs=("tool/program",),
+        )
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(command, cwd="tool")
+            run = session._sandbox_run
+            for target in ("/repo/tool", "/repo/tool/program", "/"):
+                root = session.base / "not-launched"
+                with self.subTest(target=target), self.assertRaisesRegex(
+                    MakeProbeError, "exact readonly native runtime",
+                ):
+                    run(
+                        root, mode="make", argv=["/usr/bin/make"], environment=ENVIRONMENT,
+                        native_runtime=(("/repo/tool/program", tool.path.read_bytes()),),
+                        original_tool=tool,
+                        mounts=[session._mount(session.tree, "/repo"), session._mount(self.root, target)],
+                    )
+        self.assert_clean(session)
+        owner, foreign = self.session(), self.session()
+        with owner, foreign:
+            tool = owner.compile_native_command(command, cwd="tool")
+            with self.assertRaisesRegex(MakeProbeError, "not issued by this exact probe session"):
+                foreign._native_make_readonly("all", native_tool=tool, original_tool=True)
+            self.assertTrue(foreign.budget.failed)
+            self.assertFalse(owner.budget.failed)
+        self.assert_clean(owner)
+        self.assert_clean(foreign)
+        body = (
+            "original=guard.Policy.confirm_readonly_entry\n"
+            "def changed(self,pid,state):\n"
+            " if self.read_trace is not None and self.read_trace.pending_barrier is not None:\n"
+            "  self.config['mounts'][next(i for i,row in enumerate(self.config['mounts'])"
+            " if row['target']=='/repo/tool/program')]['source']=self.config['root']+'/repo/Makefile'\n"
+            " return original(self,pid,state)\n"
+            "guard.Policy.confirm_readonly_entry=changed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            tool = session.compile_native_command(command, cwd="tool")
+            with self.assertRaisesRegex(MakeProbeError, "composite source backing differs"):
+                session._native_make_readonly(
+                    "all", native_tool=tool, original_tool=True,
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+        self.assert_clean(session)
+
+    def test_exact_null_device_preserves_command_and_native_make_redirection(self):
+        self.add("reader.py", (
+            "with open('/dev/null','wb') as output: output.write(b'discarded')\n"
+            "print('usable')\n"
+        ))
+        self.add("null.c", (
+            '#include <stdio.h>\nint main(void) {\n'
+            'FILE *f = fopen("/dev/null", "w"); if (!f) { perror("null"); return 1; }\n'
+            'if (fputs("discarded", f) < 0 || fclose(f)) return 2;\n'
+            'puts("usable"); return 0; }\n'
+        ))
+        self.add("Makefile", "VALUE := $(shell printf discarded > /dev/null; printf usable)\nall: ; @:\n")
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10,
+        )
+        self.assertEqual((ordinary.returncode, ordinary.stderr), (0, b""))
+        for lane in ("command", "native", "make"):
+            session = self.session()
+            with self.subTest(lane=lane), session:
+                if lane == "command":
+                    result = session.command(Command(("/usr/bin/python3", "reader.py"), code=("reader.py",)))
+                    self.assertEqual((result.stdout, result.stderr), (b"usable\n", b""))
+                elif lane == "native":
+                    tool = session.compile_native(("null.c",))
+                    result = session.native(tool)
+                    self.assertEqual((result.stdout, result.stderr), (b"usable\n", b""))
+                else:
+                    result, semantics, _ = session._native_make_readonly("all", variables=("VALUE",))
+                    self.assertEqual((result.stdout, result.stderr), (b"", b""))
+                    self.assertEqual(semantics["domains"]["VALUE"]["value"], "usable")
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
+        import tracemalloc
+        from scripts.validation_ownership import make_lexical, read_epochs
+        nested = "$(" * 6400 + "A" + ")" * 6400
+        tracemalloc.start()
+        try:
+            with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+                list(make_lexical._make_expression_spans(nested))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 1024 * 1024)
+        for expression in ("$(" * 513 + "A" + ")" * 513, "$(" + "(" * 512 + "A" + ")" * 513):
+            with self.subTest(expression=expression):
+                with self.assertRaisesRegex(MakeProbeError, "reference depth bound"):
+                    read_epochs.completion_source_facts("Makefile", ("VALUE := " + expression).encode())
+        spans = list(make_lexical._make_expression_spans("$(" * 512 + "A" + ")" * 512, bodies=False))
+        self.assertEqual(len(spans), 512)
+        self.assertTrue(all(body is None for _, _, body in spans))
+        self.assertEqual((spans[0][:2], spans[-1][:2]), ((1022, 1026), (0, 1537)))
+
+    def test_completion_analysis_propagates_charge_and_checkpoint_to_all_contexts(self):
+        from scripts.validation_ownership import make_lexical, read_epochs
+        contexts = (
+            "VALUE := $(strip $(A))\n",
+            "define VALUE\n$(strip $(A))\nendef\n",
+            "all: ; @printf '%s' '$(strip $(A))'\n",
+            "all:\n\t@printf '%s' '$(strip $(A))'\n",
+            "$(info $(strip $(A)))\n",
+        )
+        for source in contexts:
+            budget = ProbeBudget(Limits(control_bytes=64))
+            with self.subTest(source=source), self.assertRaisesRegex(MakeProbeError, "control byte budget"):
+                read_epochs.completion_source_facts(
+                    "Makefile", source.encode(), checkpoint=budget.remaining,
+                    charge=lambda size: budget.charge("control", size),
+                )
+            self.assertTrue(budget.failed)
+        calls = []
+        for analyze in (
+            lambda checkpoint: make_lexical.references("$(strip $(A))", checkpoint=checkpoint),
+            lambda checkpoint: make_lexical.strip_comment("VALUE := $(A) # comment", checkpoint=checkpoint),
+            lambda checkpoint: make_lexical.completion_declaration("all: $(A)", checkpoint=checkpoint),
+        ):
+            def stop():
+                calls.append(True)
+                raise MakeProbeError("actual lexical checkpoint expired")
+            with self.assertRaisesRegex(MakeProbeError, "actual lexical checkpoint expired"):
+                analyze(stop)
+        self.assertEqual(len(calls), 3)
+        charges, checkpoints = [], []
+        self.assertEqual(make_lexical.references(
+            "$(strip $(A)) $(and ,$($(DEAD))) $_ $$escaped",
+            charge=charges.append, checkpoint=lambda: checkpoints.append(True),
+        ), {"A", "_"})
+        self.assertGreater(sum(charges), 0)
+        self.assertGreater(len(checkpoints), 1)
+        rows, roots, dependencies = read_epochs.completion_source_facts(
+            "Makefile", b"VALUE := $(strip $(A))\nall: ; @printf '%s' '$(VALUE)'\n",
+            charge=charges.append, checkpoint=lambda: checkpoints.append(True),
+        )
+        self.assertEqual([(row[5], row[6]) for row in rows], [("VALUE", ":=")])
+        self.assertEqual(roots, {"VALUE"})
+        self.assertEqual(dependencies, {"VALUE": {"A"}})
+
+    def test_completion_long_statement_preserves_source_with_bounded_scan(self):
+        from scripts.validation_ownership import make_lexical, read_epochs
+        target = "t" * (512 * 1024)
+        source = target + ": ; @v=original; printf '%s' \"$$v\" # shell comment\n"
+        started = time.monotonic()
+        self.assertEqual(make_lexical.strip_comment(source, recipe_context=True), source)
+        rows, roots, dependencies = read_epochs.completion_source_facts(
+            "Makefile", ("VALUE := original\n" + source).encode(),
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual([(row[5], row[6]) for row in rows], [("VALUE", ":=")])
+        self.assertEqual(roots, set())
+        self.assertEqual(dependencies, {"VALUE": set()})
+        self.assertLess(elapsed, 3.0)
+
+    def test_native_completion_reuses_screening_without_poisoning_selection(self):
+        self.add("Makefile", "VALUE := original\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n")
+        padding = b"# immutable unused text\n" * 32768
+        self.add("notes.txt", padding)
+        session = self.session()
+        with session:
+            deadline, limits = session.budget.deadline, session.budget.limits
+            before = sum(session.budget.bytes.values())
+            first = session._native_completion_selection()
+            initial_cost = sum(session.budget.bytes.values()) - before
+            expected = encoded(first)
+            self.assertGreaterEqual(initial_cost, len(padding))
+            first["names"].append("FOREIGN")
+            first["inventory"][0]["sha256"] = "0" * 64
+            before = sum(session.budget.bytes.values())
+            second = session._native_completion_selection()
+            repeated_cost = sum(session.budget.bytes.values()) - before
+            self.assertEqual(encoded(second), expected)
+            self.assertGreaterEqual(repeated_cost, len(expected))
+            self.assertLess(repeated_cost, len(padding))
+            self.assertEqual(second["snapshot_sha256"], session.snapshot.digest)
+            self.assertEqual(second["names"], ["VALUE", "v"])
+            for _ in range(2):
+                completed, semantics, _ = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"original")
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+            remaining = limits.cache_bytes - session.budget.bytes["cache"] + 1
+            with self.assertRaisesRegex(MakeProbeError, "aggregate cache byte budget exhausted"):
+                session.budget.charge("cache", remaining)
+            with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline/budget exhausted"):
+                session._native_completion_selection()
+        self.assert_clean(session)
+
+    def test_native_completion_screening_view_isolation_and_restoration(self):
+        budget = ProbeBudget()
+        self.add("Makefile", "BASE := original\nall: ; @v='$(BASE)'; printf '%s' \"$$v\"\n")
+        base = self.capture_view(budget)
+        self.add("Makefile", "CURRENT := changed\nall: ; @v='$(CURRENT)'; printf '%s' \"$$v\"\n")
+        current = self.capture_view(budget)
+        session = ProbeSession(current, scratch_root=self.scratch, budget=budget)
+        with session:
+            expected = encoded(session._native_completion_selection())
+            retained = session.native_selection
+            with session.select_view(base):
+                self.assertIsNone(session.native_selection)
+                selected = session._native_completion_selection()
+                self.assertEqual(selected["names"], ["BASE", "v"])
+                self.assertNotEqual(encoded(selected), expected)
+                completed, _, _ = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"original")
+                with session.select_view(current):
+                    self.assertIsNone(session.native_selection)
+                    self.assertEqual(encoded(session._native_completion_selection()), expected)
+                self.assertEqual(encoded(session._native_completion_selection()), encoded(selected))
+            self.assertEqual(encoded(session._native_completion_selection()), expected)
+            self.assertIs(session.native_selection, retained)
+        self.assert_clean(session)
+
+    def test_native_readonly_reuses_captured_runtime_without_second_host_read(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "VALUE := $(shell printf original)\nall: ; @/usr/bin/printf 'recipe\\n'\n")
+        capture = make_probe._executable_runtime
+        images = {}
+        def initial(path, budget, **kwargs):
+            result = capture(path, budget, **kwargs)
+            images[path] = result
+            return result
+        session = self.session()
+        with session:
+            deadline, limits = session.budget.deadline, session.budget.limits
+            with patch.object(make_probe, "_executable_runtime", side_effect=initial):
+                first = session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/printf",),
+                    observe_reads=True, observe_completions=True,
+                )
+            control = session.budget.bytes["control"]
+            observations = session.observations_used
+            with patch.object(
+                make_probe, "_executable_runtime", side_effect=AssertionError("second live runtime capture"),
+            ):
+                second = session._native_make_readonly(
+                    "all", variables=("VALUE",), native_executables=("/usr/bin/printf",),
+                    observe_reads=True, observe_completions=True,
+                )
+            self.assertEqual(first[0].stdout, second[0].stdout)
+            self.assertEqual(second[0].stdout, b"recipe\n")
+            self.assertEqual(first[1], second[1])
+            self.assertEqual(second[1]["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(set(images), {"/usr/bin/sh", "/usr/bin/printf"})
+            self.assertEqual(session.native_runtimes, images)
+            runtime_bytes = sum(len(data) for rows in images.values() for _, data in rows)
+            self.assertLess(session.budget.bytes["control"] - control, runtime_bytes)
+            self.assertGreater(session.observations_used, observations)
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+        self.assert_clean(session)
+
+    def test_native_selinux_mount_metadata_preserves_actual_type_and_absence(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <errno.h>\n#include <stdio.h>\n#include <sys/vfs.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " struct statfs info; int rc;\n"
+            " if (argc != 2) return 7;\n"
+            " rc=statfs(argv[1], &info);\n"
+            " if (rc) printf(\"error:%d\\n\", errno);\n"
+            " else printf(\"type:%lx;size:%ld;readonly:%d\\n\", (unsigned long)info.f_type,"
+            " (long)info.f_bsize, !!(info.f_flags & 1));\n"
+            " return 0;\n}\n"
+        ))
+        for path in ("/sys/fs/selinux", "/selinux"):
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session()
+            with self.subTest(path=path), session:
+                tool = session.compile_native(("native.c",))
+                ordinary = subprocess.run(
+                    (str(tool.path), path), cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10, check=True,
+                )
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, native_metadata_directories=(path,),
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+                if Path(path).exists():
+                    self.assertEqual(completed.stdout.split(b";")[:2], ordinary.stdout.split(b";")[:2])
+                    self.assertEqual(completed.stdout.split(b";")[2], b"readonly:1\n")
+                else:
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                    self.assertEqual(completed.stdout, f"error:{errno.ENOENT}\n".encode())
+                if Path(path).exists():
+                    self.assertIn(path, observed["accessed"])
+                record, = [row for row in observed["metadata"] if row[0] == 137 and row[1] == path]
+                self.assertEqual(record[2:6], (0, 0, 120, 0))
+                self.assertEqual(record[6], 0 if Path(path).exists() else -errno.ENOENT)
+            self.assert_clean(session)
+
+    def test_native_selinux_metadata_mount_has_no_content_or_descendant_authority(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <dirent.h>\n#include <fcntl.h>\n#include <string.h>\n"
+            "#include <sys/vfs.h>\n#include <unistd.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " struct statfs info;\n"
+            " if (argc != 2) return 7;\n"
+            " if (!strcmp(argv[1], \"read\")) open(\"/sys/fs/selinux\", O_RDONLY);\n"
+            " else if (!strcmp(argv[1], \"list\")) opendir(\"/sys/fs/selinux\");\n"
+            " else if (!strcmp(argv[1], \"write\")) open(\"/sys/fs/selinux/test\", O_WRONLY|O_CREAT, 0600);\n"
+            " else statfs(argv[1], &info);\n"
+            " return 0;\n}\n"
+        ))
+        for operation, message in (
+            ("read", "metadata-only runtime operation denied"),
+            ("list", "metadata-only runtime operation denied"),
+            ("write", "filesystem write denied"),
+            ("/sys/fs/selinux/child", "uncaptured Make runtime access"),
+            ("/sys/fs/other", "uncaptured Make runtime access"),
+            ("/selinux/child", "uncaptured Make runtime access"),
+        ):
+            self.add("Makefile", "all: ; @/native/tool " + operation + "\n")
+            session = self.session()
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(MakeProbeError, message), session:
+                    tool = session.compile_native(("native.c",))
+                    session._native_make_readonly(
+                        "all", native_tool=tool,
+                        native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                    )
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_selinux_metadata_declarations_keep_exact_trust_and_identity(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @:\n")
+        for declarations in (
+            ["/sys/fs/selinux"], ("/sys",), ("/sys/fs/selinux/child",),
+            ("/sys/fs/selinux", "/sys/fs/selinux"), (True,), ("/selinux/../selinux",),
+        ):
+            session = self.session()
+            with self.subTest(declarations=declarations):
+                with self.assertRaisesRegex(MakeProbeError, "metadata directory"), session:
+                    session._native_make_readonly("all", native_metadata_directories=declarations)
+                self.assert_clean(session)
+        path = Path("/sys/fs/selinux")
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        fixture = list(self.root.stat())
+        fixture[4] = fixture[5] = 0
+        fixture[0] = stat.S_IFDIR | 0o555
+        for field, value in ((4, os.getuid() + 1), (0, stat.S_IFDIR | 0o777), (0, stat.S_IFREG | 0o444)):
+            def changed(source, *args, **kwargs):
+                if source != path:
+                    return original_stat(source, *args, **kwargs)
+                fields = fixture.copy()
+                fields[field] = value
+                return os.stat_result(fields)
+            with self.subTest(field=field), patch.object(Path, "lstat", changed):
+                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                    make_probe._native_metadata_directory(str(path), ProbeBudget())
+        def redirected(source, *args, **kwargs):
+            return Path("/sys/fs") if source == path else original_resolve(source, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected):
+            with self.assertRaisesRegex(MakeProbeError, "canonical"):
+                make_probe._native_metadata_directory(str(path), ProbeBudget())
+        capture = make_probe._native_metadata_directory
+        calls = 0
+        def replaced(name, budget):
+            nonlocal calls
+            row = capture(name, budget)
+            calls += 1
+            if calls == 2:
+                if row[1] is None:
+                    return row[0], (0, 1, stat.S_IFDIR | 0o555, 0, 0)
+                identity = list(row[1])
+                identity[1] += 1
+                return row[0], tuple(identity)
+            return row
+        session = self.session()
+        with patch.object(make_probe, "_native_metadata_directory", replaced):
+            with self.assertRaisesRegex(MakeProbeError, "changed before invocation"), session:
+                session._native_make_readonly("all", native_metadata_directories=(str(path),))
+        self.assert_clean(session)
+
+    def test_native_original_find_with_exact_selinux_startup_resources(self):
+        self.add("tree/a.txt", "original")
+        self.add("tree/other.bin", "unused")
+        self.add("Makefile", (
+            "VALUE := $(shell /usr/bin/find tree -type f -name '*.txt')\n"
+            "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        session = self.session(runtime_files=(
+            "/proc/filesystems", "/proc/mounts", "/etc/selinux/config",
+        ))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), native_executables=("/usr/bin/find",),
+                native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"tree/a.txt")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "tree/a.txt")
+            self.assertIn("/repo/tree", observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_selinux_config_exact_optional_file_boundary(self):
+        from scripts.validation_ownership import make_probe
+        path = "/etc/selinux/config"
+        item = make_probe._capture_runtime_input(path, ProbeBudget())
+        self.assertEqual(item.canonical, path)
+        actual = Path(path).read_bytes() if Path(path).exists() else None
+        self.assertEqual(item.data, actual)
+        self.add("Makefile", (
+            f"VALUE := $(shell if test -e {path}; then printf present; else printf absent; fi)\n"
+            "all: ; @:\n"
+        ))
+        session = self.session(runtime_files=(path,))
+        with session:
+            _, semantics, _ = session._native_make_readonly("all", variables=("VALUE",))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "present" if actual is not None else "absent")
+        self.assert_clean(session)
+        original = Path.resolve
+        def redirected(source, *args, **kwargs):
+            return Path("/etc/passwd") if str(source) == path else original(source, *args, **kwargs)
+        with patch.object(Path, "resolve", redirected):
+            with self.assertRaisesRegex(MakeProbeError, "exact canonical"):
+                make_probe._capture_runtime_input(path, ProbeBudget())
+        for name in ("/etc/selinux/other", path + ".old", path + "/child"):
+            with self.subTest(name=name), self.assertRaisesRegex(MakeProbeError, "outside"):
+                make_probe._capture_runtime_input(name, ProbeBudget())
+        for makefile, message in (
+            ("all: ; @read -r v < /etc/selinux/other\n", "uncaptured Make runtime access"),
+            (f"all: ; @printf changed > {path}\n", "filesystem write denied"),
+        ):
+            self.add("Makefile", makefile)
+            session = self.session(runtime_files=(path,))
+            with self.assertRaisesRegex(MakeProbeError, message), session:
+                session._native_make_readonly("all")
+            self.assert_clean(session)
+
+    def test_native_selinux_metadata_supervisor_rejects_malformed_authority(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+        identity = [1, 2, stat.S_IFDIR | 0o555, 0, 0]
+        row = {"path": "/sys/fs/selinux", "identity": identity}
+        invalid = (
+            {}, None, [None], [{**row, "path": []}], [{**row, "extra": 1}],
+            [{**row, "path": "/sys"}], [row, row], [row, row, row],
+            [{**row, "identity": True}], [{**row, "identity": identity[:-1]}],
+            [{**row, "identity": [True, *identity[1:]]}],
+            [{**row, "identity": [-1, *identity[1:]]}],
+            [{**row, "identity": [1 << 64, *identity[1:]]}],
+            [{**row, "identity": [1, 2, 1 << 32, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFREG | 0o444, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFDIR | 0o777, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFDIR | 0o555, 1000, 0]}],
+        )
+        for declaration in invalid:
+            with self.subTest(declaration=declaration):
+                with self.assertRaisesRegex(Violation, "metadata-only directory authority"):
+                    Policy({
+                        "mode": "make", "native_readonly": True,
+                        "native_metadata_directories": declaration,
+                    })
+
+    def test_native_selinux_metadata_absence_rejects_actual_replaced_backing(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+        source = self.directory / "metadata-absent"
+        guest = self.root / str(source).lstrip("/")
+        guest.parent.mkdir(parents=True, exist_ok=True)
+        policy = Policy.__new__(Policy)
+        policy.config = {"root": str(self.root), "mounts": []}
+        policy.validate_native_metadata_mount(str(source), None)
+        for location in (source, guest):
+            for kind in ("dangling", "file", "directory"):
+                if kind == "dangling":
+                    location.symlink_to("missing-target")
+                    self.assertFalse(location.exists())
+                    self.assertTrue(location.is_symlink())
+                elif kind == "file":
+                    location.write_bytes(b"changed")
+                else:
+                    location.mkdir()
+                with self.subTest(location=location, kind=kind):
+                    with self.assertRaisesRegex(Violation, "absent.*present backing"):
+                        policy.validate_native_metadata_mount(str(source), None)
+                if kind == "directory":
+                    location.rmdir()
+                else:
+                    location.unlink()
+        policy.config["mounts"] = [{"target": str(source)}]
+        with self.assertRaisesRegex(Violation, "absent.*present backing"):
+            policy.validate_native_metadata_mount(str(source), None)
+
+    def test_native_readonly_issued_statfs_preserves_source_and_kernel_outcomes(self):
+        self.add("input", "original")
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <errno.h>\n#include <fcntl.h>\n#include <stdio.h>\n"
+            "#include <sys/syscall.h>\n#include <sys/vfs.h>\n#include <unistd.h>\n"
+            "int main(void) {\n"
+            " struct statfs a, b; int fd = open(\"input\", O_RDONLY);\n"
+            " if (fd < 0 || sizeof(a) != 120 || statfs(\"input\", &a) || fstatfs(fd, &b)) return 7;\n"
+            " if (a.f_type != b.f_type || a.f_bsize != b.f_bsize || a.f_namelen != b.f_namelen) return 8;\n"
+            " errno = 0;\n"
+            " if (statfs(\"absent\", &a) != -1 || errno != ENOENT) return 9;\n"
+            " errno = 0;\n"
+            " if (syscall(SYS_statfs, \"input\", (void *)1) != -1 || errno != EFAULT) return 10;\n"
+            " close(fd); puts(\"source-fs:equal;absent:ENOENT;buffer:EFAULT\"); return 0;\n"
+            "}\n"
+        ))
+        self.add("Makefile", "all: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            ordinary = subprocess.run(
+                (str(tool.path),), cwd=self.root, env=ENVIRONMENT,
+                capture_output=True, timeout=10, check=True,
+            )
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"source-fs:equal;absent:ENOENT;buffer:EFAULT\n")
+            job, = [
+                json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                if row.startswith("native-job:")
+            ]
+            self.assertEqual(job["returncode"], 0)
+            self.assertTrue(job["waited"])
+        self.assert_clean(session)
+
+    def test_native_readonly_statfs_keeps_path_and_descriptor_authority(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <string.h>\n#include <sys/vfs.h>\n"
+            "int main(int argc, char **argv) {\n"
+            " struct statfs info;\n"
+            " if (argc != 2) return 7;\n"
+            " if (!strcmp(argv[1], \"unknown-fd\")) fstatfs(123456, &info);\n"
+            " else statfs(argv[1], &info);\n"
+            " return 0;\n}\n"
+        ))
+        for path, error in (
+            ("/etc/passwd", "uncaptured Make runtime access"),
+            ("/repo/../../etc/passwd", "uncaptured Make runtime access"),
+            ("unknown-fd", "unavailable inherited/unknown descriptor"),
+        ):
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session()
+            with self.subTest(path=path), self.assertRaisesRegex(MakeProbeError, error), session:
+                tool = session.compile_native(("native.c",))
+                session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+            self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_shared_runtime_bodies_are_captured_and_retained_once(self):
+        from collections import Counter
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @/usr/bin/printf runtime\n")
+        session = self.session()
+        with session:
+            session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+            core = dict(session.make_runtime)
+            libc, = [name for name in core if name.endswith("/libc.so.6")]
+            reads = Counter()
+            capture = make_probe._trusted_runtime_bytes
+            def counted(path, budget):
+                reads[path] += 1
+                return capture(path, budget)
+            with patch.object(make_probe, "_trusted_runtime_bytes", counted):
+                cache_before = session.budget.bytes.get("cache", 0)
+                inputs_before = set(session.native_runtime_inputs)
+                python = session._captured_native_runtime("/usr/bin/python3")
+                retained = sum(
+                    len(name.encode("utf-8")) + 16 + (0 if name in core else len(data))
+                    for name, data in session.native_runtime_inputs.items() if name not in inputs_before
+                )
+                closure = len("/usr/bin/python3") + 16 + sum(
+                    len(name.encode("utf-8")) + 16 for name, _ in python
+                )
+                self.assertEqual(session.budget.bytes["cache"] - cache_before, retained + closure)
+                for _ in range(2):
+                    completed, _, _ = session._native_make_readonly(
+                        "all", native_executables=("/usr/bin/printf",), native_libraries=(libc,),
+                    )
+                    self.assertEqual(completed.stdout, b"runtime")
+            self.assertEqual({name: reads[name] for name in core}, dict.fromkeys(core, 0))
+            for name, data in python:
+                if name in core:
+                    self.assertIs(data, core[name])
+            self.assertEqual(reads["/usr/bin/python3"], 1)
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures(self):
+        self.add("Makefile", "all: ; @:\n")
+        inactive = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "probe session is not active"):
+            inactive._captured_native_runtime_input("/usr/bin/python3")
+        self.assertFalse(inactive.native_runtime_inputs)
+        for limits in (
+            {"file_bytes": 4 * 1024 * 1024},
+            {"control_bytes": 8 * 1024 * 1024},
+            {"cache_bytes": 64},
+        ):
+            session = self.session(**limits)
+            with self.subTest(limits=limits), session:
+                with self.assertRaises(MakeProbeError):
+                    session._captured_native_runtime_input("/usr/bin/python3")
+                self.assertNotIn("/usr/bin/python3", session.native_runtime_inputs)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                session._captured_native_runtime_input(str(self.root / "untrusted"))
+            self.assertNotIn(str(self.root / "untrusted"), session.native_runtime_inputs)
+        self.assert_clean(session)
+
+    def test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup(self):
+        self.add("Makefile", "all: ; @v=owned; printf '%s' \"$$v\"\n")
+        for shutdown in (True, False):
+            budget = ProbeBudget()
+            loader = self.capture_view(budget)
+            session = ProbeSession(loader, scratch_root=self.scratch, budget=budget)
+            with self.subTest(shutdown=shutdown), session:
+                session._native_make_readonly("all")
+                maps = [(session.native_runtimes, session.native_runtime_inputs)]
+                outer, inner = session.select_view(loader), session.select_view(loader)
+                outer.__enter__()
+                session._native_make_readonly("all")
+                maps.append((session.native_runtimes, session.native_runtime_inputs))
+                inner.__enter__()
+                session._native_make_readonly("all")
+                maps.append((session.native_runtimes, session.native_runtime_inputs))
+                self.assertTrue(all(closures and bodies for closures, bodies in maps))
+                try:
+                    if shutdown:
+                        session.__exit__(None, None, None)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "nesting order"):
+                            outer.__exit__(None, None, None)
+                    self.assertIs(session.loader, loader)
+                    self.assertFalse(session._views)
+                    self.assertTrue(all(not closures and not bodies for closures, bodies in maps))
+                    self.assert_clean(session)
+                finally:
+                    inner.__exit__(None, None, None)
+                    if shutdown:
+                        outer.__exit__(None, None, None)
+            self.assert_clean(session)
+
+    def test_native_readonly_runtime_capture_view_isolation_restoration_and_failure(self):
+        from scripts.validation_ownership import make_probe
+        budget = ProbeBudget()
+        self.add("Makefile", "VALUE := base\nall: ; @v=base; printf '%s' \"$$v\"\n")
+        base = self.capture_view(budget)
+        self.add("Makefile", "VALUE := current\nall: ; @v=current; printf '%s' \"$$v\"\n")
+        current = self.capture_view(budget)
+        session = ProbeSession(current, scratch_root=self.scratch, budget=budget)
+        with session:
+            session._native_make_readonly("all")
+            outer = session.native_runtimes
+            outer_inputs = session.native_runtime_inputs
+            image = outer["/usr/bin/sh"]
+            with session.select_view(base):
+                self.assertFalse(session.native_runtimes)
+                self.assertFalse(session.native_runtime_inputs)
+                selected = session.native_runtimes
+                selected_inputs = session.native_runtime_inputs
+                completed, _, _ = session._native_make_readonly("all")
+                self.assertEqual(completed.stdout, b"base")
+                with session.select_view(current):
+                    self.assertFalse(session.native_runtimes)
+                    self.assertFalse(session.native_runtime_inputs)
+                    completed, _, _ = session._native_make_readonly("all")
+                    self.assertEqual(completed.stdout, b"current")
+                self.assertIs(session.native_runtimes, selected)
+                self.assertIs(session.native_runtime_inputs, selected_inputs)
+                self.assertTrue(selected)
+            self.assertFalse(selected)
+            self.assertFalse(selected_inputs)
+            self.assertIs(session.native_runtimes, outer)
+            self.assertIs(session.native_runtime_inputs, outer_inputs)
+            self.assertIs(session.native_runtimes["/usr/bin/sh"], image)
+            with patch.object(
+                make_probe, "_executable_runtime", side_effect=MakeProbeError("actual capture refusal"),
+            ):
+                with self.assertRaisesRegex(MakeProbeError, "actual capture refusal"):
+                    session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+            self.assertNotIn("/usr/bin/printf", session.native_runtimes)
+            self.assertTrue(budget.failed)
+        self.assertFalse(outer)
+        self.assertFalse(outer_inputs)
+        self.assert_clean(session)
+
+    def test_native_readonly_direct_executable_default_invalid_and_conflicting_admission_refuse(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @/usr/bin/printf original\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: metadata /usr/bin/printf"):
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+        for request in (None, [], (False,), ("/usr/bin/make",), ("/bin/sh",),
+                        ("usr/bin/printf",), ("/usr/bin/printf", "/usr/bin/printf")):
+            session = self.session()
+            with self.subTest(request=request), session:
+                with self.assertRaisesRegex(MakeProbeError, "invalid native executable resource declaration"):
+                    session._native_make_readonly("all", native_executables=request)
+            self.assert_clean(session)
+        original = make_probe._executable_runtime
+        def conflict(path, budget, **kwargs):
+            captured = original(path, budget, **kwargs)
+            if path == "/usr/bin/printf":
+                return tuple(
+                    (name, data + b"changed" if "libc.so" in name else data)
+                    for name, data in captured
+                )
+            return captured
+        session = self.session()
+        with session, patch.object(make_probe, "_executable_runtime", conflict):
+            with self.assertRaisesRegex(MakeProbeError, "native executable runtime conflicts"):
+                session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+        self.assert_clean(session)
+
+    def test_native_readonly_direct_executable_dispatch_and_returned_bindings_refuse(self):
+        self.add("Makefile", "all: ; @/usr/bin/printf original\n")
+        cases = (
+            (
+                "original=guard.Policy.begin_native_job\n"
+                "def foreign(self,pid,state,path):return original(self,pid,state,'/usr/bin/uname')\n"
+                "guard.Policy.begin_native_job=foreign\n",
+                "native job lacks its actual original Make dispatch",
+            ),
+            (
+                "original=guard.Policy.begin_native_job\n"
+                "def wrong(self,pid,state,path):\n"
+                " result=original(self,pid,state,path)\n"
+                " self.native_jobs[state.native_dispatch]['executable']='/usr/bin/true'\n"
+                " return result\n"
+                "guard.Policy.begin_native_job=wrong\n",
+                "native job exec has a foreign or reused dispatch child",
+            ),
+            (
+                "original=guard.Policy.observe\n"
+                "def wrong(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):]);row['executable']='/usr/bin/true'\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=wrong\n",
+                "native job differs from its actual executable",
+            ),
+            (
+                "original=guard.Policy.observe\n"
+                "def foreign(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-exec:'):\n"
+                "  value=value.rsplit(':',1)[0]+':/usr/bin/uname'\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=foreign\n",
+                "native execution differs from its admitted executable",
+            ),
+        )
+        for body, error in cases:
+            session = self.session()
+            with self.subTest(error=error), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_completions=True,
+                        native_executables=("/usr/bin/printf", "/usr/bin/true"),
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_readonly_declared_executable_does_not_admit_shell_reexec(self):
+        self.add("Makefile", "all: ; @/bin/sh -c 'exec /usr/bin/printf unissued'\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "Make execution escaped authenticated native dispatch"):
+                session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
+        self.assert_clean(session)
+
+    def test_native_readonly_optional_runtime_data_absence_and_stock_alias_jobs(self):
+        runtime = "/usr/include/stdlib.h"
+        absent = "/usr/include/.dep"
+        self.assertTrue(Path(runtime).is_file())
+        self.assertFalse(Path(absent).exists())
+        expected = Path(runtime).read_bytes().splitlines()[0]
+        self.add("Makefile", (
+            "VALUE := $(shell read -r line < /usr/include/stdlib.h; printf '%s' \"$$line\")\n"
+            "ABSENT := $(shell if test -e /usr/include/.dep; then printf present; else printf absent; fi)\n"
+            "REFERENCES = $(VALUE) $(ABSENT)\n"
+            "all:\n\t@/bin/printf 'alias\\n'\n\t@/usr/bin/printf 'canonical\\n'\n"
+        ))
+        session = self.session(runtime_files=(runtime, absent, "/bin/printf"))
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "ABSENT"),
+                native_executables=("/usr/bin/printf",),
+                observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"alias\ncanonical\n")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"].encode(), expected)
+            self.assertEqual(semantics["domains"]["ABSENT"]["value"], "absent")
+            jobs = [
+                json.loads(value.removeprefix("native-job:")) for value in observed["accessed"]
+                if value.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 4)
+            self.assertEqual({row["executable"] for row in jobs}, {"/usr/bin/sh", "/usr/bin/printf"})
+            metadata = [row for row in observed["metadata"] if row[1] == absent]
+            self.assertTrue(metadata)
+            self.assertTrue(all(row[6] == -errno.ENOENT for row in metadata))
+            self.assertIn(runtime, observed["accessed"])
+        self.assert_clean(session)
+
+    def test_native_readonly_optional_runtime_resource_and_alias_boundaries_refuse(self):
+        resources = ("/usr/include/stdlib.h", "/usr/include/.dep", "/bin/printf")
+        cases = (
+            ("all: ; @read line < /usr/include/stdio.h\n", "uncaptured Make runtime access"),
+            ("all: ; @if test -e /usr/include/.unissued; then :; fi\n", "uncaptured Make runtime access"),
+            ("all: ; @/bin/true\n", "unrequested stock runtime alias spelling"),
+            ("all: ; @read line < /usr/include/../include/stdlib.h\n", "optional Make runtime parent spelling denied"),
+            ("all: ; @/bin/printf unissued\n", "untrusted executable dispatch"),
+        )
+        for source, expected in cases:
+            self.add("Makefile", source)
+            session = self.session(runtime_files=resources)
+            with self.subTest(source=source), session:
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    session._native_make_readonly("all")
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_readonly_optional_absence_rejects_wrong_kernel_result_projection(self):
+        self.add("Makefile", "all: ; @if test -e /usr/include/.dep; then :; fi\n")
+        body = (
+            "original=guard.Policy.finish_metadata\n"
+            "def wrong(self,pid,state,result):\n"
+            " if state.metadata_pending and state.metadata_pending[0][1]=='/usr/include/.dep':result=0\n"
+            " return original(self,pid,state,result)\n"
+            "guard.Policy.finish_metadata=wrong\n"
+        )
+        session = self.session(runtime_files=("/usr/include/.dep",))
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native optional absence differs from its kernel metadata"):
+                session._native_make_readonly("all")
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_readonly_original_assignment_inputs_and_default_restore(self):
+        self.add("Makefile", (
+            "ENV_INPUT ?= file-env\nCAP ?= 0xCD\n"
+            "VALUE := $(shell v='$(ENV_INPUT):$(CAP)'; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v='$(VALUE)'; printf '%s\\n' \"$$v\"\n"
+        ))
+        assignments = (("environment", "ENV_INPUT", "native-env"), ("command-line", "CAP", "0xCE"))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "CAP=0xCE", "all"),
+            cwd=self.root, env={**ENVIRONMENT, "ENV_INPUT": "native-env"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("native input invoked command replay"),
+        ):
+            deadline, limits = session.budget.deadline, session.budget.limits
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("ENV_INPUT", "CAP", "VALUE"),
+                assignments=assignments, observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"native-env:0xCE\n")
+            self.assertEqual(semantics["domains"]["ENV_INPUT"]["origin"], "environment")
+            self.assertEqual(semantics["domains"]["CAP"]["origin"], "command line")
+            self.assertEqual(semantics["domains"]["CAP"]["flavor"], "recursive")
+            first_count = session.observations_used
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("ENV_INPUT", "CAP", "VALUE"), observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, b"file-env:0xCD\n")
+            self.assertEqual(semantics["domains"]["ENV_INPUT"]["origin"], "file")
+            self.assertEqual(semantics["domains"]["CAP"]["origin"], "file")
+            self.assertGreater(session.observations_used, first_count)
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+        self.assert_clean(session)
+
+    def test_native_readonly_assignment_authority_refuses_before_launch(self):
+        self.add("Makefile", "all: ;\n")
+        for assignments in (
+            (("environment", "LD_PRELOAD", "/repo/plugin.so"),),
+            (("command-line", "SHELL", "/repo/shell"),),
+            (("command-line", "MAKEFLAGS", "-j99"),),
+            (("file", "CAP", "0xCE"),),
+            (("environment", "CAP", "first"), ("command-line", "CAP", "second")),
+            (("command-line", "CAP", None),),
+        ):
+            with self.subTest(assignments=assignments):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "execution-authority Make assignment"):
+                    with session, patch.object(session, "_sandbox_run") as launch:
+                        session._native_make_readonly("all", assignments=assignments)
+                launch.assert_not_called()
+                self.assert_clean(session)
+
+    def test_native_readonly_actual_write_and_foreign_execution_refuse(self):
+        for recipe, diagnostic in (
+            ("v=x; printf '%s' \"$$v\" > changed.txt", "readonly native Make filesystem write"),
+            ("v=x; /usr/bin/printf '%s' \"$$v\"", "untrusted executable dispatch"),
+        ):
+            with self.subTest(recipe=recipe):
+                self.add("Makefile", ".PHONY: all\nall:\n\t@" + recipe + "\n")
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, diagnostic):
+                    with session:
+                        session._native_make_readonly("all")
+                self.assert_clean(session)
+                self.assertFalse((self.root / "changed.txt").exists())
+
+    def test_native_readonly_mapped_runtime_authority_refuses_before_dispatch(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        session = self.session(runtime_files=("/usr/include/stdio.h",))
+        with self.assertRaisesRegex(MakeProbeError, "unmapped immutable source session"):
+            with session, patch.object(session, "_sandbox_run") as launch:
+                session.make_depth = 1
+                session._native_make_readonly("all")
+        launch.assert_not_called()
+        self.assert_clean(session)
+
+    def test_native_readonly_guard_rejects_cross_lane_configuration(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+
+        valid = {
+            "mode": "make", "native_readonly": True,
+            "executables": ["/usr/bin/make", "/bin/sh"],
+            "environment": {"VO_OBSERVE_NATIVE_READONLY": "1"},
+        }
+        for changes in (
+            {"native_readonly": 1}, {"native_readonly": False},
+            {"mode": "command"}, {"executables": ["/usr/bin/make", "/usr/bin/python3"]},
+            {"producer_endpoint": "/control/producer"}, {"published": [["foreign"]]},
+            {"mapping_entries": ["foreign"]}, {"metadata_validation": True},
+            {"dependency": {"foreign": True}},
+            {"environment": {}},
+        ):
+            with self.subTest(changes=changes), self.assertRaisesRegex(
+                Violation, "invalid readonly native Make authority",
+            ):
+                Policy({**valid, **changes})
+
+    def test_native_readonly_shell_status_reaches_make_semantics(self):
+        self.add("Makefile", (
+            "VALUE := $(shell printf observed; exit 7)\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "observed")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "7")
+            self.assertEqual(completed.stdout, b"done\n")
+        self.assert_clean(session)
+
+    def test_native_readonly_recursive_observer_dispatch_refuses(self):
+        self.add("Makefile", (
+            "VALUE = $(shell v=unexpected; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 125"):
+            with session:
+                session._native_make_readonly("all", variables=("VALUE",))
+        self.assert_clean(session)
+
+    def test_native_readonly_recursive_builtin_observation_has_no_extra_effects(self):
+        cases = (
+            "VALUE = $(info observer-only)result\n",
+            "VALUE = $(warning observer-only)result\n",
+            "VALUE = $(error observer-only)result\n",
+            "VALUE = $(eval OBSERVER_EDIT := changed)result\n",
+            "VALUE = $(shell printf observer-only)result\n",
+            "HIDDEN = $(info observer-only)\nVALUE = $(HIDDEN)result\n",
+            "VALUE := valid\nSHELL = $(info original-shell)/bin/sh\n",
+            "VALUE := valid\n.SHELLFLAGS = -c$(info original-flags)\n",
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                self.add("Makefile", source + ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n")
+                ordinary = subprocess.run(
+                    ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+                    cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+                )
+                session = self.session()
+                completed = {}
+                with session:
+                    original = session._sandbox_run
+                    def capture(*args, **kwargs):
+                        result, observed = original(*args, **kwargs)
+                        completed["result"] = result
+                        return result, observed
+                    failure = None
+                    with patch.object(session, "_sandbox_run", side_effect=capture):
+                        try:
+                            session._native_make_readonly("all", variables=("VALUE",))
+                        except MakeProbeError as error:
+                            failure = error
+                    self.assertIn("result", completed)
+                    self.assertEqual(completed["result"].stdout, ordinary.stdout)
+                    self.assertNotIn(b"observer-only", completed["result"].stderr)
+                    self.assertIsNotNone(failure)
+                    self.assertRegex(str(failure), "unsupported readonly native recursive observation")
+                self.assert_clean(session)
+
+    def test_native_readonly_simple_dollar_and_literal_recursive_values_are_safe(self):
+        self.add("Makefile", (
+            "SIMPLE := $$literal\nLITERAL = literal\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("SIMPLE", "LITERAL", "UNDEFINED"),
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["SIMPLE"]["value"], "$literal")
+            self.assertEqual(semantics["domains"]["SIMPLE"]["flavor"], "simple")
+            self.assertEqual(semantics["domains"]["LITERAL"]["value"], "literal")
+            self.assertEqual(semantics["domains"]["LITERAL"]["flavor"], "recursive")
+            self.assertEqual(semantics["domains"]["UNDEFINED"]["value"], "")
+            self.assertEqual(semantics["domains"]["UNDEFINED"]["flavor"], "undefined")
+        self.assert_clean(session)
+
+    def test_native_readonly_inherited_append_observation_has_no_extra_effects(self):
+        cases = (
+            ("all", "VALUE = $(info observer-only)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(warning observer-only)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(error observer-only)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(eval OBSERVER_EDIT := changed)parent\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(shell printf observer-only >&2)parent\nall: VALUE += tail\n"),
+            ("all", "HIDDEN = $(info observer-only)\nVALUE = $(HIDDEN)parent\nall: VALUE += tail\n"),
+            ("parent", "VALUE = $(info observer-only)hidden\nparent: VALUE += middle\nall: VALUE += tail\n"),
+            ("all", "VALUE = $(info observer-only)parent\n%: VALUE += tail\n"),
+            ("all", "VALUE := valid\nSHELL = $(info original-shell)/bin/sh\nall: SHELL += \n"),
+            ("all", "VALUE := valid\n.SHELLFLAGS = -c$(info original-flags)\nall: .SHELLFLAGS += \n"),
+        )
+        for goal, source in cases:
+            with self.subTest(goal=goal, source=source):
+                self.add("Makefile", source + (
+                    ".PHONY: parent all\nparent: all\n"
+                    "all:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", goal),
+                    cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+                )
+                session = self.session()
+                completed = {}
+                with session:
+                    original = session._sandbox_run
+                    def capture(*args, **kwargs):
+                        result, observed = original(*args, **kwargs)
+                        completed["result"] = result
+                        return result, observed
+                    failure = None
+                    with patch.object(session, "_sandbox_run", side_effect=capture):
+                        try:
+                            session._native_make_readonly(goal, variables=("VALUE",))
+                        except MakeProbeError as error:
+                            failure = error
+                    self.assertIn("result", completed)
+                    self.assertEqual(completed["result"].stdout, ordinary.stdout)
+                    self.assertNotIn(b"observer-only", completed["result"].stderr)
+                    self.assertIsNotNone(failure)
+                    self.assertRegex(str(failure), "unsupported readonly native append observation")
+                self.assert_clean(session)
+
+    def test_native_readonly_target_literals_and_mapped_append_keep_semantics(self):
+        self.add("Makefile", (
+            "SIMPLE := $$literal\nLITERAL = global\nAPPENDED = parent\n"
+            "all: SIMPLE := $$target\nall: LITERAL = target\nall: APPENDED += tail\n"
+            ".PHONY: all\nall:\n\t@:\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("SIMPLE", "LITERAL", "UNDEFINED"),
+            )
+            self.assertEqual(completed.stdout, b"")
+            target = next(item for item in semantics["files"] if item["target"] == "all")
+            self.assertEqual(target["variables"]["SIMPLE"]["value"], "$target")
+            self.assertEqual(target["variables"]["LITERAL"]["value"], "target")
+            self.assertEqual(target["variables"]["UNDEFINED"]["value"], "")
+            self.assertEqual(semantics["domains"]["SIMPLE"]["value"], "$literal")
+            self.assertEqual(semantics["domains"]["LITERAL"]["value"], "global")
+            mapped = session.make("all", variables=("APPENDED",))
+            target = next(item for item in mapped.semantics["files"] if item["target"] == "all")
+            self.assertEqual(target["variables"]["APPENDED"]["value"], "parent tail")
+            self.assertEqual(mapped.semantics["domains"]["APPENDED"]["value"], "parent")
+        self.assert_clean(session)
+
+    def test_native_readonly_shell_loader_probes_cannot_select_false_absence(self):
+        for path in ("/etc/ld.so.cache", "/etc/ld.so.preload"):
+            with self.subTest(path=path):
+                self.add("Makefile", (
+                    f"VALUE := $(shell if [ -e {path} ]; then printf present; else printf absent; fi)\n"
+                    ".PHONY: all\nall:\n\t@:\n"
+                ))
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access"):
+                    with session:
+                        session._native_make_readonly("all", variables=("VALUE",))
+                self.assert_clean(session)
+
+    def test_native_readonly_runtime_overlap_uses_captured_bytes(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        with self.session() as session:
+            original = Path.read_bytes
+            def read(path):
+                if str(path).startswith(str(session.base / "native-readonly-root-")):
+                    self.fail("private runtime reread bypassed budget")
+                return original(path)
+            with patch.object(Path, "read_bytes", read):
+                completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual(completed.stdout, b"done\n")
+        self.assert_clean(session)
+
+    def test_native_readonly_conflicting_runtime_capture_refuses(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        from scripts.validation_ownership import make_probe
+        original = make_probe._executable_runtime
+        def capture(path, budget, **kwargs):
+            result = original(path, budget, **kwargs)
+            if path == "/usr/bin/sh":
+                return tuple(
+                    (name, data + b"changed" if name != path else data) for name, data in result
+                )
+            return result
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "native shell runtime conflicts"):
+            with session, patch.object(make_probe, "_executable_runtime", capture):
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    @contextmanager
+    def native_supervisor(self, body):
+        bootstrap = (
+            "import json,os,sys\nfrom pathlib import Path\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec\n"
+            + body + "\nraise SystemExit(sandbox_exec.main())\n"
+        )
+        run = ProbeBudget.run
+        def instrument(budget, argv, **kwargs):
+            if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                if json.loads(Path(argv[-1]).read_bytes()).get("native_readonly"):
+                    argv = [*argv[:-2], "-c", bootstrap, argv[-1]]
+            return run(budget, argv, **kwargs)
+        with patch.object(ProbeBudget, "run", instrument):
+            yield
+
+    def test_native_readonly_loader_rejects_stale_stop_foreign_origin_and_replacement(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        for body, error in (
+            (
+                "original=guard.Policy.native_loader_origin\n"
+                "def stale(self,state):\n"
+                " pid,number,ip=state.native_stop\n"
+                " state.native_stop=(pid,number,ip+1)\n"
+                " return original(self,state)\n"
+                "guard.Policy.native_loader_origin=stale\n",
+                "native loader probe lost its actual syscall-entry stop",
+            ),
+            (
+                "original=guard.Policy.native_loader_origin\n"
+                "def replaced(self,state):\n"
+                " path=Path(self.config['root'])/self.config['native_interpreter'].lstrip('/')\n"
+                " temporary=path.with_name(path.name+'.replaced')\n"
+                " temporary.write_bytes(path.read_bytes());temporary.chmod(0o555)\n"
+                " os.replace(temporary,path)\n"
+                " return original(self,state)\n"
+                "guard.Policy.native_loader_origin=replaced\n",
+                "Read-only file system",
+            ),
+            (
+                "original=guard.Policy.native_loader_origin\n"
+                "def foreign(self,state):\n"
+                " self.config['native_interpreter']=next(path for path in self.runtime_closure if path.endswith('/libc.so.6'))\n"
+                " return original(self,state)\n"
+                "guard.Policy.native_loader_origin=foreign\n",
+                "uncaptured Make runtime access",
+            ),
+        ):
+            with self.subTest(error=error), self.native_supervisor(body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    with session:
+                        session._native_make_readonly("all")
+                self.assert_clean(session)
+
+    def test_native_readonly_ignored_recipe_status_is_owned_by_make(self):
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n\t-@v=ignored; exit 7\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual(completed.stdout, b"done\n")
+            self.assertIn(b"Error 7 (ignored)", completed.stderr)
+        self.assert_clean(session)
+
+    def test_native_readonly_unignored_recipe_status_still_fails_make(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=failed; exit 7\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_self_signal_status_reaches_make(self):
+        self.add("Makefile", (
+            "VALUE := $(shell printf observed; kill -PIPE $$$$)\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        with self.session() as session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "observed")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "141")
+            self.assertEqual(completed.stdout, b"done\n")
+        self.assert_clean(session)
+
+    def test_native_readonly_ignored_and_unignored_self_signal_recipe(self):
+        for ignored in (True, False):
+            with self.subTest(ignored=ignored):
+                self.add("Makefile", (
+                    ".PHONY: all\nall:\n\t" + ("-" if ignored else "")
+                    + "@v=ignored; kill -PIPE $$$$\n"
+                    "\t@v=done; printf '%s\\n' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, 0 if ignored else 2)
+                session = self.session()
+                if ignored:
+                    with session:
+                        completed, _, _ = session._native_make_readonly("all")
+                        self.assertEqual(completed.stdout, b"done\n")
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                        self.assertIn(b"(ignored)", completed.stderr)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+                        with session:
+                            session._native_make_readonly("all")
+                self.assert_clean(session)
+
+    def test_native_readonly_foreign_signal_and_trap_remain_refused(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=ignored; kill -PIPE $$$$\n")
+        body = (
+            "original=guard.Policy.signal_target\n"
+            "def foreign(pid,*targets):\n"
+            " original(pid,*targets)\n"
+            " os.kill(pid,13)\n"
+            "guard.Policy.signal_target=staticmethod(foreign)\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(
+            MakeProbeError, "native shell signal delivery is not its admitted self-signal",
+        ):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+        self.add("Makefile", ".PHONY: all\nall:\n\t-@v=ignored; kill -TRAP $$$$\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unauthenticated native shell trap"):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_unadmitted_sigkill_termination_refuses(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t-@v=ignored; kill -PIPE $$$$\n")
+        receipt = self.directory / "foreign-sigkill-return.json"
+        body = (
+            "original=guard.Policy.signal_target\n"
+            "def foreign(pid,*targets):\n"
+            " original(pid,*targets)\n"
+            " returned=os.kill(pid,9)\n"
+            f" Path({str(receipt)!r}).write_text(json.dumps("
+            "{'pid':pid,'targets':list(targets),'signal':9,'return':returned}))\n"
+            "guard.Policy.signal_target=staticmethod(foreign)\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaises(MakeProbeError):
+            with session:
+                session._native_make_readonly("all")
+        observed = json.loads(receipt.read_bytes())
+        self.assertGreater(observed["pid"], 0)
+        self.assertTrue(observed["targets"])
+        self.assertEqual(set(observed["targets"]), {observed["pid"]})
+        self.assertEqual(observed["signal"], signal.SIGKILL)
+        self.assertIsNone(observed["return"])
+        self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_readonly_failed_queued_signal_cannot_admit_foreign_sigkill(self):
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n\t-@v=ignored; kill -KILL $$$$\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        for number in (129, 297):
+            with self.subTest(number=number):
+                receipt = self.directory / f"queued-fault-{number}.json"
+                body = (
+                    "entry=guard.Policy.entry\nleave=guard.Policy.leave\n"
+                    "original_ptrace=guard.ptrace\nforeign=set()\n"
+                    "def queued(self,pid,state,r):\n"
+                    " if state.role=='native' and r.orig_rax==62 and r.rsi==9:\n"
+                    f"  r.orig_rax={number}\n"
+                    "  r.rdx=0\n"
+                    + ("  r.rsi=pid;r.rdx=9;r.r10=0\n" if number == 297 else "")
+                    + "  state.kernel_call=r.orig_rax\n"
+                    "  original_ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+                    " return entry(self,pid,state,r)\n"
+                    "def failed(self,pid,state,r):\n"
+                    " result=leave(self,pid,state,r)\n"
+                    f" if state.role=='native' and r.orig_rax=={number}:\n"
+                    "  if guard.signed(r.rax)!=-14:raise guard.Violation('queued control did not fault')\n"
+                    f"  Path({str(receipt)!r}).write_text(json.dumps("
+                    "{'number':r.orig_rax,'result':guard.signed(r.rax),'pid':pid}))\n"
+                    "  foreign.add(pid)\n"
+                    " return result\n"
+                    "def terminate(request,pid,*args):\n"
+                    " result=original_ptrace(request,pid,*args)\n"
+                    " if request==guard.SYSCALL and pid in foreign:\n"
+                    "  foreign.remove(pid);os.kill(pid,9)\n"
+                    " return result\n"
+                    "guard.Policy.entry=queued;guard.Policy.leave=failed;guard.ptrace=terminate\n"
+                )
+                session = self.session()
+                error = None
+                completed = None
+                with self.native_supervisor(body), session:
+                    try:
+                        completed, _, _ = session._native_make_readonly("all")
+                    except MakeProbeError as failure:
+                        error = failure
+                actual = json.loads(receipt.read_bytes())
+                self.assertEqual((actual["number"], actual["result"]), (number, -errno.EFAULT))
+                self.assertGreater(actual["pid"], 0)
+                self.assert_clean(session)
+                self.assertIsNotNone(error, (
+                    f"kernel fault {actual} accepted foreign termination with "
+                    f"{None if completed is None else completed.stdout!r}"
+                ))
+                self.assertRegex(str(error), "native SIGKILL lacks an actual successful self-send outcome")
+
+    def test_native_readonly_successful_self_sigkill_status_is_preserved(self):
+        self.add("Makefile", (
+            "VALUE := $(shell printf observed; kill -KILL $$$$)\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            ".PHONY: all\nall:\n\t-@v=ignored; kill -KILL $$$$\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        session = self.session()
+        with session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"),
+            )
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "observed")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "137")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"done\n")
+            self.assertIn(b"(ignored)", completed.stderr)
+        self.assert_clean(session)
+
+    @owned_timezone
+    def test_native_readonly_failed_signal_preserves_prior_success_authorization(self):
+        runtime, resources = self.native_python_startup_fixture()
+        script = (
+            "import os,signal; "
+            "signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGUSR1}); "
+            "print(signal.SIGUSR1,flush=True); "
+            "os.kill(os.getpid(),signal.SIGUSR1); os.kill(os.getpid(),signal.SIGUSR1)"
+        )
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n"
+            f"\t-@/usr/bin/python3 -I -S -c {shlex.quote(script)}\n"
+            "\t@v=done; printf '%s' \"$$v\"\n"
+        ))
+        receipt = self.directory / "prior-self-signal.json"
+        body = (
+            "entry=guard.Policy.entry\nleave=guard.Policy.leave\n"
+            "calls={};actual={}\n"
+            "def queued(self,pid,state,r):\n"
+            " if state.role=='native' and r.orig_rax==62 and r.rsi==10:\n"
+            "  calls[pid]=calls.get(pid,0)+1\n"
+            "  if calls[pid]==2:\n"
+            "   r.orig_rax=129;r.rdx=0;state.kernel_call=129\n"
+            "   guard.ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+            " return entry(self,pid,state,r)\n"
+            "def completed(self,pid,state,r):\n"
+            " result=leave(self,pid,state,r)\n"
+            " if state.role=='native' and calls.get(pid)==1 and r.orig_rax==62:\n"
+            "  actual['successful']=[r.orig_rax,guard.signed(r.rax)]\n"
+            " if state.role=='native' and calls.get(pid)==2 and r.orig_rax==129:\n"
+            "  actual['failed']=[r.orig_rax,guard.signed(r.rax)]\n"
+            "  actual['authorization']=10 in state.native_signals\n"
+            "  status=Path(f'/proc/{pid}/status').read_bytes();self.charge_metadata(len(status))\n"
+            "  pending=[int(line.split()[1],16) for line in status.splitlines()"
+            " if line.startswith((b'SigPnd:',b'ShdPnd:'))]\n"
+            "  actual['kernel_pending']=any(value & (1<<9) for value in pending)\n"
+            f"  Path({str(receipt)!r}).write_text(json.dumps(actual))\n"
+            " return result\n"
+            "guard.Policy.entry=queued;guard.Policy.leave=completed\n"
+        )
+        session = self.session(runtime_files=(*resources, "/usr/share/zoneinfo/UTC"))
+        with self.native_supervisor(body), session:
+            completed, _, _ = session._native_make_readonly(
+                "all", native_executables=("/usr/bin/python3",),
+                native_runtime_directories=(runtime,),
+            )
+            self.assertEqual(completed.stdout, b"10\ndone")
+        self.assertEqual(json.loads(receipt.read_bytes()), {
+            "successful": [62, 0], "failed": [129, -errno.EFAULT],
+            "authorization": True, "kernel_pending": True,
+        })
+        self.assert_clean(session)
+
+    def test_native_readonly_chld_trap_and_unsupported_stop(self):
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n"
+            "\t@trap 'printf caught' CHLD; kill -CHLD $$$$; printf done\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"caughtdone")
+        with self.session() as session:
+            completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual(completed.stdout, ordinary.stdout)
+        self.assert_clean(session)
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=stop; kill -STOP $$$$; printf continued\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported native shell stop"):
+            with session:
+                session._native_make_readonly("all")
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_nested_source_trace(self):
+        self.add("Makefile", (
+            "include first.mk\n-include absent.mk\n"
+            "VALUE := $(shell v=native; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+        self.add("first.mk", "include nested.mk\nFIRST := first\n")
+        self.add("nested.mk", "NESTED := nested\n")
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("read observation invoked replay"),
+        ):
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "FIRST", "NESTED"), observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(
+                [semantics["domains"][name]["value"] for name in ("VALUE", "FIRST", "NESTED")],
+                ["native", "first", "nested"],
+            )
+            trace = observed["read_trace"]
+            self.assertTrue(trace["complete"])
+            self.assertEqual(trace["version"], 1)
+            entries = [row for row in trace["events"] if row["kind"] == "source-entry"]
+            self.assertEqual([row["name"] for row in entries], ["Makefile", "first.mk", "nested.mk", "absent.mk"])
+            self.assertEqual([row["parent"] for row in entries], [None, 1, 2, 1])
+            images = {
+                row["id"]: base64.b64decode(row["data"], validate=True) for row in trace["sources"]
+            }
+            opens = [row for row in trace["events"] if row["kind"] == "source-open"]
+            self.assertEqual(
+                [images[row["source"]] for row in opens if row["source"] is not None],
+                [(self.root / name).read_bytes() for name in ("Makefile", "first.mk", "nested.mk")],
+            )
+            self.assertEqual(opens[-1]["result"], -errno.ENOENT)
+            self.assertIsNone(opens[-1]["source"])
+            self.assertEqual(
+                len([row for row in trace["events"] if row["kind"] == "pass-entry"]), 1,
+            )
+            self.assertTrue(all(row["identity"] is not None for row in opens[:-1]))
+        self.assert_clean(session)
+
+    def test_native_readonly_actual_expansion_and_recipe_job_lifecycle(self):
+        self.add("Makefile", (
+            "VALUE := $(shell v=expansion; printf '%s' \"$$v\")\n"
+            "STATUS := $(.SHELLSTATUS)\n.PHONY: all\nall:\n"
+            "\t-@v=ignored; printf '%s\\n' \"$$v\"; exit 7\n"
+            "\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        with self.session() as session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE", "STATUS"), observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"ignored\ndone\n")
+            self.assertIn(b"Error 7 (ignored)", completed.stderr)
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "expansion")
+            self.assertEqual(semantics["domains"]["STATUS"]["value"], "0")
+            jobs = [
+                json.loads(value.removeprefix("native-job:"))
+                for value in observed["accessed"] if value.startswith("native-job:")
+            ]
+            jobs.sort(key=lambda row: row["sequence"])
+            self.assertEqual([row["sequence"] for row in jobs], [1, 2, 3])
+            self.assertEqual(len({row["pid"] for row in jobs}), 3)
+            self.assertEqual(
+                [(row["context"]["kind"], row["context"]["target"], row["context"]["command_line"])
+                 for row in jobs],
+                [("expansion", None, None), ("recipe", "all", 1), ("recipe", "all", 2)],
+            )
+            self.assertEqual([row["returncode"] for row in jobs], [0, 7, 0])
+            self.assertEqual([row["terminal_status"] for row in jobs], [0, 7 << 8, 0])
+            self.assertEqual([row["ignored"] for row in jobs], [False, True, False])
+            self.assertTrue(all(row["waited"] and row["executable"] == "/bin/sh" for row in jobs))
+        self.assert_clean(session)
+
+    def test_native_readonly_job_raw_status_mismatch_with_same_exit_code_refuses(self):
+        self.add("Makefile", "VALUE := $(shell kill -PIPE $$$$)\n.PHONY: all\nall:\n\t@:\n")
+        body = (
+            "original=guard.Policy.observe_native_job_policy\n"
+            "def changed_raw(self,pid,state,pointer,size):\n"
+            " for row in self.native_jobs.values():\n"
+            "  if row['returncode'] is not None and row['returncode']<0:\n"
+            "   row['terminal_status']^=128\n"
+            "   assert os.waitstatus_to_exitcode(row['terminal_status'])==row['returncode']\n"
+            " return original(self,pid,state,pointer,size)\n"
+            "guard.Policy.observe_native_job_policy=changed_raw\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(MakeProbeError, "wait result differs"):
+            with session:
+                session._native_make_readonly("all", observe_reads=True)
+        self.assert_clean(session)
+
+    def test_native_readonly_job_binding_and_retirement_mutations_refuse(self):
+        self.add("Makefile", (
+            "VALUE := $(shell v=expansion; printf '%s' \"$$v\")\n"
+            ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n"
+        ))
+        cases = (
+            (
+                "original=guard.Policy.native_job_frame\n"
+                "def foreign(self,pid,state,pointer,size):\n"
+                " for row in self.native_jobs.values():\n"
+                "  if row['pid'] is not None:row['pid']+=1000000\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.native_job_frame=foreign\n",
+                "refers to a foreign child",
+            ),
+            (
+                "original=guard.Policy.observe_native_job_context\n"
+                "def changed(self,pid,state,pointer,size):\n"
+                " original(self,pid,state,pointer,size)\n"
+                " for row in self.native_jobs.values():\n"
+                "  if row['context'] is not None:row['context']['target']='foreign'\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.observe_native_job_context=changed\n",
+                "context changed",
+            ),
+            (
+                "original=guard.Policy.bind_native_job\n"
+                "def reused(self,pid,state):\n"
+                " original(self,pid,state)\n"
+                " return original(self,pid,state)\n"
+                "guard.Policy.bind_native_job=reused\n",
+                "foreign or reused dispatch child",
+            ),
+            (
+                "original=guard.Policy.bind_native_job\n"
+                "def foreign_parent(self,pid,state):\n"
+                " state.native_parent=pid\n"
+                " return original(self,pid,state)\n"
+                "guard.Policy.bind_native_job=foreign_parent\n",
+                "foreign or reused dispatch child",
+            ),
+            (
+                "original=guard.Policy.observe_native_job_policy\n"
+                "def changed_status(self,pid,state,pointer,size):\n"
+                " for row in self.native_jobs.values():\n"
+                "  if row['returncode'] is not None:row['returncode']+=1\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.observe_native_job_policy=changed_status\n",
+                "wait result differs",
+            ),
+            (
+                "guard.Policy.observe_native_job_policy=lambda *args:None\n",
+                "incomplete actual lifecycle",
+            ),
+            (
+                "guard.Policy.retire_native_job=lambda *args:None\n",
+                "wait result differs",
+            ),
+            (
+                "original=guard.Policy.retire_native_job\n"
+                "def repeated(self,pid,state,code):\n"
+                " original(self,pid,state,code)\n"
+                " return original(self,pid,state,code)\n"
+                "guard.Policy.retire_native_job=repeated\n",
+                "terminal event lost",
+            ),
+            (
+                "original=guard.Policy.native_job_frame\n"
+                "def foreign_sender(self,pid,state,pointer,size):\n"
+                " return original(self,pid+1,state,pointer,size)\n"
+                "guard.Policy.native_job_frame=foreign_sender\n",
+                "notification sender or frame",
+            ),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected), self.native_supervisor(body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True)
+                self.assert_clean(session)
+
+    def test_mapped_make_has_no_native_job_observations(self):
+        self.add("Makefile", "VALUE := original\n.PHONY: all\nall:\n\t@printf 'metadata only\\n'\n")
+        with self.session() as session:
+            result, report, _, _ = self.capture_supervisor_report(
+                session, lambda: session.make("all", variables=("VALUE",)),
+            )
+            self.assertFalse(any(value.startswith("native-job:") for value in report["accessed"]))
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "original")
+            self.assertEqual(result.stdout, b"")
+        self.assert_clean(session)
+
+    def test_native_readonly_trace_count_settles_across_queries(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        names = tuple(f"reservoir/{index}" for index in range(1022))
+        for name in names:
+            self.add(name, "x")
+        session = self.session(entries=1024)
+        with session:
+            counts_path = self.directory / "actual-trace-counts.json"
+            body = (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.finish\n"
+                "def observed(self):\n"
+                " result=original(self)\n"
+                f" Path({str(counts_path)!r}).write_text(json.dumps({{\n"
+                "  'filesystem':sum(map(len,self.policy.observation_attempts.values())),\n"
+                "  'events':len(self.events),'traps':self.traps}))\n"
+                " return result\n"
+                "read_trace.NativeReadTrace.finish=observed\n"
+            )
+            with self.native_supervisor(body):
+                result, report, _, _ = self.capture_supervisor_report(
+                    session, lambda: session._native_make_readonly("all", observe_reads=True),
+                )
+            counts = json.loads(counts_path.read_bytes())
+            self.assertEqual(counts["events"], len(result[2]["read_trace"]["events"]))
+            self.assertGreater(counts["traps"], 0)
+            self.assertEqual(report["observations"], sum(counts.values()))
+            self.assertEqual(session.observations_used, report["observations"])
+            self.spend_observation_remainder(session, names, keep=1)
+            with self.assertRaisesRegex(MakeProbeError, "observation.*budget exhausted"):
+                session._native_make_readonly("all", observe_reads=True)
+            self.assertEqual(session.observations_used, 1024)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def native_completion_fixture(self):
+        self.add("nested.mk", "NEST := $(EARLY)-nested\nLITERAL = recursive\n")
+        self.add("empty.mk", "")
+        self.add("Makefile", (
+            "EARLY := $(shell v=original; printf '%s' \"$$v\")\n"
+            "DEFERRED = $(EARLY)\nCOND ?= first\nCOND ?= ignored\n"
+            "CONTINUED := first \\\n second\n"
+            "INPUT := $(ENV_INPUT)-$(CLI_INPUT)\n"
+            "include nested.mk\ninclude nested.mk\n-include missing.mk\ninclude empty.mk\n"
+            "ifeq (no,yes)\ninclude skipped.mk\nendif\n"
+            "UNUSED_REFERENCES = $(DEFERRED) $(COND) $(CONTINUED) $(INPUT) $(NEST)\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' \"$$v\"\n"
+        ))
+
+    def test_native_readonly_actual_completion_inventory_barrier_and_jobs(self):
+        self.native_completion_fixture()
+        with self.session() as session, patch.object(
+            session, "command", side_effect=AssertionError("per-command replay invoked"),
+        ):
+            deadline = session.budget.deadline
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("EARLY", "COND", "CONTINUED", "INPUT"),
+                assignments=(("environment", "ENV_INPUT", "environment"),
+                             ("command-line", "CLI_INPUT", "command")),
+                observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["EARLY"]["value"], "original")
+            self.assertEqual(semantics["domains"]["COND"]["value"], "first")
+            self.assertEqual(semantics["domains"]["CONTINUED"]["value"], "first second")
+            self.assertEqual(semantics["domains"]["INPUT"]["value"], "environment-command")
+            trace = observed["read_trace"]
+            self.assertEqual(trace["version"], 4)
+            self.assertEqual({row["path"] for row in trace["selection"]["inventory"]}, set(self.entries))
+            self.assertTrue(all(row["kind"] == "snapshot" for row in trace["selection"]["inventory"]))
+            barriers = [row for row in trace["events"] if row["kind"] == "entry-image"]
+            self.assertEqual(len(barriers), 1)
+            self.assertEqual(barriers[0]["image_sha256"], session.snapshot.digest)
+            assignments = [row for row in trace["events"] if row["kind"] == "assignment-completion"]
+            deferred, = [row for row in assignments if row["name"] == "DEFERRED"]
+            self.assertEqual(deferred["variable"][1], "$(EARLY)")
+            self.assertEqual([row["variable"][1] for row in assignments if row["name"] == "COND"],
+                             ["first", "first"])
+            continued, = [row for row in assignments if row["name"] == "CONTINUED"]
+            self.assertEqual(continued["site"][3:5], [5, 6])
+            self.assertEqual(len([row for row in assignments if row["name"] == "NEST"]), 2)
+            entries = [row for row in trace["events"] if row["kind"] == "source-entry"]
+            self.assertEqual([row["name"] for row in entries],
+                             ["Makefile", "nested.mk", "nested.mk", "missing.mk", "empty.mk"])
+            retired = [row for row in trace["machine"]["events"] if row["kind"] == "pin-retired"]
+            self.assertEqual(len(retired), 4)
+            jobs = [json.loads(value.removeprefix("native-job:"))
+                    for value in observed["accessed"] if value.startswith("native-job:")]
+            executed = [row for row in trace["machine"]["events"]
+                        if row["kind"] == "execute" and not row["make"]]
+            self.assertEqual({(row["sequence"], row["pid"]) for row in jobs},
+                             {(row["dispatch"], row["pid"]) for row in executed})
+            self.assertEqual(len(jobs), 2)
+            self.assertEqual(session.observations_used, observed["observations"])
+            self.assertEqual(session.budget.deadline, deadline)
+        self.assert_clean(session)
+
+    def test_native_readonly_short_underscore_matches_long_reference_completion(self):
+        from scripts.validation_ownership import make_lexical, read_epochs
+        with self.subTest(scanner="lexical"):
+            self.assertEqual(make_lexical.references("$_"), make_lexical.references("$(_)"))
+        with self.subTest(scanner="completion"):
+            self.assertEqual(
+                read_epochs.completion_reference_names(b"$_"),
+                read_epochs.completion_reference_names(b"$(_)"),
+            )
+        for expression in ("$_", "$(_)"):
+            self.add("Makefile", (
+                f"_ := original\nVALUE := {expression}\n"
+                "REFERENCES = $(VALUE)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"original")
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], "original")
+                events = [row for row in observed["read_trace"]["events"] if row["kind"] == "assignment-completion"]
+                bindings = {row["name"]: row["variable"][1] for row in events}
+                self.assertIn("_", bindings)
+                self.assertEqual({name: bindings[name] for name in ("_", "VALUE")}, {
+                    "_": "original", "VALUE": "original",
+                })
+            self.assert_clean(session)
+
+    def test_native_readonly_literal_supplier_names_are_not_omitted(self):
+        cases = (
+            (".FLAGS", "$(.FLAGS)", "original"),
+            (".FLAGS", "${.FLAGS}", "original"),
+            (".FLAGS", "$(value .FLAGS)", "original"),
+            (".SHELLFLAGS", "$(.SHELLFLAGS)", "-c"),
+            ("WITH.DOT", "$(WITH.DOT)", "original"),
+            ("WITH-DASH", "$(WITH-DASH)", "original"),
+        )
+        for name, expression, expected in cases:
+            self.add("Makefile", (
+                f"{name} := {expected}\nVALUE := {expression}\n"
+                "REFERENCES = $(VALUE)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(name=name, expression=expression), session:
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, expected.encode())
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], expected)
+                bindings = {
+                    row["name"]: row["variable"][1] for row in observed["read_trace"]["events"]
+                    if row["kind"] == "assignment-completion"
+                }
+                self.assertEqual(bindings.get(name), expected)
+            self.assert_clean(session)
+
+    def test_native_readonly_computed_suppliers_refuse_incomplete_completion(self):
+        from scripts.validation_ownership import read_epochs
+        cases = (
+            ("OUTPUT := $($(NAME))", "original"),
+            ("OUTPUT := ${${NAME}}", "original"),
+            ("OUTPUT := $(VA$(SUFFIX))", "original"),
+            ("OUTPUT := $($(NAME):original=replaced)", "replaced"),
+            ("OUTPUT := $(call $(NAME))", "original"),
+            ("OUTPUT := ${call ${NAME}}", "original"),
+            ("OUTPUT := $(origin $(NAME))", "file"),
+            ("OUTPUT := $(flavor $(NAME))", "simple"),
+            ("OUTPUT := $(value $(NAME))", "original"),
+            ("ifdef $(NAME)\nOUTPUT := selected\nelse\nOUTPUT := wrong\nendif", "selected"),
+            ("ifndef ${NAME}\nOUTPUT := wrong\nelse\nOUTPUT := selected\nendif", "selected"),
+            ("ifdef VA$(SUFFIX)\nOUTPUT := selected\nelse\nOUTPUT := wrong\nendif", "selected"),
+            ("ifdef ABSENT\nOUTPUT := wrong\nelse ifdef $(NAME)\nOUTPUT := selected\nendif", "selected"),
+            ("ifdef ABSENT\nOUTPUT := wrong\nelse ifndef ${NAME}\nOUTPUT := wrong\nelse\nOUTPUT := selected\nendif", "selected"),
+        )
+        for assignment, expected in cases:
+            with self.subTest(assignment=assignment):
+                self.add("Makefile", (
+                    f"NAME := VALUE\nSUFFIX := LUE\nVALUE := original\n{assignment}\nREFERENCES = $(OUTPUT)\n"
+                    "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "computed Make supplier is not bound"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "computed Make supplier is not bound"):
+                    with session:
+                        completed, _, _ = session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=True,
+                        )
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
+    def test_native_completion_finite_declaration_and_short_reference_admission(self):
+        from scripts.validation_ownership import read_epochs
+        cases = [
+            (f"{name} := original\nOUTPUT := ${name}\n", "original")
+            for name in (".", "-", "!")
+        ]
+        for operator in ("=", ":=", "::=", "?=", "+=", "!="):
+            value = "printf original" if operator == "!=" else "original"
+            for name in ("$(NAME)", "${NAME}", "VA$(SUFFIX)"):
+                for modifier in ("", "export ", "override ", "private "):
+                    cases.append((f"{modifier}{name} {operator} {value}\nOUTPUT := $(VALUE)\n", "original"))
+        cases.extend((
+            ("define $(NAME)\noriginal\nendef\nOUTPUT := $(VALUE)\n", "original"),
+            ("define ${NAME}\noriginal\nendef\nOUTPUT := $(VALUE)\n", "original"),
+        ))
+        for declaration, expected in cases:
+            self.add("Makefile", (
+                f"NAME := VALUE\nSUFFIX := LUE\n{declaration}"
+                "all: ; @printf '%s' '$(OUTPUT)'\n"
+            ))
+            with self.subTest(declaration=declaration):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+
+    def test_native_computed_supplier_execution_without_completion_still_works(self):
+        for expression in ("$($(NAME))", "$(call $(NAME))"):
+            self.add("Makefile", (
+                f"NAME := VALUE\nVALUE := original\nOUTPUT := {expression}\n"
+                "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, _, observed = session._native_make_readonly("all", observe_reads=True)
+                self.assertEqual(completed.stdout, b"original")
+                self.assertFalse(any(
+                    row["kind"] == "assignment-completion" for row in observed["read_trace"]["events"]
+                ))
+            self.assert_clean(session)
+        for declaration in (
+            "NAME := VALUE\n$(NAME) := original\nOUTPUT := $(VALUE)\n",
+            ". := original\nOUTPUT := $.\n",
+        ):
+            self.add("Makefile", declaration + "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n")
+            session = self.session()
+            with self.subTest(declaration=declaration), session:
+                completed, _, observed = session._native_make_readonly("all", observe_reads=True)
+                self.assertEqual(completed.stdout, b"original")
+                self.assertFalse(any(event["kind"] == "assignment-completion"
+                                     for event in observed["read_trace"]["events"]))
+            self.assert_clean(session)
+
+    def test_native_completion_eval_assignment_requires_source_provenance(self):
+        prefix = "define MACRO\nVALUE := original\nendef\n"
+        suffix = "OUTPUT := $(VALUE)\nREFERENCES = $(OUTPUT) $(VALUE)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+        self.add("Makefile", prefix + suffix)
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("VALUE",), observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"")
+            self.assertEqual(semantics["domains"]["VALUE"]["origin"], "undefined")
+            self.assertNotIn("VALUE", [event["name"] for event in observed["read_trace"]["events"]
+                                      if event["kind"] == "assignment-completion"])
+        self.assert_clean(session)
+        self.add("Makefile", prefix + "$(eval $(MACRO))\n" + suffix)
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"original")
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+            self.assertEqual(completed.stdout, ordinary.stdout)
+        self.assert_clean(session)
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion expansion-generated declaration"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "define RULE\nall: ; @v=original; printf '%s' \"$$$$v\"\nendef\n"
+            "$(eval $(RULE))\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion expansion-generated declaration"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+
+    def test_native_completion_secondary_and_forwarded_suppliers_refuse(self):
+        from scripts.validation_ownership import read_epochs
+        self.add(".SECONDEXPANSION", "")
+        cases = [
+            (declaration + "\nNAME := VALUE\nVALUE := file-shell\n"
+             "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n", "selected")
+            for declaration in (
+                ".SECONDEXPANSION:", ".SECONDEXPANSION other:", "other .SECONDEXPANSION:",
+                "SPECIAL := .SECONDEXPANSION\n$(SPECIAL):",
+                ".SECONDEXPANSION*:",
+                "$(eval .SECONDEXPANSION:)", "$(call eval,.SECONDEXPANSION:)",
+                "define RULE\n.SECONDEXPANSION:\nendef\n$(eval $(RULE))",
+            )
+        ]
+        for target, expected in (("value", "original"), ("origin", "file"), ("flavor", "simple"),
+                                 ("call", "original")):
+            expression = f"$(call {target},$(NAME))" if target != "call" else "$(call call,$(NAME))"
+            cases.append((
+                f"NAME := SUPPLIER\nSUPPLIER := original\nOUTPUT := {expression}\n"
+                "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n", expected,
+            ))
+        for source, expected in cases:
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
+    def test_native_completion_define_hash_and_recipe_prefix_context(self):
+        from scripts.validation_ownership import read_epochs
+        for expression, recipe in (
+            ("$(call MACRO)", "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"),
+            ("unused", "all: ; @v='$(MACRO)'; printf '%s' \"$$v\"\n"),
+            ("command", "all: ; @$(MACRO)\n"),
+        ):
+            for reference in ("$(SUPPLIER)", "$($(NAME))"):
+                body = f"v=unused; printf '#%s' '{reference}'" if expression == "command" else f"# {reference}"
+                source = (
+                    "NAME := SUPPLIER\nSUPPLIER := original\n"
+                    f"define MACRO\n{body}\nendef\nOUTPUT := {expression}\n" + recipe
+                )
+                self.add("Makefile", source)
+                with self.subTest(expression=expression, reference=reference):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, b"#original" if expression == "command" else b"# original")
+                    session = self.session()
+                    if reference == "$(SUPPLIER)":
+                        _, _, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
+                        self.assertIn("SUPPLIER", dependencies["MACRO"])
+                        with session:
+                            completed, _, observed = session._native_make_readonly(
+                                "all", observe_reads=True, observe_completions=True,
+                            )
+                            self.assertEqual(completed.stdout, ordinary.stdout)
+                            trace = observed["read_trace"]
+                            self.assertTrue(any(
+                                row["kind"] == "assignment-completion" and row["name"] == "SUPPLIER"
+                                for row in trace["events"]
+                            ))
+                            mutated = json.loads(json.dumps(trace))
+                            mutated["selection"]["names"].remove("SUPPLIER")
+                            with self.assertRaises(MakeProbeError):
+                                read_epochs.validate_trace(
+                                    mutated, mutated["scope"],
+                                    count_limit=session.budget.limits.observation_count,
+                                    file_limit=session.budget.limits.file_bytes,
+                                )
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"):
+                            read_epochs.completion_source_facts("Makefile", source.encode())
+                        with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"), session:
+                            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                    self.assert_clean(session)
+        for source, expected in (
+            (".RECIPEPREFIX := >\nNAME := SUPPLIER\nSUPPLIER := original\n"
+             "all:\n>@v=unused; printf '#%s' '$($(NAME))'\n", b"#original"),
+            (".RECIPEPREFIX := >\n\tSUPPLIER := original\n"
+             "all:\n>@v='$(SUPPLIER)'; printf '%s' \"$$v\"\n", b"original"),
+            ("define .RECIPEPREFIX\n>\nendef\nall:\n>@v=original; printf '%s' \"$$v\"\n", b"original"),
+            (".RECIPEPREFIX :=\nall: ; @v=original; printf '%s' \"$$v\"\n", b"original"),
+        ):
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected)
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion recipe prefix"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion recipe prefix"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
+    def test_native_completion_conditional_recipe_context_refuses_ambiguity(self):
+        from scripts.validation_ownership import read_epochs
+        prefixes = (
+            "ifeq (no,yes)\nunused:\nendif\n",
+            "ifneq (yes,yes)\nunused:\nendif\n",
+            "ifdef ABSENT\nunused:\nendif\n",
+            "DEFINED := yes\nifndef DEFINED\nunused:\nendif\n",
+            "ifeq (yes,yes)\nelse\nunused:\nendif\n",
+            "ifeq (no,yes)\nelse ifeq (no,yes)\nunused:\nendif\n",
+            "ifeq (yes,yes)\nifeq (no,yes)\nunused:\nendif\nendif\n",
+        )
+        for prefix in prefixes:
+            for assignment in ("SUPPLIER := original", "$(NAME) := original"):
+                source = "NAME := SUPPLIER\n" + prefix + "\t" + assignment + (
+                    "\nOUTPUT := $(SUPPLIER)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                )
+                self.add("Makefile", source)
+                with self.subTest(prefix=prefix, assignment=assignment):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, b"original")
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"):
+                        read_epochs.completion_source_facts("Makefile", source.encode())
+                    session = self.session()
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"), session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                    self.assert_clean(session)
+        self.add("Makefile", (
+            "ifeq (yes,yes)\nall:\n\t@v=original; printf '%s' \"$$v\"\nendif\n"
+        ))
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "ifeq (no,yes)\nunused:\nendif\nall:\n\t@v=original; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+
+    def test_native_completion_private_and_directive_context(self):
+        from scripts.validation_ownership import read_epochs
+        declarations = [
+            f"private SUPPLIER {operator} " + ("v=original; printf '%s' \"$$v\"" if operator == "!=" else "original")
+            for operator in ("=", ":=", "::=", "?=", "+=", "!=")
+        ]
+        declarations.append("private define SUPPLIER\noriginal\nendef")
+        for declaration in declarations:
+            source = declaration + "\nOUTPUT := $(SUPPLIER)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+            self.add("Makefile", source)
+            with self.subTest(declaration=declaration):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, b"original")
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion private global"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion private global"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+        for recipe in (
+            "all:\n\texport LOCAL=original; printf '%s' \"$$LOCAL\"\n",
+            "all:\n\t@export LOCAL=original; printf '%s' \"$$LOCAL\"\n",
+            "all: ; @export LOCAL=original; printf '%s' \"$$LOCAL\"\n",
+            "define CMD\nexport LOCAL=original; printf '%s' \"$$LOCAL\"\nendef\nall: ; @$(CMD)\n",
+            "CMD = export LOCAL=original; printf '%s' \"$$LOCAL\"\nall: ; @$(CMD)\n",
+        ):
+            self.add("Makefile", recipe)
+            with self.subTest(recipe=recipe):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertTrue(ordinary.stdout.endswith(b"original"))
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly(
+                        "all", observe_reads=True, observe_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+
+    def test_native_completion_rule_context_and_special_aliases(self):
+        from scripts.validation_ownership import read_epochs
+        cases = [
+            "\tSUPPLIER := original\nOUTPUT := $(SUPPLIER)\n"
+            "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n",
+            "NAME := SUPPLIER\n\t$(NAME) := original\nOUTPUT := $(SUPPLIER)\n"
+            "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n",
+            "early:\nRESET := value\n\tSUPPLIER := original\n"
+            "all: ; @v='$(SUPPLIER)'; printf '%s' \"$$v\"\n",
+        ]
+        for prefix in ("./", "././"):
+            cases.extend((
+                prefix + ".EXPORT_ALL_VARIABLES:\nSUPPLIER := original\n"
+                "all: ; @v=$$SUPPLIER; printf '%s' \"$$v\"\n",
+                prefix + ".SECONDEXPANSION:\nNAME := SUPPLIER\nSUPPLIER := chosen\n"
+                "all: $$($$(NAME)) ; @v=original; printf '%s' \"$$v\"\nchosen: ;\n",
+            ))
+        for source in cases:
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, b"original")
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+        self.add("included.mk", "\tSUPPLIER := original\n")
+        self.add("Makefile", "include included.mk\nall: ; @v='$(SUPPLIER)'; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unsupported completion tab statement"), session:
+            session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "all:\nSUPPLIER := original\n"
+            "all:\n"
+            "\t@v='$(SUPPLIER)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+        self.assert_clean(session)
+
+    def test_native_completion_constructed_rules_and_exports(self):
+        from scripts.validation_ownership import read_epochs
+        suffix = (
+            "\nNAME := VALUE\nVALUE := file-shell\n"
+            "all: $$($$(NAME)) ; @v=selected; printf '%s' \"$$v\"\nfile-shell: ;\n"
+        )
+        cases = [
+            (declaration + suffix, b"selected")
+            for declaration in (
+                "other\\:target .SECONDEXPANSION:",
+                "RULE := .SECONDEXPANSION:\n$(RULE)",
+                "RULE := .SECONDEXPANSION:\n${RULE}",
+            )
+        ]
+        cases.extend((
+            ("NAME := SUPPLIER\nSUPPLIER := original\n" + directive +
+             "\nall: ; @v=$$SUPPLIER; printf '%s' \"$$v\"\n", b"original")
+            for directive in ("export $(NAME)", "export ${NAME}", "export", ".EXPORT_ALL_VARIABLES:")
+        ))
+        for source, expected in cases:
+            self.add("Makefile", source)
+            with self.subTest(source=source):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected)
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"):
+                    read_epochs.completion_source_facts("Makefile", source.encode())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion"), session:
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+                session = self.session()
+                with session:
+                    completed, _, _ = session._native_make_readonly("all", observe_reads=True)
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assert_clean(session)
+        for declaration in (
+            "SUPPLIER := original\nexport SUPPLIER",
+            "SUPPLIER := original\nOTHER := other\nexport SUPPLIER OTHER",
+            "export SUPPLIER := original",
+        ):
+            source = declaration + "\nall: ; @v=$$SUPPLIER; printf '%s' \"$$v\"\n"
+            self.add("Makefile", source)
+            with self.subTest(declaration=declaration):
+                _, roots, _ = read_epochs.completion_source_facts("Makefile", source.encode())
+                self.assertIn("SUPPLIER", roots)
+                session = self.session()
+                with session:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"original")
+                    trace = observed["read_trace"]
+                    self.assertTrue(any(
+                        row["kind"] == "assignment-completion" and row["name"] == "SUPPLIER"
+                        for row in trace["events"]
+                    ))
+                    mutated = json.loads(json.dumps(trace))
+                    mutated["selection"]["names"].remove("SUPPLIER")
+                    with self.assertRaises(MakeProbeError):
+                        read_epochs.validate_trace(
+                            mutated, mutated["scope"],
+                            count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+                self.assert_clean(session)
+
+    def test_native_completion_recipe_hash_preserves_suppliers(self):
+        from scripts.validation_ownership import read_epochs
+        for prefix in ("all: ; ", "all:\n\t"):
+            for recipe, expected in (
+                ("@v=unused; printf '#%s' '$(SUPPLIER)'", b"#original"),
+                ('@v=unused; printf "#%s" "$(SUPPLIER)"', b"#original"),
+                ("@v=ok; printf '%s' \"$$v\" # $(SUPPLIER)", b"ok"),
+            ):
+                literal = "SUPPLIER := original\n" + prefix + recipe + "\n"
+                self.add("Makefile", literal)
+                with self.subTest(source=literal):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, expected)
+                    _, roots, _ = read_epochs.completion_source_facts("Makefile", literal.encode())
+                    self.assertIn("SUPPLIER", roots)
+                    session = self.session()
+                    with session:
+                        completed, _, observed = session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=True,
+                        )
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                        trace = observed["read_trace"]
+                        self.assertIn("SUPPLIER", trace["selection"]["names"])
+                        self.assertTrue(any(
+                            event["kind"] == "assignment-completion" and event["name"] == "SUPPLIER"
+                            for event in trace["events"]
+                        ))
+                        mutated = json.loads(json.dumps(trace))
+                        mutated["selection"]["names"].remove("SUPPLIER")
+                        with self.assertRaises(MakeProbeError):
+                            read_epochs.validate_trace(
+                                mutated, mutated["scope"],
+                                count_limit=session.budget.limits.observation_count,
+                                file_limit=session.budget.limits.file_bytes,
+                            )
+                    self.assert_clean(session)
+                computed = "NAME := SUPPLIER\n" + literal.replace("$(SUPPLIER)", "$($(NAME))")
+                self.add("Makefile", computed)
+                with self.subTest(source=computed):
+                    ordinary = subprocess.run(
+                        ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, expected)
+                    with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"):
+                        read_epochs.completion_source_facts("Makefile", computed.encode())
+                    session = self.session()
+                    with self.assertRaisesRegex(MakeProbeError, "computed Make supplier"), session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                    self.assert_clean(session)
+
+    def test_native_completion_make_comments_keep_non_recipe_context(self):
+        from scripts.validation_ownership import read_epochs
+        source = (
+            "NAME := SUPPLIER\n"
+            "VALUE := first; # $($(NAME))\n"
+            "NESTED := $(subst ;,:,a;b) # $($(NAME))\n"
+            "HASH := \\#literal # $($(NAME))\n"
+            "define MACRO\n"
+            "rule: ; ignored # literal\n"
+            "endef\n"
+            "all: LOCAL := target # $($(NAME))\n"
+            "all: SEMI := target; # literal\n"
+            "all:\n"
+            "\t@v='$(VALUE)|$(NESTED)|$(HASH)|$(LOCAL)|$(SEMI)'; printf '%s' \"$$v\"\n"
+        )
+        self.add("Makefile", source)
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(ordinary.stdout, b"first; |a:b |#literal |target |target; # literal")
+        _, roots, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
+        self.assertNotIn("SUPPLIER", roots)
+        self.assertNotIn("NAME", roots)
+        self.assertTrue(all("NAME" not in names for names in dependencies.values()))
+        session = self.session()
+        with session:
+            completed, _, _ = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+        self.assert_clean(session)
+
+    def test_native_returned_archive_uses_finite_source_admission(self):
+        from scripts.validation_ownership import read_epochs
+        recipe = "all: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+        source = "NAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe + "# reserved padding................\n"
+        source += "# " + "." * 200 + "\n"
+        self.add("Makefile", source)
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+            trace = observed["read_trace"]
+            read_epochs.validate_trace(
+                trace, trace["scope"], count_limit=session.budget.limits.observation_count,
+                file_limit=session.budget.limits.file_bytes,
+            )
+            for replacement in (
+                "NAME := VALUE\nVALUE := original\nOUTPUT := $.\n" + recipe,
+                "NAME := VALUE\n$(NAME) := original\nOUTPUT := $(VALUE)\n" + recipe,
+                "NAME := VALUE\ndefine $(NAME)\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
+                ".SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                ".SECONDEXPANSION other:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                "other .SECONDEXPANSION:\nNAME := VALUE\nVALUE := original\nOUTPUT := $(VALUE)\n" + recipe,
+                "SPECIAL := .SECONDEXPANSION\n$(SPECIAL):\nOUTPUT := original\n" + recipe,
+                ".SECONDEXPANSION*:\nOUTPUT := original\n" + recipe,
+                "$(eval .SECONDEXPANSION:)\nOUTPUT := original\n" + recipe,
+                "$(call eval,.SECONDEXPANSION:)\nOUTPUT := original\n" + recipe,
+                "define RULE\n.SECONDEXPANSION:\nendef\n$(eval $(RULE))\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\nall: ; @printf '#%s' '$($(NAME))'\n",
+                "NAME := VALUE\nVALUE := original\nall:\n\t@printf '#%s' '$($(NAME))'\n",
+                "other\\:target .SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
+                "RULE := .SECONDEXPANSION:\n$(RULE)\nOUTPUT := original\n" + recipe,
+                "RULE := .SECONDEXPANSION:\n${RULE}\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\nexport $(NAME)\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\nexport ${NAME}\nOUTPUT := original\n" + recipe,
+                "VALUE := original\nexport\nOUTPUT := original\n" + recipe,
+                ".EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
+                "NAME := VALUE\nVALUE := original\ndefine MACRO\n# $($(NAME))\nendef\n"
+                "OUTPUT := $(call MACRO)\n" + recipe,
+                ".RECIPEPREFIX := >\nNAME := VALUE\nVALUE := original\n"
+                "all:\n>@v=unused; printf '#%s' '$($(NAME))'\n",
+                ".RECIPEPREFIX := >\n\tOUTPUT := original\nall:\n>@:\n",
+                "define .RECIPEPREFIX\n>\nendef\nall:\n>@:\n",
+                ".RECIPEPREFIX :=\nOUTPUT := original\n" + recipe,
+                "\tOUTPUT := original\n" + recipe,
+                "early:\nRESET := value\n\tOUTPUT := original\n" + recipe,
+                "NAME := OUTPUT\n\t$(NAME) := original\n" + recipe,
+                "./.EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
+                "././.EXPORT_ALL_VARIABLES:\nOUTPUT := original\n" + recipe,
+                "./.SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
+                "././.SECONDEXPANSION:\nOUTPUT := original\n" + recipe,
+                *("private VALUE " + operator + " original\nOUTPUT := $(VALUE)\n" + recipe
+                  for operator in ("=", ":=", "::=", "?=", "+=", "!=")),
+                "private define VALUE\noriginal\nendef\nOUTPUT := $(VALUE)\n" + recipe,
+                "ifeq (no,yes)\nunused:\nendif\n\tOUTPUT := original\n" + recipe,
+                "NAME := OUTPUT\nifdef ABSENT\nunused:\nendif\n\t$(NAME) := original\n" + recipe,
+                *("NAME := VALUE\nVALUE := original\nOUTPUT := $(call " + target + ",$(NAME))\n" + recipe
+                  for target in ("value", "origin", "flavor", "call")),
+            ):
+                mutated = json.loads(json.dumps(trace))
+                opened = next(event for event in mutated["events"]
+                              if event["kind"] == "source-open" and event["result"] >= 0)
+                row = mutated["sources"][opened["source"] - 1]
+                self.assertLessEqual(len(replacement.encode()), row["bytes"])
+                data = replacement.encode().ljust(row["bytes"], b" ")
+                row["data"] = base64.b64encode(data).decode()
+                row["sha256"] = hashlib.sha256(data).hexdigest()
+                inventory = next(item for item in mutated["selection"]["inventory"]
+                                 if item["path"] == opened["path"])
+                inventory["sha256"] = row["sha256"]
+                with self.subTest(replacement=replacement):
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported completion|computed Make supplier"):
+                        read_epochs.validate_trace(
+                            mutated, mutated["scope"],
+                            count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+        self.assert_clean(session)
+
+    def test_native_completion_declaration_classifies_sites_and_non_site_context(self):
+        from scripts.validation_ownership import read_epochs
+        source = (
+            "VALUE := original\n"
+            "define MACRO\n"
+            "$(VALUE)\n"
+            "define NESTED\n"
+            "$(VALUE)\n"
+            "endef\n"
+            "endef\n"
+            "ifeq ($(VALUE),original)\n"
+            "NEXT := $(VALUE)\n"
+            "endif\n"
+            "all: LOCAL := $(NEXT)\n"
+            "all: ; @v='$(NEXT)'; printf '%s' \"$$v\"\n"
+            "\t@echo '$$not_a_make_reference'\n"
+            "$(info literal name=value)\n"
+        )
+        rows, roots, dependencies = read_epochs.completion_source_facts("Makefile", source.encode())
+        self.assertEqual({row[5] for row in rows}, {"VALUE", "NEXT"})
+        self.assertEqual(dependencies["MACRO"], {"VALUE"})
+        self.assertEqual(dependencies["NEXT"], {"VALUE"})
+        self.assertEqual(roots, {"VALUE", "NEXT"})
+
+    def test_native_unsupported_direct_suppliers_refuse_incomplete_completion(self):
+        from scripts.validation_ownership import read_epochs
+        for expression, expected in (
+            ("$(1NAME)", "original"), ("${1NAME}", "original"),
+            ("$(1NAME:original=replaced)", "replaced"),
+            ("${1NAME:original=replaced}", "replaced"),
+            ("$(odd name)", "original"), ("${odd name}", "original"),
+            ("$(call 1NAME)", "original"), ("$(value 1NAME)", "original"),
+            ("$(origin 1NAME)", "file"), ("$(flavor 1NAME)", "simple"),
+            ("$(intcmp name)", "original"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", (
+                    f"1NAME := original\ndefine odd name\noriginal\nendef\n"
+                    f"define intcmp name\noriginal\nendef\nOUTPUT := {expression}\n"
+                    "REFERENCES = $(OUTPUT)\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+
+        for directive in ("ifdef", "ifndef", "else ifdef", "else ifndef"):
+            prefix = "ifdef ABSENT\nOUTPUT := wrong\n" if directive.startswith("else") else ""
+            expected = "wrong" if directive.endswith("ifndef") else "selected"
+            self.add("Makefile", (
+                f"1NAME := original\n{prefix}{directive} 1NAME\nOUTPUT := selected\n"
+                "else\nOUTPUT := wrong\nendif\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+            ))
+            with self.subTest(directive=directive):
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, expected.encode())
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
+                    read_epochs.completion_source_facts("Makefile", (self.root / "Makefile").read_bytes())
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unsupported (?:Make supplier|completion)"):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assert_clean(session)
+
+    def test_native_reference_analysis_preserves_builtin_scoped_and_dead_computed_forms(self):
+        from scripts.validation_ownership import make_lexical
+        self.assertEqual(make_lexical.references(
+            "$(call VALUE,$(NAME)) $@ $(subst original,replaced,$(VALUE))",
+        ), {"VALUE", "NAME", "@"})
+        self.assertEqual(make_lexical.references("ifdef NAME\nVALUE := $(OTHER)"), {"NAME", "OTHER"})
+        for directive in ("ifdef", "ifndef"):
+            self.assertEqual(make_lexical.references(f"else {directive} NAME\nVALUE := $(OTHER)"),
+                             {"NAME", "OTHER"})
+        self.assertEqual(make_lexical.references("$() ${} $(1) ${@D} $(VALUE:x=y)"), {"1", "@D", "VALUE"})
+        self.assertEqual(make_lexical.references("escaped $$! and trailing $"), set())
+        for token in ("$.", "$-", "$!", "$ ", '$"'):
+            with self.subTest(token=token):
+                with self.assertRaisesRegex(MakeProbeError, "unsupported completion dollar reference"):
+                    make_lexical.references("OUTPUT := " + token)
+        self.add("Makefile", (
+            "NAME := VALUE\nVALUE := original\nOUTPUT := $(and ,$($(NAME)))\n"
+            "REFERENCES = $(OUTPUT)\nall: ; @v='$(OUTPUT)'; printf '[%s]' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("OUTPUT",), observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"[]")
+            self.assertEqual(semantics["domains"]["OUTPUT"]["value"], "")
+        self.assert_clean(session)
+
+    def test_native_readonly_literal_metadata_conditional_and_selection_closure(self):
+        from scripts.validation_ownership import read_epochs
+        cases = (
+            ("$(origin .FLAGS)", "file"),
+            ("$(flavor .FLAGS)", "simple"),
+            ("$(call .FLAGS)", "original"),
+            ("ifdef .FLAGS\nVALUE := selected\nelse\nVALUE := wrong\nendif", "selected"),
+            ("ifdef ABSENT\nVALUE := wrong\nelse ifdef .FLAGS\nVALUE := selected\nendif", "selected"),
+            ("ifdef ABSENT\nVALUE := wrong\nelse ifndef .FLAGS\nVALUE := wrong\nelse\nVALUE := selected\nendif", "selected"),
+        )
+        for expression, expected in cases:
+            assignment = expression if expression.startswith("ifdef") else f"VALUE := {expression}"
+            self.add("Makefile", (
+                f".FLAGS := original\n{assignment}\nREFERENCES = $(VALUE)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, expected.encode())
+                bindings = {
+                    row["name"]: row["variable"][1] for row in observed["read_trace"]["events"]
+                    if row["kind"] == "assignment-completion"
+                }
+                self.assertEqual(bindings.get(".FLAGS"), "original")
+                trace = json.loads(json.dumps(observed["read_trace"]))
+                trace["selection"]["names"].remove(".FLAGS")
+                with self.assertRaisesRegex(MakeProbeError, "outside the frozen name closure"):
+                    read_epochs.validate_trace(
+                        trace, trace["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+            self.assert_clean(session)
+        self.add("Makefile", ".FLAGS := original\nVALUE := $(.FLAGS)\nall: ; @:\n")
+        session = self.session()
+        with session:
+            original = session._native_completion_selection
+            def omit():
+                selection = original()
+                selection["names"].remove(".FLAGS")
+                return selection
+            with patch.object(session, "_native_completion_selection", side_effect=omit):
+                with self.assertRaisesRegex(MakeProbeError, "outside the frozen name closure"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+
+    def test_native_readonly_function_delimiters_preserve_original_suppliers(self):
+        cases = (
+            ("$(and {,$(SUPPLIER))", "original"),
+            ("${and (,${SUPPLIER}}", "original"),
+            ("$(and nonempty,$(SUPPLIER))", "original"),
+            ("$(and $(and {,$(SUPPLIER)),$(SUPPLIER))", "original"),
+            ("${and ${and (,${SUPPLIER}},${SUPPLIER}}", "original"),
+            ("$(and ,{)", ""),
+            ("${and ,(}", ""),
+        )
+        for expression, expected in cases:
+            self.add("Makefile", (
+                f"SUPPLIER := original\nVALUE := {expression}\n"
+                "REFERENCES = $(VALUE) $(SUPPLIER)\n"
+                "all: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"
+            ))
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+            )
+            self.assertEqual(ordinary.stdout, expected.encode())
+            session = self.session()
+            with self.subTest(expression=expression), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+                bindings = {
+                    row["name"]: row["variable"][1] for row in observed["read_trace"]["events"]
+                    if row["kind"] == "assignment-completion"
+                }
+                self.assertEqual(bindings.get("SUPPLIER"), "original")
+                self.assertEqual(bindings.get("VALUE"), expected)
+            self.assert_clean(session)
+
+    def test_native_trace_count_shares_filesystem_event_machine_and_trap_limit(self):
+        from scripts.validation_ownership.read_trace import NativeReadTrace
+        from scripts.validation_ownership.syscall_guard import Process, Violation
+        for next_record in ("event", "machine", "trap", "filesystem"):
+            with self.subTest(next_record=next_record):
+                policy = self.observation_policy(count=8)
+                trace = NativeReadTrace.__new__(NativeReadTrace)
+                trace.policy, trace.config = policy, policy.config
+                trace.events, trace.machine, trace.traps = [], [], 0
+                trace.execs, trace.passes, trace.pid, trace.bias = 1, 1, 1, 0
+                trace.deadline = lambda: None
+                for index in range(4):
+                    policy.observe("accessed", f"/repo/{index}")
+                    trace.event("source-entry", visit=index + 1)
+                self.assertEqual(policy.counters()["observations"], 8)
+                with self.assertRaisesRegex(Violation, "aggregate.*observation.*budget exhausted"):
+                    if next_record == "event":
+                        trace.event("complete")
+                    elif next_record == "machine":
+                        trace.machine_event("trap", 1)
+                    elif next_record == "trap":
+                        trace.trap(2, Process("make"))
+                    else:
+                        policy.observe("accessed", "/repo/extra")
+                self.assertEqual(policy.counters()["observations"], 8)
+                self.assertEqual(len(trace.events), 4)
+                self.assertEqual(trace.machine, [])
+
+    def test_native_readonly_completion_callback_and_machine_mutations_refuse(self):
+        self.native_completion_fixture()
+        cases = (
+            (
+                "original=read_trace.NativeReadTrace.source_location\n"
+                "def changed_frame(self,registers,current,*,allow_eval):\n"
+                " if allow_eval:current['frame']+=8\n"
+                " return original(self,registers,current,allow_eval=allow_eval)\n"
+                "read_trace.NativeReadTrace.source_location=changed_frame\n",
+                "direct original reader frame/return",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.source_location\n"
+                "def changed_floc(self,registers,current,*,allow_eval):\n"
+                " saved=self.number\n"
+                " def changed(address):\n"
+                "  value=saved(address)\n"
+                "  if allow_eval and address==registers.rbp+self.abi['completion']['eval_floc']:return value+8\n"
+                "  return value\n"
+                " self.number=changed\n"
+                " try:return original(self,registers,current,allow_eval=allow_eval)\n"
+                " finally:self.number=saved\n"
+                "read_trace.NativeReadTrace.source_location=changed_floc\n",
+                "original ebuffer/stream/pin/source custody",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.assignment_completion\n"
+                "def changed_modifier(self,registers,state):\n"
+                " saved=self.memory\n"
+                " def changed(address,count):\n"
+                "  data=saved(address,count)\n"
+                "  if address==registers.rbp+self.abi['completion']['modifiers'] and count==4:\n"
+                "   return (int.from_bytes(data,'little')|2).to_bytes(4,'little')\n"
+                "  return data\n"
+                " self.memory=changed\n"
+                " try:return original(self,registers,state)\n"
+                " finally:self.memory=saved\n"
+                "read_trace.NativeReadTrace.assignment_completion=changed_modifier\n",
+                "ordinary nonprivate assignment",
+            ),
+            (
+                "original=read_trace.read_epochs.original_variable\n"
+                "def changed_variable(*args):\n"
+                " row=original(*args)\n"
+                " row[0]='FOREIGN_BINDING'\n"
+                " return row\n"
+                "read_trace.read_epochs.original_variable=changed_variable\n",
+                "foreign/private effective variable",
+            ),
+            (
+                "guard.Policy.confirm_readonly_entry=lambda *args:None\n",
+                "source entry has no original pass",
+            ),
+            (
+                "original=os.statvfs\n"
+                "def writable(path):\n"
+                " value=original(path)\n"
+                " if str(path).endswith('/root/repo'):\n"
+                "  return os.statvfs_result((*value[:8],value.f_flag&~os.ST_RDONLY,value.f_namemax))\n"
+                " return value\n"
+                "os.statvfs=writable\n",
+                "actual native source mount is not readonly",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.source_return\n"
+                "def missing_pin(self,registers):\n"
+                " original(self,registers)\n"
+                " if self.machine[-1]['kind']=='pin-retired':self.machine.pop()\n"
+                " for seq,row in enumerate(self.machine,1):row['seq']=seq\n"
+                "read_trace.NativeReadTrace.source_return=missing_pin\n",
+                "omit traps or live pin retirement",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.actual_exec\n"
+                "def missing_clear(self,pid,make,dispatch=None):\n"
+                " original(self,pid,make,dispatch)\n"
+                " if not make:\n"
+                "  self.machine[:]=[row for row in self.machine if not(row['kind']=='clear' and row['pid']==pid)]\n"
+                "  for seq,row in enumerate(self.machine,1):row['seq']=seq\n"
+                "read_trace.NativeReadTrace.actual_exec=missing_clear\n",
+                "immediately preceding child clear",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.actual_exec\n"
+                "def missing_child(self,pid,make,dispatch=None):\n"
+                " original(self,pid,make,dispatch)\n"
+                " if not make:\n"
+                "  del self.machine[-2:]\n"
+                "  for seq,row in enumerate(self.machine,1):row['seq']=seq\n"
+                "read_trace.NativeReadTrace.actual_exec=missing_child\n",
+                "differs from actual readonly job dispatch",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.actual_exec\n"
+                "def duplicate_child(self,pid,make,dispatch=None):\n"
+                " original(self,pid,make,dispatch)\n"
+                " if not make:\n"
+                "  self.machine.extend([dict(row) for row in self.machine[-2:]])\n"
+                "  for seq,row in enumerate(self.machine,1):row['seq']=seq\n"
+                "read_trace.NativeReadTrace.actual_exec=duplicate_child\n",
+                "differs from actual readonly job dispatch",
+            ),
+            (
+                "original=read_trace.NativeReadTrace.actual_exec\n"
+                "def foreign_child(self,pid,make,dispatch=None):\n"
+                " original(self,pid,make,dispatch)\n"
+                " if not make:\n"
+                "  self.machine[-1]['pid']+=1000000\n"
+                "  self.machine[-2]['pid']+=1000000\n"
+                "read_trace.NativeReadTrace.actual_exec=foreign_child\n",
+                "differs from actual readonly job dispatch",
+            ),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected), self.native_supervisor("import read_trace\n" + body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_readonly_completion_inventory_misbind_and_invalid_options_refuse(self):
+        self.native_completion_fixture()
+        session = self.session()
+        with session:
+            original = session._native_completion_selection
+            def misbound():
+                selection = original()
+                row = next(row for row in selection["inventory"] if row["path"] == "Makefile")
+                row["sha256"] = "0" * 64
+                return selection
+            with patch.object(session, "_native_completion_selection", side_effect=misbound):
+                with self.assertRaisesRegex(MakeProbeError, "exact readonly snapshot inventory"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+        for options in (
+            {"observe_completions": True},
+            {"observe_reads": True, "observe_completions": 1},
+            {"observe_reads": 1, "observe_completions": True},
+        ):
+            session = self.session()
+            with self.subTest(options=options), session, patch.object(session, "_sandbox_run") as launch:
+                with self.assertRaisesRegex(MakeProbeError, "invalid native read observation request"):
+                    session._native_make_readonly("all", **options)
+                launch.assert_not_called()
+            self.assert_clean(session)
+
+    def test_native_readonly_completion_failed_make_has_no_successful_archive(self):
+        self.add("Makefile", "$(error intended-source-failure)\n.PHONY: all\nall:\n\t@:\n")
+        session = self.session()
+        completed = {}
+        with session:
+            original = session._sandbox_run
+            def capture(*args, **kwargs):
+                result, observed = original(*args, **kwargs)
+                completed.update(result=result, observed=observed)
+                return result, observed
+            with patch.object(session, "_sandbox_run", side_effect=capture):
+                with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+            self.assertEqual(completed["result"].returncode, 2)
+            self.assertIn(b"intended-source-failure", completed["result"].stderr)
+            self.assertNotIn("read_trace", completed["observed"])
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_effects_capture_computed_staged_define_and_eval(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("empty.mk", "")
+        self.add("Makefile", (
+            "NAME := SUPPLIER\n$(NAME) := original\n"
+            "OUTPUT := $(call if,yes,$$($$(NAME)))\n"
+            "define MACRO\nEVALUATED := $(OUTPUT)\nSECOND := next\nendef\n"
+            "$(eval $(MACRO))\n"
+            "unused:\ninclude empty.mk\n\tINCLUDED := included\n"
+            "all: $(NAME) := local\n\tGLOBAL := global\n"
+            "all: ; @v='$(EVALUATED)|$(SECOND)|$(INCLUDED)|$(GLOBAL)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("OUTPUT", "EVALUATED", "GLOBAL"),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original|next|included|global")
+            self.assertEqual(semantics["domains"]["OUTPUT"]["value"], "original")
+            trace = observed["read_trace"]
+            self.assertEqual(trace["version"], 5)
+            self.assertEqual(trace["selection"]["names"], [])
+            entries = [row for row in trace["events"] if row["kind"] == "effect-entry"]
+            values = {
+                row["variable"][0]: row["variable"][1]
+                for row in trace["events"] if row["kind"] == "effect-completion"
+            }
+            self.assertEqual(values["EVALUATED"], "original")
+            self.assertEqual(values["SECOND"], "next")
+            self.assertEqual(values["GLOBAL"], "global")
+            self.assertEqual(
+                [row["caller"] for row in entries if row["name"] == "SUPPLIER"],
+                ["assignment", "target"],
+            )
+            macro, = [row for row in entries if row["name"] == "MACRO"]
+            self.assertEqual(macro["caller"], "define")
+            self.assertEqual(macro["declaration"], ["Makefile", 4, 0])
+            evaluation, = [row for row in trace["events"] if row["kind"] == "eval-entry"]
+            source = trace["sources"][evaluation["source"] - 1]
+            self.assertEqual(base64.b64decode(source["data"]), b"EVALUATED := original\nSECOND := next")
+            self.assertEqual(
+                [row["location"]["evaluation"] for row in entries if row["name"] in {"EVALUATED", "SECOND"}],
+                [evaluation["evaluation"]] * 2,
+            )
+            archive = read_epochs.reconstruct_archive(trace, budget=session.budget)
+            self.assertEqual(archive.version, 5)
+            part, = archive.passes
+            self.assertEqual(len(part.effects), len(entries))
+            self.assertEqual(part.evaluations[0].source.data, b"EVALUATED := original\nSECOND := next")
+            self.assertEqual(
+                [effect.variable.value for effect in part.effects if effect.name == "EVALUATED"],
+                ["original"],
+            )
+        self.assert_clean(session)
+
+    def test_native_runtime_nested_eval_include_and_effect_lifetimes(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("included.mk", "OWNED := included\n")
+        self.add("Makefile", (
+            "define OUTER\n"
+            "include included.mk\n"
+            "INNER := $$(eval THIRD := nested)done\n"
+            "define NESTED\n"
+            "literal\n"
+            "endef\n"
+            "endef\n"
+            "$(eval $(OUTER))\n"
+            "all: ; @v='$(OWNED)|$(INNER)|$(THIRD)|$(NESTED)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"included|done|nested|literal")
+            trace = observed["read_trace"]
+            archive = read_epochs.reconstruct_archive(trace, budget=session.budget)
+            part, = archive.passes
+            self.assertEqual(len(part.evaluations), 2)
+            outer, inner = part.evaluations
+            self.assertEqual(inner.source.data, b"THIRD := nested")
+            parent = next(effect for effect in part.effects if effect.name == "INNER")
+            self.assertEqual(inner.parent, ("effect", parent.number))
+            self.assertEqual(inner.location.evaluation, outer.number)
+            owned = next(effect for effect in part.effects if effect.name == "OWNED")
+            self.assertIsNone(owned.location.evaluation)
+            included = next(visit for visit in part.visits if visit.name == "included.mk")
+            self.assertEqual(included.location.evaluation, outer.number)
+            third = next(effect for effect in part.effects if effect.name == "THIRD")
+            self.assertEqual(third.location.evaluation, inner.number)
+            self.assertLess(parent.entry_seq, inner.entry_seq)
+            self.assertLess(inner.exit_seq, parent.completion_seq)
+        self.assert_clean(session)
+
+    def test_native_runtime_deferred_builtins_and_context_reset_capture_all_effects(self):
+        for expression in (
+            "$(call if,yes,$$($$(NAME)))", "$(call and,yes,$$($$(NAME)))",
+            "$(call or,,$$($$(NAME)))", "$(call foreach,ITEM,one,$$($$(NAME)))",
+        ):
+            for prefix in (
+                "ifeq (no,yes)\nunused:\nendif\n",
+                "unused:\ninclude empty.mk\n",
+                "unused:\n-include empty.mk\n",
+                "unused:\nsinclude empty.mk\n",
+                "all: 1NAME := local\n",
+            ):
+                self.add("empty.mk", "")
+                self.add("Makefile", "NAME := SUPPLIER\n" + prefix + (
+                    "\tSUPPLIER := original\nOUTPUT := " + expression +
+                    "\nall: ; @v='$(OUTPUT)'; printf '%s' \"$$v\"\n"
+                ))
+                session = self.session()
+                with self.subTest(expression=expression, prefix=prefix), session:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"original")
+                    values = [
+                        row["variable"][1] for row in observed["read_trace"]["events"]
+                        if row["kind"] == "effect-completion" and row["variable"][0] == "SUPPLIER"
+                    ]
+                    self.assertEqual(values, ["original"])
+                self.assert_clean(session)
+
+    def test_native_runtime_returned_effect_eval_and_machine_mutations_refuse(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "NAME := VALUE\n$(NAME) := original\n$(eval SECOND := $(VALUE))\n"
+            "all: ; @v='$(SECOND)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            trace = observed["read_trace"]
+            saved = encoded(trace)
+            mutations = (
+                ("effect-entry", "caller", []),
+                ("source-entry", "visit", []),
+                ("source-open", "source", []),
+                ("source-open", "result", []),
+                ("effect-entry", "parent", ["pass", 1]),
+                ("effect-entry", "target", True),
+                ("effect-entry", "flavor", 0),
+                ("effect-entry", "name", "FOREIGN"),
+                ("effect-entry", "declaration", ["Makefile", 999, 0]),
+                ("effect-return", "effect", 999),
+                ("effect-completion", "cwd", "relative"),
+                ("eval-entry", "source", 1),
+                ("eval-exit", "evaluation", 999),
+                ("complete", "effects", 0),
+            )
+            for kind, key, replacement in mutations:
+                changed = parse_json(saved, "runtime projection")
+                row = next(row for row in changed["events"] if row["kind"] == kind)
+                row[key] = replacement
+                with self.subTest(kind=kind, key=key):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            for kind, key in (("pass-entry", "exec"), ("source-open", "path"), ("source-exit", "source")):
+                changed = parse_json(saved, "runtime missing field")
+                row = next(row for row in changed["events"] if row["kind"] == kind)
+                del row[key]
+                with self.subTest(missing=(kind, key)):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            for binding in ("effect-input", "effect-result", "eval-buffer"):
+                changed = parse_json(saved, "runtime machine omission")
+                changed["machine"]["events"] = [
+                    row for row in changed["machine"]["events"] if row["kind"] != binding
+                ]
+                for sequence, row in enumerate(changed["machine"]["events"], 1):
+                    row["seq"] = sequence
+                with self.subTest(binding=binding):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "omit effect/eval payload"):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            for slots in (None, (0, 1), (0, 1, 2), (0, 1, 3), "active"):
+                changed = parse_json(saved, "runtime post-read guard mutation")
+                guards = [
+                    row for row in changed["machine"]["events"]
+                    if row["kind"] == "arm"
+                    and changed["events"][row["trace_seq"] - 1]["kind"] == "pass-exit"
+                ]
+                self.assertEqual(len(guards), 1)
+                guard, = guards
+                if slots is None:
+                    changed["machine"]["events"].remove(guard)
+                elif slots == "active":
+                    active = next(
+                        row for row in changed["machine"]["events"]
+                        if row["kind"] == "arm" and len(row["slots"]) == 4
+                        and row["slots"][0][2] == "source-entry"
+                    )
+                    guard["slots"] = active["slots"]
+                    guard["registers"] = active["registers"]
+                else:
+                    guard["slots"] = [row for row in guard["slots"] if row[0] in slots]
+                    guard["registers"][:4] = [
+                        guard["registers"][index] if index in slots else 0 for index in range(4)
+                    ]
+                    guard["registers"][5] = sum(1 << (2 * index) for index in slots)
+                for sequence, row in enumerate(changed["machine"]["events"], 1):
+                    row["seq"] = sequence
+                with self.subTest(guard_slots=slots):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes,
+                        )
+            changed = parse_json(saved, "coherent runtime eval byte mutation")
+            entry = next(row for row in changed["events"] if row["kind"] == "eval-entry")
+            source = changed["sources"][entry["source"] - 1]
+            data = base64.b64decode(source["data"]).replace(b"original", b"modified")
+            self.assertNotEqual(hashlib.sha256(data).hexdigest(), source["sha256"])
+            source.update(
+                data=base64.b64encode(data).decode(), sha256=hashlib.sha256(data).hexdigest(),
+                bytes=len(data),
+            )
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "eval bytes differ from pristine capture"):
+                read_epochs.validate_trace(
+                    changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                    file_limit=session.budget.limits.file_bytes,
+                )
+        self.assert_clean(session)
+
+    def test_native_runtime_live_effect_and_buffer_custody_mutations_refuse(self):
+        cases = (
+            (
+                "runtime_effect_return",
+                " if self.invocations[-1]['kind']=='effect': self.invocations[-1]['variable']+=8\n",
+                "runtime definition",
+            ),
+            (
+                "runtime_eval_entry",
+                " self.invocations[-1]['buffer']+=1\n",
+                "pristine eval buffer",
+            ),
+        )
+        for method, mutation, message in cases:
+            self.add("Makefile", "VALUE := original\n$(eval SECOND := $(VALUE))\nall: ; @:\n")
+            body = (
+                "import read_trace\n"
+                f"original=read_trace.NativeReadTrace.{method}\n"
+                "def mutate(self,*args,**kwargs):\n"
+                " result=original(self,*args,**kwargs)\n" + mutation +
+                " return result\n"
+                f"read_trace.NativeReadTrace.{method}=mutate\n"
+            )
+            session = self.session()
+            with self.subTest(method=method), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+            self.assert_clean(session)
+        for request in (
+            {"observe_runtime_completions": True},
+            {"observe_reads": True, "observe_runtime_completions": 1},
+            {"observe_reads": True, "observe_completions": True, "observe_runtime_completions": True},
+        ):
+            session = self.session()
+            with self.subTest(request=request), session:
+                with self.assertRaisesRegex(MakeProbeError, "invalid native read observation request"):
+                    session._native_make_readonly("all", **request)
+            self.assert_clean(session)
+
+    def test_native_runtime_actual_private_prefix_secondary_and_failed_lifetimes(self):
+        self.add("Makefile", (
+            "private VALUE := original\nPUBLIC := $(VALUE)\n.RECIPEPREFIX := >\n"
+            ".SECONDEXPANSION:\n"
+            "all: $$(EMPTY)\n> @v='$(PUBLIC)'; printf '%s' \"$$v\"\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+            variable, = [
+                row["variable"] for row in observed["read_trace"]["events"]
+                if row["kind"] == "effect-completion" and row["variable"][0] == "VALUE"
+            ]
+            self.assertTrue(variable[2] & (1 << 7))
+        self.assert_clean(session)
+        self.add("Makefile", "VALUE := original\n$(error intended-runtime-failure)\nall: ;\n")
+        session = self.session()
+        captured = {}
+        with session:
+            run = session._sandbox_run
+            def actual(*args, **kwargs):
+                result, observed = run(*args, **kwargs)
+                captured.update(result=result, observed=observed)
+                return result, observed
+            with patch.object(session, "_sandbox_run", side_effect=actual):
+                with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+            self.assertNotIn("read_trace", captured["observed"])
+            self.assertIn(b"intended-runtime-failure", captured["result"].stderr)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_target_modifiers_and_ignored_origin_capture_effective_bindings(self):
+        for override, inputs, expected in (
+            ("", {}, b"local|local"),
+            ("override ", {"VALUE": "command"}, b"local|local"),
+            ("", {"VALUE": "command"}, b"command|command"),
+        ):
+            with self.subTest(override=override, inputs=inputs):
+                self.add("Makefile", (
+                    "all other: " + override + "private export VALUE := local\n"
+                    "all: ; @printf '%s' '$(VALUE)|'\"$$VALUE\"\n"
+                ))
+                session = self.session()
+                with session:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", assignments=tuple(("command-line", name, value) for name, value in inputs.items()),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, expected)
+                    bindings = [
+                        row["variable"] for row in observed["read_trace"]["events"]
+                        if row["kind"] == "effect-completion" and row["variable"][0] == "VALUE"
+                    ]
+                    self.assertEqual(len(bindings), 2)
+                    for variable in bindings:
+                        self.assertEqual(variable[1], expected.split(b"|")[0].decode())
+                        self.assertTrue(variable[2] & (1 << 7))
+                        self.assertEqual(variable[2] >> 29 & 3, 0)
+                self.assert_clean(session)
+
+    def test_native_runtime_expansion_abi_binds_original_callers_anchors_and_layout(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "all: ; @:\n")
+        session = self.session()
+        with session:
+            data = dict(session.make_runtime)["/usr/bin/make"]
+            image = read_epochs.Elf(data)
+            abi = read_epochs.runtime_expansion_abi(image)
+            expansion = image.symbol("variable_expand_for_file", 2)[0]
+            calls = {
+                "recipe": abi["recipe_return"] - 5,
+                "secondary": abi["secondary_return"] - 5,
+                "snap-suffix": abi["secondary_snap_returns"][0] - 5,
+                "snap-ordinary": abi["secondary_snap_returns"][1] - 5,
+            }
+            for key, target in (
+                ("recipe", expansion), ("secondary", expansion),
+                ("snap-suffix", abi["secondary"][0]), ("snap-ordinary", abi["secondary"][0]),
+            ):
+                address = calls[key]
+                self.assertEqual(
+                    read_epochs.direct_call(address, image.bytes(address, 5, executable=True)), target,
+                )
+            self.assertEqual((abi["file_commands"], abi["file_variables"]), (32, 80))
+            begin, end = abi["secondary"]
+            helper = image.bytes(begin, end - begin, executable=True)
+            secondary_mutations = {}
+            for label, pattern, displacement in (
+                ("secondary-prerequisites", rb"\x48\x8b\x5f\x18", 3),
+                ("secondary-target", rb"\x49\x89\xfe", 2),
+            ):
+                matches = list(re.finditer(pattern, helper, re.S))
+                self.assertEqual(len(matches), 1)
+                address = begin + matches[0].start() + displacement
+                secondary_mutations[label] = (address, image.bytes(address, 1, executable=True)[0] ^ 1)
+            for name in ("set_file_variables", "split_prereqs", "enter_prereqs"):
+                target = image.symbol(name, 2)[0]
+                sites = [
+                    begin + offset for offset in range(len(helper) - 4)
+                    if read_epochs.direct_call(begin + offset, helper[offset:offset + 5]) == target
+                ]
+                self.assertEqual(len(sites), 1)
+                calls[name] = sites[0]
+            mutations = {key + "-call": (address, 0x90) for key, address in calls.items()}
+            mutations.update(secondary_mutations)
+            mutations.update({
+                key + "-entry": (abi[key][0], 0x90)
+                for key in ("function", "recipe", "secondary", "snap")
+            })
+            start = abi["function"][0]
+            expansion_code = image.bytes(start, abi["function"][1] - start, executable=True)
+            for key, pattern, changed, displacement in (
+                ("variable-layout", rb"\x48\x8b\x46\x50", 0x58, 3),
+                ("commands-layout", rb"\x48\x8b\x46\x20", 0x28, 3),
+                ("variables-anchor", rb"\x4c\x8d\x25....", None, 3),
+                ("reading-anchor", rb"\x48\x8d\x1d....", None, 3),
+                ("expansion-callee", rb"\xe8....\x4d\x89\x34\x24", 0x90, 0),
+            ):
+                sites = list(re.finditer(pattern, expansion_code, re.S))
+                self.assertEqual(len(sites), 1)
+                address = start + sites[0].start() + displacement
+                original = image.bytes(address, 1, executable=True)[0]
+                mutations[key] = (address, original ^ 1 if changed is None else changed)
+            start, end = abi["recipe"]
+            recipe_code = image.bytes(start, end - start, executable=True)
+            saved = list(re.finditer(rb"\x48\x89\x7d.\x48\x8b\x5f\x20", recipe_code[:64], re.S))
+            self.assertEqual(len(saved), 1)
+            address = start + saved[0].start() + 3
+            mutations["recipe-saved-file"] = (address, image.bytes(address, 1, executable=True)[0] ^ 1)
+            for label, (address, changed) in mutations.items():
+                mutant = bytearray(data)
+                locations = [
+                    offset + address - start
+                    for start, extent, offset, size, flags in image.loads
+                    if start <= address < start + size and flags & 1
+                ]
+                self.assertEqual(len(locations), 1)
+                mutant[locations[0]] = changed
+                with self.subTest(mutation=label), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.runtime_expansion_abi(read_epochs.Elf(bytes(mutant)))
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_effect_abi_binds_complete_machine_call_families(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "VALUE := original\nall: ; @:\n")
+        session = self.session()
+        with session:
+            data = dict(session.make_runtime)["/usr/bin/make"]
+            image = read_epochs.Elf(data)
+            abi = session._native_read_abi(completions=True)
+            self.assertIn("runtime", abi["completion"])
+            runtime = abi["completion"]["runtime"]
+            definition, size = image.symbol("do_variable_definition", 2)
+            self.assertEqual(runtime["definition"], [definition, definition + size])
+            for key, target in (
+                ("ordinary_definition_return", definition),
+                ("define_definition_return", definition),
+                ("reader_definition_return", definition),
+                ("target_assignment_return", image.symbol("try_variable_definition", 2)[0]),
+            ):
+                returned = runtime[key]
+                self.assertEqual(
+                    read_epochs.direct_call(
+                        returned - 5, image.bytes(returned - 5, 5, executable=True),
+                    ), target,
+                )
+                mutated = bytearray(data)
+                for address, extent, offset, file_size, flags in image.loads:
+                    if address <= returned - 5 < address + file_size:
+                        mutated[offset + returned - 5 - address] = 0x90
+                        break
+                with self.subTest(call=key):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.completion_abi(read_epochs.Elf(bytes(mutated)), abi["source"])
+            self.assertEqual(
+                runtime["eval_floc"] - runtime["eval_ebuffer"], 40,
+            )
+            for key in ("definition", "try_definition", "eval_buffer"):
+                mutated = bytearray(data)
+                entry = runtime[key][0]
+                for address, extent, offset, file_size, flags in image.loads:
+                    if address <= entry < address + file_size:
+                        mutated[offset + entry - address] = 0x90
+                        break
+                with self.subTest(entry=key):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "actual frame entry"):
+                        read_epochs.completion_abi(read_epochs.Elf(bytes(mutated)), abi["source"])
+            begin, end = runtime["eval_buffer"]
+            buffer_code = image.bytes(begin, end - begin, executable=True)
+            zero_file = list(re.finditer(rb"\x48\xc7\x45.\x00\x00\x00\x00", buffer_code))
+            file_sites = [
+                match for match in zero_file
+                if int.from_bytes(match[0][3:4], "little", signed=True)
+                == runtime["eval_ebuffer"] + 32
+            ]
+            self.assertEqual(len(file_sites), 1)
+            file_site, = file_sites
+            mutated = bytearray(data)
+            changed_address = begin + file_site.start() + 3
+            for address, extent, offset, file_size, flags in image.loads:
+                if address <= changed_address < address + file_size:
+                    mutated[offset + changed_address - address] += 1
+                    break
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "foreign LP64 layout"):
+                read_epochs.completion_abi(read_epochs.Elf(bytes(mutated)), abi["source"])
+            self.assertEqual(read_epochs.validate_abi(abi, data), abi)
+            for key in runtime:
+                changed = parse_json(encoded(abi), "runtime ABI mutation")
+                if isinstance(runtime[key], list):
+                    changed["completion"]["runtime"][key][0] += 1
+                else:
+                    changed["completion"]["runtime"][key] += 1
+                with self.subTest(coordinate=key):
+                    with self.assertRaisesRegex(
+                        read_epochs.ReadEpochError, "independent machine operand discovery",
+                    ):
+                        read_epochs.validate_abi(changed, data)
+        self.assert_clean(session)
+
+    def test_native_readonly_completion_foreign_abi_and_returned_selection_refuse(self):
+        self.native_completion_fixture()
+        session = self.session()
+        with session:
+            original = session._native_read_abi
+            def foreign(**options):
+                abi = original(**options)
+                abi["image_sha256"] = "0" * 64
+                return abi
+            with patch.object(session, "_native_read_abi", side_effect=foreign):
+                with self.assertRaisesRegex(MakeProbeError, "unbound or malformed original-read ABI"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+        body = (
+            "import read_trace\n"
+            "original=read_trace.NativeReadTrace.__init__\n"
+            "def foreign_selection(self,policy,config):\n"
+            " original(self,policy,config)\n"
+            " self.selection['snapshot_sha256']='0'*64\n"
+            "read_trace.NativeReadTrace.__init__=foreign_selection\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "differs from its requested version/selection"):
+                session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+        self.assert_clean(session)
+
+    def test_native_readonly_returned_completion_requires_entire_machine_section(self):
+        self.native_completion_fixture()
+        body = (
+            "import read_trace\n"
+            "original=read_trace.NativeReadTrace.finish\n"
+            "def omit(self):\n"
+            " result=original(self);result.pop('machine');return result\n"
+            "read_trace.NativeReadTrace.finish=omit\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native completion requires its machine evidence"):
+                session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_readonly_returned_snapshot_custody_and_image_mutations_refuse(self):
+        self.native_completion_fixture()
+        mutations = (
+            ("source-open", "row['custody']={'kind':'publication','event':1,'producer':1,"
+             "'slot':0,'owner':'0'*64}"),
+            ("entry-image", "row['image_sha256']='0'*64"),
+        )
+        for kind, mutation in mutations:
+            body = (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.finish\n"
+                "def mutate(self):\n"
+                " result=original(self)\n"
+                f" row=next(row for row in result['events'] if row['kind']=={kind!r}"
+                + (" and row['result']>=0" if kind == "source-open" else "") + ")\n"
+                f" {mutation}\n"
+                " return result\n"
+                "read_trace.NativeReadTrace.finish=mutate\n"
+            )
+            session = self.session()
+            with self.subTest(kind=kind), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native readonly trace differs from its snapshot"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_general_completion_trace_consumer_keeps_optional_machine(self):
+        from scripts.validation_ownership import read_epochs
+        self.native_completion_fixture()
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_completions=True,
+            )
+            trace = {name: value for name, value in observed["read_trace"].items() if name != "machine"}
+            read_epochs.validate_trace(
+                trace, trace["scope"], count_limit=session.budget.limits.observation_count,
+                file_limit=session.budget.limits.file_bytes,
+            )
+            for kind in ("source-open", "entry-image"):
+                broader = json.loads(json.dumps(trace))
+                row = next(
+                    row for row in broader["events"] if row["kind"] == kind
+                    and (kind != "source-open" or row["result"] >= 0)
+                )
+                if kind == "source-open":
+                    row["custody"] = {
+                        "kind": "publication", "event": 1, "producer": 1,
+                        "slot": 0, "owner": "0" * 64,
+                    }
+                else:
+                    row["image_sha256"] = "0" * 64
+                read_epochs.validate_trace(
+                    broader, broader["scope"], count_limit=session.budget.limits.observation_count,
+                    file_limit=session.budget.limits.file_bytes,
+                )
+        self.assert_clean(session)
+
+    def test_native_readonly_returned_job_lifecycle_and_machine_binding_mutations_refuse(self):
+        self.native_completion_fixture()
+        mutations = [
+            "row={name:row[name] for name in ('pid','executable')}",
+            *(f"row.pop({name!r})" for name in (
+                "sequence", "context", "returncode", "terminal_status", "waited", "ignored",
+            )),
+            "row['waited']=False",
+            "row['waited']=1",
+            "row['terminal_status']=None",
+            "row['terminal_status']=256",
+            "row['terminal_status']=True",
+            "row['terminal_status']=127",
+            "row['returncode']=False",
+            "row['returncode']=1",
+            "row['sequence']=True",
+            "row['sequence']=1",
+            "row['context']['kind']='foreign'",
+            "row['context']['kind']=[]",
+            "row['context']['command_line']=None",
+            "row['context']['command_line']=False",
+            "if row['context']['kind']=='recipe':row['context']['target']='\\ud800'",
+            "row['ignored']=None",
+            "row['ignored']=1",
+            "row['extra']=True",
+            "row['sequence']=3-row['sequence']",
+        ]
+        for mutation in mutations:
+            body = (
+                "original=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job"):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        body = (
+            "original=guard.Policy.observe\n"
+            "def omitted(self,name,value):\n"
+            " if name=='accessed' and value.startswith(('native-job:','native-shell:','native-exec:')):return\n"
+            " return original(self,name,value)\n"
+            "guard.Policy.observe=omitted\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native job"):
+                session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_returned_job_context_and_policy_mutations_refuse(self):
+        self.add("Makefile", (
+            "VALUE := $(shell v=original; printf '%s' \"$$v\")\n"
+            "all:\n\t@v=one; printf '%s' \"$$v\"\n"
+            "\t-@v=two; printf '%s' \"$$v\"; exit 7\n"
+        ))
+        mutations = (
+            "if row['context']['kind']=='recipe':row['context']['target']='foreign'",
+            "if row['context']['kind']=='recipe':row['context']['command_line']+=1",
+            "row['context']={'kind':'expansion','target':None,'command_line':None}",
+            "if row['context']['kind']=='expansion':row['context']={'kind':'recipe','target':'all','command_line':1}",
+            "row['ignored']=not row['ignored']",
+        )
+        for runtime in (False, True):
+            for mutation in mutations:
+                body = (
+                    "original=guard.Policy.observe\n"
+                    "def changed(self,name,value):\n"
+                    " if name=='accessed' and value.startswith('native-job:'):\n"
+                    "  row=json.loads(value[len('native-job:'):])\n"
+                    f"  {mutation}\n"
+                    "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                    " return original(self,name,value)\n"
+                    "guard.Policy.observe=changed\n"
+                )
+                session = self.session()
+                with self.subTest(runtime=runtime, mutation=mutation), self.native_supervisor(body), session:
+                    with self.assertRaisesRegex(MakeProbeError, "native job"):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=not runtime,
+                            observe_runtime_completions=runtime,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_job_policy_live_machine_mutations_refuse(self):
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        for runtime in (False, True):
+            for mutation in (
+                "return",
+                "original(self,kind,pid,**fields)",
+                "fields['context']['target']='foreign'",
+                "fields['context']['command_line']+=1",
+                "fields['context']={'kind':'expansion','target':None,'command_line':None}",
+                "fields['ignored']=not fields['ignored']",
+                "fields['status']=256",
+                "fields['dispatch']+=1",
+                "fields['child']+=1000000",
+                "pid=fields['child']",
+            ):
+                body = (
+                    "import read_trace\n"
+                    "original=read_trace.NativeReadTrace.machine_event\n"
+                    "def changed(self,kind,pid,**fields):\n"
+                    " if kind=='native-policy':\n"
+                    "  fields['context']=dict(fields['context'])\n"
+                    f"  {mutation}\n"
+                    " return original(self,kind,pid,**fields)\n"
+                    "read_trace.NativeReadTrace.machine_event=changed\n"
+                )
+                session = self.session()
+                with self.subTest(runtime=runtime, mutation=mutation), self.native_supervisor(body), session:
+                    with self.assertRaises(MakeProbeError):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=not runtime,
+                            observe_runtime_completions=runtime,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_failed_make_cannot_publish_mutated_job_context_or_policy(self):
+        self.add("Makefile", "all: ; @v=failed; printf '%s' \"$$v\"; exit 7\n")
+        for runtime in (False, True):
+            for mutation in ("row['ignored']=True", "row['context']['target']='foreign'"):
+                body = (
+                    "original=guard.Policy.observe\n"
+                    "def changed(self,name,value):\n"
+                    " if name=='accessed' and value.startswith('native-job:'):\n"
+                    "  row=json.loads(value[len('native-job:'):])\n"
+                    f"  {mutation}\n"
+                    "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                    " return original(self,name,value)\n"
+                    "guard.Policy.observe=changed\n"
+                )
+                session, decoded = self.session(), []
+                sandbox = session._sandbox_run
+                def observed_failure(*args, **kwargs):
+                    result = sandbox(*args, **kwargs)
+                    decoded.append(result)
+                    return result
+                with self.subTest(runtime=runtime, mutation=mutation), self.native_supervisor(body), session:
+                    with patch.object(session, "_sandbox_run", observed_failure), self.assertRaises(MakeProbeError):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_completions=not runtime,
+                            observe_runtime_completions=runtime,
+                        )
+                    self.assertEqual(len(decoded), 1)
+                    completed, observed = decoded[0]
+                    self.assertEqual((completed.returncode, observed["returncode"]), (2, 2))
+                    self.assertNotIn("read_trace", observed)
+                    self.assertIn(b"Error 7", completed.stderr)
+                    jobs = [json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                            if row.startswith("native-job:")]
+                    self.assertEqual(len(jobs), 1)
+                    if "ignored" in mutation:
+                        self.assertIs(jobs[0]["ignored"], True)
+                    else:
+                        self.assertEqual(jobs[0]["context"]["target"], "foreign")
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_job_policy_machine_and_archive_bindings(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "VALUE := $(shell v=original; printf '%s' \"$$v\")\n"
+            "all:\n\t@v=one; printf '%s' \"$$v\"\n"
+            "\t-@v=two; printf '%s' \"$$v\"; exit 7\n"
+        ))
+        for runtime in (False, True):
+            session = self.session()
+            with self.subTest(runtime=runtime), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_completions=not runtime,
+                    observe_runtime_completions=runtime,
+                )
+                self.assertEqual(completed.stdout, b"onetwo")
+                self.assertIn(b"Error 7 (ignored)", completed.stderr)
+                jobs = sorted(
+                    (json.loads(row.removeprefix("native-job:")) for row in observed["accessed"]
+                     if row.startswith("native-job:")), key=lambda row: row["sequence"],
+                )
+                self.assertEqual(
+                    [(row["context"], row["ignored"], row["terminal_status"]) for row in jobs],
+                    [
+                        ({"kind": "expansion", "target": None, "command_line": None}, False, 0),
+                        ({"kind": "recipe", "target": "all", "command_line": 1}, False, 0),
+                        ({"kind": "recipe", "target": "all", "command_line": 2}, True, 7 << 8),
+                    ],
+                )
+                trace = observed["read_trace"]
+                policies = [row for row in trace["machine"]["events"] if row["kind"] == "native-policy"]
+                self.assertEqual(
+                    {(row["dispatch"], row["child"]): (row["context"], row["ignored"], row["status"])
+                     for row in policies},
+                    {(row["sequence"], row["pid"]): (row["context"], row["ignored"], row["terminal_status"])
+                     for row in jobs},
+                )
+                for mutation in (
+                    "omit", "duplicate", "parent", "child", "dispatch", "ignored", "status",
+                    "kind", "target", "command_line", "extra",
+                    *(("terminal", "early") if runtime else ()),
+                ):
+                    changed = parse_json(encoded(trace), "native policy archive mutation")
+                    events = changed["machine"]["events"]
+                    row = next(row for row in events
+                               if row["kind"] == "native-policy" and row["context"]["kind"] == "recipe")
+                    index = events.index(row)
+                    if mutation == "omit":
+                        events.remove(row)
+                    elif mutation == "duplicate":
+                        events.insert(index, parse_json(encoded(row), "duplicate policy"))
+                    elif mutation == "parent":
+                        row["pid"] = row["child"]
+                    elif mutation == "child":
+                        row["child"] += 1000000
+                    elif mutation == "dispatch":
+                        row["dispatch"] = 1000000
+                    elif mutation == "ignored":
+                        row["ignored"] = 1
+                    elif mutation == "status":
+                        row["status"] = 127
+                    elif mutation in {"kind", "target", "command_line"}:
+                        row["context"][mutation] = None
+                    elif mutation == "extra":
+                        row["extra"] = True
+                    elif mutation == "terminal":
+                        row["status"] = 7 << 8
+                    elif mutation == "early":
+                        terminal = next(event for event in events if event["kind"] == "native-tree"
+                                        and event["dispatch"] == row["dispatch"]
+                                        and event["event"]["kind"] == "exit"
+                                        and event["pid"] == row["child"])
+                        events.remove(row)
+                        events.insert(events.index(terminal), row)
+                    for number, event in enumerate(events, 1):
+                        event["seq"] = number
+                    with self.subTest(runtime=runtime, mutation=mutation):
+                        with self.assertRaises(read_epochs.ReadEpochError):
+                            read_epochs.validate_trace(
+                                changed, trace["scope"], count_limit=session.budget.limits.observation_count,
+                                file_limit=session.budget.limits.file_bytes,
+                            )
+            self.assert_clean(session)
+
+    def test_native_readonly_actual_trap_registers_preserve_original_state(self):
+        self.native_completion_fixture()
+        output = self.directory / "actual-register-restoration.json"
+        body = (
+            "import ctypes,read_trace\n"
+            "original=read_trace.NativeReadTrace.trap\n"
+            "rows=[]\n"
+            "def observed(self,pid,state):\n"
+            " before=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(before))\n"
+            " result=original(self,pid,state)\n"
+            " after=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(after))\n"
+            " rows.append({name:[getattr(before,name),getattr(after,name)] for name,*_ in before._fields_})\n"
+            f" Path({str(output)!r}).write_text(json.dumps(rows))\n"
+            " return result\n"
+            "read_trace.NativeReadTrace.trap=observed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("EARLY",), observe_reads=True, observe_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"recipe\n")
+            self.assertEqual(semantics["domains"]["EARLY"]["value"], "original")
+            rows = json.loads(output.read_bytes())
+            traps = [row for row in observed["read_trace"]["machine"]["events"] if row["kind"] == "trap"]
+            self.assertEqual(len(rows), len(traps))
+            self.assertEqual(
+                {row["purpose"] for row in traps},
+                {"pass-entry", "source-entry", "source-return", "assignment-completion", "pass-return"},
+            )
+            from scripts.validation_ownership.syscall_guard import Registers
+            fields = {name for name, *_ in Registers._fields_}
+            for row in rows:
+                self.assertEqual(set(row), fields)
+                for name, (before, after) in row.items():
+                    self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
+        self.assert_clean(session)
+
+    def test_native_runtime_jobs_capture_actual_argv_cwd_and_machine_binding(self):
+        from scripts.validation_ownership import read_epochs
+        expansion = "v=input; printf '%s' \"$v\""
+        recipe = "v='$(VALUE)'; printf '%s' \"$v\""
+        self.add("Makefile", (
+            "VALUE := $(shell " + expansion.replace("$", "$$") + ")\n"
+            "all: direct\n\t@" + recipe.replace("$v", "$$v") + "\n"
+            "direct: ; @/usr/bin/printf '%s' direct '' 'two words'\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+                native_executables=("/usr/bin/printf",),
+            )
+            self.assertEqual(completed.stdout, b"directtwo wordsinput")
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "actual native job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 3)
+            expected = {
+                ("/bin/sh", "-c", expansion),
+                ("/bin/sh", "-c", recipe.replace("$(VALUE)", "input")),
+                ("/usr/bin/printf", "%s", "direct", "", "two words"),
+            }
+            self.assertEqual({tuple(row["argv"]) for row in jobs}, expected)
+            self.assertEqual({row["cwd"] for row in jobs}, {"/repo"})
+            machines = {
+                (row["dispatch"], row["pid"]): row["input_sha256"]
+                for row in observed["read_trace"]["machine"]["events"]
+                if row["kind"] == "execute" and not row["make"]
+            }
+            for row in jobs:
+                self.assertEqual(
+                    machines[(row["sequence"], row["pid"])],
+                    hashlib.sha256(encoded({"argv": row["argv"], "cwd": row["cwd"]})).hexdigest(),
+                )
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_job_execution_input_mutations_and_capture_failures_refuse(self):
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        for mutation in (
+            "row.pop('argv')", "row.pop('cwd')", "row['argv']=[]",
+            "row['argv']=[False]", "row['argv']=['\\ud800']",
+            "row['argv']=['x'*65536]", "row['argv']=['x']*1025",
+            "row['argv'][-1]='foreign'", "row['cwd']='relative'",
+            "row['cwd']='/foreign'", "row['cwd']=False",
+        ):
+            body = (
+                "original=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for data in (b"", b"missing-null", b"/bin/sh\0\xff\0", b"\0", b"x" * 65537):
+            body = (
+                "import builtins,io\noriginal_open=builtins.open\n"
+                "def captured(path,*args,**kwargs):\n"
+                " if isinstance(path,str) and path.startswith('/proc/') and path.endswith('/cmdline'):\n"
+                f"  return io.BytesIO({data!r})\n"
+                " return original_open(path,*args,**kwargs)\n"
+                "builtins.open=captured\n"
+            )
+            session = self.session()
+            with self.subTest(capture=data[:20]), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        body = (
+            "import read_trace\noriginal=read_trace.NativeReadTrace.finish\n"
+            "def changed(self):\n"
+            " result=original(self)\n"
+            " row=next(row for row in result['machine']['events'] if row['kind']=='execute' and not row['make'])\n"
+            " row['input_sha256']='0'*64\n return result\n"
+            "read_trace.NativeReadTrace.finish=changed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            with self.assertRaisesRegex(MakeProbeError, "native machine tree differs from its original job inputs"):
+                session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_readonly_descendant_pipelines_and_exec_lifetimes(self):
+        from scripts.validation_ownership import read_epochs
+        from signal import SIGUSR1
+        cases = (
+            ("pipeline", "VALUE := $(shell /usr/bin/printf first | /usr/bin/printf second)\n"
+             "all: ; @printf '%s' '$(VALUE)'\n", b"second"),
+            ("recipe-pipeline", "all: ; @/usr/bin/printf first | /usr/bin/printf second\n", b"second"),
+            ("replacement", "all: ; @exec /usr/bin/printf '%s' replaced\n", b"replaced"),
+            ("nonzero", "all: ; @/bin/sh -c 'exit 7'; printf done\n", b"done"),
+            ("signalled", "all: ; @/bin/sh -c 'kill -USR1 $$$$'; printf done\n", b"done"),
+            ("nested", "all: ; @/bin/sh -c '/bin/sh -c \"exit 0\"; printf nested'; printf done\n", b"nesteddone"),
+        )
+        for label, body, expected in cases:
+            self.add("Makefile", body)
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, timeout=10,
+            )
+            self.assertEqual(ordinary.returncode, 0)
+            self.assertEqual(ordinary.stdout, expected)
+            session = self.session()
+            with self.subTest(label=label), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_executables=("/usr/bin/printf",),
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, expected)
+                jobs = [
+                    parse_json(row.removeprefix("native-job:").encode(), "native tree job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                packets = [event for job in jobs for event in job["tree"]]
+                if label == "replacement":
+                    self.assertEqual(
+                        [event["generation"] for event in packets if event["kind"] == "exec"],
+                        [1, 2],
+                    )
+                    self.assertEqual({event["pid"] for event in packets}, {jobs[0]["pid"]})
+                else:
+                    self.assertTrue(any(event["kind"] == "fork" for event in packets))
+                    if label == "nonzero":
+                        self.assertTrue(any(event["kind"] == "exit" and os.WIFEXITED(event["status"]) and os.WEXITSTATUS(event["status"]) == 7 for event in packets))
+                    if label == "signalled":
+                        self.assertTrue(any(event["kind"] == "exit" and os.WIFSIGNALED(event["status"]) and os.WTERMSIG(event["status"]) == SIGUSR1 for event in packets))
+                    if label == "nested":
+                        self.assertGreaterEqual(sum(event["kind"] == "fork" for event in packets), 2)
+                make_pid = next(row["pid"] for row in observed["read_trace"]["machine"]["events"] if row["kind"] == "execute" and row["make"])
+                for job in jobs:
+                    read_epochs.native_job_tree(
+                        job["tree"], job, make_pid, {"/bin/sh", "/usr/bin/printf"},
+                        count_limit=session.budget.limits.observation_count,
+                    )
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_descriptors_survive_only_their_actual_exec_lifetime(self):
+        for kind, expected in (
+            ("source", b"first"), ("dup", b"first"), ("fcntl", b"first"),
+            ("pipe", b"pipe"), ("directory", b"first"), ("fork", b"first"),
+            ("reuse", b"second"), ("cloexec-clear", b"first"),
+            ("dup-cloexec-clear", b"first"), ("ioctl-cloexec-clear", b"first"),
+        ):
+            self.add("fd.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_fd_exec.c"
+            ).read_bytes())
+            self.add("input", "first")
+            self.add("second", "second")
+            self.add("data/input", "first")
+            self.add("Makefile", "all: ; @/native/tool " + kind + "\n")
+            session = self.session()
+            with self.subTest(kind=kind), session:
+                tool = session.compile_native(("fd.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), kind], cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                self.assertEqual(ordinary.stdout, expected)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+                job, = [
+                    parse_json(row.removeprefix("native-job:").encode(), "descriptor lifetime job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                executions = [row for row in job["tree"] if row["kind"] == "exec"]
+                self.assertEqual(executions[-1]["argv"][1:3], ["after", kind])
+                if kind == "fork":
+                    self.assertNotEqual(executions[0]["pid"], executions[-1]["pid"])
+                else:
+                    self.assertEqual(executions[-1]["generation"], 2)
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_closed_exec_descriptors_do_not_keep_authority(self):
+        for kind in ("closed", "cloexec", "dup-cloexec", "stdin-cloexec",
+                     "set-cloexec", "ioctl-cloexec", "unknown"):
+            self.add("fd.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_fd_exec.c"
+            ).read_bytes())
+            self.add("input", "first")
+            self.add("Makefile", "all: ; @/native/tool " + kind + "\n")
+            session = self.session()
+            with self.subTest(kind=kind), session:
+                tool = session.compile_native(("fd.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), kind], cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10,
+                )
+                self.assertEqual((ordinary.returncode, ordinary.stdout), (
+                    7 if kind == "unknown" else 0, b"",
+                ))
+                with self.assertRaisesRegex(MakeProbeError, "unavailable inherited/unknown descriptor"):
+                    session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_failed_actual_exec_preserves_authorized_descriptors(self):
+        self.add("fd.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_fd_exec.c"
+        ).read_bytes())
+        self.add("input", "first")
+        self.add("Makefile", "all: ; @/native/tool exec-failure\n")
+        body = (
+            "entered=guard.Policy.entry;left=guard.Policy.leave\n"
+            "def entry(self,pid,state,r):\n"
+            " result=entered(self,pid,state,r)\n"
+            " if state.role=='native' and state.native_execs==1 and r.orig_rax==59:\n"
+            "  r.rsi=1;guard.ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+            " return result\n"
+            "def leave(self,pid,state,r):\n"
+            " result=left(self,pid,state,r)\n"
+            " if state.role=='native' and r.orig_rax==59 and guard.signed(r.rax)<0:\n"
+            "  self.observe('accessed','actual-exec-failure:'+guard.encoded({"
+            "'pid':pid,'syscall':r.orig_rax,'result':guard.signed(r.rax),"
+            "'generation':state.native_execs,'fds':state.fds}).decode('ascii'))\n"
+            " return result\n"
+            "guard.Policy.entry=entry;guard.Policy.leave=leave\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            tool = session.compile_native(("fd.c",))
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"first")
+            failure, = [
+                parse_json(row.removeprefix("actual-exec-failure:").encode(), "actual failed exec")
+                for row in observed["accessed"] if row.startswith("actual-exec-failure:")
+            ]
+            self.assertEqual((failure["syscall"], failure["result"], failure["generation"]),
+                             (59, -errno.EFAULT, 1))
+            self.assertEqual(failure["fds"]["3"], "/repo/input")
+            job, = [
+                parse_json(row.removeprefix("native-job:").encode(), "failed exec descriptor job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(sum(row["kind"] == "exec" for row in job["tree"]), 1)
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_actual_signal_operands_use_kernel_int_conversion(self):
+        for number in (62, 129, 200, 234, 297):
+            for mode in ("standard", "fatal"):
+                self.add("signal.c", (
+                    ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_width.c"
+                ).read_bytes())
+                self.add("Makefile", "all:\n" + "".join(
+                    "\t-@/native/tool " + str(number) + " " + mode + " " + upper + "\n"
+                    for upper in ("bit", "ones")
+                ) + "\t@v=done; printf '%s' \"$$v\"\n")
+                session = self.session()
+                with self.subTest(number=number, mode=mode), session:
+                    tool = session.compile_native(("signal.c",))
+                    for upper in ("bit", "ones"):
+                        ordinary = subprocess.run(
+                            [str(tool.path), str(number), mode, upper], env=ENVIRONMENT,
+                            capture_output=True, timeout=10,
+                        )
+                        self.assertEqual(ordinary.returncode, -signal.SIGKILL if mode == "fatal" else 0)
+                        if mode != "fatal":
+                            result = parse_json(ordinary.stdout, "ordinary actual signal")
+                            self.assertEqual((result["count"], result["signal"], result["send_result"]),
+                                             (1, signal.SIGUSR1, 0))
+                            self.assertEqual(result["sender"], result["pid"])
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                    output = completed.stdout.splitlines()
+                    self.assertEqual(output[-1], b"done")
+                    jobs = [
+                        parse_json(row.removeprefix("native-job:").encode(), "signal width job")
+                        for row in observed["accessed"] if row.startswith("native-job:")
+                    ]
+                    sent = [job for job in jobs if job["executable"] == "/native/tool"]
+                    self.assertEqual(len(sent), 2)
+                    if mode == "fatal":
+                        self.assertEqual(output, [b"done"])
+                        self.assertTrue(all(job["ignored"] and job["terminal_status"] == signal.SIGKILL
+                                            for job in sent))
+                    else:
+                        self.assertEqual(len(output), 3)
+                        by_pid = {job["pid"]: job for job in sent}
+                        for row in output[:-1]:
+                            actual = parse_json(row, "actual signal delivery")
+                            self.assertIn(actual["pid"], by_pid)
+                            self.assertEqual((actual["count"], actual["signal"], actual["send_result"]),
+                                             (1, signal.SIGUSR1, 0))
+                            self.assertEqual(actual["sender"], actual["pid"])
+                            self.assertEqual(actual["code"], -1 if number in {129, 297}
+                                             else -6 if number in {200, 234} else 0)
+                    self.assertFalse(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_normalized_invalid_signals_do_not_add_grants(self):
+        for number in (62, 129, 200, 234, 297):
+            self.add("signal.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_width.c"
+            ).read_bytes())
+            self.add("Makefile", "all:\n" + "".join(
+                "\t@/native/tool " + str(number) + " " + mode + " ones\n"
+                for mode in ("zero", "negative", "large", "prior")
+            ))
+            body = (
+                "left=guard.Policy.leave\n"
+                "def leave(self,pid,state,r):\n"
+                " pending=state.pending\n"
+                " result=left(self,pid,state,r)\n"
+                " if state.role=='native' and r.orig_rax in {62,129,200,234,297}:\n"
+                "  self.observe('accessed','actual-signal-width:'+guard.encoded({"
+                "'pid':pid,'number':r.orig_rax,'result':guard.signed(r.rax),"
+                "'raw_signal':r.rdx if r.orig_rax in {234,297} else r.rsi,"
+                "'pending':pending,'grants':state.native_signals}).decode('ascii'))\n"
+                " return result\n"
+                "guard.Policy.leave=leave\n"
+            )
+            session = self.session()
+            with self.subTest(number=number), self.native_supervisor(body), session:
+                tool = session.compile_native(("signal.c",))
+                for mode in ("zero", "negative", "large", "prior"):
+                    ordinary = subprocess.run(
+                        [str(tool.path), str(number), mode, "ones"], env=ENVIRONMENT,
+                        capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                    actual = parse_json(ordinary.stdout, "ordinary invalid signal")
+                    self.assertEqual(actual["first_result"], 0 if mode == "zero" else -1)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                results = [parse_json(row, "actual normalized signal") for row in completed.stdout.splitlines()]
+                self.assertEqual(len(results), 4)
+                calls = [
+                    parse_json(row.removeprefix("actual-signal-width:").encode(), "actual signal syscall")
+                    for row in observed["accessed"] if row.startswith("actual-signal-width:")
+                ]
+                jobs = [
+                    parse_json(row.removeprefix("native-job:").encode(), "invalid signal job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                modes = {
+                    job["pid"]: job["argv"][2]
+                    for job in jobs if job["executable"] == "/native/tool"
+                }
+                self.assertEqual(set(modes.values()), {"zero", "negative", "large", "prior"})
+                for actual in results:
+                    self.assertEqual((actual["count"], actual["signal"], actual["send_result"]),
+                                     (1, signal.SIGUSR1, 0))
+                    self.assertEqual(actual["sender"], actual["pid"])
+                    owned = [row for row in calls if row["pid"] == actual["pid"]]
+                    self.assertEqual(len(owned), 2)
+                    invalid = next(row for row in owned if row["pending"] is None)
+                    self.assertEqual(invalid["number"], number)
+                    low = ctypes.c_int(invalid["raw_signal"]).value
+                    mode = modes[actual["pid"]]
+                    self.assertEqual(low, {"zero": 0, "negative": -1, "large": 65, "prior": 65}[mode])
+                    self.assertEqual(invalid["result"], 0 if low == 0 else -errno.EINVAL)
+                    self.assertEqual(invalid["grants"], {str(signal.SIGUSR1): 1} if mode == "prior" else {})
+                    valid = next(row for row in owned if row["pending"] is not None)
+                    self.assertEqual(valid["pending"], ["native-signal", signal.SIGUSR1])
+                    self.assertEqual(valid["result"], 0)
+                    self.assertEqual(valid["grants"], {str(signal.SIGUSR1): 1})
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_actual_sigkill_uses_kernel_pid_t_conversion(self):
+        for number in (62, 129, 200, 234, 297):
+            modes = ("pid-high", "ones-high") if number in {62, 129, 200} else (
+                "pid-high", "tid-high", "both-high", "ones-high",
+            )
+            for mode in modes:
+                self.add("kill.c", (
+                    ROOT / "scripts/validation_ownership/tests/fixtures/native_sigkill.c"
+                ).read_bytes())
+                self.add("Makefile", "all:\n\t-@/native/tool " + str(number) + " " + mode
+                         + "\n\t@v=done; printf '%s' \"$$v\"\n")
+                session = self.session()
+                with self.subTest(number=number, mode=mode), session:
+                    tool = session.compile_native(("kill.c",))
+                    ordinary = subprocess.run(
+                        [str(tool.path), str(number), mode], env=ENVIRONMENT,
+                        capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(ordinary.returncode, -signal.SIGKILL)
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool,
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"done")
+                    jobs = [
+                        parse_json(row.removeprefix("native-job:").encode(), "wide PID job")
+                        for row in observed["accessed"] if row.startswith("native-job:")
+                    ]
+                    failed = next(job for job in jobs if job["executable"] == "/native/tool")
+                    self.assertTrue(failed["ignored"])
+                    self.assertEqual(failed["terminal_status"], signal.SIGKILL)
+                    self.assertFalse(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_actual_sigkill_outcomes_cover_all_self_send_forms(self):
+        for number in (62, 129, 200, 234, 297):
+            self.add("kill.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_sigkill.c"
+            ).read_bytes())
+            self.add("Makefile", "all:\n\t-@/native/tool " + str(number)
+                     + "\n\t@v=done; printf '%s' \"$$v\"\n")
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.native_sigkill_exit\n"
+                "def outcome(self,pid,state,status):\n"
+                " result=original(self,pid,state,status)\n"
+                " if state.role=='native' and status==9:\n"
+                "  r=guard.Registers();guard.ptrace(guard.GETREGS,pid,0,guard.ctypes.byref(r))\n"
+                "  self.charge_metadata(guard.ctypes.sizeof(r))\n"
+                "  self.observe('accessed','actual-sigkill:'+guard.encoded({"
+                "'pid':pid,'number':r.orig_rax,'result':guard.signed(r.rax),"
+                "'status':status,'verified':state.native_sigkill_outcome}).decode('ascii'))\n"
+                " return result\nguard.Policy.native_sigkill_exit=outcome\n"
+            )
+            session = self.session()
+            with self.subTest(number=number), self.native_supervisor(body), session:
+                tool = session.compile_native(("kill.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), str(number)], env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, -signal.SIGKILL)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"done")
+                actual, = [
+                    parse_json(row.removeprefix("actual-sigkill:").encode(), "actual sigkill")
+                    for row in observed["accessed"] if row.startswith("actual-sigkill:")
+                ]
+                self.assertEqual(
+                    {key: actual[key] for key in ("number", "result", "status", "verified")},
+                    {"number": number, "result": 0, "status": 9, "verified": True},
+                )
+                job = next(
+                    parse_json(row.removeprefix("native-job:").encode(), "sigkill job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                    and parse_json(row.removeprefix("native-job:").encode(), "sigkill job")["executable"] == "/native/tool"
+                )
+                self.assertEqual(job["pid"], actual["pid"])
+                self.assertEqual(job["terminal_status"], actual["status"])
+                self.assertTrue(job["ignored"])
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse(self):
+        self.add("Makefile", "all:\n\t-@v=ignored; kill -KILL $$$$\n"
+                 "\t@v=done; printf '%s' \"$$v\"\n")
+        receipt = self.directory / "sigkill-outcome.json"
+        for mode in (
+            "foreign-entry", "rax", "syscall", "target", "target-upper",
+            "target-zero", "target-group", "signal", "pending", "terminal",
+        ):
+            body = (
+                "import syscall_guard as guard,os,errno\nentry=guard.Policy.entry\n"
+                "exit=guard.Policy.native_sigkill_exit\noriginal=guard.ptrace\narmed=set()\n"
+                "def entered(self,pid,state,r):\n"
+                " result=entry(self,pid,state,r)\n"
+                f" if {mode!r}=='foreign-entry' and state.role=='native' and r.orig_rax==62 and r.rsi==9:armed.add(pid)\n"
+                " return result\n"
+                "def resumed(request,pid,*args):\n"
+                " if request==guard.SYSCALL and pid in armed:\n"
+                "  armed.remove(pid);os.kill(pid,9)\n"
+                "  try:return original(request,pid,*args)\n"
+                "  except OSError as error:\n"
+                "   if error.errno!=errno.ESRCH:raise\n"
+                "   return 0\n"
+                " result=original(request,pid,*args)\n"
+                " if request==guard.GETREGS and changing:\n"
+                "  r=guard.ctypes.cast(args[1],guard.ctypes.POINTER(guard.Registers)).contents\n"
+                f"  if {mode!r}=='rax':r.rax=(1<<64)-38\n"
+                f"  if {mode!r}=='syscall':r.orig_rax=1\n"
+                f"  if {mode!r}=='target':r.rdi=pid+100\n"
+                f"  if {mode!r}=='target-upper':r.rdi=(1<<32)|(pid+100)\n"
+                f"  if {mode!r}=='target-zero':r.rdi=1<<32\n"
+                f"  if {mode!r}=='target-group':r.rdi=(1<<64)-1\n"
+                f"  if {mode!r}=='signal':r.rsi=10\n"
+                " return result\n"
+                "changing=False\n"
+                "def outcome(self,pid,state,status):\n"
+                " global changing\n"
+                " if state.role=='native' and status==9:\n"
+                "  r=guard.Registers();original(guard.GETREGS,pid,0,guard.ctypes.byref(r))\n"
+                f"  Path({str(receipt)!r}).write_text(json.dumps({{'pid':pid,'rax':guard.signed(r.rax),'number':r.orig_rax,'pending':state.pending}}))\n"
+                f"  if {mode!r}=='pending':state.pending=None\n"
+                "  changing=True\n"
+                "  try:\n"
+                "   result=exit(self,pid,state,status)\n"
+                f"   if {mode!r}=='terminal':state.native_exit_status=256\n"
+                "   return result\n"
+                "  finally:changing=False\n"
+                " return exit(self,pid,state,status)\n"
+                "guard.Policy.entry=entered;guard.Policy.native_sigkill_exit=outcome;guard.ptrace=resumed\n"
+            )
+            session = self.session(seconds=10)
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(
+                    MakeProbeError, "native terminal status differs" if mode == "terminal"
+                    else "cross-process signal target denied" if mode.startswith("target")
+                    else "native SIGKILL lacks an actual successful self-send",
+                ):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                actual = json.loads(receipt.read_bytes())
+                self.assertEqual(actual["number"], 62)
+                self.assertEqual(actual["rax"], -errno.ENOSYS if mode == "foreign-entry" else 0)
+                self.assertEqual(actual["pending"], ["native-signal", 9])
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_consumed_self_signal_rejects_forged_foreign_queue(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        receipt = self.directory / "foreign-signal.json"
+        body = (
+            "original=guard.Policy.leave\n"
+            "def returned(self,pid,state,r):\n"
+            " result=original(self,pid,state,r)\n"
+            " if state.role=='native' and r.orig_rax==128 and guard.signed(r.rax)==10:\n"
+            "  data=(guard.ctypes.c_ubyte*128)()\n"
+            "  for offset,value in ((0,10),(8,-1),(16,pid),(20,os.getuid()),(24,37)):\n"
+            "   data[offset:offset+4]=list((value&0xffffffff).to_bytes(4,'little'))\n"
+            "  for index in range(32,48):data[index]=index\n"
+            "  sent=guard.LIBC.syscall(129,pid,10,guard.ctypes.byref(data))\n"
+            f"  Path({str(receipt)!r}).write_text(json.dumps({{'sent':sent,'grants':sorted(state.native_signals.items())}}))\n"
+            "  if sent:raise RuntimeError('real foreign queued-signal injection failed')\n"
+            " return result\nguard.Policy.leave=returned\n"
+        )
+        for mode in ("foreign", "positive", "null"):
+            for thread in (0, 1):
+                self.add("Makefile", f"all: ; @/native/tool {mode} {thread}\n")
+                session = self.session()
+                with self.subTest(mode=mode, thread=thread), self.native_supervisor(body), session:
+                    tool = session.compile_native(("consume.c",))
+                    with self.assertRaisesRegex(MakeProbeError, "sandbox signal|unissued queued signal"):
+                        session._native_make_readonly(
+                            "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                        )
+                    self.assertEqual(json.loads(receipt.read_bytes()), {"sent": 0, "grants": []})
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_signal_consumption_preserves_real_payload_and_padding(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for mode in ("positive", "null", "timeout", "fault", "output-fault"):
+            for thread in (0, 1):
+                self.add("Makefile", f"all: ; @/native/tool {mode} {thread}\n")
+                session = self.session()
+                with self.subTest(mode=mode, thread=thread), session:
+                    tool = session.compile_native(("consume.c",))
+                    ordinary = subprocess.run(
+                        [str(tool.path), mode, str(thread)], env=ENVIRONMENT,
+                        capture_output=True, timeout=10, check=True,
+                    )
+                    completed, _, _ = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                    self.assertEqual(completed.stdout, b"received:1 invalid:0\n")
+                    self.assertFalse(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_output_copy_fault_retires_dequeued_origin(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for realtime in (False, True):
+            number = int(signal.SIGRTMIN) if realtime else int(signal.SIGUSR1)
+            body = (
+                "original=guard.Policy.leave\n"
+                "def returned(self,pid,state,r):\n"
+                " result=original(self,pid,state,r)\n"
+                " if state.role=='native' and r.orig_rax==128 and r.rsi==1 and guard.signed(r.rax)==-14:\n"
+                "  data=(guard.ctypes.c_ubyte*128)()\n"
+                f"  for offset,value in ((0,{number}),(8,-1),(16,pid),(20,os.getuid()),(24,37)):\n"
+                "   data[offset:offset+4]=list((value&0xffffffff).to_bytes(4,'little'))\n"
+                f"  if guard.LIBC.syscall(129,pid,{number},guard.ctypes.byref(data)):\n"
+                "   raise RuntimeError('real foreign queued-signal injection failed')\n"
+                " return result\nguard.Policy.leave=returned\n"
+            )
+            for thread in (0, 1):
+                for mode in ("foreign-wait", "foreign-wait-info"):
+                    self.add("Makefile", f"all: ; @/native/tool {mode} {thread}"
+                             + (" realtime" if realtime else "") + "\n")
+                    session = self.session()
+                    with self.subTest(realtime=realtime, thread=thread, mode=mode), \
+                            self.native_supervisor(body), session:
+                        tool = session.compile_native(("consume.c",))
+                        with self.assertRaisesRegex(
+                            MakeProbeError, "unissued queued signal|successful self-send|exact pending origin",
+                        ):
+                            session._native_make_readonly(
+                                "all", native_tool=tool, observe_reads=True,
+                                observe_runtime_completions=True,
+                            )
+                        self.assertTrue(session.budget.failed)
+                    self.assert_clean(session)
+
+    def test_native_runtime_nonqueued_and_realtime_wait_origin_lifetimes(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        members = [
+            (mode, thread, False) for mode in ("null", "output-fault") for thread in (2, 3, 4)
+        ] + [("output-fault", thread, True) for thread in (0, 1)]
+        for mode, thread, realtime in members:
+            self.add("Makefile", f"all: ; @/native/tool {mode} {thread}"
+                     + (" realtime" if realtime else "") + "\n")
+            session = self.session()
+            with self.subTest(mode=mode, thread=thread, realtime=realtime), session:
+                tool = session.compile_native(("consume.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), mode, str(thread), *(["realtime"] if realtime else [])],
+                    env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                )
+                completed, _, _ = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+                self.assertEqual(completed.stdout, b"received:1 invalid:0\n")
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_standard_signals_coalesce_per_kernel_pending_queue(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for thread in (0, 1):
+            self.add("Makefile", f"all: ; @/native/tool mixed {thread}\n")
+            session = self.session()
+            with self.subTest(thread=thread), session:
+                tool = session.compile_native(("consume.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), "mixed", str(thread)], env=ENVIRONMENT,
+                    capture_output=True, timeout=10, check=True,
+                )
+                self.assertEqual(ordinary.stdout, b"received:2 invalid:0\n")
+                completed, _, _ = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assert_clean(session)
+
+    def test_native_runtime_partially_accessible_siginfo_fault_refuses_before_resume(self):
+        self.add("consume.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_signal_consume.c"
+        ).read_bytes())
+        for realtime in (False, True):
+            for thread in (0, 1):
+                self.add("Makefile", f"all: ; @/native/tool partial {thread}"
+                         + (" realtime" if realtime else "") + "\n")
+                session = self.session()
+                with self.subTest(realtime=realtime, thread=thread), session:
+                    tool = session.compile_native(("consume.c",))
+                    ordinary = subprocess.run(
+                        [str(tool.path), "partial", str(thread),
+                         *(["realtime"] if realtime else [])],
+                        env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                    )
+                    self.assertEqual(ordinary.stdout, b"received:1 invalid:0\n")
+                    with self.assertRaisesRegex(MakeProbeError, "unsupported partially accessible siginfo output"):
+                        session._native_make_readonly(
+                            "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_realtime_counts_standard_coalescing_and_failed_send(self):
+        for mode in ("queued", "kill", "standard", "direct", "failed"):
+            self.add("queue.c", (
+                ROOT / "scripts/validation_ownership/tests/fixtures/native_queued_exec.c"
+            ).read_bytes())
+            self.add("Makefile", "all: ; @/native/tool " + mode + "\n")
+            body = (
+                "import syscall_guard as guard\nentry=guard.Policy.entry\nleave=guard.Policy.leave\n"
+                "exec=guard.Policy.native_exec_signals\ncalls={}\n"
+                "def attempted(self,pid,state,r):\n"
+                " if state.role=='native' and r.orig_rax==129:\n"
+                "  calls[pid]=calls.get(pid,0)+1\n"
+                f"  if {mode!r}=='failed' and calls[pid]==2:\n"
+                "   r.rdx=0;guard.ptrace(guard.SETREGS,pid,0,guard.ctypes.byref(r))\n"
+                " return entry(self,pid,state,r)\n"
+                "def returned(self,pid,state,r):\n"
+                " result=leave(self,pid,state,r)\n"
+                " if state.role=='native' and r.orig_rax in {62,129}:\n"
+                "  self.observe('accessed','signal-outcome:'+guard.encoded({"
+                "'pid':pid,'call':calls.get(pid,0),'result':guard.signed(r.rax),"
+                "'grants':sorted(state.native_signals.items())}).decode('ascii'))\n"
+                " return result\n"
+                "def replacement(self,pid,state):\n"
+                " result=exec(self,pid,state)\n"
+                " self.observe('accessed','signal-exec:'+guard.encoded({"
+                "'pid':pid,'generation':state.native_execs,'grants':sorted(state.native_signals.items())}).decode('ascii'))\n"
+                " return result\n"
+                "guard.Policy.entry=attempted;guard.Policy.leave=returned;guard.Policy.native_exec_signals=replacement\n"
+            )
+            session = self.session()
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                tool = session.compile_native(("queue.c",))
+                if mode != "failed":
+                    ordinary = subprocess.run(
+                        [str(tool.path), mode], env=ENVIRONMENT, capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(ordinary.returncode, 0)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                outcomes = [
+                    parse_json(row.removeprefix("signal-outcome:").encode(), "signal outcome")
+                    for row in observed["accessed"] if row.startswith("signal-outcome:")
+                ]
+                self.assertTrue(outcomes)
+                if mode == "failed":
+                    failed = next(row for row in outcomes if row["result"] == -errno.EFAULT)
+                    self.assertEqual(failed["grants"], [[int(signal.SIGRTMIN), 1]])
+                if mode != "direct":
+                    replacement = next(
+                        parse_json(row.removeprefix("signal-exec:").encode(), "signal exec")
+                        for row in observed["accessed"] if row.startswith("signal-exec:")
+                        and parse_json(row.removeprefix("signal-exec:").encode(), "signal exec")["generation"] == 2
+                    )
+                    self.assertEqual(
+                        replacement["grants"],
+                        [[int(signal.SIGUSR1), 1]] if mode == "standard" else [[int(signal.SIGRTMIN), 2]],
+                    )
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def pending_exec_fixture(self, argument=""):
+        self.add("pending.c", (
+            ROOT / "scripts/validation_ownership/tests/fixtures/native_pending_exec.c"
+        ).read_bytes())
+        self.add("Makefile", "all:\n\t@/native/tool " + argument
+                 + "\n\t@v=done; printf '%s' \"$$v\"\n")
+
+    def test_native_runtime_pending_self_signals_survive_exec_not_fork(self):
+        from signal import SIGUSR1, SIGUSR2, SIGPIPE
+        body = (
+            "import syscall_guard as guard\noriginal=guard.Policy.native_exec_signals\n"
+            "def observed(self,pid,state):\n"
+            " with open(f'/proc/{pid}/status','rb') as stream:data=stream.read(4097)\n"
+            " self.charge_metadata(len(data));mask=self.pending_signal_mask(data)\n"
+            " before=sorted(state.native_signals)\n"
+            " result=original(self,pid,state)\n"
+            " self.observe('accessed','exec-signals:'+guard.encoded({"
+            "'pid':pid,'generation':state.native_execs,'before':before,"
+            "'after':sorted(state.native_signals),'mask':mask}).decode('ascii'))\n"
+            " return result\nguard.Policy.native_exec_signals=observed\n"
+        )
+        for argument in ("", "queued", "pipe", "fork", "ignored"):
+            self.pending_exec_fixture(argument)
+            session = self.session()
+            with self.subTest(argument=argument), self.native_supervisor(body), session:
+                tool = session.compile_native(("pending.c",))
+                ordinary = subprocess.run(
+                    [str(tool.path), *([argument] if argument else [])],
+                    env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(ordinary.returncode, 0)
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"done")
+                states = [
+                    parse_json(row.removeprefix("exec-signals:").encode(), "actual exec signal state")
+                    for row in observed["accessed"] if row.startswith("exec-signals:")
+                ]
+                jobs = [
+                    parse_json(row.removeprefix("native-job:").encode(), "signal job")
+                    for row in observed["accessed"] if row.startswith("native-job:")
+                ]
+                job = next(job for job in jobs if job["executable"] == "/native/tool")
+                if argument == "fork":
+                    child = next(event["child"] for event in job["tree"] if event["kind"] == "fork")
+                    child_state = next(state for state in states if state["pid"] == child)
+                    self.assertEqual(child_state, {
+                        "pid": child, "generation": 1, "before": [], "after": [], "mask": 0,
+                    })
+                else:
+                    number = SIGPIPE if argument == "pipe" else SIGUSR1
+                    own = {
+                        state["generation"]: state for state in states if state["pid"] == job["pid"]
+                    }
+                    self.assertEqual(set(own), {1, 2})
+                    self.assertEqual(
+                        own[2]["before"], [number, SIGUSR2] if argument == "ignored" else [number],
+                    )
+                    self.assertEqual(own[2]["after"], [number])
+                    self.assertTrue(own[2]["mask"] & (1 << (number - 1)))
+                    if argument == "ignored":
+                        self.assertFalse(own[2]["mask"] & (1 << (SIGUSR2 - 1)))
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_exec_pending_masks_and_foreign_signal_refuse(self):
+        mutations = (
+            "data=data.replace(b'SigPnd:',b'Absent:')",
+            "data=data.replace(b'ShdPnd:',b'SigPnd:')",
+            "data=data.replace(b'ShdPnd:',b'ShdPnd: invalid')",
+            "data=b''",
+            "data=b'x'*4097",
+            "data=None",
+        )
+        for mutation in mutations:
+            self.pending_exec_fixture()
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.pending_signal_mask\n"
+                "def changed(data):\n"
+                f" {mutation}\n"
+                " return original(data)\nguard.Policy.pending_signal_mask=staticmethod(changed)\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                tool = session.compile_native(("pending.c",))
+                with self.assertRaisesRegex(MakeProbeError, "native pending-signal status"):
+                    session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        self.pending_exec_fixture()
+        body = (
+            "import syscall_guard as guard,os,signal\noriginal=guard.Policy.native_exec_signals\n"
+            "def foreign(self,pid,state):\n"
+            " if state.native_signals:os.kill(pid,signal.SIGUSR2)\n"
+            " return original(self,pid,state)\nguard.Policy.native_exec_signals=foreign\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            tool = session.compile_native(("pending.c",))
+            with self.assertRaisesRegex(MakeProbeError, "sandbox signal 12"):
+                session._native_make_readonly(
+                    "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                )
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_undeclared_descendant_images_refuse_before_exec(self):
+        for command in (
+            "exec /usr/bin/false",
+            "/bin/sh -c 'exec /usr/bin/false'; printf unreachable",
+        ):
+            self.add("Makefile", "all: ; @" + command + "\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, "untrusted executable dispatch"):
+                    session._native_make_readonly(
+                        "all", native_executables=("/usr/bin/printf",),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_descendant_tree_returned_shapes_and_clear_omissions_refuse(self):
+        self.add("Makefile", "all: ; @/bin/sh -c 'exit 7'; printf done\n")
+        mutations = (
+            "row['tree'][0]['parent']=row['pid']",
+            "row['tree'][0]['generation']=2",
+            "next(e for e in row['tree'] if e['kind']=='fork')['child']=row['pid']",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['parent']=row['pid']+999",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['path']='/usr/bin/false'",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['argv']=['other']",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['argv']=[chr(0xD800)]",
+            "next(e for e in row['tree'] if e['kind']=='exec' and e['pid']!=row['pid'])['cwd']='/'+chr(0xD800)",
+            "next(e for e in row['tree'] if e['kind']=='exit' and e['pid']!=row['pid'])['status']=0",
+            "next(e for e in row['tree'] if e['kind']=='signal')['child']=row['pid']",
+            "row['tree']=[e for e in row['tree'] if e['kind']!='start']",
+            "row['tree']=[e for e in row['tree'] if not(e['kind']=='exit' and e['pid']!=row['pid'])]",
+            "row['tree'][-1]['status']=256",
+        )
+        for mutation in mutations:
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\nguard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native (job|child)"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for omission in ("exec-clear", "start-clear", "all-tree"):
+            body = (
+                "import read_trace\noriginal=read_trace.NativeReadTrace.finish\n"
+                "def changed(self):\n"
+                " result=original(self)\n rows=result['machine']['events']\n"
+                f" if {omission!r}=='all-tree':\n"
+                "  rows[:]=[row for row in rows if row['kind']!='native-tree']\n"
+                f" elif {omission!r}=='exec-clear':\n"
+                "  execution=next(row for row in rows if row['kind']=='native-tree' and row['event']['kind']=='exec' and row['event']['generation']==2)\n"
+                "  clear=next(row for row in reversed(rows[:rows.index(execution)]) if row['pid']==execution['pid'])\n"
+                "  if clear['kind']!='clear':raise RuntimeError('missing actual exec clear')\n"
+                "  rows.remove(clear)\n"
+                " else:\n"
+                "  start=next(row for row in rows if row['kind']=='native-tree' and row['event']['kind']=='start')\n"
+                "  clear=next(row for row in reversed(rows[:rows.index(start)]) if row['pid']==start['pid'])\n"
+                "  if clear['kind']!='clear':raise RuntimeError('missing actual inherited clear')\n"
+                "  rows.remove(clear)\n"
+                " for sequence,row in enumerate(rows,1):row['seq']=sequence\n"
+                " return result\nread_trace.NativeReadTrace.finish=changed\n"
+            )
+            self.add("Makefile", (
+                "all: ; @/bin/sh -c 'exit 7'; printf done\n" if omission == "start-clear"
+                else "all: ; @exec /usr/bin/printf done\n"
+            ))
+            session = self.session()
+            with self.subTest(omission=omission), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native"):
+                    session._native_make_readonly(
+                        "all", native_executables=("/usr/bin/printf",),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_fork_without_exec_retains_start_and_terminal_custody(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("fork.c", (
+            "#include <unistd.h>\n#include <sys/wait.h>\n"
+            "int main(void){int status=0;pid_t child=fork();"
+            "if(child<0)return 2;if(!child)_exit(7);"
+            "if(waitpid(child,&status,0)!=child)return 3;"
+            "return WIFEXITED(status)&&WEXITSTATUS(status)==7?0:4;}\n"
+        ))
+        self.add("Makefile", "all: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("fork.c",))
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.returncode, 0)
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "fork job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 1)
+            machine = observed["read_trace"]["machine"]["events"]
+            parent = next(row["pid"] for row in machine if row["kind"] == "execute" and row["make"])
+            nodes = read_epochs.native_job_tree(
+                jobs[0]["tree"], jobs[0], parent, {"/native/tool", "/bin/sh"},
+                count_limit=session.budget.limits.observation_count,
+            )
+            children = [node for pid, node in nodes.items() if pid != jobs[0]["pid"]]
+            self.assertEqual(len(children), 1)
+            self.assertEqual(children[0]["generation"], 0)
+            self.assertTrue(children[0]["started"])
+            self.assertEqual(os.WEXITSTATUS(children[0]["status"]), 7)
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_failed_roots_and_completed_descendants_preserve_make_error(self):
+        cases = (
+            ("exit", "all: ; @exit 7\n", b"Error 7"),
+            ("signal", "all: ; @v=failed; kill -USR1 $$$$\n", b"User defined signal"),
+            ("descendant", "all: ; @/bin/sh -c 'exit 7'; exit 9\n", b"Error 9"),
+        )
+        for label, body, diagnostic in cases:
+            self.add("Makefile", body)
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, timeout=10,
+            )
+            self.assertEqual(ordinary.returncode, 2)
+            self.assertIn(diagnostic, ordinary.stderr)
+            session = self.session()
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(MakeProbeError, "readonly native GNU Make failed: 2") as error:
+                    with session:
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assertIn(diagnostic.decode(), str(error.exception))
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+        self.add("Makefile", cases[-1][1])
+        for mutation in (
+            "row['tree'][0]['parent']=True",
+            "row['tree'][0]['parent']=row['pid']",
+            "row['tree']=[e for e in row['tree'] if e['kind']!='start']",
+            "row['tree']=[e for e in row['tree'] if not(e['kind']=='exit' and e['pid']!=row['pid'])]",
+        ):
+            body = (
+                "import syscall_guard as guard\noriginal=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                f"  {mutation}\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\nguard.Policy.observe=changed\n"
+            )
+            session = self.session()
+            with self.subTest(failed_tree=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native job tree"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_descendant_deadline_cleans_live_owned_tree(self):
+        self.add("Makefile", "all: ; @/bin/sh -c 'while :; do :; done'; printf unreachable\n")
+        body = (
+            "import syscall_guard as guard,time\noriginal=guard.Policy.native_tree_event\n"
+            "def observed(self,state,event):\n"
+            " result=original(self,state,event)\n"
+            " self.observe('accessed','actual-tree:'+guard.encoded(event).decode('ascii'))\n"
+            " if event['kind']=='exec' and event['pid']!=self.native_jobs[state.native_dispatch]['pid']:\n"
+            "  self.config['deadline']=min(self.config['deadline'],time.monotonic()+0.1)\n"
+            " return result\nguard.Policy.native_tree_event=observed\n"
+        )
+        session = self.session(seconds=5)
+        original = session.budget.read_bytes
+        reports = []
+
+        def capture(path, category):
+            data = original(path, category)
+            if category == "control" and Path(path).name.startswith("report-"):
+                reports.append(parse_json(data, "deadline report"))
+            return data
+
+        with self.native_supervisor(body), patch.object(session.budget, "read_bytes", side_effect=capture):
+            with self.assertRaisesRegex(MakeProbeError, "deadline"):
+                with session:
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+        self.assertEqual(len(reports), 1)
+        self.assertIs(reports[0]["ok"], False)
+        events = [
+            parse_json(row.removeprefix("actual-tree:").encode(), "actual deadline tree")
+            for row in reports[0]["accessed"] if row.startswith("actual-tree:")
+        ]
+        child = next(event["child"] for event in events if event["kind"] == "fork")
+        self.assertTrue(any(event["kind"] == "start" and event["pid"] == child for event in events))
+        self.assertTrue(any(event["kind"] == "exec" and event["pid"] == child for event in events))
+        self.assertFalse(any(event["kind"] == "exit" for event in events))
+        self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_owned_broken_pipe_and_orphan_cleanup(self):
+        from signal import SIGPIPE
+        self.add("pipe.c", (
+            "#include <unistd.h>\nint main(void){int p[2];"
+            "if(pipe(p)||close(p[0])||dup2(p[1],1)<0||close(p[1]))return 2;"
+            "return write(1,\"x\",1)==1?3:4;}\n"
+        ))
+        self.add("Makefile", "all:\n\t-@/native/tool\n\t@v=done; printf '%s' \"$$v\"\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("pipe.c",))
+            completed, _, observed = session._native_make_readonly(
+                "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"done")
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "pipe job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            failed = next(job for job in jobs if job["executable"] == "/native/tool")
+            self.assertTrue(failed["ignored"])
+            self.assertTrue(os.WIFSIGNALED(failed["terminal_status"]))
+            self.assertEqual(os.WTERMSIG(failed["terminal_status"]), SIGPIPE)
+            self.assertTrue(any(event["kind"] == "pipe-error" for event in failed["tree"]))
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+        self.add("Makefile", "all: ; @/bin/sh -c 'while :; do :; done' &\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "native (job|tree)"):
+                session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_post_read_recipe_and_secondary_eval_capture(self):
+        from scripts.validation_ownership import read_epochs
+        for family, target, body in (
+            ("recipe", "all", "VALUE := early\nall: ; @$(eval VALUE := late)v='$(VALUE)'; printf '%s' \"$$v\"\n"),
+            ("secondary", "all", "VALUE := early\nEFFECT = $(eval VALUE := late)\n.SECONDEXPANSION:\n"
+             "all: $$(EFFECT)\n\t@v='$(VALUE)'; printf '%s' \"$$v\"\n"),
+            ("secondary", ".SUFFIXES", "VALUE := early\nEFFECT = $(eval VALUE := late)\n.SECONDEXPANSION:\n"
+             ".SUFFIXES: $$(EFFECT)\n\t@:\nall: ; @v='$(VALUE)'; printf '%s' \"$$v\"\n"),
+        ):
+            self.add("Makefile", body)
+            session = self.session()
+            with self.subTest(body=body), session:
+                completed, _, observed = session._native_make_readonly(
+                    "all", observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual(completed.stdout, b"late")
+                archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                phase, = archive.passes
+                expansion = next(row for row in phase.expansions if row.family == family and row.target == target)
+                late = next(row for row in phase.effects if row.name == "VALUE" and row.value == "late")
+                evaluation = next(row for row in phase.evaluations if row.parent == ("expansion", expansion.number))
+                self.assertEqual(evaluation.location, read_epochs.ExpansionLocation(expansion.number))
+                self.assertEqual(late.location.evaluation, evaluation.number)
+                self.assertIsNone(late.location.visit)
+                self.assertLess(phase.exit_seq, expansion.entry_seq)
+                self.assertLess(expansion.entry_seq, evaluation.entry_seq)
+                self.assertLess(late.completion_seq, evaluation.exit_seq)
+                self.assertLess(evaluation.exit_seq, expansion.exit_seq)
+                self.assertEqual(evaluation.source.data, b"VALUE := late")
+                self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_post_read_nested_skipped_eval_and_include_lifetimes(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "define OUTER\nONE := alpha\n"
+            "TWO := $$(eval NESTED := $$(ONE))$$(NESTED)\n"
+            "include post.mk\n-include absent.mk\nendef\n"
+            "EFFECT = $(eval $(OUTER))$(if ,$(eval SKIPPED := bad))\n"
+            ".SECONDEXPANSION:\nall: first second\nfirst: $$(EFFECT)\n"
+            "\t@v='$(TWO)|$(POST)|$(DEEP)'; printf '%s' \"$$v\"\n"
+            "second: ; @$(eval RECIPE := late)v='$(RECIPE)'; printf '|%s' \"$$v\"\n"
+        ))
+        self.add("post.mk", "POST := $(TWO)\ninclude deep.mk\n")
+        self.add("deep.mk", "DEEP := $(POST)\n")
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"alpha|alpha|alpha|late")
+            archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+            phase, = archive.passes
+            self.assertEqual(
+                {row.name: row.variable.value for row in phase.effects if row.name in {"NESTED", "TWO", "POST", "DEEP", "RECIPE"}},
+                {"NESTED": "alpha", "TWO": "alpha", "POST": "alpha", "DEEP": "alpha", "RECIPE": "late"},
+            )
+            self.assertNotIn("SKIPPED", {row.name for row in phase.effects})
+            self.assertEqual(len(phase.evaluations), 3)
+            nested = next(row for row in phase.evaluations if row.source.data == b"NESTED := alpha")
+            self.assertEqual(nested.parent[0], "effect")
+            self.assertIsNone(nested.location.visit)
+            self.assertEqual(len(phase.visits), 4)
+            self.assertEqual(phase.goal_visits, (1,))
+            post = next(row for row in phase.visits if row.name == "post.mk")
+            deep = next(row for row in phase.visits if row.name == "deep.mk")
+            missing = next(row for row in phase.visits if row.name == "absent.mk")
+            self.assertIsNone(post.parent)
+            self.assertIsNone(post.location.visit)
+            self.assertGreater(post.entry_seq, phase.exit_seq)
+            self.assertEqual(deep.parent, post.number)
+            self.assertEqual(deep.location.visit, post.number)
+            self.assertIsNone(missing.source)
+            self.assertNotEqual(missing.error, 0)
+            saved = encoded(observed["read_trace"])
+            mutations = (
+                ("expansion-entry", "family", []),
+                ("expansion-entry", "target", ""),
+                ("expansion-entry", "cwd", "relative"),
+                ("expansion-entry", "text", 0),
+                ("expansion-entry", "target", "other"),
+                ("expansion-entry", "target", chr(0xD800)),
+                ("expansion-entry", "text", chr(0xD800)),
+                ("expansion-entry", "cwd", "/" + chr(0xD800)),
+                ("expansion-exit", "expansion", 999),
+                ("eval-entry", "location", {"expansion": 999}),
+                ("complete", "expansions", 0),
+            )
+            for kind, key, replacement in mutations:
+                changed = parse_json(saved, "postread lifecycle mutation")
+                next(row for row in changed["events"] if row["kind"] == kind)[key] = replacement
+                with self.subTest(kind=kind, key=key), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                    )
+            for mutation in ("payload", "guard", "source-location", "source-return"):
+                changed = parse_json(saved, "postread coupled mutation")
+                if mutation == "payload":
+                    next(row for row in changed["machine"]["events"] if row["kind"] == "expansion-input")["sha256"] = "0" * 64
+                elif mutation == "guard":
+                    guard = next(
+                        row for row in changed["machine"]["events"] if row["kind"] == "arm"
+                        and changed["events"][row["trace_seq"] - 1]["kind"] == "expansion-exit"
+                    )
+                    changed["machine"]["events"].remove(guard)
+                    for sequence, row in enumerate(changed["machine"]["events"], 1):
+                        row["seq"] = sequence
+                elif mutation == "source-location":
+                    next(row for row in changed["events"] if row["kind"] == "source-entry" and row["visit"] == post.number)["location"] = None
+                else:
+                    next(row for row in changed["events"] if row["kind"] == "source-exit" and row["visit"] == post.number)["source"] = None
+                with self.subTest(mutation=mutation), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                    )
+            self.assertFalse(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_runtime_post_read_actual_target_and_caller_mutations_refuse(self):
+        self.add("Makefile", (
+            "EFFECT = $(eval VALUE := secondary)\n.SECONDEXPANSION:\n"
+            "all: $$(EFFECT)\n\t@$(eval VALUE := recipe)printf '%s' '$(VALUE)'\n"
+        ))
+        for family, mutation, reason in (
+            ("secondary", "registers.rsi=0", "crossed an active original invocation"),
+            ("secondary", "registers.r14^=1", "lost its original file/target loop"),
+            ("secondary", "saved=self.number;self.number=lambda address:saved(address)^1 if address==registers.rbp+8 else saved(address)", "lost its original file/target loop"),
+            ("recipe", "saved=self.number;self.number=lambda address:saved(address)^1 if address==registers.rbp+self.expansion_abi['recipe_file'] else saved(address)", "substituted its original file"),
+        ):
+            body = (
+                "import read_trace\noriginal=read_trace.NativeReadTrace.runtime_expansion_entry\n"
+                "def changed(self,registers,state):\n"
+                " returned=self.number(registers.rsp)-self.bias\n"
+                f" if returned==self.expansion_abi[{('recipe_return' if family=='recipe' else 'secondary_return')!r}]:\n"
+                f"  {mutation}\n"
+                " return original(self,registers,state)\n"
+                "read_trace.NativeReadTrace.runtime_expansion_entry=changed\n"
+            )
+            session = self.session()
+            with self.subTest(family=family, mutation=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, reason):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for key in ("function", "recipe", "secondary", "snap"):
+            body = (
+                "import read_trace\noriginal=read_trace.NativeReadTrace.memory\n"
+                "def changed(self,address,count):\n"
+                " result=original(self,address,count)\n"
+                f" if self.bias is not None and address==self.bias+self.expansion_abi[{key!r}][0] and count>5:\n"
+                "  return bytes([result[0]^1])+result[1:]\n"
+                " return result\nread_trace.NativeReadTrace.memory=changed\n"
+            )
+            session = self.session()
+            with self.subTest(live_code=key), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "instruction image differs from captured Make"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_runtime_actual_trap_registers_preserve_all_invocation_purposes(self):
+        self.add("Makefile", (
+            "NAME := VALUE\n$(NAME) := original\n"
+            "inner = $(eval SECOND := $(VALUE))\n"
+            "$(eval $(inner)THIRD := $(SECOND))\ninclude nested.mk\n"
+            "all: private VALUE := target\n"
+            "all: ; @v='$(THIRD)|$(VALUE)|$(NESTED)'; printf '%s' \"$$v\"\n"
+        ))
+        self.add("nested.mk", "NESTED := $(THIRD)\n")
+        output = self.directory / "runtime-register-restoration.json"
+        body = (
+            "import ctypes,read_trace\n"
+            "original=read_trace.NativeReadTrace.trap\nrows=[]\n"
+            "def observed(self,pid,state):\n"
+            " before=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(before))\n"
+            " result=original(self,pid,state)\n"
+            " after=self.native.Registers()\n"
+            " self.native.ptrace(self.native.GETREGS,pid,0,ctypes.byref(after))\n"
+            " rows.append({name:[getattr(before,name),getattr(after,name)] for name,*_ in before._fields_})\n"
+            f" Path({str(output)!r}).write_text(json.dumps(rows))\n"
+            " return result\nread_trace.NativeReadTrace.trap=observed\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original|target|original")
+            traps = [row for row in observed["read_trace"]["machine"]["events"] if row["kind"] == "trap"]
+            rows = json.loads(output.read_bytes())
+            self.assertEqual(len(rows), len(traps))
+            self.assertEqual(
+                {row["purpose"] for row in traps},
+                {"pass-entry", "pass-return", "source-entry", "source-return",
+                 "effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return",
+                 "expansion-entry", "expansion-return"},
+            )
+            from scripts.validation_ownership.syscall_guard import Registers
+            fields = {name for name, *_ in Registers._fields_}
+            for row in rows:
+                self.assertEqual(set(row), fields)
+                for name, (before, after) in row.items():
+                    self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
+        self.assert_clean(session)
+
+    def test_native_immutable_foundation_original_tool_source_jobs_and_budget(self):
+        self.add("tools/scanner/reader.c", (
+            "#include <stdio.h>\n"
+            "int main(int argc, char **argv) {\n"
+            "    FILE *input;\n"
+            "    int value;\n"
+            "    if (argc != 2 || !(input = fopen(argv[1], \"r\"))) return 7;\n"
+            "    while ((value = fgetc(input)) != EOF) putchar(value);\n"
+            "    return ferror(input) || fclose(input) ? 8 : 0;\n"
+            "}\n"
+        ))
+        self.add("input.txt", "captured-input\n")
+        self.add("input.mk", "SUFFIX := immutable\n")
+        self.add("Makefile", (
+            "include input.mk\nVALUE := $(shell tools/scanner/reader input.txt)\n"
+            "all: ; @printf '%s:%s' '$(VALUE)' '$(SUFFIX)'; :\n"
+        ))
+        session = self.session()
+        with session:
+            deadline = session.budget.deadline
+            inputs = {
+                path: (
+                    session.snapshot.files[path],
+                    stat.S_IMODE((session.tree / path).stat().st_mode),
+                )
+                for path in ("Makefile", "input.mk")
+            }
+            tool = session.compile_native_command(Command(
+                ("gcc", "-O2", "reader.c", "-o", "reader"),
+                code=("tools/scanner/reader.c",), outputs=("tools/scanner/reader",),
+            ), cwd="tools/scanner")
+            self.assertEqual(tool.original_output, "tools/scanner/reader")
+            self.assertEqual(tool.inputs, tuple(session.snapshot.owners(("tools/scanner/reader.c",))))
+            with patch.object(session, "command", side_effect=AssertionError("command replay")):
+                completed, _, observed = session._native_make_readonly(
+                    "all", variables=("VALUE", "SUFFIX"), native_tool=tool, original_tool=True,
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+            self.assertEqual(completed.stdout, b"captured-input:immutable")
+            self.assertEqual(completed.stderr, b"")
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertFalse(session.budget.failed)
+            self.assertIn("/repo/input.txt", observed["accessed"])
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "actual native job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 2)
+            self.assertEqual({row["context"]["kind"] for row in jobs}, {"expansion", "recipe"})
+            self.assertEqual({row["executable"] for row in jobs}, {
+                "/repo/tools/scanner/reader", "/bin/sh",
+            })
+            tool_job = next(row for row in jobs if row["executable"] == "/repo/tools/scanner/reader")
+            self.assertEqual(tool_job["argv"], ["tools/scanner/reader", "input.txt"])
+            self.assertEqual({row["cwd"] for row in jobs}, {"/repo"})
+            self.assertTrue(all(row["returncode"] == 0 and row["waited"] for row in jobs))
+            trace = observed["read_trace"]
+            opens = [row for row in trace["events"]
+                     if row["kind"] == "source-open" and row["result"] >= 0]
+            self.assertEqual({row["path"] for row in opens}, set(inputs))
+            for row in opens:
+                data, mode = inputs[row["path"]]
+                source = next(item for item in trace["sources"] if item["id"] == row["source"])
+                self.assertEqual(base64.b64decode(source["data"]), data)
+                self.assertEqual((source["mode"], source["bytes"]), (mode, len(data)))
+                self.assertEqual(row["custody"], {"kind": "snapshot"})
+            retired = [row for row in trace["machine"]["events"] if row["kind"] == "pin-retired"]
+            self.assertEqual(
+                {(row["visit"], row["source"], tuple(row["identity"])) for row in retired},
+                {(row["visit"], row["source"], tuple(row["identity"])) for row in opens},
+            )
+        self.assert_clean(session)
+
+    def test_native_completion_variable_payload_boundaries(self):
+        name = "V" * 128
+        for runtime in (False, True):
+            for multibyte in (False, True):
+                for size in (65535, 65536, 65537):
+                    value = (
+                        chr(0xE9) * (size // 2) + ("x" if size % 2 else "")
+                        if multibyte else "x" * size
+                    )
+                    self.assertEqual(len(value.encode()), size)
+                    self.add("Makefile", (
+                        f"{name} := {value}\nSELECTED := $({name})\n"
+                        "SELECTED_ALIAS := $(SELECTED)\nall: ; @:\n"
+                    ))
+                    session = self.session()
+                    with self.subTest(runtime=runtime, multibyte=multibyte, size=size), session:
+                        options = {
+                            "observe_reads": True,
+                            "observe_runtime_completions" if runtime else "observe_completions": True,
+                        }
+                        if size > 65536:
+                            with self.assertRaisesRegex(MakeProbeError, "bounded|exceeds|malformed"):
+                                session._native_make_readonly("all", **options)
+                            self.assertTrue(session.budget.failed)
+                        else:
+                            completed, _, observed = session._native_make_readonly("all", **options)
+                            self.assertEqual(completed.stdout, b"")
+                            self.assertEqual(completed.stderr, b"")
+                            kind = "effect-completion" if runtime else "assignment-completion"
+                            bindings = [
+                                row["variable"] for row in observed["read_trace"]["events"]
+                                if row["kind"] == kind and row["variable"][0] in {name, "SELECTED"}
+                            ]
+                            self.assertEqual({row[0] for row in bindings}, {name, "SELECTED"})
+                            self.assertTrue(all(row[1] == value for row in bindings))
+                            self.assertFalse(session.budget.failed)
+                    self.assert_clean(session)
+
+    def test_native_target_payload_boundaries(self):
+        for runtime in (False, True):
+            for multibyte in (False, True):
+                for size in (4095, 4096, 4097):
+                    target = (
+                        chr(0xE9) * (size // 2) + ("x" if size % 2 else "")
+                        if multibyte else "x" * size
+                    )
+                    self.assertEqual(len(target.encode()), size)
+                    self.add("Makefile", (
+                        ".SECONDEXPANSION:\n"
+                        f".PHONY: all {target}\nall: {target}\n"
+                        f"{target}: $$(if $$(filter missing,never),missing)\n"
+                        "\t@printf target-ok; :\n"
+                    ))
+                    session = self.session()
+                    with self.subTest(runtime=runtime, multibyte=multibyte, size=size), session:
+                        options = {
+                            "observe_reads": True,
+                            "observe_runtime_completions": runtime,
+                        }
+                        if size > 4096:
+                            with self.assertRaisesRegex(MakeProbeError, "bound|target"):
+                                session._native_make_readonly("all", **options)
+                            self.assertTrue(session.budget.failed)
+                        else:
+                            completed, _, observed = session._native_make_readonly("all", **options)
+                            self.assertEqual(completed.stdout, b"target-ok")
+                            self.assertEqual(completed.stderr, b"")
+                            jobs = [
+                                parse_json(row.removeprefix("native-job:").encode(), "actual native job")
+                                for row in observed["accessed"] if row.startswith("native-job:")
+                            ]
+                            recipes = [
+                                row["context"]["target"] for row in jobs
+                                if row["context"]["kind"] == "recipe"
+                            ]
+                            self.assertEqual(recipes, [target])
+                            if runtime:
+                                families = {
+                                    row["family"] for row in observed["read_trace"]["events"]
+                                    if row["kind"] == "expansion-entry" and row["target"] == target
+                                }
+                                self.assertEqual(families, {"recipe", "secondary"})
+                            self.assertFalse(session.budget.failed)
+                    self.assert_clean(session)
+
+    def test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose(self):
+        self.add("Makefile", (
+            "VALUE := original\n$(eval SECOND := $(VALUE))\n"
+            "all: ; @printf '%s' '$(SECOND)'\n"
+        ))
+        callbacks = (
+            "runtime_effect_entry", "runtime_effect_return", "runtime_effect_completion",
+            "runtime_eval_entry", "runtime_eval_return",
+            "runtime_expansion_entry", "runtime_expansion_return",
+        )
+        for callback in callbacks:
+            body = (
+                "import read_trace\n"
+                f"original=read_trace.NativeReadTrace.{callback}\n"
+                "def changed(self,registers,*args,**kwargs):\n"
+                " result=original(self,registers,*args,**kwargs)\n"
+                " registers.r10^=1\n return result\n"
+                f"read_trace.NativeReadTrace.{callback}=changed\n"
+            )
+            session = self.session()
+            with self.subTest(callback=callback), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "original read callback changed its register state"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        for purpose in (
+            "effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return",
+            "expansion-entry", "expansion-return",
+        ):
+            body = (
+                "import ctypes,read_trace\noriginal=read_trace.NativeReadTrace.trap\n"
+                "def changed(self,pid,state):\n"
+                " saved=self.native.ptrace\n written=False\n selected=False\n"
+                " def wrong_readback(number,process,address=0,data=0):\n"
+                "  nonlocal written,selected\n"
+                "  result=saved(number,process,address,data)\n"
+                "  if number==self.native.GETREGS and not written:\n"
+                "   registers=ctypes.cast(data,ctypes.POINTER(self.native.Registers)).contents\n"
+                f"   selected=any(self.purposes.get(index)=={purpose!r} and pc==registers.rip for index,pc in self.slots.items())\n"
+                "  if number==self.native.SETREGS:written=True\n"
+                "  elif number==self.native.GETREGS and written and selected:\n"
+                "   ctypes.cast(data,ctypes.POINTER(self.native.Registers)).contents.r10^=1\n"
+                "  return result\n"
+                " self.native.ptrace=wrong_readback\n"
+                " try:return original(self,pid,state)\n"
+                " finally:self.native.ptrace=saved\n"
+                "read_trace.NativeReadTrace.trap=changed\n"
+            )
+            session = self.session()
+            with self.subTest(purpose=purpose), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "original read register restoration failed kernel readback"):
+                    session._native_make_readonly("all", observe_reads=True, observe_runtime_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_readonly_actual_callback_register_and_restore_readback_mutations_refuse(self):
+        self.native_completion_fixture()
+        cases = (
+            (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.assignment_completion\n"
+                "def changed(self,registers,state):\n"
+                " result=original(self,registers,state)\n"
+                " registers.r10^=1\n"
+                " return result\n"
+                "read_trace.NativeReadTrace.assignment_completion=changed\n",
+                "original read callback changed its register state",
+            ),
+            (
+                "import ctypes,read_trace\n"
+                "original=read_trace.NativeReadTrace.trap\n"
+                "def changed(self,pid,state):\n"
+                " saved=self.native.ptrace\n"
+                " written=False\n"
+                " def wrong_readback(number,process,address=0,data=0):\n"
+                "  nonlocal written\n"
+                "  result=saved(number,process,address,data)\n"
+                "  if number==self.native.SETREGS:written=True\n"
+                "  elif number==self.native.GETREGS and written:\n"
+                "   ctypes.cast(data,ctypes.POINTER(self.native.Registers)).contents.r10^=1\n"
+                "  return result\n"
+                " self.native.ptrace=wrong_readback\n"
+                " try:return original(self,pid,state)\n"
+                " finally:self.native.ptrace=saved\n"
+                "read_trace.NativeReadTrace.trap=changed\n",
+                "original read register restoration failed kernel readback",
+            ),
+        )
+        for body, expected in cases:
+            session = self.session()
+            with self.subTest(expected=expected), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    session._native_make_readonly("all", observe_reads=True, observe_completions=True)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_readonly_source_frame_and_pin_mutations_refuse(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        for body, expected in (
+            (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.source_io\n"
+                "def altered(self,pid,state,address,size):\n"
+                " if self.active:self.active[-1]['frame']+=8\n"
+                " return original(self,pid,state,address,size)\n"
+                "read_trace.NativeReadTrace.source_io=altered\n",
+                "mismatched actual frame",
+            ),
+            (
+                "import read_trace\n"
+                "original=read_trace.NativeReadTrace.source_return\n"
+                "def altered(self,registers):\n"
+                " if self.active and self.active[-1]['pin'] is not None:\n"
+                "  identity=list(self.active[-1]['identity']);identity[1]+=1\n"
+                "  self.active[-1]['identity']=tuple(identity)\n"
+                " return original(self,registers)\n"
+                "read_trace.NativeReadTrace.source_return=altered\n",
+                "source was changed or not closed",
+            ),
+        ):
+            with self.subTest(expected=expected), self.native_supervisor(body):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session._native_make_readonly("all", observe_reads=True)
+                self.assert_clean(session)
+
+    def test_native_readonly_incomplete_trace_writes_failure_envelope(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@v=done; printf '%s\\n' \"$$v\"\n")
+        body = (
+            "import read_trace\n"
+            "original=read_trace.NativeReadTrace.finish\n"
+            "def incomplete(self):\n"
+            " self.io=('unfinished',)\n"
+            " return original(self)\n"
+            "read_trace.NativeReadTrace.finish=incomplete\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), self.assertRaisesRegex(
+            MakeProbeError, "original read trace ended with incomplete native state",
+        ):
+            with session:
+                session._native_make_readonly("all", observe_reads=True)
+        self.assert_clean(session)
+
+    def test_native_readonly_source_active_deadline_cleans_owned_trace(self):
+        self.add("Makefile", ".PHONY: all\nall:\n\t@:\n")
+        body = (
+            "import read_trace,time\n"
+            "original=read_trace.NativeReadTrace.source_io\n"
+            "def blocked(self,pid,state,address,size):\n"
+            " result=original(self,pid,state,address,size)\n"
+            " if self.active and self.active[-1]['pin'] is not None:\n"
+            "  time.sleep(max(0,self.config['deadline']-time.monotonic())+0.1)\n"
+            " return result\n"
+            "read_trace.NativeReadTrace.source_io=blocked\n"
+        )
+        session = self.session(seconds=5)
+        with self.native_supervisor(body), self.assertRaisesRegex(MakeProbeError, "deadline"):
+            with session:
+                session._native_make_readonly("all", observe_reads=True)
+        self.assert_clean(session)
 
     def capture_supervisor_report(self, session, operation):
         original = session.budget.read_bytes
@@ -639,7 +7634,9 @@ class FoundationTests(unittest.TestCase):
                 else:
                     os.mkfifo(owned)
                 with self.subTest(kind=kind):
-                    with self.assertRaisesRegex(MakeProbeError, "ordinary regular file"):
+                    with self.assertRaisesRegex(
+                        MakeProbeError, "single canonical target" if kind == "symlink" else "ordinary regular file",
+                    ):
                         _capture_runtime_input(str(owned), ProbeBudget())
                 if kind == "directory":
                     owned.rmdir()
@@ -3439,11 +10436,11 @@ raise AssertionError("default termination was lost")
             "path=ctypes.c_char_p(b'data/module.py')\n"
             "for number,flags,mask,size in "
             "((4,0,0,144),(6,0,0,144),(5,0,0,144),(262,256,0,144),"
-            "(332,256,2047,256),(332,0,8191,256),(138,0,0,120),"
+            "(332,256,2047,256),(332,0,8191,256),(137,0,0,120),(138,0,0,120),"
             "(21,0,0,0),(269,0,4,0),(439,512,2,0),(89,0,0,32),(267,0,0,32)):\n"
             " buffer=ctypes.create_string_buffer(bytes([165])*size,size) if size else None\n"
             " target=ctypes.byref(buffer) if size else None\n"
-            " if number in (4,6): args=(path,target)\n"
+            " if number in (4,6,137): args=(path,target)\n"
             " elif number in (5,138): args=(ctypes.c_long(fd),target)\n"
             " elif number==262: args=(ctypes.c_long(-100),path,target,ctypes.c_ulong(flags))\n"
             " elif number==332: args=(ctypes.c_long(-100),path,ctypes.c_ulong(flags),ctypes.c_ulong(mask),target)\n"
@@ -3471,9 +10468,9 @@ raise AssertionError("default termination was lost")
                         and record[6] == status and record[8] == data
                         for record in output.metadata
                     ))
-            self.assertEqual([row[3] for row in returned[:9]], [0]*9)
-            self.assertIn(returned[9][3], (-errno.EACCES, -errno.EROFS))
-            self.assertEqual([row[3] for row in returned[10:]], [-errno.EINVAL]*2)
+            self.assertEqual([row[3] for row in returned[:10]], [0]*10)
+            self.assertIn(returned[10][3], (-errno.EACCES, -errno.EROFS))
+            self.assertEqual([row[3] for row in returned[11:]], [-errno.EINVAL]*2)
             run, diagnostics = session._sandbox_run, []
             def capture(root, **kwargs):
                 result = run(root, **kwargs)
@@ -3481,7 +10478,7 @@ raise AssertionError("default termination was lost")
                     diagnostics.append(result[0].stderr)
                 return result
             with patch.object(session, "_sandbox_run", capture):
-                stable = tuple(record for record in output.metadata if record[0] not in {138, 332})
+                stable = tuple(record for record in output.metadata if record[0] not in {137, 138, 332})
                 self.assertTrue(session._metadata_matches(stable), diagnostics)
                 # statx mount IDs belong to each guest namespace, not the
                 # persistent source inode. Full returned buffers stay checked.
@@ -3494,20 +10491,129 @@ raise AssertionError("default termination was lost")
                         data[144:152] = b"\xff"*8
                         changed = record[:8] + (data.hex(),) + record[9:]
                         self.assertFalse(session._metadata_matches((changed,)))
-                # fstatfs includes shared filesystem capacity, not immutable
+                # statfs/fstatfs include shared filesystem capacity, not immutable
                 # source-only state. Production cache validation keeps this row.
-                filesystem = tuple(record for record in output.metadata if record[0] == 138)
-                self.assertEqual(len(filesystem), 1)
+                filesystem = tuple(record for record in output.metadata if record[0] in {137, 138})
+                self.assertEqual({record[0] for record in filesystem}, {137, 138})
                 with (self.directory / "filesystem-change").open("wb") as allocation:
                     os.posix_fallocate(allocation.fileno(), 0, 1024*1024)
                     os.fsync(allocation.fileno())
-                    self.assertFalse(session._metadata_matches(filesystem))
+                    for record in filesystem:
+                        self.assertFalse(session._metadata_matches((record,)))
                     fresh = session.command(command)
                     self.assertIsNot(fresh, output)
-                    self.assertNotEqual(
-                        next(row[4] for row in json.loads(fresh.stdout) if row[0] == 138),
-                        next(row[4] for row in returned if row[0] == 138),
-                    )
+                    for number in (137, 138):
+                        self.assertNotEqual(
+                            next(row[4] for row in json.loads(fresh.stdout) if row[0] == number),
+                            next(row[4] for row in returned if row[0] == number),
+                        )
+        self.assert_clean(session)
+
+    def test_statfs_actual_buffers_transport_and_negative_revalidation(self):
+        from scripts.validation_ownership.metadata_transport import validate_legacy_metadata_records
+        self.add("input", "original")
+        self.add("reader.py", (
+            "import ctypes,json,os\n"
+            "libc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
+            "fd=os.open('input',os.O_RDONLY); rows=[]\n"
+            "for number,path,fault in ((137,'input',False),(138,'input',False),"
+            "(137,'__init__.py',False),(137,'input',True)):\n"
+            " buffer=ctypes.create_string_buffer(bytes([165])*120,120)\n"
+            " target=ctypes.c_void_p(1) if fault else ctypes.byref(buffer)\n"
+            " name=ctypes.c_long(fd) if number==138 else ctypes.c_char_p(path.encode())\n"
+            " ctypes.set_errno(0); result=libc.syscall(ctypes.c_long(number),name,target)\n"
+            " rows.append([number,path,result if result>=0 else -ctypes.get_errno(),"
+            " None if fault else buffer.raw.hex()])\n"
+            "os.close(fd); print(json.dumps(rows))\n"
+        ))
+        command = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "input"))
+        session = self.session()
+        with session:
+            output, report, _, _ = self.capture_supervisor_report(
+                session, lambda: session.command(command),
+            )
+            rows = json.loads(output.stdout)
+            self.assertEqual([row[2] for row in rows], [0, 0, -errno.ENOENT, -errno.EFAULT])
+            selected = []
+            for number, path, status, data in rows:
+                record, = [
+                    record for record in output.metadata
+                    if record[:6] == (number, "/repo/" + path, 0, 0, 120, 0)
+                    and record[6] == status
+                ]
+                self.assertEqual(record[7], None if data is None else "a5" * 120)
+                self.assertEqual(record[8], data)
+                selected.append(record)
+            frame = _metadata_frame(output.metadata)
+            self.assertEqual(
+                decode_metadata_transport(
+                    report["metadata"], report["observations"], decoded_limit=len(frame),
+                ),
+                output.metadata,
+            )
+            self.assertEqual(
+                validate_legacy_metadata_records([list(row) for row in selected], len(selected)),
+                tuple(selected),
+            )
+            missing = selected[2]
+            self.assertTrue(session._metadata_matches((missing,)))
+            self.assertFalse(session._metadata_matches((selected[3],)))
+            changed_after = missing[:8] + ("00" * 120,)
+            self.assertFalse(session._metadata_matches((changed_after,)))
+            wrong_result = missing[:6] + (-errno.EACCES,) + missing[7:]
+            self.assertFalse(session._metadata_matches((wrong_result,)))
+            for number in (137, 138):
+                original = next(row for row in selected if row[0] == number and row[6] == 0)
+                changed = list(original)
+                after = bytearray.fromhex(changed[8])
+                after[0] ^= 0xff
+                changed[8] = after.hex()
+                diagnostics = []
+                sandbox = session._sandbox_run
+                def observe_replay(root, **kwargs):
+                    result = sandbox(root, **kwargs)
+                    diagnostics.append(result[0].stderr)
+                    return result
+                with patch.object(session, "_sandbox_run", observe_replay):
+                    self.assertFalse(session._metadata_matches((tuple(changed),)))
+                results = re.findall(
+                    rb"syscall (\d+) expected (-?\d+) actual (-?\d+)",
+                    b"".join(diagnostics),
+                )
+                self.assertEqual(results, [(str(number).encode(), b"0", b"0")])
+                mutants = []
+                for index, value in ((0, 1), (2, 1), (3, 1), (5, 1), (6, 1), (1, "/outside/input")):
+                    changed = list(original)
+                    changed[index] = value
+                    mutants.append(changed)
+                for size in (119, 121):
+                    changed = list(original)
+                    changed[4], changed[7], changed[8] = size, "a5" * size, "00" * size
+                    mutants.append(changed)
+                for index in (7, 8):
+                    changed = list(original)
+                    changed[index] = changed[index][:-2]
+                    mutants.append(changed)
+                for index, value in ((2, 1), (3, 1), (5, 1), (6, 1)):
+                    changed = list(original)
+                    changed[index] = value
+                    with self.assertRaisesRegex(MakeProbeError, "sandbox process exited unsuccessfully: 125"):
+                        session._metadata_matches((tuple(changed),))
+                for size in (119, 121):
+                    changed = list(original)
+                    changed[4], changed[7], changed[8] = size, "a5" * size, "00" * size
+                    with self.assertRaisesRegex(MakeProbeError, "sandbox process exited unsuccessfully: 125"):
+                        session._metadata_matches((tuple(changed),))
+                for changed in mutants:
+                    with self.subTest(number=number, changed=changed[:7]):
+                        with self.assertRaises(MakeProbeError):
+                            validate_legacy_metadata_records([changed], 1)
+                        envelope = encode_metadata_transport([changed])
+                        with self.assertRaises(MakeProbeError):
+                            decode_metadata_transport(
+                                envelope, 1, decoded_limit=len(_metadata_frame([changed])),
+                            )
+            self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
     def test_metadata_transport_preserves_mixed_syscalls_cache_and_replay(self):
@@ -6354,6 +13460,76 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
         self.assert_clean(session)
         self.assertFalse((fixture / "source/nested/value").exists())
         self.assertFalse((fixture / "root/inherited/value").exists())
+
+    def test_null_device_mount_exception_is_exact_leaf_only(self):
+        self.add("Makefile", "all: ;\n")
+        fixture = self.directory / "null-mount-fixture"
+        (fixture / "root/dev").mkdir(parents=True)
+        for name in ("null", "generic", "zero"):
+            (fixture / "root/dev" / name).touch()
+        program = r'''
+import errno,json,os,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from sandbox_exec import bind,recursive_attributes,MS_NOSUID,MS_NOEXEC,MS_NODEV,MS_RDONLY
+root=Path(sys.argv[2])/"root"
+original=os.statvfs("/dev/null").f_flag
+bind(root,root,executable=True)
+bind("/dev/null",root/"dev/generic",writable=True)
+try: open(root/"dev/generic","wb")
+except OSError as error: assert error.errno==errno.EACCES,error
+else: raise AssertionError("generic NODEV leaf accepted a device open")
+bind("/dev/null",root/"dev/null",writable=True,null_device=True)
+flags=os.statvfs(root/"dev/null").f_flag
+assert flags & (MS_RDONLY|MS_NOSUID|MS_NODEV|MS_NOEXEC)==MS_NOSUID|MS_NOEXEC,flags
+info=(root/"dev/null").stat()
+assert info.st_rdev==os.makedev(1,3)
+with open(root/"dev/null","wb") as output: assert output.write(b"discard")==7
+with open(root/"dev/null","rb") as source: assert source.read()==b""
+assert os.statvfs(root).f_flag & 7==7
+for source,target,options in (
+    ("/dev/zero",root/"dev/null",{"writable":True}),
+    ("/dev/null",root/"dev/zero",{"writable":True}),
+    (str(root),root/"dev/null",{"writable":True}),
+    ("/dev/null",root/"dev/null",{"writable":True,"executable":True}),
+    ("/dev/null",root/"dev/null",{}),
+):
+    try: bind(source,target,null_device=True,**options)
+    except ValueError: pass
+    else: raise AssertionError("foreign null-device exception accepted")
+for target in (root,root/"dev/generic"):
+    try: recursive_attributes(target,MS_NOSUID|MS_NOEXEC,clear=MS_NODEV)
+    except ValueError: pass
+    else: raise AssertionError("non-null leaf cleared NODEV")
+for flags,clear in (
+    (MS_NOSUID,MS_NODEV),(MS_NOSUID|MS_NOEXEC|MS_RDONLY,MS_NODEV),
+    (MS_NOSUID|MS_NOEXEC|MS_NODEV,MS_NODEV),(MS_NOSUID|MS_NOEXEC,MS_NOEXEC),
+):
+    try: recursive_attributes(root/"dev/null",flags,clear=clear)
+    except ValueError: pass
+    else: raise AssertionError("unsupported mount restriction clear accepted")
+bind("/dev/zero",root/"dev/zero",writable=True)
+try: recursive_attributes(root/"dev/zero",MS_NOSUID|MS_NOEXEC,clear=MS_NODEV)
+except ValueError: pass
+else: raise AssertionError("foreign device cleared NODEV")
+assert os.statvfs("/dev/null").f_flag==original
+print(json.dumps({"device":[os.major(info.st_rdev),os.minor(info.st_rdev)],
+                  "readonly_root":True,"null_rw":True,"nonexec_nosuid":True,
+                  "source_flags_unchanged":True}))
+'''
+        session = self.session()
+        with session:
+            result = session.budget.run(
+                [*session.launcher, "/usr/bin/python3", "-I", "-S", "-c", program,
+                 str(TRUSTED_ROOT), str(fixture)],
+                env=ENVIRONMENT, privileged=session.sudo_drop,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), {
+                "device": [1, 3], "readonly_root": True, "null_rw": True,
+                "nonexec_nosuid": True, "source_flags_unchanged": True,
+            })
+        self.assert_clean(session)
 
     def test_recursive_mount_attribute_failure_has_no_top_only_fallback(self):
         from scripts.validation_ownership import sandbox_exec

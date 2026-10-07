@@ -16,6 +16,1801 @@ D depends on P, not on the optional view or runtime-input APIs.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
+## Immutable native foundation and dependent writable evaluator
+
+Issue [#274](https://github.com/laqieer/fireemblem8-expansion/issues/274)
+owns the closed immutable-input native foundation below, including the
+internal `_native_make_readonly` and sealed compiler/tool seams. It is a
+separately deliverable component of
+[#270](https://github.com/laqieer/fireemblem8-expansion/issues/270), not
+qualification of that umbrella's original generated eight-query contract.
+The complete writable producer **and** generated-read-version transaction
+stays together in dependent
+[#275](https://github.com/laqieer/fireemblem8-expansion/issues/275).
+
+The readonly foundation never grants native output writes, `.dep` shell
+redirection ownership, temporary/lock lifecycle, atomic retirement or
+generated-source custody. Generated include remakes/reexec requiring those
+writes remain refused. Existing mapped APIs are unchanged; neither this root
+nor a successful prefix authorizes validation narrowing or graph delivery.
+The dependent extension must preserve original commands, inputs, all four
+profiles times both Make primaries, one unchanged budget/deadline and every
+actual source/job/version outcome.
+
+### TC-WORKFLOW-NATIVE-READONLY-001: observe immutable native Make and original tools
+
+From a clean supported Linux x86-64 checkout with GNU Make 4.3, the existing
+GCC/C++ host tools and namespace/ptrace launcher:
+
+1. Run
+   `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget`.
+   The case compiles `tools/scanner/reader.c` through the original sealed
+   `Command`/output/CWD compiler seam. Original Make includes immutable
+   `input.mk`, eagerly executes the issued original-path reader against
+   `input.txt`, and runs the original recipe. Require exactly
+   `captured-input:immutable`, no stderr, the original tool and shell jobs'
+   actual argv/CWD and waited success, and source FD bytes/modes/custody with
+   matching machine pin retirements. A replay trap stays active. Compiler and
+   Make share one original budget/deadline, and context exit removes owned
+   scratch and processes.
+2. Run the same class's
+   `test_native_readonly_actual_write_and_foreign_execution_refuse` and
+   `test_native_readonly_actual_completion_inventory_barrier_and_jobs`.
+   Writes and undeclared execution must refuse without source mutation;
+   actual source/completion/inventory barriers and job/machine pairs must
+   remain valid. Retain the documented source-frame/pin, callback/register,
+   job/signal, stale-view, runtime/tool, failure-envelope, cancellation and
+   resource controls below; the integrated positive does not replace them.
+   The foreign SIGKILL control requires the actual successful supervisor
+   kill-return receipt, a failed probe/budget and complete owned teardown.
+   Kernel stop ordering may change its denial diagnostic, never its refusal;
+   the admitted self-SIGKILL controls separately preserve legitimate outcomes.
+3. Run its `test_native_completion_variable_payload_boundaries` and
+   `test_native_target_payload_boundaries`. Exact admitted UTF-8 byte payloads
+   survive both consumer families; oversized payloads refuse. Filesystem path
+   bounds stay unchanged. Preserve the original maximum-byte failure evidence.
+4. The existing `ownership-probe-test` CI owner runs the complete native suite
+   and exact selected-case inventory. No single positive, runtime capture or
+   whole-suite label substitutes for the separate native source/job/budget/
+   failure criteria. Tests create and retire only their own disposable inputs.
+
+This source-only case requires no ROM, emulator, save reset or subjective
+judgment. Dependencies are the merged immutable authority, namespace/runtime,
+observer, compiler/tool, machine/archive and cleanup seams; conflicts are none
+beyond their documented admission constraints. It changes no ROM/RAM/save,
+locale/game content, modern/archival profile or default mapped behavior.
+Unsupported native platforms, inputs or cross-lane combinations refuse.
+
+### Native evaluator runtime-admission component
+
+Issue [#270](https://github.com/laqieer/fireemblem8-expansion/issues/270)
+separates the single-invocation native evaluator from the downstream ownership
+graph. Its first component reuses the existing trusted Make ELF/loader capture
+for an exact trusted system executable. `_make_runtime` delegates to that shared
+mechanism. It still validates root-owned, non-mutable system paths, x86-64 ELF
+and interpreter headers, runs only the captured interpreter's `--list` operation
+with a clean environment from `/`, and charges the complete image/closure bytes.
+It does not invoke `ldd`, load candidate ELF/code or grant native execution.
+The shell control uses `/usr/bin/sh`; the existing trusted-root policy is not
+widened to admit an unchecked `/bin` alias.
+
+From a clean Linux x86-64 source checkout with the existing host toolchain:
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_native_make -v`.
+   Actual Make and shell captures must contain their original ELF bytes,
+   interpreter and complete loader-derived libraries, all charged in one budget
+   per control. The loader call must use the clean environment and `/` cwd.
+2. Require untrusted candidate paths, malformed ELF, failed loader execution,
+   unresolved libraries and libraries outside trusted roots to refuse. Run the
+   existing `FoundationTests` runtime-capture controls for mutable paths and
+   real Make execution with a relocated captured library closure.
+3. Retain failures and close each budget; these controls do not write candidate
+   source or create generated game data. No ROM, ARM toolchain, save reset,
+   optional profile or subjective manual judgment is involved.
+
+The existing `ownership-probe-test` target includes this component. These checks
+prove runtime admission and preserved ordinary Make behavior only. Actual
+natural dispatch, source/caller/job observations, generated-version lifecycle,
+all eight original profiles in one budget, complete resource fitness and every
+candidate/master delivery gate remain required by #270 and #180. Runtime
+capture alone must never be reported as native-evaluator qualification.
+
+### Internal readonly dispatch component
+
+The next component of `TC-WORKFLOW-NATIVE-MAKE-001` exercises the internal
+`ProbeSession._native_make_readonly` seam. It is not the graph's qualified
+evaluator and is not an alternative validation selection. It shares request
+admission, the original Make observer and the existing syscall supervisor.
+Original authenticated Make dispatch reaches the exact captured system shell
+at `/bin/sh`; the shell and its complete loader closure are private captured
+files, not a host runtime mount. No replay interceptor or mapped-command
+result supplies shell expansion or recipe stdout.
+
+Run the following controls individually from the same clean host checkout:
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_original_shell_and_recipe_without_replay`.
+   Original shell builtins must read the immutable admitted `input.txt`,
+   populate the observed `VALUE` domain and execute a real recipe. Require
+   actual recipe stdout, two authenticated native shell observations and the
+   admitted source-access observation, while trapping any per-command replay.
+   This is actual source-value/access evidence, not complete read-event custody.
+2. Run the same class's
+   `test_native_readonly_actual_write_and_foreign_execution_refuse`.
+   An actual shell source-write attempt and an unadmitted executable must
+   refuse; source stays unchanged and all owned processes/roots are closed.
+3. Run its
+   `test_native_readonly_mapped_runtime_authority_refuses_before_dispatch`
+   and `test_native_readonly_guard_rejects_cross_lane_configuration`.
+   Explicit optional runtime, mapped publication, altered executable authority,
+   metadata replay, dependency confinement or a mismatched native environment
+   cannot be combined with this lane.
+4. Run its `test_native_readonly_shell_status_reaches_make_semantics`,
+   `test_native_readonly_ignored_recipe_status_is_owned_by_make` and
+   `test_native_readonly_unignored_recipe_status_still_fails_make`.
+   An authenticated shell's nonzero status must reach original Make:
+   `$(shell)` retains its output and `.SHELLSTATUS`, an explicitly ignored
+   recipe continues, and an unignored recipe still fails through final Make
+   status 2. Supervisor confinement violations never become ignored errors.
+5. Run its `test_native_readonly_recursive_observer_dispatch_refuses`.
+   An unused recursive variable containing `$(shell)` must refuse if exit
+   observation would execute it. Refusal is explicit; the readonly component
+   does not yet provide complete side-effect-free recursive-value observation.
+6. Run its `test_native_readonly_shell_loader_probes_cannot_select_false_absence`
+   and `test_native_readonly_loader_rejects_stale_stop_foreign_origin_and_replacement`.
+   Shell builtins probing either absent `/etc/ld.so.cache` or
+   `/etc/ld.so.preload` must refuse instead of selecting an absent branch.
+   Genuine loader startup is admitted only from an owned actual syscall-entry
+   stop, the captured interpreter's readonly executable mapping and matching
+   instruction bytes. An altered actual stop, foreign libc origin or attempted
+   private readonly image replacement must reject. The replacement attempt
+   fails at the readonly filesystem boundary, not at a claimed inode detector.
+7. Run its `test_native_readonly_runtime_overlap_uses_captured_bytes` and
+   `test_native_readonly_conflicting_runtime_capture_refuses`.
+   Shared images compare against already charged captured Make bytes; a disk
+   reread trap must not fire and a conflicting captured library must refuse.
+8. Run its `test_native_readonly_self_signal_status_reaches_make`,
+   `test_native_readonly_ignored_and_unignored_self_signal_recipe`,
+   `test_native_readonly_foreign_signal_and_trap_remain_refused` and
+   `test_native_readonly_unadmitted_sigkill_termination_refuses`.
+   Admitted shell self-SIGPIPE must produce `.SHELLSTATUS` 141; ignored and
+   unignored recipes must match ordinary Make continuation/failure. Native
+   bootstrap restores Python-ignored signal defaults before execution, as
+   ordinary subprocess execution does. Forwarding requires actual kernel
+   delivery from the same shell bound to its admitted self-signal syscall.
+   Foreign sender, unauthenticated trap and unadmitted SIGKILL termination
+   still refuse, including under an error-ignored recipe. Cleanup and resource
+   signals do not acquire candidate self-signal authority.
+   The externally injected SIGKILL control may reject at the earlier vanished
+   ptrace target or terminal provenance check; it does not prove both paths.
+   Also run
+   `test_native_readonly_failed_queued_signal_cannot_admit_foreign_sigkill`:
+   at genuine native shell syscall stops, replace self-kill arguments with
+   `rt_sigqueueinfo` or `rt_tgsigqueueinfo` and a null information pointer.
+   Both must actually return kernel `EFAULT`; after resuming, inject foreign
+   SIGKILL. Before correction both ignored recipes continue and print `done`.
+   Now both must reject terminal self-signal provenance and clean owned state.
+   This is controlled syscall-argument and foreign-signal injection, not a
+   hostile-process isolation claim. The existing pending-call lifecycle
+   retracts a failed attempt's new signal authorization without discarding a
+   preceding successful authorization.
+   `test_native_readonly_failed_signal_preserves_prior_success_authorization`
+   runs actual declared Python with SIGUSR1 blocked, records successful
+   self-kill and a later queued `EFAULT`, and requires both the surviving
+   authorization and actual kernel pending-signal bit. The signal remains
+   blocked until Python exits after that fault; this is not complete signal
+   queue or cancellation qualification.
+   `test_native_readonly_successful_self_sigkill_status_is_preserved` requires
+   `.SHELLSTATUS` 137 and ignored-recipe continuation matching ordinary Make.
+
+The round-three supplier reconsideration removes duplicated syscall-origin
+observation. Native loader and dependency negative-purpose checks share one
+owned kernel-entry/mapping/instruction reader; each retains its separate
+captured-image and operation predicates. Actual bounded mapping bytes remain
+charged, with no budget change, reset or exempt category. A plain namespace
+launcher cannot supply the required source/caller/job/generated custody, while
+per-command replay exceeded the original aggregate budget. Neither is an
+acceptable replacement. This simplification does not release the original
+graph's held architecture disposition or qualify the complete native supplier.
+
+Readonly dispatch admits only the original Make image and captured shell.
+It cannot produce generated files or execute undeclared native tools.
+
+`TC-OWNERSHIP-NATIVE-EXECUTABLE-001` (#270) additionally covers the explicit
+`native_tool` declaration for one exact session-issued `NativeTool`. The default
+is absent. Reuse the existing compiler capsule, issued-object identity, sealed
+bytes and `/native/tool` placement; both direct-native and native-Make execution
+materialize the bytes actually verified, not a later reread. The readonly native
+Make lane admits the image only with its captured interpreter and existing
+runtime resources; missing external dependencies still refuse, never resolve
+implicitly. Source paths and argv are not rewritten.
+
+With a clean fixture, run
+`test_native_readonly_session_issued_tool_executes_in_original_make`: compile
+the candidate C fixture, invoke its actual `/native/tool` through unchanged GNU
+Make, and require `compiled` semantics/output plus actual executable, terminal
+status and waited native-job evidence. Then run
+`test_native_readonly_session_issued_tool_boundaries`: a structurally identical
+but unissued tool object, changed sealed bytes, undeclared image metadata and
+actual candidate source writes must refuse and leave owned cleanup complete.
+Repeat the existing C++ direct-native test to preserve that execution lane.
+Readonly native Make accepts `native_libraries=(absolute_shared_library_paths,)`
+as explicit resource declarations, separate from `native_executables`.
+Only exact root-verified ELF shared-library files under trusted system library
+roots enter the existing sealed runtime closure; aliases to the same canonical
+file, malformed paths and non-library declarations refuse. No library declaration
+grants execution or write authority, and dependencies are never inferred from a
+candidate ELF or resolved by executing its loader in the trusted collector.
+Run `test_native_readonly_declared_cpp_library_resources`: a real compiled C++
+iostream tool requires declared stdc/gcc/m resources, actual output/semantics and
+waited native-job evidence. Missing dependencies, direct library execution,
+library writes and malformed/duplicate/canonical-alias declarations must refuse.
+The internal `/native/tool` case does not qualify original `tools/scaninc`
+paths, arbitrary external-library dependencies, generated publications or the
+original eight-query family. No ROM/save/profile/localization interaction applies.
+Source/caller/job provenance, generated mutation/version custody and complete
+unchanged-budget eight-profile fitness still require the complete #270
+implementation; these passing controls do not qualify those missing contracts.
+Ordinary live/mapped Make remains unchanged. No save, localization, ROM/RAM,
+modern/archival build profile or public configuration change is involved.
+
+### Original compiler component
+
+`ProbeSession.compile_native_command(command, cwd=".")` reuses the existing
+typed `Command`, trusted compiler capsule, immutable `Snapshot`, output
+collision check, compiler resource policy and session-issued `NativeTool`.
+The admitted original driver names are `g++`, `gcc`, `/usr/bin/g++` and
+`/usr/bin/gcc`; `cc` and arbitrary executable spellings are not admitted by
+this component. The existing `compile_native` C/C++ lane is unchanged.
+Declare snapshot-only `code`, exactly one repository-relative `outputs` path,
+an existing snapshot directory as `cwd`, and exactly one separated `-o`
+operand resolving to that output. Arguments, including argv[0] and relative
+source/output operands, are not rewritten. At the owned initial exec stop,
+the supervisor reads the actual bounded command line and verifies the actual
+CWD inode against the configured private directory; the host binds that
+structured observation to the original command before accepting its artifact.
+
+Only this compile route derives a private source scaffold from the actual
+snapshot: writable ancestors around the declared output, maximal readonly
+source islands, and no precreated output. Exact output read/metadata/write
+authority is compiler-only. Source/CWD ancestor mutation and undeclared
+resources remain denied. The existing private `/work` compiler temporaries,
+readonly trusted system runtime, aggregate budgets and owned cleanup remain;
+generic native runtime limits and Make publication authority are not widened.
+Only a regular output passing the existing ELF validator can be sealed with
+its immutable input identities. A missing, symlink, directory or invalid
+artifact is an explicit failure, not a usable tool.
+
+For the #270 `TC-WORKFLOW-NATIVE-MAKE-001` compiler component, start from a
+clean Linux host with the existing namespace launcher and trusted GCC tools.
+Run `test_original_compiler_preserves_relative_argv_cwd_and_output` and
+`test_original_c_compiler_preserves_relative_inputs`: actual compiler and
+native execution must retain `source.cpp:7` and `source.c` relative-file
+results and snapshot input owners. Run
+`test_original_scaninc_compiles_original_sources_flags_cwd_and_output`: the
+original four C++ files/four headers, flags, CWD and `scaninc` output compile,
+and the sealed scanner reports the same actual header dependency as the
+ordinary scanner, with no artifact added to the immutable tree.
+
+Run the malformed-typed-input, command/namespace and compile-only layout controls;
+nonstrings or mutable declaration containers must fail through the normal
+terminal `MakeProbeError` boundary, leaving no issued tool. Wrong CWD/output,
+collisions, unsupported driver, additional authority and cross-mode source
+mounts must reject. The actual-initial-argv mutant must reject despite
+successful compilation. In the real-write/capture controls, a linker map
+targeting immutable source or its ancestor must reject at write admission;
+an undeclared map target rejects at its earlier metadata probe. The direct
+production resource predicate separately rejects every ancestor/source/extra
+write and noncompiler output access. After a real successful compile, the
+missing/directory/symlink/invalid capture mutants must refuse sealing.
+Candidate executable GCC plugins remain unsupported: the ordinary plugin
+control actually overwrites its private source, while the capsule rejects its
+executable mapping before the plugin runs. This is not claimed as evidence of
+plugin-origin write or rename interception. Every case retains source bytes,
+refuses unissued tools and cleans its owned scratch.
+
+This component has no save, ROM/RAM, localization or profile interaction.
+It does not qualify generated-source versions/read pins, original Make
+producer ownership, nested Make/reexec or the supervised eight-query family.
+Those dependent #270 contracts and all final delivery gates remain open.
+
+### Original compiled-tool placement
+
+The original compiler additionally binds its declared output path into the
+session-issued `NativeTool`. The key includes that path as well as sealed
+bytes and immutable input owners. Default compilation/direct-native execution
+and default readonly native-Make `/native/tool` placement remain unchanged.
+An explicit `_native_make_readonly(..., native_tool=tool, original_tool=True)`
+uses only that issued original binding; there is no caller-selected pathname
+or second tool registry. Generic tools without a binding refuse. C++ shared
+libraries and recipe executables still need their existing explicit resource
+declarations; original placement does not infer them.
+
+Reuse the snapshot-derived source scaffold, but mount its root readonly for
+this lane. Every immutable source island and the separately materialized
+verified tool image is a readonly child mount. Original source-entry barriers
+verify actual source/guest device and inode pairs and readonly/nosuid/nodev
+flags for every composed repository mount while the original Make is stopped.
+The host admits that composed layout only for the exact session-issued tool
+and captured runtime bytes, rejecting caller-supplied root/child mounts.
+No binary is added to the snapshot inventory or immutable tree. Existing
+native dispatch, original exec inputs, source pin/bytes, runtime and archive
+validation remain active; every native/Make filesystem write still refuses.
+This is not a writable producer namespace or generated-source custody.
+
+For the #270 `TC-WORKFLOW-NATIVE-MAKE-001` original-tool member, run
+`test_original_scaninc_executes_original_path_through_unchanged_make` from the
+same clean compiler/namespace environment. Compile the original scanner,
+declare its existing C++ libraries and the actual recipe `printf`, then run
+unchanged `tools/scaninc/scaninc -I include unit.c` through original Make.
+Require `include/sample.h` semantics/output, exactly one actual scanner exec
+with unchanged argv and `/repo` CWD, waited/zero terminal native jobs and
+snapshot input owners. No original output may persist in the immutable tree.
+
+Run the original-native-tool binding and mount-custody controls. Copied or
+changed tools, missing/generic bindings, invalid flags and foreign-session
+objects must refuse. Real source/tool/ancestor writes and a genuine neighboring
+executable must refuse; the ordinary neighboring executable control must
+actually run. A modified composed-mount source identity must reject at the
+stopped source-entry barrier. Explicit root/child mounts must reject before
+launch. The same original-issued tool must still work through default
+`/native/tool` placement and direct native execution. All controls retain
+source bytes and owned cleanup. Generated producers/version pins, nested
+Make/reexec, original supervised eight queries and every final delivery gate
+remain unqualified by these member results.
+
+### Original source-entry observation component
+
+The existing explicit `runtime_files` declarations may capture the one
+canonical kernel-data input `/proc/sys/crypto/fips_enabled`. Actual bytes or
+actual absence are captured under the same trust, identity and ancestor
+checks, then materialized in the sealed private root. No live `/proc` tree is
+mounted into the guest and no generic proc, write or executable authority is
+added. Nonoptional tool/library use and redirects remain forbidden. Present
+Linux int-sysctl data has nonrepresentative zero `st_size`: its exact capture
+uses a bounded 13-byte lookahead with reserved probe/result buffers and live
+descriptor identity checks, not the ordinary size-based file reader. The
+generic reader and every original limit remain unchanged.
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_readonly_exact_kernel_fips_input_matches_actual_capture` to compare
+actual host capture with original Make shell visibility (including the actual
+absent input on the development host); do not relabel a fabricated fixture as
+a present-kernel observation. Run
+`test_native_readonly_kernel_fips_input_has_no_neighbor_write_or_executable_authority`
+for uncaptured, neighbor, canonical-redirect, write and executable refusals.
+Run `test_kernel_fips_zero_size_bounded_bytes_and_identity_controls` for actual
+owned-file reads with explicitly shaped zero-size metadata, full signed-int
+data, byte/control bounds, wrong identity and physical mid-read content change.
+This finite pseudo-file control is not an actual present-kernel observation.
+Run `test_kernel_fips_reader_captures_actual_linux_int_sysctl` for the same
+bounded reader on a real present zero-size Linux int-sysctl inode
+(`/proc/sys/kernel/pid_max`), with ordinary-reader preimage and byte equality.
+That read-only kernel control does not grant its pathname any runtime-file
+authority and is not an actual present FIPS-file observation.
+Other runtime dependencies and the complete original eight-query outcome
+remain independently required.
+
+Native readonly inventory and source admission use the original fixed
+per-file bound, not the declining remaining channel allowance. Actual
+metadata/source capture still reserves aggregate observation bytes before
+allocation; control, event and all other limits and charges are unchanged.
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_readonly_inventory_keeps_fixed_file_admission_with_remaining_control`:
+an unused valid binary inventory entry larger than remaining control capacity
+must not prevent observing the small original Makefile. Run
+`test_native_readonly_actual_source_keeps_aggregate_control_and_file_limits`:
+actually reading the large Makefile exhausts aggregate capacity, and exceeding
+the fixed per-file bound still refuses source admission; both clean up and fail
+terminally. The pre-fix negative control rejects the unused inventory as
+malformed. Generic command/compiler/mapped limits are unchanged. These
+member cases do not qualify generated producers or the original eight queries.
+
+The existing exact `/dev/null` mount is a nonexecuting writable exception,
+not a generic device namespace. The trusted launcher verifies the actual null
+character device (major 1, minor 3) and clears inherited NODEV only on that
+exact leaf, retaining NOSUID/NOEXEC. Repository/runtime roots and inherited
+submounts retain their recursive restrictions; other devices and directories
+cannot request that clear. Syscall device-path admission is unchanged.
+The #270 `TC-WORKFLOW-NATIVE-MAKE-001` null-device regression reproduces the
+pre-fix original item-cap resolver redirection failure. Run
+`test_exact_null_device_preserves_command_and_native_make_redirection`:
+actual Python command, compiled native tool and original native-Make shell
+redirection must produce usable results with zero stderr and owned cleanup.
+Run `test_null_device_mount_exception_is_exact_leaf_only`: actual mount flags,
+device identity, null writes/reads, unchanged root/source flags and other-device/
+directory/executable/readonly/unsupported-clear refusals are required.
+Repeat the existing recursive submount and unsupported-mount-setattr cases.
+This fixes the admitted null resource, not missing Python runtime probes,
+native producers or original eight-query qualification.
+
+The internal readonly invocation can now request `observe_reads=True`. Only
+the existing version-1 original-read contract is configured: Make/source ELF
+ABI sites decoded from the captured Make bytes, actual private runtime mapping,
+kernel hardware-breakpoint entry/caller frames, trusted paired `fopen`
+notifications, source descriptor pins and bytes through close/return, and
+complete read-pass/goal structure. It reuses the existing original read-trace
+and validator source rather than introducing a second source registry.
+Version 1 remains the default; the explicit readonly completion component below
+admits version 4 only with its complete frozen selection and entry proof.
+Generated-version mutation is not admitted. Ordinary mapped execution does not
+request these internal variants.
+
+From the same clean host checkout, run these `FoundationTests` controls:
+
+1. `test_native_readonly_actual_nested_source_trace`: require Makefile, nested
+   required includes and a missing optional include to report their actual
+   visit parents, exact opened immutable source bytes/identities and complete
+   pass. The original shell expression and recipe must run without command
+   replay and preserve selected values and stdout.
+2. `test_native_readonly_source_frame_and_pin_mutations_refuse`: altered cached
+   reader-frame and pin-identity bindings at actual source callbacks must refuse.
+   These are binding-mutation controls, not fabricated register samples or
+   proof of physical source replacement.
+3. `test_native_readonly_incomplete_trace_writes_failure_envelope`: incomplete
+   actual trace state must produce a failed supervisor report, not omit the
+   report or manufacture success.
+4. `test_native_readonly_source_active_deadline_cleans_owned_trace`: block the
+   actual source callback after an opened pin until the unchanged report
+   deadline; require terminal refusal and owned session/process cleanup.
+   This does not prove every register-restoration or arbitrary cancellation
+   scenario required by the complete supplier.
+5. `test_native_readonly_chld_trap_and_unsupported_stop`: admitted native
+   self-SIGCHLD must run the shell trap and match ordinary Make stdout.
+   Native SIGSTOP beyond the one actual newborn tracing stop explicitly
+   refuses; it must not silently continue. Unsupported native child-origin
+   signals also refuse rather than acquire unauthenticated forwarding.
+
+All controls have ordinary immutable fixtures and teardown; no ROM or save
+artifact is involved. Full assignment-completion/caller/job observations,
+machine/restoration adversaries, generated-version lifecycle, all eight
+original profiles in one budget and every remote delivery gate remain open.
+
+`TC-OWNERSHIP-NATIVE-TRACE-COUNT-001` (#270) covers shared count custody.
+Trace events, actual hardware-breakpoint traps and configured machine records
+reserve the same aggregate count as filesystem attempts. Each trace reservation
+uses the existing 128-byte bookkeeping allowance, in addition to actual
+metadata bytes. Successful and failed reports settle this total into the one
+session; subsequent queries receive only its remainder. Filesystem records
+retain their existing deduplication, while distinct trace records and traps
+are not deduplicated.
+
+From a clean host checkout, run
+`test_native_trace_count_shares_filesystem_event_machine_and_trap_limit`:
+four filesystem records plus four event records fill an eight-record allowance.
+The next event, machine record, trap or filesystem attempt must refuse without
+incrementing past eight. Run
+`test_native_readonly_trace_count_settles_across_queries`: a real readonly
+Make source trace in a 1024-entry fixture must report filesystem attempts plus
+every event and trap, measured from actual supervisor state at trace finish.
+Successful filesystem result lists alone omit unsuccessful attempts and cannot
+substitute for that count. Spend all but one remaining
+entry through the ordinary command seam; the next native query must consume
+that remainder, fail, settle exactly 1024 observations and clean owned state.
+The initial 64-entry fixture cannot hold Make's original variable table and is
+not a count-accounting control. Pre-fix reports omit the trace count.
+Dependencies are the existing readonly source trace and supervisor settlement;
+conflicts are none. Production limits, ordinary mapped behavior, ROM/RAM,
+save compatibility, generated data and localization are unchanged. These
+controls do not qualify the full supplier or the original eight-profile family.
+
+### Original readonly job observations
+
+`TC-OWNERSHIP-NATIVE-JOB-001` (#270) binds readonly shell work to original
+Make jobs. It reuses the original GNU Make 4.3 `children`/`shell_function_pid`
+ABI and trusted observer read/wait notifications. Each actual original spawn
+gets one sequence, which must bind a direct, traced `/bin/sh` exec child.
+Original Make supplies expansion ownership or the recipe target and command
+index before waiting, then its ignored-error flags and wait status at return.
+The supervisor retains the actual kernel terminal result across process exit
+and requires the wait result to match it before retirement. Repeated identical
+context notifications deduplicate; changed, foreign, reused or incomplete
+bindings refuse.
+
+Completed records use the existing `accessed` transport with `native-job:`
+followed by a JSON object containing `sequence`, `executable`, `pid`, `context`,
+`returncode`, raw `terminal_status`, `waited` and `ignored`. `context` contains `kind`, `target` and
+`command_line`; expansion target/index are null. The index is Make's original
+next-command index, not a source line number. Records are an observation of
+actual work, never a command registry, replay instruction or permission to
+write. Dispatch, exec, context, exit and wait bookkeeping share the aggregate
+observation/byte bounds; no retired process retains executable or signal
+authority. A failed spawn without a complete observed child refuses rather
+
+Trusted native ELF bodies are captured once per exact requested pathname in
+the active immutable view, shared by executable closures and explicit library
+declarations. The already captured core Make runtime retains its existing
+whole-session lifetime and supplies identical shared bytes without another
+host read. Each new executable still resolves its closure through the trusted
+interpreter's original `--list`; generic command/compiler capture is unchanged.
+New bodies keep the original trust, identity, file/control/deadline checks and
+retained-byte charge. Map entries and closure references retain their own
+metadata charges, but referencing the same byte object does not allocate or
+read another body. This is not a larger quota, a global snapshot service, or
+additional executable/library authority. View selection isolates the native
+body map, restores the preceding map, and clears retired maps and session state.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_shared_runtime_bodies_are_captured_and_retained_once` for actual
+trusted Python/sh/printf closure capture, two original guest invocations with
+explicit libc, shared core byte identities and exact retained allocation cost.
+The pre-fix run rereads libc three times and the interpreter once after warm
+capture; the fixed run must perform no such duplicate body read while preserving
+stdout. Run
+`test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures`
+for inactive-session, actual cold Python fixed-file/control/cache failures,
+and an untrusted new pathname. Run the existing runtime reuse, nested view
+isolation/restoration/failure and direct/shell conflicting-capture controls.
+Run `test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup`
+for populated outer and selected body/closure maps at explicit shutdown and
+out-of-order view exit. Both retire every saved map, restore the original
+loader, empty the view stack and retain normal owned cleanup; the pre-fix
+saved-tuple mismatch raises `ValueError` and strands outer maps.
+They require original deadline/limit identity, no second loader capture for a
+warm executable, actual shared-map cleanup and terminal conflicting bytes.
+Dependencies are the existing trusted capture, loader and immutable-view seams;
+conflicts are none. No ROM/RAM/save/locale/profile or archival impact.
+
+The original 2148-file first-query diagnostic remains a separate criterion.
+With unchanged source, argv, original compiler and budgets, duplicate capture
+removal progresses beyond aggregate exhaustion at 25,648,667 control bytes
+to an undeclared original `find` executable. Explicitly capturing that
+tool progresses, before path-statfs support, to unsupported syscall 137 at
+26,678,061 control bytes; both
+are failed queries, not original eight-query qualification. Managed-Python
+directory-wide trust admission and original producer/nested/reexec custody are
+unchanged by this byte-cache correction.
+
+The original Python/hashlib runtime may also read OpenSSL configuration.
+Declare only `/usr/lib/ssl/openssl.cnf` or its exact canonical
+`/etc/ssl/openssl.cnf` through existing optional runtime files. The alias must
+directly name that canonical regular file. The exact standard relative leaf
+`../../../etc/ssl/openssl.cnf` is supported in addition to the direct absolute
+leaf; other traversal or multi-hop aliases remain rejected. Existing root
+ownership, nonmutable parents/file, before/after identity, control-byte/deadline
+checks and sealed readonly materialization still apply. This is not an
+`/etc/ssl` directory grant, an executable/library grant, or a live host mount.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, from a clean Linux checkout with that
+standard configuration, run
+`test_native_readonly_openssl_configuration_preserves_actual_alias_and_bytes`
+and `test_native_readonly_openssl_relative_leaf_is_sealed_and_readable`.
+Compare captured bytes/mode against the actual canonical file without
+publishing its contents; original Make must read the sealed guest alias in
+both representations. The relative spelling uses an isolated declaration
+fixture, not a modification of the host symlink. Run
+`test_native_openssl_capture_has_no_neighbor_write_or_executable_authority`
+and `test_native_openssl_capture_trust_and_identity_controls`: neighboring
+`/etc/ssl` files, redirected canonical target, uncaptured reads and captured
+writes refuse. The readonly data file cannot execute: original Make shell
+expansion status 127 and its permission diagnostic match ordinary Make rather than being
+converted into a successful shell result. Foreign ownership, mutable mode,
+postread identity changes and an alias with missing canonical target refuse;
+direct canonical absence remains optional. Use the existing physical alias
+replacement/multi-hop/missing-target and generic traversal tests as shared
+capture controls. No ROM/RAM/save/locale/profile or archival impact, and no
+new dependency or service beyond the existing optional-file seam. This resource
+member does not qualify the original eight queries: the measured original
+first query with configuration capture still exhausts its unchanged aggregate
+control budget. A failed spawn without a complete observed child refuses rather
+than manufacturing a completed record.
+
+On the same clean host checkout, run
+`test_native_readonly_actual_expansion_and_recipe_job_lifecycle`. Its immutable
+Make fixture evaluates one immediate shell value and two recipe commands,
+the first returning ignored status 7. Require ordinary Make stdout, the actual
+value and shell status, three distinct child/dispatch identities, expansion
+versus target/index ownership, ignored-policy values and matching terminal
+statuses. Run `test_native_readonly_job_binding_and_retirement_mutations_refuse`:
+at actual callbacks, alter the PID, sender, parent, stable context or terminal
+status; repeat exec/exit binding or omit wait/exit completion. Each must refuse
+and clean its owned session. These are mutations of real cached bindings, not
+fabricated register observations.
+`test_native_readonly_job_raw_status_mismatch_with_same_exit_code_refuses`
+changes the retained core-dump bit at the real SIGPIPE child's wait callback.
+The normalized exit code remains identical, but the differing raw status must
+refuse; a normalized-code comparison alone cannot meet this contract.
+Keep the native PIPE/CHLD controls and the
+ordinary mapped static-metadata/cache test as compatibility controls.
+`test_mapped_make_has_no_native_job_observations` requires the original mapped
+metadata-only behavior, selected domain value and absence of native job records.
+
+For the #270 `TC-WORKFLOW-NATIVE-MAKE-001` returned-job regression, run
+`test_native_returned_job_context_and_policy_mutations_refuse` from a clean
+Linux source checkout. The original Make performs one shell expansion, two
+commands on `all`, and an ignored exit 7. In both completion v4 and runtime v5,
+changing only a returned recipe target, command index, context kind, or ignored
+flag must reject and poison the session; the pre-fix native execution accepted
+all eight well-typed changes. Run
+`test_native_job_policy_machine_and_archive_bindings` for actual stdout
+`onetwo`, original `all` command indices 1 and 2, expansion context, and
+unignored/ignored statuses 0 and 7. Its archive controls omit or duplicate the
+policy binding, change parent/child/dispatch, corrupt typed context/policy/wait
+members, or move the v5 binding ahead of its actual root terminal event.
+
+The existing machine channel records `native-policy` at the authenticated
+original Make wait notification, with its child, dispatch, exact context,
+ignored policy and raw wait status. Each executed child must have one policy
+in the same execution/read pass. Runtime v5 additionally requires its actual
+root terminal tree before that notification. The live decoder cross-checks
+the complete returned-job policy against this separately captured observation;
+the shared archive validator enforces the same typed lifecycle. These are
+operational observations, not signatures against coherent rewriting of every
+evidence channel. The existing control-byte, observation and deadline accounting
+also applies to policy records. Default/no-reader and mapped paths do not gain
+a new service or machine-evidence requirement. Failed Make omits completed
+read/machine evidence; the readonly API rejects before publishing semantics or
+job/context observations. Run
+`test_native_failed_make_cannot_publish_mutated_job_context_or_policy` for actual
+v4/v5 Make exit 2 after recipe exit 7 with well-typed returned diagnostic
+target/policy changes. Instrumentation confirms the internal decoder reaches
+that original nonzero outcome but the API poisons the session and returns no
+accepted report. These failed diagnostic fields are not independently bound to
+a completed machine trace, and no completion is fabricated for them. Run the
+existing actual lifecycle, unignored recipe failure and mapped absence tests as
+compatibility controls. Original producer/eight-query and final delivery holds
+remain separate. Dependencies are the existing native dispatch/observer/machine
+seams; conflicts are none, with no ROM/RAM/save/locale/archival impact.
+
+Dependencies are authenticated readonly dispatch, the existing observer ABI
+and shared accounting; conflicts are none. Ordinary mapped invocation emits
+no native job callbacks. No ROM/RAM/save/localization/game-data or archival
+behavior changes. Arbitrary descendants, source assignment/caller completion,
+generated-version write/transfer/retirement custody, machine restoration,
+the original eight-query resource family and final delivery remain unqualified.
+
+`TC-OWNERSHIP-NATIVE-INPUT-001` (#270) covers original input parameter parity.
+The internal readonly call accepts the same
+`assignments=(("environment", name, value), ("command-line", name, value), ...)`
+request as ordinary mapped Make, through the existing shared admission helper.
+It does not rewrite immutable source, modify host global environment, or grant
+execution authority. With no assignments, existing defaults are unchanged.
+
+From a clean host checkout, run
+`test_native_readonly_original_assignment_inputs_and_default_restore`: supply
+one environment input and one command-line cap to the immutable shell/recipe
+fixture. Require ordinary Make stdout and original domain value/origin/flavor.
+In the same session, run again without assignments and require file defaults
+with no input leakage, increasing aggregate observations, and unchanged budget
+object/deadline. Run
+`test_native_readonly_assignment_authority_refuses_before_launch`: loader/shell/
+Make-option authority names, invalid origins, duplicate names and nonstring
+values must refuse before sandbox execution and clean owned state. The
+pre-component API rejects the assignment keyword. Dependencies are readonly
+execution and existing Make request admission; conflicts are none. No ROM/RAM,
+save, localization, game-data or archival impact. This input smoke is not
+assignment-completion ancestry or the original eight-profile qualification.
+
+`TC-OWNERSHIP-NATIVE-OBSERVE-001` (#270) covers output-independent exit
+observation. Native requested domains and target `SHELL`/`.SHELLFLAGS` values
+are checked through the original nonexpanding effective-variable lookup in
+the same target/global scope, then flavor/raw-value metadata, before expansion.
+An effective deferred append binding explicitly refuses: its nearest raw value
+can hide an inherited parent's expression. The original variable-set pointer
+is restored after lookup; no append expression is interpreted or replayed.
+Simple and undefined bindings and literal recursive bindings remain supported.
+A recursive raw value containing `$` explicitly refuses before its contents
+are executed. This includes otherwise pure references and escaped dollar
+expressions: general recursive-expression observation remains unsupported.
+There is no builtin blacklist or alternative expression interpreter, and
+ordinary mapped observation retains its existing behavior.
+
+Run `test_native_readonly_recursive_builtin_observation_has_no_extra_effects`
+on a clean host checkout. Unused info/warning/error/eval/shell bodies and a
+nested reference, plus recursive shell/flags bindings, must refuse. Captured
+native stdout must exactly match the ordinary invocation, including legitimate
+shell/flags output emitted by Make before exit; observer-only output must not
+appear. The pre-fix observer adds output, alters Make state, or executes the
+requested error. Run
+`test_native_readonly_simple_dollar_and_literal_recursive_values_are_safe`:
+a simple dollar-bearing value, literal recursive value and undefined value
+must preserve their original value/flavor and successful recipe output.
+Run `test_native_readonly_inherited_append_observation_has_no_extra_effects`:
+target, inherited and pattern append bindings hiding info/warning/error/eval/
+shell or nested-reference parents must refuse before observation effects.
+Include appended `SHELL` and `.SHELLFLAGS`; preserve their legitimate original
+recipe-time output and compare captured native stdout with ordinary Make.
+The pre-fix observer emits extra output or reaches the wrong failure boundary
+after entering an inherited body. Run
+`test_native_readonly_target_literals_and_mapped_append_keep_semantics`:
+target simple dollar-bearing and literal recursive bindings and undefined
+values must remain correct, global bindings must retain their original scope,
+and ordinary mapped append must still return `parent tail`.
+Retain the existing native shell-spawn refusal and original input/job/source/
+count controls. The mapped inode-identity control also retains its existing
+`readonly executable image` diagnostic and still rejects a zero inode.
+
+Dependencies are the admitted GNU Make 4.3 file/variable prefix ABI, existing
+observer metadata API and shared origin helper;
+conflicts are none. No new execution authority, input profile, generated data,
+ROM/RAM/save/localization or archival change. Full recursive value support,
+readonly completion integration, generated custody and original eight-query
+qualification remain incomplete.
+
+### Declared original direct executables
+
+Captured final file-alias targets must not contain `..` path components:
+normalizing the final target does not materialize directories required by
+kernel traversal of the preserved link text. Direct, `./target` and nested
+canonical targets remain supported. Run
+`test_captured_file_alias_traversal_refuses_and_direct_spellings_roundtrip`:
+existing-host relative and absolute `sub/../target` aliases must refuse at
+capture; direct/dot/nested spellings must preserve link text and round-trip
+captured bytes. Retain live link/target replacement and native alias metadata
+controls. This is final optional-runtime file-alias admission, not repository
+include-path normalization or stock ancestor-alias behavior.
+
+Trusted native ELF closures are captured once per exact active immutable view
+and requested executable pathname. First acquisition charges the actual
+captured bytes and retained cache resources; repeat queries reuse these bytes
+rather than rereading the live host. Every invocation still gets fresh readonly
+backing and actual source/dispatch/job/machine observations under the same
+cumulative deadline and budgets. Nested `select_view` isolates captures,
+restores the outer objects and clears selected caches; session failure/exit
+clears all runtime captures. ABI decoding remains per invocation.
+
+Completion source analysis enforces the existing 512-level expression limit
+even without a budget object. Pruning, function classification and statement
+syntax retain positional spans rather than copied bodies for every nested
+expression; reference and metadata body analysis streams its results.
+The host and archive source consumers pass their existing charge/checkpoint
+callbacks through comment, declaration, define, recipe and assignment analysis.
+Charges precede scanner stack/body allocation, and exhausted quotas/deadlines
+propagate without falling back to an unaccounted scan.
+
+For `TC-OWNERSHIP-NATIVE-COMPLETION-001`, run
+`test_completion_expression_depth_rejects_before_nested_body_allocation`:
+6,400 nested references in 19,201 bytes must reject at the existing depth
+limit with less than 1 MiB traced temporary allocation; before correction
+the scanner retains 61,436,800 body bytes. Require rejection both for dollar
+references and ordinary nested grouping past 512, while 512 positional spans
+remain representable without body copies. Run
+`test_completion_analysis_propagates_charge_and_checkpoint_to_all_contexts`:
+a 64-byte source-analysis quota must fail in assignment, define, inline recipe,
+tab recipe and expansion-only contexts. A failing callback must propagate
+from reference, comment and declaration analysis. The normal nested builtin,
+short-reference, escaped-dollar and dead computed branch control must retain
+exact names and charge/checkpoint activity; parsed source facts must retain
+their actual assignment/dependency/root semantics. Retain the real native
+completion and optional-machine archive controls. This bounded source fix
+does not qualify generated versions or the original eight-query budget.
+
+Completion screening retains one validated encoded selection per immutable
+view. First acquisition charges the source scan and both the returned selection
+and retained bytes; reuse charges a fresh decoded selection instead of scanning
+the same bytes again. Each invocation still validates opened sources and
+produces fresh actual observations. Nested views isolate this cache and restore
+the outer bytes; failure/exit drops it. Mutating a returned dictionary cannot
+alter the next request.
+
+Run `test_native_completion_reuses_screening_without_poisoning_selection`:
+capture a 786432-byte unused text input, require first screening to charge at
+least its size, then require reuse to charge at least the serialized selection
+but less than that input. Mutate returned names and an inventory digest and
+require an unchanged next selection, two real original Make outputs/values,
+unchanged deadline/limits and refusal after actual budget exhaustion.
+`test_native_completion_screening_view_isolation_and_restoration` exercises
+different BASE/CURRENT names in nested immutable views, real BASE execution and
+exact outer cache restoration. The pre-fix repeated screening charges 787648
+bytes and fails the reuse bound. This is not unchanged eight-query qualification
+and does not remove any accounting category or increase limits.
+
+`test_completion_long_statement_preserves_source_with_bounded_scan` admits a
+512-KiB literal rule target, preserves its complete inline recipe/hash text and
+parses the preceding VALUE assignment with unchanged dependency facts. Require
+the combined comment/source scan to finish in less than three seconds on the
+host. The pre-fix control takes 27.584 seconds and fails this exact bound.
+Boundary escape checks visit separator candidates only, counting adjacent
+backslashes without copying preceding prefixes; comment construction tracks
+the current backslash run and joins accumulated characters once. Existing real
+GNU/native escaped-colon, escaped-hash, recipe/hash and returned-archive controls
+remain required. This restores bounded scanning cost, not runtime source
+authority; the separately bound architecture hold remains in force.
+
+Runtime effect-custody redesign is still WIP. The existing independently
+validated completion ABI also derives original `do_variable_definition`,
+`try_variable_definition` and `eval_buffer` executable spans; the ordinary,
+direct multiline-define, reader-internal and target-specific machine callers;
+and the copied eval ebuffer/floc member offsets. Derivation verifies frame
+entries, parsed-name/flavor/result instructions, unique direct calls, null
+file/size fields and the original `reading_file` anchor. This ABI alone does
+not grant runtime completion authority.
+
+Run `test_native_runtime_effect_abi_binds_complete_machine_call_families`
+against the actually captured Make ELF. Verify each derived call targets its
+real exported callee and the eval floc is 40 bytes after its ebuffer. Mutating
+each caller opcode or function entry must refuse; mutating each supplied ABI
+coordinate must fail independent machine-operand validation. Existing real
+completion/barrier/job and foreign-ABI controls remain required. These are
+machine ABI predicates, not source spelling evidence, and are necessary to
+bind original parser effects without a second evaluator.
+
+The internal readonly request `observe_runtime_completions=True` selects
+version-5 observations, requires `observe_reads=True`, and conflicts with the
+version-4 `observe_completions=True` request. Version 4 remains a compatibility
+lane, not a substitute for runtime source authority. Version 5 inventories the
+immutable view without selecting inferred supplier names. It observes original
+definition arguments, actual returns, effective post-modifier bindings and
+pristine nested `eval_buffer` inputs. Four hardware slots follow one real
+pass/source/eval/effect invocation stack; existing kernel register restoration
+and readback applies to every slot purpose. Target-specific completion follows
+its independently derived private/export and command-origin merge, not the
+earlier definition return; ordinary assignments/defines use their common
+post-modifier continuation. Definitions inside evaluated text
+use its actual consumed buffer interval. A multiline define's executed
+position can be its endef, while its separate copied declaration floc names the
+header. Neither is silently relabeled as the other.
+
+The typed archive appends effects and evaluations to each `OriginalPass`;
+existing constructors retain empty defaults. Runtime file visits retain pinned
+immutable sources, and eval occurrences retain their pristine byte captures.
+Standalone validation checks source/parent/return lifetimes, effective names,
+counts and actual machine payload associations. Effect-input/result digests
+bind the observer's exact captured event; eval-buffer digests bind its pristine
+bytes. These are reconstruction/integrity observations, not signatures or
+protection against hostile same-UID processes. Malformed read rows use the
+shared versioned wire schema before runtime lifecycle interpretation.
+After the read pass returns, version 5 observes original target-aware expansion
+entry for recipes and both secondary prerequisite loops. An expansion binds its
+actual file, verified caller, pristine unexpanded input and supervised CWD,
+then uses the same source/eval/definition/innermost-return four-slot scheduler.
+Unrooted post-read eval/definition still explicitly refuses. Actual Make
+readiness checks these additional machine spans against readonly executable
+mappings and captured bytes; each expansion validates its direct original caller
+and file association without replay or a second code scan.
+The `runtime_expansion_abi` discovery prerequisite identifies original
+target-aware expansion and both actual secondary prerequisite loops from the
+captured executable. It binds the restored variable/reader anchors, file layout,
+recipe entry's saved original file, secondary entry's actual target/dependency
+chain, and expansion/set-variables/split/enter callees. Neither an exported
+symbol alone nor copied recipe floc authorizes secondary source attribution.
+The typed archive retains `OriginalExpansion` occurrences on their originating
+exec/pass, including occurrences after that pass's return. A first eval's
+`ExpansionLocation` names its actual root without inventing a file visit.
+Nested eval/effect locations retain their pristine eval source and consumed
+interval; `visit` is null when no file reader is active. Post-read includes retain
+real readonly snapshot descriptor/pin custody and may start a new source tree;
+they are not members of the already-returned pass goal chain. Shared source-read
+structural validation admits explicit, paired expansion intervals and validates
+every post-read source event, rather than discarding those visits. Machine
+expansion-input digests bind the captured root payload, and every root return
+requires the actual post-read guard to be rearmed. Generated-source admission,
+nested Make/restart qualification and the original aggregate-budget holds remain.
+Run `test_native_runtime_expansion_abi_binds_original_callers_anchors_and_layout`
+on the admitted host: captured Make must yield both verified loop callers and
+the actual recipe/secondary expansion callers. Independent machine mutations
+of each loop call, entry, target/dependency association, original file save,
+anchor, layout and relied-on callee must refuse rather than selecting a surviving
+sibling as complete evidence. This case alone is ELF/ABI evidence, not
+generated-resource or eight-query resource qualification.
+Version-4 staged suppliers forwarded through call-if/and/or/foreach remain
+unqualified under the runtime redesign hold; compatibility results do not
+grant complete supplier authority.
+
+To exercise this WIP checkpoint on the admitted GNU Make 4.3 x86-64 host,
+start each `FoundationTests` case with its temporary immutable view and let
+session exit remove owned resources. Run
+`test_native_runtime_effects_capture_computed_staged_define_and_eval` and
+`test_native_runtime_nested_eval_include_and_effect_lifetimes`: require original
+Make output, actual computed/staged/define/target bindings, distinct pristine
+nested eval occurrences and properly paired returns. Run
+`test_native_runtime_deferred_builtins_and_context_reset_capture_all_effects`:
+forwarded if/and/or/foreach and conditional/include/target context resets must
+still return and record the executed supplier. These are the pre-version-5
+omission controls, not a new static supplier grammar.
+
+Run `test_native_runtime_returned_effect_eval_and_machine_mutations_refuse`:
+foreign/reordered effect/eval parameters, missing/wrong-type read fields,
+coherently renumbered missing machine bindings and coherently changed pristine
+eval bytes must raise `ReadEpochError`. Run
+`test_native_runtime_live_effect_and_buffer_custody_mutations_refuse`: injected
+live definition/effective-binding and eval-buffer custody errors must refuse
+with owned cleanup. Run
+`test_native_runtime_actual_private_prefix_secondary_and_failed_lifetimes`:
+verify GNU private scope, a custom recipe prefix and secondary expansion, then
+require a real Make error to retain its diagnostic without a successful
+archive. Existing actual hardware register, job and immutable-view controls
+remain required.
+
+Run `test_native_runtime_target_modifiers_and_ignored_origin_capture_effective_bindings`:
+two targets receive private exported VALUE, once with no command-line input,
+once with override plus a command-line value, and once with a command-line value
+that wins. Require original recipe and environment values, both captured
+bindings, private/export flags and the effective winning value. The early-return
+negative control omits private flags in the first two cases and records the
+losing local value in the third. Target post-modifier custody is the same
+runtime contract, not an additional source restriction.
+
+This checkpoint does not complete graph-consumer integration, generated
+creates/replacements/remakes, nested Make/restarts or the unchanged
+original preliminary-plus-eight-query budget case. The sticky architecture
+hold remains a delivery hold. Limits, accounting categories and the original
+fixtures are unchanged. No ROM/RAM/save/localization, modern/archival profile or
+generated-data change; no new execution authority or service. The new request
+remains incompatible with generated/published resources until their real
+producer custody is implemented and qualified.
+
+Version-4 register controls establish compatibility only. Run
+`test_native_runtime_actual_trap_registers_preserve_all_invocation_purposes`
+for direct version-5 evidence: computed assignments, nested eval, includes and
+a private target binding must return `original|target|original`. Read actual
+kernel registers before/after every hardware trap and require all fields
+unchanged except the required resume flag. The observed purpose set must
+contain pass/source entry/return, expansion entry/return, effect entry/return/completion and eval
+entry/return. Run
+`test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose`:
+each of the seven runtime callbacks must reject a changed register object;
+each matching trap purpose must reject a corrupted restoration readback.
+Readback projections are decoder controls, not claims of physical kernel
+register corruption. Both cases require owned cleanup. These are the existing
+restoration criterion on actual version-5 paths, not generated/descendant or
+aggregate-budget qualification.
+
+Run `test_native_runtime_post_read_recipe_and_secondary_eval_capture`: recipe,
+ordinary secondary and `.SUFFIXES` secondary expansion each evaluate a VALUE
+assignment after source reading. Require `late`, a paired typed expansion/eval,
+the actual effective VALUE binding with a null file visit, and complete ordered
+returns. The earlier honest refusal is the pre-fix negative control.
+Run `test_native_runtime_post_read_nested_skipped_eval_and_include_lifetimes`:
+require `alpha|alpha|alpha|late`, three real eval occurrences, no skipped
+assignment, actual post-read `post.mk`/nested `deep.mk` and optional missing
+include visits, and unchanged initial pass goals. Its fifteen returned
+lifecycle/payload/source/guard mutations must refuse, including independent
+surrogate-string controls for target, pristine input and CWD with typed errors.
+Run `test_native_runtime_post_read_actual_target_and_caller_mutations_refuse`:
+null/wrong file, wrong secondary target register/loop caller and each of four
+live machine-image substitutions must refuse and clean owned state. Preserve
+the private/custom-prefix/ordinary-secondary and nested read-pass observations.
+The returned-machine mutation case also removes the post-read guard arm or
+coherently substitutes startup-only/either-missing-slot shapes, updating slot
+readbacks, control bits and sequence numbers; substituting the active-reader
+four-slot shape must also refuse. Each completed
+pass and expansion return requires exactly one actual four-slot guard arm; the two-slot startup
+shape is admitted only in its original exec context.
+
+Version-5 native jobs additionally retain actual `argv` and supervised `cwd`.
+Capture command-line bytes through the owned child's `/proc/<pid>/cmdline` at
+its successful kernel exec stop, before resuming the executable. Retain at most
+65536 bytes and 1024 arguments, preserving empty arguments and spaces, with
+strict UTF-8 and a nonempty argv[0]. Charge captured bytes and retained job
+observations under the existing cumulative accounting. The same stopped exec
+machine observation carries `input_sha256` binding encoded argv/cwd to that
+dispatch/PID; Make execution has a null binding. Returned jobs must match the
+exact child machine binding. Version-4 and nontrace job formats are unchanged.
+This is original execution-input observation, not generated-output authority,
+registration matching, command replay, a signature or same-UID isolation.
+
+Run `test_native_runtime_jobs_capture_actual_argv_cwd_and_machine_binding`:
+execute an original shell expansion, recipe shell and declared direct printf.
+Require `directtwo wordsinput`, their exact argv (including empty/spaced direct
+arguments), actual `/repo` cwd and paired machine input bindings.
+The pre-checkpoint observation lacks argv/cwd. Run
+`test_native_runtime_job_execution_input_mutations_and_capture_failures_refuse`:
+missing/malformed/foreign returned inputs, wrong machine input binding and
+empty/nonterminated/invalid-UTF-8/oversized command-line captures must refuse
+with owned cleanup. Capture substitutions are decoder controls, not actual
+malformed Linux exec claims. Retain version-4 source/job/machine controls and
+direct version-5 hardware parity. Generated command-to-resource matching,
+descriptor/version custody and original budget qualification remain open.
+
+Version-5 readonly native jobs retain a finite `tree` under their original Make
+dispatch. Each actual fork records its parent and child. Each stopped newborn
+records `start` only after its inherited hardware registers are cleared and
+before its first resume; a child that never execs still needs this lifetime.
+Each original exec or same-PID replacement records its generation, admitted
+image, actual argv and supervised CWD after an actual register clear. Every
+member must terminate before the original root's terminal event. The root's
+original Make wait/context/ignore handling remains unchanged; nonzero or
+signalled leaves do not fabricate a failing root shell result.
+
+Real native SIGCHLD delivery requires kernel siginfo naming an actual forked
+child of that parent, with its code/status matched to the child's observed
+terminal wait status. Native SIGPIPE is admitted only after an actual
+write-family syscall returns EPIPE on an owned pipe; the pipe error and actual
+signal termination remain observable. Surviving/orphaned descendants refuse
+publication and are removed by existing owned-process cleanup. No foreign
+image, arbitrary signal, writable mount, generated-source authority, replay or
+new accounting exclusion is admitted.
+
+Returned tree events have strict shapes, order, ownership, start/exec
+generations and complete terminal lifetimes. Every event is bound to the
+machine packet for the same original dispatch/PID, with the complete returned
+tree equal to the observed machine tree. Child start and every exec independently
+require their immediately preceding actual register clear. These are captured
+runtime/integrity observations, not signatures or hostile same-UID isolation.
+Version 4 retains its original descendant/reexec refusal and wire format.
+Version-5 exec reconciles every previously authorized descriptor, including
+those above stderr, with its actual stopped-process `/proc` lifetime. Only
+still-present known descriptors retain authority; closed and close-on-exec
+descriptors are removed. Observations are bounded by the existing descriptor
+limit and charged to the same observation budget. Unknown kernel descriptors
+are never discovered into authority. This preserves original source,
+directory and pipe inheritance without a second grant or CLOEXEC-flag model;
+an unsuccessful exec has no exec event and does not perform this reconciliation.
+Failed Make runs retain structural job/tree validation and their original
+status/diagnostic, but do not publish a successful trace. Only successful runs
+bind the root parent and complete returned tree to that trace's machine
+observations; failed-run structural parent values are not archive authority.
+Nested Make/read forests, Make restart, generated producers and the original
+aggregate-budget qualification are separate unresolved contracts.
+
+Run `test_native_runtime_descriptors_survive_only_their_actual_exec_lifetime`
+and `test_native_runtime_closed_exec_descriptors_do_not_keep_authority` on the
+admitted Linux GNU Make 4.3 x86-64 host. Compile `native_fd_exec.c` through the
+existing NativeTool route. An original non-CLOEXEC source FD above stderr,
+`dup2`, `F_DUPFD`, pipe endpoint, directory with `openat`, and fork-child exec
+must retain their actual source/pipe output, matching the ordinary executable.
+Clearing CLOEXEC through `F_SETFD` or `FIONCLEX`, including a descriptor created
+by `F_DUPFD_CLOEXEC`, must retain it. Reopening a closed descriptor number after
+exec must read the new `second` source, not its old `input` source.
+Consumption of an explicitly closed, `O_CLOEXEC`, `F_DUPFD_CLOEXEC`,
+`F_SETFD`/`FIOCLEX`, or close-on-exec stdin descriptor must refuse as unavailable;
+so must an unknown descriptor. Before correction all six nonstandard
+source/dup/pipe/directory/fork cases refuse despite ordinary success.
+Run `test_native_runtime_failed_actual_exec_preserves_authorized_descriptors`:
+the bounded diagnostic changes the already-admitted exec's argv register to an
+invalid address, observes the actual kernel `EFAULT` return, and requires the
+original live source FD/output and unchanged exec generation. This is an
+injected failed-kernel-transition control, not an ordinary argv parity claim.
+Every case requires owned cleanup; unchanged v4 refusal and original descendant
+pipeline/SIGPIPE controls remain coupled checks. These readonly cases do not
+qualify generated descriptors, nested Make/restarts or the original eight-query
+aggregate budget.
+
+On the admitted GNU Make 4.3 x86-64 host, run
+`test_native_runtime_readonly_descendant_pipelines_and_exec_lifetimes`:
+the unchanged eager and recipe printf pipelines must produce `second`, matching
+ordinary Make; a same-PID exec
+replacement must produce `replaced` with generations 1 and 2; nonzero,
+SIGUSR1-terminated and nested shell leaves must preserve the successful original
+root output while retaining all actual child statuses. The pre-checkpoint
+pipeline refusal is the negative control. Run
+`test_native_runtime_undeclared_descendant_images_refuse_before_exec`: an
+undeclared false image must refuse before actual exec, both as a same-PID
+replacement and under a real owned child; cleanup must retain no owned process.
+Run
+`test_native_runtime_fork_without_exec_retains_start_and_terminal_custody`:
+compile the small owned C fixture, fork a child that exits 7 without exec and
+wait for it; require a successful root, a started generation-zero child and its
+actual terminal status. Run
+`test_native_runtime_descendant_tree_returned_shapes_and_clear_omissions_refuse`:
+foreign parent/PID/image, generation, argv/CWD, signal/status and missing
+start/terminal mutations must refuse. Independently omit inherited-start clear,
+replacement-exec clear or all tree machine packets; each must also refuse.
+These are returned-evidence/decoder controls, not physical register-corruption
+claims. Run `test_native_runtime_owned_broken_pipe_and_orphan_cleanup`:
+the compiled fixture writes to its own closed-reader pipe and must actually
+terminate with SIGPIPE under Make's ignored-recipe policy, recording EPIPE and
+then continuing to `done`; a shell leaving a live busy-loop child must refuse.
+Use each test's temporary view and require session exit to remove all owned
+resources. Run
+`test_native_runtime_failed_roots_and_completed_descendants_preserve_make_error`:
+unignored exit 7, an actual SIGUSR1-terminated root and exit 9 after a completed
+nonzero child must preserve ordinary Make's status 2 and actual diagnostic,
+without accessing an absent success archive. Malformed parent/start/terminal
+trees on that failed path must still refuse with typed errors. None of these
+cases substitutes for original eight-query resource
+qualification or generated/nested-Make integration.
+Run `test_native_runtime_descendant_deadline_cleans_live_owned_tree`: start a
+root shell waiting on an actual busy-loop child, capture its actual fork,
+register-cleared start and exec, then shorten the supervisor deadline after
+that exec. Require explicit deadline refusal, no successful terminal/archive
+and owned cleanup. The earlier supervisor deadline allows its failure report
+to be decoded within the unchanged host budget; this is a cancellation control,
+not aggregate-budget qualification.
+
+Version-5 native exec reconciles existing self-signal grants against actual
+kernel `SigPnd` and `ShdPnd` masks at the owned exec stop. Only already
+authenticated grants that remain pending survive. Both masks must occur exactly
+once as 64-bit hex fields in a bounded status capture; those bytes are charged
+to existing observation accounting. This neither grants a foreign signal nor
+retains a successful-but-discarded signal. Forked children still start without
+their parent's pending grants. Delivery/termination markers reset as before,
+and actual sender/code checking remains required at delivery. Version 4 retains
+its existing exec boundary.
+
+Run `test_native_runtime_pending_self_signals_survive_exec_not_fork`: compile
+`scripts/validation_ownership/tests/fixtures/native_pending_exec.c` through the
+existing owned native route.
+Blocked self-kill, queued self-SIGUSR1 and actual closed-pipe EPIPE/SIGPIPE must
+survive same-PID exec, then reach their handler on unblock, matching the same
+program's ordinary host result. Bind actual kernel pending masks and grant
+states to the exec generation, not the transport collection's ordering.
+A forked child must inherit neither the pending signal nor its grant. A
+blocked self-SIGUSR2 discarded by changing its disposition to ignored must
+lose its grant at exec while the still-pending SIGUSR1 survives. The pre-fix
+kill/queued/pipe cases refuse with signals 10/10/13 instead of succeeding.
+Run `test_native_runtime_exec_pending_masks_and_foreign_signal_refuse`:
+missing/duplicate/malformed masks, empty/oversized/nonbyte status captures must
+refuse; a real foreign SIGUSR2 sent at the owned exec stop must also refuse
+rather than being granted by its pending bit. Capture substitutions are decoder
+controls, not claims of physical `/proc` corruption. Require owned cleanup,
+and retain failed queued-signal rollback and actual hardware parity controls.
+These cases do not qualify generated versions, nested Make or the original
+eight-query budget.
+
+Self-signal admission records the attempted syscall separately and issues grants
+only after its actual successful kernel return. Failed sends neither introduce
+a grant nor discard an earlier successful one. Standard signals coalesce to
+one origin per kernel thread/shared pending queue; kernel realtime signals (32 through 64 on the admitted Linux
+x86-64 host) retain a count per successful send and consume one on each
+authenticated delivery. Existing observation-count and byte budgets charge
+every successful grant and bound outstanding counts. Exec pending-mask
+reconciliation retains those counts only for already-authorized pending
+signals, without interpreting a mask bit as a new or repeated grant.
+
+Successful `rt_sigtimedwait` also consumes exactly one existing signal grant;
+timeouts and pre-dequeue failures consume none. An output-copy `EFAULT`
+can occur after the signal is dequeued. Before a wait and after `EFAULT`,
+the supervisor reconciles issued origins with the actual thread and shared
+kernel queues, retiring absent origins before another wait or resend.
+An origin already missing at a later wait is not evidence of that wait's
+consumption. `SI_QUEUE` sender fields are
+caller-supplied and are not origin authentication. At the owned queued-send
+entry, the supervisor temporarily replaces unused x86-64 siginfo union bytes
+32 through 47 with a private 16-byte marker. It restores the caller's bytes
+at the actual syscall return, retaining the marker only for a successful
+send and preserving the first standard-coalesced origin. An actual queued
+delivery or synchronous consumption must match that issued marker before
+the supervisor restores the original union padding for the candidate.
+Sender, signal, errno and application payload fields are not changed.
+For successful waits with no siginfo output, bounded kernel `PTRACE_PEEKSIGINFO`
+observations of both thread and shared pending queues identify the retired
+marker; unknown or ambiguous custody refuses. No caller-supplied sender
+field, pending-mask bit, stale count or foreign queued signal is a substitute.
+Kernel-generated `SI_USER`/`SI_TKILL` and owned EPIPE/SIGPIPE keep their
+existing self-origin checks. This is a local signal-lifecycle boundary,
+not hostile same-UID OS isolation.
+
+Partially accessible siginfo output is deliberately unsupported. After an
+output-copy `EFAULT` retires a queued origin, an accessible padding byte causes
+explicit terminal refusal before the candidate resumes; the supervisor does
+not emulate partial usercopy, overwrite unrelated or read-only output, or
+claim ordinary-host parity for that buffer shape. Fully inaccessible output
+still returns its actual kernel `EFAULT`. Run
+`test_native_runtime_partially_accessible_siginfo_fault_refuses_before_resume`:
+ordinary execution covers each accessible padding prefix from zero to 16 bytes
+and a 64-byte prefix against an unmapped tail; native execution must refuse
+the first potentially observable partial padding for both queued-send syscalls
+and standard/realtime signals, with owned cleanup. Also run
+`test_native_runtime_standard_signals_coalesce_per_kernel_pending_queue`:
+one shared and one thread-directed SIGUSR1 must both reach their handlers,
+matching the two deliveries observed outside the supervisor.
+
+Run `test_native_runtime_consumed_self_signal_rejects_forged_foreign_queue`
+and `test_native_runtime_signal_consumption_preserves_real_payload_and_padding`.
+The owned `native_signal_consume.c` fixture blocks SIGUSR1, sends an actual
+self-queue through either queued-send syscall and consumes it with a real
+wait. A controlled foreign process then queues SIGUSR1 with a forged recipient
+PID and `SI_QUEUE`. Require terminal refusal both with no grant and when a
+later genuine self-send coalesces behind that foreign signal. The pre-fix
+program instead accepts the foreign handler and succeeds. Include null-output
+waits, timeout/input-EFAULT controls, and ordinary-host parity for actual payload,
+sender, caller siginfo memory and delivered union padding. Require owned
+cleanup. Also run `test_native_runtime_output_copy_fault_retires_dequeued_origin`
+for valid-mask/invalid-output `EFAULT`, genuine resend and subsequent foreign
+waits with and without output, through both queued-send syscalls and standard
+and realtime signals. Retain the realtime/count/coalescing, failed-send, exec/fork
+and broken-pipe controls above. These cases do not qualify the original
+producer, generated-version or eight-query contracts.
+
+Self-SIGKILL does not reach an ordinary syscall return. The supervisor uses the
+actual ptrace exit stop instead: it requires the exact outstanding self-send
+syscall, original self-PID/signal operands and actual return register zero,
+with PID/TID and signal operands interpreted through one shared signed 32-bit
+request decoder at syscall entry and fatal exit, and the kernel exit status
+paired to the final terminal wait. Upper register bits are not part of the
+kernel's `pid_t` or `int` argument. An external
+SIGKILL while stopped before the send leaves return register `-ENOSYS` and
+explicitly refuses; an entry attempt is never terminal authorization.
+Exit stops resume before the final wait. On refusal, owned cleanup resumes
+already-parked killed processes before reaping, including processes stopped
+at exit; otherwise those stops could prevent cleanup from completing.
+
+Run `test_native_runtime_actual_sigkill_outcomes_cover_all_self_send_forms`:
+compile the owned `native_sigkill.c` fixture and exercise kill,
+rt_sigqueueinfo, tkill, tgkill and rt_tgsigqueueinfo. The same ordinary binary
+must terminate with SIGKILL; native Make must preserve ignored status 9,
+continue to `done` and retain actual zero-result/exit-status observations on
+the same job PID. Run
+`test_native_runtime_actual_sigkill_uses_kernel_pid_t_conversion`:
+use nonzero bit 32 and all-ones upper 32 PID bits for each supported syscall;
+for tgkill and rt_tgsigqueueinfo also vary TID alone and both operands. All 14
+ordinary binaries must actually die by SIGKILL, and native ignored recipes must
+retain raw status 9 and `done`. Before correction all 14 native invocations
+refuse the successful send at exit. Upper-bit normalization must still refuse
+low-32-bit foreign, zero/broadcast and negative/group target mutations.
+Run `test_native_runtime_actual_signal_operands_use_kernel_int_conversion`:
+compile `native_signal_width.c` and pass bit 32 or all-ones upper 32 bits in
+both target and signal operands for all five syscall forms. Compare each
+ordinary binary with its native execution: blocked SIGUSR1 must reach exactly
+one handler with its actual sender PID and signal code; SIGKILL must terminate
+with status 9 while the ignored native recipe continues to `done`. Before the
+shared decoder, these successful native sends refuse despite ordinary kernel
+success. Run `test_native_runtime_normalized_invalid_signals_do_not_add_grants`:
+use upper-bit zero, negative and 65 signals, plus a valid blocked SIGUSR1
+followed by invalid 65. Bind actual syscall returns and grants to each job's
+captured argv/PID. Zero returns zero without a grant; negative and 65 return
+EINVAL without a grant; the prior-send case retains exactly its earlier
+SIGUSR1 grant. Every case then receives exactly one valid SIGUSR1, matching
+the ordinary binary. Invalid sends must neither create authority nor erase
+prior authority. These controls do not qualify generated namespace custody
+or the original eight-query family.
+Run
+`test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse`:
+send a real supervisor-origin SIGKILL before resuming the self-send syscall,
+require its actual `-ENOSYS` outcome and explicit refusal, then independently
+substitute return/syscall/target/signal/pending/terminal fields on genuine
+self-send controls. Kernel-readback substitutions are decoder controls, not
+physical register corruption. Every refusal must complete owned cleanup.
+The pre-fix entry grant admitted an attempt without requiring a successful
+send; the actual exit-stop diagnosis distinguishes those outcomes.
+
+Run `test_native_runtime_realtime_counts_standard_coalescing_and_failed_send`:
+the `native_queued_exec.c` fixture blocks and sends two realtime signals via
+kill or sigqueue, execs and receives both; also receive both without exec.
+Two standard signals coalesce to one. A genuine EFAULT on the middle queued
+send must leave the earlier grant intact, and the later success must result
+in exactly two retained realtime grants. Bind captured grant counts to actual
+syscall returns and exec generations; compare ordinary binary behavior for
+unmodified controls. The pre-fix two-queued/exec case rejects its second real
+delivery as signal 34. Retain old successful self-SIGKILL, failed queued send
+followed by foreign SIGKILL, pending-mask/fork controls, actual SIGPIPE,
+orphan/deadline cleanup and direct hardware restoration. These are the
+existing signal-lifetime contract, not generated custody or overall native
+qualification.
+
+Run `test_native_readonly_reuses_captured_runtime_without_second_host_read`:
+execute two original shell/direct-printf Make queries in one session, deny a
+second host runtime acquisition and require identical real output/values,
+retained exact capture resources, lower incremental control cost, unchanged
+deadline/limits and growing observations. Before reuse, the second real query
+tries another host acquisition. Run
+`test_native_readonly_runtime_capture_view_isolation_restoration_and_failure`:
+select base/current nested immutable views, require isolated captures and
+correct original outputs, restore the outer capture object, then reject a
+new executable capture and prove it is not cached; cleanup empties every
+retained view cache. This does not make an oversized Python runtime profile
+admissible or qualify the original eight-query family.
+
+Captured session `runtime_files` are also supported as readonly optional data,
+including real absent paths and recorded stock ancestor aliases. The native
+invocation builds fresh captured backing; it does not mount the session's
+cached mapped interceptor runtime. Optional program bytes remain data unless
+explicitly declared executable. Shared optional/native images must have
+identical bytes and preserve the optional input mode. Actual dispatch, exec
+and returned jobs use the installed canonical pathname; original argv and
+notification bytes are not rewritten. Thus a recorded `/bin` alias can place
+the original `/bin/sh` at `/usr/bin/sh` without granting arbitrary aliases.
+
+Run `test_native_readonly_optional_runtime_data_absence_and_stock_alias_jobs`
+on the clean Linux x86-64 host with the existing build-essential libc headers
+and admitted stock printf: capture `/usr/include/stdlib.h`, absent `/usr/include/.dep` and
+`/bin/printf`, explicitly declare `/usr/bin/printf`, read the first header line
+and probe absence in original shell expansions, then invoke printf through
+both spellings. Require exact values/output, four real canonical shell/direct
+jobs, successful data access and actual absent kernel metadata results.
+The pre-fix readonly invocation rejects these captured runtime inputs.
+Run `test_native_readonly_optional_runtime_resource_and_alias_boundaries_refuse`:
+adjacent uncaptured data/absence, unrequested `/bin/true`, parent traversal and
+an undeclared optional program must refuse and clean owned state.
+Run `test_native_readonly_optional_absence_rejects_wrong_kernel_result_projection`:
+alter a real absent metadata result projection to success; the host must reject
+it against the declared absent resource. This is not physical kernel mutation.
+Actual optional-resource metadata requests/results/buffers and successful
+accesses use existing observation settlement and shared budgets. Mapped-parent
+invocations, mutable publications and root/repository submount overrides remain
+forbidden. Default profiles without optional resources retain their behavior.
+No Python runtime, candidate NativeTool, descendant or generated authority is
+granted by these optional data/alias resources.
+The generic case does not require Newlib provisioning; the exact original
+eight-query fixture retains its own original Newlib resource declaration.
+
+Run `test_native_readonly_short_underscore_matches_long_reference_completion`:
+use `_ := original`, then `VALUE := $_` or `VALUE := $(_)` in separate real
+source fixtures. Both scanners must select `_`; actual native output/value and
+selected `_`/`VALUE` assignment completions must agree. The short-form pre-fix
+case expands correctly but omits the supplying `_` completion. Both scanners
+share the same admitted single-character identifier alphabet.
+Retain `test_native_readonly_completion_failed_make_has_no_successful_archive`:
+a real failed query keeps Make's status/diagnostic without a successful trace.
+Successful-query machine/job cross-checks must not dereference the deliberately
+absent archive for that failed query; the pre-fix host instead raises KeyError.
+
+The internal readonly invocation accepts `native_executables=()`; the empty
+default still admits only the original shell. Explicit ordinary trusted host
+ELF paths are captured with their interpreter/library closure and installed as
+readonly resources, never substituted with command handlers. Their interpreter
+must be the already admitted native interpreter. Conflicting bytes, duplicate
+paths or reserved execution-authority paths reject before launch. Actual GNU
+Make dispatch, exec, job PID/context/raw wait and returned executable bindings
+must agree. A declaration does not authorize a later shell re-exec or arbitrary
+descendant. Capture and observation costs retain the same aggregate budget and
+deadline.
+
+Returned `native-job` records require exactly `sequence`, `executable`, `pid`,
+`context`, `returncode`, `terminal_status`, `waited` and `ignored`. Context
+distinguishes expansion from recipe target/command index; typed terminal status
+must be final and agree with the return code, waiting must be complete, and
+sequences/PIDs must be unique and complete. Executable/PID records must match
+actual execution observations. Completion requests additionally require the
+existing complete machine section and exact child dispatch/PID agreement with
+these jobs. General trace consumers retain optional machine archives.
+
+From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
+namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
+
+1. Run `test_native_readonly_declared_direct_executable_preserves_original_jobs`:
+   define `VALUE := $(shell /usr/bin/printf %s original)` and an original direct
+   `/usr/bin/printf` recipe. Explicitly declare `/usr/bin/printf`; require
+   `original`, `recipe` plus newline, two actual expansion/recipe jobs with zero
+   raw wait status, and exact dispatch/PID machine binding without command
+   replay. Complete source/completion custody and owned-state cleanup must hold.
+2. Run `test_native_readonly_direct_executable_default_invalid_and_conflicting_admission_refuse`:
+   the same recipe without declaration must refuse at GNU's earlier uncaptured
+   executable metadata lookup, before original dispatch;
+   invalid, duplicate and reserved declarations and conflicting captured
+   library bytes must reject. The empty-profile refusal is the pre-fix control.
+3. Run `test_native_readonly_direct_executable_dispatch_and_returned_bindings_refuse`:
+   change an actual dispatch or its job executable, or alter returned job/exec
+   projections. Unissued resources and an otherwise admitted but different
+   program must both reject. These are controlled binding mutations, not
+   physical executable replacement.
+4. Run `test_native_readonly_declared_executable_does_not_admit_shell_reexec`:
+   declaring the program must not let an already dispatched shell re-exec it
+   without an original authenticated Make dispatch.
+5. Run `test_native_readonly_returned_completion_requires_entire_machine_section`
+   and `test_native_readonly_returned_job_lifecycle_and_machine_binding_mutations_refuse`:
+   delete the whole machine section after actual trace finalization, reduce
+   actual returned jobs to PID/path, delete lifecycle fields, mutate typed
+   wait/status/context/sequence evidence, swap otherwise complete dispatch
+   bindings, and omit jobs plus execution markers while retaining real machine
+   children. Before the host correction all twenty controls return successfully;
+   each must now explicitly refuse and clean owned state. These are real
+   return/observation projection mutations, not physical execution replacement
+   or hostile same-UID report authentication.
+6. Run `test_native_readonly_returned_snapshot_custody_and_image_mutations_refuse`
+   (#270, `TC-OWNERSHIP-NATIVE-EXECUTABLE-001`): after genuine completion,
+   change a successful source-open to well-formed publication custody, or change
+   an entry-image digest without changing selection or machine evidence.
+   The pre-fix host accepts both archives. The readonly host must reject both,
+   requiring snapshot custody and its requested immutable snapshot digest for
+   every corresponding event, and clean owned state. The shared validator
+   remains publication-capable; these are request-specific return mutations,
+   not proof of protection against a hostile same-UID process.
+
+### Explicit managed Python resource directory
+
+`TC-OWNERSHIP-NATIVE-MANAGED-RUNTIME-001` (#270) covers the internal
+`native_runtime_directories=()` resource declaration. Its empty default retains
+the captured-only native runtime. Up to four distinct exact Python resource
+roots may be declared: `/usr/lib/pythonM.N`,
+`/usr/local/lib/pythonM.N/dist-packages`, `/usr/lib/python3/dist-packages`,
+and `/usr/lib/pythonM.N/dist-packages`. These use the existing readonly bind-mount seam. Before
+mounting, every namespace entry is checked for root ownership and nonmutable
+group/other permissions, regular-file/directory/symlink type, entry bounds and
+the existing deadline; metadata admission charges the existing control budget.
+Real installed symlinks are preserved, but resolving outside the declared
+directory grants no target access. Captured executable/optional-resource
+overlap refuses. The supervisor checks exact mount declaration, actual backing
+device/inode and readonly/nosuid/nodev flags before candidate execution.
+
+This is an explicit amendment to the early captured-runtime-only design, not a
+claim of captured resource bytes. The managed system runtime must remain stable
+through the session; privileged host updates are outside this trust model.
+Resource reads, metadata, enumeration and executable library mappings within
+the declared root do not grant additional command execution, writes,
+candidate-source or generated-output authority. This namespace contains
+trusted Python source and extension code. Command executable ELF and external
+library admission remain separately captured and explicit; argv is not rewritten.
+No broad `/usr` or library-directory mount is introduced.
+
+Tester prerequisites are the installed system versioned Python stdlib and the
+existing native namespace launcher; no ROM, save, localization or archival
+interaction applies. Start with a clean fixture and run:
+
+1. `test_native_readonly_managed_python_directory_preserves_real_namespace`:
+   original shell reads a real stdlib resource and returns its actual first
+   line; successful access evidence must include that file. Repeat without the
+   declaration and require uncaptured-access refusal and owned cleanup.
+2. `test_native_readonly_managed_python_directory_boundaries_refuse`: reject
+   broad/nested/duplicate declarations, resource writes, parent escapes,
+   external symlink targets and execution of an unissued executable stdlib
+   file. Cleanup must retain no capsule or session cache.
+3. `test_native_readonly_managed_python_startup_does_not_invent_absence`:
+   dispatch real explicitly admitted Python with the fixture's actual `-I -S`
+   argv. Its unadmitted `/usr/pyvenv.cfg` startup read must refuse, not become a
+   false-absence branch. **Original generator invocations and full extension
+   dependency closure are still unqualified.** This
+   negative is not a successful Python execution or original-eight-query proof.
+   Explicit optional `runtime_files` may now name ordinary trusted files or
+   genuine absence beneath `/usr/`, retaining the existing captured data/mode,
+   root-owned ancestry and before/after identity checks. This file-only capture
+   does not mount `/usr`, grant directory enumeration or extend executable
+   trust roots. A single root-owned final file symlink directly naming its
+   canonical ordinary trusted target is preserved, not flattened. Capture
+   verifies both link and target identities around the target byte/mode read;
+   chained, dangling, untrusted or escaping targets refuse. Native executable
+   image and managed-directory overlap still refuse.
+   `test_native_optional_usr_data_capture_preserves_bytes_and_real_absence`
+   verifies captured timezone data bytes/mode, startup-file absence, unchanged
+   executable trust roots and the UTC alias target. Positive timezone cases
+   use owned physical `UTC -> Etc/UTC` and regular-file fixtures with only
+   path admission substituted, then exercise the real capture and guest
+   materialization at the declared system paths. Installed timezone data can
+   be runner-owned or mutable and must not be treated as trusted automatically.
+   `test_native_runtime_system_owner_and_write_permissions_refuse_before_capture`
+   exercises the real admission predicate with foreign-owner, group-write and
+   other-write metadata controls; each refuses before byte acquisition.
+   These controls do not change host ownership or production trust policy.
+   `test_native_readonly_python_declared_startup_still_refuses_uncaptured_timezone`
+   declares startup paths actually observed in the native fixture. Real Python
+   then reaches and explicitly refuses `/usr/share/zoneinfo/UTC`; that final
+   symlink has not been declared. This is startup progress, not successful dynamic
+   import or qualification of the original nonisolated invocations.
+   Explicit optional probes beneath the fixed sandbox `HOME=/nonexistent`
+   may capture genuine absence with the same ancestry and before/after checks.
+   Present resources there refuse before any byte acquisition; no home mount,
+   user data, enumeration or executable authority is granted.
+   `test_native_default_home_runtime_capture_requires_actual_absence` checks
+   actual missing metadata and unchanged executable roots, plus private
+   present-file refusal with only path admission substituted.
+   `test_native_readonly_default_python_home_absence_does_not_hide_installed_site`
+   runs the genuine default `python3 -c` command, not an isolated substitute.
+   Ordinary Python returns `[1, 2]`; without the exact HOME site declaration
+   confinement must refuse that real metadata probe. Declaring its actual
+   absence reaches the existing `/usr/local/lib/pythonM.N/dist-packages`
+   namespace, which still refuses rather than being reported missing.
+   This undeclared-site boundary is an explicit negative, not successful
+   nonisolated execution.
+   `test_native_readonly_default_python_declared_site_startup` additionally
+   declares the actual installed local/system site roots and the exact
+   canonical root-owned `/etc/pythonM.N/sitecustomize.py` optional file.
+   Require unchanged `python3 -c` JSON import and recipe output to match
+   ordinary Python `[1, 2]`, actual JSON reads and owned cleanup. The existing
+   captured startup/zip/HOME/timezone resources remain explicit. A genuinely
+   absent versioned `dist-packages` beneath the declared stdlib uses the live
+   readonly namespace, not a conflicting captured absence.
+   `test_native_readonly_python_site_resource_boundaries` requires actual
+   site write and parent-escape refusal, unissued Python metadata refusal
+   before dispatch,
+   sitecustomize bytes/mode capture and denial of other `/etc` paths, spelling
+   extensions and nonoptional executable admission. This is not an `/etc`
+   mount or a new executable root. Default startup is qualified only for this
+   concrete system Python JSON invocation, not arbitrary installed package
+   dependencies, original generators or the complete eight-query family.
+   `test_native_readonly_python_captured_alias_and_dynamic_import` additionally
+   declares that exact UTC resource, runs the fixture's genuine Python command,
+   and requires `[1, 2]` from actual JSON dynamic import and recipe output plus
+   JSON and canonical timezone access evidence. It does not qualify unmodified
+   original generator argv or the eight-query family.
+   `test_native_readonly_captured_alias_metadata_and_overlap` requires genuine
+   `readlink` output `Etc/UTC`, capsule symlink/data preservation and duplicate
+   canonical-resource refusal.
+   `test_native_captured_file_alias_shape_and_identity_refuse` uses private
+   physical link/file fixtures with only root-path admission substituted to
+   mutate the real target or link during capture, and tests chained/missing
+   target refusal. It separately rejects an owned traversal alias.
+   These private fixtures prove capture consistency, not root ownership.
+4. `test_native_readonly_managed_python_make_enumeration_is_complete`: original
+   ready Make wildcard enumeration must match the actual declared stdlib
+   directory's complete `.py` names; the adjacent parent root remains denied.
+   This also checks the Make consumer rather than only a native child.
+5. `test_native_readonly_managed_python_mount_and_capture_overlap_refuse`:
+   reject an actual optional captured file overlapping the mount, and projected
+   missing readonly mount flags. The latter tests verification, not a physical
+   kernel remount or hostile host writer.
+
+Dependencies are the existing mount/namespace and runtime trust mechanisms;
+conflicts are captured-resource overlap. The full original invocation still
+requires complete startup/resource and producer/job/source custody plus
+unchanged aggregate accounting. This bounded resource-directory component
+does not waive those criteria or any final gate.
+
+Dependencies are the existing captured ELF closure, readonly loader-origin
+proof and original job/machine lifecycle; conflicts are none. No ROM/RAM/save,
+localization, generated or archival change. Original Python generator resources,
+compiled candidate `NativeTool` source-path placement, optional runtime metadata profiles, arbitrary
+descendants, generated versions/remakes, general recursive final observation
+and original eight-query qualification remain unsupported or unqualified.
+`NativeTool` remains excluded from mapped Make; explicit readonly native-Make
+admission at `/native/tool` is covered above. This component does not waive
+any complete-supplier or final delivery criterion.
+
+### Original readonly completion component
+
+`TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270) is the closed immutable-source
+component, not full generated-source qualification. The internal invocation
+requires both `observe_reads=True` and `observe_completions=True`. It decodes
+the existing version-2 completion ABI from captured private Make bytes and
+returns the existing version-4 trace. The complete Snapshot inventory is
+screened with the original bounded text/binary/UTF-8 rules; conservative
+reference names select literal assignment sites. Screening, native assignment
+sites, references, metadata/call/conditional consumers and selection validation
+share one literal-name grammar: optional leading dot, initial ASCII letter or
+underscore, then ASCII letters/digits/underscore/dot/hyphen. Opened source bytes, mode
+and extent must match that frozen snapshot inventory, and references must be
+covered, including assignment RHS dependencies rather than only roots.
+Computed lookup, named-function or conditional suppliers are not yet bound
+to actual native observations. Completion-enabled source facts explicitly
+refuse them instead of claiming a complete literal closure; ordinary native
+execution without assignment-completion evidence remains available.
+Publication origins are forbidden rather than serviced by a null
+publication fallback.
+
+At the actual owned, parked Make read-entry hardware stop, the supervisor
+checks the original process/read context, the single complete repository mount
+without root/submount overrides, and kernel `statvfs` readback through the
+actual process root. It confirms the existing entry-image barrier before the
+first source entry. The Snapshot digest is only this binding; it cannot replace
+entry/caller/stream/floc/modifier/effective-variable and descriptor-pin proof.
+Actual shell machine executions carry the original native dispatch sequence
+and must match every completed readonly job's sequence/PID. Machine shape
+alone cannot substitute for that cross-binding.
+
+The shared effective-variable decoder admits names up to 128 UTF-8 bytes and
+values up to 65,536 UTF-8 bytes. Its bounded native string reads include one
+additional byte for the terminating NUL; this does not increase the payload
+limit. Both static assignment completion and runtime effect completion use
+this decoder. For the #270 native completion case, run
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_variable_payload_boundaries`.
+It executes original GNU Make with 128-byte names and ASCII or multibyte
+values: 65,535 and 65,536 payload bytes must survive unchanged through both
+completion routes, while 65,537 bytes must refuse and retire owned state.
+The pre-fix decoder rejects every 65,536-byte positive because it has no space
+to observe the NUL. This host-only boundary has no ROM/RAM/save/profile impact
+and does not qualify generated-source custody or the original eight-query
+family.
+
+Non-filesystem target payloads similarly admit 4,096 UTF-8 bytes, with a
+separate byte for the NUL in both recipe/secondary expansion and job-context
+readers. Run `FoundationTests.test_native_target_payload_boundaries` through
+the same unittest module: a phony target reached from `all` uses ASCII or
+multibyte names of 4,095, 4,096 and 4,097 bytes. With runtime completion enabled
+and disabled, the first two produce exactly `target-ok` and preserve the exact
+recipe-job target. Runtime observation also retains both recipe and secondary
+expansion targets. Oversized names refuse and clean owned state. The pre-fix
+readers reject all four 4,096-byte positives. Filesystem pathname admission
+and its NUL-inclusive 4,096-byte read bound remain unchanged.
+
+From the same clean Linux x86-64 host checkout with admitted GNU Make 4.3 and
+the existing namespace launcher, run these `FoundationTests` controls:
+
+1. `test_native_readonly_actual_completion_inventory_barrier_and_jobs`: use
+   immediate, deferred, conditional/ignored and continued definitions; repeated
+   nested, empty, optional-missing and skipped includes; original environment/
+   command-line inputs; one eager shell and one recipe. Require original
+   output/values, selected raw deferred and ignored bindings, exact continued
+   physical spans, four successful pin retirements, complete inventory and
+   actual entry confirmation, and both actual job/machine execution pairs.
+   The deferred names are referenced in an unused binding so the conservative
+   selection covers them without expanding that binding. No command replay,
+   deadline reset or observation reset is permitted.
+2. `test_native_readonly_completion_callback_and_machine_mutations_refuse`:
+   alter captured bindings at actual frame/floc/modifier/returned-variable
+   callbacks; omit entry confirmation, clear/pin records or a child, change a
+   child PID or duplicate its execution, and alter actual readonly flag
+   readback. Every case must refuse and clean owned state. These are controlled
+   binding/projection mutations, not physical remount, variable replacement or
+   independently proven kernel register-restoration attacks.
+3. `test_native_readonly_completion_inventory_misbind_and_invalid_options_refuse`:
+   a valid-shaped but wrong source digest must fail against the actual pin;
+   completion without reads and nonboolean requests must fail before launch.
+   Also run `test_native_readonly_literal_supplier_names_are_not_omitted` and
+   `test_native_readonly_literal_metadata_conditional_and_selection_closure`
+   (#270): independent `.FLAGS` parenthesis/brace/value, `.SHELLFLAGS`,
+   internal-dot/hyphen, origin/flavor/call and conditional fixtures must retain
+   their actual supplying assignment completions, not merely correct final
+   stdout. The pre-fix six supplier controls return correct values but omit
+   those suppliers. Removing a supplier from the selected closure must refuse
+   in both live-source and archive validation, including assignment RHS
+   references. The existing underscore and scoped-variable controls remain.
+   `test_native_readonly_function_delimiters_preserve_original_suppliers`
+   compares actual ordinary Make with native completion for opposite-delimiter
+   literals in both function forms, nested and ordinary arguments, and empty
+   short-circuit arguments. The pre-fix native reader rejects six valid sources
+   although ordinary Make succeeds; all seven fixtures must now retain exact
+   output and their actual `SUPPLIER`/`VALUE` completions. The existing splitter
+   uses one enclosing-delimiter depth counter instead of a mixed-delimiter
+   stack; no second Make parser or source transformation is introduced.
+   `test_native_readonly_computed_suppliers_refuse_incomplete_completion`
+   compares fourteen real ordinary Make lookup/call/metadata/conditional forms
+   with the shared source-facts parser and completion-enabled native reader.
+   Before correction nine original forms returned correct values with
+   incomplete supplier selection; all fourteen now explicitly refuse computed
+   supplier binding. Concatenation and substitution names are included.
+   `test_native_computed_supplier_execution_without_completion_still_works`
+   requires original computed lookup/call output when completion evidence is
+   not requested, rather than silently manufacturing an assignment trace.
+   `test_native_reference_analysis_preserves_builtin_scoped_and_dead_computed_forms`
+   keeps literal call arguments, ordinary function references, scoped tokens
+   and multiline literal conditionals in reference analysis; a genuine
+   constant-empty `and` fixture must retain empty output and semantics without
+   rejecting its already-pruned computed branch. This is a bounded
+   completion limitation, not qualification of arbitrary computed Make source.
+   Chained `else ifdef` and `else ifndef` use the same full-name extraction
+   and refusal as top-level directives. Run
+   `test_native_unsupported_direct_suppliers_refuse_incomplete_completion`:
+   ordinary GNU Make must return the declared value for both `1NAME` lookup
+   delimiters and substitution forms, space-containing names, all four
+   name-taking functions, and literal top-level/chained conditionals. The shared
+   source-facts parser and completion-enabled native reader must instead
+   explicitly reject the unsupported supplier; they must not return an archive
+   that silently omits it. The pre-fix parser accepts the direct forms and the
+   chained computed directives. Known GNU builtin function arguments, empty
+   references, scoped tokens and supported literal substitution names remain
+   accepted. Unknown function-like expressions are variable lookups, not
+   evidence that a supplier can be ignored. The function set matches the
+   admitted Make 4.3: `intcmp name` is a variable
+   lookup, not the builtin added in Make 4.4, and must explicitly refuse.
+   Literal chained conditional tests also require actual supplier completions and reject a returned selection
+   with that supplier removed. Parser-only negatives are not whole-archive
+   mutation evidence.
+   The third-round disposition binds `TC-OWNERSHIP-NATIVE-COMPLETION-001`
+   to finite shared source admission, not permissive assignment-regex
+   fallthrough. `test_native_completion_finite_declaration_and_short_reference_admission`
+   compares 77 ordinary GNU positives against shared-source and real native
+   completion refusals: unsupported short names, computed names in both
+   delimiters and concatenations, six assignment operators, all ordinary
+   modifiers and computed define headers. Every unsupported declaration must
+   refuse before publishing sites. The existing balanced scanner now classifies
+   every short dollar token; escaped `$$`, trailing literal `$`, builtin/scoped
+   arguments and already-pruned dead branches remain supported.
+   `test_native_returned_archive_uses_finite_source_admission` validates one real
+   native archive, then changes its source payload and matching inventory digest
+   coherently while preserving byte length. Short-reference, computed-assignment
+   and computed-define payloads must reach and fail the named admission boundary.
+   These are actual returned-archive consumer mutations, not native source
+   custody mutations or claims that the pre-fix entire modified archive succeeded.
+   `test_native_completion_declaration_classifies_sites_and_non_site_context`
+   checks parsed ordinary-site/dependency facts and deliberate recipe, target,
+   directive and nested literal-define contexts. Literal define bodies retain
+   dependencies but are not ordinary assignment sites; arbitrary macro/eval
+   execution still needs broader supplier qualification.
+   `test_native_completion_eval_assignment_requires_source_provenance`
+   requires a dead literal macro to preserve empty output and undefined VALUE
+   without manufacturing its completion. Evaluating the macro must return
+   `original` under ordinary GNU and native execution without completion
+   evidence. Completion-enabled execution must instead explicitly refuse the
+   evaluated-source invocation lacking admitted provenance and clean
+   owned pins/processes; it must not publish a success-shaped archive omitting
+   the supplier. Rule-only eval is also unsupported with completion observation:
+   it can enable secondary expansion without hitting an assignment callback.
+   Native execution without completion observation remains unchanged. Direct
+   `eval` and `call eval` both refuse at shared source admission. The existing
+   verified eval ancestry and runtime refusal remain defense in depth.
+   Version-3 legacy readers are unchanged;
+   version-4 evaluated assignment provenance is unqualified, not silently
+   ignored. Runtime buffer bytes modified by GNU are not original authored
+   source and cannot borrow immutable-source authority.
+   `test_native_completion_secondary_and_forwarded_suppliers_refuse` compares
+   real ordinary GNU and native no-completion output for computed secondary
+   prerequisites and `call` forwarding to `value`, `origin`, `flavor` and
+   `call`. Completion-enabled source admission must explicitly refuse
+   `.SECONDEXPANSION` (including either ordering in literal multi-target
+   declarations), constructed target lists, evaluated-source invocations and
+   these forwarded name-taking builtin targets rather
+   than omit suppliers. Secondary expansion is a source-level unsupported
+   completion context, not a recipe-dollar heuristic. Ordinary escaped dollars
+   in values/recipes and custom literal calls remain supported.
+   The returned-archive admission test also supplies coherent payload mutations
+   for literal/computed/wildcard/evaluated secondary declarations and all four
+   forwarded name-taking targets; each must fail
+   its named admission boundary. This bounded limitation does not qualify
+   arbitrary deferred prerequisite expansion or builtin forwarding.
+   The source-context disposition bound to the third correction round uses
+   shared Make-versus-recipe comment handling, not hash-specific supplier
+   exceptions. `test_native_completion_recipe_hash_preserves_suppliers`
+   exercises tab and inline recipes with single/double quoted hashes and
+   actual shell comments: Make expands references in all three contexts.
+   Literal suppliers must have real native completion events; computed
+   suppliers must refuse instead of disappearing behind a hash. Returned
+   archives reject removed literal suppliers and coherent tab/inline computed
+   recipe payloads. `test_native_completion_make_comments_keep_non_recipe_context`
+   preserves Make comments in ordinary/target assignments; nested expression delimiters and
+   escaped literal hashes retain ordinary GNU output.
+   A target-specific assignment's semicolon enters GNU rule context: hashes
+   after that delimiter remain in its value. Only global assignments retain
+   Make-comment semantics across semicolons.
+   `test_native_completion_constructed_rules_and_exports` exercises escaped
+   colons before a secondary-expansion target, both delimiters of an
+   expansion-only rule, computed export lists, bare export and
+   `.EXPORT_ALL_VARIABLES`. Each real GNU-positive form must refuse completion
+   evidence explicitly while native no-completion execution retains its output.
+   Expansion-only declarations are unsupported except direct `info`, `warning`
+   and `error` expressions, which do not return parser source. This also
+   refuses variable-only declarations that happen to expand to empty text;
+   no evaluated value is inferred from immutable source spelling.
+   Literal export lists and exported assignments instead retain their supplying
+   assignment as a consumer in screening and exact source closure. Native
+   completion events must bind that supplier even when the recipe uses only a
+   shell environment variable. Returned archives reject removed literal-export
+   suppliers and coherent payloads for every unsupported enabling form.
+   `test_native_completion_define_hash_and_recipe_prefix_context` preserves
+   hashes as literal multiline define-value text, including when the macro is
+   expanded through `call` or in a recipe. Literal supplier dependencies require
+   real native completion bindings; computed suppliers explicitly refuse.
+   Ordinary comments outside definitions remain Make comments. Computed
+   references in unused define bodies are conservatively unsupported too.
+   Any `.RECIPEPREFIX` assignment or definition is unsupported for completion
+   evidence, including a reset/default spelling: the finite source model does
+   not infer the effective prefix. Real GNU and native no-completion controls
+   retain non-tab recipes and tab-indented assignments after a prefix change.
+   Coherent archive payloads and removed literal-define supplier selections
+   must reject at their corresponding consumer boundaries.
+   The third-round shared-context redesign uses one balanced, escape-aware
+   statement boundary for declaration admission and inline comment handling.
+   `test_native_completion_rule_context_and_special_aliases` refuses unqualified
+   tab statements before an admitted local rule, including assignments after a
+   global assignment resets rule context and leading tabs in included sources.
+   Actual recipes after admitted rules remain supported. Special target names
+   remove GNU-supported repeated `./` prefixes before secondary-expansion and
+   blanket-export refusal; other filesystem normalization is not inferred.
+   Real GNU/native controls and coherent returned-archive mutations cover
+   literal/computed leading-tab assignments and both aliased special targets.
+   `test_native_completion_private_and_directive_context` requires private
+   global assignments across all six operators and private definitions to
+   refuse completion evidence rather than disappear from assignment sites.
+   Native no-completion execution retains ordinary GNU output. Target-local
+   private bindings remain a separate non-global context. Make directive
+   consumers are checked only in statement headers: plain/quiet/inline shell
+   exports and export text in assignment or define values remain shell text,
+   with their dollar references still analyzed. The plain recipe's command
+   echo is preserved as well as its output. Coherent returned archives exercise
+   every private-global declaration form.
+   `test_native_completion_conditional_recipe_context_refuses_ambiguity`
+   exercises false rules under all four conditional directives, else/chained
+   else and nesting. Conditional transitions invalidate recipe context; rules
+   within unresolved conditionals cannot authorize tab statements. Literal and
+   computed tab assignments must refuse rather than disappear as recipes.
+   Even genuine conditional tab recipes are unsupported until actual parser
+   context is bound; native no-completion execution remains unchanged.
+   A new unconditional local rule restores recipe admission. Coherent returned
+   archive payloads cover skipped-rule literal and computed assignments.
+   Repeat the no-completion execution control with computed assignment and short
+   lookup sources: genuine native output must remain `original` without an
+   invented completion trace. No native evaluator, source rewrite, new budget,
+   or separate parser backend is introduced.
+4. `test_native_readonly_completion_failed_make_has_no_successful_archive`:
+   a real source error must retain Make's status and diagnostic, fail the
+   invocation and clean active pins without a successful trace.
+5. `test_native_readonly_completion_foreign_abi_and_returned_selection_refuse`:
+   alter the decoded ABI's image binding, or the supervisor's copied selection
+   while retaining an internally valid archive. The image admission or exact
+   host request binding must reject it. These are binding mutations, not
+   physical executable replacement.
+6. `test_native_readonly_actual_trap_registers_preserve_original_state`:
+   capture actual kernel general registers before and after every normal
+   pass/source/assignment-completion hardware trap in the same real fixture.
+   Require every field to remain unchanged except the intentional RF bit,
+   all issued trap purposes to be exercised, and original output/values and
+   cleanup to remain correct.
+7. `test_native_readonly_actual_callback_register_and_restore_readback_mutations_refuse`:
+   mutate the actual assignment callback's fetched register object, or alter
+   the projection of an actual kernel GETREGS readback after SETREGS while the
+   owned process remains stopped. Both must refuse explicitly before resume,
+   fail the invocation and clean owned state. Before the guard, both cases
+   returned successfully. The readback control is a projection mutation, not
+   physical arbitrary kernel corruption.
+
+The existing trap owner snapshots the original register state before callback
+interpretation, permits only the existing RF update, checks the callback
+projection, and verifies complete actual kernel readback after SETREGS before
+rearming. Snapshot, readback and comparison-copy bytes consume the unchanged
+shared metadata budget. This is normal owned hardware-trap restoration only;
+it does not qualify cancellation, arbitrary descendants/signals or generated
+source custody. No new trace version, restoration journal or execution
+authority is introduced.
+
+Existing version-1, mapped, input, job, signal, count and observer controls
+remain required. Tests use ordinary immutable fixtures and automatic teardown;
+there is no ROM, save or manual visual artifact. Dependencies are the existing
+read/completion decoder, scanner, source validator, readonly dispatch/job
+observations and shared budget. Mutable/generated/publication mode conflicts
+and explicitly refuses; no new execution or write authority is granted.
+ROM/RAM/save/localization/archival behavior is unchanged. General recursive
+value observation, complete arbitrary descendants/register restoration,
+natural generated-version lifecycle, the original unchanged-budget eight-query
+family and every remote delivery gate remain unqualified.
+
 ## Run the real consumer
 
 From a source checkout:
@@ -401,7 +2196,9 @@ capsule. Its resolved host compiler/toolchain is trusted; no candidate compiler
 flags/plugins are accepted. The output must be a bounded x86-64 ELF with valid
 program headers, no writable executable load segment and only the admitted
 dynamic loader. A session-issued `NativeTool` is sealed before `native` runs it
-in another channel-free capsule. It never becomes a Make-capsule executable.
+in another channel-free capsule. It never becomes a mapped Make-capsule
+executable. Explicit readonly native-Make admission at `/native/tool` uses the
+same issued object and seal; generated/source-path placement remains unqualified.
 Changed or foreign-session ELF handles reject. Native Make registration and
 declared generated-file results belong to #225, not this direct native API.
 
@@ -595,10 +2392,147 @@ contents. The guard uses the mounted read-only view, never a writable alias.
 already-permitted observations of explicitly captured runtime files:
 syscall number, canonical guest path, flags, mask, buffer size, directory
 offset, actual signed kernel result, and complete input/output buffer bytes.
-Stat/lstat/fstat/newfstatat, supported statx/fstatfs, access/readlink variants
+Stat/lstat/fstat/newfstatat, supported statx/statfs/fstatfs, access/readlink variants
 and directory results retain their actual supported ABI data. Failed operations
 keep their status without becoming successful source consumption. Unreadable
 buffers and unsupported requests are explicit, not empty successful records.
+
+Explicit optional `/proc/filesystems` and `/proc/mounts` declarations capture
+their actual bounded kernel text despite an advertised zero file size. They
+are copied immutable inputs, not live guest `/proc` mounts. The mount-list
+declaration preserves the physical `mounts -> self/mounts` and
+`self -> <collector-pid>` aliases and binds bytes to that exact collector task.
+Only its task directory and mount-list leaf may use the collector's actual
+UID; other objects retain root-owned/nonmutable trust. Foreign PID leaves and
+direct `/proc/self/mounts` declarations are not extra admitted input names.
+Neither declaration grants neighboring proc content, writes or execution.
+The reader uses bounded nonblocking/no-follow reads through complete EOF,
+before/after descriptor identity, original fixed-file/deadline limits, and
+conservative scratch/assembled/returned control charges. A blocked, changed
+or over-budget input terminates; no truncation or empty-size fallback exists.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, on the documented Linux native host,
+run `test_kernel_filesystem_text_capture_preserves_actual_proc_aliases_and_bytes`
+to compare real kernel input bytes and parsed current-task alias identities.
+Its pre-fix capture refuses both paths. Run
+`test_native_kernel_filesystem_text_reads_sealed_actual_capture` to compile a
+real C reader and invoke it through original GNU Make: guest stdout equals
+the captured bytes even with a live kernel recapture trap active. Run
+`test_kernel_filesystem_text_reader_keeps_bounded_complete_reads` for empty/
+nonempty/multichunk EOF and actual fixed-file/control/deadline/blocked/identity
+negative controls. Run
+`test_kernel_filesystem_text_exact_alias_and_trust_boundaries` for foreign
+PID, physical alias redirection, foreign UID, writable input and post-read
+replacement refusal. Run
+`test_kernel_filesystem_text_actual_absence_stays_absent_in_guest` for both
+optional leaves: actual absent leaf state has no bytes or invented task
+aliases, and original GNU Make sees absence in the guest. A present dangling
+mount-list alias still refuses its missing target rather than becoming absence.
+Run
+`test_native_kernel_filesystem_text_grants_no_neighbor_write_or_execution`
+for undeclared reads, proc neighbors, writes and executable admission refusal.
+Retain existing exact FIPS, SSL and generic runtime-alias controls. New source
+trees and session state are retired by each case. Dependencies are the existing
+runtime capture/materialization/alias and bounded-reader seams; conflicts are
+none, with no new default inputs or ROM/RAM/save/locale/profile/archival impact.
+This does not admit present SELinux metadata directories or prove original
+`find`/eight-query qualification. Captured mount-list text is a collector
+snapshot, not a claim that its namespaces match later guest namespaces.
+
+Path `statfs` (x86-64 syscall 137) uses the same guarded ownership and metadata
+transport as descriptor `fstatfs` (138), not an unrestricted syscall grant.
+Both have a 120-byte frame, zero flags/mask/offset, and a zero success or
+negative kernel result. The native helper reissues pathname operations against
+that pathname and descriptor operations against a freshly opened owned
+descriptor. Neither permits an outside pathname, an unknown descriptor, a
+write, or execution of a declared metadata resource.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, start from the documented native host
+setup and run `test_native_readonly_issued_statfs_preserves_source_and_kernel_outcomes`.
+The session compiles a real C tool and runs it through original GNU Make.
+Compare its result with ordinary execution: source pathname/descriptor
+filesystem properties agree, an absent source returns `ENOENT`, and an
+invalid buffer returns `EFAULT`. The pre-fix invocation refuses syscall 137.
+Run `test_native_readonly_statfs_keeps_path_and_descriptor_authority` to
+require terminal refusal of outside/escaping paths and an unknown descriptor.
+Run `test_statfs_actual_buffers_transport_and_negative_revalidation` for
+real 137/138 kernel buffers and statuses, legacy/packed round trips, native
+revalidation of the authorized missing import probe, and rejected changed
+status/buffer, size, flags, mask, offset and positive-result controls. Invalid
+pointer results stay observable but cannot become reusable helper results.
+For successful 137/138 frames, change one returned filesystem-type byte while
+keeping the valid ABI and zero result: the helper must issue the real operation
+successfully and still reject the changed buffer. Removing successful-137
+buffer comparison must fail this control. Run the existing complete-metadata
+case for both pathname-137 and descriptor-138: allocating a real file changes
+their observed capacity, refuses old buffers and prevents cached reuse. This
+also retains other syscall compatibility without assuming shared-host capacity
+is stable enough to guarantee byte-identical successful replay. These cases
+use new temporary source trees and retire
+all session state; dependencies are the existing path/fd authority, compiler
+and metadata seams, with no new resource grant, conflict, ROM/RAM/save,
+locale/profile or archival impact.
+
+The original-find reproduction first progressed from syscall 137 to undeclared
+`/sys/fs/selinux`. On the measured host this is a present sysfs directory, not
+an absence. The optional `native_metadata_directories` tuple now admits only
+the exact standard `/sys/fs/selinux` and `/selinux` mount probes, with a maximum
+of two distinct names. Present probes retain actual root-owned, nonmutable,
+canonical directory backing through exact readonly/nosuid/nodev/noexec bind
+mounts; absent probes remain absent. Content, enumeration, descendants, writes
+and execution are not granted. Declaration and pre-invocation capture check
+actual identities; the supervisor binds actual mount dev/inode/mode and
+source/guest identities within its namespace, where host UID 0 may be unmapped.
+Collector-side root ownership is not replaced by a guest UID spelling test.
+Actual confined `statfs` flags are retained: a readonly bind may set
+`ST_RDONLY`, so arbitrary unconfined SELinux-library equivalence is not claimed.
+The accepted outcome is unchanged original filename traversal and source
+queries, not fabricated host flags.
+
+Libselinux's filesystem/mount text and `/etc/selinux/config` startup inputs
+remain explicit optional file declarations. The configuration name has exact
+canonical root-trusted regular-file presence/absence capture through the
+existing runtime input seam, not a broad `/etc/selinux` grant. No input is
+added to native defaults; nonstandard discovered mount paths still refuse.
+
+For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_selinux_mount_metadata_preserves_actual_type_and_absence`:
+an issued C tool in original Make observes the real present mount type/block
+size, actual readonly guest flag, and `ENOENT` for the absent standard probe;
+the returned 137 frame has its real status and 120-byte ABI. The pre-fix
+request has no metadata-directory API and the preserved original-find
+preimages refuse syscall 137 and then the unadmitted present mount. Run
+`test_native_selinux_metadata_mount_has_no_content_or_descendant_authority`
+for actual read/list/write/child/neighbor refusal on both standard probes.
+Run `test_native_selinux_metadata_declarations_keep_exact_trust_and_identity`
+for malformed/duplicate/nonstandard declarations, actual trust/type/alias
+guards and changed backing before invocation. Run
+`test_native_selinux_metadata_supervisor_rejects_malformed_authority` for the
+actual typed supervisor parser, including unhashable paths, wrong shapes,
+duplicate/count limits, boolean/negative/overflow identities, file/writable
+backing and foreign ownership. Run
+`test_native_selinux_metadata_absence_rejects_actual_replaced_backing` against
+the supervisor's admission routine: real host and guest dangling symlinks,
+files, directories and unexpected mounts cannot replace captured absence.
+Only an actual `lstat` `ENOENT` is absence; a symlink-following existence
+check fails the preserved negative control. Run
+`test_native_selinux_config_exact_optional_file_boundary` for real config
+presence/absence through original Make and exact canonical/neighbor/write
+controls. Run `test_native_original_find_with_exact_selinux_startup_resources`
+to declare all startup resources and compare unchanged GNU Make/find source
+traversal with ordinary execution: exact `tree/a.txt` stdout and Make value.
+Temporary trees/session state are retired by every case. Dependencies are
+the existing trusted runtime, exact mounts, metadata transport and kernel-text
+capture seams; conflicts are none, with no ROM/RAM/save/locale/profile or
+archival impact.
+
+This small original-find positive is not original eight-query qualification.
+With the same 2148-file fixture, original producer/argv and unchanged limits,
+the first query now progresses to an unadmitted original `/usr/bin/mkdir`
+at 26,873,532 control bytes. The readonly evaluator does not grant original
+producer writes merely because this diagnostic reaches them. Complete native
+producer lifecycle, read-time generated versions, nested/remake/reexec,
+all eight queries and final architecture/delivery gates remain open.
 
 The supervisor-to-parent transport for those records is now a strict metadata
 envelope:
@@ -645,7 +2579,7 @@ simulation.
 An unchanged compatible result can be reused. Changed metadata causes genuine
 execution; a result that cannot be reproduced in the native Make context
 rejects rather than supplying stale matched output. In particular, filesystem
-capacity from `fstatfs` may change even without a source edit. Its complete
+capacity from `statfs`/`fstatfs` may change even without a source edit. Its complete
 returned buffer remains part of validation; no universal stable mount-ID or
 free-block assumption is made. Invalid-pointer metadata can report its real
 error through a fresh execution; it is not admitted as an unsupported cached

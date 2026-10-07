@@ -19,13 +19,16 @@ import re
 import resource
 import signal
 import stat
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__:
-    from .authority import _event_command, _read_events, encoded, parse_json
+    from . import read_epochs
+    from .read_trace import NativeReadTrace
+    from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from .producer_channel import (
@@ -33,7 +36,9 @@ if __package__:
         publication_identity, validate_publication_identity,
     )
 else:
-    from authority import _event_command, _read_events, encoded, parse_json
+    import read_epochs
+    from read_trace import NativeReadTrace
+    from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
     from producer_channel import (
@@ -43,10 +48,13 @@ else:
 
 
 LIBC = ctypes.CDLL(None, use_errno=True)
+VO_SOURCE_IO = 0x564F4D4B00000008
+VO_JOB_CONTEXT = 0x564F4D4B00000006
+VO_JOB_POLICY = 0x564F4D4B00000007
 LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
 TRACEME, PEEKDATA, SYSCALL, GETREGS, SETREGS, SETOPTIONS = 0, 2, 24, 12, 13, 0x4200
-OPTIONS = 1 | 2 | 4 | 8 | 16 | 32 | 0x100000  # syscall/fork/vfork/clone/exec/vforkdone/exitkill
+OPTIONS = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 0x100000  # syscall/process/exec/exit stops and exitkill
 PROT_READ, PROT_WRITE, PROT_EXEC = 1, 2, 4
 MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE = 1, 2, 3
 MAP_ANONYMOUS = 0x20
@@ -100,13 +108,26 @@ def memory(pid, address, count):
     return bytes(result[leading:leading + count])
 
 
-def cstring(pid, address):
+def replace_memory(pid, address, data):
+    offset = 0
+    while offset < len(data):
+        cursor = address + offset
+        start = cursor & ~7
+        leading = cursor - start
+        amount = min(8 - leading, len(data) - offset)
+        word = bytearray(memory(pid, start, 8))
+        word[leading:leading + amount] = data[offset:offset + amount]
+        ptrace(5, pid, start, int.from_bytes(word, "little"))
+        offset += amount
+
+
+def cstring(pid, address, *, limit=4096):
     if not address:
         raise Violation("null pathname")
     result = bytearray()
-    while len(result) < 4096:
+    while len(result) < limit:
         cursor = address + len(result)
-        count = min(8 - (cursor & 7), 4096 - len(result))
+        count = min(8 - (cursor & 7), limit - len(result))
         word = memory(pid, cursor, count)
         if b"\0" in word:
             result.extend(word.split(b"\0", 1)[0])
@@ -206,6 +227,18 @@ class Process:
     exec_path: str | None = None
     dependency_image: str | None = None
     dependency_stop: tuple[int, int, int] | None = None
+    native_stop: tuple[int, int, int] | None = None
+    native_signals: dict[int, int] = field(default_factory=dict)
+    native_signal_origins: dict[int, list] = field(default_factory=dict)
+    native_signal_buffer: tuple | None = None
+    native_sigkill_outcome: bool = False
+    native_exit_status: int | None = None
+    delivery_signal: int = 0
+    native_delivered: int = 0
+    newborn_stop: bool = False
+    native_dispatch: int | None = None
+    native_parent: int | None = None
+    native_execs: int = 0
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -215,6 +248,7 @@ class Process:
             break_end=self.break_end, dispatch=self.dispatch, observer_ready=self.observer_ready,
             memory_group=self.memory_group, memory_limit=self.memory_limit,
             dependency_image=self.dependency_image,
+            native_dispatch=self.native_dispatch,
         )
 
     def close(self):
@@ -227,6 +261,87 @@ class Policy:
     def __init__(self, config):
         self.config = config
         self.mode = config["mode"]
+        self.native_readonly = config.get("native_readonly", False)
+        native_shell = config.get("native_shell", "/bin/sh")
+        native_executables = config.get("native_executables", ["/bin/sh"])
+        if (
+            not isinstance(native_executables, list) or not native_executables
+            or any(not isinstance(path, str) or not path.startswith("/") for path in native_executables)
+            or len(set(native_executables)) != len(native_executables)
+            or native_shell not in {"/bin/sh", "/usr/bin/sh"}
+            or native_executables[0] != native_shell or "/usr/bin/make" in native_executables
+        ):
+            raise Violation("invalid native executable resource declaration")
+        self.native_executables = set(native_executables)
+        metadata_directories = config.get("native_metadata_directories", [])
+        if (
+            not isinstance(metadata_directories, list) or len(metadata_directories) > 2
+            or any(
+                not isinstance(item, dict) or set(item) != {"path", "identity"}
+                or not isinstance(item["path"], str)
+                or item["path"] not in {"/sys/fs/selinux", "/selinux"}
+                or item["identity"] is not None and (
+                    not isinstance(item["identity"], list) or len(item["identity"]) != 5
+                    or any(type(value) is not int or value < 0 for value in item["identity"])
+                    or any(value >= 1 << 64 for value in item["identity"][:2])
+                    or any(value >= 1 << 32 for value in item["identity"][2:])
+                    or not stat.S_ISDIR(item["identity"][2]) or item["identity"][3] != 0
+                    or item["identity"][2] & (stat.S_IWGRP | stat.S_IWOTH)
+                )
+                for item in metadata_directories
+            )
+            or len({item["path"] for item in metadata_directories}) != len(metadata_directories)
+            or metadata_directories and not self.native_readonly
+        ):
+            raise Violation("invalid native metadata-only directory authority")
+        self.native_metadata_directories = {item["path"]: item["identity"] for item in metadata_directories}
+        self.native_runtime_directories = config.get("native_runtime_directories", [])
+        if (
+            not isinstance(self.native_runtime_directories, list)
+            or len(self.native_runtime_directories) > 4
+            or any(
+                not isinstance(path, str)
+                or PYTHON_RUNTIME_DIRECTORY.fullmatch(path) is None
+                for path in self.native_runtime_directories
+            )
+            or len(set(self.native_runtime_directories)) != len(self.native_runtime_directories)
+            or self.native_runtime_directories and not self.native_readonly
+        ):
+            raise Violation("invalid native managed runtime directory authority")
+        self.read_trace = None
+        request = config.get("read_epochs")
+        if request is not None:
+            if (
+                not self.native_readonly or not isinstance(request, dict)
+                or set(request) != {"version", "scope", "abi"} | (
+                    {"selection"} if request.get("version") in {4, 5} else set()
+                )
+                or type(request["version"]) is not int or request["version"] not in {1, 4, 5}
+                or not isinstance(request["abi"], dict)
+                or request["abi"].get("version") != (2 if request["version"] in {4, 5} else 1)
+                or request["version"] in {4, 5} and (
+                    not isinstance(request["selection"], dict)
+                    or not isinstance(request["selection"].get("inventory"), list)
+                    or any(not isinstance(row, dict) or row.get("kind") != "snapshot"
+                           for row in request["selection"]["inventory"])
+                )
+                or not isinstance(request["scope"], str) or not request["scope"]
+                or config.get("environment", {}).get("VO_OBSERVE_READS") != "1"
+            ):
+                raise Violation("invalid readonly native read-trace authority")
+        elif "VO_OBSERVE_READS" in config.get("environment", {}):
+            raise Violation("unconfigured native read observation")
+        if type(self.native_readonly) is not bool or (
+            not self.native_readonly and "VO_OBSERVE_NATIVE_READONLY" in config.get("environment", {})
+        ) or self.native_readonly and (
+            self.mode != "make"
+            or config["executables"] != ["/usr/bin/make", *native_executables]
+            or config.get("producer_endpoint") or config.get("published")
+            or config.get("mapping_entries") or config.get("metadata_validation")
+            or config.get("dependency")
+            or config.get("environment", {}).get("VO_OBSERVE_NATIVE_READONLY") != "1"
+        ):
+            raise Violation("invalid readonly native Make authority")
         self.code = {"/repo/" + path for path in config["code"]}
         self.sources = {"/repo/" + path for path in config["sources"]}
         self.enumerations = {posixpath.normpath("/repo/" + path) for path in config["enumerations"]}
@@ -236,6 +351,8 @@ class Policy:
         self.observation_attempts = {
             name: set() for name in ("consumed", "code_consumed", "accessed")
         }
+        self.trace_observations = 0
+        self.native_jobs = {}
         self.written = 0
         self.calls = 0
         self.created = 0
@@ -257,9 +374,36 @@ class Policy:
         self.live_process_peak = 0
         self.make_pid = 0
         self.make_restarts = 0
+        for path in self.native_runtime_directories:
+            expected_mount = {
+                "source": path, "target": path, "writable": False, "executable": True,
+            }
+            if [item for item in config["mounts"] if item["target"] == path] != [expected_mount]:
+                raise Violation("native managed runtime lacks its exact readonly mount")
+            source = Path(path).stat()
+            guest = (Path(config["root"]) / path.lstrip("/")).stat()
+            mounted = os.statvfs(Path(config["root"]) / path.lstrip("/"))
+            self.charge_metadata(len(encoded([list(source), list(guest), list(mounted)])))
+            if (
+                (source.st_dev, source.st_ino) != (guest.st_dev, guest.st_ino)
+                or not stat.S_ISDIR(guest.st_mode) or guest.st_uid != source.st_uid
+                or guest.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                or mounted.f_flag & (os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV)
+                != os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV
+            ):
+                raise Violation("native managed runtime mount backing or readonly flags differ")
+        for path, identity in self.native_metadata_directories.items():
+            self.validate_native_metadata_mount(path, identity)
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
+        if self.native_readonly and (
+            self.resolve("/bin/sh") != native_shell
+            or any(self.resolve(path) != path for path in native_executables)
+        ):
+            raise Violation("native executable declaration differs from its actual runtime alias")
         self.runtime_closure = set(config.get("runtime_closure", ()))
+        if self.native_readonly and not self.native_executables <= self.runtime_closure:
+            raise Violation("native executable is outside captured runtime closure")
         dependency = config.get("dependency")
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
@@ -319,13 +463,15 @@ class Policy:
             "/usr/bin/lib/python" + version + "/lib-dynload",
         }
         self.link_option_probes = {
-            "/repo/" + argument for argument in (
+            config.get("cwd", "/repo") + "/" + argument for argument in (
                 "-lc", "-lm", "-lgcc", "-lgcc_s", "-lstdc++", *config["argv"],
             ) if argument.startswith("-l") and re.fullmatch(r"-l[A-Za-z0-9_+.-]+", argument)
         }
         self.link_option_probes.update({
-            "/repo/libgcc_s.so.1", "/repo/libgcc.a", "/repo/libc.so.6",
-            "/repo/libc_nonshared.a", "/repo/ld-linux-x86-64.so.2",
+            config.get("cwd", "/repo") + "/" + name for name in (
+                "libgcc_s.so.1", "libgcc.a", "libc.so.6", "libc_nonshared.a",
+                "ld-linux-x86-64.so.2",
+            )
         })
         self.code_dirs = {"/repo"}
         self.source_dirs = set()
@@ -335,6 +481,55 @@ class Policy:
                 while parent != "/":
                     directories.add(parent)
                     parent = posixpath.dirname(parent)
+        if request is not None:
+            self.read_trace = NativeReadTrace(self, request)
+
+    def observation_count(self):
+        return sum(map(len, self.observation_attempts.values())) + self.trace_observations
+
+    def confirm_readonly_entry(self, pid, state):
+        trace = self.read_trace
+        if trace is None or trace.pending_barrier is None:
+            return
+        mounts = self.config.get("mounts", ())
+        repository = [row for row in mounts if row["target"] == "/repo"]
+        composite = self.config.get("readonly_source_composite", False)
+        source_mounts = [row for row in mounts if row["target"].startswith("/repo/")]
+        if (
+            not self.native_readonly or trace.version not in {4, 5} or pid != self.make_pid or pid != trace.pid
+            or self.processes.get(pid) is not state or state.role != "make"
+            or not state.observer_ready or not state.parked or state.pidfd < 0
+            or len(repository) != 1 or repository[0]["writable"] is not False
+            or type(composite) is not bool
+            or any(row["target"] == "/" for row in mounts)
+            or source_mounts and not composite
+            or composite and any(row["writable"] is not False for row in source_mounts)
+        ):
+            raise Violation("readonly source entry lacks its actual stopped immutable backing")
+        backing = os.statvfs(f"/proc/{pid}/root/repo")
+        self.charge_metadata(sys.getsizeof(backing))
+        if not backing.f_flag & os.ST_RDONLY:
+            raise Violation("actual native source mount is not readonly")
+        if composite:
+            for row in (*repository, *source_mounts):
+                source = os.stat(row["source"])
+                guest_path = f"/proc/{pid}/root" + row["target"]
+                guest = os.stat(guest_path)
+                flags = os.statvfs(guest_path)
+                self.charge_metadata(len(encoded([list(source), list(guest), list(flags)])))
+                if (
+                    (source.st_dev, source.st_ino) != (guest.st_dev, guest.st_ino)
+                    or flags.f_flag & (os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV)
+                    != os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV
+                ):
+                    raise Violation("actual readonly composite source backing differs")
+        trace.confirm_barrier(dict(trace.pending_barrier), trace.selection["snapshot_sha256"])
+
+    def reserve_trace_observation(self):
+        self.charge_metadata(128)
+        if self.observation_count() >= self.config["observation_count"]:
+            raise Violation("aggregate native trace observation budget exhausted")
+        self.trace_observations += 1
 
     def reserve_observation(self, name, value):
         attempted = self.observation_attempts[name]
@@ -342,7 +537,7 @@ class Policy:
             self.observation_bytes += len(value.encode("utf-8")) + 128
             if (
                 self.observation_bytes > self.config["observation_limit"]
-                or sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
+                or self.observation_count() >= self.config["observation_count"]
             ):
                 raise Violation("aggregate filesystem-observation budget exhausted")
             attempted.add(value)
@@ -350,6 +545,385 @@ class Policy:
     def observe(self, name, value):
         self.reserve_observation(name, value)
         getattr(self, name).add(value)
+
+    def native_job_event(self, row):
+        self.reserve_trace_observation()
+        self.charge_metadata(len(encoded(row)))
+
+    def begin_native_job(self, pid, state, path):
+        if (
+            pid != self.make_pid or state.role != "make" or not state.observer_ready
+            or state.native_dispatch is not None or path not in self.native_executables
+        ):
+            raise Violation("native job lacks its actual original Make dispatch")
+        sequence = len(self.native_jobs) + 1
+        if sequence > self.config["descendant_limit"]:
+            raise Violation("native job dispatch count exceeds its process bound")
+        row = {
+            "sequence": sequence, "executable": path, "pid": None,
+            "context": None, "returncode": None, "terminal_status": None,
+            "waited": False, "ignored": None,
+        }
+        self.native_job_event(row)
+        self.native_jobs[sequence] = row
+        state.native_dispatch = sequence
+
+    def bind_native_job(self, pid, state):
+        row = self.native_jobs.get(state.native_dispatch)
+        tree = self.read_trace is not None and self.read_trace.version == 5
+        descendant = tree and row is not None and row["pid"] is not None
+        if (
+            row is None or not descendant and (
+                row["pid"] is not None or row["executable"] != state.exec_path
+                or state.native_parent != self.make_pid
+                or any(job["pid"] == pid for job in self.native_jobs.values())
+            )
+            or descendant and not any(
+                event.get("child", event["pid"]) == pid for event in row["tree"]
+            )
+            or state.pidfd < 0
+        ):
+            raise Violation("native job exec has a foreign or reused dispatch child")
+        self.native_job_event({"sequence": state.native_dispatch, "pid": pid})
+        if not descendant:
+            row["pid"] = pid
+        if tree:
+            with open(f"/proc/{pid}/cmdline", "rb") as stream:
+                data = stream.read(65537)
+            self.charge_metadata(len(data))
+            if not data or len(data) > 65536 or not data.endswith(b"\0"):
+                raise Violation("native job command line is missing or exceeds its byte bound")
+            try:
+                argv = [item.decode("utf-8", "strict") for item in data[:-1].split(b"\0")]
+            except UnicodeDecodeError as error:
+                raise Violation("native job command line is not strict UTF-8") from error
+            inputs = read_epochs.native_execution_input(argv, state.cwd)
+            self.native_job_event({"sequence": state.native_dispatch, **inputs})
+            if not descendant:
+                row.update(inputs)
+                row["tree"] = []
+            state.native_execs += 1
+            return {
+                "kind": "exec", "pid": pid, "parent": state.native_parent,
+                "generation": state.native_execs, "path": state.exec_path, **inputs,
+            }
+
+    def native_tree_event(self, state, event):
+        if self.read_trace is None or self.read_trace.version != 5:
+            return
+        row = self.native_jobs.get(state.native_dispatch)
+        if row is None or row["pid"] is None or row["terminal_status"] is not None:
+            raise Violation("native tree event lacks its original dispatched root")
+        event = {"seq": len(row["tree"]) + 1, **event}
+        self.native_job_event(event)
+        row["tree"].append(event)
+        self.read_trace.machine_event(
+            "native-tree", event["pid"], dispatch=state.native_dispatch,
+            event={**event}, sha256=hashlib.sha256(encoded(event)).hexdigest(),
+        )
+
+    @staticmethod
+    def pending_signal_mask(data):
+        if not isinstance(data, bytes) or not 0 < len(data) <= 4096:
+            raise Violation("native pending-signal status exceeds its actual extent")
+        result = 0
+        for name in (b"SigPnd:", b"ShdPnd:"):
+            rows = [line.split() for line in data.splitlines() if line.startswith(name)]
+            if (
+                len(rows) != 1 or len(rows[0]) != 2
+                or re.fullmatch(b"[0-9a-fA-F]{16}", rows[0][1]) is None
+            ):
+                raise Violation("native pending-signal status has an invalid kernel mask")
+            result |= int(rows[0][1], 16)
+        return result
+
+    def native_exec_descriptors(self, pid, state):
+        retained = {}
+        for descriptor, path in state.fds.items():
+            self.reserve_trace_observation()
+            try:
+                target = os.readlink(f"/proc/{pid}/fd/{descriptor}")
+            except FileNotFoundError:
+                continue
+            data = os.fsencode(target)
+            self.charge_metadata(len(data))
+            if len(data) > 4096:
+                raise Violation("native exec descriptor target exceeds the observation bound")
+            retained[descriptor] = path
+        return retained
+
+    def native_exec_signals(self, pid, state):
+        if self.read_trace is None or self.read_trace.version != 5 or not state.native_signals:
+            state.native_signals.clear()
+            state.native_signal_origins.clear()
+            return
+        with open(f"/proc/{pid}/status", "rb") as stream:
+            data = stream.read(4097)
+        self.charge_metadata(len(data))
+        pending = self.pending_signal_mask(data)
+        for number in tuple(state.native_signals):
+            if not pending & (1 << (number - 1)):
+                del state.native_signals[number]
+                state.native_signal_origins.pop(number, None)
+
+    def native_signal_grant(self, state, number, origin=None, *, thread=False):
+        if sum(state.native_signals.values()) >= self.config["observation_count"]:
+            raise Violation("native pending-signal grants exceed the observation bound")
+        self.reserve_trace_observation()
+        self.charge_metadata(16)
+        origins = state.native_signal_origins.setdefault(number, [])
+        if number >= 32 or not any(row[2] == thread for row in origins):
+            origins.append((*(origin or (None, None)), thread))
+        state.native_signals[number] = len(origins)
+
+    def native_queue_entry(self, pid, state, number, address):
+        if not address:
+            return
+        self.charge_metadata(48)
+        try:
+            information = memory(pid, address, 48)
+        except OSError as error:
+            if error.errno not in {errno.EIO, errno.EFAULT}:
+                raise
+            return
+        if int.from_bytes(information[8:12], "little", signed=True) != -1:
+            return
+        marker = os.urandom(16)
+        replace_memory(pid, address + 32, marker)
+        state.native_signal_buffer = (address + 32, information[32:48], marker, number)
+
+    def native_pending_signals(self, pid):
+        rows = []
+        for flags in (0, 1):
+            offset = 0
+            while True:
+                self.reserve_trace_observation()
+                arguments = ctypes.create_string_buffer(
+                    offset.to_bytes(8, "little") + flags.to_bytes(4, "little")
+                    + (16).to_bytes(4, "little"), 16,
+                )
+                information = (ctypes.c_ubyte * (128 * 16))()
+                count = ptrace(0x4209, pid, ctypes.addressof(arguments), ctypes.byref(information))
+                if not 0 <= count <= 16:
+                    raise Violation("invalid kernel pending-signal queue extent")
+                self.charge_metadata(128 * count)
+                for index in range(count):
+                    row = bytes(information[index * 128:(index + 1) * 128])
+                    rows.append((flags == 0, row[:48]))
+                if count < 16:
+                    break
+                offset += count
+        return rows
+
+    def native_reconcile_signal_origins(self, pid, state):
+        pending = {}
+        available = {number: list(origins)
+                     for number, origins in state.native_signal_origins.items()}
+        for thread, information in self.native_pending_signals(pid):
+            number = int.from_bytes(information[:4], "little", signed=True)
+            code = int.from_bytes(information[8:12], "little", signed=True)
+            if number == signal.SIGCHLD and code > 0:
+                continue
+            origins = available.get(number, [])
+            origin = next(
+                (row for row in origins if row[2] == thread and (
+                    row[0] == information[32:48] if code == -1 else row[0] is None
+                )),
+                None,
+            )
+            if code == -1 and origin is None:
+                raise Violation("unissued queued signal origin")
+            if (
+                code not in {0, -1, -6}
+                or int.from_bytes(information[16:20], "little", signed=True) != pid
+                or origin not in origins
+            ):
+                raise Violation("pending signal lacks its successful self-send")
+            origins.remove(origin)
+            pending.setdefault(number, []).append(origin)
+        state.native_signal_origins = pending
+        state.native_signals = {number: len(origins) for number, origins in pending.items()}
+
+    def native_signal_consumed(self, pid, state, number, information=None):
+        origins = state.native_signal_origins.get(number, [])
+        if number not in state.native_signals or not origins:
+            raise Violation("native signal consumption lacks its successful self-send")
+        if information is None:
+            rows = self.native_pending_signals(pid)
+            pending = {row[32:48] for _, row in rows
+                       if int.from_bytes(row[8:12], "little", signed=True) == -1}
+            retired = [origin for origin in origins if origin[0] is not None and origin[0] not in pending]
+            for thread in (False, True):
+                unqueued = sum(
+                    bucket == thread
+                    and int.from_bytes(row[:4], "little", signed=True) == number
+                    and int.from_bytes(row[8:12], "little", signed=True) in {0, -6}
+                    and int.from_bytes(row[16:20], "little", signed=True) == pid
+                    for bucket, row in rows
+                )
+                count = sum(row[0] is None and row[2] == thread for row in origins) - unqueued
+                if count not in {0, 1}:
+                    raise Violation("native signal consumption has ambiguous retired queue origins")
+                if count:
+                    retired.append((None, None, thread))
+            if len(retired) != 1:
+                raise Violation("native signal consumption has ambiguous retired queue origins")
+            origin = retired[0]
+        else:
+            code = int.from_bytes(information[8:12], "little", signed=True)
+            if (
+                int.from_bytes(information[:4], "little", signed=True) != number
+                or code not in {0, -1, -6}
+                or int.from_bytes(information[16:20], "little", signed=True) != pid
+            ):
+                raise Violation("native shell signal delivery is not its admitted self-signal")
+            origin = next(
+                (row for row in origins if row[0] == information[32:48]),
+                None,
+            ) if code == -1 else None
+            if code == -1 and origin is None:
+                raise Violation("unissued queued signal origin")
+            if code != -1:
+                return self.native_signal_consumed(pid, state, number)
+        if origin not in origins:
+            raise Violation("native signal consumption lacks its exact pending origin")
+        origins.remove(origin)
+        state.native_signals[number] -= 1
+        if not state.native_signals[number]:
+            del state.native_signals[number]
+            del state.native_signal_origins[number]
+        return origin[1]
+
+    def native_sigkill_exit(self, pid, state, status):
+        if not self.native_readonly or state.role != "native" or status != signal.SIGKILL:
+            return
+        registers = Registers()
+        self.charge_metadata(ctypes.sizeof(registers))
+        ptrace(GETREGS, pid, 0, ctypes.byref(registers))
+        number = registers.orig_rax
+        if (
+            state.pending != ("native-signal", signal.SIGKILL)
+            or state.kernel_call != number or signed(registers.rax) != 0
+        ):
+            raise Violation("native SIGKILL lacks an actual successful self-send outcome")
+        if self.signal_request(
+            pid, number, registers.rdi, registers.rsi, registers.rdx,
+        ) != signal.SIGKILL:
+            raise Violation("native SIGKILL lacks an actual successful self-send outcome")
+        state.native_sigkill_outcome = True
+
+    def native_child_signal(self, pid, state):
+        if self.read_trace is None or self.read_trace.version != 5:
+            return False
+        information = (ctypes.c_ubyte * 128)()
+        self.charge_metadata(ctypes.sizeof(information))
+        ptrace(0x4202, pid, 0, ctypes.byref(information))
+        code = int.from_bytes(bytes(information[8:12]), "little", signed=True)
+        if code not in {1, 2, 3}:
+            return False
+        child = int.from_bytes(bytes(information[16:20]), "little", signed=True)
+        row = self.native_jobs.get(state.native_dispatch)
+        if (
+            int.from_bytes(bytes(information[:4]), "little", signed=True) != signal.SIGCHLD
+            or row is None or not any(
+                event["kind"] == "fork" and event["pid"] == pid and event["child"] == child
+                for event in row["tree"]
+            )
+        ):
+            raise Violation("native SIGCHLD lacks its actual owned child")
+        self.native_tree_event(state, {
+            "kind": "signal", "pid": pid, "child": child, "code": code,
+            "status": int.from_bytes(bytes(information[24:28]), "little", signed=True),
+        })
+        state.delivery_signal = signal.SIGCHLD
+        return True
+
+    def native_job_frame(self, pid, state, pointer, size):
+        if (
+            not self.native_readonly or pid != self.make_pid or state.role != "make"
+            or not state.observer_ready or size != 24
+        ):
+            raise Violation("invalid native job notification sender or frame")
+        self.charge_metadata(size)
+        frame = memory(pid, pointer, size)
+        values = tuple(int.from_bytes(frame[offset:offset + 8], "little") for offset in (0, 8, 16))
+        child = values[0]
+        jobs = [row for row in self.native_jobs.values() if row["pid"] == child]
+        if not 0 < child < 1 << 31 or child == self.make_pid or len(jobs) != 1:
+            raise Violation("native job notification refers to a foreign child")
+        return jobs[0], values
+
+    def observe_native_job_context(self, pid, state, pointer, size):
+        row, (_, target_pointer, command_line) = self.native_job_frame(pid, state, pointer, size)
+        target = cstring(pid, target_pointer, limit=4097) if target_pointer else None
+        if command_line >= 1 << 32 or target_pointer and not target or not target_pointer and command_line:
+            raise Violation("invalid native job target or command index")
+        if target is not None:
+            self.charge_metadata(len(target.encode("utf-8")) + 1)
+        context = {
+            "kind": "recipe" if target is not None else "expansion",
+            "target": target, "command_line": command_line if target is not None else None,
+        }
+        if row["context"] is not None:
+            if row["context"] != context:
+                raise Violation("native job context changed for its actual child")
+            return
+        if row["waited"]:
+            raise Violation("native job context arrived after retirement")
+        self.native_job_event({"sequence": row["sequence"], "context": context})
+        row["context"] = context
+
+    def observe_native_job_policy(self, pid, state, pointer, size):
+        row, (_, status, flags) = self.native_job_frame(pid, state, pointer, size)
+        if (
+            status >= 1 << 32 or flags & ~3 or row["context"] is None or row["waited"]
+            or row["terminal_status"] is None or not (os.WIFEXITED(status) or os.WIFSIGNALED(status))
+            or bool(flags & 2) != (row["context"]["kind"] == "recipe")
+            or status != row["terminal_status"] or os.waitstatus_to_exitcode(status) != row["returncode"]
+        ):
+            raise Violation("native job wait result differs from its actual terminal lifecycle")
+        if self.read_trace is not None and self.read_trace.version == 5:
+            read_epochs.native_job_tree(
+                row["tree"], row, self.make_pid, self.native_executables,
+                count_limit=self.config["observation_count"],
+            )
+        self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
+        row["waited"], row["ignored"] = True, bool(flags & 1)
+        if self.read_trace is not None and self.read_trace.version in {4, 5}:
+            self.read_trace.machine_event(
+                "native-policy", pid, dispatch=row["sequence"], child=row["pid"],
+                context=dict(row["context"]), ignored=row["ignored"], status=status,
+            )
+        self.observe("accessed", "native-job:" + encoded(row).decode("ascii"))
+
+    def retire_native_job(self, pid, state, status):
+        row = self.native_jobs.get(state.native_dispatch)
+        if self.read_trace is not None and self.read_trace.version == 5:
+            self.native_tree_event(state, {"kind": "exit", "pid": pid, "status": status})
+            if row is not None and pid != row["pid"]:
+                return
+        if row is None or row["pid"] != pid or row["terminal_status"] is not None:
+            raise Violation("native job terminal event lost its actual dispatched child")
+        code = os.waitstatus_to_exitcode(status)
+        self.native_job_event({"sequence": row["sequence"], "returncode": code, "terminal_status": status})
+        row["returncode"], row["terminal_status"] = code, status
+
+    def finish_native_jobs(self):
+        if self.native_readonly and any(
+            row["pid"] is None or row["context"] is None or row["terminal_status"] is None or not row["waited"]
+            for row in self.native_jobs.values()
+        ):
+            raise Violation("native job observation ended with incomplete actual lifecycle")
+        if self.read_trace is not None and self.read_trace.version == 4:
+            executed = [
+                (row["dispatch"], row["pid"]) for row in self.read_trace.machine
+                if row["kind"] == "execute" and row["make"] is False
+            ]
+            if (
+                any(type(dispatch) is not int or type(pid) is not int for dispatch, pid in executed)
+                or sorted(executed) != sorted((key, row["pid"]) for key, row in self.native_jobs.items())
+            ):
+                raise Violation("native machine execution differs from actual readonly job dispatch")
 
     def defer_observation(self, state, collection, value):
         # Failed attempts still spend bounded bookkeeping, not evidence credit.
@@ -767,7 +1341,7 @@ class Policy:
             "processes": self.total_processes, "syscalls": self.calls,
             "written_bytes": self.written, "created_files": self.created,
             "observation_bytes": self.observation_bytes,
-            "observations": sum(map(len, self.observation_attempts.values())),
+            "observations": self.observation_count(),
             "live_process_peak": self.live_process_peak, "memory_peak": self.memory_peak,
         }
 
@@ -783,7 +1357,7 @@ class Policy:
         spent = {
             "descendant_limit": self.total_processes, "syscall_limit": self.calls,
             "write_limit": self.written, "creation_limit": self.created,
-            "observation_count": sum(map(len, self.observation_attempts.values())),
+            "observation_count": self.observation_count(),
             "observation_limit": self.observation_bytes,
             "process_limit": self.reservations()["processes"],
             "memory_limit": self.reservations()["memory"],
@@ -822,6 +1396,7 @@ class Policy:
                     spelling = posixpath.normpath(name)
                     if ".." in name.split("/") or (
                         spelling not in self.config["executables"] and not self.runtime_metadata(spelling)
+                        and not (self.native_readonly and spelling == "/bin/sh")
                     ):
                         raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
@@ -988,14 +1563,16 @@ class Policy:
         )
         if (
             not (path == "/repo" or path.startswith("/repo/") or optional)
-            or self.mode == "make" and state.role != "helper" and not (optional and state.observer_ready)
+            or self.mode == "make" and state.role != "helper" and not (
+                optional and (state.observer_ready or self.native_readonly and state.role == "native")
+            )
         ):
             return
         number = r.orig_rax
         flags = mask = size = address = offset = 0
         if number in {4, 5, 6}:
             size, address = 144, r.rsi
-        elif number == 138:
+        elif number in {137, 138}:
             size, address = 120, r.rsi
         elif number == 262:
             size, address, flags = 144, r.rdx, r.r10 & 0xFFFFFFFF
@@ -1058,15 +1635,50 @@ class Policy:
             return ()
         return entries[index]["metadata"]
 
+    def validate_native_metadata_mount(self, path, identity):
+        mounts = [item for item in self.config["mounts"] if item["target"] == path]
+        guest_path = Path(self.config["root"]) / path.lstrip("/")
+        if identity is None:
+            for source in (Path(path), guest_path):
+                try:
+                    source.lstat()
+                except FileNotFoundError:
+                    continue
+                raise Violation("absent native metadata directory has present backing")
+            if mounts:
+                raise Violation("absent native metadata directory has present backing")
+            return
+        expected = {"source": path, "target": path, "writable": False, "executable": False}
+        source, guest = Path(path).lstat(), guest_path.lstat()
+        actual = [source.st_dev, source.st_ino, source.st_mode, source.st_uid, source.st_gid]
+        mounted = os.statvfs(guest_path)
+        self.charge_metadata(len(encoded([list(source), list(guest), list(mounted)])))
+        required = os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV | os.ST_NOEXEC
+        if (
+            mounts != [expected] or actual[:3] != identity[:3]
+            or (guest.st_dev, guest.st_ino, guest.st_mode, guest.st_uid, guest.st_gid)
+            != tuple(actual) or mounted.f_flag & required != required
+        ):
+            raise Violation(
+                f"native metadata directory mount identity or flags differ: "
+                f"{path} source={actual} expected={identity} "
+                f"guest={[guest.st_dev, guest.st_ino, guest.st_mode, guest.st_uid, guest.st_gid]} "
+                f"flags={mounted.f_flag} mounts={mounts}"
+            )
+
     def runtime_metadata(self, path, *, parents=True):
         return (
-            path in self.config.get("runtime_files", ())
+            path in self.native_metadata_directories
+            or path in self.config.get("runtime_files", ())
             or parents and path in self.config.get("runtime_parents", ())
             or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
         )
 
     def check_optional_make_spelling(self, state, path, operation):
-        if self.mode != "make" or state.role != "make" or state.path_context is None:
+        if (
+            self.mode != "make" or state.path_context is None
+            or state.role != "make" and not (self.native_readonly and state.role == "native")
+        ):
             return
         # Shared mandatory directory metadata does not need the optional grant.
         if operation == "metadata" and path in self.runtime_directories:
@@ -1088,12 +1700,34 @@ class Policy:
         if any(name.startswith(prefix) for name in self.config["forbidden_paths"]):
             raise Violation(f"nonregular namespace in source enumeration: {path}")
 
+    def native_managed_runtime(self, path):
+        return self.native_readonly and any(
+            path == root or path.startswith(root + "/")
+            for root in self.native_runtime_directories
+        )
+
     def make_runtime_access(self, state, path, operation):
+        if path in self.native_metadata_directories:
+            if operation != "metadata":
+                raise Violation(f"metadata-only runtime operation denied: {operation} {path}")
+            self.check_optional_make_spelling(state, path, operation)
+            self.defer_observation(state, "accessed", path)
+            return
+        if self.native_managed_runtime(path) and operation in {"read", "metadata", "directory"}:
+            self.check_optional_make_spelling(state, path, operation)
+            self.defer_observation(state, "accessed", path)
+            return
+        if self.native_readonly and operation in {"read", "metadata"} and self.runtime_metadata(path):
+            self.check_optional_make_spelling(state, path, operation)
+            self.defer_observation(state, "accessed", path)
+            return
         if operation in {"read", "metadata"} and path in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
             return
         if operation == "metadata" and path in self.runtime_directories:
             return
-        if not state.observer_ready and operation in {"read", "metadata"} and path in self.loader_probes:
+        if not state.observer_ready and operation in {"read", "metadata"} and path in self.loader_probes and (
+            state.role != "native" or self.native_loader_origin(state)
+        ):
             try:
                 (Path(self.config["root"]) / path.lstrip("/")).lstat()
             except FileNotFoundError:
@@ -1118,7 +1752,7 @@ class Policy:
         ):
             raise Violation("dependency executable differs from its verified image")
 
-    def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction):
+    def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction, *, identity=None):
         if not re.fullmatch(rb"[0-9a-fA-F]{1,16}", raw_offset):
             raise Violation("dependency mapping offset is malformed")
         offset = int(raw_offset, 16)
@@ -1138,7 +1772,7 @@ class Policy:
                 before = os.fstat(source.fileno())
                 if not stat.S_ISREG(before.st_mode) or (
                     before.st_dev, before.st_ino
-                ) != self.dependency_image_ids[image]:
+                ) != (self.dependency_image_ids[image] if identity is None else identity):
                     raise Violation("opened dependency mapping image has a different identity")
                 if position > before.st_size - len(instruction):
                     raise Violation("dependency instruction span exceeds its runtime image")
@@ -1154,13 +1788,12 @@ class Policy:
         except OSError as error:
             raise Violation("dependency runtime instruction span is unavailable") from error
 
-    def dependency_negative_purpose(self, state, path, operation):
-        if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
-            raise Violation("dependency negative probe has no verified syscall context")
-        pid, number, ip = state.dependency_stop
-        if self.processes.get(pid) is not state or state.pidfd < 0 or state.kernel_call != number:
-            raise Violation("dependency negative probe is not owned by the stopped tracee")
-        self.reserve_observation("accessed", f"dependency-purpose:{pid}:{number}:{ip}:{operation}:{path}")
+    def syscall_origin(self, state, stop, label):
+        if stop is None:
+            raise Violation(f"{label} lacks its owned syscall stop")
+        pid, number, ip = stop
+        if self.processes.get(pid) is not state or state.pidfd < 0 or state.kernel_call != number or ip < 2:
+            raise Violation(f"{label} is not owned by the stopped tracee")
         information = (ctypes.c_ubyte * 128)()
         ptrace(0x420E, pid, len(information), ctypes.byref(information))
         if (
@@ -1168,37 +1801,60 @@ class Policy:
             or int.from_bytes(bytes(information[4:8]), "little") != 0xC000003E
             or int.from_bytes(bytes(information[8:16]), "little") != ip
             or int.from_bytes(bytes(information[24:32]), "little") != number
-            or ip < 2
         ):
-            raise Violation("dependency negative probe lost its actual syscall-entry stop")
+            raise Violation(f"{label} lost its actual syscall-entry stop")
         self.charge_metadata(2)
         instruction = memory(pid, ip - 2, 2)
         if instruction != b"\x0f\x05":
-            raise Violation("dependency negative probe has an unsupported syscall instruction")
-        self.verify_dependency_image(pid, state.dependency_image)
+            raise Violation(f"{label} has an unsupported syscall instruction")
         with open(f"/proc/{pid}/maps", "rb") as source:
             data = source.read(SYSCALL_MEMORY_LIMIT + 1)
         self.charge_metadata(len(data))
         if len(data) > SYSCALL_MEMORY_LIMIT:
-            raise Violation("dependency syscall mapping exceeds the observation bound")
-        origin = mapping = None
+            raise Violation(f"{label} mapping exceeds observation bound")
+        found = None
         for line in data.splitlines():
             fields = line.split(None, 5)
             if len(fields) < 5:
-                raise Violation("malformed dependency syscall mapping")
+                raise Violation(f"malformed {label} mapping")
             try:
                 start, end = (int(value, 16) for value in fields[0].split(b"-"))
                 major, minor = (int(value, 16) for value in fields[3].split(b":"))
                 inode = int(fields[4])
             except ValueError as error:
-                raise Violation("malformed dependency syscall mapping identity") from error
+                raise Violation(f"malformed {label} mapping identity") from error
             if start <= ip - 2 < ip < end:
-                if fields[1] != b"r-xp" or inode <= 0 or origin is not None:
-                    raise Violation("dependency syscall origin is not one readonly executable image")
-                origin = os.makedev(major, minor), inode
-                mapping = start, end, fields[2]
-        if origin is None:
-            raise Violation("dependency syscall origin has no executable mapping")
+                if fields[1] != b"r-xp" or inode <= 0 or found is not None:
+                    raise Violation(f"{label} lacks one readonly executable image mapping")
+                found = (os.makedev(major, minor), inode), (start, end, fields[2])
+        if found is None:
+            raise Violation(f"{label} syscall has no mapped origin")
+        return found[0], found[1], ip, instruction
+
+    def native_loader_origin(self, state):
+        if not self.native_readonly:
+            raise Violation("native loader probe is outside its readonly lane")
+        origin, mapping, ip, instruction = self.syscall_origin(
+            state, state.native_stop, "native loader probe",
+        )
+        image = self.config["native_interpreter"]
+        if image not in self.runtime_closure:
+            raise Violation("native interpreter is not in captured runtime closure")
+        identity = self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/"))
+        if origin != identity:
+            return False
+        self.verify_dependency_mapping_span(image, *mapping, ip, instruction, identity=identity)
+        return True
+
+    def dependency_negative_purpose(self, state, path, operation):
+        if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
+            raise Violation("dependency negative probe has no verified syscall context")
+        pid, number, ip = state.dependency_stop
+        self.reserve_observation("accessed", f"dependency-purpose:{pid}:{number}:{ip}:{operation}:{path}")
+        origin, mapping, ip, instruction = self.syscall_origin(
+            state, state.dependency_stop, "dependency negative probe",
+        )
+        self.verify_dependency_image(pid, state.dependency_image)
         for image in (self.dependency_interpreter, self.dependency_libc):
             if self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/")) != self.dependency_image_ids[image]:
                 raise Violation("dependency purpose image changed after resolution")
@@ -1253,6 +1909,9 @@ class Policy:
             if path == "/lib/vo-observer.so" and not observer:
                 raise Violation("supervisor observer image access denied")
             if operation == "directory" and not (path == "/repo" or path.startswith("/repo/")):
+                if self.native_managed_runtime(path):
+                    self.make_runtime_access(state, path, operation)
+                    return
                 raise Violation("Make runtime directory enumeration denied")
         if path == "/control" or path.startswith("/control/"):
             if state.role == "helper":
@@ -1273,6 +1932,8 @@ class Policy:
             return
         if path == "/dev/null":
             return
+        if self.native_readonly and operation == "write":
+            raise Violation(f"readonly native Make filesystem write denied: {path}")
         if state.role == "helper":
             if operation == "metadata" and path in {"/", "/bin", "/usr", "/usr/bin", "/proc/self/exe"}:
                 return
@@ -1284,7 +1945,10 @@ class Policy:
                 self.defer_observation(state, "accessed", path)
                 return
             raise Violation(f"interceptor attempted nonprotocol filesystem access: {path}")
-        if self.mode == "make" and state.role == "make" and not state.observer_ready:
+        if self.mode == "make" and (
+            state.role == "make" and not state.observer_ready
+            or self.native_readonly and state.role == "native"
+        ):
             if not (path == "/repo" or path.startswith("/repo/")):
                 self.make_runtime_access(state, path, operation)
                 return
@@ -1309,6 +1973,10 @@ class Policy:
             for name in ("gnm", "gstrip", "gld")
         }:
             return
+        if self.mode == "compile" and path in self.config.get("repository_outputs", ()):
+            if state.role == "compiler" and operation in {"read", "metadata", "write"}:
+                return
+            raise Violation(f"original compiler output operation denied: {operation} {path}")
         if operation == "write":
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
@@ -1440,6 +2108,15 @@ class Policy:
         if any(ctypes.c_int(target).value != pid for target in targets):
             raise Violation("cross-process signal target denied")
 
+    @classmethod
+    def signal_request(cls, pid, number, a, b, c):
+        two_targets = number in {234, 297}
+        if not two_targets and number not in {62, 129, 200}:
+            raise Violation("unsupported self-signal syscall")
+        targets = (a, b) if two_targets else (a,)
+        cls.signal_target(pid, *targets)
+        return ctypes.c_int(c if two_targets else b).value
+
     def entry(self, pid, state, r):
         self.calls += 1
         if self.calls > self.config["syscall_limit"]:
@@ -1451,10 +2128,14 @@ class Policy:
         state.metadata_pending = None
         state.path_context = None
         state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") else None
+        state.native_stop = (pid, r.orig_rax, r.rip) if self.native_readonly and state.role == "native" else None
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE}:
+        if n == 39 and a in {
+            VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE,
+            VO_SOURCE_IO, VO_JOB_CONTEXT, VO_JOB_POLICY,
+        }:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
@@ -1495,17 +2176,30 @@ class Policy:
                     if b or c or state.observer_ready:
                         raise Violation("invalid observer bootstrap notification")
                     state.observer_ready = True
+                    if self.read_trace is not None:
+                        self.read_trace.ready(pid)
+                elif a == VO_SOURCE_IO:
+                    if self.read_trace is None or state.role != "make" or not state.observer_ready:
+                        raise Violation("unconfigured original source stream notification")
+                    self.read_trace.source_io(pid, state, b, c)
+                elif a == VO_JOB_CONTEXT:
+                    self.observe_native_job_context(pid, state, b, c)
+                elif a == VO_JOB_POLICY:
+                    self.observe_native_job_policy(pid, state, b, c)
                 elif b:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
                         raise Violation(f"untrusted executable dispatch: {path}")
                     if self.runtime_metadata(path, parents=False):
                         self.check_optional_make_spelling(state, path, "execute")
+                    if self.native_readonly:
+                        self.begin_native_job(pid, state, path)
                     state.dispatch = (path, c)
                 else:
                     if c:
                         raise Violation("invalid Make dispatch completion")
                     state.dispatch = None
+                    state.native_dispatch = None
         elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
@@ -1522,7 +2216,7 @@ class Policy:
             if creating:
                 self.reserve_creation()
             state.pending = ("open", path)
-        elif n in {4, 6, 21, 89, 262, 267, 269, 332, 439}:  # metadata, access, readlink
+        elif n in {4, 6, 21, 89, 137, 262, 267, 269, 332, 439}:  # metadata, access, readlink
             at = n in {262, 267, 269, 332, 439}
             follow = n not in {6, 89, 267} and not (
                 n in {262, 439} and d & 0x100 or n == 332 and c & 0x100
@@ -1608,6 +2302,7 @@ class Policy:
                 if (
                     self.mode == "make" and c & PROT_EXEC
                     and path not in self.executable | self.runtime_closure | {"/lib/vo-observer.so"}
+                    and not self.native_managed_runtime(path)
                 ):
                     raise Violation("optional runtime image execution denied")
                 if c & PROT_EXEC and path not in self.executable and not path.startswith(("/usr/", "/lib/", "/lib64/", "/bin/")):
@@ -1651,7 +2346,21 @@ class Policy:
                     if self.make_restarts > 64:
                         raise Violation("Make restart exceeded the existing pass bound")
                     role = "make"
-                elif path == "/control/interceptor" and state.dispatch:
+                elif self.native_readonly and path in self.native_executables and state.dispatch:
+                    if state.dispatch[0] != path:
+                        raise Violation("native shell differs from authenticated Make dispatch")
+                    role = "native"
+                    state.exec_path = path
+                    self.reserve_observation("accessed", "native-shell:" + str(pid) + ":" + path)
+                    state.dispatch = None
+                elif (
+                    self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
+                    and state.role == "native" and state.native_dispatch in self.native_jobs
+                    and path in self.native_executables
+                ):
+                    role = "native"
+                    state.exec_path = path
+                elif not self.native_readonly and path == "/control/interceptor" and state.dispatch:
                     role = "helper"
                     source, required = state.dispatch
                     state.helper_kind = VO_VALUE if (
@@ -1764,10 +2473,15 @@ class Policy:
             self.check(state, self.path(pid, state, b, signed(a), follow_final=bool(e & 0x400)), "write")
             self.check(state, self.path(pid, state, d, signed(c), follow_final=False), "write")
             self.reserve_creation()
-        elif n in {62, 129, 200}:  # kill, rt_sigqueueinfo, tkill
-            self.signal_target(pid, a)
-        elif n in {234, 297}:  # tgkill, rt_tgsigqueueinfo
-            self.signal_target(pid, a, b)
+        elif n in {62, 129, 200, 234, 297}:
+            number = self.signal_request(pid, n, a, b, c)
+            if self.native_readonly and state.role == "native" and 0 < number <= 64:
+                state.pending = ("native-signal", number)
+                if n in {129, 297}:
+                    self.native_queue_entry(pid, state, number, c if n == 129 else d)
+        elif n == 128 and self.native_readonly and state.role == "native":
+            self.native_reconcile_signal_origins(pid, state)
+            state.pending = ("native-signal-wait", b)
         elif n == 424:
             raise Violation("candidate pidfd signal authority is not admitted")
         elif n in {105, 106, 113, 114, 117, 119}:
@@ -1815,16 +2529,61 @@ class Policy:
         observations = state.observations
         state.observations = []
         pending, state.pending = state.pending, None
+        queued, state.native_signal_buffer = state.native_signal_buffer, None
+        if queued is not None:
+            replace_memory(pid, queued[0], queued[1])
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
+            if operation == "native-signal-wait" and result == -errno.EFAULT:
+                queued_origins = {
+                    origin for origins in state.native_signal_origins.values()
+                    for origin in origins if origin[0] is not None
+                }
+                self.native_reconcile_signal_origins(pid, state)
+                retained = {
+                    origin for origins in state.native_signal_origins.values()
+                    for origin in origins if origin[0] is not None
+                }
+                if value and queued_origins - retained:
+                    self.charge_metadata(1)
+                    try:
+                        memory(pid, value + 32, 1)
+                    except OSError as error:
+                        if error.errno not in {errno.EIO, errno.EFAULT}:
+                            raise
+                    else:
+                        raise Violation("unsupported partially accessible siginfo output")
+            if (
+                self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
+                and state.role == "native" and result == -errno.EPIPE
+                and r.orig_rax in {1, 18, 20} and state.kernel_io == "<pipe>"
+            ):
+                self.native_signal_grant(state, signal.SIGPIPE, thread=True)
+                self.native_tree_event(state, {
+                    "kind": "pipe-error", "pid": pid, "syscall": r.orig_rax, "error": errno.EPIPE,
+                })
             if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
                 raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return
+        if operation == "native-signal":
+            self.native_signal_grant(
+                state, value, None if queued is None else (queued[2], queued[1]),
+                thread=r.orig_rax in {200, 234, 297},
+            )
+        elif operation == "native-signal-wait":
+            self.charge_metadata(48 if value else 0)
+            padding = self.native_signal_consumed(
+                pid, state, result, memory(pid, value, 48) if value else None,
+            )
+            if padding is not None and value:
+                replace_memory(pid, value + 32, padding)
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
+            if self.read_trace is not None:
+                self.read_trace.fd_closed(pid, value)
             state.fds.pop(value, None)
         elif operation == "pipe":
             data = memory(pid, value, 8)
@@ -1865,11 +2624,17 @@ def observer_ranges(pid):
 
 
 def signal_tracees(processes):
-    for record in processes.values():
+    for pid, record in processes.items():
         try:
             signal.pidfd_send_signal(record.pidfd, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        if record.parked:
+            try:
+                ptrace(7, pid, 0, signal.SIGKILL)
+            except OSError as error:
+                if error.errno != errno.ESRCH:
+                    raise
 
 
 def supervise(config, drop_privileges):
@@ -1904,13 +2669,14 @@ def supervise(config, drop_privileges):
     primary = None
     result = None
     main_status = None
+    finished_trace = None
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
         raise Violation("no remaining guest-process capacity")
     pid = os.fork()
     if pid == 0:
         try:
             os.chroot(config["root"])
-            os.chdir("/repo")
+            os.chdir(config.get("cwd", "/repo"))
             os.umask(0o022)
             os.closerange(3, 65536)
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -1920,14 +2686,19 @@ def supervise(config, drop_privileges):
             resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
             cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
             resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+            if policy.native_readonly:
+                for name in ("SIGPIPE", "SIGXFZ", "SIGXFSZ"):
+                    if hasattr(signal, name):
+                        signal.signal(getattr(signal, name), signal.SIG_DFL)
             trace_me(drop_privileges)
-            os.execve(config["argv"][0], config["argv"], config["environment"])
+            os.execve(config.get("initial_executable", config["argv"][0]),
+                      config["argv"], config["environment"])
         except BaseException as failure:
             os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
             os._exit(125)
     processes[pid] = Process(
         "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
-        memory_group=pid, pidfd=os.pidfd_open(pid),
+        memory_group=pid, pidfd=os.pidfd_open(pid), cwd=config.get("cwd", "/repo"),
     )
     if config.get("metadata_validation"):
         processes[pid].helper_kind = VO_VALIDATE
@@ -1948,7 +2719,10 @@ def supervise(config, drop_privileges):
             state.kernel_call = registers.orig_rax
             policy.entry(child, state, registers)
         state.parked = False
-        ptrace(SYSCALL, child)
+        delivered, state.delivery_signal = state.delivery_signal, 0
+        if delivered:
+            state.native_delivered = delivered
+        ptrace(SYSCALL, child, 0, delivered)
 
     def release_vfork(child):
         for parent, waited_child in tuple(vfork_waiters.items()):
@@ -1970,6 +2744,16 @@ def supervise(config, drop_privileges):
             raise Violation("unrecorded sandbox descendant")
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
+            if policy.native_readonly and state.role == "native" and state.native_exit_status != status:
+                raise Violation("native terminal status differs from its actual kernel exit stop")
+            if policy.native_readonly and state.role == "native" and os.WIFSIGNALED(status):
+                terminated = os.WTERMSIG(status)
+                if terminated != state.native_delivered and not (
+                    terminated == signal.SIGKILL and state.native_sigkill_outcome
+                ):
+                    raise Violation("native shell termination lacks an admitted self-signal")
+            if policy.native_readonly and state.role == "native":
+                policy.retire_native_job(stopped, state, status)
             unfulfilled = state.producer_requested and (
                 state.producer_slot is None or not state.producer_event_written
             )
@@ -1984,25 +2768,51 @@ def supervise(config, drop_privileges):
             if code != 0 and not (
                 stopped == pid and (config["mode"] == "make"
                 or config.get("metadata_validation") and code in {1, 2})
+                or policy.native_readonly and state.role == "native"
             ):
                 raise Violation(f"sandbox process exited unsuccessfully: {code}")
             return
         state.parked = True
         sig = os.WSTOPSIG(status)
         event = status >> 16
+        tracing_stop = sig == signal.SIGSTOP and state.newborn_stop
+        if tracing_stop:
+            state.newborn_stop = False
+            if policy.read_trace is not None and stopped != policy.read_trace.pid:
+                policy.read_trace.clear(stopped)
+                if state.role == "native" and policy.read_trace.version == 5:
+                    policy.native_tree_event(state, {"kind": "start", "pid": stopped})
+        if sig == signal.SIGTRAP and event == 6:
+            outcome = ctypes.c_ulong()
+            policy.charge_metadata(ctypes.sizeof(outcome))
+            ptrace(0x4201, stopped, 0, ctypes.byref(outcome))
+            if policy.native_readonly and state.role == "native":
+                if state.native_exit_status is not None:
+                    raise Violation("native process reused its terminal kernel exit stop")
+                state.native_exit_status = outcome.value
+            policy.native_sigkill_exit(stopped, state, outcome.value)
+            state.parked = False
+            ptrace(7, stopped, 0, 0)
+            return
         if sig == signal.SIGTRAP and event in {1, 2, 3}:
             child = ctypes.c_ulong()
             ptrace(0x4201, stopped, 0, ctypes.byref(child))
             if child.value not in newborn_stops:
                 policy.total_processes += 1
             record = state.clone()
+            record.native_parent = stopped
             if not state.clone_shares_vm:
                 record.memory_group = child.value
             record.pidfd = newborn_stops.pop(child.value, -1)
             already_stopped = record.pidfd >= 0
+            record.newborn_stop = not already_stopped
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5:
+                policy.native_tree_event(
+                    state, {"kind": "fork", "pid": stopped, "child": child.value},
+                )
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
             state.process_reservation = False
@@ -2011,10 +2821,26 @@ def supervise(config, drop_privileges):
                 state.vfork_child = child.value
             policy.account_processes()
             if already_stopped:
+                if policy.read_trace is not None:
+                    policy.read_trace.clear(child.value)
+                    if record.role == "native" and policy.read_trace.version == 5:
+                        policy.native_tree_event(record, {"kind": "start", "pid": child.value})
                 resume(child.value)
         elif sig == signal.SIGTRAP and event == 4:
+            tree_exec = None
             if state.pending is None or state.pending[0] != "exec":
                 raise Violation("unapproved executable transition")
+            if policy.native_readonly and state.pending[1] == "native":
+                if state.exec_path not in policy.native_executables:
+                    raise Violation("native exec has no admitted image")
+                tree_exec = policy.bind_native_job(stopped, state)
+                if tree_exec is None or state.native_execs == 1 and stopped == policy.native_jobs[state.native_dispatch]["pid"]:
+                    policy.observe(
+                        "accessed",
+                        ("native-shell:" if state.exec_path == config.get("native_shell", "/bin/sh") else "native-exec:")
+                        + str(stopped) + ":" + state.exec_path,
+                    )
+                state.exec_path = None
             if config.get("dependency"):
                 if state.exec_path is None:
                     raise Violation("dependency exec has no admitted image")
@@ -2025,19 +2851,59 @@ def supervise(config, drop_privileges):
                 policy.executed.append(state.exec_path)
                 state.exec_path = None
             if state.bootstrap:
+                if config.get("repository_outputs") and stopped == pid:
+                    with open(f"/proc/{stopped}/cmdline", "rb") as stream:
+                        data = stream.read(65537)
+                    policy.charge_metadata(len(data))
+                    if not data or len(data) > 65536 or not data.endswith(b"\0"):
+                        raise Violation("original compiler command line exceeds its byte bound")
+                    try:
+                        argv = [item.decode("utf-8", "strict") for item in data[:-1].split(b"\0")]
+                    except UnicodeDecodeError as error:
+                        raise Violation("original compiler command line is not strict UTF-8") from error
+                    actual = os.stat(f"/proc/{stopped}/cwd")
+                    expected = os.stat(Path(config["root"]) / config["cwd"].lstrip("/"))
+                    policy.charge_metadata(256)
+                    if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+                        raise Violation("original compiler CWD differs from its owned directory")
+                    inputs = read_epochs.native_execution_input(argv, config["cwd"])
+                    policy.observe("accessed", "compiler-input:" + json.dumps(inputs))
                 descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
                 policy.charge_metadata(sum(len(name) + 16 for name in descriptors))
                 if descriptors != {"0", "1", "2"}:
                     raise Violation("initial guest exec inherited a nonstandard descriptor")
             state.role = state.pending[1]
             state.bootstrap = False
-            state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
+            state.fds = (
+                policy.native_exec_descriptors(stopped, state)
+                if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5
+                else {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
+            )
             state.observer_ranges = ()
             state.observer_ready = False
+            policy.native_exec_signals(stopped, state)
+            state.delivery_signal = 0
+            state.native_delivered = 0
+            state.native_sigkill_outcome = False
             state.memory_reservation = 0
             state.break_end = 0
             state.kernel_call = None
             policy.finish_exec(stopped, state)
+            if policy.read_trace is not None:
+                if tree_exec is not None and (
+                    state.native_execs > 1 or stopped != policy.native_jobs[state.native_dispatch]["pid"]
+                ):
+                    policy.read_trace.clear(stopped)
+                else:
+                    policy.read_trace.actual_exec(
+                        stopped, state.role == "make",
+                        None if state.role == "make" else state.native_dispatch,
+                        **({"inputs": None if state.role == "make" else {
+                            key: policy.native_jobs[state.native_dispatch][key] for key in ("argv", "cwd")
+                        }} if policy.read_trace.version == 5 else {}),
+                    )
+                if tree_exec is not None:
+                    policy.native_tree_event(state, tree_exec)
             release_vfork(stopped)
         elif sig == signal.SIGTRAP and event == 5:
             child = ctypes.c_ulong()
@@ -2069,8 +2935,28 @@ def supervise(config, drop_privileges):
                 state.kernel_call = None
             else:
                 raise Violation("kernel did not identify syscall entry/exit")
-        elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
-            raise Violation(f"sandbox signal {sig}")
+        elif sig == signal.SIGTRAP and event == 0 and policy.read_trace is not None:
+            policy.read_trace.trap(stopped, state)
+            policy.confirm_readonly_entry(stopped, state)
+        elif policy.native_readonly and state.role == "native" and sig == signal.SIGTRAP:
+            raise Violation("unauthenticated native shell trap")
+        elif policy.native_readonly and state.role == "native" and sig == signal.SIGSTOP and not tracing_stop:
+            raise Violation("unsupported native shell stop")
+        elif policy.native_readonly and state.role == "native" and sig == signal.SIGCHLD and policy.native_child_signal(stopped, state):
+            pass
+        elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP} or (
+            policy.native_readonly and state.role == "native" and sig == signal.SIGCHLD
+        ):
+            if not policy.native_readonly or state.role != "native" or sig not in state.native_signals:
+                raise Violation(f"sandbox signal {sig}")
+            information = (ctypes.c_ubyte * 128)()
+            policy.charge_metadata(ctypes.sizeof(information))
+            ptrace(0x4202, stopped, 0, ctypes.byref(information))
+            padding = policy.native_signal_consumed(stopped, state, sig, bytes(information))
+            if padding is not None:
+                information[32:48] = padding
+                ptrace(0x4203, stopped, 0, ctypes.byref(information))
+            state.delivery_signal = sig
         resume(stopped)
 
     def unsettled(state):
@@ -2256,6 +3142,21 @@ def supervise(config, drop_privileges):
                     for record in processes.values():
                         record.close()
                     processes.clear()
+        def finish_trace():
+            nonlocal error, finished_trace
+            if error is None:
+                try:
+                    policy.finish_native_jobs()
+                except BaseException as failure:
+                    error = str(failure)
+                    raise
+            if error is None and main_status == 0 and policy.read_trace is not None:
+                try:
+                    finished_trace = policy.read_trace.finish()
+                except BaseException as failure:
+                    error = str(failure)
+                    raise
+
         def write_report():
             nonlocal result
             result = {
@@ -2272,10 +3173,12 @@ def supervise(config, drop_privileges):
                 "created_files": policy.created,
                 "memory_peak": policy.memory_peak,
                 "observation_bytes": policy.observation_bytes,
-                "observations": sum(map(len, policy.observation_attempts.values())),
+                "observations": policy.observation_count(),
                 "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }
+            if finished_trace is not None:
+                result["read_trace"] = finished_trace
             if config.get("dependency"):
                 result["executed"] = policy.executed
             if channel is not None:
@@ -2301,7 +3204,8 @@ def supervise(config, drop_privileges):
                         error = str(failure)
                     raise
         finish_cleanup([
-            reap_owned, finish_channel, write_report,
+            reap_owned, finish_channel, finish_trace, write_report,
+            *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)
     return 0 if result["ok"] else 125
