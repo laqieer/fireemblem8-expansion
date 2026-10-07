@@ -226,6 +226,29 @@ cross-parent replacement. Entry-time identity/entry checks reject unobserved par
 changes. Failed operations retain the parent preimage. Directory pin reads,
 entry inventories and events use the existing shared observation budget.
 Terminal cleanup closes pending pins without publishing an unobserved return.
+The existing pending-operation map also excludes overlapping namespace
+operands, directory ancestors and owned-parent entry inventories across PIDs
+before a second kernel operation. This prevents two admitted absent,
+nonexclusive creating opens from publishing the wrong producer's inode.
+Do not change the original syscall flags to force exclusive creation.
+Independent names without a shared owned-parent inventory remain concurrent;
+readonly opens may concurrently share a settled version without claiming
+namespace mutation. Conflicting namespace operations may proceed after the
+first actual return.
+This is admitted tracee-operation custody, not hostile same-UID host isolation.
+
+Run `NativeOutputCustodyTests.test_pending_namespace_excludes_raced_creation_and_all_conflicting_action_siblings`
+and `NativeOutputCustodyTests.test_pending_owned_parent_inventory_excludes_sibling_namespace_mutations`.
+For all five namespace actions, source/destination variants, ancestor and
+same-owner/different-owner modeled bindings, require refusal before mutation
+with no new pins, pending records, object ownership or events. Preserve the
+first pending operation; independently create a different name, then complete
+the first actual nonexclusive kernel open and permit sequential continuation.
+Require exact owned-parent entries after sequential child creation.
+The pre-fix model admits both absent entries and can attribute the actual
+second creator's inode to the first producer processed at return. These are
+actual filesystem/component controls with modeled producer/PID labels, not
+qualification of distinct native Make jobs.
 
 From a clean fixture run
 `python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_observes_directory_syscall_and_failed_return_family scripts.validation_ownership.tests.test_producer.NativeOutputCustodyTests`.

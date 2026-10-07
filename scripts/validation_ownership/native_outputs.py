@@ -341,6 +341,32 @@ class NativeOutputs:
             raise NativeOutputError("native operation lacks its issued producer/process")
         if pid in self.pending:
             raise NativeOutputError("native operation overlaps its unfinished kernel return")
+        namespace_kinds = {"open", "replace", "remove", "mkdir", "rmdir"}
+        if kind in namespace_kinds:
+            paths = {path for path in (source, destination) if path is not None}
+            paths.update(
+                path.rpartition("/")[0] for path in tuple(paths)
+                if path.rpartition("/")[0] in self.directories
+            )
+            for active in self.pending.values():
+                if active.kind not in namespace_kinds:
+                    continue
+                if (
+                    kind == active.kind == "open"
+                    and not (flags | active.flags) & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC)
+                ):
+                    continue
+                self.deadline()
+                others = {
+                    path for path in (active.source, active.destination, *active.parents)
+                    if path is not None
+                }
+                self.charge(64 + sum(len(os.fsencode(path)) for path in paths | others))
+                if any(
+                    left == right or left.startswith(right + "/") or right.startswith(left + "/")
+                    for left in paths for right in others
+                ):
+                    raise NativeOutputError("native namespace operation overlaps an unfinished kernel return")
         operands, directory_parents = [], []
         try:
             for path, descriptor in pins:

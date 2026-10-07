@@ -5146,6 +5146,133 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.closed(pid, descriptor, 0)
         return pin
 
+    def test_pending_namespace_excludes_raced_creation_and_all_conflicting_action_siblings(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        flags = os.O_CREAT | os.O_TRUNC | os.O_RDWR
+        first = self.outputs.enter_open(owner=1, pid=1, path="held", flags=flags, pin=None)
+        actions = (
+            lambda: self.outputs.enter_open(owner=2, pid=2, path="held", flags=flags, pin=None),
+            lambda: self.outputs.enter_remove(owner=2, pid=2, path="held", pin=None),
+            lambda: self.outputs.enter_replace(
+                owner=2, pid=2, source="held", destination="other", source_pin=None, retired_pin=None,
+            ),
+            lambda: self.outputs.enter_replace(
+                owner=2, pid=2, source="other", destination="held", source_pin=None, retired_pin=None,
+            ),
+            lambda: self.outputs.enter_mkdir(owner=2, pid=2, path="held", pin=None, mode=0o700),
+            lambda: self.outputs.enter_rmdir(owner=2, pid=2, path="held", pin=None),
+            lambda: self.outputs.enter_open(owner=1, pid=2, path="held", flags=flags, pin=None),
+            lambda: self.outputs.enter_mkdir(owner=2, pid=2, path="held/child", pin=None, mode=0o700),
+        )
+        for index, action in enumerate(actions):
+            with self.subTest(action=index):
+                descriptors = set(os.listdir("/proc/self/fd"))
+                with self.assertRaisesRegex(NativeOutputError, "namespace operation overlaps"):
+                    action()
+                self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+                self.assertEqual(self.outputs.pending, {1: first})
+                self.assertEqual(self.outputs.objects, {})
+                self.assertEqual(self.events, [])
+                self.assertFalse((self.root / "held").exists())
+        other = self.outputs.enter_open(owner=2, pid=2, path="independent", flags=flags, pin=None)
+        descriptor = os.open(self.root / "independent", flags, 0o600)
+        try:
+            self.outputs.leave_open(other, result=descriptor, pin=descriptor)
+        finally:
+            os.close(descriptor)
+        self.outputs.closed(2, descriptor, 0)
+        self.assertIs(self.outputs.pending[1], first)
+        descriptor = os.open(self.root / "held", flags, 0o600)
+        try:
+            self.outputs.leave_open(first, result=descriptor, pin=descriptor)
+        finally:
+            os.close(descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        self.assertEqual(self.outputs.objects["held"].owner, 1)
+        self.assertFalse(self.outputs.pending)
+        pin = os.open(self.root / "held", os.O_RDONLY)
+        try:
+            next_operation = self.outputs.enter_open(owner=1, pid=2, path="held", flags=flags, pin=pin)
+            descriptor = os.open(self.root / "held", flags, 0o600)
+            try:
+                self.outputs.leave_open(next_operation, result=descriptor, pin=descriptor)
+            finally:
+                os.close(descriptor)
+            self.outputs.closed(2, descriptor, 0)
+        finally:
+            os.close(pin)
+        self.assertEqual(self.outputs.objects["held"].revision, 1)
+        self.outputs.finish()
+
+    def test_pending_owned_parent_inventory_excludes_sibling_namespace_mutations(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        self.create_directory("parent")
+        flags = os.O_CREAT | os.O_TRUNC | os.O_RDWR
+        first = self.outputs.enter_open(owner=1, pid=1, path="parent/first", flags=flags, pin=None)
+        actions = (
+            lambda: self.outputs.enter_open(owner=1, pid=2, path="parent/second", flags=flags, pin=None),
+            lambda: self.outputs.enter_remove(owner=1, pid=2, path="parent/second", pin=None),
+            lambda: self.outputs.enter_replace(
+                owner=1, pid=2, source="parent/second", destination="outside",
+                source_pin=None, retired_pin=None,
+            ),
+            lambda: self.outputs.enter_replace(
+                owner=1, pid=2, source="outside", destination="parent/second",
+                source_pin=None, retired_pin=None,
+            ),
+            lambda: self.outputs.enter_mkdir(owner=1, pid=2, path="parent/second", pin=None, mode=0o700),
+            lambda: self.outputs.enter_rmdir(owner=1, pid=2, path="parent/second", pin=None),
+        )
+        before = self.outputs.directories["parent"].identity
+        events = list(self.events)
+        for index, action in enumerate(actions):
+            with self.subTest(action=index):
+                descriptors = set(os.listdir("/proc/self/fd"))
+                with self.assertRaisesRegex(NativeOutputError, "namespace operation overlaps"):
+                    action()
+                self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+                self.assertEqual(self.outputs.pending, {1: first})
+                self.assertEqual(self.outputs.directories["parent"].identity, before)
+                self.assertEqual(self.outputs.directories["parent"].entries, ())
+                self.assertEqual(self.events, events)
+                self.assertEqual(tuple((self.root / "parent").iterdir()), ())
+        descriptor = os.open(self.root / "parent/first", flags, 0o600)
+        try:
+            self.outputs.leave_open(first, result=descriptor, pin=descriptor)
+        finally:
+            os.close(descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        next_operation = self.outputs.enter_open(
+            owner=1, pid=2, path="parent/second", flags=flags, pin=None,
+        )
+        descriptor = os.open(self.root / "parent/second", flags, 0o600)
+        try:
+            self.outputs.leave_open(next_operation, result=descriptor, pin=descriptor)
+        finally:
+            os.close(descriptor)
+        self.outputs.closed(2, descriptor, 0)
+        self.assertEqual(self.outputs.directories["parent"].entries, ("first", "second"))
+        self.outputs.finish()
+
+    def test_pending_readonly_opens_share_a_settled_version_without_namespace_exclusion(self):
+        pin = self.create("readable", b"settled")
+        first = self.outputs.enter_open(owner=2, pid=11, path="readable", flags=os.O_RDONLY, pin=pin)
+        second = self.outputs.enter_open(owner=3, pid=12, path="readable", flags=os.O_RDONLY, pin=pin)
+        descriptors = []
+        try:
+            for operation in (first, second):
+                descriptor = os.open(self.root / "readable", os.O_RDONLY)
+                descriptors.append((operation.pid, descriptor))
+                item = self.outputs.leave_open(operation, result=descriptor, pin=descriptor)
+                self.assertEqual(item.owner, 1)
+                self.assertEqual(os.read(descriptor, 7), b"settled")
+                self.assertEqual(item.sha256, hashlib.sha256(b"settled").hexdigest())
+        finally:
+            for pid, descriptor in descriptors:
+                os.close(descriptor)
+                self.outputs.closed(pid, descriptor, 0)
+        self.outputs.finish()
+
     def test_writer_interface_transitions_preserve_expected_image_and_refuse_before_mutation(self):
         from contextlib import ExitStack
         from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
