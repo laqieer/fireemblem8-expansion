@@ -1624,6 +1624,81 @@ class ProducerTests(unittest.TestCase):
             ])
         self.fixture.assert_clean(session)
 
+    def test_native_capsule_observes_directory_syscall_and_failed_return_family(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <errno.h>\n#include <stdlib.h>\n#include <sys/syscall.h>\n"
+            "int main(int argc,char **argv){int at,root,fd;long result;"
+            "if(argc!=2)return 1;at=atoi(argv[1]);"
+            "root=open(\"/work\",O_RDONLY|O_DIRECTORY);if(root<0)return 2;"
+            "result=at?syscall(SYS_mkdirat,root,\"scratch\",0700)"
+            ":syscall(SYS_mkdir,\"/work/scratch\",0700);if(result)return 3;"
+            "errno=0;result=at?syscall(SYS_mkdirat,root,\"scratch\",0700)"
+            ":syscall(SYS_mkdir,\"/work/scratch\",0700);"
+            "if(result!=-1||errno!=EEXIST)return 4;"
+            "fd=open(\"/work/scratch/result.tmp\",O_CREAT|O_EXCL|O_WRONLY,0600);"
+            "if(fd<0||write(fd,\"final\",5)!=5||close(fd))return 5;"
+            "errno=0;result=at?syscall(SYS_mkdirat,root,\"scratch/result.tmp\",0700)"
+            ":syscall(SYS_mkdir,\"/work/scratch/result.tmp\",0700);"
+            "if(result!=-1||errno!=EEXIST)return 10;"
+            "errno=0;result=at?syscall(SYS_unlinkat,root,\"scratch/result.tmp\",AT_REMOVEDIR)"
+            ":syscall(SYS_rmdir,\"/work/scratch/result.tmp\");"
+            "if(result!=-1||errno!=ENOTDIR)return 11;"
+            "errno=0;result=at?syscall(SYS_unlinkat,root,\"scratch\",AT_REMOVEDIR)"
+            ":syscall(SYS_rmdir,\"/work/scratch\");"
+            "if(result!=-1||errno!=ENOTEMPTY)return 6;"
+            "if(rename(\"/work/scratch/result.tmp\",\"/work/result\"))return 7;"
+            "result=at?syscall(SYS_unlinkat,root,\"scratch\",AT_REMOVEDIR)"
+            ":syscall(SYS_rmdir,\"/work/scratch\");if(result)return 8;"
+            "errno=0;result=at?syscall(SYS_unlinkat,root,\"scratch\",AT_REMOVEDIR)"
+            ":syscall(SYS_rmdir,\"/work/scratch\");"
+            "if(result!=-1||errno!=ENOENT||close(root))return 9;"
+            "puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for at in ("0", "1"):
+            with self.subTest(at=at):
+                reports = []
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    execute = session._sandbox_run
+                    def record(root, **kwargs):
+                        result = execute(root, **kwargs)
+                        if kwargs["mode"] == "command":
+                            reports.append(result[1])
+                        return result
+                    with patch.object(session, "_sandbox_run", record):
+                        output = session.native(tool, (at,), outputs=("result",))
+                    self.assertEqual(output.stdout, b"once\n")
+                    self.assertEqual([(item.path, item.data, item.mode) for item in output.generated], [
+                        ("result", b"final", 0o600),
+                    ])
+                    report, = reports
+                    rows = sorted(
+                        (json.loads(value.removeprefix("native-output:")) for value in report["accessed"]
+                         if value.startswith("native-output:")), key=lambda row: row["sequence"],
+                    )
+                    created, = [row for row in rows if row["kind"] == "output-mkdir"]
+                    removed, = [row for row in rows if row["kind"] == "output-rmdir"]
+                    self.assertEqual(created["path"], "/work/scratch")
+                    self.assertEqual(removed["serial"], created["serial"])
+                    self.assertEqual(created["identity"][:3], removed["identity"][:3])
+                    self.assertEqual(created["identity"][6], 2)
+                    self.assertEqual(removed["identity"][6], 0)
+                    self.assertEqual(
+                        [(row["operation"], row["result"]) for row in rows
+                         if row["kind"] == "output-operation-failed"],
+                        [("mkdir", -errno.EEXIST), ("mkdir", -errno.EEXIST),
+                         ("rmdir", -errno.ENOTDIR), ("rmdir", -errno.ENOTEMPTY),
+                         ("rmdir", -errno.ENOENT)],
+                    )
+                    self.assertEqual(
+                        [row["operation"] for row in rows if row["kind"] == "output-directory-change"],
+                        ["open", "replace"],
+                    )
+                self.fixture.assert_clean(session)
+
     def test_native_capsule_large_and_zero_byte_write_family_matches_kernel_bytes(self):
         self.fixture.add("native.c", (
             "#define _POSIX_C_SOURCE 200809L\n"
@@ -5023,6 +5098,246 @@ class NativeOutputCustodyTests(unittest.TestCase):
             self.assertEqual(os.pread(retained, 65536, 0), b"")
         self.outputs.closed(1, descriptor, 0)
         self.outputs.finish()
+
+    def create_directory(self, path, owner=1, pid=1):
+        operation = self.outputs.enter_mkdir(owner=owner, pid=pid, path=path, pin=None, mode=0o700)
+        os.mkdir(self.root / path, 0o700)
+        pin = os.open(self.root / path, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, pin)
+        self.outputs.leave_mkdir(operation, result=0, pin=pin)
+        return pin
+
+    def test_directory_kernel_returns_preserve_children_and_failed_namespace_operations(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        directory = self.create_directory("owned")
+        item = self.outputs.directories["owned"]
+        initial = item.identity
+        already = self.outputs.enter_mkdir(
+            owner=1, pid=1, path="owned", pin=directory, mode=0o700,
+        )
+        with self.assertRaises(FileExistsError):
+            os.mkdir(self.root / "owned", 0o700)
+        self.outputs.leave_mkdir(already, result=-errno.EEXIST)
+        self.assertEqual(item.identity, initial)
+        self.assertEqual(item.entries, ())
+        child = self.outputs.enter_open(
+            owner=1, pid=1, path="owned/file", pin=None,
+            flags=os.O_CREAT | os.O_EXCL | os.O_RDWR,
+        )
+        descriptor = os.open(self.root / "owned/file", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        with os.fdopen(descriptor, "r+b", buffering=0):
+            self.outputs.leave_open(child, result=descriptor, pin=descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        self.assertEqual(item.entries, ("file",))
+        before = item.identity
+        nonempty = self.outputs.enter_rmdir(owner=1, pid=1, path="owned", pin=directory)
+        with self.assertRaises(OSError) as failed:
+            os.rmdir(self.root / "owned")
+        self.assertEqual(failed.exception.errno, errno.ENOTEMPTY)
+        self.outputs.leave_rmdir(nonempty, -errno.ENOTEMPTY)
+        self.assertEqual(item.identity, before)
+        self.assertEqual(item.entries, ("file",))
+        pin = os.open(self.root / "owned/file", os.O_RDONLY)
+        self.addCleanup(os.close, pin)
+        removing = self.outputs.enter_remove(owner=1, pid=1, path="owned/file", pin=pin)
+        os.unlink(self.root / "owned/file")
+        self.outputs.leave_remove(removing, 0)
+        self.assertEqual(item.entries, ())
+        with self.assertRaisesRegex(NativeOutputError, "owned operand"):
+            self.outputs.enter_rmdir(owner=2, pid=1, path="owned", pin=directory)
+        removing = self.outputs.enter_rmdir(owner=1, pid=1, path="owned", pin=directory)
+        os.rmdir(self.root / "owned")
+        self.outputs.leave_rmdir(removing, 0)
+        self.assertTrue(item.retired)
+        self.assertEqual(os.fstat(directory).st_nlink, 0)
+        self.assertNotIn("owned", self.outputs.directories)
+        missing = self.outputs.enter_rmdir(owner=1, pid=1, path="absent", pin=None)
+        self.outputs.leave_rmdir(missing, -errno.ENOENT)
+        self.assertNotIn("absent", self.outputs.directories)
+        self.assertEqual(
+            [event["operation"] for event in self.events if event["kind"] == "output-operation-failed"],
+            ["mkdir", "rmdir", "rmdir"],
+        )
+        self.outputs.finish()
+
+    def test_directory_parent_returns_bind_exact_nested_create_replace_and_retirement(self):
+        parent = self.create_directory("owned")
+        child = self.create_directory("owned/child")
+        self.assertEqual(self.outputs.directories["owned"].entries, ("child",))
+        operation = self.outputs.enter_open(
+            owner=1, pid=1, path="owned/child/file", pin=None,
+            flags=os.O_CREAT | os.O_EXCL | os.O_RDWR,
+        )
+        descriptor = os.open(self.root / "owned/child/file", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        with os.fdopen(descriptor, "r+b", buffering=0):
+            self.outputs.leave_open(operation, result=descriptor, pin=descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        pin = os.open(self.root / "owned/child/file", os.O_RDONLY)
+        self.addCleanup(os.close, pin)
+        replacing = self.outputs.enter_replace(
+            owner=1, pid=1, source="owned/child/file", destination="owned/final",
+            source_pin=pin, retired_pin=None,
+        )
+        os.rename(self.root / "owned/child/file", self.root / "owned/final")
+        self.outputs.leave_replace(replacing, 0)
+        self.assertEqual(self.outputs.directories["owned"].entries, ("child", "final"))
+        self.assertEqual(self.outputs.directories["owned/child"].entries, ())
+        removing = self.outputs.enter_rmdir(owner=1, pid=1, path="owned/child", pin=child)
+        os.rmdir(self.root / "owned/child")
+        self.outputs.leave_rmdir(removing, 0)
+        self.assertEqual(self.outputs.directories["owned"].entries, ("final",))
+        self.assertEqual(os.fstat(parent).st_nlink, 2)
+        self.outputs.finish()
+
+    def test_directory_role_refuses_foreign_existing_and_unobserved_parent_changes(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        os.mkdir(self.root / "foreign", 0o700)
+        foreign = os.open(self.root / "foreign", os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, foreign)
+        with self.assertRaisesRegex(NativeOutputError, "previously created owner"):
+            self.outputs.enter_rmdir(owner=1, pid=1, path="foreign", pin=foreign)
+        self.assertTrue((self.root / "foreign").is_dir())
+        self.create_directory("owned")
+        (self.root / "owned/foreign").write_bytes(b"foreign")
+        with self.assertRaisesRegex(NativeOutputError, "parent directory"):
+            self.outputs.enter_open(
+                owner=1, pid=1, path="owned/new", pin=None,
+                flags=os.O_CREAT | os.O_EXCL | os.O_RDWR,
+            )
+        self.assertFalse((self.root / "owned/new").exists())
+        self.assertFalse(self.outputs.pending)
+        with self.assertRaisesRegex(NativeOutputError, "changed directory"):
+            self.outputs.finish()
+
+    def test_directory_success_refuses_extra_child_and_terminal_cleanup_does_not_publish_return(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        parent = self.create_directory("owned")
+        operation = self.outputs.enter_mkdir(
+            owner=1, pid=1, path="owned/child", pin=None, mode=0o700,
+        )
+        os.mkdir(self.root / "owned/child", 0o700)
+        pin = os.open(self.root / "owned/child", os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, pin)
+        (self.root / "owned/foreign").write_bytes(b"foreign")
+        events = len(self.events)
+        versions = len(self.outputs.versions)
+        with self.assertRaisesRegex(NativeOutputError, "exact parent effect"):
+            self.outputs.leave_mkdir(operation, result=0, pin=pin)
+        self.assertEqual(len(self.events), events)
+        self.assertEqual(len(self.outputs.versions), versions)
+        self.assertNotIn("owned/child", self.outputs.directories)
+        identity = self.outputs.directories["owned"].identity
+        self.outputs.close()
+        self.assertEqual(len(self.events), events)
+        self.assertEqual(self.outputs.directories["owned"].identity, identity)
+        self.assertEqual(os.fstat(parent).st_nlink, 3)
+        self.assertIsNotNone(self.outputs.incomplete)
+
+    def test_directory_cross_parent_refusal_does_not_publish_first_parent_or_file_transfer(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        self.create_directory("first")
+        self.create_directory("second")
+        operation = self.outputs.enter_open(
+            owner=1, pid=1, path="first/file", pin=None,
+            flags=os.O_CREAT | os.O_EXCL | os.O_RDWR,
+        )
+        descriptor = os.open(self.root / "first/file", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        with os.fdopen(descriptor, "r+b", buffering=0):
+            self.outputs.leave_open(operation, result=descriptor, pin=descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        pin = os.open(self.root / "first/file", os.O_RDONLY)
+        self.addCleanup(os.close, pin)
+        file = self.outputs.objects["first/file"]
+        before = {
+            name: (item.identity, item.entries)
+            for name, item in self.outputs.directories.items()
+        }
+        events = len(self.events)
+        replacing = self.outputs.enter_replace(
+            owner=1, pid=1, source="first/file", destination="second/final",
+            source_pin=pin, retired_pin=None,
+        )
+        os.rename(self.root / "first/file", self.root / "second/final")
+        (self.root / "second/foreign").write_bytes(b"foreign")
+        with self.assertRaisesRegex(NativeOutputError, "exact parent effect"):
+            self.outputs.leave_replace(replacing, 0)
+        self.assertEqual(
+            {name: (item.identity, item.entries) for name, item in self.outputs.directories.items()},
+            before,
+        )
+        self.assertEqual(len(self.events), events)
+        self.assertIs(self.outputs.objects["first/file"], file)
+        self.assertEqual(file.path, "first/file")
+        self.assertNotIn("second/final", self.outputs.objects)
+        self.outputs.close()
+        self.assertEqual(len(self.events), events)
+
+    def test_directory_parent_refusal_preserves_open_remove_and_rmdir_sibling_state(self):
+        from contextlib import ExitStack
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for kind in ("open", "remove", "rmdir"):
+            with self.subTest(kind=kind), ExitStack() as stack:
+                outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda event, **fields: self.events.append({"kind": event, **fields}),
+                )
+                stack.callback(outputs.close)
+                stack.enter_context(patch.object(self, "outputs", outputs))
+                parent = "owned-" + kind
+                self.create_directory(parent)
+                path = parent + "/child"
+                pin = None
+                if kind == "rmdir":
+                    pin = self.create_directory(path)
+                elif kind == "remove":
+                    creating = outputs.enter_open(
+                        owner=1, pid=1, path=path, pin=None,
+                        flags=os.O_CREAT | os.O_EXCL | os.O_RDWR,
+                    )
+                    descriptor = os.open(self.root / path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+                    with os.fdopen(descriptor, "r+b", buffering=0):
+                        outputs.leave_open(creating, result=descriptor, pin=descriptor)
+                    outputs.closed(1, descriptor, 0)
+                    pin = os.open(self.root / path, os.O_RDONLY)
+                    self.addCleanup(os.close, pin)
+                before = {
+                    item.serial: (item.path, item.identity, item.entries, item.retired, item.sha256)
+                    for item in outputs.versions
+                }
+                keys = (tuple(outputs.objects), tuple(outputs.directories))
+                events = len(self.events)
+                if kind == "open":
+                    operation = outputs.enter_open(
+                        owner=1, pid=1, path=path, pin=None,
+                        flags=os.O_CREAT | os.O_EXCL | os.O_RDWR,
+                    )
+                    result = os.open(self.root / path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+                    stack.callback(os.close, result)
+                elif kind == "remove":
+                    operation = outputs.enter_remove(owner=1, pid=1, path=path, pin=pin)
+                    os.unlink(self.root / path)
+                    result = 0
+                else:
+                    operation = outputs.enter_rmdir(owner=1, pid=1, path=path, pin=pin)
+                    os.rmdir(self.root / path)
+                    result = 0
+                (self.root / parent / "foreign").write_bytes(b"foreign")
+                with self.assertRaisesRegex(NativeOutputError, "exact parent effect"):
+                    if kind == "open":
+                        outputs.leave_open(operation, result=result, pin=result)
+                    elif kind == "remove":
+                        outputs.leave_remove(operation, result)
+                    else:
+                        outputs.leave_rmdir(operation, result)
+                self.assertEqual((tuple(outputs.objects), tuple(outputs.directories)), keys)
+                self.assertEqual(
+                    {item.serial: (item.path, item.identity, item.entries, item.retired, item.sha256)
+                     for item in outputs.versions},
+                    before,
+                )
+                self.assertEqual(len(self.events), events)
+                outputs.close()
+                self.assertEqual(len(self.events), events)
 
     def test_linux_late_close_error_retires_released_descriptor_without_retry(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError

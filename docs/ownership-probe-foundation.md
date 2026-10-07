@@ -212,6 +212,43 @@ returns settle content and versions; failures preserve preimages. Counters,
 pin/content reads, event storage and the deadline use the existing shared
 budget. No second runner or output ownership registry is introduced.
 
+The same model now observes capsule `mkdir`/`mkdirat` and
+`rmdir`/`unlinkat(AT_REMOVEDIR)` entry/return pairs. Successful creation pins
+the actual empty, owner-traversable directory and its inode/mode; removal
+requires that previously observed owner and records the same inode with zero
+links after the kernel return. A missing removal may fail without inventing
+a directory, and an existing foreign directory cannot be adopted for deletion.
+Creating or removing children and regular-file replacement update an owned
+parent only after verifying the exact namespace entry change and stable
+parent inode/mode. Validate every affected parent before publishing any
+directory/file ownership change or parent update, including both sides of a
+cross-parent replacement. Entry-time identity/entry checks reject unobserved parent
+changes. Failed operations retain the parent preimage. Directory pin reads,
+entry inventories and events use the existing shared observation budget.
+Terminal cleanup closes pending pins without publishing an unobserved return.
+
+From a clean fixture run
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_observes_directory_syscall_and_failed_return_family scripts.validation_ownership.tests.test_producer.NativeOutputCustodyTests`.
+The actual C program must exercise both ordinary and dirfd-relative syscall
+families, each producing exactly `result` bytes `final`, mode `0600`, and
+stdout `once`. Require paired creation/removal identities and actual
+`EEXIST`, `ENOTEMPTY` and `ENOENT` failure results without invented versions.
+Creating a directory over an admitted regular file must reach actual `EEXIST`;
+removing that regular file as a directory must reach `ENOTDIR`. Preserve its
+typed file preimage without adopting it as a directory or refusing before
+those harmless failed kernel operations.
+Component controls additionally exercise nested directory/file creation,
+cross-parent replacement, child retirement, foreign-owner/foreign-existing
+directory rejection, unobserved parent changes and extra children introduced
+between entry and return. A refused mkdir must publish no new directory
+ownership; a cross-parent replacement with a bad second parent must publish
+neither the first-parent update nor file transfer. Terminal cleanup after
+either refusal must not publish a successful return or refresh retained
+parent identities.
+The pre-extension model did not observe directory syscall lifecycles and
+has no paired directory API. These controls do not establish original native
+Make admission, directory plans or generated-source v6 qualification.
+
 Paired writes retain one charged expected byte image for each writer lifetime,
 initialized from its actual pinned object. Each return checks exact size,
 identity/mode and the requested range, including unwritten suffixes after

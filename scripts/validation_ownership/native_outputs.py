@@ -60,12 +60,14 @@ class NativeOutputObserver:
         self.policy.charge_metadata(128)
         return os.open(f"/proc/{pid}/fd/{descriptor}", os.O_RDONLY | os.O_CLOEXEC)
 
-    def operand(self, path):
+    def operand(self, path, *, directory=False):
         self.deadline()
         self.policy.charge_metadata(128)
         try:
             return os.open(
-                self.policy.config["root"] + path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                self.policy.config["root"] + path,
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+                | (os.O_DIRECTORY if directory else 0),
             )
         except FileNotFoundError:
             return None
@@ -175,6 +177,23 @@ class NativeOutputObserver:
                         os.close(second)
             else:
                 raise NativeOutputError("native relocation is outside its exact Command outputs")
+        elif n in {83, 84, 258} or n == 263 and c == 0x200:
+            path = native.path(
+                pid, state, b if n in {258, 263} else a,
+                native_signed(a) if n in {258, 263} else -100, follow_final=False,
+            )
+            if path.startswith("/work/"):
+                pin = self.operand(path)
+                try:
+                    if n in {83, 258}:
+                        operation = self.custody.enter_mkdir(
+                            owner=1, pid=pid, path=path, pin=pin, mode=c if n == 258 else b,
+                        )
+                    else:
+                        operation = self.custody.enter_rmdir(owner=1, pid=pid, path=path, pin=pin)
+                finally:
+                    if pin is not None:
+                        os.close(pin)
         elif n == 87 or n == 263 and c == 0:
             path = native.path(pid, state, a if n == 87 else b, -100 if n == 87 else native_signed(a), follow_final=False)
             if path.startswith("/work/"):
@@ -223,6 +242,15 @@ class NativeOutputObserver:
                 finally:
                     if pin is not None:
                         os.close(pin)
+            elif operation.kind == "mkdir":
+                pin = None if result < 0 else self.operand(operation.source, directory=True)
+                try:
+                    self.custody.leave_mkdir(operation, result=result, pin=pin)
+                finally:
+                    if pin is not None:
+                        os.close(pin)
+            elif operation.kind == "rmdir":
+                self.custody.leave_rmdir(operation, result)
             else:
                 raise NativeOutputError("native output supervisor lost its operation kind")
         descriptor, state.native_output_close = state.native_output_close, None
@@ -253,6 +281,7 @@ class OutputObject:
     readers: set[int] = field(default_factory=set)
     retired: bool = False
     expected: bytearray | None = None
+    entries: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -283,6 +312,7 @@ class NativeOperation:
     duplicate_kind: str | None = None
     target: int | None = None
     minimum: int | None = None
+    parents: tuple[str, ...] = ()
 
 
 class NativeOutputs:
@@ -295,6 +325,7 @@ class NativeOutputs:
         self.emit = emit
         self.serial = 0
         self.objects = {}
+        self.directories = {}
         self.versions = []
         self.descriptors = {}
         self.pins = {}
@@ -312,16 +343,26 @@ class NativeOutputs:
             raise NativeOutputError("native operation lacks its issued producer/process")
         if pid in self.pending:
             raise NativeOutputError("native operation overlaps its unfinished kernel return")
-        operands = []
+        operands, directory_parents = [], []
         try:
             for path, descriptor in pins:
-                item = self.objects.get(path)
+                directory = kind in {"mkdir", "rmdir"}
+                item = (
+                    self.directories.get(path) or self.objects.get(path)
+                    if directory else self.objects.get(path)
+                )
                 if descriptor is None:
                     if item is not None:
                         raise NativeOutputError("native operation absence contradicts its owned object")
                     operands.append((path, None, None, None))
                     continue
-                identity = self._identity(descriptor)
+                if directory and (
+                    item is not None and item.entries is not None
+                    or item is None and self._directory_operand(descriptor)
+                ):
+                    identity = self._directory_identity(descriptor)
+                else:
+                    identity = self._identity(descriptor)
                 prior_version = (
                     kind == "replace" and path == destination
                     or kind == "open" and not flags & (
@@ -329,12 +370,30 @@ class NativeOutputs:
                     )
                 )
                 if (
-                    item is None or item.owner != owner and not prior_version
-                    or item.retired or identity != item.identity
+                    item is None and kind != "mkdir"
+                    or item is not None and (
+                        item.owner != owner and not prior_version
+                        or item.retired or identity != item.identity
+                    )
                 ):
                     raise NativeOutputError("native operation entry differs from its owned operand")
                 pin = os.dup(descriptor)
                 operands.append((path, pin, identity, item))
+            if kind in {"open", "replace", "remove", "mkdir", "rmdir"}:
+                parents = {path.rpartition("/")[0] for path in (source, destination) if path is not None}
+                for parent in sorted(parents):
+                    item = self.directories.get(parent)
+                    if item is None:
+                        continue
+                    if self._directory_identity(item.descriptor) != item.identity:
+                        raise NativeOutputError("native namespace operation changed its parent directory")
+                    if self._directory_entries(item.descriptor) != item.entries:
+                        raise NativeOutputError("native namespace operation changed its parent entries")
+                    if self._directory_identity(item.descriptor) != item.identity:
+                        raise NativeOutputError("native namespace parent changed during observation")
+                    pin = os.dup(item.descriptor)
+                    operands.append((parent, pin, item.identity, item))
+                    directory_parents.append(parent)
             for label, descriptor, item in bindings:
                 identity = self._identity(descriptor)
                 if identity != item.identity:
@@ -342,7 +401,10 @@ class NativeOutputs:
                 pin = os.dup(descriptor)
                 operands.append((label, pin, identity, item))
             self.charge(256 + 128 * len(operands))
-            operation = NativeOperation(owner, pid, kind, source, destination, flags, tuple(operands))
+            operation = NativeOperation(
+                owner, pid, kind, source, destination, flags, tuple(operands),
+                parents=tuple(directory_parents),
+            )
             self.pending[pid] = operation
             return operation
         except BaseException as error:
@@ -361,7 +423,17 @@ class NativeOutputs:
             raise NativeOutputError("native operation return is foreign, stale or unpaired")
         self.deadline()
 
-    def _end(self, operation):
+    def _end(self, operation, *, success=True, parent_postimages=()):
+        if success:
+            if len(parent_postimages) != len(operation.parents):
+                raise NativeOutputError("native namespace return lacks validated parent postimages")
+            for item, identity, entries in parent_postimages:
+                item.identity, item.entries = identity, entries
+            for item, identity, _ in parent_postimages:
+                self._event(
+                    "output-directory-change", item, pid=operation.pid, operation=operation.kind,
+                    identity=list(identity),
+                )
         del self.pending[operation.pid]
         finish_cleanup([
             lambda pin=pin: os.close(pin)
@@ -371,18 +443,24 @@ class NativeOutputs:
     def _failed(self, operation, result):
         if type(result) is not int or not -4095 <= result < 0:
             raise NativeOutputError("native failed operation has no actual kernel error")
-        for _, pin, identity, item in operation.operands:
+        for index, (_, pin, identity, item) in enumerate(operation.operands):
             if pin is not None:
-                if self._identity(pin) != identity:
+                actual = (
+                    self._directory_identity(pin)
+                    if stat.S_ISDIR(identity[2])
+                    or operation.parents and index >= len(operation.operands) - len(operation.parents)
+                    else self._identity(pin)
+                )
+                if actual != identity:
                     raise NativeOutputError("failed native operation changed its entry operand")
-                if item.sha256 is not None:
+                if item is not None and item.sha256 is not None:
                     self._verify_settled(item, identity)
         self._emit(
             "output-operation-failed", owner=operation.owner, pid=operation.pid,
             operation=operation.kind, source=operation.source,
             destination=operation.destination, result=result,
         )
-        self._end(operation)
+        self._end(operation, success=False)
 
     def enter_open(self, *, owner, pid, path, flags, pin):
         self._usable()
@@ -412,6 +490,7 @@ class NativeOutputs:
             raise NativeOutputError("native open return lacks its actual descriptor pin")
         _, before_pin, before, item = operation.operands[0]
         identity = self._identity(pin)
+        parents = self._directory_postimages(operation)
         if item is not None and operation.flags & os.O_TRUNC:
             if (
                 identity[:3] != before[:3] or identity[3] != 0 or identity[6] != before[6]
@@ -431,7 +510,7 @@ class NativeOutputs:
             path=operation.source,
             writing=bool(operation.flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC)),
         )
-        self._end(operation)
+        self._end(operation, parent_postimages=parents)
         return item
 
     def enter_replace(self, *, owner, pid, source, destination, source_pin, retired_pin, flags=0):
@@ -458,11 +537,12 @@ class NativeOutputs:
             or operation.flags == 1 and operation.operands[1][1] is not None
         ):
             raise NativeOutputError("native replacement success lacks its exact source object")
+        parents = self._directory_postimages(operation)
         self.replaced(
             owner=operation.owner, source=operation.source, destination=operation.destination,
             source_pin=operation.operands[0][1], retired_pin=operation.operands[1][1], result=result,
         )
-        self._end(operation)
+        self._end(operation, parent_postimages=parents)
 
     def enter_remove(self, *, owner, pid, path, pin):
         self._usable()
@@ -480,8 +560,122 @@ class NativeOutputs:
         pin = operation.operands[0][1]
         if result != 0 or pin is None:
             raise NativeOutputError("native removal success lacks its exact owned object")
+        parents = self._directory_postimages(operation)
         self.removed(owner=operation.owner, path=operation.source, pin=pin, result=result)
-        self._end(operation)
+        self._end(operation, parent_postimages=parents)
+
+    def _directory_operand(self, descriptor):
+        self.deadline()
+        self.charge(128)
+        return stat.S_ISDIR(os.fstat(descriptor).st_mode)
+
+    def _directory_identity(self, descriptor):
+        self._usable()
+        self.deadline()
+        info = os.fstat(descriptor)
+        self.charge(128)
+        if (
+            not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o7000
+            or stat.S_IMODE(info.st_mode) & 0o700 != 0o700 or info.st_nlink < 0
+        ):
+            raise NativeOutputError("native output directory lacks its traversable kernel identity")
+        return publication_identity(info)
+
+    def _directory_entries(self, descriptor):
+        self.deadline()
+        entries = tuple(sorted(os.listdir(descriptor)))
+        self.charge(128 + sum(64 + len(os.fsencode(name)) for name in entries))
+        return entries
+
+    def _directory_postimages(self, operation):
+        if not operation.parents:
+            return ()
+        postimages = []
+        for parent, pin, before, item in operation.operands[-len(operation.parents):]:
+            entries = set(item.entries)
+            if operation.kind in {"remove", "rmdir", "replace"}:
+                if operation.source.rpartition("/")[0] == parent:
+                    entries.remove(operation.source.rpartition("/")[2])
+            if operation.kind == "mkdir" or (
+                operation.kind == "open" and operation.operands[0][1] is None
+            ):
+                entries.add(operation.source.rpartition("/")[2])
+            if operation.kind == "replace" and operation.destination.rpartition("/")[0] == parent:
+                entries.add(operation.destination.rpartition("/")[2])
+            identity = self._directory_identity(pin)
+            expected = tuple(sorted(entries))
+            if (
+                identity[:3] != before[:3] or self._directory_entries(pin) != expected
+                or self._directory_identity(pin) != identity
+            ):
+                raise NativeOutputError("native namespace return differs from its exact parent effect")
+            postimages.append((item, identity, expected))
+        return tuple(postimages)
+
+    def enter_mkdir(self, *, owner, pid, path, pin, mode):
+        if (
+            type(mode) is not int or mode & ~0o777 or mode & 0o700 != 0o700
+        ):
+            raise NativeOutputError("native directory creation lacks its exact mode/path role")
+        return self._begin(owner, pid, "mkdir", path, flags=mode, pins=((path, pin),))
+
+    def leave_mkdir(self, operation, *, result, pin=None):
+        self._operation(operation, "mkdir")
+        self._status_result(result)
+        if result < 0:
+            if pin is not None:
+                raise NativeOutputError("failed native mkdir claims a created directory pin")
+            self._failed(operation, result)
+            return
+        if operation.operands[0][1] is not None or pin is None:
+            raise NativeOutputError("successful native mkdir contradicts its absent entry operand")
+        identity = self._directory_identity(pin)
+        if (
+            stat.S_IMODE(identity[2]) & ~operation.flags or identity[6] != 2
+            or self._directory_entries(pin) or self._directory_identity(pin) != identity
+        ):
+            raise NativeOutputError("native mkdir returned an unexpected mode or populated directory")
+        parents = self._directory_postimages(operation)
+        self.charge(256)
+        self.serial += 1
+        item = OutputObject(
+            operation.owner, self.serial, operation.source, identity, os.dup(pin), entries=(),
+        )
+        self.directories[operation.source] = item
+        self.versions.append(item)
+        self._event("output-mkdir", item, pid=operation.pid, identity=list(identity))
+        self._end(operation, parent_postimages=parents)
+
+    def enter_rmdir(self, *, owner, pid, path, pin):
+        item = self.directories.get(path)
+        if item is None and path in self.objects and pin is not None:
+            return self._begin(owner, pid, "rmdir", path, pins=((path, pin),))
+        if item is None and pin is None:
+            return self._begin(owner, pid, "rmdir", path, pins=((path, pin),))
+        if item is None or pin is None:
+            raise NativeOutputError("native directory removal lacks its previously created owner")
+        identity = self._directory_identity(pin)
+        if identity != item.identity or self._directory_entries(pin) != item.entries:
+            raise NativeOutputError("native directory removal changed its owned inode/mode/entries")
+        return self._begin(owner, pid, "rmdir", path, pins=((path, pin),))
+
+    def leave_rmdir(self, operation, result):
+        self._operation(operation, "rmdir")
+        self._status_result(result)
+        if result < 0:
+            self._failed(operation, result)
+            return
+        _, pin, before, item = operation.operands[0]
+        if pin is None or item is None or item.entries is None:
+            raise NativeOutputError("successful native rmdir lacks its owned entry directory")
+        identity = self._directory_identity(pin)
+        if identity[:3] != before[:3] or identity[6] != 0:
+            raise NativeOutputError("native rmdir return differs from its retired directory")
+        parents = self._directory_postimages(operation)
+        item.identity, item.retired = identity, True
+        del self.directories[operation.source]
+        self._event("output-rmdir", item, pid=operation.pid, identity=list(identity))
+        self._end(operation, parent_postimages=parents)
 
     def _bytes(self, pin, identity):
         self.charge(identity[3])
@@ -996,8 +1190,14 @@ class NativeOutputs:
             raise NativeOutputError("native output custody ended with active descriptors/pins")
         if self.incomplete is not None:
             raise NativeOutputError("native output custody is incomplete: " + self.incomplete)
-        if any(item.sha256 is None for item in self.versions):
+        if any(item.sha256 is None for item in self.versions if item.entries is None):
             raise NativeOutputError("native output custody ended with unsettled content")
+        for item in self.versions:
+            if item.entries is not None:
+                if self._directory_identity(item.descriptor) != item.identity or (
+                    not item.retired and self._directory_entries(item.descriptor) != item.entries
+                ):
+                    raise NativeOutputError("native output custody ended with changed directory state")
 
     def close(self):
         """Close owned object/source pins, never borrowed tracee FD integers."""
@@ -1020,7 +1220,7 @@ class NativeOutputs:
 
         try:
             finish_cleanup([
-                *(lambda operation=operation: self._end(operation)
+                *(lambda operation=operation: self._end(operation, success=False)
                   for operation in tuple(self.pending.values())),
                 *(lambda descriptor=descriptor, source=source: close_source(descriptor, source)
                   for descriptor, source in tuple(self.pins.items())),
