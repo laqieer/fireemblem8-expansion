@@ -37,6 +37,17 @@ The dependent extension must preserve original commands, inputs, all four
 profiles times both Make primaries, one unchanged budget/deadline and every
 actual source/job/version outcome.
 
+The dependent #275 branch's internal `NativeOutputs` object model keeps
+successful output-descriptor operations and generated source-read pins in
+one lifetime. Its focused kernel controls exercise actual file writes,
+fork-inherited descriptors, failed writes/renames, atomic replacement with
+an old source pin, foreign owners, in-place mutation refusal and pin cleanup:
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.NativeOutputCustodyTests`.
+These controls are component evidence only. Until original owned exec/syscall,
+mount, source-reader and machine/host/archive consumers are wired, this object
+model grants no native write authority and does not qualify
+TC-WORKFLOW-NATIVE-MAKE-001 or any original eight-query outcome.
+
 ### TC-WORKFLOW-NATIVE-READONLY-001: observe immutable native Make and original tools
 
 From a clean supported Linux x86-64 checkout with GNU Make 4.3, the existing

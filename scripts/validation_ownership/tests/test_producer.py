@@ -10,6 +10,7 @@ import socket
 import stat
 import struct
 import subprocess
+import tempfile
 import time
 import unittest
 import weakref
@@ -4598,6 +4599,227 @@ class ProducerTests(unittest.TestCase):
                     depfile=cases["chapterobjectives"]["depfile"],
                 )
         self.fixture.assert_clean(session)
+
+
+class NativeOutputCustodyTests(unittest.TestCase):
+    def setUp(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputs
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.events = []
+        self.charged = 0
+        self.deadlines = 0
+        self.outputs = NativeOutputs(
+            deadline=self.deadline, charge=self.charge, file_limit=65536,
+            emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+        )
+        self.addCleanup(self.outputs.close)
+
+    def deadline(self):
+        self.deadlines += 1
+
+    def charge(self, amount):
+        self.charged += amount
+
+    def create(self, path, data, owner=1, pid=1):
+        descriptor = os.open(self.root / path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        self.addCleanup(os.close, descriptor)
+        self.outputs.opened(
+            owner=owner, pid=pid, descriptor=descriptor, pin=descriptor, path=path, writing=True,
+        )
+        self.outputs.before_write(pid, descriptor, descriptor)
+        result = os.write(descriptor, data)
+        self.outputs.written(pid, descriptor, descriptor, result)
+        self.outputs.closed(pid, descriptor, 0)
+        return descriptor
+
+    def test_actual_atomic_replacement_preserves_old_source_and_current_version(self):
+        old = self.create("generated.mk", b"VALUE := old\n")
+        source = self.outputs.capture(owner=1, path="generated.mk", descriptor=old)
+        new = self.create("generated.mk.tmp", b"VALUE := new\n")
+        os.replace(self.root / "generated.mk.tmp", self.root / "generated.mk")
+        self.outputs.replaced(
+            owner=1, source="generated.mk.tmp", destination="generated.mk",
+            source_pin=new, retired_pin=old, result=0,
+        )
+        current = self.outputs.capture(owner=1, path="generated.mk", descriptor=new)
+        self.assertEqual(source.data, b"VALUE := old\n")
+        self.assertEqual(os.pread(source.descriptor, 65536, 0), source.data)
+        self.assertEqual(current.data, b"VALUE := new\n")
+        self.assertEqual(source.object.identity[6], 0)
+        self.assertTrue(source.object.retired)
+        self.assertNotEqual(source.object.serial, current.object.serial)
+        self.outputs.release(source)
+        self.outputs.release(current)
+        self.outputs.finish()
+        self.assertEqual(
+            [row["kind"] for row in self.events].count("output-source-retired"), 2,
+        )
+        self.assertGreater(self.charged, len(source.data) + len(current.data))
+        self.assertGreater(self.deadlines, 0)
+
+    def test_actual_failed_rename_does_not_retire_or_transfer_versions(self):
+        source = self.create("source.tmp", b"unchanged")
+        old_identity = self.outputs.objects["source.tmp"].identity
+        with self.assertRaises(FileNotFoundError) as failed:
+            os.rename(self.root / "source.tmp", self.root / "missing" / "output")
+        self.outputs.replaced(
+            owner=1, source="source.tmp", destination="missing/output",
+            source_pin=source, retired_pin=None, result=-failed.exception.errno,
+        )
+        self.assertEqual(self.outputs.objects["source.tmp"].identity, old_identity)
+        self.assertFalse(self.outputs.objects["source.tmp"].retired)
+        self.assertNotIn("missing/output", self.outputs.objects)
+        self.outputs.finish()
+
+    def test_actual_fork_descriptor_inheritance_keeps_writer_until_child_retirement(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "inherited", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        self.addCleanup(os.close, descriptor)
+        pid = os.getpid()
+        self.outputs.opened(
+            owner=1, pid=pid, descriptor=descriptor, pin=descriptor, path="inherited", writing=True,
+        )
+        read_end, write_end = os.pipe()
+        child = os.fork()
+        if child == 0:
+            os.close(write_end)
+            os.read(read_end, 1)
+            os.close(descriptor)
+            os._exit(0)
+        os.close(read_end)
+        waited = False
+        try:
+            self.outputs.inherited(pid, child, (descriptor,))
+            self.outputs.closed(pid, descriptor, 0)
+            with self.assertRaisesRegex(NativeOutputError, "settled"):
+                self.outputs.capture(owner=1, path="inherited", descriptor=descriptor)
+            os.write(write_end, b"x")
+            observed, status = os.waitpid(child, 0)
+            waited = True
+            self.assertEqual((observed, os.waitstatus_to_exitcode(status)), (child, 0))
+            self.outputs.retire_process(child)
+            source = self.outputs.capture(owner=1, path="inherited", descriptor=descriptor)
+            self.assertEqual(source.data, b"")
+            self.outputs.release(source)
+            self.outputs.finish()
+        finally:
+            os.close(write_end)
+            if not waited:
+                os.waitpid(child, 0)
+
+    def test_actual_failed_write_and_unknown_descriptor_preserve_live_ownership(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "output", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        self.addCleanup(os.close, descriptor)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="output", writing=True,
+        )
+        with self.assertRaises(OSError) as failed:
+            os.pwrite(descriptor, b"denied", -1)
+        self.outputs.written(1, descriptor, descriptor, -failed.exception.errno)
+        self.assertIn((1, descriptor), self.outputs.descriptors)
+        with self.assertRaisesRegex(NativeOutputError, "descriptor"):
+            self.outputs.before_write(2, descriptor, descriptor)
+        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.finish()
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
+    def test_foreign_owner_inplace_mutation_and_active_pin_cleanup_refuse(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("generated.mk", b"VALUE := original\n")
+        with self.assertRaisesRegex(NativeOutputError, "settled"):
+            self.outputs.capture(owner=2, path="generated.mk", descriptor=descriptor)
+        source = self.outputs.capture(owner=1, path="generated.mk", descriptor=descriptor)
+        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.finish()
+        os.pwrite(descriptor, b"X", 0)
+        with self.assertRaisesRegex(NativeOutputError, "outside observed"):
+            self.outputs.release(source)
+        self.assertFalse(source.closed)
+        self.outputs.close()
+        self.assertTrue(source.closed)
+        self.outputs.finish()
+
+    def test_actual_unlink_preserves_pinned_bytes_and_rejects_copied_pin(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("include.mk", b"VALUE := retired\n")
+        source = self.outputs.capture(owner=1, path="include.mk", descriptor=descriptor)
+        copied = replace(source)
+        with self.assertRaisesRegex(NativeOutputError, "foreign"):
+            self.outputs.release(copied)
+        os.unlink(self.root / "include.mk")
+        self.outputs.removed(owner=1, path="include.mk", pin=descriptor, result=0)
+        self.assertNotIn("include.mk", self.outputs.objects)
+        self.assertEqual(os.pread(source.descriptor, 65536, 0), b"VALUE := retired\n")
+        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.finish()
+        self.outputs.release(source)
+        self.outputs.finish()
+
+    def test_source_event_failure_releases_capture_without_stale_owned_pin(self):
+        descriptor = self.create("include.mk", b"VALUE := input\n")
+
+        def refuse(kind, **fields):
+            raise RuntimeError("event budget exhausted")
+
+        self.outputs.emit = refuse
+        with self.assertRaisesRegex(RuntimeError, "event budget"):
+            self.outputs.capture(owner=1, path="include.mk", descriptor=descriptor)
+        self.assertFalse(self.outputs.pins)
+        self.assertFalse(self.outputs.objects["include.mk"].readers)
+        self.outputs.close()
+        self.outputs.finish()
+
+    def test_actual_later_write_has_distinct_version_after_previous_reader_retires(self):
+        descriptor = self.create("generated.mk", b"VALUE := first\n")
+        first = self.outputs.capture(owner=1, path="generated.mk", descriptor=descriptor)
+        self.outputs.release(first)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="generated.mk", writing=True,
+        )
+        self.outputs.before_write(1, descriptor, descriptor)
+        result = os.pwrite(descriptor, b"VALUE := later\n", 0)
+        self.outputs.written(1, descriptor, descriptor, result)
+        self.outputs.closed(1, descriptor, 0)
+        later = self.outputs.capture(owner=1, path="generated.mk", descriptor=descriptor)
+        self.assertEqual(first.object.serial, later.object.serial)
+        self.assertGreater(later.revision, first.revision)
+        self.assertEqual(first.data, b"VALUE := first\n")
+        self.assertEqual(later.data, b"VALUE := later\n")
+        self.outputs.release(later)
+        self.outputs.finish()
+
+    def test_actual_metadata_restored_mutation_cannot_borrow_atomic_retirement(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        for operation in ("replace", "remove"):
+            with self.subTest(operation=operation):
+                path = operation + ".mk"
+                descriptor = self.create(path, b"VALUE := original\n")
+                source = self.outputs.capture(owner=1, path=path, descriptor=descriptor)
+                before = os.fstat(descriptor)
+                os.pwrite(descriptor, b"X", 0)
+                os.utime(
+                    self.root / path,
+                    ns=(before.st_atime_ns, before.st_mtime_ns),
+                )
+                if operation == "replace":
+                    temporary = path + ".tmp"
+                    replacement = self.create(temporary, b"VALUE := replaced\n")
+                    os.replace(self.root / temporary, self.root / path)
+                    with self.assertRaisesRegex(NativeOutputError, "content"):
+                        self.outputs.replaced(
+                            owner=1, source=temporary, destination=path,
+                            source_pin=replacement, retired_pin=descriptor, result=0,
+                        )
+                else:
+                    os.unlink(self.root / path)
+                    with self.assertRaisesRegex(NativeOutputError, "content"):
+                        self.outputs.removed(owner=1, path=path, pin=descriptor, result=0)
+                self.assertFalse(source.object.retired)
+                self.outputs.close()
 
 
 if __name__ == "__main__":
