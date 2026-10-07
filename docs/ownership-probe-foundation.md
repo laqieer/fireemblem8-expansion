@@ -454,7 +454,8 @@ descendants retain the actual dispatch. A union of declared paths selects
 private writable ancestors with existing maximal immutable source islands;
 it does not grant every job the union. File opens/writes require the job's
 exact output; this first wire family does not yet admit directory or other
-namespace/mode mutations, even under a writable ancestor.
+namespace/mode mutations without a separate closed resource-role request,
+even under a writable ancestor.
 Tracked source collisions and another job's output refuse before mutation.
 
 This lane uses explicit wire version 6. Immutable version 5 still rejects
@@ -470,10 +471,101 @@ capture additionally agrees with the actual settled inode and content digest;
 it is not an intermediate generated-source observation.
 The initial format only admits the implemented regular-file open/write/
 duplicate/replacement/close/exec-closure/settlement family and the first
-settled generated include reader. Shared lock roles, temporary namespace plans,
-prior-version retirement, produced
-executable admission and the original all-plus-eight case remain incomplete.
+settled generated include reader. An optional internal `native_resources`
+plan adds the finite resource family described below. Persistent native
+versions, produced executable admission and the original all-plus-eight case
+remain incomplete.
 No renderer request/publication event or v1 source-effects journal is fabricated.
+
+`Command.native_resources` and `_native_make_writable(native_resources=...)`
+carry the same closed `(role, relative_path)` pairs. `Command.outputs` remains
+the retained regular-file contract. A job receives only its own subset, bound
+to its sealed actual argv/CWD/input/runtime closure; the global union selects
+private writable ancestors, not per-job permission. Empty plans preserve the
+existing regular-file schema. Source collisions, including names matching
+temporary templates, and ambiguous retained/resource roles refuse.
+Concrete template-generated file ancestors also conflict with directory, file
+or nested-template resources in either declaration order, and with immutable
+sources or retained outputs. Declared directory/child relationships remain
+valid; a PID-temporary base may equal its retained output base.
+
+The finite roles are `directory`, `temporary`, `shared-lock`, `pid-temporary`
+and `atomic-temporary`. Exact roles name one path. A PID temporary appends
+`.<actual dispatched root PID>.tmp` to its base. An atomic temporary names the
+source-defined `.asset-manifest-write-` prefix in one exact parent and accepts
+exactly eight `[a-z0-9_]` characters. No candidate regex or general writable
+directory-prefix authority is accepted. Temporary files and shared locks are
+not returned as retained generated files and cannot become generated sources.
+Shared lock RDWR opens do not acquire content write/truncate/mode/removal
+authority. Separate opens have separate descriptions; dup/fork share one.
+Flock success, nonblocking failure, explicit unlock and last-close release
+bind those actual descriptions.
+Only directory roles admit mkdir/rmdir; only shared-lock roles admit flock.
+Shared locks cannot be removed or replaced even when an operation fails.
+Last-close lock release precedes its matching close, exec closure, duplicate
+target retirement or supported close-error record. Replay rejects an omitted
+release or a return borrowed from another PID/FD/open description.
+
+The existing machine dispatch and event PID identify the live operation actor;
+the output object's owner remains its originating producer. No duplicate actor
+ledger exists. Directory creation/removal and failed namespace operations retain
+their exact object/parent preimages. Parent returns are paired with the observed
+operation and contain the resulting entry set. Descriptor mode changes preserve
+content/version. Replacement transfers the settled source object and digest,
+retires the old inode without changing its bytes/mode/revision, and reports its
+new current path to final capture. Original Make evaluator, effect and source
+return all compare the independent stream pin to the same observed lease
+identity. Snapshot streams still require their full original identity.
+Failed descriptor operations bind their live PID to the current dispatch, not
+the original producer's exited process tree; operand objects still retain their
+original producer ownership.
+
+Run these source-built `NativeWriterTests` members from a clean temporary
+fixture; their setup compiles the original C recipe as a sealed fixture tool:
+`test_native_original_make_directory_roles_preserve_actual_namespace_lifecycle`
+creates a directory, observes actual EEXIST, creates/removes a child, then
+returns only the final file. Rehashed directory actor/preimage/entry-set mutants
+must refuse.
+`test_native_original_make_resource_roles_separate_temporary_lock_and_final_versions`
+creates an atomic temporary, writes/chmods/closes/replaces it, then reopens the
+same lock from a distinct second job and removes its actual root-PID temporary.
+Independent nonblocking lock contention fails with EAGAIN; explicit unlock and
+last close release the respective descriptions. Failed replacement/removal
+observe ENOENT and populated rmdir observes ENOTEMPTY. The final artifact is
+exactly `VALUE := native\n`, mode 0644, with empty stdout/stderr. Temporary and
+lock resources must not appear in the returned artifact list.
+`test_native_original_make_resource_roles_refuse_unissued_and_shared_content_effects`
+denies foreign PID/incorrect atomic names and shared-lock write/mode/truncate
+before the kernel operation.
+
+`test_native_shared_lock_release_binds_close_exec_duplicate_fork_and_death`
+checks explicit unlock, last duplicated close, forked nonlast/last close,
+foreign-source duplicate target replacement, successful CLOEXEC exec and process
+death. Rehashed missing-release controls must reject the corresponding lifetime.
+Controlled close-error replay is not evidence of an actual kernel EIO.
+`test_native_shared_lock_failed_descriptors_bind_later_actor_and_descendant`
+creates a lock in job 1 and reopens it in job 2. The later root and a real fork
+child each observe actual dup EMFILE, dup2 EBADF, dup3 EINVAL, both fcntl
+duplication EINVAL returns, foreign-source duplicate-target EINVAL and exec
+EFAULT. All fourteen failures retain producer 1 and dispatch 2; FD_CLOEXEC and
+the final `final` bytes/mode 0644 remain unchanged. Rehashed foreign-producer
+controls reject rather than borrowing the current actor's ownership.
+`test_native_resource_scope_refuses_pattern_source_collisions_and_ambiguous_roles`
+checks the complete operation matrix and both-order exact/template intersections,
+including concrete file ancestors; valid directory/child and PID retained-base
+plans remain accepted.
+
+`test_native_original_make_replaces_pinned_generated_source_with_actual_recipe`
+starts with a missing generated include. Original Make invokes its creator
+once, then parses the generated old source, whose original shell expansion
+invokes the actual replacement recipe while that old source is pinned.
+The expected semantic result/stdout is `old|old`; the current retained file is
+`VALUE := new\nAFTER := new\n`, mode 0644. The original and replacement serials
+differ, creator/retirement actor are jobs 1/2, old nlink changes 1 to 0 without
+changing retained bytes, and actual source return retires the old reader.
+These are production cells, not the earlier controlled return component.
+They do not qualify persisted queries, produced tools or the full indexed
+TC-WORKFLOW-NATIVE-MAKE-001 procedure. All existing global delivery holds remain.
 
 Every observed native write emits `output-write-entry` in that same machine
 stream before the kernel proceeds. It binds a chronological request ID to the

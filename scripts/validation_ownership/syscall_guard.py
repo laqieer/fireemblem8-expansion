@@ -247,6 +247,7 @@ class Process:
     path_context: tuple[str, int, str | None] | None = None
     native_output_operation: object | None = None
     native_output_close: int | None = None
+    native_unlink_flags: int | None = None
 
     def clone(self):
         return Process(
@@ -2034,10 +2035,22 @@ class Policy:
             if self.native_outputs is not None:
                 job = self.native_jobs.get(state.native_dispatch)
                 outputs = job.get("admission", {}).get("outputs", []) if job is not None else []
-                if (
-                    state.role == "native" and state.kernel_call in {1, 18, 20, 2, 85, 257}
-                    and path in {"/repo/" + output for output in outputs}
-                ):
+                if job is not None and state.role == "native" and self.config.get("native_resources"):
+                    if __package__:
+                        from .native_resources import resource_operation
+                    else:
+                        from native_resources import resource_operation
+                    selected = {
+                        1: "write", 18: "write", 20: "write", 2: "open", 85: "open", 257: "open",
+                        82: "replace", 264: "replace", 316: "replace", 87: "remove", 91: "mode",
+                        83: "mkdir", 258: "mkdir", 84: "rmdir",
+                        263: "rmdir" if state.native_unlink_flags == 0x200 else "remove",
+                    }.get(state.kernel_call)
+                    if resource_operation(
+                        job["admission"].get("resources", ()), path, job["pid"], outputs, selected,
+                    ):
+                        return
+                elif state.role == "native" and state.kernel_call in {1, 18, 20, 2, 85, 257} and path in {"/repo/" + output for output in outputs}:
                     return
                 raise Violation(f"native job write lacks its issued output authority: {path}")
             raise Violation(f"readonly native Make filesystem write denied: {path}")
@@ -2230,6 +2243,7 @@ class Policy:
             raise Violation("aggregate syscall budget exhausted")
         n = r.orig_rax
         a, b, c, d, e = r.rdi, r.rsi, r.rdx, r.r10, r.r8
+        state.native_unlink_flags = ctypes.c_int(c).value if n == 263 else None
         state.pending = None
         state.kernel_io = None
         state.metadata_pending = None
@@ -2653,6 +2667,7 @@ class Policy:
             operation, state.native_output_operation = state.native_output_operation, None
             if operation is None or operation.kind != "close" or operation.descriptor != descriptor:
                 raise Violation("native close return lost its paired entry custody")
+            self.native_outputs.actor, self.native_outputs.dispatch = pid, state.native_dispatch
             self.native_outputs.custody.leave_close(operation, result=result)
         if self.read_trace is not None:
             self.read_trace.fd_closed(pid, descriptor)
@@ -2826,6 +2841,8 @@ def supervise(config, drop_privileges):
             not isinstance(reply, dict)
             or set(reply) != {"kind", "scope", "sequence", "owner", "input_sha256", "limits"} | (
                 {"outputs"} if policy.native_outputs is not None else set()
+            ) | (
+                {"resources"} if config.get("native_resources") else set()
             )
             or reply["kind"] != "native-authorized" or reply["scope"] != config["producer_scope"]
             or type(reply["sequence"]) is not int or reply["sequence"] != sequence
@@ -2839,12 +2856,21 @@ def supervise(config, drop_privileges):
             or len(set(reply["outputs"])) != len(reply["outputs"])
         ):
             raise Violation("native Command reply escapes its issued output namespace")
+        if config.get("native_resources"):
+            if __package__:
+                from .native_resources import resource_plan
+            else:
+                from native_resources import resource_plan
+            issued = resource_plan(config["native_resources"])
+            if any(row not in issued for row in resource_plan(reply["resources"])):
+                raise Violation("native Command reply escapes its issued resource roles")
         policy.apply_producer_limits(reply["limits"], ceilings)
         channel.ensure_idle()
         policy.producer_completed = sequence
         return {
             "owner": reply["owner"], "input_sha256": reply["input_sha256"],
             **({"outputs": reply["outputs"]} if policy.native_outputs is not None else {}),
+            **({"resources": reply["resources"]} if config.get("native_resources") else {}),
         }
 
     if policy.native_admission:
@@ -2926,6 +2952,7 @@ def supervise(config, drop_privileges):
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
             if policy.native_outputs is not None:
+                policy.native_outputs.actor, policy.native_outputs.dispatch = stopped, state.native_dispatch
                 policy.native_outputs.custody.retire_process(stopped)
             if policy.native_readonly and state.role == "native" and state.native_exit_status != status:
                 raise Violation("native terminal status differs from its actual kernel exit stop")
@@ -3001,6 +3028,7 @@ def supervise(config, drop_privileges):
                     descriptor for owner_pid, descriptor in policy.native_outputs.custody.descriptors
                     if owner_pid == stopped
                 )
+                policy.native_outputs.actor, policy.native_outputs.dispatch = stopped, state.native_dispatch
                 policy.native_outputs.custody.inherited(stopped, child.value, descriptors)
             if not state.process_reservation:
                 raise Violation("unreserved process creation")

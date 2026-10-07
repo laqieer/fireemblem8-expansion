@@ -84,6 +84,7 @@ class Command:
     outputs: tuple[str, ...] = ()
     dependency_only: bool = False
     publication_policy: str = "replace"
+    native_resources: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         if type(self.publication_policy) is not str or self.publication_policy not in PUBLICATION_POLICIES:
@@ -1218,7 +1219,7 @@ class ProbeSession:
         runtime_completions=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None, native_admission_handler=None,
-        native_output_paths=(),
+        native_output_paths=(), native_resources=(),
     ):
         self.budget.remaining()
         if native_admission_handler is not None and (
@@ -1258,7 +1259,9 @@ class ProbeSession:
             if original_tool is not None:
                 raise MakeProbeError("native produced tool admission is not yet supported with output authority")
             mounts = [item for item in mounts if item["target"] != "/repo"]
-            mounts.extend(self._compiler_source_mounts(root, self._output_paths(native_output_paths)))
+            mounts.extend(self._compiler_source_mounts(
+                root, self._output_paths(native_output_paths) + tuple(path for _, path in native_resources),
+            ))
         if original_tool is not None:
             binary = self._sealed_native_tool_bytes(original_tool)
             if (
@@ -1407,6 +1410,8 @@ class ProbeSession:
             ):
                 raise MakeProbeError("native output observation requires the issued native-tool capsule")
             config["native_output_paths"] = list(self._output_paths(native_output_paths))
+            if native_resources:
+                config["native_resources"] = [list(row) for row in native_resources]
         counter_names = {
             "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
             "observations", "live_process_peak", "memory_peak",
@@ -1525,13 +1530,20 @@ class ProbeSession:
                 authorization = native_admission_handler(request["path"], inputs)
                 if native_output_paths:
                     if (
-                        not isinstance(authorization, dict) or set(authorization) != {"owner", "outputs"}
+                        not isinstance(authorization, dict) or set(authorization) != {"owner", "outputs"} | (
+                            {"resources"} if native_resources else set()
+                        )
                         or not isinstance(authorization["outputs"], list)
                         or any(path not in native_output_paths for path in authorization["outputs"])
                         or len(set(authorization["outputs"])) != len(authorization["outputs"])
                     ):
                         raise MakeProbeError("native Command admission lacks its exact output plan")
                     owner = authorization["owner"]
+                    if native_resources:
+                        from .native_resources import resource_plan, validate_resource_scope
+                        resources = resource_plan(authorization["resources"])
+                        if any(row not in native_resources for row in resources):
+                            raise MakeProbeError("native Command resources escape their issued plan")
                 else:
                     owner = authorization
                 if not isinstance(owner, str) or re.fullmatch("[0-9a-f]{64}", owner) is None:
@@ -1539,6 +1551,7 @@ class ProbeSession:
                 admission = {
                     "owner": owner, "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(),
                     **({"outputs": authorization["outputs"]} if native_output_paths else {}),
+                    **({"resources": authorization["resources"]} if native_resources else {}),
                 }
                 native_authorizations[sequence] = (request["path"], inputs, admission)
                 self.budget.charge("cache", len(encoded(native_authorizations[sequence])))
@@ -2511,7 +2524,7 @@ class ProbeSession:
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
         original_tool=False, native_metadata_directories=(),
-        commands=None, writable_outputs=(),
+        commands=None, writable_outputs=(), native_resources=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2527,6 +2540,13 @@ class ProbeSession:
         if commands is not None and not observe_runtime_completions:
             raise MakeProbeError("native Command admission requires complete runtime job inputs")
         writable_outputs = self._output_paths(writable_outputs)
+        from .native_resources import resource_plan, validate_resource_scope
+        native_resources = resource_plan(native_resources)
+        if native_resources and not writable_outputs:
+            raise MakeProbeError("native resource roles require writable native Make")
+        if len(native_resources) > self.budget.limits.entries:
+            raise MakeProbeError("native resource plan exceeds its existing entry bound")
+        validate_resource_scope(native_resources, writable_outputs, self.snapshot.files)
         if writable_outputs and commands is None:
             raise MakeProbeError("native writable Make requires original Command admission")
         if writable_outputs and not (observe_reads and observe_runtime_completions):
@@ -2554,6 +2574,9 @@ class ProbeSession:
                 raise MakeProbeError("native readonly Command differs from actual argv or requests output authority")
             Command.__post_init__(command)
             outputs = self._output_paths(command.outputs)
+            resources = resource_plan(command.native_resources)
+            if any(row not in native_resources for row in resources):
+                raise MakeProbeError("native Command resources escape its issued namespace")
             if any(name not in writable_outputs for name in outputs):
                 raise MakeProbeError("native Command outputs escape its issued namespace")
             sources = self.sources(command.sources) if command.sources else ()
@@ -2578,11 +2601,14 @@ class ProbeSession:
             payload = encoded([
                 self.snapshot.digest, path, runtime_identity, tool_identity,
                 inputs, command.code, sources, directories,
-                *([outputs] if writable_outputs else []),
+                *([outputs] if writable_outputs else []), *([resources] if native_resources else []),
             ])
             self.budget.charge("cache", len(payload))
             owner = hashlib.sha256(payload).hexdigest()
-            return {"owner": owner, "outputs": list(outputs)} if writable_outputs else owner
+            return {
+                "owner": owner, "outputs": list(outputs),
+                **({"resources": [list(row) for row in resources]} if native_resources else {}),
+            } if writable_outputs else owner
         if (
             not isinstance(native_executables, tuple)
             or len(native_executables) > self.budget.limits.entries
@@ -2753,6 +2779,7 @@ class ProbeSession:
                 original_tool=native_tool if original_tool else None,
                 native_admission_handler=admit if commands is not None else None,
                 native_output_paths=writable_outputs,
+                native_resources=native_resources,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     *(self._mount(Path(path), path) for path, identity in metadata_directories

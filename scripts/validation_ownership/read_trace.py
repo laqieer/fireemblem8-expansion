@@ -465,7 +465,7 @@ class NativeReadTrace:
             or self.number(self.bias + self.abi["globals"]["reading_file"]) != floc
             or self.number(buffer + 32) == 0
             or current["source"] is None or current["pin"] is None or current["closed"]
-            or self.native.publication_identity(os.fstat(current["pin"])) != current["identity"]
+            or self.native.publication_identity(os.fstat(current["pin"])) != self.source_identity(current)
         ):
             raise read_epochs.ReadEpochError("completion lost original ebuffer/stream/pin/source custody")
         if self.string(self.number(floc), 4096) != current["name"]:
@@ -539,7 +539,7 @@ class NativeReadTrace:
                 buffer != current["frame"] + abi["reader_ebuffer"]
                 or not self.number(buffer + 32) or current["source"] is None
                 or current["pin"] is None or current["closed"]
-                or self.native.publication_identity(os.fstat(current["pin"])) != current["identity"]
+                or self.native.publication_identity(os.fstat(current["pin"])) != self.source_identity(current)
                 or self.string(self.number(floc), 4096) != current["name"]
             ):
                 raise read_epochs.ReadEpochError("runtime effect lost its live source descriptor/pin")
@@ -806,6 +806,8 @@ class NativeReadTrace:
                 path = self.policy.resolve(name if name.startswith("/") else state.cwd + "/" + name)
                 item = observer.custody.objects.get(path)
                 if item is not None:
+                    if path.removeprefix("/repo/") not in self.config["native_output_paths"]:
+                        raise read_epochs.ReadEpochError("native resource role cannot become a generated source")
                     descriptor = observer.operand(path)
                     try:
                         if descriptor is None:
@@ -957,8 +959,7 @@ class NativeReadTrace:
                 + repr((current["name"], resolved, error, current["source"]))
             )
         if current["pin"] is not None:
-            lease = current.get("generated")
-            expected_identity = lease.object.identity if lease is not None else current["identity"]
+            expected_identity = self.source_identity(current)
             if not current["closed"] or self.native.publication_identity(os.fstat(current["pin"])) != expected_identity:
                 raise read_epochs.ReadEpochError("original source was changed or not closed before return")
             path = read_epochs._resolved_source_path(resolved)
@@ -1004,6 +1005,7 @@ class NativeReadTrace:
         if self.version == read_epochs.WRITABLE_VERSION:
             result["output_authority"] = {
                 "paths": self.config["native_output_paths"],
+                **({"resources": self.config["native_resources"]} if self.config.get("native_resources") else {}),
                 "jobs": [
                     {key: row[key] for key in ("sequence", "pid", "admission", "tree")}
                     for row in self.policy.native_jobs.values()
@@ -1012,6 +1014,11 @@ class NativeReadTrace:
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],
                                    file_limit=self.config["file_limit"], reserve=self.policy.charge_metadata)
         return result
+
+    @staticmethod
+    def source_identity(current):
+        lease = current.get("generated")
+        return lease.object.identity if lease is not None else current["identity"]
 
     def close(self):
         pins = []

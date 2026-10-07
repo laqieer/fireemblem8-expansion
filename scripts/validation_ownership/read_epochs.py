@@ -9,6 +9,7 @@ import hashlib
 import os
 import posixpath
 import re
+import stat
 import struct
 import sys
 from types import MappingProxyType
@@ -1743,7 +1744,8 @@ def validate_machine_observations(value, trace, *, count_limit):
             if (
                 type(dispatch) is not int or dispatch not in native_roots
                 or native_roots[dispatch]["pid"] != pid
-                or not isinstance(event, dict) or event.get("owner") != dispatch
+                or not isinstance(event, dict)
+                or not trace.get("output_authority", {}).get("resources") and event.get("owner") != dispatch
                 or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
             ):
                 raise ReadEpochError("native output machine event lost its actual job binding")
@@ -1926,8 +1928,19 @@ def native_output_effects(trace):
 
 def validate_native_output_authority(trace, *, count_limit, file_limit, reserve):
     authority = trace["output_authority"]
+    resources = authority.get("resources", ()) if isinstance(authority, dict) else ()
+    if __package__:
+        from .native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope
+    else:
+        from native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope
+    try:
+        resources = resource_plan(resources)
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
     if (
-        not isinstance(authority, dict) or set(authority) != {"paths", "jobs"}
+        not isinstance(authority, dict) or set(authority) != {"paths", "jobs"} | (
+            {"resources"} if resources else set()
+        )
         or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit for key in authority)
         or not authority["paths"]
         or any(
@@ -1939,6 +1952,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     ):
         raise ReadEpochError("malformed native output authority")
     reserve(len(encoded(authority)))
+    try:
+        validate_resource_scope(resources, authority["paths"], (row["path"] for row in trace["selection"]["inventory"]))
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
     for path in authority["paths"]:
         try:
             relative_path(path)
@@ -1960,10 +1977,17 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or type(job["pid"]) is not int or job["pid"] < 1
             or not isinstance(job["tree"], list) or not job["tree"]
             or not isinstance(job["admission"], dict)
-            or set(job["admission"]) != {"owner", "input_sha256", "outputs"}
+            or set(job["admission"]) != {"owner", "input_sha256", "outputs"} | (
+                {"resources"} if resources else set()
+            )
         ):
             raise ReadEpochError("native output job lacks its closed dispatch binding")
         admission = job["admission"]
+        try:
+            if any(row not in resources for row in resource_plan(admission.get("resources", ()))):
+                raise ReadEpochError("native job resources escape their closed plan")
+        except MakeProbeError as error:
+            raise ReadEpochError(str(error)) from error
         if (
             any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
                 for key in ("owner", "input_sha256"))
@@ -1996,10 +2020,34 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         "output-close-failed": {"pid", "fd", "result"},
         "output-dup": {"pid", "fd", "result", "description"},
         "output-inherit": {"parent", "pid", "fd", "description"},
+        "output-mkdir": {"pid", "identity"},
+        "output-rmdir": {"pid", "identity"},
+        "output-directory-change": {"pid", "operation", "identity", "source", "destination", "entries", "before"},
     }
-    objects, bindings, descriptions, readers = {}, {}, set(), {}
+    if resources:
+        fields["output-settled"].add("pid")
+        fields["output-close-failed"].add("description")
+        fields.update({
+            "output-lock": {"pid", "fd", "description", "flags", "result", "mode"},
+            "output-mode": {"pid", "fd", "mode", "identity"},
+            "output-replace": {"pid", "source", "identity"},
+            "output-retire": {"pid", "operation_owner", "identity", "destination"},
+            "output-lock-release": {"pid", "fd", "description", "mode"},
+        })
+    objects, bindings, descriptions, readers, directories = {}, {}, set(), {}, {}
     writes = {}
+    lock_modes = {}
+    released_locks = {}
+    parent_returns = {}
     request_number = 0
+    def parent_request(pid, operation, source, destination=None):
+        parents = {
+            path.rpartition("/")[0] for path in (source, destination)
+            if path is not None and path.rpartition("/")[0] in directories
+        }
+        if parents:
+            parent_returns[pid] = {"operation": operation, "source": source,
+                                   "destination": destination, "parents": parents}
     number = 0
     for observation in machine:
         if observation["kind"] == "generated-source-entry":
@@ -2030,6 +2078,15 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             continue
         number += 1
         row = observation["event"]
+        dispatch = observation["dispatch"]
+        actor_job = jobs.get(dispatch)
+        def role(path):
+            return resource_role(actor_job["admission"].get("resources", ()), path, actor_job["pid"])
+        def permitted(path, operation):
+            return actor_job is not None and resource_operation(
+                actor_job["admission"].get("resources", ()), path, actor_job["pid"],
+                actor_job["admission"]["outputs"], operation,
+            )
         if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
             if type(row.get("pid")) is int and row["pid"] in writes:
                 raise ReadEpochError("native failed operation omitted its pending write return")
@@ -2037,21 +2094,59 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             extra = {"flags"} if operation == "open" else {
                 "descriptor", "duplicate_kind", "target", "minimum", "flags",
             } if operation == "dup" else set()
+            if resources and isinstance(operation, str) and operation in {"mkdir", "replace"}:
+                extra.add("flags")
             if (
-                set(row) != {"sequence", "kind", "owner", "pid", "operation", "source", "destination", "result"} | extra
+                set(row) != {"sequence", "kind", "owner", "pid", "operation", "source", "destination", "result"} | extra | (
+                    {"preimages"} if resources else set()
+                )
                 or type(row["sequence"]) is not int or row["sequence"] != number
                 or type(row["owner"]) is not int or row["owner"] not in jobs
                 or not isinstance(row["operation"], str)
-                or row["operation"] not in {"open", "dup", "duplicate-release", "exec"} or row["destination"] is not None
+                or row["operation"] not in {"open", "dup", "duplicate-release", "exec", "mkdir", "rmdir", "remove", "replace"}
+                or (not isinstance(row["destination"], str) if operation == "replace" else row["destination"] is not None)
                 or not isinstance(row["source"], str)
                 or operation != "dup" and row["source"] not in {
                     "/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]
-                }
+                } and not (actor_job is not None and role(row["source"]) is not None)
                 or type(row["pid"]) is not int
-                or row["pid"] not in {event["pid"] for event in jobs[row["owner"]]["tree"]}
+                or actor_job is None
+                or row["pid"] not in {event["pid"] for event in actor_job["tree"]}
                 or type(row["result"]) is not int or not -4095 <= row["result"] < 0
             ):
                 raise ReadEpochError("native failed descriptor transition lost its actual job or preimage")
+            if resources:
+                if actor_job is None:
+                    raise ReadEpochError("native failed operation lost its actual actor")
+                expected = []
+                for path in (row["source"], row["destination"]) if operation == "replace" else (row["source"],):
+                    item = directories.get(path) or next((item for item in objects.values() if item["path"] == path), None)
+                    expected.append([path, None if item is None else item["identity"],
+                                     None if item is None or "entries" not in item else item["entries"]])
+                parents = {path.rpartition("/")[0] for path in (row["source"], row["destination"]) if path is not None}
+                for parent in sorted(parents):
+                    if parent in directories:
+                        item = directories[parent]
+                        expected.append([parent, item["identity"], item["entries"]])
+                if operation in {"mkdir", "rmdir", "remove", "replace", "open"} and row["preimages"] != expected:
+                    raise ReadEpochError("native failed namespace operation changed its observed operands")
+            if operation in {"mkdir", "rmdir"}:
+                if not resources or role(row["source"]) != "directory":
+                    raise ReadEpochError("native failed directory operation lacks its exact resource role")
+                if operation == "mkdir" and (
+                    type(row["flags"]) is not int or row["flags"] & ~0o777 or row["flags"] & 0o700 != 0o700
+                ):
+                    raise ReadEpochError("native failed mkdir changed its requested mode")
+                continue
+            if operation in {"replace", "remove"}:
+                if not resources or not permitted(row["source"], operation):
+                    raise ReadEpochError("native failed namespace operation escaped its resource role matrix")
+                if operation == "replace" and (
+                    type(row["flags"]) is not int or row["flags"] not in {0, 1}
+                    or not permitted(row["destination"], "replace")
+                ):
+                    raise ReadEpochError("native failed replacement lost its destination plan")
+                continue
             if operation == "open":
                 if (
                     type(row["flags"]) is not int or row["flags"] < 0
@@ -2059,6 +2154,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                     or row["flags"] & os.O_TRUNC and any(
                         binding[2] and objects[binding[0]]["path"] == row["source"]
                         for binding in bindings.values()
+                    )
+                    or resources and (
+                        not permitted(row["source"], "open")
+                        or role(row["source"]) == "shared-lock" and row["flags"] & (os.O_WRONLY | os.O_TRUNC | os.O_EXCL)
                     )
                 ):
                     raise ReadEpochError("native failed open changed its admitted flags or active writer preimage")
@@ -2094,11 +2193,19 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or type(row["sequence"]) is not int or row["sequence"] != number
             or any(type(row[key]) is not int or row[key] < 1 for key in ("owner", "serial"))
             or type(row["revision"]) is not int or row["revision"] < 0
-            or row["owner"] not in jobs or not isinstance(row["path"], str)
-            or row["path"] not in {"/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]}
+            or row["owner"] not in jobs
+            or not isinstance(row["path"], str) and not (
+                resources and row["kind"] == "output-retire" and row["path"] is None
+                and isinstance(row.get("destination"), str)
+            )
+            or actor_job is None
+            or (
+                row.get("destination") if row["kind"] == "output-retire" else row["path"]
+            ) not in {"/repo/" + path for path in actor_job["admission"]["outputs"]}
+            and not role(row.get("destination") if row["kind"] == "output-retire" else row["path"])
         ):
             raise ReadEpochError("native output effect escapes its actual job plan")
-        job = jobs[row["owner"]]
+        job = actor_job if resources else jobs[row["owner"]]
         pids = {job["pid"]} | {event["pid"] for event in job["tree"]} | {
             event["child"] for event in job["tree"] if "child" in event
         }
@@ -2111,17 +2218,31 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             raise ReadEpochError("native output effect has a malformed inode identity")
         if "identity" in row:
             identity = row["identity"]
-            try:
-                validate_publication_identity(identity, identity[2] & 0o777, identity[3])
-            except ChannelError as error:
-                raise ReadEpochError(f"native output effect has an invalid object identity: {error}") from error
+            if row["kind"] in {"output-mkdir", "output-rmdir", "output-directory-change"}:
+                if (
+                    not resources or role(row["path"]) != "directory"
+                    or not stat.S_ISDIR(identity[2]) or identity[2] & 0o7000
+                    or identity[2] & 0o700 != 0o700 or any(value < 0 for value in identity)
+                ):
+                    raise ReadEpochError("native directory effect lacks its issued traversable identity")
+            else:
+                try:
+                    validate_publication_identity(
+                        identity[:6] + [1] if row["kind"] == "output-retire" and identity[6] == 0 else identity,
+                        identity[2] & 0o777, identity[3],
+                    )
+                except ChannelError as error:
+                    raise ReadEpochError(f"native output effect has an invalid object identity: {error}") from error
             if identity[3] > file_limit:
                 raise ReadEpochError("native output effect exceeds its original file bound")
         if "sha256" in row and (
             not isinstance(row["sha256"], str) or re.fullmatch("[0-9a-f]{64}", row["sha256"]) is None
         ):
             raise ReadEpochError("native settled output lacks its exact content digest")
-        if "operation_owner" in row and row["operation_owner"] != row["owner"]:
+        if "operation_owner" in row and (
+            type(row["operation_owner"]) is not int
+            or row["operation_owner"] != (dispatch if resources else row["owner"])
+        ):
             raise ReadEpochError("native output open borrowed another producer")
         if any(
             type(row[key]) is not int or row[key] < 0 for key in ("fd", "description")
@@ -2129,10 +2250,60 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         ) or "description" in row and row["description"] == 0:
             raise ReadEpochError("native output effect has an invalid descriptor lineage")
         kind, serial = row["kind"], row["serial"]
-        item = objects.get(serial)
+        parents = parent_returns.get(row.get("pid"))
+        if parents is not None and kind not in {"output-directory-change", "output-settled"} and not (
+            kind == "output-replace" and parents["operation"] == "remove" and parents["source"] == row["path"]
+        ):
+            raise ReadEpochError("native namespace operation omitted its parent return")
         pending = writes.get(row.get("pid"))
         if pending is not None and kind not in {"output-write", "output-write-failed"}:
             raise ReadEpochError("native output process omitted its pending write return")
+        if kind == "output-mkdir":
+            if row["path"] in directories or row["identity"][6] != 2 or row["revision"] != 0 or serial in objects or any(item["serial"] == serial for item in directories.values()):
+                raise ReadEpochError("native mkdir reused an issued directory object")
+            directories[row["path"]] = {
+                "serial": serial, "owner": row["owner"], "identity": row["identity"], "entries": [],
+            }
+            parent_request(row["pid"], "mkdir", row["path"])
+            continue
+        if kind in {"output-rmdir", "output-directory-change"}:
+            item = directories.get(row["path"])
+            if item is None or item["serial"] != serial or item["owner"] != row["owner"] or row["revision"] != 0 or row["identity"][:3] != item["identity"][:3]:
+                raise ReadEpochError("native directory transition lost its issued object")
+            if kind == "output-rmdir":
+                if item["entries"] or row["identity"][6] != 0:
+                    raise ReadEpochError("native rmdir retired a populated directory")
+                del directories[row["path"]]
+                parent_request(row["pid"], "rmdir", row["path"])
+            else:
+                if parents is None or row["path"] not in parents["parents"] or any(
+                    row[key] != parents[key] for key in ("operation", "source", "destination")
+                ):
+                    raise ReadEpochError("native directory change borrowed another namespace operation")
+                if row["before"] != item["identity"] or row["operation"] not in {"open", "mkdir", "rmdir", "remove", "replace"}:
+                    raise ReadEpochError("native directory change lost its namespace preimage")
+                entries = set(item["entries"])
+                for selected, removing in (
+                    (row["source"], row["operation"] in {"rmdir", "remove", "replace"}),
+                    (row["destination"], False),
+                ):
+                    if selected is None or selected.rpartition("/")[0] != row["path"]:
+                        continue
+                    name = selected.rpartition("/")[2]
+                    if removing:
+                        if name not in entries:
+                            raise ReadEpochError("native directory change removed an unknown child")
+                        entries.remove(name)
+                    else:
+                        entries.add(name)
+                if row["entries"] != sorted(entries):
+                    raise ReadEpochError("native directory change absorbed unrelated entries")
+                item.update(identity=row["identity"], entries=row["entries"])
+                parents["parents"].remove(row["path"])
+                if not parents["parents"]:
+                    del parent_returns[row["pid"]]
+            continue
+        item = objects.get(serial)
         if kind == "output-settled" and any(entry["serial"] == serial for entry in writes.values()):
             raise ReadEpochError("native output settlement omitted its pending write return")
         if kind in {"output-write", "output-write-failed"}:
@@ -2145,8 +2316,41 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             ):
                 raise ReadEpochError("native write return lost its stopped request or preimage")
             del writes[row["pid"]]
+        if kind == "output-retire":
+            if (
+                not permitted(row["destination"], "remove")
+                or
+                item is None or item["owner"] != row["owner"] or item["path"] != row["destination"]
+                or row["path"] is not None or row["revision"] != item["revision"]
+                or row["identity"][:5] != item["identity"][:5] or row["identity"][6] != item["identity"][6] - 1
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+                or not item["settled"]
+            ):
+                raise ReadEpochError("native retirement lost its settled prior version")
+            item.update(identity=row["identity"], path=None)
+            parent_request(row["pid"], "remove", row["destination"])
+            continue
+        if kind == "output-replace":
+            if (
+                not isinstance(row["source"], str)
+                or not permitted(row["source"], "replace") or not permitted(row["path"], "replace")
+                or
+                item is None or item["owner"] != row["owner"] or row["source"] != item["path"]
+                or row["revision"] != item["revision"] or row["identity"][:5] != item["identity"][:5]
+                or row["identity"][6] != item["identity"][6] or not item["settled"]
+                or serial in readers.values()
+                or any(other is not item and other["path"] == row["path"] for other in objects.values())
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+            ):
+                raise ReadEpochError("native replacement lost its settled source or destination")
+            item.update(identity=row["identity"], path=row["path"])
+            parent_returns.pop(row["pid"], None)
+            parent_request(row["pid"], "replace", row["source"], row["path"])
+            continue
         if kind == "output-open":
             if (
+                resources and not permitted(row["path"], "open")
+                or
                 type(row["writing"]) is not bool or (row["pid"], row["fd"]) in bindings
                 or row["description"] in descriptions
                 or row["writing"] and serial in readers.values()
@@ -2164,9 +2368,24 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 objects[serial] = item
             elif any(row[key] != item[key] for key in ("owner", "path", "revision", "identity")):
                 raise ReadEpochError("native output open adopted a different produced object")
+            if role(row["path"]) == "shared-lock" and row["writing"]:
+                raise ReadEpochError("native shared lock acquired content writer authority")
             bindings[(row["pid"], row["fd"])] = serial, row["description"], row["writing"]
+            if resources:
+                parent_request(row["pid"], "open", row["path"])
         elif item is None or row["owner"] != item["owner"] or row["path"] != item["path"]:
             raise ReadEpochError("native output effect lacks its issued live object")
+        elif kind == "output-mode":
+            binding = bindings.get((row["pid"], row["fd"]))
+            if (
+                binding is None or binding[0] != serial or serial in readers.values()
+                or type(row["mode"]) is not int or not 0 <= row["mode"] <= 0o777
+                or row["identity"][:2] != item["identity"][:2] or row["identity"][3:5] != item["identity"][3:5]
+                or row["identity"][6] != item["identity"][6] or row["identity"][2] != stat.S_IFREG | row["mode"]
+                or role(row["path"]) == "shared-lock" or row["revision"] != item["revision"]
+            ):
+                raise ReadEpochError("native mode transition changed unrelated content or binding")
+            item.update(identity=row["identity"], settled=False)
         elif kind == "output-write-entry":
             if (
                 type(row["request"]) is not int or row["request"] != request_number + 1
@@ -2244,17 +2463,69 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             elif kind in {"output-close", "output-exec-close", "output-duplicate-release"}:
                 if binding[1] != row["description"]:
                     raise ReadEpochError("native output retirement changed its description")
+                if (
+                    lock_modes.get(row["description"], 0)
+                    and sum(value[1] == row["description"] for value in bindings.values()) == 1
+                ):
+                    raise ReadEpochError("native last close omitted its lock release")
+                released_locks.pop(row["description"], None)
                 del bindings[(row["pid"], row["fd"])]
+                if not any(value[1] == row["description"] for value in bindings.values()):
+                    lock_modes.pop(row["description"], None)
             elif kind == "output-write-failed":
                 if not binding[2] or type(row["result"]) is not int or not -4095 <= row["result"] < 0:
                     raise ReadEpochError("native failed write lacks its writable binding and errno")
+            elif kind == "output-lock":
+                import fcntl
+                if (
+                    binding[1] != row["description"] or role(row["path"]) != "shared-lock"
+                    or type(row["flags"]) is not int
+                    or row["flags"] not in {fcntl.LOCK_SH, fcntl.LOCK_EX, fcntl.LOCK_UN, fcntl.LOCK_SH | fcntl.LOCK_NB, fcntl.LOCK_EX | fcntl.LOCK_NB}
+                    or type(row["result"]) is not int or row["result"] not in {0, -errno.EAGAIN, -errno.EINTR}
+                    or type(row["mode"]) is not int or row["mode"] not in {0, fcntl.LOCK_SH, fcntl.LOCK_EX}
+                    or row["result"] == 0 and row["mode"] != (0 if row["flags"] == fcntl.LOCK_UN else row["flags"] & ~fcntl.LOCK_NB)
+                ):
+                    raise ReadEpochError("native shared lock lost its actual description or return")
+                requested = row["flags"] & ~fcntl.LOCK_NB
+                previous = lock_modes.get(row["description"], 0)
+                if row["result"] < 0 and (
+                    requested == fcntl.LOCK_UN
+                    or row["result"] == -errno.EAGAIN and not row["flags"] & fcntl.LOCK_NB
+                    or row["mode"] != (previous if previous == requested else 0)
+                ):
+                    raise ReadEpochError("native failed flock changed its actual description preimage")
+                lock_modes[row["description"]] = row["mode"]
+            elif kind == "output-lock-release":
+                following = effects[number] if number < len(effects) else None
+                if (
+                    binding[1] != row["description"]
+                    or type(row["mode"]) is not int or row["mode"] not in {1, 2}
+                    or row["mode"] != lock_modes.get(row["description"], 0)
+                    or sum(value[1] == row["description"] for value in bindings.values()) != 1
+                    or row["description"] in released_locks
+                    or not isinstance(following, dict)
+                    or following.get("kind") not in {"output-close", "output-exec-close", "output-duplicate-release", "output-close-failed"}
+                    or any(following.get(key) != row[key] for key in ("pid", "fd", "serial", "description"))
+                ):
+                    raise ReadEpochError("native lock release lost its last actual description binding")
+                lock_modes[row["description"]] = 0
+                released_locks[row["description"]] = (row["pid"], row["fd"])
             elif kind == "output-close-failed":
                 if type(row["result"]) is not int or row["result"] not in {
                     -errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT,
                 }:
                     raise ReadEpochError("native failed close lacks its supported released-FD errno")
+                description = row["description"] if resources else binding[1]
+                if binding[1] != description or (
+                    lock_modes.get(description, 0)
+                    and sum(value[1] == description for value in bindings.values()) == 1
+                ):
+                    raise ReadEpochError("native failed last close omitted its lock release")
+                released_locks.pop(description, None)
                 del bindings[(row["pid"], row["fd"])]
-    if bindings or readers or writes or any(not item["settled"] for item in objects.values()):
+                if not any(value[1] == description for value in bindings.values()):
+                    lock_modes.pop(description, None)
+    if bindings or readers or writes or parent_returns or released_locks or any(lock_modes.values()) or any(not item["settled"] for item in objects.values()):
         raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
 
 

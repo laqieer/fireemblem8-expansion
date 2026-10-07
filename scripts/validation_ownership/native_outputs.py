@@ -37,10 +37,13 @@ class NativeOutputObserver:
         for path in paths:
             relative_path(path)
         self.sequence = 0
+        self.actor = None
+        self.dispatch = None
         self.prefix = "/repo/" if policy.mode == "make" else "/work/"
         self.custody = NativeOutputs(
             deadline=self.deadline, charge=policy.charge_metadata,
             file_limit=policy.config["file_limit"], emit=self.emit,
+            shared_paths={"/repo/" + path for kind, path in policy.config.get("native_resources", ()) if kind == "shared-lock"},
         )
 
     def deadline(self):
@@ -53,8 +56,18 @@ class NativeOutputObserver:
         self.sequence += 1
         row = {"sequence": self.sequence, "kind": kind, **fields}
         if self.policy.mode == "make":
+            if kind == "output-close-failed" and not self.policy.config.get("native_resources"):
+                row.pop("description")
             if kind == "output-operation-failed":
                 operation = self.custody.pending[row["pid"]]
+                if self.policy.config.get("native_resources"):
+                    row["preimages"] = [
+                        [path, None if identity is None else list(identity),
+                         None if item is None or item.entries is None else list(item.entries)]
+                        for path, pin, identity, item in operation.operands
+                    ]
+                    if operation.kind in {"mkdir", "replace"}:
+                        row["flags"] = operation.flags
                 if operation.kind == "open":
                     row["flags"] = operation.flags
                 elif operation.kind == "dup":
@@ -62,9 +75,14 @@ class NativeOutputObserver:
                         descriptor=operation.descriptor, duplicate_kind=operation.duplicate_kind,
                         target=operation.target, minimum=operation.minimum, flags=operation.flags,
                     )
-            job = self.policy.native_jobs[row["owner"]]
+            dispatch = self.dispatch if self.policy.config.get("native_resources") else row["owner"]
+            if self.policy.config.get("native_resources"):
+                row.setdefault("pid", self.actor)
+                if kind == "output-retire":
+                    row.setdefault("operation_owner", dispatch)
+            job = self.policy.native_jobs[dispatch]
             self.policy.read_trace.machine_event(
-                "native-output", job["pid"], dispatch=row["owner"],
+                "native-output", job["pid"], dispatch=dispatch,
                 event=row, sha256=hashlib.sha256(self.native.encoded(row)).hexdigest(),
             )
         self.policy.observe(
@@ -123,6 +141,7 @@ class NativeOutputObserver:
         return fcntl.LOCK_SH if match[1] == b"READ" else fcntl.LOCK_EX
 
     def successful_exec(self, pid, state):
+        self.actor, self.dispatch = pid, state.native_dispatch
         operation, state.native_output_operation = state.native_output_operation, None
         if operation is not None:
             self.custody.complete_exec(operation)
@@ -148,6 +167,7 @@ class NativeOutputObserver:
                 raise NativeOutputError("native exec retained a different output descriptor object")
 
     def entry(self, pid, state, registers):
+        self.actor, self.dispatch = pid, state.native_dispatch
         native = self.policy
         r = registers
         n, a, b, c, d, e = r.orig_rax, r.rdi, r.rsi, r.rdx, r.r10, r.r8
@@ -184,7 +204,15 @@ class NativeOutputObserver:
             if self.policy.mode == "make" and path not in {
                 "/repo/" + name for name in self.policy.config["native_output_paths"]
             }:
-                return
+                if __package__:
+                    from .native_resources import resource_role
+                else:
+                    from native_resources import resource_role
+                job = self.policy.native_jobs.get(owner)
+                if job is None or resource_role(job["admission"].get("resources", ()), path, job["pid"]) not in {
+                    "temporary", "pid-temporary", "atomic-temporary", "shared-lock",
+                }:
+                    return
             if flags & os.O_TMPFILE == os.O_TMPFILE:
                 raise NativeOutputError("native anonymous temporary output transitions are not implemented")
             if path.startswith(self.prefix):
@@ -237,6 +265,8 @@ class NativeOutputObserver:
             state.native_output_close = descriptor
         elif n == 73 and (pid, descriptor) in self.custody.descriptors:
             item = self.custody.descriptors[(pid, descriptor)]
+            if self.policy.config.get("native_resources") and item.path not in self.custody.shared_paths:
+                raise NativeOutputError("native flock lacks its shared synchronization role")
             operation = self.custody.enter_lock(
                 pid=pid, descriptor=descriptor, flags=native_int(b),
                 observed=self.lock_mode(pid, descriptor, item.identity),
@@ -323,13 +353,21 @@ class NativeOutputObserver:
                 )
                 observed = path in self.custody.objects
             if observed:
-                raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
+                if n == 91 and self.policy.config.get("native_resources"):
+                    pin = self.pin(pid, descriptor)
+                    try:
+                        operation = self.custody.enter_mode(pid=pid, descriptor=descriptor, pin=pin, mode=b)
+                    finally:
+                        os.close(pin)
+                else:
+                    raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
         elif n in {86, 265}:
             raise NativeOutputError("native output hardlink transitions are not implemented")
         if operation is not None:
             state.native_output_operation = operation
 
     def leave(self, pid, state, result):
+        self.actor, self.dispatch = pid, state.native_dispatch
         if state.native_output_operation is not None and state.native_output_operation.kind == "close":
             return
         operation, state.native_output_operation = state.native_output_operation, None
@@ -454,11 +492,12 @@ class NativeOperation:
 class NativeOutputs:
     """Internal state keyed by issued producer; supervisor binds actual jobs."""
 
-    def __init__(self, *, deadline, charge, file_limit, emit):
+    def __init__(self, *, deadline, charge, file_limit, emit, shared_paths=()):
         self.deadline = deadline
         self.charge = charge
         self.file_limit = file_limit
         self.emit = emit
+        self.shared_paths = frozenset(shared_paths)
         self.serial = 0
         self.description_serial = 0
         self.write_serial = 0
@@ -531,6 +570,7 @@ class NativeOutputs:
                     identity = self._identity(descriptor)
                 prior_version = (
                     kind == "replace" and path == destination
+                    or kind == "open" and path in self.shared_paths
                     or kind == "open" and not flags & (
                         os.O_WRONLY | os.O_RDWR | os.O_TRUNC | os.O_CREAT
                     )
@@ -600,7 +640,9 @@ class NativeOutputs:
             for item, identity, _ in parent_postimages:
                 self._event(
                     "output-directory-change", item, pid=operation.pid, operation=operation.kind,
-                    identity=list(identity),
+                    identity=list(identity), source=operation.source, destination=operation.destination,
+                    entries=list(item.entries),
+                    before=list(next(before for path, pin, before, previous in operation.operands if previous is item)),
                 )
         if operation.description is not None:
             operation.description.pending = None
@@ -640,6 +682,8 @@ class NativeOutputs:
         ):
             raise NativeOutputError("native output open has unsupported flags")
         item = self.objects.get(path)
+        if path in self.shared_paths and flags & (os.O_WRONLY | os.O_TRUNC | os.O_EXCL):
+            raise NativeOutputError("native shared lock open requests content or replacement authority")
         writing = bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
         if item is not None and writing and (
             item.readers or flags & os.O_TRUNC and (item.writers or item.pending_writer is not None)
@@ -678,7 +722,7 @@ class NativeOutputs:
         item = self.opened(
             owner=operation.owner, pid=operation.pid, descriptor=result, pin=pin,
             path=operation.source,
-            writing=bool(operation.flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC)),
+            writing=operation.source not in self.shared_paths and bool(operation.flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC)),
         )
         self._end(operation, parent_postimages=parents)
         return item
@@ -1350,12 +1394,12 @@ class NativeOutputs:
         item.descriptions[binding] = description
         if writing:
             item.writers.add(binding)
-        elif item.sha256 is None and not item.writers:
-            self._settle(item)
         self._event(
             "output-open", item, pid=pid, fd=descriptor, operation_owner=owner,
             identity=list(identity), writing=writing, description=description.serial,
         )
+        if not writing and item.sha256 is None and not item.writers:
+            self._settle(item)
         return item
 
     def inherited(self, parent, child, descriptors):
@@ -1478,7 +1522,6 @@ class NativeOutputs:
                 raise NativeOutputError("failed native close contradicts its live owned descriptor")
             if result not in {-errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT}:
                 raise NativeOutputError("native close has an unsupported Linux error outcome")
-            self._event("output-close-failed", item, pid=pid, fd=descriptor, result=result)
         binding = (pid, descriptor)
         item = self.descriptors.get(binding)
         if item is not None:
@@ -1498,6 +1541,11 @@ class NativeOutputs:
             item.writers.discard(binding)
             if writer and not item.writers:
                 self._settle(item)
+            if result < 0:
+                self._event(
+                    "output-close-failed", item, pid=pid, fd=descriptor,
+                    description=description.serial, result=result,
+                )
             if result >= 0:
                 self._event(
                     event_kind, item, pid=pid, fd=descriptor, description=description.serial,
@@ -1592,6 +1640,7 @@ class NativeOutputs:
         item.identity = moved
         self.objects[destination] = item
         self._event("output-replace", item, source=source, identity=list(moved))
+        self._event("output-settled", item, identity=list(moved), sha256=item.sha256)
 
     def removed(self, *, owner, path, pin, result):
         self._usable()

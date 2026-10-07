@@ -815,6 +815,513 @@ class NativeWriterTests(unittest.TestCase):
         self.assert_clean(session)
 
 
+    def test_native_original_make_directory_roles_preserve_actual_namespace_lifecycle(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <fcntl.h>\n"
+            "#include <unistd.h>\n#include <errno.h>\n"
+            "int main(void){int fd;"
+            "if(mkdir(\"/repo/stage\",0700))return 1;"
+            "if(mkdir(\"/repo/stage\",0700)!=-1||errno!=EEXIST)return 2;"
+            "if(mkdir(\"/repo/stage/empty\",0700)||rmdir(\"/repo/stage/empty\"))return 3;"
+            "fd=open(\"/repo/stage/generated.mk\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"VALUE := native\\n\",16)!=16||close(fd))return 4;"
+            "return 0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool\n")
+        resources = (("directory", "stage"), ("directory", "stage/empty"))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("stage/generated.mk",), native_resources=resources)
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("stage/generated.mk",), native_resources=resources,
+                native_tool=tool, commands=Commands(), observe_reads=True,
+                observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual([(row.path, row.data, row.mode) for row in generated], [
+                ("stage/generated.mk", b"VALUE := native\n", 0o644),
+            ])
+            trace = observed["read_trace"]
+            effects = read_epochs.native_output_effects(trace)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-mkdir"]), 2)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-rmdir"]), 1)
+            failed, = [row for row in effects if row["kind"] == "output-operation-failed"]
+            self.assertEqual((failed["operation"], failed["result"]), ("mkdir", -errno.EEXIST))
+            for kind, field, value in (
+                ("output-mkdir", "pid", 999),
+                ("output-mkdir", "path", "/repo/foreign"),
+                ("output-rmdir", "identity", [0] * 7),
+                ("output-directory-change", "entries", ["foreign"]),
+                ("output-directory-change", "before", [0] * 7),
+                ("output-operation-failed", "preimages", []),
+            ):
+                with self.subTest(kind=kind, field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    row = next(row for row in invalid["machine"]["events"] if row["kind"] == "native-output" and row["event"]["kind"] == kind)
+                    row["event"][field] = value
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_original_make_resource_roles_separate_temporary_lock_and_final_versions(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <sys/file.h>\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n#include <string.h>\n#include <errno.h>\n"
+            "int main(int argc,char **argv){int lock,fd,other;char temp[256];"
+            "if(argc!=2)return 1;if(!strcmp(argv[1],\"create\")&&mkdir(\"/repo/stage\",0700))return 2;"
+            "lock=open(\"/repo/stage/generation.lock\",O_CREAT|O_RDWR|O_NOFOLLOW,0600);"
+            "if(lock<0||flock(lock,LOCK_EX))return 3;"
+            "other=open(\"/repo/stage/generation.lock\",O_CREAT|O_RDWR|O_NOFOLLOW,0600);"
+            "if(other<0||flock(other,LOCK_EX|LOCK_NB)!=-1||errno!=EAGAIN||close(other))return 8;"
+            "if(!strcmp(argv[1],\"create\")){"
+            "fd=open(\"/repo/stage/.asset-manifest-write-abcdefgh\",O_CREAT|O_EXCL|O_WRONLY,0600);"
+            "if(fd<0||write(fd,\"VALUE := native\\n\",16)!=16||fchmod(fd,0644)||close(fd))return 4;"
+            "if(rename(\"/repo/stage/.asset-manifest-write-abcdefgh\",\"/repo/stage/generated.mk\"))return 5;"
+            "if(rename(\"/repo/stage/.asset-manifest-write-abcdefgh\",\"/repo/stage/generated.mk\")!=-1||errno!=ENOENT)return 10;"
+            "if(unlink(\"/repo/stage/.asset-manifest-write-abcdefgh\")!=-1||errno!=ENOENT)return 11;"
+            "if(rmdir(\"/repo/stage\")!=-1||errno!=ENOTEMPTY)return 12;"
+            "}else{snprintf(temp,sizeof(temp),\"/repo/stage/generated.mk.%ld.tmp\",(long)getpid());"
+            "fd=open(temp,O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"discard\",7)!=7||close(fd)||unlink(temp))return 6;}"
+            "if(!strcmp(argv[1],\"create\")&&flock(lock,LOCK_UN))return 7;"
+            "if(close(lock))return 9;return 0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool create\n\t@/native/tool reopen\n")
+        resources = (
+            ("directory", "stage"), ("shared-lock", "stage/generation.lock"),
+            ("atomic-temporary", "stage/.asset-manifest-write-"),
+            ("pid-temporary", "stage/generated.mk"),
+        )
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("stage/generated.mk",), native_resources=resources)
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("stage/generated.mk",), native_resources=resources,
+                native_tool=tool, commands=Commands(), observe_reads=True,
+                observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual([(row.path, row.data, row.mode) for row in generated], [
+                ("stage/generated.mk", b"VALUE := native\n", 0o644),
+            ])
+            trace = observed["read_trace"]
+            effects = read_epochs.native_output_effects(trace)
+            lock_opens = [row for row in effects if row["kind"] == "output-open" and row["path"] == "/repo/stage/generation.lock"]
+            self.assertEqual([row["owner"] for row in lock_opens], [1, 1, 1, 1])
+            self.assertEqual([row["operation_owner"] for row in lock_opens], [1, 1, 2, 2])
+            self.assertEqual(len({row["description"] for row in lock_opens}), 4)
+            self.assertTrue(all(not row["writing"] for row in lock_opens))
+            locks = [row for row in effects if row["kind"] == "output-lock"]
+            self.assertEqual(len(locks), 5)
+            self.assertEqual([row["result"] for row in locks], [0, -errno.EAGAIN, 0, 0, -errno.EAGAIN])
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-lock-release"]), 1)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-mode"]), 1)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-replace"]), 1)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-retire"]), 1)
+            failed = [row for row in effects if row["kind"] == "output-operation-failed"]
+            self.assertEqual([(row["operation"], row["result"]) for row in failed], [
+                ("replace", -errno.ENOENT), ("remove", -errno.ENOENT), ("rmdir", -errno.ENOTEMPTY),
+            ])
+            read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            for kind, field, value in (
+                ("output-lock", "description", 999),
+                ("output-lock", "mode", 1),
+                ("output-replace", "source", "/repo/foreign"),
+                ("output-replace", "source", []),
+                ("output-replace", "source", None),
+                ("output-mode", "mode", 0o600),
+                ("output-retire", "operation_owner", 1),
+                ("output-operation-failed", "preimages", []),
+                ("output-operation-failed", "operation", []),
+            ):
+                with self.subTest(kind=kind, field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    row = next(row for row in invalid["machine"]["events"] if row["kind"] == "native-output" and row["event"]["kind"] == kind)
+                    row["event"][field] = value
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            released_templates = [trace]
+            for error in (errno.EINTR, errno.EIO, errno.ENOSPC, errno.EDQUOT):
+                released = json.loads(json.dumps(trace))
+                release_index = next(
+                    index for index, row in enumerate(released["machine"]["events"])
+                    if row["kind"] == "native-output" and row["event"]["kind"] == "output-lock-release"
+                )
+                close = released["machine"]["events"][release_index + 1]
+                self.assertEqual(close["event"]["kind"], "output-close")
+                close["event"].update(kind="output-close-failed", result=-error)
+                close["sha256"] = hashlib.sha256(encoded(close["event"])).hexdigest()
+                read_epochs.validate_trace(released, released["scope"], count_limit=100000, file_limit=10000000)
+                released_templates.append(released)
+            for template in released_templates:
+                invalid = json.loads(json.dumps(template))
+                rows = invalid["machine"]["events"]
+                rows[:] = [row for row in rows if not (row["kind"] == "native-output" and row["event"]["kind"] == "output-lock-release")]
+                effect_number = 0
+                for number, row in enumerate(rows, 1):
+                    row["seq"] = number
+                    if row["kind"] == "native-output":
+                        effect_number += 1
+                        row["event"]["sequence"] = effect_number
+                        row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                with self.assertRaisesRegex(read_epochs.ReadEpochError, "last close omitted its lock release"):
+                    read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            for operation in ("replace-lock", "remove-directory", "open-lock-truncate"):
+                invalid = json.loads(json.dumps(trace))
+                row = next(
+                    row for row in invalid["machine"]["events"]
+                    if row["kind"] == "native-output" and row["event"]["kind"] == (
+                        "output-replace" if operation == "replace-lock" else "output-operation-failed"
+                    )
+                )
+                effect = row["event"]
+                if operation == "replace-lock":
+                    effect["path"] = "/repo/stage/generation.lock"
+                    expected = "native replacement lost"
+                else:
+                    directory = [
+                        other for other in effects if other["kind"] == "output-directory-change"
+                        and other["sequence"] < effect["sequence"]
+                    ][-1]
+                    effect.pop("flags", None)
+                    effect["destination"] = None
+                    if operation == "remove-directory":
+                        effect.update(operation="remove", source="/repo/stage")
+                        effect["preimages"] = [["/repo/stage", directory["identity"], directory["entries"]]]
+                        expected = "namespace operation escaped its resource role matrix"
+                    else:
+                        effect.update(operation="open", source="/repo/stage/generation.lock", flags=os.O_RDWR | os.O_TRUNC)
+                        effect["preimages"] = [
+                            ["/repo/stage/generation.lock", lock_opens[0]["identity"], None],
+                            ["/repo/stage", directory["identity"], directory["entries"]],
+                        ]
+                        expected = "failed open changed"
+                row["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                with self.subTest(role_matrix=operation):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, expected):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            for field, value in (("description", 999), ("fd", 999), ("mode", 1)):
+                invalid = json.loads(json.dumps(trace))
+                row = next(row for row in invalid["machine"]["events"] if row["kind"] == "native-output" and row["event"]["kind"] == "output-lock-release")
+                row["event"][field] = value
+                row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                with self.assertRaisesRegex(read_epochs.ReadEpochError, "last actual description binding|actual descriptor"):
+                    read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+        self.assert_clean(session)
+
+    def test_native_original_make_replaces_pinned_generated_source_with_actual_recipe(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <fcntl.h>\n"
+            "#include <unistd.h>\n#include <stdio.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd;const char *data;"
+            "if(argc!=2)return 1;"
+            "if(!strcmp(argv[1],\"create\")){if(mkdir(\"/repo/stage\",0700))return 2;"
+            "fd=open(\"/repo/stage/generated.mk\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "data=\"VALUE := old\\nREPLACEMENT := $(shell /native/tool replace)\\nAFTER := old\\n\";"
+            "}else{fd=open(\"/repo/stage/.asset-manifest-write-abcdefgh\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "data=\"VALUE := new\\nAFTER := new\\n\";}"
+            "if(fd<0||write(fd,data,strlen(data))!=(ssize_t)strlen(data)||close(fd))return 3;"
+            "if(!strcmp(argv[1],\"replace\")&&rename(\"/repo/stage/.asset-manifest-write-abcdefgh\","
+            "\"/repo/stage/generated.mk\"))return 4;return 0;}\n"
+        ))
+        self.add("Makefile", (
+            "-include stage/generated.mk\n"
+            "stage/generated.mk:\n\t@/native/tool create\n"
+            "all:\n\t@printf '%s|%s' '$(VALUE)' '$(AFTER)'\n"
+        ))
+        resources = (("directory", "stage"), ("atomic-temporary", "stage/.asset-manifest-write-"))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    if argv[0] == "/native/tool":
+                        return Command(argv, native_tool=tool, outputs=("stage/generated.mk",), native_resources=resources)
+                    return Command(argv)
+            completed, semantics, observed, generated = session._native_make_writable(
+                "all", variables=("VALUE", "AFTER"), outputs=("stage/generated.mk",),
+                native_resources=resources, native_tool=tool, commands=Commands(),
+                native_executables=("/usr/bin/printf",),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"old|old", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "old")
+            self.assertEqual(semantics["domains"]["AFTER"]["value"], "old")
+            self.assertEqual([(row.path, row.data, row.mode) for row in generated], [
+                ("stage/generated.mk", b"VALUE := new\nAFTER := new\n", 0o644),
+            ])
+            trace = observed["read_trace"]
+            effects = read_epochs.native_output_effects(trace)
+            retired, = [row for row in effects if row["kind"] == "output-retire"]
+            replaced, = [row for row in effects if row["kind"] == "output-replace"]
+            self.assertEqual((retired["owner"], retired["operation_owner"]), (1, 2))
+            self.assertNotEqual(retired["serial"], replaced["serial"])
+            lease, = [row for row in trace["machine"]["events"] if row["kind"] == "generated-source-entry"]
+            self.assertEqual(lease["serial"], retired["serial"])
+            self.assertEqual(lease["identity"][:5], retired["identity"][:5])
+            self.assertEqual((lease["identity"][6], retired["identity"][6]), (1, 0))
+            returned = [row for row in trace["machine"]["events"] if row["kind"] == "pin-retired" and row["visit"] == lease["visit"]]
+            self.assertEqual(len(returned), 1)
+            read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+        self.assert_clean(session)
+
+    def test_native_original_make_resource_roles_refuse_unissued_and_shared_content_effects(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <fcntl.h>\n"
+            "#include <unistd.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd;if(argc!=2)return 1;"
+            "if(mkdir(\"/repo/stage\",0700))return 2;"
+            "if(!strcmp(argv[1],\"unknown-temp\"))"
+            "return open(\"/repo/stage/.asset-manifest-write-toolonggg\",O_CREAT|O_WRONLY,0600)<0;"
+            "if(!strcmp(argv[1],\"foreign-pid\"))"
+            "return open(\"/repo/stage/result.999999999.tmp\",O_CREAT|O_WRONLY,0600)<0;"
+            "fd=open(\"/repo/stage/generation.lock\",O_CREAT|O_RDWR|O_NOFOLLOW,0600);"
+            "if(fd<0)return 3;if(!strcmp(argv[1],\"write-lock\"))return write(fd,\"bad\",3)!=3;"
+            "if(!strcmp(argv[1],\"source-lock\"))return close(fd);"
+            "if(!strcmp(argv[1],\"mode-lock\"))return fchmod(fd,0644);"
+            "return open(\"/repo/stage/generation.lock\",O_CREAT|O_RDWR|O_TRUNC,0600)<0;}\n"
+        ))
+        resources = (
+            ("directory", "stage"), ("shared-lock", "stage/generation.lock"),
+            ("atomic-temporary", "stage/.asset-manifest-write-"), ("pid-temporary", "stage/result"),
+        )
+        for mode in ("unknown-temp", "foreign-pid", "write-lock", "mode-lock", "truncate-lock", "source-lock"):
+            with self.subTest(mode=mode):
+                self.add("Makefile", (
+                    "-include stage/generation.lock\nstage/generation.lock:\n\t@/native/tool source-lock\nall:\n"
+                ) if mode == "source-lock" else "all:\n\t@/native/tool " + mode + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, outputs=("stage/result",), native_resources=resources)
+                    with self.assertRaisesRegex(MakeProbeError, "issued output authority|shared lock open|resource role cannot become a generated source"):
+                        session._native_make_writable(
+                            "all", outputs=("stage/result",), native_resources=resources,
+                            native_tool=tool, commands=Commands(), observe_reads=True,
+                            observe_runtime_completions=True,
+                        )
+                self.assert_clean(session)
+
+    def test_native_resource_scope_refuses_pattern_source_collisions_and_ambiguous_roles(self):
+        from scripts.validation_ownership.native_resources import resource_plan, resource_operation, validate_resource_scope
+        for rows in (
+            (("directory", "stage"), ("shared-lock", "stage")),
+            (("unknown", "stage"),), (("directory", "../stage"),),
+            (("atomic-temporary", "stage/prefix"),), ((True, "stage"),),
+            (("atomic-temporary", "stage/.asset-manifest-write-"), ("shared-lock", "stage/.asset-manifest-write-abcdefgh")),
+            (("shared-lock", "stage/.asset-manifest-write-abcdefgh"), ("atomic-temporary", "stage/.asset-manifest-write-")),
+            (("pid-temporary", "stage/result"), ("temporary", "stage/result.123.tmp")),
+            (("temporary", "stage/result.123.tmp"), ("pid-temporary", "stage/result")),
+            (("temporary", "stage/file"), ("shared-lock", "stage/file/child")),
+            (("shared-lock", "stage/file/child"), ("temporary", "stage/file")),
+        ):
+            with self.subTest(rows=rows):
+                with self.assertRaises(MakeProbeError):
+                    resource_plan(rows)
+        for rows, outputs, sources in (
+            ((("atomic-temporary", "stage/.asset-manifest-write-"),), (), ("stage/.asset-manifest-write-abcdefgh",)),
+            ((("pid-temporary", "stage/result"),), (), ("stage/result.123.tmp",)),
+            ((("temporary", "stage/tmp"),), ("stage/tmp",), ()),
+            ((("directory", "stage"),), (), ("stage/immutable",)),
+            ((("shared-lock", "stage/lock"),), ("stage/lock",), ()),
+        ):
+            with self.subTest(rows=rows):
+                with self.assertRaises(MakeProbeError):
+                    validate_resource_scope(rows, outputs, iter(sources))
+        validate_resource_scope(
+            (("pid-temporary", "stage/result"), ("atomic-temporary", "stage/.asset-manifest-write-")),
+            ("stage/result",), iter(("other/source",)),
+        )
+        for pattern, concrete in (
+            (("pid-temporary", "stage/result"), "stage/result.123.tmp"),
+            (("atomic-temporary", "stage/.asset-manifest-write-"), "stage/.asset-manifest-write-abcdefgh"),
+        ):
+            for kind, suffix in (
+                ("directory", "/child"), ("temporary", "/child"), ("shared-lock", "/child"),
+                ("pid-temporary", "/child"), ("atomic-temporary", "/.asset-manifest-write-"),
+            ):
+                child = (kind, concrete + suffix)
+                for rows in ((pattern, child), (child, pattern)):
+                    with self.subTest(file_ancestor=rows):
+                        with self.assertRaises(MakeProbeError):
+                            resource_plan(rows)
+            for outputs, sources in (((concrete + "/child",), ()), ((), (concrete + "/child",))):
+                with self.subTest(pattern=pattern, outputs=outputs, sources=sources):
+                    with self.assertRaises(MakeProbeError):
+                        validate_resource_scope((pattern,), outputs, iter(sources))
+        self.assertEqual(
+            resource_plan((("directory", "stage"), ("temporary", "stage/child"))),
+            (("directory", "stage"), ("temporary", "stage/child")),
+        )
+        for kind, name, allowed in (
+            ("directory", "stage", {"mkdir", "rmdir"}),
+            ("shared-lock", "stage/lock", {"open", "lock"}),
+            ("temporary", "stage/tmp", {"open", "write", "mode", "replace", "remove"}),
+            ("pid-temporary", "stage/result", {"open", "write", "mode", "replace", "remove"}),
+            ("atomic-temporary", "stage/.asset-manifest-write-", {"open", "write", "mode", "replace", "remove"}),
+        ):
+            path = "/repo/" + name
+            if kind == "pid-temporary":
+                path += ".123.tmp"
+            elif kind == "atomic-temporary":
+                path += "abcdefgh"
+            for operation in ("open", "write", "mode", "replace", "remove", "mkdir", "rmdir", "lock"):
+                self.assertEqual(resource_operation(((kind, name),), path, 123, (), operation), operation in allowed)
+
+    def test_native_shared_lock_failed_descriptors_bind_later_actor_and_descendant(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <sys/file.h>\n#include <sys/wait.h>\n"
+            "#include <sys/syscall.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <errno.h>\n#include <string.h>\n"
+            "static int failures(int fd){int slots[128],count=0,copy;char *next[]={\"/native/tool\",\"next\",0};"
+            "while((copy=open(\"/dev/null\",O_RDONLY))>=0){if(count==128)return 20;slots[count++]=copy;}"
+            "if(errno!=EMFILE||dup(fd)!=-1||errno!=EMFILE)return 21;"
+            "while(count)if(close(slots[--count]))return 22;"
+            "if(dup2(fd,-1)!=-1||errno!=EBADF)return 23;"
+            "if(dup3(fd,fd,O_CLOEXEC)!=-1||errno!=EINVAL)return 24;"
+            "if(fcntl(fd,F_DUPFD,-1)!=-1||errno!=EINVAL)return 25;"
+            "if(fcntl(fd,F_DUPFD_CLOEXEC,-1)!=-1||errno!=EINVAL)return 26;"
+            "copy=open(\"/dev/null\",O_RDONLY);if(copy<0)return 27;"
+            "if(syscall(SYS_dup3,copy,fd,~O_CLOEXEC)!=-1||errno!=EINVAL||close(copy))return 27;"
+            "if(syscall(SYS_execve,next[0],next,(char **)1)!=-1||errno!=EFAULT)return 28;"
+            "return fcntl(fd,F_GETFD)==FD_CLOEXEC?0:29;}"
+            "int main(int argc,char **argv){int fd,out,status,result;pid_t child;"
+            "if(argc!=2)return 1;if(!strcmp(argv[1],\"seed\")){"
+            "if(mkdir(\"/repo/stage\",0700))return 2;"
+            "fd=open(\"/repo/stage/lock\",O_CREAT|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600);"
+            "out=open(\"/repo/stage/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||out<0||write(out,\"final\",5)!=5||close(out)||close(fd))return 3;return 0;}"
+            "fd=open(\"/repo/stage/lock\",O_RDWR|O_CLOEXEC|O_NOFOLLOW);"
+            "if(fd<0||flock(fd,LOCK_EX))return 4;result=failures(fd);if(result)return result;"
+            "child=fork();if(child<0)return 5;if(!child)_exit(failures(fd));"
+            "if(waitpid(child,&status,0)!=child||status||close(fd))return 6;return 0;}\n"
+        ))
+        self.add("Makefile", "all: second\nfirst:\n\t@/native/tool seed\nsecond: first\n\t@/native/tool later\n")
+        resources = (("directory", "stage"), ("shared-lock", "stage/lock"))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("stage/result",), native_resources=resources)
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("stage/result",), native_resources=resources,
+                native_tool=tool, commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
+            trace = observed["read_trace"]
+            failures = [
+                row for row in trace["machine"]["events"]
+                if row["kind"] == "native-output" and row["event"]["kind"] == "output-operation-failed"
+            ]
+            self.assertEqual(len(failures), 14)
+            self.assertEqual({row["dispatch"] for row in failures}, {2})
+            self.assertEqual({row["event"]["owner"] for row in failures}, {1})
+            pids = {row["event"]["pid"] for row in failures}
+            self.assertEqual(len(pids), 2)
+            for pid in pids:
+                effects = [row["event"] for row in failures if row["event"]["pid"] == pid]
+                self.assertEqual(
+                    [(row["operation"], row.get("duplicate_kind"), row["result"]) for row in effects],
+                    [("dup", "dup", -errno.EMFILE), ("dup", "dup2", -errno.EBADF),
+                     ("dup", "dup3", -errno.EINVAL), ("dup", "fcntl-dupfd", -errno.EINVAL),
+                     ("dup", "fcntl-dupfd-cloexec", -errno.EINVAL),
+                     ("duplicate-release", None, -errno.EINVAL), ("exec", None, -errno.EFAULT)],
+                )
+            for operation in ("dup", "duplicate-release", "exec"):
+                invalid = json.loads(json.dumps(trace))
+                row = next(
+                    row for row in invalid["machine"]["events"]
+                    if row["kind"] == "native-output" and row["event"].get("operation") == operation
+                )
+                row["event"]["owner"] = 2
+                row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                with self.subTest(foreign_producer=operation):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+        self.assert_clean(session)
+
+    def test_native_shared_lock_release_binds_close_exec_duplicate_fork_and_death(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <sys/file.h>\n#include <sys/wait.h>\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd,out,copy,status;pid_t child;"
+            "char *next[]={\"/native/tool\",\"finish\",0};"
+            "if(argc!=2)return 1;if(!strcmp(argv[1],\"finish\"))return 0;"
+            "if(mkdir(\"/repo/stage\",0700))return 2;"
+            "fd=open(\"/repo/stage/lock\",O_CREAT|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600);"
+            "if(fd<0||flock(fd,LOCK_EX))return 3;"
+            "out=open(\"/repo/stage/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(out<0||write(out,\"final\",5)!=5||close(out))return 4;"
+            "if(!strcmp(argv[1],\"unlock\")){if(flock(fd,LOCK_UN)||close(fd))return 5;}"
+            "else if(!strcmp(argv[1],\"dup\")){copy=dup(fd);if(copy<0||close(fd)||close(copy))return 6;}"
+            "else if(!strcmp(argv[1],\"fork\")){child=fork();if(child<0)return 7;"
+            "if(!child){if(close(fd))_exit(8);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||status||close(fd))return 9;}"
+            "else if(!strcmp(argv[1],\"replace\")){copy=open(\"/dev/null\",O_RDONLY);"
+            "if(copy<0||dup2(copy,fd)!=fd||close(copy)||close(fd))return 10;}"
+            "else if(!strcmp(argv[1],\"exec\")){execv(next[0],next);return 11;}"
+            "return 0;}\n"
+        ))
+        resources = (("directory", "stage"), ("shared-lock", "stage/lock"))
+        for mode, closing in (
+            ("unlock", "output-close"), ("dup", "output-close"), ("fork", "output-close"),
+            ("replace", "output-duplicate-release"), ("exec", "output-exec-close"), ("death", "output-close"),
+        ):
+            with self.subTest(mode=mode):
+                self.add("Makefile", "all:\n\t@/native/tool " + mode + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, outputs=("stage/result",), native_resources=resources)
+                    completed, _, observed, generated = session._native_make_writable(
+                        "all", outputs=("stage/result",), native_resources=resources,
+                        native_tool=tool, commands=Commands(), observe_reads=True,
+                        observe_runtime_completions=True,
+                    )
+                    self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+                    self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
+                    trace = observed["read_trace"]
+                    effects = read_epochs.native_output_effects(trace)
+                    releases = [row for row in effects if row["kind"] == "output-lock-release"]
+                    self.assertEqual(len(releases), 0 if mode == "unlock" else 1)
+                    if releases:
+                        index = effects.index(releases[0])
+                        self.assertEqual(effects[index + 1]["kind"], closing)
+                        self.assertEqual(effects[index + 1]["description"], releases[0]["description"])
+                        invalid = json.loads(json.dumps(trace))
+                        rows = invalid["machine"]["events"]
+                        rows[:] = [row for row in rows if not (row["kind"] == "native-output" and row["event"]["kind"] == "output-lock-release")]
+                        number = 0
+                        for sequence, row in enumerate(rows, 1):
+                            row["seq"] = sequence
+                            if row["kind"] == "native-output":
+                                number += 1
+                                row["event"]["sequence"] = number
+                                row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                        with self.assertRaisesRegex(read_epochs.ReadEpochError, "last close omitted its lock release"):
+                            read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+                self.assert_clean(session)
+
     def test_native_original_make_first_wire_refuses_unimplemented_namespace_mutations(self):
         self.add("native.c", (
             "#define _POSIX_C_SOURCE 200809L\n#include <unistd.h>\n#include <sys/stat.h>\n"
