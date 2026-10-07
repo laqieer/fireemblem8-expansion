@@ -4833,8 +4833,9 @@ class NativeOutputCustodyTests(unittest.TestCase):
     def test_write_entry_preparation_failure_releases_only_new_pins_and_writer_marker(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         charges = {
-            "entry-identity-charge": 1, "operand-identity-charge": 2, "begin-charge": 3,
-            "preimage-charge": 4, "post-read-identity-charge": 5, "payload-charge": 6,
+            "descriptor-flags-charge": 1,
+            "entry-identity-charge": 2, "operand-identity-charge": 3, "begin-charge": 4,
+            "preimage-charge": 5, "post-read-identity-charge": 6, "payload-charge": 7,
         }
         for seam in (*charges, "preimage-read", "preimage-end"):
             with self.subTest(seam=seam):
@@ -4883,7 +4884,7 @@ class NativeOutputCustodyTests(unittest.TestCase):
                 self.assertEqual(item.writers, {(1, descriptor)})
                 self.assertEqual(len(self.events), events)
                 self.assertEqual(os.pread(descriptor, 65536, 0), b"original")
-                self.assertEqual(len(owned), 0 if charges.get(seam, 3) < 3 else 1)
+                self.assertEqual(len(owned), 0 if charges.get(seam, 4) < 4 else 1)
                 for pin in owned:
                     with self.assertRaises(OSError) as closed:
                         os.fstat(pin)
@@ -4895,6 +4896,53 @@ class NativeOutputCustodyTests(unittest.TestCase):
                 self.outputs.closed(1, descriptor, 0)
                 self.assertEqual(os.pread(descriptor, 65536, 0), b"NEWginal")
                 self.outputs.finish()
+
+    def test_append_open_and_actual_flag_changes_refuse_before_fixed_offset_write(self):
+        import fcntl
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("append", b"original")
+        before = self.outputs.objects["append"].identity
+        events = len(self.events)
+        with self.assertRaisesRegex(NativeOutputError, "unsupported flags"):
+            self.outputs.enter_open(
+                owner=1, pid=1, path="append", flags=os.O_WRONLY | os.O_APPEND, pin=descriptor,
+            )
+        self.assertFalse(self.outputs.pending)
+        self.assertEqual(len(self.events), events)
+        self.assertEqual(os.pread(descriptor, 65536, 0), b"original")
+        self.assertEqual(self.outputs.objects["append"].identity, before)
+        item = self.outputs.opened(
+            owner=1, pid=1, path="append", descriptor=descriptor, pin=descriptor, writing=True,
+        )
+        flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+        fcntl.fcntl(descriptor, fcntl.F_SETFL, flags | os.O_APPEND)
+        duplicate = os.dup(descriptor)
+        try:
+            for pin in (descriptor, duplicate):
+                events = len(self.events)
+                with self.assertRaisesRegex(NativeOutputError, "append descriptors"):
+                    self.outputs.enter_write(
+                        pid=1, descriptor=descriptor, pin=pin, data=b"NEW", offset=0,
+                    )
+                self.assertIsNone(item.pending_writer)
+                self.assertFalse(self.outputs.pending)
+                self.assertEqual(len(self.events), events)
+                self.assertEqual(os.pread(descriptor, 65536, 0), b"original")
+            with (self.root / "linux-append").open("wb") as stream:
+                stream.write(b"original")
+            with (self.root / "linux-append").open("ab", buffering=0) as stream:
+                self.assertEqual(os.pwrite(stream.fileno(), b"NEW", 0), 3)
+            self.assertEqual((self.root / "linux-append").read_bytes(), b"originalNEW")
+        finally:
+            os.close(duplicate)
+            fcntl.fcntl(descriptor, fcntl.F_SETFL, flags)
+        operation = self.outputs.enter_write(
+            pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
+        )
+        self.outputs.leave_write(operation, os.pwrite(descriptor, b"NEW", 0))
+        self.outputs.closed(1, descriptor, 0)
+        self.assertEqual(os.pread(descriptor, 65536, 0), b"NEWginal")
+        self.outputs.finish()
 
     def test_entry_return_nonzero_write_cannot_absorb_unrelated_content(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError

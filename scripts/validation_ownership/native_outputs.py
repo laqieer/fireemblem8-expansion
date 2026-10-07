@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import errno
+import fcntl
 import hashlib
 import os
 import stat
@@ -159,7 +160,10 @@ class NativeOutputs:
 
     def enter_open(self, *, owner, pid, path, flags, pin):
         self._usable()
-        if type(flags) is not int or flags < 0 or flags & os.O_TMPFILE == os.O_TMPFILE:
+        if (
+            type(flags) is not int or flags < 0 or flags & os.O_APPEND
+            or flags & os.O_TMPFILE == os.O_TMPFILE
+        ):
             raise NativeOutputError("native output open has unsupported flags")
         item = self.objects.get(path)
         writing = bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
@@ -521,6 +525,10 @@ class NativeOutputs:
 
     def before_write(self, pid, descriptor, pin):
         self._usable()
+        self.deadline()
+        self.charge(64)
+        if fcntl.fcntl(pin, fcntl.F_GETFL) & os.O_APPEND:
+            raise NativeOutputError("native fixed-offset write does not support append descriptors")
         binding = (pid, descriptor)
         item = self.descriptors.get(binding)
         if (

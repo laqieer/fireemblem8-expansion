@@ -103,6 +103,13 @@ and operation token and close only new owned operand pins. Actual borrowed
 output descriptors, settled identity/digest and version remain unchanged.
 This rollback applies before the kernel write, not to an actual failed write
 return or incomplete post-write settlement.
+The fixed-offset model does not admit append writes. Paired open entry rejects
+`O_APPEND`; write entry also checks the actual pinned open-file-description
+flags before marking a writer, covering post-open `F_SETFL` and duplicate FDs.
+Linux `pwrite` on an append description ignores the supplied offset; it cannot
+be qualified by this fixed-offset postimage model. Original finite domains
+do not require append redirection. This limitation does not grant production
+output authority or generated-source admission.
 
 The existing native production observer now captures original `posix_spawn`
 argv and canonical `/repo` CWD before spawning. Its private `VO_JOB_INPUTS`
