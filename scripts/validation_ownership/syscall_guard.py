@@ -599,7 +599,7 @@ class Policy:
         )
         path = self.path(pid, state, path_pointer)
         if path not in self.native_executables:
-            raise Violation("native dispatch inputs refer to an unadmitted executable")
+            raise Violation(f"untrusted executable dispatch: {path} (original pre-spawn inputs)")
         inputs = read_epochs.native_execution_input(self.native_argv(pid, argv_pointer), state.cwd)
         if self.native_admission:
             if self.native_admit is None:
