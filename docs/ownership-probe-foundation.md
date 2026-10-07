@@ -125,7 +125,7 @@ This is an original-input binding seam, not writable-output permission,
 Command-plan admission, nested-Make support, or generated-source v6 evidence.
 The v5 machine/host/archive input schema remains unchanged. To reproduce the
 deterministic seam controls from a clean source tree, run
-`python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_original_prespawn_inputs_bind_entry_and_exec_stop`.
+`python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_original_prespawn_inputs_bind_entry_and_exec_stop`.
 The original recipe must print `original`; omitted, repeated, foreign-sender,
 wrong-size, changed-argv/CWD and changed exec-stop bindings must refuse and
 clean the owned process tree. Existing original expansion, direct-executable
@@ -166,8 +166,8 @@ behavior are unchanged. Full #275 integration still requires original finite
 output/effect plans, actual writers/read pins, generated wire crosschecks,
 nested Make and the unchanged eight-query qualification.
 
-Run the `FoundationTests.test_native_command_admission_*` cases in
-`scripts.validation_ownership.tests.test_foundation`. The positive case must
+Run the `NativeWriterTests.test_native_command_admission_*` cases in
+`scripts.validation_ownership.tests.test_native_writer`. The positive case must
 return the two actual expansion-root PIDs from the original Make variables
 and direct recipe stdout, exactly three actual jobs and three authorizations.
 Missing/substituted/writable Commands, changed views, expired deadline,
@@ -478,9 +478,10 @@ count, zero size and next revision into its paired writable open. This does not
 admit standalone truncation. Failed-close replay accepts only the live model's
 released-FD `EINTR`, `EIO`, `ENOSPC` and `EDQUOT` outcomes, retiring each binding.
 
-Run `FoundationTests.test_native_original_make_job_writes_only_its_admitted_output_once`,
-`FoundationTests.test_native_original_make_distinct_jobs_bind_their_actual_output_owners`
-and `FoundationTests.test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions`.
+Run `NativeWriterTests.test_native_original_make_job_writes_only_its_admitted_output_once`,
+`NativeWriterTests.test_native_original_make_distinct_jobs_bind_their_actual_output_owners`
+and `NativeWriterTests.test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions`
+in `scripts/validation_ownership/tests/test_native_writer.py`.
 Actual original shell recipes must run once, produce exact stdout/stderr,
 output bytes/mode and distinct real job PID/owner bindings, and clean the
 private filesystem. The standalone controls change descriptor, revision and
@@ -490,11 +491,11 @@ exercise readonly admission, another job's output, undeclared paths and tracked
 source collision. Shell redirection restoration pairs an actual foreign
 descriptor's duplication onto a tracked output, retires only the old binding,
 and preserves the restored stdout. The capsule still refuses that operation.
-`FoundationTests.test_native_original_make_first_wire_refuses_unimplemented_namespace_mutations`
+`NativeWriterTests.test_native_original_make_first_wire_refuses_unimplemented_namespace_mutations`
 runs a sealed C recipe that directly calls `mkdir` and `symlink` on the issued
 path. Both refuse before mutation without an external utility's additional
 runtime probes; the symlink reaches the existing symlink prohibition.
-`FoundationTests.test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model`
+`NativeWriterTests.test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model`
 runs `printf first > result; printf final > result; printf once` as one original
 recipe. Final bytes must be `final`, mode `0644`, stdout `once`, and stderr empty.
 Hash-preserving mutations of truncation revision, FD and size refuse.
@@ -506,7 +507,7 @@ are not evidence of naturally occurring kernel close errors.
 `NativeOutputCustodyTests.test_foreign_duplicate_release_preserves_failed_target_and_retires_actual_replacement`
 uses actual `dup2`, stale/copied-token refusal, an explicitly injected failed
 return with unchanged target, and component inherited-description exclusion.
-`FoundationTests.test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec`
+`NativeWriterTests.test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec`
 uses a sealed C fixture as the original Make recipe, not a newly produced tool.
 Separate opens of one inode issue distinct descriptions; dup shares one.
 Actual `execve` with an invalid environment address returns `EFAULT` and
@@ -520,7 +521,7 @@ checks `dup2`/`dup3` target replacement versus exec in both entry orders, with
 unchanged actual target identity and descriptor maps on refusal, failed-return
 continuation and actual `dup2` replacement after release. Inherited PID labels
 in this component control are not actual child-process admission evidence.
-`FoundationTests.test_native_original_make_failed_open_and_duplicate_preserve_actual_output`
+`NativeWriterTests.test_native_original_make_failed_open_and_duplicate_preserve_actual_output`
 runs a sealed original C recipe with real `O_EXCL`/`EEXIST`, self-target
 `dup3`/`EINVAL`, negative `F_DUPFD`/`EINVAL` and negative-target `dup2`/`EBADF`
 returns. The existing output remains exactly `final`/`0644`, stdout is `once`
@@ -530,11 +531,11 @@ state change; mutated operand records with recomputed hashes refuse.
 Failed exec and foreign-replacement records require a live producer binding;
 moving failed exec before output creation with renumbered records/hashes
 refuses rather than inventing a preimage.
-`FoundationTests.test_native_writable_make_admission_failure_exhausts_whole_session`
+`NativeWriterTests.test_native_writable_make_admission_failure_exhausts_whole_session`
 requires an invalid writable admission to fail and close the entire existing
 budget; a subsequent budget operation must refuse. The writable wrapper uses
 the same terminal-failure guard as the readonly wrapper.
-`FoundationTests.test_native_original_make_actual_forked_output_alias_and_parent_wire`
+`NativeWriterTests.test_native_original_make_actual_forked_output_alias_and_parent_wire`
 runs a sealed original recipe whose real child inherits the output, duplicates
 it to FD7 and writes through the shared offset. The actual parent waits and
 closes its alias. Bytes must be `firstfinal`/`0644`, stdout `once`, and stderr
