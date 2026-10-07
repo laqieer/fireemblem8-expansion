@@ -2360,7 +2360,7 @@ class Policy:
                         raise Violation("live producer event differs from its request")
                 state.pending = ("event", frame)
         elif n == 3:
-            state.pending = ("close", a)
+            state.pending = ("close", ctypes.c_int(a).value)
         elif n in {8, 74, 75, 73}:
             self.check_fd(state, a, "read", r)
         elif n in {78, 217}:
@@ -2622,6 +2622,16 @@ class Policy:
         if self.native_outputs is not None:
             self.native_outputs.entry(pid, state, r)
 
+    def close_return(self, pid, state, descriptor, result):
+        selected, state.native_output_close = state.native_output_close, None
+        if selected is not None:
+            if self.native_outputs is None or selected != descriptor:
+                raise Violation("native close return differs from its shared descriptor binding")
+            self.native_outputs.custody.closed(pid, descriptor, result)
+        if self.read_trace is not None:
+            self.read_trace.fd_closed(pid, descriptor)
+        state.fds.pop(descriptor, None)
+
     def leave(self, pid, state, r):
         state.dependency_stop = None
         result = signed(r.rax)
@@ -2640,6 +2650,8 @@ class Policy:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
+            if operation == "close" and state.native_output_close is not None:
+                self.close_return(pid, state, value, result)
             if operation == "native-signal-wait" and result == -errno.EFAULT:
                 queued_origins = {
                     origin for origins in state.native_signal_origins.values()
@@ -2686,9 +2698,7 @@ class Policy:
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
-            if self.read_trace is not None:
-                self.read_trace.fd_closed(pid, value)
-            state.fds.pop(value, None)
+            self.close_return(pid, state, value, result)
         elif operation == "pipe":
             data = memory(pid, value, 8)
             for offset in (0, 4):

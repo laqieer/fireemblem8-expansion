@@ -88,6 +88,9 @@ class NativeOutputObserver:
         r = registers
         n, a, b, c, d, e = r.orig_rax, r.rdi, r.rsi, r.rdx, r.r10, r.r8
         descriptor = native_int(a)
+        unlink_flags = native_int(c) if n == 263 else None
+        if n == 263 and unlink_flags not in {0, 0x200}:
+            raise NativeOutputError("native unlinkat flags escape its finite file/directory operations")
         operation = None
         if n in {2, 85, 257}:
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC if n == 85 else c if n == 257 else b
@@ -177,7 +180,7 @@ class NativeOutputObserver:
                         os.close(second)
             else:
                 raise NativeOutputError("native relocation is outside its exact Command outputs")
-        elif n in {83, 84, 258} or n == 263 and c == 0x200:
+        elif n in {83, 84, 258} or n == 263 and unlink_flags == 0x200:
             path = native.path(
                 pid, state, b if n in {258, 263} else a,
                 native_signed(a) if n in {258, 263} else -100, follow_final=False,
@@ -194,7 +197,7 @@ class NativeOutputObserver:
                 finally:
                     if pin is not None:
                         os.close(pin)
-        elif n == 87 or n == 263 and c == 0:
+        elif n == 87 or n == 263 and unlink_flags == 0:
             path = native.path(pid, state, a if n == 87 else b, -100 if n == 87 else native_signed(a), follow_final=False)
             if path.startswith("/work/"):
                 pin = self.operand(path)
@@ -253,11 +256,6 @@ class NativeOutputObserver:
                 self.custody.leave_rmdir(operation, result)
             else:
                 raise NativeOutputError("native output supervisor lost its operation kind")
-        descriptor, state.native_output_close = state.native_output_close, None
-        if descriptor is not None:
-            self.custody.closed(pid, descriptor, result)
-
-
 def native_signed(value):
     return value - (1 << 64) if value & (1 << 63) else value
 

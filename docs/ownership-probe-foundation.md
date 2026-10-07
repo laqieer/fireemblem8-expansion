@@ -249,6 +249,34 @@ The pre-extension model did not observe directory syscall lifecycles and
 has no paired directory API. These controls do not establish original native
 Make admission, directory plans or generated-source v6 qualification.
 
+Close returns use one supervisor path to retire output custody, source-read
+bindings and generic descriptor authority together. Linux releases a tracked
+descriptor on `EINTR`, `EIO`, `ENOSPC` and `EDQUOT`; these accepted late errors
+must not leave a pathname authorization or be retried. `EBADF` contradicts
+a live output binding and unsupported errors still refuse. Normalize the
+close operand and `unlinkat` flags to the kernel's signed 32-bit argument
+before selecting custody. Only normalized `0` and `AT_REMOVEDIR` unlink
+operations are admitted; unsupported flags refuse before kernel mutation.
+
+Run the two `ProducerTests` methods
+`test_native_capsule_injected_late_close_retires_both_fd_maps_for_actual_binding_family`
+and `test_native_capsule_unlinkat_normalizes_kernel_flags_and_refuses_unknown_operations`
+from a clean fixture with `python3 -m unittest`. The close control executes
+real successful kernel closes, verifies absence of each tracee `/proc/PID/fd`
+entry, then injects each of the four late error returns at the stopped syscall
+return. It is injected-return integration evidence, not a claim that the
+filesystem naturally produced those errors. Exercise original, duplicate and
+actual fork-inherited bindings with ordinary and upper-bit descriptor operands;
+require both descriptor maps retired, exact final bytes/mode/stdout, four
+distinct injected outcomes, and successful uninjected parent/original closes.
+The pre-fix supervisor retains generic descriptor authority after the injected
+error. Exercise both unlink forms with ordinary, bit-32 and bit-63 flags;
+require actual zero-link retirement identities for the file and directory.
+Unknown low flags must refuse, including when upper bits are present.
+The pre-fix full-register comparison skips custody for the upper-bit operands.
+Require complete session cleanup after every positive and refused invocation.
+These capsule controls do not qualify original native Make or generated v6.
+
 Paired writes retain one charged expected byte image for each writer lifetime,
 initialized from its actual pinned object. Each return checks exact size,
 identity/mode and the requested range, including unwritten suffixes after

@@ -1699,6 +1699,159 @@ class ProducerTests(unittest.TestCase):
                     )
                 self.fixture.assert_clean(session)
 
+    def test_native_capsule_unlinkat_normalizes_kernel_flags_and_refuses_unknown_operations(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <stdlib.h>\n#include <errno.h>\n#include <sys/stat.h>\n#include <sys/syscall.h>\n"
+            "int main(int argc,char **argv){int fd,dir;long result;unsigned long flags;"
+            "if(argc!=2)return 1;flags=strtoull(argv[1],0,0);dir=(unsigned int)flags==AT_REMOVEDIR;"
+            "fd=open(\"/work/discard\",O_CREAT|O_EXCL|O_WRONLY,0600);"
+            "if(fd<0||write(fd,\"discard\",7)!=7||close(fd))return 2;"
+            "if(mkdir(\"/work/scratch\",0700))return 3;"
+            "result=syscall(SYS_unlinkat,AT_FDCWD,dir?\"/work/scratch\":\"/work/discard\",flags);"
+            "if(result){if(errno!=EINVAL)return 4;"
+            "if(unlink(\"/work/discard\")||rmdir(\"/work/scratch\"))return 5;}"
+            "else if(dir?unlink(\"/work/discard\"):rmdir(\"/work/scratch\"))return 6;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_WRONLY,0600);"
+            "if(fd<0||write(fd,\"final\",5)!=5||close(fd))return 7;"
+            "puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for flags in (0, 0x200, 1 << 32, (1 << 32) | 0x200, 1 << 63, (1 << 63) | 0x200):
+            with self.subTest(flags=flags):
+                reports = []
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    execute = session._sandbox_run
+                    def record(root, **kwargs):
+                        result = execute(root, **kwargs)
+                        if kwargs["mode"] == "command":
+                            reports.append(result[1])
+                        return result
+                    with patch.object(session, "_sandbox_run", record):
+                        output = session.native(tool, (str(flags),), outputs=("result",))
+                    self.assertEqual(output.stdout, b"once\n")
+                    self.assertEqual([(item.path, item.data, item.mode) for item in output.generated], [
+                        ("result", b"final", 0o600),
+                    ])
+                    report, = reports
+                    rows = [
+                        json.loads(value.removeprefix("native-output:")) for value in report["accessed"]
+                        if value.startswith("native-output:")
+                    ]
+                    retired, = [row for row in rows if row["kind"] == "output-retire"]
+                    removed, = [row for row in rows if row["kind"] == "output-rmdir"]
+                    self.assertEqual(retired["destination"], "/work/discard")
+                    self.assertEqual(retired["identity"][6], 0)
+                    self.assertEqual(removed["path"], "/work/scratch")
+                    self.assertEqual(removed["identity"][6], 0)
+                self.fixture.assert_clean(session)
+        for flags in (1, 0x100, 0x400, -1, (1 << 32) | 1):
+            with self.subTest(flags=flags):
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    with self.assertRaisesRegex(MakeProbeError, "unlinkat flags escape"):
+                        session.native(tool, (str(flags),), outputs=("result",))
+                self.fixture.assert_clean(session)
+
+    def test_native_capsule_injected_late_close_retires_both_fd_maps_for_actual_binding_family(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <stdlib.h>\n#include <errno.h>\n#include <sys/syscall.h>\n#include <sys/wait.h>\n"
+            "int main(int argc,char **argv){int kind,high,fd,copy,status,i;pid_t child;"
+            "unsigned long selected;const int errors[4]={EINTR,EIO,ENOSPC,EDQUOT};"
+            "if(argc!=3)return 1;kind=atoi(argv[1]);high=atoi(argv[2]);"
+            "for(i=0;i<4;i++){fd=open(\"/work/result\",O_CREAT|O_TRUNC|O_RDWR,0600);"
+            "if(fd!=3||write(fd,\"final\",5)!=5)return 2;"
+            "if(kind==1){copy=dup(fd);if(copy!=4)return 3;}else copy=fd;"
+            "selected=(unsigned long)copy|(high?1UL<<32:0);"
+            "if(kind==2){child=fork();if(child<0)return 4;"
+            "if(child==0){errno=0;if(syscall(SYS_close,selected)!=-1||errno!=errors[i])_exit(5);"
+            "_exit(0);}if(waitpid(child,&status,0)!=child||status)return 6;"
+            "if(syscall(SYS_close,(unsigned long)fd|(high?1UL<<32:0)))return 7;}"
+            "else{errno=0;if(syscall(SYS_close,selected)!=-1||errno!=errors[i])return 8;"
+            "if(kind==1&&syscall(SYS_close,(unsigned long)fd|(high?1UL<<32:0)))return 9;}}"
+            "puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        proxy = self.fixture.directory / "late-close-supervisor.py"
+        proxy.write_text(
+            "import os,sys,json,errno,ctypes\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec\n"
+            "original=guard.Policy.leave\n"
+            "def observe(self,pid,state,r):\n"
+            " fd=state.native_output_close\n"
+            " watched=r.orig_rax==3 and guard.signed(r.rax)==0 and fd is not None\n"
+            " injected=False\n"
+            " if watched:\n"
+            "  try:os.readlink('/proc/'+str(pid)+'/fd/'+str(fd))\n"
+            "  except FileNotFoundError:pass\n"
+            "  else:raise guard.Violation('actual kernel close did not release its tracee FD')\n"
+            "  kind=int(self.config['argv'][1])\n"
+            "  injected=(kind==0 or kind==1 and fd==4 or kind==2 and state.native_parent is not None)\n"
+            "  if injected:\n"
+            "   index=getattr(self,'test_close_index',0);self.test_close_index=index+1\n"
+            "   r.rax=-[errno.EINTR,errno.EIO,errno.ENOSPC,errno.EDQUOT][index]\n"
+            "   guard.ptrace(guard.SETREGS,pid,0,ctypes.byref(r))\n"
+            " original(self,pid,state,r)\n"
+            " if watched:\n"
+            "  if fd in state.fds or (pid,fd) in self.native_outputs.custody.descriptors:\n"
+            "   raise guard.Violation('released close retained a stale descriptor authorization')\n"
+            "  sequence=getattr(self,'test_close_sequence',0);self.test_close_sequence=sequence+1\n"
+            "  row={'sequence':sequence,'pid':pid,'fd':fd,'raw_fd':r.rdi,'result':guard.signed(r.rax),"
+            "'injected':injected,'kernel_fd_absent':True,'generic_fd_absent':fd not in state.fds,"
+            "'custody_fd_absent':(pid,fd) not in self.native_outputs.custody.descriptors}\n"
+            "  data=json.dumps(row,sort_keys=True,separators=(',',':'))\n"
+            "  self.charge_metadata(len(data));self.observe('accessed','late-close-evidence:'+data)\n"
+            "guard.Policy.leave=observe\nraise SystemExit(sandbox_exec.main())\n",
+        )
+        for binding in (0, 1, 2):
+            for high in (0, 1):
+                with self.subTest(binding=binding, high=high):
+                    reports = []
+                    with self.fixture.session(seconds=40) as session:
+                        tool = session.compile_native(("native.c",))
+                        run, execute = session.budget.run, session._sandbox_run
+                        def supervised(argv, **kwargs):
+                            if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                                config = json.loads(Path(argv[-1]).read_bytes())
+                                if config["mode"] == "command":
+                                    argv = [*argv[:-2], str(proxy), argv[-1]]
+                            return run(argv, **kwargs)
+                        def record(root, **kwargs):
+                            result = execute(root, **kwargs)
+                            if kwargs["mode"] == "command":
+                                reports.append(result[1])
+                            return result
+                        with patch.object(session.budget, "run", supervised), \
+                             patch.object(session, "_sandbox_run", record):
+                            output = session.native(tool, (str(binding), str(high)), outputs=("result",))
+                        self.assertEqual(output.stdout, b"once\n")
+                        self.assertEqual([(item.path, item.data, item.mode) for item in output.generated], [
+                            ("result", b"final", 0o600),
+                        ])
+                        report, = reports
+                        rows = sorted(
+                            (json.loads(value.removeprefix("late-close-evidence:"))
+                             for value in report["accessed"] if value.startswith("late-close-evidence:")),
+                            key=lambda row: -row["result"],
+                        )
+                        self.assertEqual(
+                            sorted(row["result"] for row in rows if row["injected"]),
+                            sorted(-error for error in (errno.EINTR, errno.EIO, errno.ENOSPC, errno.EDQUOT)),
+                        )
+                        self.assertEqual(len(rows), 4 if binding == 0 else 8)
+                        self.assertTrue(all(
+                            row["kernel_fd_absent"] and row["generic_fd_absent"] and row["custody_fd_absent"]
+                            for row in rows
+                        ))
+                        self.assertTrue(all(row["raw_fd"] >> 32 == high for row in rows))
+                        self.assertEqual(report["processes"], 5 if binding == 2 else 1)
+                    self.fixture.assert_clean(session)
+
     def test_native_capsule_large_and_zero_byte_write_family_matches_kernel_bytes(self):
         self.fixture.add("native.c", (
             "#define _POSIX_C_SOURCE 200809L\n"
