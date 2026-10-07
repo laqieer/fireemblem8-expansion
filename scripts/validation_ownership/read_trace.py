@@ -800,6 +800,30 @@ class NativeReadTrace:
         if phase == 0:
             if self.io is not None or descriptor != -1 or error:
                 raise read_epochs.ReadEpochError("overlapping or malformed source stream entry")
+            if source and self.version == read_epochs.WRITABLE_VERSION:
+                current = self.active[-1]
+                observer = self.policy.native_outputs
+                path = self.policy.resolve(name if name.startswith("/") else state.cwd + "/" + name)
+                item = observer.custody.objects.get(path)
+                if item is not None:
+                    descriptor = observer.operand(path)
+                    try:
+                        if descriptor is None:
+                            raise read_epochs.ReadEpochError("generated source entry lost its produced object")
+                        lease = observer.custody.capture(
+                            owner=item.owner, path=path, descriptor=descriptor, observed=False,
+                        )
+                    finally:
+                        if descriptor is not None:
+                            os.close(descriptor)
+                    current["generated"] = lease
+                    self.machine_event(
+                        "generated-source-entry", pid, visit=current["visit"],
+                        owner=item.owner, serial=item.serial, revision=lease.revision,
+                        path=path.removeprefix("/repo/"), identity=list(lease.identity),
+                        sha256=lease.sha256,
+                    )
+                    current["generated_entry"] = len(self.machine)
             self.io = binding
             return
         if self.io != binding:
@@ -814,6 +838,8 @@ class NativeReadTrace:
                        visit=visit, name=name, mode=mode, result=result)
             return
         current = self.active[-1]
+        if descriptor < 0 and current.get("generated") is not None:
+            raise read_epochs.ReadEpochError("generated source stream failed after its pinned entry")
         snapshot = identity = None
         if descriptor >= 0:
             if current["source"] is not None or mode not in {"r", "re"}:
@@ -869,6 +895,14 @@ class NativeReadTrace:
                         and entry["sha256"] == content_digest
                     ):
                         custody = {"kind": "snapshot"}
+                    elif self.version == read_epochs.WRITABLE_VERSION and current.get("generated") is not None:
+                        lease = current["generated"]
+                        if (
+                            identity != lease.identity or bytes(data) != lease.data
+                            or path != lease.object.path or lease.closed
+                        ):
+                            raise read_epochs.ReadEpochError("generated source stream differs from its pinned entry")
+                        custody = {"kind": "native-output", "entry": current["generated_entry"]}
                     else:
                         raise read_epochs.ReadEpochError(
                             "opened source is outside the exact readonly snapshot inventory"
@@ -930,6 +964,8 @@ class NativeReadTrace:
                 raise read_epochs.ReadEpochError("original source status names a different actual stream")
             pin, current["pin"] = current["pin"], None
             os.close(pin)
+        if current.get("generated") is not None:
+            self.policy.native_outputs.custody.release(current["generated"])
         if self.pass_frame is not None:
             self.goals[pointer] = current["visit"]
         self.event("source-exit", **self.context(), visit=current["visit"], resolved=resolved,

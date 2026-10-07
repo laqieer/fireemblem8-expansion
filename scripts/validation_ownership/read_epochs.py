@@ -1512,13 +1512,18 @@ def native_job_context(value):
     return value
 
 
-def validate_machine_observations(value, trace, *, count_limit):
+def _machine_events(value, *, count_limit):
     if (
         not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
         or type(value["version"]) is not int or value["version"] != 1 or value["closed"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
     ):
         raise ReadEpochError("incomplete native machine observations")
+    return value["events"]
+
+
+def validate_machine_observations(value, trace, *, count_limit):
+    _machine_events(value, count_limit=count_limit)
     common = {"seq", "kind", "trace_seq", "pid", "exec", "pass"}
     fields = {
         "clear": {"registers"}, "arm": {"registers", "slots"},
@@ -1540,6 +1545,9 @@ def validate_machine_observations(value, trace, *, count_limit):
         })
     if trace["version"] == WRITABLE_VERSION:
         fields["native-output"] = {"dispatch", "event", "sha256"}
+        fields["generated-source-entry"] = {
+            "visit", "owner", "serial", "revision", "path", "identity", "sha256",
+        }
     runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer", "expansion-input")}
     postread_guards = set()
     armed, retired = {}, set()
@@ -1783,6 +1791,12 @@ def validate_machine_observations(value, trace, *, count_limit):
             elif row["sha256"] != hashlib.sha256(encoded(context)).hexdigest():
                 raise ReadEpochError("runtime machine effect payload differs from its observed event")
             runtime_bindings[kind].add(row[key])
+        elif kind == "generated-source-entry":
+            if (
+                pid != make_pid or context is None or context["kind"] != "source-entry"
+                or type(row["visit"]) is not int or row["visit"] != context["visit"]
+            ):
+                raise ReadEpochError("generated source pin lacks its actual Make entry")
         else:
             if (
                 context is None or context["kind"] != "source-exit"
@@ -1804,6 +1818,14 @@ def validate_machine_observations(value, trace, *, count_limit):
         event["visit"] for event in trace["events"]
         if event["kind"] == "source-exit" and event["source"] is not None
     }
+    if trace["version"] == WRITABLE_VERSION and {
+        row["seq"] for row in value["events"] if row["kind"] == "generated-source-entry"
+    } != {
+        event["custody"]["entry"] for event in trace["events"]
+        if event["kind"] == "source-open" and isinstance(event["custody"], dict)
+        and event["custody"].get("kind") == "native-output"
+    }:
+        raise ReadEpochError("generated source entries omit their actual opened consumers")
     trap_kinds = {
         "pass-entry": "pass-entry", "source-entry": "source-entry",
         "source-exit": "source-return", "assignment-completion": "assignment-completion",
@@ -1974,8 +1996,37 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         "output-dup": {"pid", "fd", "result", "description"},
         "output-inherit": {"parent", "pid", "fd", "description"},
     }
-    objects, bindings, descriptions = {}, {}, set()
-    for number, row in enumerate(effects, 1):
+    objects, bindings, descriptions, readers = {}, {}, set(), {}
+    number = 0
+    for observation in machine:
+        if observation["kind"] == "generated-source-entry":
+            serial, visit = observation["serial"], observation["visit"]
+            if (
+                any(type(observation[key]) is not int or observation[key] < 1 for key in ("owner", "serial", "visit"))
+                or type(observation["revision"]) is not int or observation["revision"] < 0
+                or visit in readers
+            ):
+                raise ReadEpochError("generated source entry has a malformed producer version")
+            item = objects.get(serial)
+            if (
+                item is None or not item["settled"]
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+                or observation["owner"] != item["owner"]
+                or "/repo/" + observation["path"] != item["path"]
+                or observation["revision"] != item["revision"]
+                or observation["identity"] != item["identity"]
+                or observation["sha256"] != item["sha256"]
+            ):
+                raise ReadEpochError("generated source entry borrowed an unsettled or foreign version")
+            readers[visit] = serial
+            continue
+        if observation["kind"] == "pin-retired":
+            readers.pop(observation["visit"], None)
+            continue
+        if observation["kind"] != "native-output":
+            continue
+        number += 1
+        row = observation["event"]
         if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
             operation = row.get("operation")
             extra = {"flags"} if operation == "open" else {
@@ -2078,10 +2129,16 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             if (
                 type(row["writing"]) is not bool or (row["pid"], row["fd"]) in bindings
                 or row["description"] in descriptions
+                or row["writing"] and serial in readers.values()
             ):
                 raise ReadEpochError("native output open reused a live descriptor")
             descriptions.add(row["description"])
             if item is None:
+                if any(
+                    other["path"] == row["path"] or other["identity"][:2] == row["identity"][:2]
+                    for other in objects.values()
+                ):
+                    raise ReadEpochError("native output open issued an alias of an existing object")
                 item = {"owner": row["owner"], "path": row["path"], "revision": row["revision"],
                         "identity": row["identity"], "settled": False}
                 objects[serial] = item
@@ -2095,6 +2152,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             if (
                 row["identity"][:3] != item["identity"][:3]
                 or any(binding[0] == serial and binding[2] for binding in bindings.values())
+                or serial in readers.values()
                 or row["identity"][3] != 0 or row["identity"][6] != item["identity"][6]
                 or row["revision"] != item["revision"] + 1
                 or not isinstance(following, dict) or following.get("kind") != "output-open"
@@ -2109,6 +2167,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             binding = bindings.get((row["pid"], row["fd"]))
             if (
                 binding is None or binding[0] != serial or not binding[2]
+                or serial in readers.values()
                 or type(row["result"]) is not int or row["result"] < 0
                 or row["identity"][:3] != item["identity"][:3]
                 or row["identity"][6] != item["identity"][6]
@@ -2123,6 +2182,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             if row["identity"] != item["identity"]:
                 raise ReadEpochError("native output settlement changed its observed preimage")
             item["settled"] = True
+            item["sha256"] = row["sha256"]
         elif kind == "output-inherit":
             if type(row["parent"]) is not int or row["parent"] not in pids:
                 raise ReadEpochError("native inherited output has a foreign or malformed parent")
@@ -2157,7 +2217,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 }:
                     raise ReadEpochError("native failed close lacks its supported released-FD errno")
                 del bindings[(row["pid"], row["fd"])]
-    if bindings or any(not item["settled"] for item in objects.values()):
+    if bindings or readers or any(not item["settled"] for item in objects.values()):
         raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
 
 
@@ -2171,6 +2231,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         or not isinstance(value["sources"], list) or len(value["sources"]) > count_limit
     ):
         raise ReadEpochError("incomplete runtime source/effect trace")
+    _machine_events(value["machine"], count_limit=count_limit)
     selection = validate_completion_selection(
         value["selection"], count_limit=count_limit, file_limit=file_limit,
     )
@@ -2397,14 +2458,40 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             path, custody = row.pop("path"), row.pop("custody")
             if event["result"] >= 0:
                 source = event["source"]
-                if type(source) is not int or source not in snapshots or source_kinds.get(source) == "eval" or custody != {"kind": "snapshot"}:
+                if type(source) is not int or source not in snapshots or source_kinds.get(source) == "eval":
                     raise ReadEpochError("runtime file open substituted evaluated/publication bytes")
                 captured = snapshots[source][0]
                 if not isinstance(path, str):
                     raise ReadEpochError("runtime file has no exact inventory path")
-                entry = inventory.get(path)
-                if entry is None or entry["mode"] != captured["mode"] or entry["size"] != captured["bytes"] or entry["sha256"] != captured["sha256"]:
-                    raise ReadEpochError("runtime file differs from frozen immutable inventory")
+                if custody == {"kind": "snapshot"}:
+                    entry = inventory.get(path)
+                    if entry is None or entry["mode"] != captured["mode"] or entry["size"] != captured["bytes"] or entry["sha256"] != captured["sha256"]:
+                        raise ReadEpochError("runtime file differs from frozen immutable inventory")
+                elif (
+                    value["version"] == WRITABLE_VERSION and isinstance(custody, dict)
+                    and set(custody) == {"kind", "entry"} and custody["kind"] == "native-output"
+                    and type(custody["entry"]) is int
+                    and 1 <= custody["entry"] <= len(value["machine"]["events"])
+                ):
+                    entry = value["machine"]["events"][custody["entry"] - 1]
+                    if (
+                        not isinstance(entry, dict) or entry.get("kind") != "generated-source-entry"
+                        or any(key not in entry for key in (
+                            "visit", "trace_seq", "path", "identity", "sha256",
+                        ))
+                        or type(entry["trace_seq"]) is not int
+                        or not isinstance(entry["identity"], list) or len(entry["identity"]) != 7
+                        or any(type(part) is not int for part in entry["identity"])
+                        or entry["visit"] != event["visit"]
+                        or entry["trace_seq"] >= event["seq"] or entry["path"] != path
+                        or entry["identity"] != event["identity"]
+                        or entry["sha256"] != captured["sha256"]
+                        or entry["identity"][3] != captured["bytes"]
+                        or entry["identity"][2] & 0o777 != captured["mode"]
+                    ):
+                        raise ReadEpochError("runtime generated file differs from its original pinned entry")
+                else:
+                    raise ReadEpochError("runtime file open substituted evaluated/publication bytes")
                 opens[event["visit"]] = source
                 opened_paths[event["visit"]] = path
                 source_kinds[source] = "file"

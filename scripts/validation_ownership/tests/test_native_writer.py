@@ -139,6 +139,142 @@ class NativeWriterTests(unittest.TestCase):
                 )
         self.assert_clean(session)
 
+    def test_native_original_make_remakes_and_reads_generated_include_once(self):
+        from scripts.validation_ownership import read_epochs
+        recipe = "printf 'VALUE := produced\\n' > generated.mk"
+        all_recipe = "v=once; printf '%s' \"$$v\""
+        self.add("Makefile", (
+            "-include generated.mk\n"
+            "generated.mk:\n\t@" + recipe + "\n"
+            "all:\n\t@" + all_recipe + "\n"
+        ))
+        requests = []
+        class Commands:
+            def __getitem__(self, argv):
+                requests.append(argv)
+                return Command(
+                    argv, outputs=("generated.mk",) if argv == ("/bin/sh", "-c", recipe) else (),
+                )
+        session = self.session()
+        with session:
+            completed, semantics, observed, generated = session._native_make_writable(
+                "all", outputs=("generated.mk",), variables=("VALUE",),
+                observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+            )
+            self.assertEqual(completed.stdout, b"once")
+            self.assertEqual(completed.stderr, b"")
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "produced")
+            self.assertEqual(
+                [(item.path, item.data, item.mode) for item in generated],
+                [("generated.mk", b"VALUE := produced\n", 0o644)],
+            )
+            self.assertEqual(requests.count(("/bin/sh", "-c", recipe)), 1)
+            self.assertEqual(len(requests), 2)
+            trace = observed["read_trace"]
+            opened = [
+                row for row in trace["events"]
+                if row["kind"] == "source-open" and row["path"] == "generated.mk"
+                and row["source"] is not None
+            ]
+            self.assertEqual(len(opened), 1)
+            self.assertNotEqual(opened[0]["custody"]["kind"], "snapshot")
+            retired = [
+                row for row in trace["machine"]["events"]
+                if row["kind"] == "pin-retired" and row["visit"] == opened[0]["visit"]
+            ]
+            self.assertEqual(len(retired), 1)
+            read_epochs.validate_trace(
+                trace, trace["scope"], count_limit=100000, file_limit=10000000,
+            )
+            entry = trace["machine"]["events"][opened[0]["custody"]["entry"] - 1]
+            self.assertEqual(entry["kind"], "generated-source-entry")
+            self.assertEqual(entry["visit"], opened[0]["visit"])
+            self.assertEqual(entry["identity"], opened[0]["identity"])
+            self.assertEqual(entry["owner"], 1)
+            for field, value in (
+                ("owner", 2), ("owner", True), ("serial", 99), ("serial", True),
+                ("revision", entry["revision"] + 1), ("revision", entry["revision"] - 1),
+                ("revision", True), ("visit", 99), ("pid", 1),
+                ("path", "other.mk"), ("path", []), ("sha256", "0" * 64),
+                ("identity", []), ("identity", None),
+                ("identity", [True] * 7), ("trace_seq", True),
+            ):
+                with self.subTest(generated_entry_field=field, value=value):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["machine"]["events"][entry["seq"] - 1][field] = value
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            for custody in (
+                {"kind": "snapshot"}, {"kind": "native-output", "entry": True},
+                {"kind": "native-output", "entry": 1},
+                {"kind": "native-output", "entry": entry["seq"] + 1},
+            ):
+                with self.subTest(generated_custody=custody):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["events"][opened[0]["seq"] - 1]["custody"] = custody
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            for machine in (
+                None, {}, [], 1,
+                {"version": 1, "closed": True},
+                {"version": 1, "closed": True, "events": None},
+                {"version": 1, "closed": True, "events": 1},
+                {"version": 1, "closed": True, "events": {}},
+                {"version": 1, "closed": True, "events": []},
+                {**trace["machine"], "version": True},
+                {**trace["machine"], "closed": 1},
+                {**trace["machine"], "extra": 1},
+            ):
+                with self.subTest(machine_envelope=machine):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["machine"] = machine
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_original_make_generated_reader_refuses_writes_before_mutation(self):
+        recipe = (
+            "printf '%s\\n' 'VALUE := produced' "
+            "'TOUCH := $$(shell printf hacked > generated.mk)' > generated.mk"
+        )
+        for makefile, expected, expected_requests in (
+            (
+                "-include generated.mk\ngenerated.mk:\n\t@" + recipe + "\nall:\n\t@:\n",
+                "native output open would destroy an active source/writer version",
+                [
+                    ("/bin/sh", "-c", recipe.replace("$$", "$")),
+                    ("/bin/sh", "-c", "printf hacked > generated.mk"),
+                ],
+            ),
+            (
+                "$(file >generated.mk,unissued)\nall:\n\t@:\n",
+                "native job write lacks its issued output authority",
+                [],
+            ),
+        ):
+            with self.subTest(refusal=expected):
+                self.add("Makefile", makefile)
+                requests = []
+                class Commands:
+                    def __getitem__(self, argv):
+                        requests.append(argv)
+                        return Command(argv, outputs=("generated.mk",))
+                session = self.session()
+                with session:
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session._native_make_writable(
+                            "all", outputs=("generated.mk",),
+                            observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+                        )
+                self.assertEqual(requests, expected_requests)
+                self.assert_clean(session)
+
 
     def test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions(self):
         self.add("Makefile", "all:\n\t@printf final > result\n")

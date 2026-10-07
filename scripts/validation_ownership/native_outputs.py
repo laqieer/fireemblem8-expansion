@@ -177,6 +177,10 @@ class NativeOutputObserver:
         elif n in {2, 85, 257}:
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC if n == 85 else c if n == 257 else b
             path = state.pending[1]
+            if self.policy.mode == "make" and state.role == "make" and not flags & (
+                os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC
+            ):
+                return
             if self.policy.mode == "make" and path not in {
                 "/repo/" + name for name in self.policy.config["native_output_paths"]
             }:
@@ -421,6 +425,7 @@ class SourcePin:
     sha256: str
     revision: int
     closed: bool = False
+    observed: bool = True
 
 
 @dataclass(frozen=True)
@@ -1493,8 +1498,10 @@ class NativeOutputs:
             if process == pid:
                 self.closed(pid, descriptor, 0)
 
-    def capture(self, *, owner, path, descriptor):
+    def capture(self, *, owner, path, descriptor, observed=True):
         self._usable()
+        if type(observed) is not bool:
+            raise NativeOutputError("native source capture has an invalid observation mode")
         item = self.objects.get(path)
         if item is None or item.owner != owner or item.retired or item.writers:
             raise NativeOutputError("native generated source has no settled owned version")
@@ -1517,11 +1524,12 @@ class NativeOutputs:
                 raise NativeOutputError("native generated source differs from its settled content")
             source = SourcePin(
                 pin, item, identity, bytes(data), stat.S_IMODE(identity[2]),
-                hashlib.sha256(data).hexdigest(), item.revision,
+                hashlib.sha256(data).hexdigest(), item.revision, observed=observed,
             )
             item.readers.add(pin)
             self.pins[pin] = source
-            self._event("output-source", item, identity=list(identity), sha256=source.sha256)
+            if observed:
+                self._event("output-source", item, identity=list(identity), sha256=source.sha256)
             return source
         except BaseException:
             item.readers.discard(pin)
@@ -1611,7 +1619,8 @@ class NativeOutputs:
         del self.pins[source.descriptor]
         source.closed = True
         os.close(source.descriptor)
-        self._event("output-source-retired", source.object, sha256=source.sha256)
+        if source.observed:
+            self._event("output-source-retired", source.object, sha256=source.sha256)
 
     def finish(self):
         if self.pending or self.descriptors or self.pins or any(

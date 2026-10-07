@@ -1741,6 +1741,10 @@ class ProbeSession:
                         and event["image_sha256"] != self.snapshot.digest
                         or read_selection is not None and event["kind"] == "source-open"
                         and event["result"] >= 0 and event["custody"] != {"kind": "snapshot"}
+                        and not (
+                            request["version"] == WRITABLE_VERSION
+                            and event["custody"]["kind"] == "native-output"
+                        )
                     ):
                         raise MakeProbeError("native readonly trace differs from its snapshot")
             if dependency is not None and observed["executed"] != dependency["executables"]:
