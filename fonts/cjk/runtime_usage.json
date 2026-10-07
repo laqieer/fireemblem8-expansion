@@ -126,7 +126,7 @@
         {
           "id": "game:0x000F",
           "mapping_source_kind": "authored",
-          "reason": "literal StartTalkMsg consumer in opinfo.c",
+          "reason": "literal StartTalkMsg consumer in worldmap_text.c",
           "styles": [
             "talk"
           ]
@@ -28948,7 +28948,7 @@
         {
           "id": "game:0x000F",
           "mapping_source_kind": "authored",
-          "reason": "literal StartTalkMsg consumer in opinfo.c",
+          "reason": "literal StartTalkMsg consumer in worldmap_text.c",
           "styles": [
             "talk"
           ]

@@ -233,8 +233,8 @@
       "sha256": "a58c41c11d3c387f9884b0c8539ba729bfdcc26bf6a0540bf3f38e74d6f991d6"
     },
     "fonts/cjk/runtime_usage.json": {
-      "byte_count": 1536055,
-      "sha256": "6786565500264d1380b06e5fa8f17955712606cbe6d348f0bc0bab0c69316d66"
+      "byte_count": 1536069,
+      "sha256": "b68f1aac43db024abc118ce154bb2a82eed0fd5c7b6024bb8e5d6879752f03b8"
     }
   },
   "schema_version": 1,

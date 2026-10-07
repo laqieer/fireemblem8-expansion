@@ -658,13 +658,15 @@
       "id": "full-game-localization",
       "title": "Localized FE8U full-game message catalog",
       "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/272",
         "https://github.com/laqieer/fireemblem8-expansion/issues/18",
         "https://github.com/laqieer/fireemblem8-expansion/issues/56"
       ],
       "reference": "docs/game_localization_catalog.md",
       "status": "current",
       "required_cases": [
-        "TC-LOCALIZATION-003"
+        "TC-LOCALIZATION-003",
+        "TC-CJK-INVENTORY-ORDER-001"
       ]
     },
     {
@@ -771,6 +773,40 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-CJK-INVENTORY-ORDER-001",
+      "title": "Deterministic CJK consumer inventory",
+      "feature_id": "full-game-localization",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/272"
+      ],
+      "document": "docs/cjk_fonts.md",
+      "anchor": "tc-cjk-inventory-order-001-deterministic-consumer-inventory",
+      "profiles": ["Host Python 3 CJK inventory generation; no optional game profile"],
+      "purpose": "Make generated consumer explanations independent of filesystem enumeration while retaining every target and unchanged glyph assets.",
+      "prerequisites": "Clean source checkout with Python 3 and committed CJK inputs; no ROM or emulator.",
+      "actions": "Run the direct-consumer order regression and existing CJK check. Reverse enumeration of real synthetic source files containing overlapping and unique target IDs. Regenerate metadata through the existing inventory/provenance commands and compare committed outputs.",
+      "expected_result": "Both enumerations yield identical classifications and explanations with all unique targets retained. Generated metadata matches byte-for-byte, and provenance refresh preserves corpora, glyph counts, bitmaps and widths.",
+      "negative_control": "Removing canonical traversal changes message15's explanation when enumeration reverses. Existing provenance controls refuse a changed font oracle.",
+      "interactions": "Uses existing CJK inventory and compact-asset provenance; no new dependency or feature conflict. Native evaluator delivery remains independent.",
+      "save_compatibility": "No save, ABI, message text, glyph, profile identity or ROM/RAM change.",
+      "cleanup": "The regression removes only its owned temporary files. Generation writes existing named inventory outputs.",
+      "limitations": "Host metadata reproducibility only; no native Make, runtime visual or manual criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_direct_talk_inventory_is_independent_of_directory_order",
+          "evidence": "scripts/fonttools/cjk/tests/test_cjk_fonts.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_inventory_regeneration_is_byte_identical",
+          "evidence": "scripts/fonttools/cjk/tests/test_cjk_fonts.py"
+        },
+        {
+          "command": "make -f cjk_fonts.mk cjk-fonts-check",
+          "evidence": "scripts/fonttools/cjk/inventory.py"
+        }
+      ]
+    },
     {
       "id": "TC-TEXT-ATOMIC-PUBLICATION-001",
       "title": "Publish complete shared text outputs",

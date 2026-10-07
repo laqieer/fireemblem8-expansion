@@ -267,7 +267,7 @@ def _direct_talk_target_ids(root: Path, target_count: int) -> Dict[int, str]:
         for offset in offsets:
             add(base + offset, "shop dialogue base plus type-offset talk consumer")
 
-    for path in (root / "src").glob("*.c"):
+    for path in sorted((root / "src").glob("*.c")):
         source = path.read_text(encoding="utf-8")
         for value in re.findall(
             r"\bStartTalkMsg(?:Ext)?\s*\([^;{}]*?,\s*"
