@@ -338,6 +338,46 @@ distinct native Make owners or reconcile a successful post-bootstrap exec.
 Those production resource roles and generated-source wire contracts remain
 required before #275 acceptance.
 
+Tracked output `fcntl(F_SETLK/F_SETLKW)` refuses before kernel mutation:
+POSIX record locks have different process/close semantics and are outside the
+original manifest's flock contract. Run
+`ProducerTests.test_native_capsule_posix_lock_mutations_refuse_original_duplicate_and_inherited_bindings`
+for both commands through original, duplicated and actual inherited FDs.
+The old capsule silently allowed all six mutations without lock custody.
+`F_GETLK` remains a query, not a granted mutation.
+
+Paired descriptor `fchmod` requires an owned writable binding, no pinned
+source readers and no unfinished mode/write/lock/object operation. Verify
+unchanged inode, complete bytes, size, mtime and link count before updating
+only the mode/ctime identity; preserve the same content revision/expected
+writer image. Failed returns preserve the complete preimage. Other mode
+and standalone truncate syscalls remain explicitly unsupported.
+Close checks exclusion at the actual syscall entry, not just after the kernel
+has released the descriptor. Its paired token remains pending until the
+existing shared close-return handler validates and retires it; a pending close
+also excludes mode entry on another alias of the same object.
+Run `ProducerTests.test_native_capsule_pending_mode_refuses_actual_alias_close_before_kernel_release`
+to park actual child mode and parent alias-close syscall entries with a
+test-only supervisor. The rejected close must leave the actual `/proc` FD
+inode and both descriptor maps live. This controlled interleaving is not a
+claim about natural scheduler timing.
+`NativeOutputCustodyTests.test_paired_close_excludes_mode_entry_until_the_actual_kernel_return`
+checks the reciprocal pending-close exclusion, copied-token refusal and mode
+continuation after an actual successful kernel close. The late-close family
+still uses the same return handler, including actual kernel release followed
+by injected Linux late errors.
+Run `ProducerTests.test_native_capsule_descriptor_mode_tracks_actual_alias_fork_and_kernel_width_operands`
+and `NativeOutputCustodyTests`: actual dup/fork aliases change one inode
+through mode0644 to0755, preserving bytes `final`, stdout `once`, content
+revision and cleanup. Repeat with upper descriptor/flag bits and kernel
+16-bit mode truncation. Component mode failure is injected `EPERM` with an
+unchanged inode, not a naturally induced filesystem failure. Copied returns,
+unrelated bytes/mtime/link changes, wrong mode and all pending-object sibling
+operations refuse without publishing identity or events. Existing readonly
+renamed/replaced/unlinked original/dup/fork mode attempts remain forbidden.
+The old actual capsule rejects fchmod entirely; these controls do not prove
+original native Make's produced-executable admission or generated v6.
+
 Paired writes retain one charged expected byte image for each writer lifetime,
 initialized from its actual pinned object. Each return checks exact size,
 identity/mode and the requested range, including unwritten suffixes after

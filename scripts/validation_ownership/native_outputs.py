@@ -166,6 +166,7 @@ class NativeOutputObserver:
             finally:
                 os.close(pin)
         elif n == 3 and (pid, descriptor) in self.custody.descriptors:
+            operation = self.custody.enter_close(pid=pid, descriptor=descriptor)
             state.native_output_close = descriptor
         elif n == 73 and (pid, descriptor) in self.custody.descriptors:
             item = self.custody.descriptors[(pid, descriptor)]
@@ -173,8 +174,12 @@ class NativeOutputObserver:
                 pid=pid, descriptor=descriptor, flags=native_int(b),
                 observed=self.lock_mode(pid, descriptor, item.identity),
             )
+        elif n == 91 and (pid, descriptor) in self.custody.descriptors:
+            operation = self.custody.enter_mode(pid=pid, descriptor=descriptor, mode=b & 0xFFFF)
         elif n in {32, 33, 292, 72} and (pid, descriptor) in self.custody.descriptors:
             if n == 72 and b not in {0, 1030}:
+                if b in {fcntl.F_SETLK, fcntl.F_SETLKW}:
+                    raise NativeOutputError("native POSIX record lock mutation is not admitted")
                 if b == fcntl.F_SETFL and c & os.O_APPEND:
                     raise NativeOutputError("native output append description change is not admitted")
             else:
@@ -252,6 +257,8 @@ class NativeOutputObserver:
             state.native_output_operation = operation
 
     def leave(self, pid, state, result):
+        if state.native_output_operation is not None and state.native_output_operation.kind == "close":
+            return
         operation, state.native_output_operation = state.native_output_operation, None
         if operation is not None:
             if operation.kind == "open":
@@ -288,6 +295,8 @@ class NativeOutputObserver:
                     operation, result=result,
                     observed=self.lock_mode(pid, operation.descriptor, operation.operands[0][2]),
                 )
+            elif operation.kind == "mode":
+                self.custody.leave_mode(operation, result=result)
             else:
                 raise NativeOutputError("native output supervisor lost its operation kind")
 def native_signed(value):
@@ -420,6 +429,8 @@ class NativeOutputs:
                     self.directories.get(path) or self.objects.get(path)
                     if directory else self.objects.get(path)
                 )
+                if item is not None and self._pending_mode(item):
+                    raise NativeOutputError("native operation overlaps an unfinished mode transition")
                 if descriptor is None:
                     if item is not None:
                         raise NativeOutputError("native operation absence contradicts its owned object")
@@ -464,6 +475,8 @@ class NativeOutputs:
                     operands.append((parent, pin, item.identity, item))
                     directory_parents.append(parent)
             for label, descriptor, item in bindings:
+                if self._pending_mode(item):
+                    raise NativeOutputError("native operation overlaps an unfinished mode transition")
                 identity = self._identity(descriptor)
                 if identity != item.identity:
                     raise NativeOutputError("native operation entry differs from its bound descriptor")
@@ -948,6 +961,101 @@ class NativeOutputs:
             finish_cleanup([lambda: self._end(operation, success=False)], primary=error)
             raise
 
+    def enter_mode(self, *, pid, descriptor, mode):
+        self._usable()
+        binding = (pid, descriptor)
+        item = self.descriptors.get(binding)
+        if (
+            item is None or binding not in item.writers or item.retired or item.readers
+            or type(mode) is not int or mode < 0 or mode & ~0o777
+            or item.pending_writer is not None
+            or any(description.pending is not None for description in item.descriptions.values())
+            or any(
+                operand[3] is item for active in self.pending.values() for operand in active.operands
+            )
+        ):
+            raise NativeOutputError("native mode transition lacks its exclusive owned writable object")
+        operation = self._begin(
+            item.owner, pid, "mode", item.path, flags=mode,
+            bindings=(("mode-fd:" + str(descriptor), item.descriptor, item),),
+        )
+        try:
+            digest = self._digest(operation.operands[0][1], operation.operands[0][2])
+            if item.expected is not None:
+                self._verify_expected(item, digest)
+            operation = NativeOperation(
+                operation.owner, pid, operation.kind, operation.source, None,
+                mode, operation.operands, descriptor=descriptor, before=digest.encode("ascii"),
+            )
+            self.pending[pid] = operation
+            return operation
+        except BaseException as error:
+            finish_cleanup([lambda: self._end(operation, success=False)], primary=error)
+            raise
+
+    def _pending_mode(self, item):
+        return any(
+            active.kind == "mode" and any(operand[3] is item for operand in active.operands)
+            for active in self.pending.values()
+        )
+
+    def enter_close(self, *, pid, descriptor):
+        self._usable()
+        binding = (pid, descriptor)
+        item = self.descriptors.get(binding)
+        if item is None:
+            raise NativeOutputError("native close entry lacks its exact owned descriptor")
+        self._close_available(item, binding)
+        operation = self._begin(
+            item.owner, pid, "close", item.path,
+            bindings=(("close-fd:" + str(descriptor), item.descriptor, item),),
+        )
+        operation = NativeOperation(
+            operation.owner, pid, operation.kind, operation.source, None, 0,
+            operation.operands, descriptor=descriptor,
+        )
+        self.pending[pid] = operation
+        return operation
+
+    def leave_close(self, operation, *, result):
+        self._operation(operation, "close")
+        self.closed(operation.pid, operation.descriptor, result)
+        self._end(operation)
+
+    def _close_available(self, item, binding):
+        if item.pending_writer == binding:
+            raise NativeOutputError("native output close overlaps an unfinished write")
+        if item.descriptions[binding].pending is not None:
+            raise NativeOutputError("native output close overlaps an unfinished flock")
+        if self._pending_mode(item):
+            raise NativeOutputError("native output close overlaps an unfinished mode transition")
+
+    def leave_mode(self, operation, *, result):
+        self._operation(operation, "mode")
+        self._status_result(result)
+        pin, before, item = operation.operands[0][1:]
+        if self.descriptors.get((operation.pid, operation.descriptor)) is not item:
+            raise NativeOutputError("native mode return lost its actual descriptor")
+        identity = self._identity(pin)
+        if (
+            result < 0 and identity != before
+            or result == 0 and (
+                identity[:2] != before[:2] or identity[3:5] != before[3:5]
+                or identity[6] != before[6] or stat.S_IMODE(identity[2]) != operation.flags
+            )
+            or self._digest(pin, identity).encode("ascii") != operation.before
+        ):
+            raise NativeOutputError("native mode return changed content or unrelated identity")
+        if result < 0:
+            self._failed(operation, result)
+            return
+        item.identity = identity
+        self._event(
+            "output-mode", item, pid=operation.pid, fd=operation.descriptor,
+            mode=operation.flags, identity=list(identity),
+        )
+        self._end(operation)
+
     def leave_lock(self, operation, *, result, observed):
         self._operation(operation, "lock")
         self._status_result(result)
@@ -1145,6 +1253,7 @@ class NativeOutputs:
         if (
             item is None or binding not in item.writers or item.retired or item.readers
             or item.pending_writer is not None
+            or self._pending_mode(item)
             or self._identity(pin) != item.identity
         ):
             raise NativeOutputError("native output write lost its live object/descriptor")
@@ -1200,10 +1309,8 @@ class NativeOutputs:
             self._event("output-close-failed", item, pid=pid, fd=descriptor, result=result)
         binding = (pid, descriptor)
         item = self.descriptors.get(binding)
-        if item is not None and item.pending_writer == binding:
-            raise NativeOutputError("native output close overlaps an unfinished write")
-        if item is not None and item.descriptions[binding].pending is not None:
-            raise NativeOutputError("native output close overlaps an unfinished flock")
+        if item is not None:
+            self._close_available(item, binding)
         item = self.descriptors.pop(binding, None)
         if item is not None:
             description = item.descriptions.pop(binding)

@@ -1756,6 +1756,133 @@ class ProducerTests(unittest.TestCase):
                         session.native(tool, (str(flags),), outputs=("result",))
                 self.fixture.assert_clean(session)
 
+    def test_native_capsule_descriptor_mode_tracks_actual_alias_fork_and_kernel_width_operands(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n#include <stdlib.h>\n"
+            "#include <sys/syscall.h>\n#include <sys/wait.h>\n"
+            "int main(int argc,char **argv){int fd,copy,status;pid_t child;unsigned long extra,fdextra;"
+            "if(argc!=2)return 1;extra=strtoull(argv[1],0,0);fdextra=extra==(1UL<<16)?0:extra;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);"
+            "if(fd<0||write(fd,\"final\",5)!=5)return 2;"
+            "copy=dup(fd);if(copy<0)return 3;child=fork();if(child<0)return 4;"
+            "if(!child){if(syscall(SYS_fchmod,(unsigned long)copy|fdextra,0644UL|extra))_exit(5);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||status)return 6;"
+            "if(syscall(SYS_fchmod,(unsigned long)fd|fdextra,0755UL|extra))return 7;"
+            "if(close(copy)||close(fd))return 8;puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for upper in (0, 1 << 16, 1 << 32, 1 << 63):
+            with self.subTest(upper=upper):
+                reports = []
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    execute = session._sandbox_run
+                    def record(root, **kwargs):
+                        result = execute(root, **kwargs)
+                        if kwargs["mode"] == "command":
+                            reports.append(result[1])
+                        return result
+                    with patch.object(session, "_sandbox_run", record):
+                        output = session.native(tool, (str(upper),), outputs=("result",))
+                    self.assertEqual(output.stdout, b"once\n")
+                    self.assertEqual([(item.path, item.data, item.mode) for item in output.generated], [
+                        ("result", b"final", 0o755),
+                    ])
+                    report, = reports
+                    rows = sorted(
+                        (json.loads(value.removeprefix("native-output:")) for value in report["accessed"]
+                         if value.startswith("native-output:")),
+                        key=lambda row: row["sequence"],
+                    )
+                    modes = [row for row in rows if row["kind"] == "output-mode"]
+                    self.assertEqual([row["mode"] for row in modes], [0o644, 0o755])
+                    self.assertEqual([row["revision"] for row in modes], [1, 1])
+                    self.assertNotEqual(modes[0]["pid"], modes[1]["pid"])
+                    self.assertEqual(modes[0]["identity"][:2], modes[1]["identity"][:2])
+                    self.assertEqual([row["identity"][3] for row in modes], [5, 5])
+                    self.assertEqual(report["processes"], 2)
+                self.fixture.assert_clean(session)
+
+    def test_native_capsule_pending_mode_refuses_actual_alias_close_before_kernel_release(self):
+        self.fixture.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n#include <sys/wait.h>\n"
+            "int main(void){int fd,copy,status;pid_t child;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);"
+            "if(fd!=3||write(fd,\"final\",5)!=5)return 1;copy=dup(fd);if(copy!=4)return 2;"
+            "child=fork();if(child<0)return 3;if(!child){if(fchmod(copy,0755))_exit(4);_exit(0);}"
+            "if(close(copy)||waitpid(child,&status,0)!=child||status||close(fd))return 5;return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        proxy = self.fixture.directory / "mode-close-supervisor.py"
+        proxy.write_text(
+            "import os,sys,ctypes\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec,native_outputs\n"
+            "original=guard.Policy.entry\n"
+            "def close_entry(self,pid,state,r):\n"
+            " fd=ctypes.c_int(r.rdi).value\n"
+            " try:original(self,pid,state,r)\n"
+            " except (guard.Violation,native_outputs.NativeOutputError) as error:\n"
+            "  if 'unfinished mode transition' not in str(error):raise\n"
+            "  info=os.stat('/proc/'+str(pid)+'/fd/'+str(fd))\n"
+            "  item=self.native_outputs.custody.descriptors.get((pid,fd))\n"
+            "  if item is None or fd not in state.fds or info.st_ino!=item.identity[1]:\n"
+            "   raise guard.Violation('mode-close entry already lost its actual FD or authority')\n"
+            "  raise guard.Violation('mode-close entry refusal kept actual alias FD live')\n"
+            " raise guard.Violation('mode-close entry did not refuse before kernel mutation')\n"
+            "def observe(self,pid,state,r):\n"
+            " if self.native_outputs is None:return original(self,pid,state,r)\n"
+            " if r.orig_rax==3 and ctypes.c_int(r.rdi).value==4 and state.native_parent is None:\n"
+            "  if getattr(self,'test_mode_entered',False):return close_entry(self,pid,state,r)\n"
+            "  held=guard.Registers();ctypes.memmove(ctypes.byref(held),ctypes.byref(r),ctypes.sizeof(r))\n"
+            "  self.test_close_held=(pid,state,held);state.producer_ready=True;return\n"
+            " original(self,pid,state,r)\n"
+            " if r.orig_rax==91 and state.native_parent is not None:\n"
+            "  self.test_mode_entered=True;state.producer_ready=True\n"
+            "  if hasattr(self,'test_close_held'):return close_entry(self,*self.test_close_held)\n"
+            "guard.Policy.entry=observe\nraise SystemExit(sandbox_exec.main())\n",
+        )
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            run = session.budget.run
+            def supervised(argv, **kwargs):
+                if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    if config["mode"] == "command":
+                        argv = [*argv[:-2], str(proxy), argv[-1]]
+                return run(argv, **kwargs)
+            with patch.object(session.budget, "run", supervised):
+                with self.assertRaisesRegex(MakeProbeError, "entry refusal kept actual alias FD live"):
+                    session.native(tool, (), outputs=("result",))
+        self.fixture.assert_clean(session)
+
+    def test_native_capsule_posix_lock_mutations_refuse_original_duplicate_and_inherited_bindings(self):
+        self.fixture.add("native.c", (
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdlib.h>\n#include <sys/wait.h>\n"
+            "int main(int argc,char **argv){int fd,copy,kind,command,status;pid_t child;"
+            "struct flock lock={0};if(argc!=3)return 1;kind=atoi(argv[1]);"
+            "command=atoi(argv[2])?F_SETLKW:F_SETLK;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);"
+            "if(fd<0||write(fd,\"final\",5)!=5)return 2;"
+            "lock.l_type=F_WRLCK;lock.l_whence=SEEK_SET;"
+            "copy=kind==1?dup(fd):fd;if(copy<0)return 3;"
+            "if(kind==2){child=fork();if(child<0)return 4;"
+            "if(!child){if(fcntl(copy,command,&lock))_exit(5);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||status)return 6;}"
+            "else if(fcntl(copy,command,&lock))return 7;return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for binding in range(3):
+            for command in range(2):
+                with self.subTest(binding=binding, command=command):
+                    with self.fixture.session(seconds=40) as session:
+                        tool = session.compile_native(("native.c",))
+                        with self.assertRaisesRegex(MakeProbeError, "POSIX record lock mutation is not admitted"):
+                            session.native(tool, (str(binding), str(command)), outputs=("result",))
+                    self.fixture.assert_clean(session)
+
     def test_native_capsule_flock_tracks_distinct_opens_duplicates_and_actual_fork_descriptions(self):
         self.fixture.add("native.c", (
             "#define _GNU_SOURCE\n"
@@ -2012,7 +2139,7 @@ class ProducerTests(unittest.TestCase):
                 with self.subTest(lifetime=lifetime, binding=binding):
                     with self.fixture.session(seconds=40) as session:
                         tool = session.compile_native(("native.c",))
-                        with self.assertRaisesRegex(MakeProbeError, "mode/standalone truncate transition"):
+                        with self.assertRaisesRegex(MakeProbeError, "mode transition lacks its exclusive owned writable object"):
                             session.native(tool, (lifetime, binding), outputs=("result",))
                     self.fixture.assert_clean(session)
 
@@ -5232,6 +5359,119 @@ class NativeOutputCustodyTests(unittest.TestCase):
             self.outputs.written(pid, descriptor, pin, result)
         self.outputs.closed(pid, descriptor, 0)
         return pin
+
+    def test_descriptor_mode_changes_preserve_expected_bytes_and_injected_failure_preimage(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "mode", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            item = self.outputs.opened(
+                owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="mode", writing=True,
+            )
+            write = self.outputs.enter_write(pid=1, descriptor=descriptor, pin=descriptor, data=b"content", offset=0)
+            self.outputs.leave_write(write, os.pwrite(descriptor, b"content", 0))
+            digest = hashlib.sha256(b"content").hexdigest()
+            events = len(self.events)
+            for mode in (-1, True, 0o1000, 0o4700, 1 << 16):
+                with self.assertRaisesRegex(NativeOutputError, "exclusive owned"):
+                    self.outputs.enter_mode(pid=1, descriptor=descriptor, mode=mode)
+                self.assertFalse(self.outputs.pending)
+                self.assertEqual(len(self.events), events)
+                self.assertEqual(stat.S_IMODE(os.fstat(descriptor).st_mode), 0o600)
+            operation = self.outputs.enter_mode(pid=1, descriptor=descriptor, mode=0o755)
+            os.fchmod(descriptor, 0o755)
+            self.outputs.leave_mode(operation, result=0)
+            self.assertEqual(bytes(item.expected), b"content")
+            self.assertEqual(item.revision, 1)
+            self.assertEqual(stat.S_IMODE(item.identity[2]), 0o755)
+            before = item.identity
+            operation = self.outputs.enter_mode(pid=1, descriptor=descriptor, mode=0o644)
+            self.outputs.leave_mode(operation, result=-errno.EPERM)
+            self.assertEqual(item.identity, before)
+            self.assertEqual(bytes(item.expected), b"content")
+        finally:
+            os.close(descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        self.assertEqual(item.sha256, digest)
+        self.outputs.finish()
+
+    def test_paired_close_excludes_mode_entry_until_the_actual_kernel_return(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "paired-close-mode", os.O_CREAT | os.O_RDWR, 0o600)
+        copied = os.dup(descriptor)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+            path="paired-close-mode", writing=True,
+        )
+        self.outputs.duplicated(1, descriptor, copied)
+        self.outputs.inherited(1, 2, (copied,))
+        operation = self.outputs.enter_close(pid=1, descriptor=descriptor)
+        with self.assertRaisesRegex(NativeOutputError, "exclusive owned"):
+            self.outputs.enter_mode(pid=2, descriptor=copied, mode=0o755)
+        with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+            self.outputs.leave_close(replace(operation), result=0)
+        self.assertEqual(stat.S_IMODE(os.fstat(descriptor).st_mode), 0o600)
+        os.close(descriptor)
+        self.outputs.leave_close(operation, result=0)
+        self.assertFalse(self.outputs.pending)
+        mode = self.outputs.enter_mode(pid=2, descriptor=copied, mode=0o755)
+        os.fchmod(copied, 0o755)
+        self.outputs.leave_mode(mode, result=0)
+        self.assertEqual(stat.S_IMODE(os.fstat(copied).st_mode), 0o755)
+        os.close(copied)
+        self.outputs.closed(1, copied, 0)
+        self.outputs.closed(2, copied, 0)
+        self.outputs.finish()
+
+    def test_descriptor_mode_refuses_unrelated_changes_and_pending_object_siblings(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for mutation in ("mode", "content", "links", "mtime"):
+            with self.subTest(mutation=mutation):
+                outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                path = self.root / ("mode-" + mutation)
+                descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+                try:
+                    item = outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                        path=path.name, writing=True,
+                    )
+                    copy = os.dup(descriptor)
+                    try:
+                        outputs.duplicated(1, descriptor, copy)
+                        outputs.inherited(1, 2, (copy,))
+                        operation = outputs.enter_mode(pid=1, descriptor=descriptor, mode=0o755)
+                        before = item.identity
+                        events = len(self.events)
+                        for action in (
+                            lambda: outputs.enter_mode(pid=2, descriptor=copy, mode=0o644),
+                            lambda: outputs.enter_duplicate(pid=2, descriptor=copy),
+                            lambda: outputs.enter_lock(pid=2, descriptor=copy, flags=fcntl.LOCK_EX, observed=0),
+                            lambda: outputs.enter_write(pid=2, descriptor=copy, pin=copy, data=b"bad", offset=0),
+                            lambda: outputs.enter_open(owner=1, pid=2, path=path.name, flags=os.O_TRUNC | os.O_RDWR, pin=copy),
+                            lambda: outputs.closed(2, copy, 0),
+                        ):
+                            with self.assertRaises(NativeOutputError):
+                                action()
+                        with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+                            outputs.leave_mode(replace(operation), result=0)
+                        os.fchmod(descriptor, 0o644 if mutation == "mode" else 0o755)
+                        if mutation == "content":
+                            os.pwrite(descriptor, b"unobserved", 0)
+                        elif mutation == "links":
+                            os.unlink(path)
+                        elif mutation == "mtime":
+                            os.utime(path, ns=(1, 2))
+                        with self.assertRaisesRegex(NativeOutputError, "mode return changed"):
+                            outputs.leave_mode(operation, result=0)
+                        self.assertEqual(item.identity, before)
+                        self.assertEqual(len(self.events), events)
+                    finally:
+                        os.close(copy)
+                finally:
+                    outputs.close()
+                    os.close(descriptor)
 
     def test_real_flock_descriptions_distinguish_open_aliases_and_failed_conversion(self):
         from scripts.validation_ownership.native_outputs import NativeOutputObserver

@@ -2532,8 +2532,9 @@ class Policy:
             if mode & 0o700 != 0o700:
                 raise Violation("candidate pathname permission loss is forbidden")
         elif n == 91:
-            self.check_fd(state, a, "write", r)
-            if not stat.S_ISREG(os.stat(f"/proc/{pid}/fd/{a}").st_mode):
+            descriptor = ctypes.c_int(a).value
+            self.check_fd(state, descriptor, "write", r)
+            if not stat.S_ISREG(os.stat(f"/proc/{pid}/fd/{descriptor}").st_mode):
                 raise Violation("candidate directory permission changes are forbidden")
         elif n == 95:
             if a & 0o700:
@@ -2627,7 +2628,10 @@ class Policy:
         if selected is not None:
             if self.native_outputs is None or selected != descriptor:
                 raise Violation("native close return differs from its shared descriptor binding")
-            self.native_outputs.custody.closed(pid, descriptor, result)
+            operation, state.native_output_operation = state.native_output_operation, None
+            if operation is None or operation.kind != "close" or operation.descriptor != descriptor:
+                raise Violation("native close return lost its paired entry custody")
+            self.native_outputs.custody.leave_close(operation, result=result)
         if self.read_trace is not None:
             self.read_trace.fd_closed(pid, descriptor)
         state.fds.pop(descriptor, None)
