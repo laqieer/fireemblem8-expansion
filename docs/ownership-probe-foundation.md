@@ -481,9 +481,25 @@ No renderer request/publication event or v1 source-effects journal is fabricated
 carry the same closed `(role, relative_path)` pairs. `Command.outputs` remains
 the retained regular-file contract. A job receives only its own subset, bound
 to its sealed actual argv/CWD/input/runtime closure; the global union selects
-private writable ancestors, not per-job permission. Empty plans preserve the
-existing regular-file schema. Source collisions, including names matching
+private writable ancestors, not per-job permission. Empty resource plans preserve
+the regular-file effect schema. Source collisions, including names matching
 temporary templates, and ambiguous retained/resource roles refuse.
+Writable v6 admission stores the existing sealed command-closure digest
+(immutable view, path, complete runtime/tool identity, actual argv/CWD and
+code/source/directory inputs). Its owner hashes that digest with the exact
+output and resource lists. The actual root machine `execute` record carries
+`admission_owner`; Make's own execute uses null. Archive replay recomputes the
+owner and compares it to that actual dispatch binding, so even an unused
+globally valid permission cannot be added to a job. The host also compares the
+returned global plan, complete job admissions and execute owners to its existing
+configuration and independently retained issued authorizations. Coherently
+changing archive plans and their hashes cannot replace that independent binding.
+This uses the existing
+admission channel and machine stream, not a second command registry.
+Readonly v5 owner construction and closed wire are unchanged. Earlier unmerged
+v6 checkpoint archives without this binding remain evidence for their exact
+checkpoint, not accepted current-format archives. Hash commitments do not
+authenticate wholesale replacement of every external observation.
 Concrete template-generated file ancestors also conflict with directory, file
 or nested-template resources in either declaration order, and with immutable
 sources or retained outputs. Declared directory/child relationships remain
@@ -609,6 +625,20 @@ valid. `test_native_output_authority_covers_actual_output_free_jobs` executes an
 original shell writer followed by an actual output-free printf job. It requires
 both issued job records and rejects removal of the trailing job despite complete
 remaining file effects and valid terminal retained bytes.
+The distinct-job case rejects unused output broadening, removal, borrowed
+owner/closure and a recomputed owner without matching actual machine binding.
+The resource case additionally declares an unused optional global temporary,
+then rejects granting it to a job, dropping an unused PID role, changing the
+exact ordered resource list or recommitting a changed plan against the old
+machine owner. The failed-source parser control recomputes its controlled plan
+and machine binding to reach the source-role predicate; it still does not claim
+a new kernel observation. The readonly job case verifies the unchanged v5
+admission and execute field sets.
+`test_native_returned_archive_owner_is_bound_to_issued_command` alters the
+successful returned report after actual execution, preserving its separate
+`native-job:` observations. It coherently broadens an unused output or resource
+and recommits the archive owner/execute binding, or adds an unissued global
+resource. All three must refuse against retained coordinator authority.
 
 `test_native_original_make_replaces_pinned_generated_source_with_actual_recipe`
 starts with a missing generated include. Original Make invokes its creator

@@ -28,7 +28,7 @@ from pathlib import Path
 if __package__:
     from . import read_epochs
     from .read_trace import NativeReadTrace
-    from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
+    from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from .producer_channel import (
@@ -38,7 +38,7 @@ if __package__:
 else:
     import read_epochs
     from read_trace import NativeReadTrace
-    from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
+    from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
     from producer_channel import (
@@ -2840,7 +2840,7 @@ def supervise(config, drop_privileges):
         if (
             not isinstance(reply, dict)
             or set(reply) != {"kind", "scope", "sequence", "owner", "input_sha256", "limits"} | (
-                {"outputs"} if policy.native_outputs is not None else set()
+                {"closure", "outputs"} if policy.native_outputs is not None else set()
             ) | (
                 {"resources"} if config.get("native_resources") else set()
             )
@@ -2854,6 +2854,11 @@ def supervise(config, drop_privileges):
             not isinstance(reply["outputs"], list)
             or any(path not in config["native_output_paths"] for path in reply["outputs"])
             or len(set(reply["outputs"])) != len(reply["outputs"])
+            or not isinstance(reply["closure"], str)
+            or re.fullmatch("[0-9a-f]{64}", reply["closure"]) is None
+            or reply["owner"] != native_command_owner(
+                reply["closure"], reply["outputs"], reply.get("resources", ()),
+            )
         ):
             raise Violation("native Command reply escapes its issued output namespace")
         if config.get("native_resources"):
@@ -2869,6 +2874,7 @@ def supervise(config, drop_privileges):
         policy.producer_completed = sequence
         return {
             "owner": reply["owner"], "input_sha256": reply["input_sha256"],
+            **({"closure": reply["closure"]} if policy.native_outputs is not None else {}),
             **({"outputs": reply["outputs"]} if policy.native_outputs is not None else {}),
             **({"resources": reply["resources"]} if config.get("native_resources") else {}),
         }

@@ -77,6 +77,10 @@ def encoded(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
+def native_command_owner(closure, outputs, resources=()):
+    return hashlib.sha256(encoded([closure, outputs, resources])).hexdigest()
+
+
 class Frames:
     def __init__(self, raw: bytes):
         self.raw = raw

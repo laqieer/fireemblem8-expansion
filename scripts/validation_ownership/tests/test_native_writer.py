@@ -7,7 +7,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership.authority import encoded, parse_json
+from scripts.validation_ownership.authority import encoded, native_command_owner, parse_json
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
@@ -60,6 +60,11 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual(len({row["pid"] for row in jobs}), 3)
             self.assertEqual(jobs[0]["admission"], jobs[1]["admission"])
             self.assertTrue(all(row["waited"] and row["returncode"] == 0 for row in jobs))
+            self.assertTrue(all(set(row["admission"]) == {"owner", "input_sha256"} for row in jobs))
+            self.assertTrue(all(
+                "admission_owner" not in row for row in observed["read_trace"]["machine"]["events"]
+                if row["kind"] == "execute"
+            ))
         self.assert_clean(session)
 
 
@@ -709,6 +714,44 @@ class NativeWriterTests(unittest.TestCase):
         self.assert_clean(session)
 
 
+    def test_native_returned_archive_owner_is_bound_to_issued_command(self):
+        self.add("Makefile", "all:\n\t@printf final > first\n\t@printf final > second\n")
+        resources = (("temporary", "spare"),)
+        class Commands:
+            def __getitem__(self, argv):
+                if argv not in {("/bin/sh", "-c", "printf final > " + name) for name in ("first", "second")}:
+                    raise KeyError(argv)
+                return Command(argv, outputs=(argv[-1].split()[-1],))
+        for mutation in ("output", "resource", "global-resource"):
+            body = (
+                "from authority import native_command_owner\n"
+                "original=guard.supervise\n"
+                "def altered(config,drop):\n"
+                " status=original(config,drop)\n"
+                " if config.get('native_output_paths') and status==0:\n"
+                "  path=Path(config['report']);report=json.loads(path.read_text())\n"
+                "  trace=report['read_trace'];admission=trace['output_authority']['jobs'][0]['admission']\n"
+                + ("  admission['outputs'].append('second')\n" if mutation == "output" else
+                   "  admission['resources'].append(['temporary','spare'])\n" if mutation == "resource" else
+                   "  trace['output_authority']['resources'].append(['temporary','unissued'])\n")
+                + "  admission['owner']=native_command_owner(admission['closure'],admission['outputs'],admission['resources'])\n"
+                "  for event in trace['machine']['events']:\n"
+                "   if event['kind']=='execute' and not event['make'] and event['dispatch']==1:\n"
+                "    event['admission_owner']=admission['owner']\n"
+                "  path.write_text(json.dumps(report))\n"
+                " return status\n"
+                "guard.supervise=altered\n"
+            )
+            session = self.session()
+            with self.subTest(returned_plan=mutation), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "issued Command"):
+                    session._native_make_writable(
+                        "all", outputs=("first", "second"), native_resources=resources,
+                        commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                    )
+            self.assert_clean(session)
+
+
     def test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model(self):
         from scripts.validation_ownership import read_epochs
         recipe = "printf first > result; printf final > result; printf once"
@@ -853,6 +896,41 @@ class NativeWriterTests(unittest.TestCase):
                 [(row.path, row.data, row.mode) for row in generated],
                 [(name, str(job["pid"]).encode(), 0o644) for name, job in zip(("first", "second"), jobs)],
             )
+            broadened = json.loads(json.dumps(observed["read_trace"]))
+            broadened["output_authority"]["jobs"][0]["admission"]["outputs"].append("second")
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "Command owner"):
+                read_epochs.validate_trace(broadened, broadened["scope"], count_limit=100000, file_limit=10000000)
+            for mutation in ("missing-output", "borrow-owner", "borrow-closure", "recommit-plan", "recommit-closure"):
+                with self.subTest(owner_plan=mutation):
+                    invalid = json.loads(json.dumps(observed["read_trace"]))
+                    admission = invalid["output_authority"]["jobs"][0]["admission"]
+                    if mutation == "missing-output":
+                        admission["outputs"] = []
+                    elif mutation == "borrow-owner":
+                        admission["owner"] = jobs[1]["admission"]["owner"]
+                    elif mutation == "borrow-closure":
+                        admission["closure"] = jobs[1]["admission"]["closure"]
+                    elif mutation == "recommit-plan":
+                        admission["outputs"].append("second")
+                    else:
+                        admission["closure"] = jobs[1]["admission"]["closure"]
+                    if mutation.startswith("recommit"):
+                        admission["owner"] = native_command_owner(admission["closure"], admission["outputs"])
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "Command owner"):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            for value in (None, True, [], "x" * 64):
+                with self.subTest(closure_shape=value):
+                    invalid = json.loads(json.dumps(observed["read_trace"]))
+                    invalid["output_authority"]["jobs"][0]["admission"]["closure"] = value
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            for make, value in ((True, jobs[0]["admission"]["owner"]), (False, None), (False, True), (False, "x" * 64)):
+                with self.subTest(machine_owner_make=make, value=value):
+                    invalid = json.loads(json.dumps(observed["read_trace"]))
+                    execute = next(row for row in invalid["machine"]["events"] if row["kind"] == "execute" and row["make"] is make)
+                    execute["admission_owner"] = value
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
             for name, job in zip(("first", "second"), jobs):
                 rows = [row for row in effects if row["path"] == "/repo/" + name]
                 self.assertTrue(rows)
@@ -967,7 +1045,7 @@ class NativeWriterTests(unittest.TestCase):
                 def __getitem__(self, argv):
                     return Command(argv, native_tool=tool, outputs=("stage/generated.mk",), native_resources=resources)
             completed, _, observed, generated = session._native_make_writable(
-                "all", outputs=("stage/generated.mk",), native_resources=resources,
+                "all", outputs=("stage/generated.mk",), native_resources=resources + (("temporary", "stage/unused"),),
                 native_tool=tool, commands=Commands(), observe_reads=True,
                 observe_runtime_completions=True,
             )
@@ -994,6 +1072,25 @@ class NativeWriterTests(unittest.TestCase):
                 ("replace", -errno.ENOENT), ("remove", -errno.ENOENT), ("rmdir", -errno.ENOTEMPTY),
             ])
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            broadened = json.loads(json.dumps(trace))
+            broadened["output_authority"]["jobs"][0]["admission"]["resources"].append(["temporary", "stage/unused"])
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "Command owner"):
+                read_epochs.validate_trace(broadened, broadened["scope"], count_limit=100000, file_limit=10000000)
+            for mutation in ("omit-unused-pid", "reorder", "recommit"):
+                with self.subTest(resource_plan=mutation):
+                    invalid = json.loads(json.dumps(trace))
+                    admission = invalid["output_authority"]["jobs"][0]["admission"]
+                    if mutation == "omit-unused-pid":
+                        admission["resources"].remove(["pid-temporary", "stage/generated.mk"])
+                    elif mutation == "reorder":
+                        admission["resources"].reverse()
+                    else:
+                        admission["resources"].append(["temporary", "stage/unused"])
+                        admission["owner"] = native_command_owner(
+                            admission["closure"], admission["outputs"], admission["resources"],
+                        )
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "Command owner"):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
             leftover = json.loads(json.dumps(trace))
             rows = leftover["machine"]["events"]
             temporary_retirement = next(
@@ -1467,6 +1564,13 @@ class NativeWriterTests(unittest.TestCase):
             for job in temporary_source["output_authority"]["jobs"]:
                 job["admission"]["outputs"] = ["stage/required-other"]
                 job["admission"]["resources"].append(role)
+                admission = job["admission"]
+                admission["owner"] = native_command_owner(
+                    admission["closure"], admission["outputs"], admission["resources"],
+                )
+                for event in temporary_source["machine"]["events"]:
+                    if event["kind"] == "execute" and not event["make"] and event["dispatch"] == job["sequence"]:
+                        event["admission_owner"] = admission["owner"]
             with self.assertRaisesRegex(read_epochs.ReadEpochError, "resource role cannot become a generated source"):
                 read_epochs.validate_native_output_authority(
                     temporary_source, count_limit=100000, file_limit=10000000, reserve=lambda size: None,

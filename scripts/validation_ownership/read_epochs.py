@@ -17,12 +17,12 @@ from typing import NamedTuple
 
 if __package__:
     from . import make_lexical
-    from .authority import encoded, relative_path
+    from .authority import encoded, native_command_owner, relative_path
     from .budget import MakeProbeError
     from .producer_channel import ChannelError, validate_publication_identity
 else:
     import make_lexical
-    from authority import encoded, relative_path
+    from authority import encoded, native_command_owner, relative_path
     from budget import MakeProbeError
     from producer_channel import ChannelError, validate_publication_identity
 
@@ -1545,6 +1545,7 @@ def validate_machine_observations(value, trace, *, count_limit):
             "native-tree": {"dispatch", "event", "sha256"},
         })
     if trace["version"] == WRITABLE_VERSION:
+        fields["execute"].add("admission_owner")
         fields["native-output"] = {"dispatch", "event", "sha256"}
         fields["generated-source-entry"] = {
             "visit", "owner", "serial", "revision", "path", "identity", "sha256",
@@ -1677,6 +1678,13 @@ def validate_machine_observations(value, trace, *, count_limit):
                     or not row["make"] and (
                         not isinstance(row["input_sha256"], str)
                         or re.fullmatch("[0-9a-f]{64}", row["input_sha256"]) is None
+                    )
+                )
+                or trace["version"] == WRITABLE_VERSION and (
+                    row["make"] and row["admission_owner"] is not None
+                    or not row["make"] and (
+                        not isinstance(row["admission_owner"], str)
+                        or re.fullmatch("[0-9a-f]{64}", row["admission_owner"]) is None
                     )
                 )
             ):
@@ -2010,7 +2018,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or type(job["pid"]) is not int or job["pid"] < 1
             or not isinstance(job["tree"], list) or not job["tree"]
             or not isinstance(job["admission"], dict)
-            or set(job["admission"]) != {"owner", "input_sha256", "outputs"} | (
+            or set(job["admission"]) != {"owner", "closure", "input_sha256", "outputs"} | (
                 {"resources"} if resources else set()
             )
         ):
@@ -2023,7 +2031,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             raise ReadEpochError(str(error)) from error
         if (
             any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
-                for key in ("owner", "input_sha256"))
+                for key in ("owner", "closure", "input_sha256"))
             or not isinstance(admission["outputs"], list)
             or any(not isinstance(path, str) or path not in authority["paths"] for path in admission["outputs"])
             or len(set(admission["outputs"])) != len(admission["outputs"])
@@ -2038,6 +2046,16 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             )
         ):
             raise ReadEpochError("native output job differs from its actual machine lifecycle")
+        if (
+            admission["owner"] != native_command_owner(
+                admission["closure"], admission["outputs"], admission.get("resources", ()),
+            )
+            or any(
+                row["admission_owner"] != admission["owner"] for row in machine
+                if row["kind"] == "execute" and not row["make"] and row["dispatch"] == number
+            )
+        ):
+            raise ReadEpochError("native output plan differs from its issued Command owner")
         jobs[number] = job
     if set(jobs) != {row["dispatch"] for row in machine if row["kind"] == "execute" and not row["make"]}:
         raise ReadEpochError("native output authority omitted or added an actual job dispatch")

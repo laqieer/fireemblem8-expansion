@@ -185,6 +185,8 @@ class NativeReadTrace:
             "execute", pid, make=make, dispatch=dispatch,
             **({"input_sha256": None if make else hashlib.sha256(encoded(inputs)).hexdigest()}
                if self.runtime else {}),
+            **({"admission_owner": None if make else self.policy.native_jobs[dispatch]["admission"]["owner"]}
+               if self.version == read_epochs.WRITABLE_VERSION else {}),
         )
         if not make:
             return

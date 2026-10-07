@@ -27,7 +27,7 @@ from threading import get_ident, main_thread
 
 from .authority import (
     AuthorityLoader, ENVIRONMENT, Frames, PYTHON_RUNTIME_DIRECTORY, Snapshot, _command_hash, _event_command,
-    _read_event_frames, _read_events, encoded, parse_json, relative_path,
+    _read_event_frames, _read_events, encoded, native_command_owner, parse_json, relative_path,
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
@@ -1530,7 +1530,7 @@ class ProbeSession:
                 authorization = native_admission_handler(request["path"], inputs)
                 if native_output_paths:
                     if (
-                        not isinstance(authorization, dict) or set(authorization) != {"owner", "outputs"} | (
+                        not isinstance(authorization, dict) or set(authorization) != {"owner", "closure", "outputs"} | (
                             {"resources"} if native_resources else set()
                         )
                         or not isinstance(authorization["outputs"], list)
@@ -1548,8 +1548,17 @@ class ProbeSession:
                     owner = authorization
                 if not isinstance(owner, str) or re.fullmatch("[0-9a-f]{64}", owner) is None:
                     raise MakeProbeError("native Command admission lacks its exact issued binding")
+                if native_output_paths and (
+                    not isinstance(authorization["closure"], str)
+                    or re.fullmatch("[0-9a-f]{64}", authorization["closure"]) is None
+                    or owner != native_command_owner(
+                        authorization["closure"], authorization["outputs"], authorization.get("resources", ()),
+                    )
+                ):
+                    raise MakeProbeError("native output plan differs from its issued Command owner")
                 admission = {
                     "owner": owner, "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(),
+                    **({"closure": authorization["closure"]} if native_output_paths else {}),
                     **({"outputs": authorization["outputs"]} if native_output_paths else {}),
                     **({"resources": authorization["resources"]} if native_resources else {}),
                 }
@@ -1877,6 +1886,26 @@ class ProbeSession:
                         if row["kind"] == "execute" and row["make"] is False
                     }:
                         raise MakeProbeError("native job execution inputs differ from returned machine observation")
+                    if native_output_paths:
+                        authority = observed["read_trace"]["output_authority"]
+                        if (
+                            authority["paths"] != config["native_output_paths"]
+                            or authority.get("resources", []) != config.get("native_resources", [])
+                            or any(
+                                job["sequence"] not in native_authorizations
+                                or job["admission"] != native_authorizations[job["sequence"]][2]
+                                for job in authority["jobs"]
+                            )
+                            or {
+                                row["dispatch"]: row["admission_owner"]
+                                for row in observed["read_trace"]["machine"]["events"]
+                                if row["kind"] == "execute" and not row["make"]
+                            } != {
+                                sequence: authorization[2]["owner"]
+                                for sequence, authorization in native_authorizations.items()
+                            }
+                        ):
+                            raise MakeProbeError("native returned archive differs from issued Command authority")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
@@ -2601,12 +2630,14 @@ class ProbeSession:
             payload = encoded([
                 self.snapshot.digest, path, runtime_identity, tool_identity,
                 inputs, command.code, sources, directories,
-                *([outputs] if writable_outputs else []), *([resources] if native_resources else []),
             ])
             self.budget.charge("cache", len(payload))
-            owner = hashlib.sha256(payload).hexdigest()
+            closure = hashlib.sha256(payload).hexdigest()
+            if writable_outputs:
+                self.budget.charge("cache", len(encoded([closure, outputs, resources])))
+            owner = native_command_owner(closure, outputs, resources) if writable_outputs else closure
             return {
-                "owner": owner, "outputs": list(outputs),
+                "owner": owner, "closure": closure, "outputs": list(outputs),
                 **({"resources": [list(row) for row in resources]} if native_resources else {}),
             } if writable_outputs else owner
         if (
