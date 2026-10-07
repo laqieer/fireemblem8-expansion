@@ -1726,6 +1726,9 @@ def validate_machine_observations(value, trace, *, count_limit):
                     raise ReadEpochError("native tree exec omitted its actual register clear")
             elif event.get("kind") == "start" and (prior_pid is None or prior_pid["kind"] != "clear"):
                 raise ReadEpochError("native tree start omitted its inherited register clear")
+            if trace["version"] == WRITABLE_VERSION and event.get("kind") == "exit":
+                del native_owners[pid]
+                native_cleared.discard(pid)
             native_trees[dispatch].append(event)
         elif kind == "native-output":
             dispatch, event = row["dispatch"], row["event"]
@@ -1736,6 +1739,18 @@ def validate_machine_observations(value, trace, *, count_limit):
                 or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
             ):
                 raise ReadEpochError("native output machine event lost its actual job binding")
+            actor = event.get("pid")
+            if (
+                dispatch in native_policies
+                or actor is not None and (
+                    type(actor) is not int or native_owners.get(actor) != dispatch
+                )
+                or actor is None and dispatch not in native_owners.values()
+                or event.get("kind") == "output-inherit" and (
+                    type(event.get("parent")) is not int or native_owners.get(event["parent"]) != dispatch
+                )
+            ):
+                raise ReadEpochError("native output event lacks its live job actor at the actual sequence")
             if event.get("kind") == "output-exec-close":
                 execs = [
                     prior for prior in native_trees[dispatch]

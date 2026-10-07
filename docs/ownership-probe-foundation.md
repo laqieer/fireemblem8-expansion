@@ -541,6 +541,11 @@ it to FD7 and writes through the shared offset. The actual parent waits and
 closes its alias. Bytes must be `firstfinal`/`0644`, stdout `once`, and stderr
 empty; the saved parent/child IDs must match the real job tree. List, boolean
 and foreign parent-ID mutations with recomputed machine hashes refuse.
+Machine replay uses the existing live ownership map, not the completed tree's
+future PID set. The observed fork precedes inherited FD effects; exit expires
+the actor after its descriptor retirement. Moving child inheritance before
+fork or child close records after exit with renumbered records/hashes refuses.
+No output effect may borrow a dead/unborn actor or follow terminal job policy.
 This is actual fork/alias support, not a parked concurrent exec/replacement
 race control.
 Exec entry reserves the closing descriptions in the existing operation map,

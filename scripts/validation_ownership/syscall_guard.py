@@ -2992,16 +2992,16 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            if state.role == "native" and policy.read_trace is not None and policy.read_trace.runtime:
+                policy.native_tree_event(
+                    state, {"kind": "fork", "pid": stopped, "child": child.value},
+                )
             if policy.native_outputs is not None:
                 descriptors = tuple(
                     descriptor for owner_pid, descriptor in policy.native_outputs.custody.descriptors
                     if owner_pid == stopped
                 )
                 policy.native_outputs.custody.inherited(stopped, child.value, descriptors)
-            if state.role == "native" and policy.read_trace is not None and policy.read_trace.runtime:
-                policy.native_tree_event(
-                    state, {"kind": "fork", "pid": stopped, "child": child.value},
-                )
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
             state.process_reservation = False

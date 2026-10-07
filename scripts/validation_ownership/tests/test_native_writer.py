@@ -277,6 +277,37 @@ class NativeWriterTests(unittest.TestCase):
                 row["kind"] == "output-write" and row["pid"] == inherited["pid"] and row["fd"] == 7
                 for row in read_epochs.native_output_effects(trace)
             ))
+            for phase in ("before-fork", "after-exit"):
+                with self.subTest(actor_phase=phase):
+                    invalid = json.loads(json.dumps(trace))
+                    events = invalid["machine"]["events"]
+                    kind = "output-inherit" if phase == "before-fork" else "output-close"
+                    moved = [
+                        row for row in events if row["kind"] == "native-output"
+                        and row["event"]["kind"] == kind and row["event"]["pid"] == inherited["pid"]
+                    ]
+                    self.assertTrue(moved)
+                    events[:] = [row for row in events if row not in moved]
+                    anchor = next(
+                        index for index, row in enumerate(events)
+                        if row["kind"] == "native-tree" and (
+                            row["event"]["kind"] == "fork" and row["event"]["child"] == inherited["pid"]
+                            if phase == "before-fork" else
+                            row["event"]["kind"] == "exit" and row["event"]["pid"] == inherited["pid"]
+                        )
+                    )
+                    position = anchor if phase == "before-fork" else anchor + 1
+                    events[position:position] = moved
+                    for number, row in enumerate(read_epochs.native_output_effects(invalid), 1):
+                        row["sequence"] = number
+                    for number, row in enumerate(events, 1):
+                        row["seq"] = number
+                        if row["kind"] == "native-output":
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "live job actor"):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
             for parent in ([], True, 99999999):
                 with self.subTest(parent=parent):
                     invalid = json.loads(json.dumps(trace))
@@ -287,7 +318,7 @@ class NativeWriterTests(unittest.TestCase):
                         if row["kind"] == "native-output" and row["event"]["sequence"] == effect["sequence"]
                     )
                     machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
-                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "malformed parent"):
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "live job actor"):
                         read_epochs.validate_trace(
                             invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
                         )
