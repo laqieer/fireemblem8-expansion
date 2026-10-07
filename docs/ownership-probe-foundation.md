@@ -131,6 +131,35 @@ wrong-size, changed-argv/CWD and changed exec-stop bindings must refuse and
 clean the owned process tree. Existing original expansion, direct-executable
 and descendant pipeline cases are the positive compatibility controls.
 
+The readonly production lane can now bind original job inputs to the existing
+typed `Command` schema by passing `commands` to `_native_make_readonly`.
+Its existing mapping is indexed by the **actual argv tuple**, not reconstructed
+shell text. Each lookup must return a `Command` whose argv is exactly that
+tuple. The host resolves the binding through the existing `ProducerChannel`
+before the original spawn, without executing the command itself. The same
+monotonic dispatch is bound to the actual clone, exec entry, runtime v5
+exec-stop inputs and complete returned job. Repeated equal argv means repeated
+real jobs, not deduplicated/replayed results. The final channel report must
+cover every issued authorization and completed actual job.
+
+This intermediate path requires runtime v5, canonical `/repo`, immutable
+source/code/directory declarations, the active issued native tool if one is
+named, and no outputs or dependency-only execution. It grants neither a
+writable mount nor generated-source acceptance. Existing source selection,
+machine/archive format, shared counters/deadline and normal mapped producer
+behavior are unchanged. Full #275 integration still requires original finite
+output/effect plans, actual writers/read pins, generated wire crosschecks,
+nested Make and the unchanged eight-query qualification.
+
+Run the `FoundationTests.test_native_command_admission_*` cases in
+`scripts.validation_ownership.tests.test_foundation`. The positive case must
+return the two actual expansion-root PIDs from the original Make variables
+and direct recipe stdout, exactly three actual jobs and three authorizations.
+Missing/substituted/writable Commands, changed views, expired deadline,
+exhausted cache, cancellation, changed live/returned bindings, stale replies
+and incomplete terminal counts must refuse and fully clean owned processes.
+These controls are deterministic host evidence, not original-eight proof.
+
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
 variants to preserve exact source bytes, inherited writer membership and final

@@ -1212,9 +1212,15 @@ class ProbeSession:
         native_executables=(), native_runtime_directories=(), native_metadata_directories=(),
         runtime_completions=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
-        original_tool=None,
+        original_tool=None, native_admission_handler=None,
     ):
         self.budget.remaining()
+        if native_admission_handler is not None and (
+            mode != "make" or not native_runtime or not runtime_completions
+            or producer_handler is not None or publication_observer is not None
+            or repository_outputs or not callable(native_admission_handler)
+        ):
+            raise MakeProbeError("native Command admission requires unmapped runtime observation")
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
         if repository_outputs:
@@ -1391,16 +1397,20 @@ class ProbeSession:
         settled = dict.fromkeys(counter_names, 0)
         sequence = 0
         completion = None
+        native_authorizations = {}
         channel = None
         channel_directory = self.base / f"producer-{self.serial}"
-        if producer_handler is not None:
+        if producer_handler is not None or native_admission_handler is not None:
             if mode != "make":
                 raise MakeProbeError("live producer requests require native Make")
             config["producer_scope"] = self.base.name + "/" + root.name
-            config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
-            config["publication_limit"] = self.budget.limits.created_files
-            if self.published_sources:
-                config["published"] = self._publication_records()
+            if native_admission_handler is not None:
+                config["native_admission"] = True
+            else:
+                config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
+                config["publication_limit"] = self.budget.limits.created_files
+                if self.published_sources:
+                    config["published"] = self._publication_records()
             config["pending_limit"] = self.budget.limits.pending - sum(
                 item["pending"] for item in self.parked_capsules
             )
@@ -1471,6 +1481,49 @@ class ProbeSession:
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
+            if native_admission_handler is not None:
+                if request.get("kind") == "finished":
+                    if (
+                        set(request) != {"kind", "scope", "issued", "completed", "publication"}
+                        or type(request["issued"]) is not int or request["issued"] != sequence
+                        or type(request["completed"]) is not int or not 0 <= request["completed"] <= sequence
+                        or request["publication"] is not None
+                    ):
+                        raise MakeProbeError("incomplete native Command admission handshake")
+                    completion = sequence, request["completed"], None
+                    return None
+                if (
+                    set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"}
+                    or request["kind"] != "native-request"
+                    or type(request["sequence"]) is not int or request["sequence"] != sequence + 1
+                    or request["path"] not in config["native_executables"]
+                ):
+                    raise MakeProbeError("foreign or stale native Command admission request")
+                from .read_epochs import native_execution_input
+                inputs = native_execution_input(request["argv"], request["cwd"])
+                if inputs["cwd"] != "/repo":
+                    raise MakeProbeError("native Command admission requires canonical repository CWD")
+                settle(request["counters"])
+                sequence += 1
+                owner = native_admission_handler(request["path"], inputs)
+                if not isinstance(owner, str) or re.fullmatch("[0-9a-f]{64}", owner) is None:
+                    raise MakeProbeError("native Command admission lacks its exact issued binding")
+                admission = {
+                    "owner": owner, "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(),
+                }
+                native_authorizations[sequence] = (request["path"], inputs, admission)
+                self.budget.charge("cache", len(encoded(native_authorizations[sequence])))
+                self.pending_commands_peak = max(self.pending_commands_peak, 1)
+                reply = {
+                    "kind": "native-authorized", "scope": config["producer_scope"],
+                    "sequence": sequence, **admission, "limits": grants(),
+                }
+                bound = len(encoded(reply)) + 4
+                reply["limits"] = grants(bound)
+                data = encoded(reply)
+                if len(data) + 4 > bound:
+                    raise MakeProbeError("native Command grant exceeds its charged reply reservation")
+                return data
             if request.get("kind") == "finished":
                 if (
                     set(request) != {"kind", "scope", "issued", "completed", "publication"}
@@ -1563,7 +1616,7 @@ class ProbeSession:
             lambda: report.unlink(missing_ok=True), lambda: config_path.unlink(missing_ok=True),
             close_channel, lambda: _remove_owned_tree(channel_directory),
         ]):
-            if producer_handler is not None:
+            if producer_handler is not None or native_admission_handler is not None:
                 mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
                 try:
                     channel_directory.mkdir(mode=0o700)
@@ -1682,6 +1735,7 @@ class ProbeSession:
                                 "sequence", "executable", "pid", "context", "returncode",
                                 "terminal_status", "waited", "ignored",
                             } | ({"argv", "cwd", "tree"} if runtime_completions else set())
+                            | ({"admission"} if native_admission_handler is not None else set())
                             or not 0 < job["pid"] < 1 << 31
                             or type(job["sequence"]) is not int or job["sequence"] <= 0
                             or type(job["returncode"]) is not int
@@ -1709,6 +1763,11 @@ class ProbeSession:
                         if runtime_completions:
                             from .read_epochs import native_execution_input, native_job_tree
                             inputs = native_execution_input(job["argv"], job["cwd"])
+                            if native_admission_handler is not None and (
+                                native_authorizations.get(job["sequence"])
+                                != (job["executable"], inputs, job["admission"])
+                            ):
+                                raise MakeProbeError("native job differs from its issued Command admission")
                             job_inputs[(job["sequence"], job["pid"])] = hashlib.sha256(encoded(inputs)).hexdigest()
                             parent = None
                             if observed["returncode"] == 0:
@@ -1750,6 +1809,8 @@ class ProbeSession:
                     raise MakeProbeError("native job differs from its actual executable")
                 if sorted(sequence for sequence, _ in dispatches) != list(range(1, len(dispatches) + 1)):
                     raise MakeProbeError("native job dispatch sequences are incomplete or reused")
+                if native_admission_handler is not None and len(dispatches) != len(native_authorizations):
+                    raise MakeProbeError("native Command admission lacks its completed actual job")
                 if read_selection is not None and observed["returncode"] == 0:
                     children = [
                         (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
@@ -2405,6 +2466,7 @@ class ProbeSession:
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
         original_tool=False, native_metadata_directories=(),
+        commands=None,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2417,6 +2479,52 @@ class ProbeSession:
             or observe_completions and observe_runtime_completions
         ):
             raise MakeProbeError("invalid native read observation request or completion dependency")
+        if commands is not None and not observe_runtime_completions:
+            raise MakeProbeError("native Command admission requires complete runtime job inputs")
+        frozen_snapshot, frozen_tree = self.snapshot, self.tree
+
+        def admit(path, inputs):
+            if self.snapshot is not frozen_snapshot or self.tree != frozen_tree:
+                raise MakeProbeError("native Command admission crossed its immutable view")
+            try:
+                command = commands[tuple(inputs["argv"])]
+            except KeyError as error:
+                raise MakeProbeError("original native argv lacks its sealed Command") from error
+            if self.snapshot is not frozen_snapshot or self.tree != frozen_tree:
+                raise MakeProbeError("native Command resolver changed its immutable view")
+            if (
+                type(command) is not Command or type(command.argv) is not tuple
+                or command.argv != tuple(inputs["argv"]) or inputs["cwd"] != "/repo"
+                or type(command.dependency_only) is not bool or command.dependency_only
+                or command.outputs or command.publication_policy != "replace"
+                or any(type(value) is not tuple for value in (
+                    command.code, command.sources, command.directories, command.outputs,
+                ))
+            ):
+                raise MakeProbeError("native readonly Command differs from actual argv or requests output authority")
+            Command.__post_init__(command)
+            sources = self.sources(command.sources) if command.sources else ()
+            for name in (*command.code, *sources, *command.directories):
+                relative_path(name)
+            if (
+                len(command.code) + len(sources) + len(command.directories) > self.budget.limits.entries
+                or any(name not in self.snapshot.files for name in (*command.code, *sources))
+                or any(not any(
+                    name.startswith(directory + "/") for name in self.snapshot.files
+                ) for directory in command.directories)
+            ):
+                raise MakeProbeError("native Command inputs escape its immutable source view")
+            if command.native_tool is not None:
+                if command.native_tool is not native_tool:
+                    raise MakeProbeError("native Command tool differs from the active issued runtime")
+                self._sealed_native_tool_bytes(command.native_tool)
+            self.budget.remaining()
+            self.budget.charge("cache", len(encoded([
+                path, inputs, command.code, sources, command.directories,
+            ])))
+            return hashlib.sha256(encoded([
+                self.snapshot.digest, path, inputs, command.code, sources, command.directories,
+            ])).hexdigest()
         if (
             not isinstance(native_executables, tuple)
             or len(native_executables) > self.budget.limits.entries
@@ -2560,6 +2668,7 @@ class ProbeSession:
                 native_metadata_directories=metadata_directories,
                 runtime_completions=observe_runtime_completions,
                 original_tool=native_tool if original_tool else None,
+                native_admission_handler=admit if commands is not None else None,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     *(self._mount(Path(path), path) for path, identity in metadata_directories

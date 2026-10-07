@@ -5498,6 +5498,181 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_command_admission_runs_original_jobs_once_without_replay(self):
+        shell = "printf '%s' \"$$\""
+        self.add("Makefile", (
+            "FIRST := $(shell " + shell.replace("$", "$$") + ")\n"
+            "SECOND := $(shell " + shell.replace("$", "$$") + ")\n"
+            "all:\n\t@printf '%s\\n' '$(FIRST)' '$(SECOND)'\n"
+        ))
+        requests = []
+        class Commands:
+            def __getitem__(self, argv):
+                requests.append(argv)
+                return Command(argv)
+        session = self.session()
+        with session:
+            completed, semantics, observed = session._native_make_readonly(
+                "all", variables=("FIRST", "SECOND"), observe_reads=True,
+                observe_runtime_completions=True, commands=Commands(),
+                native_executables=("/usr/bin/printf",),
+            )
+            jobs = sorted([
+                parse_json(row.removeprefix("native-job:").encode(), "original admitted job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ], key=lambda row: row["sequence"])
+            self.assertEqual(len(requests), 3)
+            self.assertEqual(len(jobs), 3)
+            self.assertEqual([tuple(row["argv"]) for row in jobs], requests)
+            self.assertEqual(requests[:2], [("/bin/sh", "-c", shell)] * 2)
+            self.assertEqual(
+                completed.stdout,
+                (str(jobs[0]["pid"]) + "\n" + str(jobs[1]["pid"]) + "\n").encode(),
+            )
+            self.assertEqual(semantics["domains"]["FIRST"]["value"], str(jobs[0]["pid"]))
+            self.assertEqual(semantics["domains"]["SECOND"]["value"], str(jobs[1]["pid"]))
+            self.assertEqual(observed["rendezvous"], {
+                "issued": 3, "completed": 3, "pending_peak": 1, "publication": None,
+            })
+            self.assertEqual(len({row["pid"] for row in jobs}), 3)
+            self.assertEqual(jobs[0]["admission"], jobs[1]["admission"])
+            self.assertTrue(all(row["waited"] and row["returncode"] == 0 for row in jobs))
+        self.assert_clean(session)
+
+    def test_native_command_admission_rejects_missing_substituted_and_writable_commands(self):
+        argv = ("/bin/sh", "-c", "v=original; printf '%s' \"$v\"")
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        for commands, error in (
+            ({}, "original native argv lacks its sealed Command"),
+            ({argv: False}, "native readonly Command differs"),
+            ({argv: Command(("/bin/sh", "-c", "printf replaced"))}, "native readonly Command differs"),
+            ({argv: Command(argv, outputs=("output",))}, "native readonly Command differs"),
+            ({argv: Command(argv, dependency_only=True)}, "native readonly Command differs"),
+            ({argv: Command(argv, sources=("missing",))}, "source"),
+            ({argv: Command(argv, code=("missing",))}, "immutable source view"),
+            ({argv: Command(argv, directories=("missing",))}, "immutable source view"),
+        ):
+            session = self.session()
+            with self.subTest(error=error, commands=commands), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, commands=commands,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+                commands={argv: Command(argv, sources=("Makefile",))},
+            )
+            self.assertEqual(completed.stdout, b"original")
+            self.assertEqual(observed["rendezvous"]["issued"], 1)
+            self.assertEqual(observed["rendezvous"]["completed"], 1)
+        self.assert_clean(session)
+
+    def test_native_command_admission_resolver_view_deadline_and_quota_failures_cleanup(self):
+        import copy
+        argv = ("/bin/sh", "-c", "v=original; printf '%s' \"$v\"")
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        for fault, error in (
+            ("view", "resolver changed its immutable view"),
+            ("deadline", "deadline"),
+            ("quota", "cache"),
+            ("cancel", "canceled original admission"),
+        ):
+            session = self.session()
+            class Commands:
+                def __getitem__(self, key):
+                    self_test.assertEqual(key, argv)
+                    if fault == "view":
+                        session.snapshot = copy.copy(session.snapshot)
+                    elif fault == "deadline":
+                        session.budget.started -= session.budget.limits.seconds
+                    elif fault == "quota":
+                        session.budget.charge("cache", session.budget.limits.cache_bytes + 1)
+                    else:
+                        raise MakeProbeError("canceled original admission")
+                    return Command(argv)
+            self_test = self
+            with self.subTest(fault=fault), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_command_admission_rejects_live_and_returned_binding_mutations(self):
+        argv = ("/bin/sh", "-c", "v=original; printf '%s' \"$v\"")
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        cases = (
+            (
+                "original=guard.Policy.begin_native_job\n"
+                "def changed(self,pid,state,path):\n"
+                " state.native_admission=None\n"
+                " return original(self,pid,state,path)\n"
+                "guard.Policy.begin_native_job=changed\n",
+                "native job lacks its actual original Make dispatch",
+            ),
+            (
+                "original=guard.Policy.entry\n"
+                "def changed(self,pid,state,r):\n"
+                " if r.orig_rax==59 and state.dispatch is not None and self.native_admission:\n"
+                "  state.native_admission={**state.native_admission,'owner':'0'*64}\n"
+                " return original(self,pid,state,r)\n"
+                "guard.Policy.entry=changed\n",
+                "native exec entry differs from its issued Command admission",
+            ),
+            (
+                "original=guard.Policy.observe\n"
+                "def changed(self,name,value):\n"
+                " if name=='accessed' and value.startswith('native-job:'):\n"
+                "  row=json.loads(value[len('native-job:'):])\n"
+                "  row['admission']['owner']='0'*64\n"
+                "  value='native-job:'+guard.encoded(row).decode('ascii')\n"
+                " return original(self,name,value)\n"
+                "guard.Policy.observe=changed\n",
+                "native job differs from its issued Command admission",
+            ),
+            (
+                "original=guard.parse_json\n"
+                "def changed(raw,label):\n"
+                " row=original(raw,label)\n"
+                " if label=='native Command admission reply':row['sequence']+=1\n"
+                " return row\n"
+                "guard.parse_json=changed\n",
+                "native Command reply is foreign, stale",
+            ),
+            (
+                "original=guard.parse_json\n"
+                "def changed(raw,label):\n"
+                " row=original(raw,label)\n"
+                " if label=='native Command admission reply':row['input_sha256']='0'*64\n"
+                " return row\n"
+                "guard.parse_json=changed\n",
+                "native Command reply is foreign, stale",
+            ),
+            (
+                "original=guard.ProducerChannel.finish\n"
+                "def changed(self,raw):\n"
+                " row=guard.parse_json(raw,'test terminal');row['completed']-=1\n"
+                " return original(self,guard.encoded(row))\n"
+                "guard.ProducerChannel.finish=changed\n",
+                "partial or inconsistent live producer completion",
+            ),
+        )
+        for body, error in cases:
+            session = self.session()
+            with self.subTest(error=error), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                        commands={argv: Command(argv)},
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_original_prespawn_inputs_bind_entry_and_exec_stop(self):
         self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
         cases = (

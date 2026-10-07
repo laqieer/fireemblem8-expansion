@@ -243,6 +243,7 @@ class Process:
     native_parent: int | None = None
     native_execs: int = 0
     native_inputs: tuple[str, dict] | None = None
+    native_admission: dict | None = None
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -254,6 +255,7 @@ class Process:
             dependency_image=self.dependency_image,
             native_dispatch=self.native_dispatch,
             native_inputs=self.native_inputs,
+            native_admission=self.native_admission,
         )
 
     def close(self):
@@ -267,6 +269,13 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         self.native_readonly = config.get("native_readonly", False)
+        self.native_admission = config.get("native_admission", False)
+        self.native_admit = None
+        if type(self.native_admission) is not bool or self.native_admission and (
+            not self.native_readonly or not config.get("producer_endpoint")
+            or config.get("read_epochs", {}).get("version") != 5
+        ):
+            raise Violation("native Command admission lacks its existing channel/runtime authority")
         native_shell = config.get("native_shell", "/bin/sh")
         native_executables = config.get("native_executables", ["/bin/sh"])
         if (
@@ -341,7 +350,7 @@ class Policy:
         ) or self.native_readonly and (
             self.mode != "make"
             or config["executables"] != ["/usr/bin/make", *native_executables]
-            or config.get("producer_endpoint") or config.get("published")
+            or config.get("producer_endpoint") and not self.native_admission or config.get("published")
             or config.get("mapping_entries") or config.get("metadata_validation")
             or config.get("dependency")
             or config.get("environment", {}).get("VO_OBSERVE_NATIVE_READONLY") != "1"
@@ -592,6 +601,10 @@ class Policy:
         if path not in self.native_executables:
             raise Violation("native dispatch inputs refer to an unadmitted executable")
         inputs = read_epochs.native_execution_input(self.native_argv(pid, argv_pointer), state.cwd)
+        if self.native_admission:
+            if self.native_admit is None:
+                raise Violation("native Command admission has no active supervisor rendezvous")
+            state.native_admission = self.native_admit(path, inputs)
         state.native_inputs = path, inputs
 
     def begin_native_job(self, pid, state, path):
@@ -599,6 +612,7 @@ class Policy:
             pid != self.make_pid or state.role != "make" or not state.observer_ready
             or state.native_dispatch is not None or path not in self.native_executables
             or state.native_inputs is None or state.native_inputs[0] != path
+            or self.native_admission and state.native_admission is None
         ):
             raise Violation("native job lacks its actual original Make dispatch")
         sequence = len(self.native_jobs) + 1
@@ -609,6 +623,8 @@ class Policy:
             "context": None, "returncode": None, "terminal_status": None,
             "waited": False, "ignored": None,
         }
+        if self.native_admission:
+            row["admission"] = dict(state.native_admission)
         self.native_job_event(row)
         self.native_jobs[sequence] = row
         state.native_dispatch = sequence
@@ -653,6 +669,7 @@ class Policy:
                 row["tree"] = []
             state.native_execs += 1
             state.native_inputs = None
+            state.native_admission = None
             return {
                 "kind": "exec", "pid": pid, "parent": state.native_parent,
                 "generation": state.native_execs, "path": state.exec_path, **inputs,
@@ -2407,6 +2424,13 @@ class Policy:
                     inputs = read_epochs.native_execution_input(self.native_argv(pid, b), state.cwd)
                     if state.native_inputs is None or state.native_inputs != (path, inputs):
                         raise Violation("native exec entry differs from original pre-spawn dispatch inputs")
+                    if self.native_admission and (
+                        state.native_admission is None
+                        or state.native_admission != self.native_jobs[state.native_dispatch]["admission"]
+                        or state.native_admission["input_sha256"]
+                        != hashlib.sha256(encoded(inputs)).hexdigest()
+                    ):
+                        raise Violation("native exec entry differs from its issued Command admission")
                     role = "native"
                     state.exec_path = path
                     self.reserve_observation("accessed", "native-shell:" + str(pid) + ":" + path)
@@ -2726,6 +2750,36 @@ def supervise(config, drop_privileges):
     error = None
     primary = None
     result = None
+    def admit_native(path, inputs):
+        if channel is None or not policy.native_admission:
+            raise Violation("native admission lost its existing private channel")
+        sequence = policy.producer_issued + 1
+        policy.producer_issued = sequence
+        policy.producer_pending_peak = max(policy.producer_pending_peak, 1)
+        request = {
+            "kind": "native-request", "scope": config["producer_scope"],
+            "sequence": sequence, "path": path, **inputs, "counters": policy.counters(),
+        }
+        raw = channel.exchange(
+            encoded(request), watch=(processes[policy.make_pid].pidfd,),
+        )
+        reply = parse_json(raw, "native Command admission reply")
+        if (
+            not isinstance(reply, dict)
+            or set(reply) != {"kind", "scope", "sequence", "owner", "input_sha256", "limits"}
+            or reply["kind"] != "native-authorized" or reply["scope"] != config["producer_scope"]
+            or type(reply["sequence"]) is not int or reply["sequence"] != sequence
+            or not isinstance(reply["owner"], str) or re.fullmatch("[0-9a-f]{64}", reply["owner"]) is None
+            or reply["input_sha256"] != hashlib.sha256(encoded(inputs)).hexdigest()
+        ):
+            raise Violation("native Command reply is foreign, stale or changes actual inputs")
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.ensure_idle()
+        policy.producer_completed = sequence
+        return {"owner": reply["owner"], "input_sha256": reply["input_sha256"]}
+
+    if policy.native_admission:
+        policy.native_admit = admit_native
     main_status = None
     finished_trace = None
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
