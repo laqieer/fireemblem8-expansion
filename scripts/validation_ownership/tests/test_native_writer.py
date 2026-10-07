@@ -285,6 +285,110 @@ class NativeWriterTests(unittest.TestCase):
                 self.assertEqual(requests, expected_requests)
                 self.assert_clean(session)
 
+    def test_generated_source_return_keeps_observed_retirement_and_rejects_unobserved_change(self):
+        import ctypes
+        import struct
+        import time
+        from types import SimpleNamespace
+        from scripts.validation_ownership import read_epochs
+        from scripts.validation_ownership.native_outputs import NativeOutputs
+        from scripts.validation_ownership.producer_channel import publication_identity
+        from scripts.validation_ownership.read_trace import NativeReadTrace
+
+        for generated, mutate, foreign_pin in (
+            (True, False, False), (False, False, False),
+            (True, True, False), (True, False, True),
+        ):
+            with self.subTest(generated=generated, unobserved_mutation=mutate, foreign_pin=foreign_pin):
+                effects = []
+                outputs = NativeOutputs(
+                    deadline=lambda: None, charge=lambda amount: None, file_limit=65536,
+                    emit=lambda kind, **fields: effects.append({"kind": kind, **fields}),
+                )
+                descriptors = []
+                trace = NativeReadTrace.__new__(NativeReadTrace)
+                trace.active = []
+                def create(name, data):
+                    descriptor = os.open(self.root / name, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+                    descriptors.append(descriptor)
+                    outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                        path="/repo/" + name, writing=True,
+                    )
+                    outputs.before_write(1, descriptor, descriptor)
+                    outputs.written(1, descriptor, descriptor, os.write(descriptor, data))
+                    outputs.closed(1, descriptor, 0)
+                    return descriptor
+                stem = "generated-" + str(generated) + "-" + str(mutate) + "-" + str(foreign_pin)
+                old_name, new_name = stem + ".mk", stem + ".tmp"
+                try:
+                    old = create(old_name, b"VALUE := old\n")
+                    source = outputs.capture(
+                        owner=1, path="/repo/" + old_name, descriptor=old, observed=False,
+                    )
+                    new = create(new_name, b"VALUE := new\n")
+                    os.replace(self.root / new_name, self.root / old_name)
+                    outputs.replaced(
+                        owner=1, source="/repo/" + new_name, destination="/repo/" + old_name,
+                        source_pin=new, retired_pin=old, result=0,
+                    )
+                    self.assertTrue(source.object.retired)
+                    self.assertTrue(any(
+                        effect["kind"] == "output-retire" and effect["serial"] == source.object.serial
+                        for effect in effects
+                    ))
+                    self.assertEqual(source.object.identity[6], 0)
+                    self.assertNotEqual(source.object.serial, outputs.objects["/repo/" + old_name].serial)
+                    self.assertEqual(os.pread(old, 65536, 0), b"VALUE := old\n")
+                    self.assertEqual((self.root / old_name).read_bytes(), b"VALUE := new\n")
+                    if mutate:
+                        os.pwrite(old, b"X", 0)
+                    resolved = ctypes.create_string_buffer(("/repo/" + old_name).encode())
+                    status = ctypes.create_string_buffer(struct.pack(
+                        "<QQQQIiQQQ", 0, ctypes.addressof(resolved), 0, 0, 0, 0, 0, 0, 0,
+                    ))
+                    trace.version = read_epochs.WRITABLE_VERSION
+                    trace.runtime = True
+                    trace.config = {"deadline": time.monotonic() + 10}
+                    trace.native = SimpleNamespace(
+                        publication_identity=publication_identity,
+                        memory=lambda pid, address, size: ctypes.string_at(address, size),
+                    )
+                    trace.policy = SimpleNamespace(
+                        charge_metadata=lambda amount: None,
+                        reserve_trace_observation=lambda: None,
+                        native_outputs=SimpleNamespace(custody=outputs),
+                    )
+                    trace.pid = os.getpid()
+                    trace.execs = trace.passes = 1
+                    trace.events, trace.machine = [], []
+                    trace.pass_frame = trace.io = None
+                    trace.invocations = [{"kind": "source", "visit": 1}]
+                    trace.active = [{
+                        "stack": 1000, "visit": 1, "name": "/repo/" + old_name, "flags": 0,
+                        "source": 1, "pin": os.dup(new if foreign_pin else old), "closed": True,
+                        "identity": source.identity, "path": "/repo/" + old_name,
+                        **({"generated": source} if generated else {}),
+                    }]
+                    registers = SimpleNamespace(rsp=1008, rax=ctypes.addressof(status))
+                    if generated and not mutate and not foreign_pin:
+                        trace.source_return(registers)
+                        self.assertTrue(source.closed)
+                        self.assertFalse(source.object.readers)
+                        self.assertFalse(outputs.pins)
+                        self.assertFalse(trace.active)
+                        self.assertEqual(trace.machine[-1]["kind"], "pin-retired")
+                        outputs.finish()
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            trace.source_return(registers)
+                        self.assertFalse(source.closed)
+                finally:
+                    trace.close()
+                    outputs.close()
+                    for descriptor in descriptors:
+                        os.close(descriptor)
+
 
     def test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions(self):
         self.add("Makefile", "all:\n\t@printf final > result\n")

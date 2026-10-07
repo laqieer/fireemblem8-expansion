@@ -957,7 +957,9 @@ class NativeReadTrace:
                 + repr((current["name"], resolved, error, current["source"]))
             )
         if current["pin"] is not None:
-            if not current["closed"] or self.native.publication_identity(os.fstat(current["pin"])) != current["identity"]:
+            lease = current.get("generated")
+            expected_identity = lease.object.identity if lease is not None else current["identity"]
+            if not current["closed"] or self.native.publication_identity(os.fstat(current["pin"])) != expected_identity:
                 raise read_epochs.ReadEpochError("original source was changed or not closed before return")
             path = read_epochs._resolved_source_path(resolved)
             if path != current["path"]:

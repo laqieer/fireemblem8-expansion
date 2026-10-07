@@ -503,6 +503,16 @@ write to refuse without any native job. Neither output plans nor this reader
 seam authorize root writes. These cases do not qualify failed generated
 fopen after a pinned entry, old-version replacement, persisted generated
 sources across queries or the complete original graph.
+`NativeWriterTests.test_generated_source_return_keeps_observed_retirement_and_rejects_unobserved_change`
+is a component return-bridge regression, not an original Make invocation.
+Controlled GNU return registers/memory invoke the real return function over
+actual file descriptors and an observed `os.replace`. Generated return compares
+its stream pin against the lease object's observed current identity, then uses
+the existing release checks for retained data/mode/revision. Original snapshot
+identity changes, unobserved retained-inode writes and substitution of the
+new-version stream pin refuse. The old generated pin must close and leave no
+reader lease after successful return. Actual GNU namespace/old-version
+production qualification remains held separately.
 Truncation through a supported `O_TRUNC` open carries the same inode/mode/link
 count, zero size and next revision into its paired writable open. This does not
 admit standalone truncation. Failed-close replay accepts only the live model's
