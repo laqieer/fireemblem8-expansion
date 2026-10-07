@@ -941,6 +941,11 @@ class NativeOutputs:
         ):
             raise NativeOutputError("native flock lacks its finite bound descriptor operation")
         description = item.descriptions[(pid, descriptor)]
+        if any(
+            active.kind == "close" and active.description is description
+            for active in self.pending.values()
+        ):
+            raise NativeOutputError("native flock overlaps an unfinished close on its description")
         if description.pending is not None or item.pending_writer is not None or observed != description.lock:
             raise NativeOutputError("native flock differs from its live open-file description")
         operation = self._begin(
@@ -1012,7 +1017,7 @@ class NativeOutputs:
         )
         operation = NativeOperation(
             operation.owner, pid, operation.kind, operation.source, None, 0,
-            operation.operands, descriptor=descriptor,
+            operation.operands, descriptor=descriptor, description=item.descriptions[binding],
         )
         self.pending[pid] = operation
         return operation

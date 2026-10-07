@@ -366,6 +366,16 @@ checks the reciprocal pending-close exclusion, copied-token refusal and mode
 continuation after an actual successful kernel close. The late-close family
 still uses the same return handler, including actual kernel release followed
 by injected Linux late errors.
+Close and flock exclude each other at entry on the same open-file description,
+including inherited aliases. A pending close retains that description in its
+existing operation token; independent opens of the same inode remain distinct
+and may acquire their own compatible locks.
+Run `ProducerTests.test_native_capsule_pending_close_refuses_actual_inherited_flock_before_mutation`
+to park actual parent close and inherited-child flock entries. On refusal,
+both real `/proc` aliases and both descriptor maps must remain live, and
+bounded kernel fdinfo must still show no lock. The reciprocal and independent
+open controls are in
+`NativeOutputCustodyTests.test_paired_close_excludes_shared_description_lock_but_not_independent_opens`.
 Run `ProducerTests.test_native_capsule_descriptor_mode_tracks_actual_alias_fork_and_kernel_width_operands`
 and `NativeOutputCustodyTests`: actual dup/fork aliases change one inode
 through mode0644 to0755, preserving bytes `final`, stdout `once`, content

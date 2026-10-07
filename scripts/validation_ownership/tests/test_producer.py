@@ -1858,6 +1858,65 @@ class ProducerTests(unittest.TestCase):
                     session.native(tool, (), outputs=("result",))
         self.fixture.assert_clean(session)
 
+    def test_native_capsule_pending_close_refuses_actual_inherited_flock_before_mutation(self):
+        self.fixture.add("native.c", (
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <sys/file.h>\n#include <sys/wait.h>\n"
+            "int main(void){int fd,copy,status;pid_t child;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);"
+            "if(fd!=3||write(fd,\"final\",5)!=5)return 1;copy=dup(fd);if(copy!=4)return 2;"
+            "child=fork();if(child<0)return 3;if(!child){if(flock(copy,LOCK_EX))_exit(4);_exit(0);}"
+            "if(close(copy)||waitpid(child,&status,0)!=child||status||close(fd))return 5;return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        proxy = self.fixture.directory / "close-lock-supervisor.py"
+        proxy.write_text(
+            "import os,sys,ctypes\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec,native_outputs\n"
+            "original=guard.Policy.entry\n"
+            "def lock_entry(self,pid,state,r):\n"
+            " fd=ctypes.c_int(r.rdi).value\n"
+            " try:original(self,pid,state,r)\n"
+            " except (guard.Violation,native_outputs.NativeOutputError) as error:\n"
+            "  if 'unfinished close' not in str(error):raise\n"
+            "  parent,parent_state=self.test_close_entered\n"
+            "  for owner,owner_state in ((pid,state),(parent,parent_state)):\n"
+            "   info=os.stat('/proc/'+str(owner)+'/fd/'+str(fd))\n"
+            "   item=self.native_outputs.custody.descriptors.get((owner,fd))\n"
+            "   if item is None or fd not in owner_state.fds or info.st_ino!=item.identity[1]:\n"
+            "    raise guard.Violation('close-lock entry already lost an actual FD or authority')\n"
+            "  if self.native_outputs.lock_mode(pid,fd,self.native_outputs.custody.descriptors[(pid,fd)].identity)!=0:\n"
+            "   raise guard.Violation('close-lock entry already changed the actual kernel lock')\n"
+            "  raise guard.Violation('close-lock entry refusal kept actual aliases and lock unchanged')\n"
+            " raise guard.Violation('close-lock entry did not refuse before kernel mutation')\n"
+            "def observe(self,pid,state,r):\n"
+            " if self.native_outputs is None:return original(self,pid,state,r)\n"
+            " if r.orig_rax==73 and state.native_parent is not None:\n"
+            "  if hasattr(self,'test_close_entered'):return lock_entry(self,pid,state,r)\n"
+            "  held=guard.Registers();ctypes.memmove(ctypes.byref(held),ctypes.byref(r),ctypes.sizeof(r))\n"
+            "  self.test_lock_held=(pid,state,held);state.producer_ready=True;return\n"
+            " original(self,pid,state,r)\n"
+            " if r.orig_rax==3 and ctypes.c_int(r.rdi).value==4 and state.native_parent is None:\n"
+            "  self.test_close_entered=(pid,state);state.producer_ready=True\n"
+            "  if hasattr(self,'test_lock_held'):return lock_entry(self,*self.test_lock_held)\n"
+            "guard.Policy.entry=observe\nraise SystemExit(sandbox_exec.main())\n",
+        )
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            run = session.budget.run
+            def supervised(argv, **kwargs):
+                if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    if config["mode"] == "command":
+                        argv = [*argv[:-2], str(proxy), argv[-1]]
+                return run(argv, **kwargs)
+            with patch.object(session.budget, "run", supervised):
+                with self.assertRaisesRegex(
+                    MakeProbeError, "entry refusal kept actual aliases and lock unchanged",
+                ):
+                    session.native(tool, (), outputs=("result",))
+        self.fixture.assert_clean(session)
+
     def test_native_capsule_posix_lock_mutations_refuse_original_duplicate_and_inherited_bindings(self):
         self.fixture.add("native.c", (
             "#include <fcntl.h>\n#include <unistd.h>\n#include <stdlib.h>\n#include <sys/wait.h>\n"
@@ -5392,6 +5451,43 @@ class NativeOutputCustodyTests(unittest.TestCase):
             os.close(descriptor)
         self.outputs.closed(1, descriptor, 0)
         self.assertEqual(item.sha256, digest)
+        self.outputs.finish()
+
+    def test_paired_close_excludes_shared_description_lock_but_not_independent_opens(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "paired-close-lock", os.O_CREAT | os.O_RDWR, 0o600)
+        copied = os.dup(descriptor)
+        independent = os.open(self.root / "paired-close-lock", os.O_RDWR)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+            path="paired-close-lock", writing=True,
+        )
+        self.outputs.duplicated(1, descriptor, copied)
+        self.outputs.inherited(1, 2, (copied,))
+        self.outputs.opened(
+            owner=1, pid=3, descriptor=independent, pin=independent,
+            path="paired-close-lock", writing=True,
+        )
+        close = self.outputs.enter_close(pid=1, descriptor=descriptor)
+        with self.assertRaisesRegex(NativeOutputError, "unfinished close"):
+            self.outputs.enter_lock(pid=2, descriptor=copied, flags=fcntl.LOCK_EX, observed=0)
+        lock = self.outputs.enter_lock(pid=3, descriptor=independent, flags=fcntl.LOCK_SH, observed=0)
+        fcntl.flock(independent, fcntl.LOCK_SH)
+        self.outputs.leave_lock(lock, result=0, observed=fcntl.LOCK_SH)
+        os.close(descriptor)
+        self.outputs.leave_close(close, result=0)
+        lock = self.outputs.enter_lock(
+            pid=2, descriptor=copied, flags=fcntl.LOCK_SH, observed=0,
+        )
+        with self.assertRaisesRegex(NativeOutputError, "unfinished flock"):
+            self.outputs.enter_close(pid=1, descriptor=copied)
+        fcntl.flock(copied, fcntl.LOCK_SH)
+        self.outputs.leave_lock(lock, result=0, observed=fcntl.LOCK_SH)
+        os.close(copied)
+        self.outputs.closed(1, copied, 0)
+        self.outputs.closed(2, copied, 0)
+        os.close(independent)
+        self.outputs.closed(3, independent, 0)
         self.outputs.finish()
 
     def test_paired_close_excludes_mode_entry_until_the_actual_kernel_return(self):
