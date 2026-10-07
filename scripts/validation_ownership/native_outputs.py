@@ -252,6 +252,7 @@ class OutputObject:
     writers: set[tuple[int, int]] = field(default_factory=set)
     readers: set[int] = field(default_factory=set)
     retired: bool = False
+    expected: bytearray | None = None
 
 
 @dataclass
@@ -511,8 +512,15 @@ class NativeOutputs:
             operation = self._begin(
                 item.owner, pid, "write", item.path, pins=((item.path, pin),),
             )
-            before = self._bytes(operation.operands[0][1], operation.operands[0][2])
-            self.charge(len(data) + len(before))
+            initial = (
+                self._bytes(operation.operands[0][1], operation.operands[0][2])
+                if item.expected is None else None
+            )
+            self.charge(len(data) + (0 if initial is None else len(initial)))
+            if initial is not None:
+                item.expected = bytearray(initial)
+            before = bytes(item.expected[offset:offset + len(data)])
+            self.charge(len(before))
             operation = NativeOperation(
                 operation.owner, pid, operation.kind, operation.source,
                 operation.destination, operation.flags, operation.operands,
@@ -534,20 +542,39 @@ class NativeOutputs:
             raise NativeOutputError("native write return exceeds its actual entry bytes")
         pin = operation.operands[0][1]
         identity = self._identity(pin)
-        actual = self._bytes(pin, identity)
+        item = operation.operands[0][3]
+        size = len(item.expected)
         expected = operation.before
         if result > 0:
-            offset = operation.offset
-            expected = (
-                operation.before[:offset]
-                + b"\0" * max(0, offset - len(operation.before))
-                + operation.data[:result]
-                + operation.before[offset + result:]
-            )
-        if actual != expected:
+            size = max(size, operation.offset + result)
+            expected = operation.data[:result] + operation.before[result:]
+        if identity[3] != size:
             raise NativeOutputError("native write return absorbed bytes outside its actual kernel effect")
+        self.charge(len(expected))
+        offset = 0
+        while offset < len(expected):
+            self.deadline()
+            actual = os.pread(pin, min(65536, len(expected) - offset), operation.offset + offset)
+            if not actual or actual != expected[offset:offset + len(actual)]:
+                raise NativeOutputError("native write return absorbed bytes outside its actual kernel effect")
+            offset += len(actual)
+        if self._identity(pin) != identity:
+            raise NativeOutputError("native write postimage changed during range observation")
+        growth = size - len(item.expected)
+        self.charge(2 * growth)
         self.written(operation.pid, operation.descriptor, pin, result)
+        if result > 0:
+            item.expected.extend(b"\0" * growth)
+            item.expected[operation.offset:operation.offset + result] = operation.data[:result]
         self._end(operation)
+
+    def _verify_expected(self, item, digest):
+        if item.expected is None:
+            return
+        self.charge(len(item.expected))
+        self.deadline()
+        if hashlib.sha256(item.expected).hexdigest() != digest:
+            raise NativeOutputError("native write return absorbed bytes outside its actual kernel effect")
 
     def enter_duplicate(self, *, pid, descriptor, kind="dup", target=None, minimum=None, flags=0):
         self._usable()
@@ -676,8 +703,10 @@ class NativeOutputs:
         if identity != item.identity:
             raise NativeOutputError("native output settlement absorbed an unobserved change")
         digest = self._digest(item.descriptor, identity)
+        self._verify_expected(item, digest)
         self._event("output-settled", item, identity=list(identity), sha256=digest)
         item.sha256 = digest
+        item.expected = None
 
     def _verify_settled(self, item, identity):
         if item.sha256 is None or self._digest(item.descriptor, identity) != item.sha256:
@@ -981,6 +1010,7 @@ class NativeOutputs:
 
         def close_object(item):
             descriptor, item.descriptor = item.descriptor, -1
+            item.expected = None
             os.close(descriptor)
 
         try:

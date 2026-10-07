@@ -1761,6 +1761,30 @@ class ProducerTests(unittest.TestCase):
                         session.native(tool, (mode,), outputs=("result",))
                 self.fixture.assert_clean(session)
 
+    def test_native_capsule_incremental_writes_keep_linear_shared_observation_cost(self):
+        self.fixture.add("native.c", (
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "static char block[4096];"
+            "int main(void){int fd,index;memset(block,'X',sizeof(block));"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_WRONLY,0600);if(fd<0)return 1;"
+            "for(index=0;index<256;index++)"
+            "if(write(fd,block,sizeof(block))!=sizeof(block))return 2;"
+            "return close(fd);}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        size = 256 * 4096
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            cached = len(session.cache)
+            before = session.budget.bytes["control"]
+            output = session.native(tool, outputs=("result",))
+            observed = session.budget.bytes["control"] - before
+            self.assertEqual(output.generated[0].data, b"X" * size)
+            self.assertEqual(output.generated[0].mode, 0o600)
+            self.assertLess(observed, 16 * size + 1024 * 1024)
+            self.assertEqual(len(session.cache), cached)
+        self.fixture.assert_clean(session)
+
     def test_missing_direct_native_path_is_not_synthesized_into_the_make_view(self):
         self.fixture.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
         self.fixture.add("Makefile", "all:\n\t+@tools/native\n")
@@ -4973,15 +4997,17 @@ class NativeOutputCustodyTests(unittest.TestCase):
             pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
         )
         result = os.pwrite(descriptor, b"NEW", 0)
-        os.pwrite(descriptor, b"OTHER", 3)
+        os.pwrite(descriptor, b"BAD", 0)
         with self.assertRaisesRegex(NativeOutputError, "outside its actual"):
             self.outputs.leave_write(operation, result)
         item = self.outputs.objects["terminal-write"]
+        self.assertIsNotNone(item.expected)
         self.outputs.close()
+        self.assertIsNone(item.expected)
         self.assertEqual(item.pending_writer, (1, descriptor))
         self.assertFalse(self.outputs.pending)
         self.assertEqual(item.descriptor, -1)
-        self.assertEqual(os.pread(descriptor, 65536, 0), b"NEWOTHER")
+        self.assertEqual(os.pread(descriptor, 65536, 0), b"BADginal")
         with self.assertRaisesRegex(NativeOutputError, "active"):
             self.outputs.finish()
         for action in (
@@ -5284,11 +5310,16 @@ class NativeOutputCustodyTests(unittest.TestCase):
         )
         result = os.pwrite(descriptor, b"NEW", 0)
         os.pwrite(descriptor, b"OTHER", 3)
+        self.outputs.leave_write(operation, result)
+        with self.assertRaisesRegex(NativeOutputError, "settled"):
+            self.outputs.capture(owner=1, path="write", descriptor=descriptor)
         with self.assertRaisesRegex(NativeOutputError, "outside its actual"):
-            self.outputs.leave_write(operation, result)
-        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.closed(1, descriptor, 0)
+        with self.assertRaisesRegex(NativeOutputError, "settled"):
+            self.outputs.capture(owner=1, path="write", descriptor=descriptor)
+        with self.assertRaisesRegex(NativeOutputError, "unsettled"):
             self.outputs.finish()
-        self.assertIs(self.outputs.pending[1], operation)
+        self.assertFalse(self.outputs.pending)
         own_pin = operation.operands[0][1]
         self.outputs.close()
         with self.assertRaises(OSError):
@@ -5826,7 +5857,8 @@ class NativeOutputCustodyTests(unittest.TestCase):
     def test_actual_fork_descriptor_inheritance_keeps_writer_until_child_retirement(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = os.open(self.root / "inherited", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
-        self.addCleanup(os.close, descriptor)
+        writer = os.fdopen(descriptor, "r+b", buffering=0)
+        self.addCleanup(writer.close)
         pid = os.getpid()
         self.outputs.opened(
             owner=1, pid=pid, descriptor=descriptor, pin=descriptor, path="inherited", writing=True,
@@ -5842,15 +5874,21 @@ class NativeOutputCustodyTests(unittest.TestCase):
         waited = False
         try:
             self.outputs.inherited(pid, child, (descriptor,))
+            writer.close()
+            with self.assertRaises(OSError) as closed:
+                os.fstat(descriptor)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
             self.outputs.closed(pid, descriptor, 0)
+            reader = os.open(self.root / "inherited", os.O_RDONLY)
+            self.addCleanup(os.close, reader)
             with self.assertRaisesRegex(NativeOutputError, "settled"):
-                self.outputs.capture(owner=1, path="inherited", descriptor=descriptor)
+                self.outputs.capture(owner=1, path="inherited", descriptor=reader)
             os.write(write_end, b"x")
             observed, status = os.waitpid(child, 0)
             waited = True
             self.assertEqual((observed, os.waitstatus_to_exitcode(status)), (child, 0))
             self.outputs.retire_process(child)
-            source = self.outputs.capture(owner=1, path="inherited", descriptor=descriptor)
+            source = self.outputs.capture(owner=1, path="inherited", descriptor=reader)
             self.assertEqual(source.data, b"")
             self.outputs.release(source)
             self.outputs.finish()
