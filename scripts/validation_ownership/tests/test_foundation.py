@@ -5604,7 +5604,9 @@ class FoundationTests(unittest.TestCase):
             ({argv: Command(argv, dependency_only=True)}, "native readonly Command differs"),
             ({argv: Command(argv, sources=("missing",))}, "source"),
             ({argv: Command(argv, code=("missing",))}, "immutable source view"),
-            ({argv: Command(argv, directories=("missing",))}, "immutable source view"),
+            ({argv: Command(argv, directories=("missing",))}, "directory declaration is absent"),
+            ({argv: Command(argv, directories=("Makefile",))}, "not an active directory"),
+            ({argv: Command(argv, directories=("../outside",))}, "path"),
         ):
             session = self.session()
             with self.subTest(error=error, commands=commands), session:
@@ -5624,6 +5626,35 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(observed["rendezvous"]["issued"], 1)
             self.assertEqual(observed["rendezvous"]["completed"], 1)
         self.assert_clean(session)
+
+    def test_native_command_admission_preserves_root_directories_and_stock_shell_alias(self):
+        self.add("sub/input", "source\n")
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        argv = ("/bin/sh", "-c", "v=original; printf '%s' \"$v\"")
+        for resources in ((), ("/bin/printf",)):
+            session = self.session(runtime_files=resources)
+            with self.subTest(runtime_files=resources), session:
+                owners = []
+                for directories in ((), (".", "sub"), ("sub", ".", "sub")):
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                        commands={argv: Command(argv, directories=directories)},
+                    )
+                    self.assertEqual(completed.stdout, b"original")
+                    job, = [
+                        parse_json(row.removeprefix("native-job:").encode(), "root/alias admission")
+                        for row in observed["accessed"] if row.startswith("native-job:")
+                    ]
+                    self.assertEqual(job["argv"], list(argv))
+                    self.assertEqual(job["executable"], "/usr/bin/sh" if resources else "/bin/sh")
+                    self.assertTrue(job["waited"])
+                    self.assertEqual(job["returncode"], 0)
+                    self.assertEqual(observed["rendezvous"]["issued"], 1)
+                    self.assertEqual(observed["rendezvous"]["completed"], 1)
+                    owners.append(job["admission"]["owner"])
+                self.assertNotEqual(owners[0], owners[1])
+                self.assertEqual(owners[1], owners[2])
+            self.assert_clean(session)
 
     def test_native_command_admission_resolver_view_deadline_and_quota_failures_cleanup(self):
         import copy

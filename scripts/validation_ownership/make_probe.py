@@ -1204,6 +1204,11 @@ class ProbeSession:
                 (root / directory).symlink_to(target)
         return root
 
+    def _native_shell_path(self):
+        return "/usr/bin/sh" if any(
+            alias == "/bin" for item in self.runtime_inputs for alias, _ in item.aliases
+        ) else "/bin/sh"
+
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
@@ -1288,9 +1293,7 @@ class ProbeSession:
         executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
-        native_shell = "/usr/bin/sh" if any(
-            alias == "/bin" for item in self.runtime_inputs for alias, _ in item.aliases
-        ) else "/bin/sh"
+        native_shell = self._native_shell_path()
         if native_runtime:
             if (
                 mode != "make"
@@ -2504,16 +2507,14 @@ class ProbeSession:
                 raise MakeProbeError("native readonly Command differs from actual argv or requests output authority")
             Command.__post_init__(command)
             sources = self.sources(command.sources) if command.sources else ()
-            for name in (*command.code, *sources, *command.directories):
+            for name in (*command.code, *sources):
                 relative_path(name)
             if (
                 len(command.code) + len(sources) + len(command.directories) > self.budget.limits.entries
                 or any(name not in self.snapshot.files for name in (*command.code, *sources))
-                or any(not any(
-                    name.startswith(directory + "/") for name in self.snapshot.files
-                ) for directory in command.directories)
             ):
                 raise MakeProbeError("native Command inputs escape its immutable source view")
+            directories = self._directories(command.directories)
             if command.native_tool is not None:
                 if command.native_tool is not native_tool:
                     raise MakeProbeError("native Command tool differs from the active issued runtime")
@@ -2528,7 +2529,7 @@ class ProbeSession:
                 )
             payload = encoded([
                 self.snapshot.digest, path, executable_digests[path], tool_identity,
-                inputs, command.code, sources, command.directories,
+                inputs, command.code, sources, directories,
             ])
             self.budget.charge("cache", len(payload))
             return hashlib.sha256(payload).hexdigest()
@@ -2622,6 +2623,7 @@ class ProbeSession:
                 self.budget.remaining()
                 self.budget.charge("total", len(runtime[path]))
                 executable_digests[path] = hashlib.sha256(runtime[path]).hexdigest()
+            executable_digests[self._native_shell_path()] = executable_digests["/bin/sh"]
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(
             completions=observe_completions or observe_runtime_completions,

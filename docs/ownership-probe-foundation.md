@@ -147,6 +147,11 @@ source inputs and original placement when applicable. Hashing and the complete
 encoded payload use the existing shared budget. Different sealed tools or
 captured host images cannot alias merely because argv and pathname agree;
 repeated execution of the same image retains a stable owner.
+Directory declarations use the existing `_directories` authority, including
+the repository root `"."`, and their normalized set participates in the owner.
+The selected executable digest follows the same captured stock `/bin` alias
+used by the actual supervisor; canonical `/usr/bin/sh` jobs retain their
+original argv rather than being rewritten.
 
 This intermediate path requires runtime v5, canonical `/repo`, immutable
 source/code/directory declarations, the active issued native tool if one is
@@ -165,6 +170,12 @@ Missing/substituted/writable Commands, changed views, expired deadline,
 exhausted cache, cancellation, changed live/returned bindings, stale replies
 and incomplete terminal counts must refuse and fully clean owned processes.
 These controls are deterministic host evidence, not original-eight proof.
+`test_native_command_admission_preserves_root_directories_and_stock_shell_alias`
+must execute the original job with and without the captured `/bin` alias,
+preserve its argv/stdout and complete one actual authorization, and bind equal
+normalized directory sets identically. Absent, file-valued and escaping
+directory declarations must refuse. The pre-fix controls reject valid root
+directories and fail aliased shell admission with a missing executable digest.
 
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
