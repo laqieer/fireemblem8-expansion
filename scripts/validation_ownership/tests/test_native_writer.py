@@ -1072,6 +1072,30 @@ class NativeWriterTests(unittest.TestCase):
                 ("replace", -errno.ENOENT), ("remove", -errno.ENOENT), ("rmdir", -errno.ENOTEMPTY),
             ])
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            creations = [
+                row for row in effects if row["kind"] == "output-mkdir"
+                or row["kind"] == "output-open" and (
+                    row["path"] == "/repo/stage/generation.lock" and row["operation_owner"] == 1
+                    or row["path"].startswith("/repo/stage/.asset-manifest-write-")
+                    or row["path"].endswith(".tmp")
+                )
+            ]
+            seen = set()
+            for creation in creations:
+                if creation["serial"] in seen:
+                    continue
+                seen.add(creation["serial"])
+                with self.subTest(foreign_creator=creation["path"]):
+                    invalid = json.loads(json.dumps(trace))
+                    foreign = 2 if creation["owner"] == 1 else 1
+                    for row in invalid["machine"]["events"]:
+                        if row["kind"] == "native-output" and row["event"].get("serial") == creation["serial"]:
+                            row["event"]["owner"] = foreign
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "creating dispatch"):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
             broadened = json.loads(json.dumps(trace))
             broadened["output_authority"]["jobs"][0]["admission"]["resources"].append(["temporary", "stage/unused"])
             with self.assertRaisesRegex(read_epochs.ReadEpochError, "Command owner"):

@@ -496,6 +496,11 @@ configuration and independently retained issued authorizations. Coherently
 changing archive plans and their hashes cannot replace that independent binding.
 This uses the existing
 admission channel and machine stream, not a second command registry.
+The first directory or regular-file issuance also binds its creator to the
+actual machine dispatch. Later authorized jobs may reopen the same object,
+but their actor dispatch never replaces its original creator. Coherent
+whole-object creator changes reject for directories, shared locks, atomic
+temporaries subsequently retained, and PID temporaries.
 Readonly v5 owner construction and closed wire are unchanged. Earlier unmerged
 v6 checkpoint archives without this binding remain evidence for their exact
 checkpoint, not accepted current-format archives. Hash commitments do not

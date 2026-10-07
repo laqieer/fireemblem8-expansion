@@ -2316,6 +2316,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         if pending is not None and kind not in {"output-write", "output-write-failed"}:
             raise ReadEpochError("native output process omitted its pending write return")
         if kind == "output-mkdir":
+            if row["owner"] != dispatch:
+                raise ReadEpochError("native directory owner differs from its creating dispatch")
             if row["path"] in directories or row["identity"][6] != 2 or row["revision"] != 0 or serial in objects or any(item["serial"] == serial for item in directories.values()):
                 raise ReadEpochError("native mkdir reused an issued directory object")
             directories[row["path"]] = {
@@ -2415,6 +2417,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 raise ReadEpochError("native output open reused a live descriptor")
             descriptions.add(row["description"])
             if item is None:
+                if row["owner"] != dispatch:
+                    raise ReadEpochError("native file owner differs from its creating dispatch")
                 if any(
                     other["path"] == row["path"] or other["identity"][:2] == row["identity"][:2]
                     for other in objects.values()
