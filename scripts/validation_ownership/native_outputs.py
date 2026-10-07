@@ -171,6 +171,8 @@ class NativeOutputs:
 
     def leave_open(self, operation, *, result, pin=None):
         self._operation(operation, "open")
+        if type(result) is not int or not -4095 <= result < 1 << 31:
+            raise NativeOutputError("native open return is not a bounded kernel descriptor/status")
         if result < 0:
             if pin is not None:
                 raise NativeOutputError("failed native open claims a returned descriptor pin")
@@ -523,6 +525,8 @@ class NativeOutputs:
 
     def written(self, pid, descriptor, pin, result):
         self._usable()
+        if type(result) is not int or not -4095 <= result <= self.file_limit:
+            raise NativeOutputError("native write return is not a bounded kernel byte count/status")
         item = self.descriptors.get((pid, descriptor))
         if (
             item is None or (pid, descriptor) not in item.writers

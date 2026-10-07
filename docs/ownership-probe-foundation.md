@@ -94,6 +94,10 @@ sticky-incomplete rather than pretending the actual kernel fork rolled back.
 Pure-status `close`, rename and unlink returns require integer zero for success
 or a bounded negative kernel error: positive, Boolean, float and null evidence
 cannot retire a descriptor or transfer a version.
+Open descriptor/status and write byte-count/status returns likewise validate
+exact integer type and kernel bounds before comparison or mutation. Malformed
+decoded values raise the custody-layer error and retain the pending entry or
+writer; they cannot escape as a Python type error or clear incomplete evidence.
 
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`

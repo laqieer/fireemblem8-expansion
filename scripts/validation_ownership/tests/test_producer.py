@@ -5289,6 +5289,41 @@ class NativeOutputCustodyTests(unittest.TestCase):
                 with self.assertRaises(NativeOutputError):
                     self.outputs.finish()
 
+    def test_open_and_write_malformed_returns_preserve_pending_actual_operations(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        operation = self.outputs.enter_open(
+            owner=1, pid=1, path="typed-open", flags=os.O_CREAT | os.O_EXCL | os.O_RDWR, pin=None,
+        )
+        with os.fdopen(os.open(self.root / "typed-open", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600),
+                       "w+b", buffering=0) as stream:
+            descriptor = stream.fileno()
+            events = len(self.events)
+            for result in (None, "0", True, False, 0.0, -4096, 1 << 31):
+                with self.subTest(operation="open", result=result):
+                    with self.assertRaises(NativeOutputError):
+                        self.outputs.leave_open(operation, result=result, pin=descriptor)
+                    self.assertIs(self.outputs.pending[1], operation)
+                    self.assertFalse(self.outputs.objects)
+                    self.assertFalse(self.outputs.descriptors)
+                    self.assertEqual(len(self.events), events)
+                    self.assertEqual(os.fstat(descriptor).st_size, 0)
+            item = self.outputs.leave_open(operation, result=descriptor, pin=descriptor)
+            self.outputs.before_write(1, descriptor, descriptor)
+            result = os.write(descriptor, b"actual")
+            before = item.identity, item.revision, item.sha256
+            events = len(self.events)
+            for malformed in (None, "0", True, False, 0.0, -4096, self.outputs.file_limit + 1):
+                with self.subTest(operation="write", result=malformed):
+                    with self.assertRaises(NativeOutputError):
+                        self.outputs.written(1, descriptor, descriptor, malformed)
+                    self.assertEqual(item.pending_writer, (1, descriptor))
+                    self.assertEqual((item.identity, item.revision, item.sha256), before)
+                    self.assertEqual(len(self.events), events)
+                    self.assertEqual(os.pread(descriptor, 65536, 0), b"actual")
+            self.outputs.written(1, descriptor, descriptor, result)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
     def test_close_rejects_nonzero_boolean_and_noninteger_status_without_retirement(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         retained = self.create("close-status", b"retained")
