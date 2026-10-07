@@ -23,6 +23,218 @@ class NativeOutputError(MakeProbeError):
     pass
 
 
+class NativeOutputObserver:
+    """Bind exact native-tool capsule outputs to stopped kernel operations."""
+
+    def __init__(self, policy, paths):
+        import sys
+        if __package__:
+            from .authority import relative_path
+        else:
+            from authority import relative_path
+        self.policy = policy
+        self.native = sys.modules[type(policy).__module__]
+        self.paths = frozenset("/work/" + relative_path(path) for path in paths)
+        self.parents = {"/work"} | {
+            os.path.dirname(path) for path in self.paths
+        }
+        for path in self.paths:
+            parent = os.path.dirname(path)
+            while parent != "/work":
+                self.parents.add(parent)
+                parent = os.path.dirname(parent)
+        self.sequence = 0
+        self.custody = NativeOutputs(
+            deadline=self.deadline, charge=policy.charge_metadata,
+            file_limit=policy.config["file_limit"], emit=self.emit,
+        )
+
+    def deadline(self):
+        import time
+        if time.monotonic() >= self.policy.config["deadline"]:
+            raise NativeOutputError("native output observation exhausted its original deadline")
+
+    def emit(self, kind, **fields):
+        import json
+        self.sequence += 1
+        row = {"sequence": self.sequence, "kind": kind, **fields}
+        self.policy.observe(
+            "accessed", "native-output:" + json.dumps(row, sort_keys=True, separators=(",", ":")),
+        )
+
+    def pin(self, pid, descriptor):
+        self.deadline()
+        self.policy.charge_metadata(128)
+        return os.open(f"/proc/{pid}/fd/{descriptor}", os.O_RDONLY | os.O_CLOEXEC)
+
+    def operand(self, path):
+        self.deadline()
+        self.policy.charge_metadata(128)
+        try:
+            return os.open(
+                self.policy.config["root"] + path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            )
+        except FileNotFoundError:
+            return None
+
+    def require_path(self, path):
+        if path not in self.paths:
+            raise NativeOutputError("native output operation is outside its exact Command outputs")
+
+    def entry(self, pid, state, registers):
+        native = self.policy
+        r = registers
+        n, a, b, c, d, e = r.orig_rax, r.rdi, r.rsi, r.rdx, r.r10, r.r8
+        operation = None
+        if n in {2, 85, 257}:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC if n == 85 else c if n == 257 else b
+            path = state.pending[1]
+            writing = bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC))
+            if path.startswith("/work/") and writing:
+                self.require_path(path)
+            if path in self.paths:
+                pin = self.operand(path)
+                try:
+                    operation = self.custody.enter_open(
+                        owner=1, pid=pid, path=path, flags=flags, pin=pin,
+                    )
+                finally:
+                    if pin is not None:
+                        os.close(pin)
+        elif n in {1, 18, 20} and (pid, a) in self.custody.descriptors:
+            pin = self.pin(pid, a)
+            try:
+                info = {}
+                with open(f"/proc/{pid}/fdinfo/{a}", encoding="ascii") as stream:
+                    for line in stream:
+                        key, value = line.split(":", 1)
+                        info[key] = value.strip()
+                native.charge_metadata(128 + sum(len(key) + len(value) for key, value in info.items()))
+                if int(info["flags"], 8) & os.O_APPEND:
+                    raise NativeOutputError("native output append writes are not admitted")
+                if n == 20:
+                    if c > 1024:
+                        raise NativeOutputError("native output writev exceeds its vector bound")
+                    native.charge_metadata(c * 16)
+                    vectors = self.native.memory(pid, b, c * 16)
+                    parts, size = [], 0
+                    for offset in range(0, len(vectors), 16):
+                        pointer = int.from_bytes(vectors[offset:offset + 8], "little")
+                        count = int.from_bytes(vectors[offset + 8:offset + 16], "little")
+                        size += count
+                        if size > self.custody.file_limit:
+                            raise NativeOutputError("native output writev exceeds its file bound")
+                        native.charge_metadata(count)
+                        parts.append(self.native.memory(pid, pointer, count))
+                    data = b"".join(parts)
+                else:
+                    if c > self.custody.file_limit:
+                        raise NativeOutputError("native output write exceeds its file bound")
+                    native.charge_metadata(c)
+                    data = self.native.memory(pid, b, c)
+                offset = native_signed(d) if n == 18 else int(info["pos"])
+                operation = self.custody.enter_write(
+                    pid=pid, descriptor=a, pin=pin, data=data, offset=offset,
+                )
+            finally:
+                os.close(pin)
+        elif n == 3 and (pid, a) in self.custody.descriptors:
+            state.native_output_close = a
+        elif n in {32, 33, 292, 72} and (pid, a) in self.custody.descriptors:
+            if n == 72 and b not in {0, 1030}:
+                if b == fcntl.F_SETFL and c & os.O_APPEND:
+                    raise NativeOutputError("native output append description change is not admitted")
+            else:
+                kind = {32: "dup", 33: "dup2", 292: "dup3"}.get(
+                    n, "fcntl-dupfd" if b == 0 else "fcntl-dupfd-cloexec",
+                )
+                operation = self.custody.enter_duplicate(
+                    pid=pid, descriptor=a, kind=kind,
+                    target=b if n in {33, 292} else None,
+                    minimum=c if n == 72 else None, flags=c if n == 292 else 0,
+                )
+        elif n in {33, 292} and (pid, b) in self.custody.descriptors:
+            raise NativeOutputError("native output replacement by an untracked descriptor is not admitted")
+        elif n in {82, 264, 316}:
+            source = native.path(pid, state, a if n == 82 else b, -100 if n == 82 else native_signed(a), follow_final=False)
+            destination = native.path(pid, state, b if n == 82 else d, -100 if n == 82 else native_signed(c), follow_final=False)
+            if source.startswith("/work/") or destination.startswith("/work/"):
+                self.require_path(source)
+                self.require_path(destination)
+                first, second = self.operand(source), None
+                try:
+                    second = self.operand(destination)
+                    operation = self.custody.enter_replace(
+                        owner=1, pid=pid, source=source, destination=destination,
+                        source_pin=first, retired_pin=second, flags=e if n == 316 else 0,
+                    )
+                finally:
+                    if first is not None:
+                        os.close(first)
+                    if second is not None:
+                        os.close(second)
+            else:
+                raise NativeOutputError("native relocation is outside its exact Command outputs")
+        elif n == 87 or n == 263 and c == 0:
+            path = native.path(pid, state, a if n == 87 else b, -100 if n == 87 else native_signed(a), follow_final=False)
+            if path.startswith("/work/"):
+                self.require_path(path)
+                pin = self.operand(path)
+                try:
+                    operation = self.custody.enter_remove(owner=1, pid=pid, path=path, pin=pin)
+                finally:
+                    if pin is not None:
+                        os.close(pin)
+        elif n in {83, 258}:
+            path = native.path(pid, state, a if n == 83 else b, -100 if n == 83 else native_signed(a), follow_final=False)
+            if path.startswith("/work/") and path not in self.parents:
+                raise NativeOutputError("native output directory is not a declared output ancestor")
+        elif n in {76, 77, 90, 91, 92, 93, 94, 260, 268, 280}:
+            path = state.fds.get(a) if n in {77, 91, 93} else native.path(
+                pid, state, b if n in {260, 268, 280} else a,
+                native_signed(a) if n in {260, 268, 280} else -100,
+            )
+            if path in self.paths:
+                raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
+        elif n in {86, 265}:
+            raise NativeOutputError("native output hardlink transitions are not implemented")
+        if operation is not None:
+            state.native_output_operation = operation
+
+    def leave(self, pid, state, result):
+        operation, state.native_output_operation = state.native_output_operation, None
+        if operation is not None:
+            if operation.kind == "open":
+                pin = None if result < 0 else self.pin(pid, result)
+                try:
+                    self.custody.leave_open(operation, result=result, pin=pin)
+                finally:
+                    if pin is not None:
+                        os.close(pin)
+            elif operation.kind == "write":
+                self.custody.leave_write(operation, result)
+            elif operation.kind == "replace":
+                self.custody.leave_replace(operation, result)
+            elif operation.kind == "remove":
+                self.custody.leave_remove(operation, result)
+            elif operation.kind == "dup":
+                pin = None if result < 0 else self.pin(pid, result)
+                try:
+                    self.custody.leave_duplicate(operation, result, pin=pin)
+                finally:
+                    if pin is not None:
+                        os.close(pin)
+            else:
+                raise NativeOutputError("native output supervisor lost its operation kind")
+        descriptor, state.native_output_close = state.native_output_close, None
+        if descriptor is not None:
+            self.custody.closed(pid, descriptor, result)
+
+
+def native_signed(value):
+    return value - (1 << 64) if value & (1 << 63) else value
+
+
 @dataclass
 class OutputObject:
     owner: int

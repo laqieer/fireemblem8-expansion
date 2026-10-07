@@ -202,6 +202,43 @@ owners distinct when a captured non-root shared-library image changes without
 changing stdout. Repeating the original closure must restore its original
 owner. The root-only pre-fix binding aliases both controls.
 
+The existing session-issued native-tool `Command` capsule now connects exact
+`outputs` declarations to the live syscall supervisor's output-object model.
+Open, write/writev/pwrite, duplicate, close, actual fork inheritance, process
+exit, atomic replacement and unlink use stopped kernel operands and paired
+return observations. Owned `/proc/PID/fd` duplicates pin the actual objects;
+tracee descriptor numbers are never closed by the supervisor. Successful
+returns settle content and versions; failures preserve preimages. Counters,
+pin/content reads, event storage and the deadline use the existing shared
+budget. No second runner or output ownership registry is introduced.
+
+This intermediate adapter applies only to the existing `/native/tool` command
+capsule, not original native Make jobs. It retains final exact output capture
+and reports charged, sequenced output events through the existing supervisor
+observation transport; those events are not yet generated-source machine/
+host/archive qualification. All intermediate file operands must be explicitly
+declared outputs; final capture still requires every declared output to exist.
+It does not infer temporary filename domains. Append, standalone truncation,
+mode/ownership changes, hardlinks, and replacement of a tracked output FD by
+an untracked FD refuse rather than inventing an observed transition.
+These limitations still need reconciliation with the original producer effect
+plans before #275 acceptance; they do not establish a new supported restriction
+on the original Make backend.
+
+Run
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_observes_actual_fork_dup_writes_and_atomic_retirement scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_refuses_unobserved_output_effects_before_kernel_entry`.
+From a clean host fixture the actual C writer must run once, print `once`,
+fork and duplicate its real output descriptor, write vectors followed by a
+fixed-offset parent write, atomically replace the output and retire a separate
+temporary version. Require `result` bytes `AxyD` and `result.tmp` bytes `final`,
+both mode `0600`, distinct actual parent/child PIDs and matching sequenced
+object lifecycles. Each undeclared output, append-description change,
+standalone truncate, untracked FD replacement and hardlink control must refuse
+and clean the owned process tree. The existing generated-include/native-tool
+publication test remains a compatibility control. These are deterministic
+host cases for the existing native-custody contract, not original-eight proof,
+and do not change ROM/RAM, save, locale, modern or archival build profiles.
+
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
 variants to preserve exact source bytes, inherited writer membership and final

@@ -245,6 +245,8 @@ class Process:
     native_inputs: tuple[str, dict] | None = None
     native_admission: dict | None = None
     path_context: tuple[str, int, str | None] | None = None
+    native_output_operation: object | None = None
+    native_output_close: int | None = None
 
     def clone(self):
         return Process(
@@ -497,6 +499,21 @@ class Policy:
                     parent = posixpath.dirname(parent)
         if request is not None:
             self.read_trace = NativeReadTrace(self, request)
+        self.native_outputs = None
+        paths = config.get("native_output_paths")
+        if paths is not None:
+            if (
+                self.mode != "command" or config["argv"][0] != "/native/tool"
+                or not isinstance(paths, list) or not paths
+                or any(not isinstance(path, str) for path in paths) or len(set(paths)) != len(paths)
+                or len(paths) > config["creation_limit"]
+            ):
+                raise Violation("native output observer lacks its exact issued tool outputs")
+            if __package__:
+                from .native_outputs import NativeOutputObserver
+            else:
+                from native_outputs import NativeOutputObserver
+            self.native_outputs = NativeOutputObserver(self, paths)
 
     def observation_count(self):
         return sum(map(len, self.observation_attempts.values())) + self.trace_observations
@@ -2539,7 +2556,8 @@ class Policy:
         elif n in {82, 264, 316}:
             # Moving a cwd/dirfd ancestor changes the kernel's '..' meaning
             # without changing its recorded path. No supported tool needs it.
-            raise Violation("candidate directory-entry relocation is forbidden")
+            if self.native_outputs is None:
+                raise Violation("candidate directory-entry relocation is forbidden")
         elif n == 86:
             for pointer in (a, b):
                 self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
@@ -2601,10 +2619,14 @@ class Policy:
             raise Violation(f"unadmitted syscall {n}")
         if self.written > self.config["write_limit"]:
             raise Violation("aggregate capsule storage budget exhausted")
+        if self.native_outputs is not None:
+            self.native_outputs.entry(pid, state, r)
 
     def leave(self, pid, state, r):
         state.dependency_stop = None
         result = signed(r.rax)
+        if self.native_outputs is not None:
+            self.native_outputs.leave(pid, state, result)
         self.finish_metadata(pid, state, result)
         state.memory_reservation = 0
         state.process_reservation = False
@@ -2856,6 +2878,8 @@ def supervise(config, drop_privileges):
             raise Violation("unrecorded sandbox descendant")
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
+            if policy.native_outputs is not None:
+                policy.native_outputs.custody.retire_process(stopped)
             if policy.native_readonly and state.role == "native" and state.native_exit_status != status:
                 raise Violation("native terminal status differs from its actual kernel exit stop")
             if policy.native_readonly and state.role == "native" and os.WIFSIGNALED(status):
@@ -2921,6 +2945,12 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
+            if policy.native_outputs is not None:
+                descriptors = tuple(
+                    descriptor for owner_pid, descriptor in policy.native_outputs.custody.descriptors
+                    if owner_pid == stopped
+                )
+                policy.native_outputs.custody.inherited(stopped, child.value, descriptors)
             if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5:
                 policy.native_tree_event(
                     state, {"kind": "fork", "pid": stopped, "child": child.value},
@@ -3256,6 +3286,12 @@ def supervise(config, drop_privileges):
                     processes.clear()
         def finish_trace():
             nonlocal error, finished_trace
+            if error is None and policy.native_outputs is not None:
+                try:
+                    policy.native_outputs.custody.finish()
+                except BaseException as failure:
+                    error = str(failure)
+                    raise
             if error is None:
                 try:
                     policy.finish_native_jobs()
@@ -3317,6 +3353,7 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, finish_channel, finish_trace, write_report,
+            *([] if policy.native_outputs is None else [policy.native_outputs.custody.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)

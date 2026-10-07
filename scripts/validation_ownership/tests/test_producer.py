@@ -1503,6 +1503,96 @@ class ProducerTests(unittest.TestCase):
             self.assertFalse((session.tree / "native/tool").exists())
         self.fixture.assert_clean(session)
 
+    def test_native_capsule_observes_actual_fork_dup_writes_and_atomic_retirement(self):
+        self.fixture.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <sys/uio.h>\n#include <sys/wait.h>\n"
+            "int main(void) { int fd, copy, status; pid_t child;"
+            "struct iovec parts[2]={{\"AB\",2},{\"CD\",2}};"
+            "fd=open(\"/work/result.tmp\",O_CREAT|O_EXCL|O_RDWR,0600); if(fd<0)return 1;"
+            "child=fork(); if(child<0)return 2;"
+            "if(!child){ copy=dup(fd); if(copy<0)return 3;"
+            "if(writev(copy,parts,2)!=4)return 4; if(close(copy))return 5; _exit(0); }"
+            "if(waitpid(child,&status,0)!=child||status)return 6;"
+            "if(pwrite(fd,\"xy\",2,1)!=2||close(fd))return 7;"
+            "if(rename(\"/work/result.tmp\",\"/work/result\"))return 8;"
+            "fd=open(\"/work/result.tmp\",O_CREAT|O_EXCL|O_WRONLY,0600);if(fd<0)return 9;"
+            "if(write(fd,\"retired\",7)!=7||close(fd)||unlink(\"/work/result.tmp\"))return 10;"
+            "fd=open(\"/work/result.tmp\",O_CREAT|O_EXCL|O_WRONLY,0600);if(fd<0)return 11;"
+            "if(write(fd,\"final\",5)!=5||close(fd))return 12;"
+            "puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        reports = []
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            execute = session._sandbox_run
+            def record(root, **kwargs):
+                result = execute(root, **kwargs)
+                if kwargs["mode"] == "command":
+                    reports.append(result[1])
+                return result
+            with patch.object(session, "_sandbox_run", record):
+                output = session.native(tool, outputs=("result", "result.tmp"))
+            self.assertEqual(output.stdout, b"once\n")
+            self.assertEqual({item.path: item.data for item in output.generated}, {
+                "result": b"AxyD", "result.tmp": b"final",
+            })
+            self.assertEqual({item.mode for item in output.generated}, {0o600})
+            report, = reports
+            rows = sorted(
+                (json.loads(value.removeprefix("native-output:")) for value in report["accessed"]
+                 if value.startswith("native-output:")), key=lambda row: row["sequence"],
+            )
+            self.assertEqual([row["sequence"] for row in rows], list(range(1, len(rows) + 1)))
+            inherited, = [row for row in rows if row["kind"] == "output-inherit"]
+            self.assertNotEqual(inherited["parent"], inherited["pid"])
+            duplicate, = [row for row in rows if row["kind"] == "output-dup"]
+            self.assertEqual(duplicate["pid"], inherited["pid"])
+            self.assertEqual(duplicate["fd"], inherited["fd"])
+            writes = [row for row in rows if row["kind"] == "output-write"]
+            self.assertEqual([row["result"] for row in writes], [4, 2, 7, 5])
+            self.assertEqual(writes[0]["pid"], inherited["pid"])
+            self.assertEqual(writes[1]["pid"], inherited["parent"])
+            replacement, = [row for row in rows if row["kind"] == "output-replace"]
+            self.assertEqual(replacement["source"], "/work/result.tmp")
+            self.assertEqual(replacement["path"], "/work/result")
+            retired, = [row for row in rows if row["kind"] == "output-retire"]
+            self.assertNotEqual(retired["serial"], replacement["serial"])
+            self.assertEqual(retired["destination"], "/work/result.tmp")
+            self.assertEqual(report["processes"], 2)
+        self.fixture.assert_clean(session)
+
+    def test_native_capsule_refuses_unobserved_output_effects_before_kernel_entry(self):
+        self.fixture.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd,other;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0700);if(fd<0)return 1;"
+            "if(argc!=2)return 2;"
+            "if(!strcmp(argv[1],\"extra\"))other=open(\"/work/extra\",O_CREAT|O_WRONLY,0600);"
+            "else if(!strcmp(argv[1],\"append\"))other=fcntl(fd,F_SETFL,O_APPEND);"
+            "else if(!strcmp(argv[1],\"truncate\"))other=ftruncate(fd,1);"
+            "else if(!strcmp(argv[1],\"replace-fd\"))other=dup2(1,fd);"
+            "else other=link(\"/work/result\",\"/work/alias\");"
+            "(void)other;return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for mutation, diagnostic in (
+            ("extra", "outside its exact Command outputs"),
+            ("append", "append description change"),
+            ("truncate", "standalone truncate transition"),
+            ("replace-fd", "untracked descriptor"),
+            ("link", "hardlink transitions"),
+        ):
+            with self.subTest(mutation=mutation):
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    with self.assertRaisesRegex(MakeProbeError, diagnostic):
+                        session.native(tool, (mutation,), outputs=("result",))
+                self.fixture.assert_clean(session)
+
     def test_missing_direct_native_path_is_not_synthesized_into_the_make_view(self):
         self.fixture.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
         self.fixture.add("Makefile", "all:\n\t+@tools/native\n")

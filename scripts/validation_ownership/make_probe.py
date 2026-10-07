@@ -1218,6 +1218,7 @@ class ProbeSession:
         runtime_completions=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None, native_admission_handler=None,
+        native_output_paths=(),
     ):
         self.budget.remaining()
         if native_admission_handler is not None and (
@@ -1393,6 +1394,10 @@ class ProbeSession:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
             config["dependency"] = dependency
+        if native_output_paths:
+            if mode != "command" or argv[0] != "/native/tool" or native_runtime:
+                raise MakeProbeError("native output observation requires the issued native-tool capsule")
+            config["native_output_paths"] = list(self._output_paths(native_output_paths))
         counter_names = {
             "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
             "observations", "live_process_peak", "memory_peak",
@@ -2142,6 +2147,7 @@ class ProbeSession:
                 ],
                 code=code, sources=sources, directories=directories,
                 executables=compiler, dependency=dependency,
+                native_output_paths=outputs if native is not None else (),
                 **({} if original_executable is None else {
                     "repository_outputs": outputs, "cwd": original_cwd,
                     "initial_executable": original_executable,
