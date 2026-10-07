@@ -527,6 +527,11 @@ identity. Snapshot streams still require their full original identity.
 Failed descriptor operations bind their live PID to the current dispatch, not
 the original producer's exited process tree; operand objects still retain their
 original producer ownership.
+Archive authority covers every observed non-Make execute dispatch, including
+output-free jobs. Machine replay carries stopped/started state in its existing
+native-owner map: root successful exec and child start enable ordinary output
+effects; exit retires that actor. FD inheritance is separately bound to the
+current actual fork and its live parent, before the child begins running.
 Settlement with a remaining writable binding is valid only immediately before
 the matching final close, exec closure, duplicate-target retirement or supported
 close-error return. Earlier duplicated-writer or readonly closes cannot
@@ -598,6 +603,12 @@ successful CLOEXEC exec and process death. Moving settlement before an earlier
 readonly close rejects in every mode. All four supported close-error records
 have controlled replay coverage, not claimed native errno generation.
 The fork/dup case also rejects settlement moved before a nonlast writer close.
+Its rehashed actor controls reject operations before fork, after fork but before
+child start, and after exit, while actual pre-start kernel FD inheritance remains
+valid. `test_native_output_authority_covers_actual_output_free_jobs` executes an
+original shell writer followed by an actual output-free printf job. It requires
+both issued job records and rejects removal of the trailing job despite complete
+remaining file effects and valid terminal retained bytes.
 
 `test_native_original_make_replaces_pinned_generated_source_with_actual_recipe`
 starts with a missing generated include. Original Make invokes its creator

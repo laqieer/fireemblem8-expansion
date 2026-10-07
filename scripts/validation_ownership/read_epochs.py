@@ -1689,7 +1689,7 @@ def validate_machine_observations(value, trace, *, count_limit):
                 native_trees[row["dispatch"]] = []
                 if runtime and pid in native_owners:
                     raise ReadEpochError("native root execution reused an owned process")
-                native_owners[pid] = row["dispatch"]
+                native_owners[pid] = (row["dispatch"], False)
         elif kind == "native-policy":
             dispatch = row["dispatch"]
             if (
@@ -1717,14 +1717,14 @@ def validate_machine_observations(value, trace, *, count_limit):
                 or not isinstance(event, dict) or event.get("pid") != pid
                 or not isinstance(row["sha256"], str)
                 or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
-                or native_owners.get(pid) != dispatch or pid not in native_cleared
+                or native_owners.get(pid, (None, False))[0] != dispatch or pid not in native_cleared
             ):
                 raise ReadEpochError("native machine tree lost its actual root/event payload")
             if event.get("kind") == "fork":
                 child = event.get("child")
                 if type(child) is not int or child <= 0 or child in native_owners:
                     raise ReadEpochError("native machine tree reused its owned child")
-                native_owners[child] = dispatch
+                native_owners[child] = (dispatch, False)
                 native_cleared.discard(child)
             elif event.get("kind") == "exec":
                 if prior_pid is None or not (
@@ -1735,6 +1735,8 @@ def validate_machine_observations(value, trace, *, count_limit):
                     raise ReadEpochError("native tree exec omitted its actual register clear")
             elif event.get("kind") == "start" and (prior_pid is None or prior_pid["kind"] != "clear"):
                 raise ReadEpochError("native tree start omitted its inherited register clear")
+            if event.get("kind") in {"exec", "start"}:
+                native_owners[pid] = (dispatch, True)
             if trace["version"] == WRITABLE_VERSION and event.get("kind") == "exit":
                 del native_owners[pid]
                 native_cleared.discard(pid)
@@ -1753,11 +1755,18 @@ def validate_machine_observations(value, trace, *, count_limit):
             if (
                 dispatch in native_policies
                 or actor is not None and (
-                    type(actor) is not int or native_owners.get(actor) != dispatch
+                    type(actor) is not int
+                    or native_owners.get(actor, (None, False))[0] != dispatch
+                    or not native_owners[actor][1] and event.get("kind") != "output-inherit"
                 )
-                or actor is None and dispatch not in native_owners.values()
+                or actor is None and (dispatch, True) not in native_owners.values()
                 or event.get("kind") == "output-inherit" and (
-                    type(event.get("parent")) is not int or native_owners.get(event["parent"]) != dispatch
+                    type(event.get("parent")) is not int
+                    or native_owners.get(event["parent"]) != (dispatch, True)
+                    or not native_trees[dispatch]
+                    or native_trees[dispatch][-1].get("kind") != "fork"
+                    or native_trees[dispatch][-1].get("child") != actor
+                    or native_trees[dispatch][-1].get("pid") != event["parent"]
                 )
             ):
                 raise ReadEpochError("native output event lacks its live job actor at the actual sequence")
@@ -2030,6 +2039,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         ):
             raise ReadEpochError("native output job differs from its actual machine lifecycle")
         jobs[number] = job
+    if set(jobs) != {row["dispatch"] for row in machine if row["kind"] == "execute" and not row["make"]}:
+        raise ReadEpochError("native output authority omitted or added an actual job dispatch")
     common = {"sequence", "kind", "owner", "serial", "revision", "path"}
     fields = {
         "output-open": {"pid", "fd", "operation_owner", "identity", "writing", "description"},

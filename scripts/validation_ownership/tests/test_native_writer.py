@@ -626,14 +626,15 @@ class NativeWriterTests(unittest.TestCase):
                     row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
             with self.assertRaisesRegex(read_epochs.ReadEpochError, "settlement"):
                 read_epochs.validate_trace(premature, premature["scope"], count_limit=100000, file_limit=10000000)
-            for phase in ("before-fork", "after-exit"):
+            for phase in ("before-fork", "before-start", "after-exit"):
                 with self.subTest(actor_phase=phase):
                     invalid = json.loads(json.dumps(trace))
                     events = invalid["machine"]["events"]
                     kind = "output-inherit" if phase == "before-fork" else "output-close"
                     moved = [
                         row for row in events if row["kind"] == "native-output"
-                        and row["event"]["kind"] == kind and row["event"]["pid"] == inherited["pid"]
+                        and (row["event"]["kind"] != "output-inherit" if phase == "before-start" else row["event"]["kind"] == kind)
+                        and row["event"].get("pid") == inherited["pid"]
                     ]
                     self.assertTrue(moved)
                     events[:] = [row for row in events if row not in moved]
@@ -642,10 +643,12 @@ class NativeWriterTests(unittest.TestCase):
                         if row["kind"] == "native-tree" and (
                             row["event"]["kind"] == "fork" and row["event"]["child"] == inherited["pid"]
                             if phase == "before-fork" else
+                            row["event"]["kind"] == "start" and row["event"]["pid"] == inherited["pid"]
+                            if phase == "before-start" else
                             row["event"]["kind"] == "exit" and row["event"]["pid"] == inherited["pid"]
                         )
                     )
-                    position = anchor if phase == "before-fork" else anchor + 1
+                    position = anchor if phase != "after-exit" else anchor + 1
                     events[position:position] = moved
                     for number, row in enumerate(read_epochs.native_output_effects(invalid), 1):
                         row["sequence"] = number
@@ -671,6 +674,38 @@ class NativeWriterTests(unittest.TestCase):
                         read_epochs.validate_trace(
                             invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
                         )
+        self.assert_clean(session)
+
+
+    def test_native_output_authority_covers_actual_output_free_jobs(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "all:\n\t@printf final > result\n\t@printf '%s' once\n")
+        requests = []
+        class Commands:
+            def __getitem__(self, argv):
+                requests.append(argv)
+                if argv == ("/bin/sh", "-c", "printf final > result"):
+                    return Command(argv, outputs=("result",))
+                if argv == ("printf", "%s", "once"):
+                    return Command(argv)
+                raise KeyError(argv)
+        session = self.session()
+        with session:
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), commands=Commands(),
+                native_executables=("/usr/bin/printf",),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"once", b""))
+            self.assertEqual([(item.path, item.data, item.mode) for item in generated], [("result", b"final", 0o644)])
+            trace = observed["read_trace"]
+            self.assertEqual(len(requests), 2)
+            self.assertEqual([job["admission"]["outputs"] for job in trace["output_authority"]["jobs"]], [["result"], []])
+            read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            missing = json.loads(json.dumps(trace))
+            missing["output_authority"]["jobs"].pop()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "actual job dispatch"):
+                read_epochs.validate_trace(missing, missing["scope"], count_limit=100000, file_limit=10000000)
         self.assert_clean(session)
 
 
