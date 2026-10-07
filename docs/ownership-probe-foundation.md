@@ -40,9 +40,20 @@ actual source/job/version outcome.
 The dependent #275 branch's internal `NativeOutputs` object model keeps
 successful output-descriptor operations and generated source-read pins in
 one lifetime. Its focused kernel controls exercise actual file writes,
-fork-inherited descriptors, failed writes/renames, atomic replacement with
+fork-inherited descriptors, paired write entry/return, actual `dup2` no-op
+and replacement, failed writes/renames, atomic replacement with
 an old source pin, foreign owners, in-place mutation refusal and pin cleanup:
 `python3 -m unittest scripts.validation_ownership.tests.test_producer.NativeOutputCustodyTests`.
+Settled versions retain generated-content digests through owned object pins;
+rename/unlink verify both moved and retired bytes. Plain write returns cannot
+absorb mode/link changes. Cleanup closes owned object/source pins, never the
+borrowed tracee descriptor integers.
+Zero-byte write returns preserve the complete entry identity and cannot absorb
+an unrelated intervening content write.
+Settlement or event-budget failure propagates without a successful admission.
+Because the kernel open has already succeeded, its borrowed binding remains
+diagnostic state until actual retirement; cleanup closes its owned duplicate
+but does not invent a kernel rollback or make an active lifecycle complete.
 These controls are component evidence only. Until original owned exec/syscall,
 mount, source-reader and machine/host/archive consumers are wired, this object
 model grants no native write authority and does not qualify

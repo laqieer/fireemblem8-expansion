@@ -9,9 +9,11 @@ import stat
 
 if __package__:
     from .budget import MakeProbeError
+    from .lifecycle import finish_cleanup
     from .producer_channel import publication_identity
 else:
     from budget import MakeProbeError
+    from lifecycle import finish_cleanup
     from producer_channel import publication_identity
 
 
@@ -25,7 +27,10 @@ class OutputObject:
     serial: int
     path: str | None
     identity: tuple
+    descriptor: int
+    sha256: str | None = None
     revision: int = 0
+    pending_writer: tuple[int, int] | None = None
     writers: set[tuple[int, int]] = field(default_factory=set)
     readers: set[int] = field(default_factory=set)
     retired: bool = False
@@ -92,6 +97,33 @@ class NativeOutputs:
             if self._identity(descriptor) != before or digest.hexdigest() != source.sha256:
                 raise NativeOutputError("native retirement changed pinned source content")
 
+    def _digest(self, descriptor, identity):
+        self.charge(identity[3])
+        digest, offset = hashlib.sha256(), 0
+        while offset < identity[3]:
+            self.deadline()
+            block = os.pread(descriptor, min(65536, identity[3] - offset), offset)
+            if not block:
+                raise NativeOutputError("native output content was truncated during settlement")
+            digest.update(block)
+            offset += len(block)
+        if self._identity(descriptor) != identity:
+            raise NativeOutputError("native output changed during content settlement")
+        return digest.hexdigest()
+
+    def _settle(self, item):
+        if item.writers or item.pending_writer is not None or item.retired:
+            raise NativeOutputError("native output settlement overlaps an active writer")
+        identity = self._identity(item.descriptor)
+        if identity != item.identity:
+            raise NativeOutputError("native output settlement absorbed an unobserved change")
+        item.sha256 = self._digest(item.descriptor, identity)
+        self._event("output-settled", item, identity=list(identity), sha256=item.sha256)
+
+    def _verify_settled(self, item, identity):
+        if item.sha256 is None or self._digest(item.descriptor, identity) != item.sha256:
+            raise NativeOutputError("native output retirement changed settled content")
+
     def opened(self, *, owner, pid, descriptor, pin, path, writing):
         """Bind an actual successful open to its kernel object, not pathname alone."""
         if type(owner) is not int or owner < 1 or type(writing) is not bool:
@@ -106,7 +138,7 @@ class NativeOutputs:
                 raise NativeOutputError("native output open names a retired object")
             self.charge(256)
             self.serial += 1
-            item = OutputObject(owner, self.serial, path, identity)
+            item = OutputObject(owner, self.serial, path, identity, os.dup(pin))
             self.objects[path] = item
             self.versions.append(item)
         elif item.retired or item.owner != owner or identity != item.identity:
@@ -117,6 +149,8 @@ class NativeOutputs:
         self.descriptors[binding] = item
         if writing:
             item.writers.add(binding)
+        elif item.sha256 is None:
+            self._settle(item)
         self._event("output-open", item, pid=pid, fd=descriptor, identity=list(identity), writing=writing)
         return item
 
@@ -138,9 +172,12 @@ class NativeOutputs:
         item = self.descriptors.get((pid, original))
         if item is None:
             raise NativeOutputError("native output duplicate has no owned descriptor")
+        if result == original:
+            self._event("output-dup", item, pid=pid, fd=original, result=result)
+            return
         copied = (pid, result)
         if copied in self.descriptors:
-            raise NativeOutputError("native output duplicate replaced an unretired descriptor")
+            self.closed(pid, result, 0)
         self.charge(64)
         self.descriptors[copied] = item
         if (pid, original) in item.writers:
@@ -152,26 +189,38 @@ class NativeOutputs:
         item = self.descriptors.get(binding)
         if (
             item is None or binding not in item.writers or item.retired or item.readers
+            or item.pending_writer is not None
             or self._identity(pin) != item.identity
         ):
             raise NativeOutputError("native output write lost its live object/descriptor")
+        item.pending_writer = binding
         return item
 
     def written(self, pid, descriptor, pin, result):
         item = self.descriptors.get((pid, descriptor))
-        if item is None or (pid, descriptor) not in item.writers:
+        if (
+            item is None or (pid, descriptor) not in item.writers
+            or item.pending_writer != (pid, descriptor)
+        ):
             raise NativeOutputError("native output completion has no owned writer")
         if result < 0:
             if self._identity(pin) != item.identity:
                 raise NativeOutputError("failed native output write changed its object")
+            item.pending_writer = None
             self._event("output-write-failed", item, pid=pid, fd=descriptor, result=result)
             return
         identity = self._identity(pin)
+        if result == 0 and identity != item.identity:
+            raise NativeOutputError("zero-byte native output write changed its object")
         if identity[:2] != item.identity[:2] or item.readers or item.retired:
             raise NativeOutputError("native output write completion changed its object/lifetime")
+        if identity[2] != item.identity[2] or identity[6] != item.identity[6]:
+            raise NativeOutputError("native output write absorbed an unrelated mode or link change")
         if identity != item.identity:
             item.revision += 1
             item.identity = identity
+            item.sha256 = None
+        item.pending_writer = None
         self._event("output-write", item, pid=pid, fd=descriptor, result=result, identity=list(identity))
 
     def closed(self, pid, descriptor, result):
@@ -181,9 +230,15 @@ class NativeOutputs:
                 self._event("output-close-failed", item, pid=pid, fd=descriptor, result=result)
             return
         binding = (pid, descriptor)
+        item = self.descriptors.get(binding)
+        if item is not None and item.pending_writer == binding:
+            raise NativeOutputError("native output close overlaps an unfinished write")
         item = self.descriptors.pop(binding, None)
         if item is not None:
+            writer = binding in item.writers
             item.writers.discard(binding)
+            if writer and not item.writers:
+                self._settle(item)
             self._event("output-close", item, pid=pid, fd=descriptor)
 
     def retire_process(self, pid):
@@ -210,6 +265,8 @@ class NativeOutputs:
                 data.extend(block)
             if self._identity(pin) != identity:
                 raise NativeOutputError("native generated source changed during capture")
+            if item.sha256 is None or hashlib.sha256(data).hexdigest() != item.sha256:
+                raise NativeOutputError("native generated source differs from its settled content")
             source = SourcePin(
                 pin, item, identity, bytes(data), stat.S_IMODE(identity[2]),
                 hashlib.sha256(data).hexdigest(), item.revision,
@@ -249,7 +306,9 @@ class NativeOutputs:
             )
         ):
             raise NativeOutputError("native replacement changed object content or mode")
+        self._verify_settled(item, moved)
         if old is not None:
+            self._verify_settled(old, retired)
             self._verify_readers(old)
             old.identity = retired
             old.path = None
@@ -273,6 +332,7 @@ class NativeOutputs:
             return
         if identity[:5] != item.identity[:5] or identity[6] != item.identity[6] - 1:
             raise NativeOutputError("native output removal changed object content or mode")
+        self._verify_settled(item, identity)
         self._verify_readers(item)
         del self.objects[path]
         item.identity = identity
@@ -298,13 +358,25 @@ class NativeOutputs:
         self._event("output-source-retired", source.object, sha256=source.sha256)
 
     def finish(self):
-        if self.descriptors or self.pins or any(item.readers or item.writers for item in self.versions):
+        if self.descriptors or self.pins or any(
+            item.readers or item.writers or item.pending_writer is not None for item in self.versions
+        ):
             raise NativeOutputError("native output custody ended with active descriptors/pins")
 
     def close(self):
-        """Close only model-owned source pins; tracee descriptors are borrowed."""
-        for descriptor, source in tuple(self.pins.items()):
-            os.close(descriptor)
+        """Close owned object/source pins, never borrowed tracee FD integers."""
+        def close_source(descriptor, source):
             source.closed = True
             source.object.readers.discard(descriptor)
             del self.pins[descriptor]
+            os.close(descriptor)
+
+        def close_object(item):
+            descriptor, item.descriptor = item.descriptor, -1
+            os.close(descriptor)
+
+        finish_cleanup([
+            *(lambda descriptor=descriptor, source=source: close_source(descriptor, source)
+              for descriptor, source in tuple(self.pins.items())),
+            *(lambda item=item: close_object(item) for item in self.versions if item.descriptor >= 0),
+        ])

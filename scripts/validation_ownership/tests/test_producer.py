@@ -4624,15 +4624,17 @@ class NativeOutputCustodyTests(unittest.TestCase):
 
     def create(self, path, data, owner=1, pid=1):
         descriptor = os.open(self.root / path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
-        self.addCleanup(os.close, descriptor)
-        self.outputs.opened(
-            owner=owner, pid=pid, descriptor=descriptor, pin=descriptor, path=path, writing=True,
-        )
-        self.outputs.before_write(pid, descriptor, descriptor)
-        result = os.write(descriptor, data)
-        self.outputs.written(pid, descriptor, descriptor, result)
+        with os.fdopen(descriptor, "wb", buffering=0):
+            pin = os.dup(descriptor)
+            self.addCleanup(os.close, pin)
+            self.outputs.opened(
+                owner=owner, pid=pid, descriptor=descriptor, pin=pin, path=path, writing=True,
+            )
+            self.outputs.before_write(pid, descriptor, pin)
+            result = os.write(descriptor, data)
+            self.outputs.written(pid, descriptor, pin, result)
         self.outputs.closed(pid, descriptor, 0)
-        return descriptor
+        return pin
 
     def test_actual_atomic_replacement_preserves_old_source_and_current_version(self):
         old = self.create("generated.mk", b"VALUE := old\n")
@@ -4716,6 +4718,7 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.opened(
             owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="output", writing=True,
         )
+        self.outputs.before_write(1, descriptor, descriptor)
         with self.assertRaises(OSError) as failed:
             os.pwrite(descriptor, b"denied", -1)
         self.outputs.written(1, descriptor, descriptor, -failed.exception.errno)
@@ -4726,6 +4729,25 @@ class NativeOutputCustodyTests(unittest.TestCase):
             self.outputs.finish()
         self.outputs.closed(1, descriptor, 0)
         self.outputs.finish()
+
+    def test_actual_zero_byte_write_cannot_absorb_an_intervening_content_write(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("zero-write", b"original")
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="zero-write", writing=True,
+        )
+        self.outputs.before_write(1, descriptor, descriptor)
+        result = os.write(descriptor, b"")
+        self.assertEqual(result, 0)
+        self.outputs.written(1, descriptor, descriptor, result)
+        original = self.outputs.objects["zero-write"].identity
+        self.assertEqual(original, self.outputs._identity(descriptor))
+        self.outputs.before_write(1, descriptor, descriptor)
+        result = os.write(descriptor, b"")
+        os.pwrite(descriptor, b"external", 0)
+        with self.assertRaisesRegex(NativeOutputError, "zero-byte"):
+            self.outputs.written(1, descriptor, descriptor, result)
+        self.assertEqual(self.outputs.objects["zero-write"].identity, original)
 
     def test_foreign_owner_inplace_mutation_and_active_pin_cleanup_refuse(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
@@ -4772,6 +4794,53 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.assertFalse(self.outputs.objects["include.mk"].readers)
         self.outputs.close()
         self.outputs.finish()
+
+    def test_readonly_settlement_failure_preserves_actual_binding_and_owned_pin_cleanup(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        data = b"VALUE := settlement input\n"
+        for failure in ("content-budget", "settled-event"):
+            with self.subTest(failure=failure):
+                path = self.root / failure
+                path.write_bytes(data)
+                events = []
+
+                def charge(amount):
+                    self.charge(amount)
+                    if failure == "content-budget" and amount == len(data):
+                        raise RuntimeError("settlement budget exhausted")
+
+                def emit(kind, **fields):
+                    if failure == "settled-event" and kind == "output-settled":
+                        raise RuntimeError("settlement budget exhausted")
+                    events.append(kind)
+
+                outputs = NativeOutputs(
+                    deadline=self.deadline, charge=charge, file_limit=65536, emit=emit,
+                )
+                self.addCleanup(outputs.close)
+                with path.open("rb") as reader:
+                    descriptor, pid = reader.fileno(), os.getpid()
+                    with self.assertRaisesRegex(RuntimeError, "settlement budget"):
+                        outputs.opened(
+                            owner=1, pid=pid, descriptor=descriptor, pin=descriptor,
+                            path=failure, writing=False,
+                        )
+                    item = outputs.descriptors[(pid, descriptor)]
+                    self.assertIs(outputs.objects[failure], item)
+                    owned = item.descriptor
+                    self.assertEqual(os.pread(owned, len(data), 0), data)
+                    self.assertNotIn("output-open", events)
+                    self.assertFalse(outputs.pins)
+                    with self.assertRaisesRegex(NativeOutputError, "active"):
+                        outputs.finish()
+                    outputs.close()
+                    with self.assertRaises(OSError):
+                        os.fstat(owned)
+                    self.assertEqual(os.pread(descriptor, len(data), 0), data)
+                    with self.assertRaisesRegex(NativeOutputError, "active"):
+                        outputs.finish()
+                outputs.retire_process(pid)
+                outputs.finish()
 
     def test_actual_later_write_has_distinct_version_after_previous_reader_retires(self):
         descriptor = self.create("generated.mk", b"VALUE := first\n")
@@ -4820,6 +4889,106 @@ class NativeOutputCustodyTests(unittest.TestCase):
                         self.outputs.removed(owner=1, path=path, pin=descriptor, result=0)
                 self.assertFalse(source.object.retired)
                 self.outputs.close()
+
+    def test_overlapping_inherited_write_cannot_borrow_another_return(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "output", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+        self.addCleanup(os.close, descriptor)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="output", writing=True,
+        )
+        self.outputs.inherited(1, 2, (descriptor,))
+        self.outputs.before_write(1, descriptor, descriptor)
+        with self.assertRaisesRegex(NativeOutputError, "live"):
+            self.outputs.before_write(2, descriptor, descriptor)
+        result = os.write(descriptor, b"one")
+        with self.assertRaisesRegex(NativeOutputError, "owned writer"):
+            self.outputs.written(2, descriptor, descriptor, result)
+        with self.assertRaisesRegex(NativeOutputError, "unfinished"):
+            self.outputs.closed(1, descriptor, 0)
+        self.outputs.written(1, descriptor, descriptor, result)
+        self.outputs.before_write(2, descriptor, descriptor)
+        result = os.write(descriptor, b"two")
+        self.outputs.written(2, descriptor, descriptor, result)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.closed(2, descriptor, 0)
+        source = self.outputs.capture(owner=1, path="output", descriptor=descriptor)
+        self.assertEqual(source.data, b"onetwo")
+        self.outputs.release(source)
+        self.outputs.finish()
+
+    def test_actual_dup2_noop_and_replacement_preserve_exact_writer_objects(self):
+        first = self.create("first", b"first")
+        second = self.create("second", b"second")
+        for path, descriptor in (("first", first), ("second", second)):
+            self.outputs.opened(
+                owner=1, pid=1, descriptor=descriptor, pin=descriptor, path=path, writing=True,
+            )
+        result = os.dup2(first, first)
+        self.outputs.duplicated(1, first, result)
+        self.assertEqual(self.outputs.objects["first"].writers, {(1, first)})
+        result = os.dup2(first, second)
+        self.outputs.duplicated(1, first, result)
+        self.assertIs(self.outputs.descriptors[(1, second)], self.outputs.objects["first"])
+        self.assertFalse(self.outputs.objects["second"].writers)
+        self.outputs.before_write(1, second, second)
+        result = os.pwrite(second, b"FIRST", 0)
+        self.outputs.written(1, second, second, result)
+        self.outputs.closed(1, first, 0)
+        self.outputs.closed(1, second, 0)
+        source = self.outputs.capture(owner=1, path="first", descriptor=first)
+        self.assertEqual(source.data, b"FIRST")
+        self.outputs.release(source)
+        self.outputs.finish()
+
+    def test_actual_settled_temporary_mutation_cannot_borrow_rename(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        temporary = self.create("output.tmp", b"original")
+        before = os.fstat(temporary)
+        os.pwrite(temporary, b"X", 0)
+        os.utime(self.root / "output.tmp", ns=(before.st_atime_ns, before.st_mtime_ns))
+        os.rename(self.root / "output.tmp", self.root / "output")
+        with self.assertRaisesRegex(NativeOutputError, "content"):
+            self.outputs.replaced(
+                owner=1, source="output.tmp", destination="output",
+                source_pin=temporary, retired_pin=None, result=0,
+            )
+        self.assertNotIn("output", self.outputs.objects)
+
+    def test_actual_intervening_metadata_cannot_borrow_write_return(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        for operation in ("chmod", "unlink"):
+            with self.subTest(operation=operation):
+                descriptor = self.create(operation, b"original")
+                self.outputs.opened(
+                    owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                    path=operation, writing=True,
+                )
+                self.outputs.before_write(1, descriptor, descriptor)
+                preceding = self.outputs.objects[operation].identity
+                result = os.write(descriptor, b"new")
+                if operation == "chmod":
+                    os.fchmod(descriptor, 0o640)
+                else:
+                    os.unlink(self.root / operation)
+                with self.assertRaisesRegex(NativeOutputError, "mode|link"):
+                    self.outputs.written(1, descriptor, descriptor, result)
+                self.assertEqual(self.outputs.objects[operation].identity, preceding)
+
+    def test_cleanup_closes_owned_object_and_source_pins_not_borrowed_descriptor(self):
+        borrowed = self.create("output", b"owned bytes")
+        source = self.outputs.capture(owner=1, path="output", descriptor=borrowed)
+        object_pin = self.outputs.objects["output"].descriptor
+        self.assertNotEqual(object_pin, borrowed)
+        self.assertNotEqual(source.descriptor, borrowed)
+        self.outputs.close()
+        self.assertEqual(os.pread(borrowed, 65536, 0), b"owned bytes")
+        for descriptor in (object_pin, source.descriptor):
+            with self.assertRaises(OSError) as closed:
+                os.fstat(descriptor)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
+        self.outputs.close()
+        self.outputs.finish()
 
 
 if __name__ == "__main__":
