@@ -174,6 +174,22 @@ Missing/substituted/writable Commands, changed views, expired deadline,
 exhausted cache, cancellation, changed live/returned bindings, stale replies
 and incomplete terminal counts must refuse and fully clean owned processes.
 These controls are deterministic host evidence, not original-eight proof.
+The output-object component distinguishes the acting producer of a readonly
+open or atomic replacement from the producer of a retained prior version.
+Reading or retiring that prior object does not relabel its owner; replacement
+keeps the new temporary's producer and retains the prior source pin's original
+owner/content. This is observation, not cross-producer output authorization:
+the production supervisor must still admit the exact destination effect from
+its issued Command before allowing any kernel mutation.
+`NativeOutputCustodyTests.test_distinct_producers_read_and_replace_prior_versions_without_relabeling_sources`
+uses actual readonly opens, `renameat2(RENAME_NOREPLACE)` failure and atomic
+replacement to verify both versions, distinct acting/version owners and old
+pin retirement. Producer/process labels are component inputs, not independently
+observed native jobs. Foreign temporary owners and writable reopenings refuse;
+unsupported rename flags and a success return contradicting NOREPLACE with an
+existing destination refuse. The pre-fix component cannot read or retire a
+prior producer's version. Actual supervised multi-job/source/wire qualification
+remains required before #275 acceptance.
 `test_native_command_admission_preserves_root_directories_and_stock_shell_alias`
 must execute the original job with and without the captured `/bin` alias,
 preserve its argv/stdout and complete one actual authorization, and bind equal

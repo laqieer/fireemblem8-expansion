@@ -4807,6 +4807,77 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.assertFalse(self.outputs.pending)
         self.outputs.finish()
 
+    def test_distinct_producers_read_and_replace_prior_versions_without_relabeling_sources(self):
+        import ctypes
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        old = self.create("shared.mk", b"VALUE := first\n", owner=1, pid=1)
+        prior = self.outputs.capture(owner=1, path="shared.mk", descriptor=old)
+        new = self.create("shared.mk.tmp", b"VALUE := second\n", owner=2, pid=2)
+        with self.assertRaisesRegex(NativeOutputError, "owned operand"):
+            self.outputs.enter_replace(
+                owner=3, pid=3, source="shared.mk.tmp", destination="shared.mk",
+                source_pin=new, retired_pin=old,
+            )
+        reading = self.outputs.enter_open(
+            owner=2, pid=2, path="shared.mk", flags=os.O_RDONLY, pin=old,
+        )
+        descriptor = os.open(self.root / "shared.mk", os.O_RDONLY)
+        try:
+            item = self.outputs.leave_open(reading, result=descriptor, pin=descriptor)
+            self.assertEqual(item.owner, 1)
+            self.assertEqual(os.read(descriptor, 65536), prior.data)
+        finally:
+            os.close(descriptor)
+        self.outputs.closed(2, descriptor, 0)
+        libc = ctypes.CDLL(None, use_errno=True)
+        for flags in (True, -1, 2, 4):
+            with self.subTest(flags=flags), self.assertRaises(NativeOutputError):
+                self.outputs.enter_replace(
+                    owner=2, pid=2, source="shared.mk.tmp", destination="shared.mk",
+                    source_pin=new, retired_pin=old, flags=flags,
+                )
+        operation = self.outputs.enter_replace(
+            owner=2, pid=2, source="shared.mk.tmp", destination="shared.mk",
+            source_pin=new, retired_pin=old, flags=1,
+        )
+        with self.assertRaisesRegex(NativeOutputError, "success lacks"):
+            self.outputs.leave_replace(operation, 0)
+        self.assertIs(self.outputs.pending[2], operation)
+        result = libc.renameat2(
+            -100, os.fsencode(self.root / "shared.mk.tmp"),
+            -100, os.fsencode(self.root / "shared.mk"), 1,
+        )
+        self.assertEqual(result, -1)
+        self.assertEqual(ctypes.get_errno(), errno.EEXIST)
+        self.outputs.leave_replace(operation, -ctypes.get_errno())
+        self.assertIs(self.outputs.objects["shared.mk"], prior.object)
+        self.assertEqual(prior.object.owner, 1)
+        operation = self.outputs.enter_replace(
+            owner=2, pid=2, source="shared.mk.tmp", destination="shared.mk",
+            source_pin=new, retired_pin=old,
+        )
+        os.replace(self.root / "shared.mk.tmp", self.root / "shared.mk")
+        self.outputs.leave_replace(operation, 0)
+        self.assertEqual(self.outputs.objects["shared.mk"].owner, 2)
+        self.assertEqual(prior.object.owner, 1)
+        self.assertTrue(prior.object.retired)
+        self.assertEqual(os.pread(prior.descriptor, 65536, 0), b"VALUE := first\n")
+        current = self.outputs.capture(owner=2, path="shared.mk", descriptor=new)
+        self.assertEqual(current.data, b"VALUE := second\n")
+        retirement, = [
+            row for row in self.events if row["kind"] == "output-retire"
+            and row["serial"] == prior.object.serial
+        ]
+        self.assertEqual((retirement["owner"], retirement["operation_owner"]), (1, 2))
+        self.outputs.release(prior)
+        self.outputs.release(current)
+        with self.assertRaisesRegex(NativeOutputError, "owned operand"):
+            self.outputs.enter_open(
+                owner=3, pid=3, path="shared.mk", flags=os.O_WRONLY, pin=new,
+            )
+        self.assertEqual((self.root / "shared.mk").read_bytes(), b"VALUE := second\n")
+        self.outputs.finish()
+
     def test_entry_return_write_attributes_exact_payload_offset_and_sparse_bytes(self):
         descriptor = self.create("write", b"original")
         self.outputs.opened(

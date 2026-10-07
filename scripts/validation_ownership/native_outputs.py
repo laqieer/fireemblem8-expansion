@@ -105,7 +105,16 @@ class NativeOutputs:
                     operands.append((path, None, None, None))
                     continue
                 identity = self._identity(descriptor)
-                if item is None or item.owner != owner or item.retired or identity != item.identity:
+                prior_version = (
+                    kind == "replace" and path == destination
+                    or kind == "open" and not flags & (
+                        os.O_WRONLY | os.O_RDWR | os.O_TRUNC | os.O_CREAT
+                    )
+                )
+                if (
+                    item is None or item.owner != owner and not prior_version
+                    or item.retired or identity != item.identity
+                ):
                     raise NativeOutputError("native operation entry differs from its owned operand")
                 pin = os.dup(descriptor)
                 operands.append((path, pin, identity, item))
@@ -208,16 +217,16 @@ class NativeOutputs:
         self._end(operation)
         return item
 
-    def enter_replace(self, *, owner, pid, source, destination, source_pin, retired_pin):
+    def enter_replace(self, *, owner, pid, source, destination, source_pin, retired_pin, flags=0):
         self._usable()
-        if source == destination:
+        if source == destination or type(flags) is not int or flags not in {0, 1}:
             raise NativeOutputError("native replacement lacks distinct declared operands")
         for path in (source, destination):
             item = self.objects.get(path)
             if item is not None and (item.writers or path == source and item.readers):
                 raise NativeOutputError("native replacement overlaps an active writer/source")
         return self._begin(
-            owner, pid, "replace", source, destination,
+            owner, pid, "replace", source, destination, flags=flags,
             pins=((source, source_pin), (destination, retired_pin)),
         )
 
@@ -227,7 +236,10 @@ class NativeOutputs:
         if result < 0:
             self._failed(operation, result)
             return
-        if result != 0 or operation.operands[0][1] is None:
+        if (
+            result != 0 or operation.operands[0][1] is None
+            or operation.flags == 1 and operation.operands[1][1] is not None
+        ):
             raise NativeOutputError("native replacement success lacks its exact source object")
         self.replaced(
             owner=operation.owner, source=operation.source, destination=operation.destination,
@@ -473,7 +485,7 @@ class NativeOutputs:
             item = OutputObject(owner, self.serial, path, identity, os.dup(pin))
             self.objects[path] = item
             self.versions.append(item)
-        elif item.retired or item.owner != owner or identity != item.identity:
+        elif item.retired or writing and item.owner != owner or identity != item.identity:
             raise NativeOutputError("native output open differs from its live owned object")
         if writing and item.readers:
             raise NativeOutputError("native output writer overlaps a pinned source read")
@@ -483,7 +495,10 @@ class NativeOutputs:
             item.writers.add(binding)
         elif item.sha256 is None:
             self._settle(item)
-        self._event("output-open", item, pid=pid, fd=descriptor, identity=list(identity), writing=writing)
+        self._event(
+            "output-open", item, pid=pid, fd=descriptor, operation_owner=owner,
+            identity=list(identity), writing=writing,
+        )
         return item
 
     def inherited(self, parent, child, descriptors):
@@ -649,7 +664,7 @@ class NativeOutputs:
         if (
             item is None or item.owner != owner or item.retired or item.writers
             or item.readers or source == destination
-            or old is not None and (old.owner != owner or old.retired or old.writers)
+            or old is not None and (old.retired or old.writers)
             or (old is None) != (retired_pin is None)
         ):
             raise NativeOutputError("native output replacement lacks exact owned operands")
@@ -674,7 +689,10 @@ class NativeOutputs:
             old.identity = retired
             old.path = None
             old.retired = True
-            self._event("output-retire", old, identity=list(retired), destination=destination)
+            self._event(
+                "output-retire", old, operation_owner=owner,
+                identity=list(retired), destination=destination,
+            )
         del self.objects[source]
         item.path = destination
         item.identity = moved
