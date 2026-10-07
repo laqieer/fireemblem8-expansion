@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
@@ -15,6 +16,7 @@ from scripts.fonttools.cjk.inventory import (
     CjkFontError,
     FONT_SOURCES,
     build_generated_files,
+    _direct_talk_target_ids,
     read_sfnt_identity,
 )
 from scripts.fonttools.cjk.package import (
@@ -30,6 +32,26 @@ from scripts.fonttools.cjk.package import (
 
 class CjkFontTests(unittest.TestCase):
     SCRATCH = Path(__file__).resolve().parent / ".scratch"
+
+    def test_direct_talk_inventory_is_independent_of_directory_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "src"
+            source.mkdir()
+            (source / "uiarena.c").write_text("StartArenaDialogue(2);\n")
+            (source / "bmshop.c").write_text("[SHOP_TYPE_ARMORY] = 0;\n")
+            (source / "a.c").write_text("StartTalkMsg(0, 15);\nStartTalkMsg(0, 3);\n")
+            (source / "z.c").write_text("StartTalkMsgExt(0, 15, 0);\nStartTalkMsg(0, 4);\n")
+            original = Path.glob
+            results = []
+            for reverse in (False, True):
+                def enumerate_paths(path, pattern):
+                    values = original(path, pattern)
+                    return iter(sorted(values, reverse=reverse))
+                with patch.object(Path, "glob", enumerate_paths):
+                    results.append(_direct_talk_target_ids(root, 16))
+            self.assertEqual(results[0], results[1])
+            self.assertEqual(set(results[0]), {2, 3, 4, 15})
 
     def test_expansion_catalog_inventory_provenance_matches_current_keys(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
@@ -239,13 +261,26 @@ class CjkFontTests(unittest.TestCase):
                 self.assertTrue({"售", "周"} <= talk)
 
     def test_inventory_regeneration_is_byte_identical(self):
-        generated = build_generated_files(ROOT)
-        for relative_path, expected in generated.items():
-            self.assertEqual(
-                (ROOT / relative_path).read_bytes(),
-                expected,
-                relative_path,
-            )
+        original = Path.glob
+        forward = None
+        for reverse in (False, True):
+            def enumerate_paths(path, pattern):
+                values = original(path, pattern)
+                if path == ROOT / "src" and pattern == "*.c":
+                    return iter(sorted(values, reverse=reverse))
+                return values
+            with patch.object(Path, "glob", enumerate_paths):
+                generated = build_generated_files(ROOT)
+            with self.subTest(reverse=reverse):
+                if forward is None:
+                    forward = generated
+                self.assertEqual(generated, forward)
+                for relative_path, expected in generated.items():
+                    self.assertEqual(
+                        (ROOT / relative_path).read_bytes(),
+                        expected,
+                        relative_path,
+                    )
 
     def test_font_identity_license_and_hash_pins(self):
         sources = json.loads((ROOT / "fonts/cjk/font-sources.json").read_text())
