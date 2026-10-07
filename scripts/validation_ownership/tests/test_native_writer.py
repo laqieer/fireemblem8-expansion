@@ -21,6 +21,276 @@ class NativeWriterTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def _native_image_operand_fixture(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/stat.h>\n#include <sys/file.h>\n#include <sys/wait.h>\n"
+            "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+            "static int helper(const char *mode,int fd,int lock){int other,status;pid_t child;char temp[128],number[32],locknumber[32];"
+            "if(write(fd,\"inherited\",9)!=9||fchmod(fd,0644)||flock(lock,LOCK_EX)||flock(lock,LOCK_UN))return 10;"
+            "if(!strcmp(mode,\"grandchild\")){"
+            "snprintf(number,sizeof(number),\"%d\",fd);snprintf(locknumber,sizeof(locknumber),\"%d\",lock);"
+            "child=fork();if(child<0)return 13;if(!child){"
+            "execl(\"/native/tool\",\"/native/tool\",\"inherited\",number,locknumber,(char*)0);return 14;}"
+            "if(waitpid(child,&status,0)!=child||status)return 15;return close(fd)||close(lock);}"
+            "if(!strcmp(mode,\"inherited\"))return close(fd)||close(lock);"
+            "if(!strcmp(mode,\"foreign-mkdir\"))return mkdir(\"/repo/stage/new\",0700);"
+            "if(!strcmp(mode,\"foreign-rmdir\"))return rmdir(\"/repo/stage/empty\");"
+            "if(!strcmp(mode,\"foreign-remove\"))return unlink(\"/repo/stage/second\");"
+            "if(!strcmp(mode,\"foreign-replace\"))return rename(\"/repo/stage/second\",\"/repo/stage/tmp\");"
+            "if(!strcmp(mode,\"foreign-mode\")){other=open(\"/repo/stage/second\",O_RDONLY);"
+            "return other<0||fchmod(other,0600);}"
+            "if(!strcmp(mode,\"foreign-lock\"))other=open(\"/repo/stage/lock\",O_RDWR|O_NOFOLLOW);"
+            "else if(!strcmp(mode,\"foreign-atomic\"))other=open(\"/repo/stage/.asset-manifest-write-abcdefgh\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "else if(!strcmp(mode,\"foreign-pid\")){"
+            "snprintf(temp,sizeof(temp),\"/repo/stage/second.%ld.tmp\",(long)getppid());"
+            "other=open(temp,O_CREAT|O_EXCL|O_WRONLY,0644);}"
+            "else if(!strcmp(mode,\"foreign-temp\")||!strcmp(mode,\"own-temp\"))"
+            "other=open(\"/repo/stage/tmp\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "else other=open(\"/repo/stage/second\",O_WRONLY|O_TRUNC);"
+            "if(other<0||write(other,\"own\",3)!=3||close(other))return 11;"
+            "if(!strcmp(mode,\"own-temp\")&&rename(\"/repo/stage/tmp\",\"/repo/stage/second\"))return 12;"
+            "return close(fd)||close(lock);}"
+            "int main(int argc,char **argv){int fd,other,lock,status;pid_t child;"
+            "char number[32],locknumber[32];const char *mode=getenv(\"MODE\");"
+            "if(argc==4)return helper(argv[1],atoi(argv[2]),atoi(argv[3]));"
+            "if(mkdir(\"/repo/stage\",0700)||mkdir(\"/repo/stage/empty\",0700))return 1;"
+            "fd=open(\"/repo/stage/first\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "other=open(\"/repo/stage/second\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "lock=open(\"/repo/stage/lock\",O_CREAT|O_RDWR|O_NOFOLLOW,0600);"
+            "if(fd<0||other<0||lock<0||close(other))return 2;"
+            "snprintf(number,sizeof(number),\"%d\",fd);snprintf(locknumber,sizeof(locknumber),\"%d\",lock);"
+            "child=fork();if(child<0)return 3;if(!child){"
+            "if(!strcmp(mode,\"fork-foreign\"))_exit(helper(\"foreign-open\",fd,lock));"
+            "if(!strcmp(mode,\"fork-inherited\"))_exit(helper(\"inherited\",fd,lock));"
+            "execl(\"/native/tool\",\"/native/tool\",mode,number,locknumber,(char*)0);return 4;}"
+            "if(waitpid(child,&status,0)!=child||status||close(fd)||close(lock))return 5;return 0;}\n"
+        ))
+        outputs = ("stage/first", "stage/second")
+        resources = (
+            ("directory", "stage"), ("directory", "stage/empty"), ("directory", "stage/new"),
+            ("shared-lock", "stage/lock"), ("temporary", "stage/tmp"),
+            ("pid-temporary", "stage/second"), ("atomic-temporary", "stage/.asset-manifest-write-"),
+        )
+        return outputs, resources
+
+    def test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority(self):
+        from scripts.validation_ownership import read_epochs
+        outputs, resources = self._native_image_operand_fixture()
+        for mode in (
+            "inherited", "own", "own-temp", "grandchild", "fork-inherited",
+            "foreign-open", "foreign-mkdir", "foreign-rmdir",
+            "foreign-remove", "foreign-replace", "foreign-mode", "foreign-lock",
+            "foreign-atomic", "foreign-pid", "foreign-temp", "fork-foreign", "missing",
+        ):
+            self.add("Makefile", "all:\n\t@MODE=" + mode + " /native/tool\n\t@v=done; printf '%s' \"$$v\"\n")
+            session = self.session()
+            with self.subTest(mode=mode), session:
+                tool = session.compile_native(("native.c",))
+                requests = []
+                class Commands:
+                    def __getitem__(self, argv):
+                        requests.append(argv)
+                        helper = len(argv) == 4 and argv[0] == "/native/tool"
+                        final = len(argv) == 3 and argv[:2] == ("/bin/sh", "-c") and argv[2].startswith("v=done;")
+                        if helper and argv[1] == "missing":
+                            raise KeyError(argv)
+                        return Command(
+                            argv, native_tool=tool,
+                            outputs=() if final else (
+                                (("stage/second",) if argv[1] in {"own", "own-temp"} else ()) if helper else outputs
+                            ),
+                            native_resources=(("temporary", "stage/tmp"),) if helper and argv[1] == "own-temp" else (
+                                () if helper or final else resources
+                            ),
+                        )
+                def run():
+                    return session._native_make_writable(
+                        "all", outputs=outputs, native_resources=resources, native_tool=tool,
+                        commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                    )
+                if mode not in {"inherited", "own", "own-temp", "grandchild", "fork-inherited"}:
+                    expected = "original native argv lacks its sealed Command" if mode == "missing" else "issued output authority"
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        run()
+                    self.assertTrue(session.budget.failed)
+                else:
+                    completed, _, observed, generated = run()
+                    self.assertEqual((completed.stdout, completed.stderr), (b"done", b""))
+                    self.assertEqual({row.path: row.data for row in generated}, {
+                        "stage/first": b"inheritedinherited" if mode == "grandchild" else b"inherited",
+                        "stage/second": b"own" if mode in {"own", "own-temp"} else b"",
+                    })
+                    self.assertEqual({row.path: row.mode for row in generated}, {
+                        "stage/first": 0o644, "stage/second": 0o644,
+                    })
+                    trace = observed["read_trace"]
+                    images = [
+                        row["event"] for row in trace["machine"]["events"]
+                        if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"
+                    ]
+                    self.assertEqual([tuple(row["argv"]) for row in images], requests)
+                    self.assertEqual([row["admission"]["sequence"] for row in images], list(range(1, len(images) + 1)))
+                    self.assertEqual(observed["rendezvous"]["issued"], len(images))
+                    self.assertEqual([job["sequence"] for job in trace["output_authority"]["jobs"]], [1, 2])
+                    self.assertEqual(
+                        [job["admission"]["sequence"] for job in trace["output_authority"]["jobs"]],
+                        [1, len(images)],
+                    )
+                    helper_images = [row for row in images if len(row["argv"]) == 4]
+                    self.assertEqual(len(helper_images), 0 if mode == "fork-inherited" else 2 if mode == "grandchild" else 1)
+                    read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+                    for field, value in (
+                        ("owner", "0" * 64), ("sequence", 1), ("input_sha256", "0" * 64),
+                        ("outputs", list(outputs)), ("resources", [list(row) for row in resources]),
+                    ):
+                        invalid = json.loads(json.dumps(trace))
+                        image = next((
+                            row for row in invalid["output_authority"]["jobs"][0]["tree"]
+                            if row["kind"] == "exec" and len(row["argv"]) == 4
+                        ), None)
+                        if image is None:
+                            continue
+                        image["admission"][field] = value
+                        with self.subTest(image_field=field):
+                            with self.assertRaises(read_epochs.ReadEpochError):
+                                read_epochs.validate_trace(
+                                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                                )
+            self.assert_clean(session)
+
+    def test_native_returned_image_plan_is_bound_to_independent_issued_authorization(self):
+        outputs, resources = self._native_image_operand_fixture()
+        self.add("Makefile", "all:\n\t@MODE=inherited /native/tool\n")
+        for mutation in ("output", "resource", "sequence"):
+            body = (
+                "from authority import native_command_owner\n"
+                "original=guard.supervise\n"
+                "def altered(config,drop):\n"
+                " status=original(config,drop)\n"
+                " if config.get('native_output_paths') and status==0:\n"
+                "  path=Path(config['report']);report=json.loads(path.read_text());trace=report['read_trace']\n"
+                "  image=next(row['event'] for row in trace['machine']['events']"
+                " if row['kind']=='native-tree' and row['event']['kind']=='exec' and len(row['event']['argv'])==4)\n"
+                "  admission=image['admission']\n"
+                + ("  admission['outputs'].append('stage/second')\n" if mutation == "output" else
+                   "  admission['resources'].append(['temporary','stage/tmp'])\n" if mutation == "resource" else
+                   "  admission['sequence']=1\n")
+                + "  admission['owner']=native_command_owner(admission['closure'],admission['outputs'],admission['resources'])\n"
+                "  def update(tree):\n"
+                "   for event in tree:\n"
+                "    if event['kind']=='exec' and event['pid']==image['pid'] and event['generation']==image['generation']:\n"
+                "     event['admission']=admission.copy()\n"
+                "  for job in trace['output_authority']['jobs']:update(job['tree'])\n"
+                "  for row in trace['machine']['events']:\n"
+                "   if row['kind']=='native-tree' and row['event']['kind']=='exec'"
+                " and row['event']['pid']==image['pid'] and row['event']['generation']==image['generation']:\n"
+                "    row['event']['admission']=admission.copy();row['sha256']=guard.hashlib.sha256(guard.encoded(row['event'])).hexdigest()\n"
+                "  for index,value in enumerate(report['accessed']):\n"
+                "   if value.startswith('native-job:'):\n"
+                "    job=json.loads(value.removeprefix('native-job:'));update(job['tree'])\n"
+                "    report['accessed'][index]='native-job:'+json.dumps(job)\n"
+                "  path.write_text(json.dumps(report))\n"
+                " return status\n"
+                "guard.supervise=altered\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=mutation), session:
+                tool = session.compile_native(("native.c",))
+                class Commands:
+                    def __getitem__(self, argv):
+                        helper = len(argv) == 4 and argv[0] == "/native/tool"
+                        return Command(
+                            argv, native_tool=tool, outputs=() if helper else outputs,
+                            native_resources=() if helper else resources,
+                        )
+                with self.native_supervisor(body), self.assertRaisesRegex(
+                    MakeProbeError, "issued request" if mutation == "sequence" else
+                    "native image differs from its issued operand admission",
+                ):
+                    session._native_make_writable(
+                        "all", outputs=outputs, native_resources=resources, native_tool=tool,
+                        commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                    )
+            self.assert_clean(session)
+
+    def test_native_failed_path_operations_use_current_image_and_fork_only_plans(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/stat.h>\n#include <sys/wait.h>\n#include <errno.h>\n"
+            "#ifdef DIRECTORY\n#define OUTPUT \"/repo/stage/result\"\n"
+            "#else\n#define OUTPUT \"/repo/result\"\n#endif\n"
+            "int main(int argc,char **argv){int fd,status;pid_t child;(void)argv;"
+            "if(argc>1)return 0;\n"
+            "#ifdef DIRECTORY\n"
+            "if(mkdir(\"/repo/stage\",0700))return 1;\n"
+            "#endif\n"
+            "fd=open(OUTPUT,O_CREAT|O_EXCL|O_WRONLY,0644);if(fd<0||close(fd))return 2;"
+            "if(open(OUTPUT,O_CREAT|O_EXCL|O_WRONLY,0644)!=-1||errno!=EEXIST)return 3;\n"
+            "#ifdef DIRECTORY\n"
+            "if(mkdir(\"/repo/stage\",0700)!=-1||errno!=EEXIST)return 4;\n"
+            "if(rmdir(\"/repo/stage\")!=-1||errno!=ENOTEMPTY)return 5;\n"
+            "#endif\n"
+            "child=fork();if(child<0)return 6;"
+            "if(!child){execl(\"/native/tool\",\"/native/tool\",\"helper\",(char*)0);return 7;}"
+            "if(waitpid(child,&status,0)!=child||status)return 8;return 0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool\n")
+        for directory in (False, True):
+            outputs = ("stage/result" if directory else "result",)
+            resources = (("directory", "stage"),) if directory else ()
+            session = self.session()
+            with self.subTest(directory=directory), session:
+                tool = session.compile_native(
+                    ("native.c",), defines=("DIRECTORY",) if directory else (),
+                )
+                class Commands:
+                    def __getitem__(self, argv):
+                        helper = len(argv) == 2 and argv[0] == "/native/tool"
+                        return Command(
+                            argv, native_tool=tool, outputs=() if helper else outputs,
+                            native_resources=() if helper else resources,
+                        )
+                _, _, observed, generated = session._native_make_writable(
+                    "all", outputs=outputs, native_resources=resources, native_tool=tool,
+                    commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual([(row.path, row.data) for row in generated], [(outputs[0], b"")])
+                trace = observed["read_trace"]
+                failures = [
+                    row for row in trace["machine"]["events"]
+                    if row["kind"] == "native-output" and row["event"]["kind"] == "output-operation-failed"
+                ]
+                self.assertEqual({row["event"]["operation"] for row in failures}, {"open", "mkdir", "rmdir"} if directory else {"open"})
+                for failure in failures:
+                    for phase in ("start", "exec"):
+                        invalid = json.loads(json.dumps(trace))
+                        rows = invalid["machine"]["events"]
+                        moved = next(row for row in rows if row["seq"] == failure["seq"])
+                        rows.remove(moved)
+                        anchor = next(
+                            row for row in rows if row["kind"] == "native-tree"
+                            and row["event"]["kind"] == phase and (
+                                phase == "start" or len(row["event"]["argv"]) == 2
+                            )
+                        )
+                        moved["event"]["pid"] = anchor["event"]["pid"]
+                        rows.insert(rows.index(anchor) + 1, moved)
+                        effect_number = 0
+                        for number, row in enumerate(rows, 1):
+                            row["seq"] = number
+                            if row["kind"] == "native-output":
+                                effect_number += 1
+                                row["event"]["sequence"] = effect_number
+                                row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                        with self.subTest(operation=failure["event"]["operation"], phase=phase):
+                            with self.assertRaisesRegex(read_epochs.ReadEpochError, "current image"):
+                                read_epochs.validate_trace(
+                                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                                )
+            self.assert_clean(session)
+
     def test_native_command_admission_runs_original_jobs_once_without_replay(self):
         shell = "printf '%s' \"$$\""
         self.add("Makefile", (
@@ -1592,9 +1862,15 @@ class NativeWriterTests(unittest.TestCase):
                 admission["owner"] = native_command_owner(
                     admission["closure"], admission["outputs"], admission["resources"],
                 )
+                for image in job["tree"]:
+                    if image["kind"] == "exec":
+                        image["admission"] = json.loads(json.dumps(admission))
                 for event in temporary_source["machine"]["events"]:
                     if event["kind"] == "execute" and not event["make"] and event["dispatch"] == job["sequence"]:
                         event["admission_owner"] = admission["owner"]
+                    elif event["kind"] == "native-tree" and event["dispatch"] == job["sequence"] and event["event"]["kind"] == "exec":
+                        event["event"]["admission"] = json.loads(json.dumps(admission))
+                        event["sha256"] = hashlib.sha256(encoded(event["event"])).hexdigest()
             with self.assertRaisesRegex(read_epochs.ReadEpochError, "resource role cannot become a generated source"):
                 read_epochs.validate_native_output_authority(
                     temporary_source, count_limit=100000, file_limit=10000000, reserve=lambda size: None,

@@ -450,7 +450,11 @@ This is an incomplete internal integration seam, not #275 qualification.
 Each resolver returns the actual argv's `Command` with exact output paths;
 the complete sealed code/input/runtime closure and output list bind the owner.
 The actual pre-spawn dispatch carries that closed output list, and fork
-descendants retain the actual dispatch. A union of declared paths selects
+descendants retain the actual dispatch, not its pathname permissions.
+Each later successful image exec stops before the new image runs and resolves
+its actual argv/CWD through the same sealed `Command` admission channel.
+Its output/resource operands must be a subset of the original job's plan.
+A fork without exec receives no automatic pathname plan. A union of declared paths selects
 private writable ancestors with existing maximal immutable source islands;
 it does not grant every job the union. File opens/writes require the job's
 exact output; this first wire family does not yet admit directory or other
@@ -505,6 +509,44 @@ Readonly v5 owner construction and closed wire are unchanged. Earlier unmerged
 v6 checkpoint archives without this binding remain evidence for their exact
 checkpoint, not accepted current-format archives. Hash commitments do not
 authenticate wholesale replacement of every external observation.
+Writable v6 admissions additionally carry the existing channel request
+`sequence`, distinct from Make's job dispatch sequence. Each actual `native-tree`
+exec records its issued image admission. Root reexecs, child and grandchild
+images receive distinct requests; an output-free later Make job does not reuse
+a child's request identity. Machine/tree replay requires complete unique issued
+sequences, actual image inputs, exact root admission and finite descendant
+subsets. The host binds each image to its independently retained issued path,
+argv/CWD, plan and dispatch/PID/generation context. Coherently changing both
+returned job and machine copies cannot replace those issued authorizations.
+
+Tracked writable descriptions survive actual fork/duplicate and non-CLOEXEC
+exec independently of pathname permissions. Inherited writes and exclusive
+writable-description `fchmod` use the existing descriptor/object predicates;
+readonly descriptors do not acquire mode authority. Shared-lock operations,
+close/failure, duplicate and final settlement retain their existing description
+lifecycles. Failed exec does not install another image plan. Parent-directory
+entry reconciliation binds the successful child's exact namespace operation;
+it does not require unrelated permission to create or remove that parent.
+Failed pathname operations also require the actor's current image operands,
+including resource-free failed opens and failed directory operations. A kernel
+error does not restore the root job's pathname plan. Failed descriptor
+operations instead retain their actual live-description bindings.
+
+Run `NativeWriterTests.test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority`
+for actual root reexec, child/grandchild and fork-only inherited writer/lock
+positives, explicitly admitted retained/temporary operands, an output-free
+later job, and refused unissued open/truncate, mkdir/rmdir, remove/replace,
+readonly-FD mode, shared-lock open and all three temporary roles.
+Run `NativeWriterTests.test_native_returned_image_plan_is_bound_to_independent_issued_authorization`
+for after-execution coherent output/resource broadening of both returned job
+and machine records against the retained host authorizations, plus reused
+request refusal. These are scoped backend controls, not the missing original
+compiler/scanner/helper resolver or original all-plus-eight qualification.
+Run `NativeWriterTests.test_native_failed_path_operations_use_current_image_and_fork_only_plans`
+for actual admitted failed open/mkdir/rmdir observations and controlled archive
+replay that moves those observations to a fork-only or operand-free exec actor.
+The archive mutations retain the original dispatch, preimages and admissions;
+they are not additional child kernel observations.
 Concrete template-generated file ancestors also conflict with directory, file
 or nested-template resources in either declaration order, and with immutable
 sources or retained outputs. Declared directory/child relationships remain

@@ -258,7 +258,7 @@ class Process:
             dependency_image=self.dependency_image,
             native_dispatch=self.native_dispatch,
             native_inputs=self.native_inputs,
-            native_admission=self.native_admission,
+            native_admission=self.native_admission if self.role == "make" else None,
         )
 
     def close(self):
@@ -700,10 +700,27 @@ class Policy:
                 row["tree"] = []
             state.native_execs += 1
             state.native_inputs = None
-            state.native_admission = None
+            if self.native_outputs is not None:
+                if descendant:
+                    state.native_admission = self.native_admit(state.exec_path, inputs, {
+                        "dispatch": state.native_dispatch, "pid": pid,
+                        "generation": state.native_execs,
+                    })
+                    root_admission = row["admission"]
+                    if (
+                        any(path not in root_admission["outputs"] for path in state.native_admission["outputs"])
+                        or any(resource not in root_admission.get("resources", [])
+                               for resource in state.native_admission.get("resources", []))
+                    ):
+                        raise Violation("native image operands escape its original job authority")
+                else:
+                    state.native_admission = dict(row["admission"])
+            else:
+                state.native_admission = None
             return {
                 "kind": "exec", "pid": pid, "parent": state.native_parent,
                 "generation": state.native_execs, "path": state.exec_path, **inputs,
+                **({"admission": dict(state.native_admission)} if self.native_outputs is not None else {}),
             }
         state.native_inputs = None
 
@@ -985,6 +1002,7 @@ class Policy:
             read_epochs.native_job_tree(
                 row["tree"], row, self.make_pid, self.native_executables,
                 count_limit=self.config["observation_count"],
+                writable=self.native_outputs is not None,
             )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
@@ -2034,7 +2052,8 @@ class Policy:
         if self.native_readonly and operation == "write":
             if self.native_outputs is not None:
                 job = self.native_jobs.get(state.native_dispatch)
-                outputs = job.get("admission", {}).get("outputs", []) if job is not None else []
+                admission = state.native_admission or {}
+                outputs = admission.get("outputs", [])
                 if job is not None and state.role == "native" and self.config.get("native_resources"):
                     if __package__:
                         from .native_resources import resource_operation
@@ -2047,7 +2066,7 @@ class Policy:
                         263: "rmdir" if state.native_unlink_flags == 0x200 else "remove",
                     }.get(state.kernel_call)
                     if resource_operation(
-                        job["admission"].get("resources", ()), path, job["pid"], outputs, selected,
+                        admission.get("resources", ()), path, job["pid"], outputs, selected,
                     ):
                         return
                 elif state.role == "native" and state.kernel_call in {1, 18, 20, 2, 85, 257} and path in {"/repo/" + output for output in outputs}:
@@ -2218,6 +2237,15 @@ class Policy:
 
     def check_fd(self, state, descriptor, operation, registers):
         path = self.fd(state, descriptor)
+        if (
+            operation == "write" and self.native_outputs is not None
+            and state.role == "native" and state.native_stop is not None
+            and state.kernel_call in {1, 18, 20, 91}
+        ):
+            binding = (state.native_stop[0], descriptor)
+            item = self.native_outputs.custody.descriptors.get(binding)
+            if item is not None and binding in item.writers and item.path == path:
+                return path
         self.check(state, path, operation, observer=self.observer(state, registers))
         return path
 
@@ -2823,15 +2851,17 @@ def supervise(config, drop_privileges):
     error = None
     primary = None
     result = None
-    def admit_native(path, inputs):
+    def admit_native(path, inputs, context=None):
         if channel is None or not policy.native_admission:
             raise Violation("native admission lost its existing private channel")
         sequence = policy.producer_issued + 1
         policy.producer_issued = sequence
         policy.producer_pending_peak = max(policy.producer_pending_peak, 1)
         request = {
-            "kind": "native-request", "scope": config["producer_scope"],
+            "kind": "native-request" if context is None else "native-exec-request",
+            "scope": config["producer_scope"],
             "sequence": sequence, "path": path, **inputs, "counters": policy.counters(),
+            **({} if context is None else context),
         }
         raw = channel.exchange(
             encoded(request), watch=(processes[policy.make_pid].pidfd,),
@@ -2874,6 +2904,7 @@ def supervise(config, drop_privileges):
         policy.producer_completed = sequence
         return {
             "owner": reply["owner"], "input_sha256": reply["input_sha256"],
+            **({"sequence": sequence} if policy.native_outputs is not None else {}),
             **({"closure": reply["closure"]} if policy.native_outputs is not None else {}),
             **({"outputs": reply["outputs"]} if policy.native_outputs is not None else {}),
             **({"resources": reply["resources"]} if config.get("native_resources") else {}),

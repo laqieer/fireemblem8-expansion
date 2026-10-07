@@ -1402,7 +1402,38 @@ def native_execution_input(argv, cwd):
     return {"argv": argv, "cwd": cwd}
 
 
-def native_job_tree(events, job, parent, executables, *, count_limit):
+def native_image_admission(admission, inputs, outputs, resources, *, resource_field):
+    if __package__:
+        from .native_resources import resource_plan
+    else:
+        from native_resources import resource_plan
+    if (
+        not isinstance(admission, dict)
+        or set(admission) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
+            {"resources"} if resource_field else set()
+        )
+        or type(admission["sequence"]) is not int or admission["sequence"] < 1
+        or any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
+               for key in ("owner", "closure", "input_sha256"))
+        or not isinstance(admission["outputs"], list)
+        or any(not isinstance(path, str) or path not in outputs for path in admission["outputs"])
+        or len(set(admission["outputs"])) != len(admission["outputs"])
+        or inputs is not None and admission["input_sha256"] != hashlib.sha256(encoded(inputs)).hexdigest()
+    ):
+        raise ReadEpochError("native image lacks its closed Command owner and operands")
+    try:
+        selected = resource_plan(admission.get("resources", ()))
+        if any(row not in resource_plan(resources) for row in selected):
+            raise ReadEpochError("native image resources escape its original Command owner")
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
+    if admission["owner"] != native_command_owner(
+        admission["closure"], admission["outputs"], admission.get("resources", ()),
+    ):
+        raise ReadEpochError("native image operands differ from its issued Command owner")
+
+
+def native_job_tree(events, job, parent, executables, *, count_limit, writable=False):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")
     nodes, signals = {}, []
@@ -1414,7 +1445,9 @@ def native_job_tree(events, job, parent, executables, *, count_limit):
             raise ReadEpochError("native job tree has an invalid event")
         kind = event["kind"]
         fields = {
-            "exec": {"parent", "generation", "path", "argv", "cwd"},
+            "exec": {"parent", "generation", "path", "argv", "cwd"} | (
+                {"admission"} if writable else set()
+            ),
             "fork": {"child"}, "start": set(), "exit": {"status"},
             "signal": {"child", "code", "status"},
             "pipe-error": {"syscall", "error"},
@@ -1467,7 +1500,17 @@ def native_job_tree(events, job, parent, executables, *, count_limit):
             ):
                 raise ReadEpochError("native job tree has an invalid owned pipe error")
         elif kind == "exec":
-            native_execution_input(event["argv"], event["cwd"])
+            inputs = native_execution_input(event["argv"], event["cwd"])
+            if writable:
+                root_admission = job.get("admission")
+                if not isinstance(root_admission, dict) or not isinstance(root_admission.get("outputs"), list):
+                    raise ReadEpochError("native job tree lacks its root Command owner")
+                native_image_admission(
+                    event["admission"], inputs, root_admission["outputs"],
+                    root_admission.get("resources", ()), resource_field="resources" in root_admission,
+                )
+                if number == 1 and event["admission"] != root_admission:
+                    raise ReadEpochError("native root image changed its original Command owner")
             if (
                 type(event["parent"]) is not int or event["parent"] != node["parent"]
                 or type(event["generation"]) is not int or event["generation"] != node["generation"] + 1
@@ -1934,8 +1977,10 @@ def validate_machine_observations(value, trace, *, count_limit):
                 events, {
                     "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
                     "executable": first["path"], "terminal_status": last["status"],
+                    **({"admission": first.get("admission")} if trace["version"] == WRITABLE_VERSION else {}),
                 }, make_pid, {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
                 count_limit=count_limit,
+                writable=trace["version"] == WRITABLE_VERSION,
             )
     return value
 
@@ -2018,12 +2063,28 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or type(job["pid"]) is not int or job["pid"] < 1
             or not isinstance(job["tree"], list) or not job["tree"]
             or not isinstance(job["admission"], dict)
-            or set(job["admission"]) != {"owner", "closure", "input_sha256", "outputs"} | (
+            or set(job["admission"]) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
                 {"resources"} if resources else set()
             )
         ):
             raise ReadEpochError("native output job lacks its closed dispatch binding")
         admission = job["admission"]
+        native_image_admission(
+            admission, None, authority["paths"], resources, resource_field=bool(resources),
+        )
+        for index, event in enumerate(job["tree"]):
+            if not isinstance(event, dict) or not isinstance(event.get("kind"), str):
+                raise ReadEpochError("native output authority has a malformed image tree")
+            if event["kind"] == "exec":
+                if not {"argv", "cwd", "admission"} <= event.keys():
+                    raise ReadEpochError("native image lacks its actual Command owner")
+                native_image_admission(
+                    event["admission"], native_execution_input(event["argv"], event["cwd"]),
+                    admission["outputs"], admission.get("resources", ()),
+                    resource_field="resources" in admission,
+                )
+                if index == 0 and event["admission"] != admission:
+                    raise ReadEpochError("native root image changed its original Command owner")
         try:
             if any(row not in resources for row in resource_plan(admission.get("resources", ()))):
                 raise ReadEpochError("native job resources escape their closed plan")
@@ -2059,6 +2120,12 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         jobs[number] = job
     if set(jobs) != {row["dispatch"] for row in machine if row["kind"] == "execute" and not row["make"]}:
         raise ReadEpochError("native output authority omitted or added an actual job dispatch")
+    image_sequences = [
+        event["admission"]["sequence"] for job in jobs.values()
+        for event in job["tree"] if event["kind"] == "exec"
+    ]
+    if sorted(image_sequences) != list(range(1, len(image_sequences) + 1)):
+        raise ReadEpochError("native image admissions omitted or reused an issued request")
     common = {"sequence", "kind", "owner", "serial", "revision", "path"}
     fields = {
         "output-open": {"pid", "fd", "operation_owner", "identity", "writing", "description"},
@@ -2093,6 +2160,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     released_locks = {}
     parent_returns = {}
     request_number = 0
+    process_plans = {}
     def parent_request(pid, operation, source, destination=None):
         parents = {
             path.rpartition("/")[0] for path in (source, destination)
@@ -2103,6 +2171,15 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                                    "destination": destination, "parents": parents}
     number = 0
     for observation in machine:
+        if observation["kind"] == "native-tree":
+            event = observation["event"]
+            if event["kind"] == "exec":
+                process_plans[event["pid"]] = event["admission"]
+            elif event["kind"] == "fork":
+                process_plans[event["child"]] = {}
+            elif event["kind"] == "exit":
+                process_plans.pop(event["pid"], None)
+            continue
         if observation["kind"] == "generated-source-entry":
             serial, visit = observation["serial"], observation["visit"]
             try:
@@ -2137,12 +2214,18 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         row = observation["event"]
         dispatch = observation["dispatch"]
         actor_job = jobs.get(dispatch)
+        image_plan = process_plans.get(row["pid"], {}) if (
+            isinstance(row, dict) and type(row.get("pid")) is int
+        ) else {}
+        image_outputs = image_plan.get("outputs", ())
+        image_resources = image_plan.get("resources", ())
         def role(path):
             return resource_role(actor_job["admission"].get("resources", ()), path, actor_job["pid"])
+        def image_role(path):
+            return resource_role(image_resources, path, actor_job["pid"])
         def permitted(path, operation):
             return actor_job is not None and resource_operation(
-                actor_job["admission"].get("resources", ()), path, actor_job["pid"],
-                actor_job["admission"]["outputs"], operation,
+                image_resources, path, actor_job["pid"], image_outputs, operation,
             )
         if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
             if type(row.get("pid")) is int and row["pid"] in writes:
@@ -2172,6 +2255,11 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 or type(row["result"]) is not int or not -4095 <= row["result"] < 0
             ):
                 raise ReadEpochError("native failed descriptor transition lost its actual job or preimage")
+            if operation in {"open", "mkdir", "rmdir", "remove", "replace"} and (
+                not permitted(row["source"], operation)
+                or operation == "replace" and not permitted(row["destination"], "replace")
+            ):
+                raise ReadEpochError("native failed namespace operation escaped its resource role matrix for the current image")
             if resources:
                 if actor_job is None:
                     raise ReadEpochError("native failed operation lost its actual actor")
@@ -2188,7 +2276,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 if operation in {"mkdir", "rmdir", "remove", "replace", "open"} and row["preimages"] != expected:
                     raise ReadEpochError("native failed namespace operation changed its observed operands")
             if operation in {"mkdir", "rmdir"}:
-                if not resources or role(row["source"]) != "directory":
+                if not resources or image_role(row["source"]) != "directory":
                     raise ReadEpochError("native failed directory operation lacks its exact resource role")
                 if operation == "mkdir" and (
                     type(row["flags"]) is not int or row["flags"] & ~0o777 or row["flags"] & 0o700 != 0o700
@@ -2196,11 +2284,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                     raise ReadEpochError("native failed mkdir changed its requested mode")
                 continue
             if operation in {"replace", "remove"}:
-                if not resources or not permitted(row["source"], operation):
+                if not resources:
                     raise ReadEpochError("native failed namespace operation escaped its resource role matrix")
                 if operation == "replace" and (
                     type(row["flags"]) is not int or row["flags"] not in {0, 1}
-                    or not permitted(row["destination"], "replace")
                 ):
                     raise ReadEpochError("native failed replacement lost its destination plan")
                 continue
@@ -2213,8 +2300,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                         for binding in bindings.values()
                     )
                     or resources and (
-                        not permitted(row["source"], "open")
-                        or role(row["source"]) == "shared-lock" and row["flags"] & (os.O_WRONLY | os.O_TRUNC | os.O_EXCL)
+                        image_role(row["source"]) == "shared-lock" and row["flags"] & (os.O_WRONLY | os.O_TRUNC | os.O_EXCL)
                     )
                 ):
                     raise ReadEpochError("native failed open changed its admitted flags or active writer preimage")
@@ -2258,8 +2344,15 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or actor_job is None
             or (
                 row.get("destination") if row["kind"] == "output-retire" else row["path"]
-            ) not in {"/repo/" + path for path in actor_job["admission"]["outputs"]}
-            and not role(row.get("destination") if row["kind"] == "output-retire" else row["path"])
+            ) not in {"/repo/" + path for path in image_outputs}
+            and not image_role(row.get("destination") if row["kind"] == "output-retire" else row["path"])
+            and not (
+                row["kind"] not in {
+                    "output-open", "output-mkdir", "output-rmdir", "output-replace",
+                    "output-retire", "output-directory-change",
+                } and row["serial"] in objects
+            )
+            and not (row["kind"] == "output-directory-change" and row["path"] in directories)
         ):
             raise ReadEpochError("native output effect escapes its actual job plan")
         job = actor_job if resources else jobs[row["owner"]]
@@ -2440,6 +2533,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             binding = bindings.get((row["pid"], row["fd"]))
             if (
                 binding is None or binding[0] != serial or serial in readers.values()
+                or not binding[2]
                 or type(row["mode"]) is not int or not 0 <= row["mode"] <= 0o777
                 or row["identity"][:2] != item["identity"][:2] or row["identity"][3:5] != item["identity"][3:5]
                 or row["identity"][6] != item["identity"][6] or row["identity"][2] != stat.S_IFREG | row["mode"]

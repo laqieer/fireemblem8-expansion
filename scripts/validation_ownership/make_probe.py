@@ -1514,9 +1514,20 @@ class ProbeSession:
                         raise MakeProbeError("incomplete native Command admission handshake")
                     completion = sequence, request["completed"], None
                     return None
+                image_request = request.get("kind") == "native-exec-request"
+                context = None
+                if image_request:
+                    if not native_output_paths or any(
+                        type(request.get(key)) is not int or request[key] < 1
+                        for key in ("dispatch", "pid", "generation")
+                    ):
+                        raise MakeProbeError("native image request lacks its actual process generation")
+                    context = {key: request[key] for key in ("dispatch", "pid", "generation")}
                 if (
-                    set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"}
-                    or request["kind"] != "native-request"
+                    set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"} | (
+                        {"dispatch", "pid", "generation"} if image_request else set()
+                    )
+                    or request["kind"] not in {"native-request", "native-exec-request"}
                     or type(request["sequence"]) is not int or request["sequence"] != sequence + 1
                     or request["path"] not in config["native_executables"]
                 ):
@@ -1558,11 +1569,14 @@ class ProbeSession:
                     raise MakeProbeError("native output plan differs from its issued Command owner")
                 admission = {
                     "owner": owner, "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(),
+                    **({"sequence": sequence} if native_output_paths else {}),
                     **({"closure": authorization["closure"]} if native_output_paths else {}),
                     **({"outputs": authorization["outputs"]} if native_output_paths else {}),
                     **({"resources": authorization["resources"]} if native_resources else {}),
                 }
-                native_authorizations[sequence] = (request["path"], inputs, admission)
+                native_authorizations[sequence] = (request["path"], inputs, admission) + (
+                    (context,) if native_output_paths else ()
+                )
                 self.budget.charge("cache", len(encoded(native_authorizations[sequence])))
                 self.pending_commands_peak = max(self.pending_commands_peak, 1)
                 reply = {
@@ -1818,11 +1832,29 @@ class ProbeSession:
                         if runtime_completions:
                             from .read_epochs import native_execution_input, native_job_tree
                             inputs = native_execution_input(job["argv"], job["cwd"])
-                            if native_admission_handler is not None and (
-                                native_authorizations.get(job["sequence"])
-                                != (job["executable"], inputs, job["admission"])
-                            ):
-                                raise MakeProbeError("native job differs from its issued Command admission")
+                            if native_admission_handler is not None:
+                                request_id = job["admission"].get("sequence") if native_output_paths else job["sequence"]
+                                issued = native_authorizations.get(request_id)
+                                if (
+                                    issued is None or issued[:3] != (job["executable"], inputs, job["admission"])
+                                    or native_output_paths and issued[3] is not None
+                                ):
+                                    raise MakeProbeError("native job differs from its issued Command admission")
+                                if native_output_paths:
+                                    for event in job["tree"][1:]:
+                                        if event.get("kind") != "exec":
+                                            continue
+                                        image = event.get("admission", {})
+                                        issued = native_authorizations.get(image.get("sequence"))
+                                        expected_context = {
+                                            "dispatch": job["sequence"], "pid": event["pid"],
+                                            "generation": event["generation"],
+                                        }
+                                        if issued != (
+                                            event["path"], native_execution_input(event["argv"], event["cwd"]),
+                                            image, expected_context,
+                                        ):
+                                            raise MakeProbeError("native image differs from its issued operand admission")
                             job_inputs[(job["sequence"], job["pid"])] = hashlib.sha256(encoded(inputs)).hexdigest()
                             parent = None
                             if observed["returncode"] == 0:
@@ -1836,6 +1868,7 @@ class ProbeSession:
                             native_job_tree(
                                 job["tree"], job, parent, config["native_executables"],
                                 count_limit=config["observation_count"],
+                                writable=bool(native_output_paths),
                             )
                             if observed["returncode"] == 0:
                                 machine_tree = [
@@ -1864,8 +1897,15 @@ class ProbeSession:
                     raise MakeProbeError("native job differs from its actual executable")
                 if sorted(sequence for sequence, _ in dispatches) != list(range(1, len(dispatches) + 1)):
                     raise MakeProbeError("native job dispatch sequences are incomplete or reused")
-                if native_admission_handler is not None and len(dispatches) != len(native_authorizations):
-                    raise MakeProbeError("native Command admission lacks its completed actual job")
+                if native_admission_handler is not None:
+                    issued_images = (
+                        [event["admission"]["sequence"] for job in observed["read_trace"]["output_authority"]["jobs"]
+                         for event in job["tree"] if event["kind"] == "exec"]
+                        if native_output_paths and observed["returncode"] == 0 else
+                        [sequence for sequence, _ in dispatches]
+                    )
+                    if sorted(issued_images) != sorted(native_authorizations):
+                        raise MakeProbeError("native Command admission lacks its completed actual image")
                 if read_selection is not None and observed["returncode"] == 0:
                     children = [
                         (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
@@ -1892,8 +1932,13 @@ class ProbeSession:
                             authority["paths"] != config["native_output_paths"]
                             or authority.get("resources", []) != config.get("native_resources", [])
                             or any(
-                                job["sequence"] not in native_authorizations
-                                or job["admission"] != native_authorizations[job["sequence"]][2]
+                                job["admission"].get("sequence") not in native_authorizations
+                                or job["admission"] != native_authorizations[job["admission"]["sequence"]][2]
+                                or any(
+                                    event.get("admission", {}).get("sequence") not in native_authorizations
+                                    or event["admission"] != native_authorizations[event["admission"]["sequence"]][2]
+                                    for event in job["tree"] if event["kind"] == "exec"
+                                )
                                 for job in authority["jobs"]
                             )
                             or {
@@ -1901,8 +1946,8 @@ class ProbeSession:
                                 for row in observed["read_trace"]["machine"]["events"]
                                 if row["kind"] == "execute" and not row["make"]
                             } != {
-                                sequence: authorization[2]["owner"]
-                                for sequence, authorization in native_authorizations.items()
+                                job["sequence"]: native_authorizations[job["admission"]["sequence"]][2]["owner"]
+                                for job in authority["jobs"]
                             }
                         ):
                             raise MakeProbeError("native returned archive differs from issued Command authority")
