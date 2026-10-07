@@ -37,7 +37,6 @@ class NativeReadTrace:
         self.scope = config["scope"]
         self.version = config["version"]
         self.runtime = self.version in {read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}
-        self.output_events = []
         self.pending_barrier = None
         self.barriers = 0
         path = Path(self.config["root"]) / "usr/bin/make"
@@ -971,7 +970,6 @@ class NativeReadTrace:
                     {key: row[key] for key in ("sequence", "pid", "admission", "tree")}
                     for row in self.policy.native_jobs.values()
                 ],
-                "effects": self.output_events,
             }
         read_epochs.validate_trace(result, self.scope, count_limit=self.config["observation_count"],
                                    file_limit=self.config["file_limit"], reserve=self.policy.charge_metadata)

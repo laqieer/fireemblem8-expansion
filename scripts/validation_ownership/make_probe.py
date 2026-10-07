@@ -2496,6 +2496,7 @@ class ProbeSession:
             raise MakeProbeError("readonly native Make cannot request writable output authority")
         return self._native_make_run(target, **kwargs)
 
+    @terminal_failure
     def _native_make_writable(self, target, *, outputs, **kwargs):
         if not outputs:
             raise MakeProbeError("native writable Make requires exact output paths")
@@ -2765,6 +2766,7 @@ class ProbeSession:
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )
             if writable_outputs:
+                from .read_epochs import native_output_effects
                 generated = []
                 for name in writable_outputs:
                     path = root.parent / (root.name + "-sources") / name
@@ -2780,7 +2782,7 @@ class ProbeSession:
                         ):
                             raise MakeProbeError("native Make output changed during bounded capture")
                         settlements = [
-                            row for row in observed["read_trace"]["output_authority"]["effects"]
+                            row for row in native_output_effects(observed["read_trace"])
                             if row["kind"] == "output-settled" and row["path"] == "/repo/" + name
                         ]
                         if (

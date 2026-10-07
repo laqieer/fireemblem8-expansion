@@ -460,7 +460,9 @@ Tracked source collisions and another job's output refuse before mutation.
 This lane uses explicit wire version 6. Immutable version 5 still rejects
 output authority and retains its original closed schema/read-only backing.
 Version 6 records closed output plans, original job/input/PID/tree bindings
-and paired output effects mirrored into machine observations. Standalone
+and paired output effects in the existing machine observations. A single
+machine stream supplies both saved replay and final settlement; there is no
+second `output_authority.effects` payload or collector buffer. Standalone
 validation checks machine/job/effect agreement, descriptor description
 lifetimes, content revisions and terminal retirement/settlement. Exec closure
 also binds the already observed successful job image generation. Host artifact
@@ -482,7 +484,7 @@ and `FoundationTests.test_native_original_make_output_plan_refuses_other_jobs_an
 Actual original shell recipes must run once, produce exact stdout/stderr,
 output bytes/mode and distinct real job PID/owner bindings, and clean the
 private filesystem. The standalone controls change descriptor, revision and
-path while preserving both machine mirror and hash; each still refuses.
+path while preserving the machine record's hash; each still refuses.
 Immutable v5 rejects the v6 authority payload. Negative actual invocations
 exercise readonly admission, another job's output, undeclared paths and tracked
 source collision. Shell redirection restoration pairs an actual foreign
@@ -495,7 +497,9 @@ runtime probes; the symlink reaches the existing symlink prohibition.
 `FoundationTests.test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model`
 runs `printf first > result; printf final > result; printf once` as one original
 recipe. Final bytes must be `final`, mode `0644`, stdout `once`, and stderr empty.
-Hash/mirror-preserving mutations of truncation revision, FD and size refuse.
+Hash-preserving mutations of truncation revision, FD and size refuse.
+An inserted writable alias spanning the truncating open also refuses; the
+actual double-redirection control closes its first writable aliases first.
 Inserted `EBADF`/`EINVAL` close-failure events refuse; transformations to the
 four accepted released-FD outcomes pass replay. These archive transformations
 are not evidence of naturally occurring kernel close errors.
@@ -510,12 +514,34 @@ preserves all output FDs. The following successful reexec closes
 `O_CLOEXEC`/`F_SETFD(FD_CLOEXEC)` bindings before the new image reuses FD3 for
 `/dev/null`. An unflagged alias survives reexec and retires at actual exit.
 Archive controls change the actual closure generation to a prior or future
-image or a boolean while preserving the machine mirror/hash; each refuses.
+image or a boolean while preserving the machine hash; each refuses.
 `NativeOutputCustodyTests.test_exec_closure_and_target_duplicates_refuse_both_entry_orders_before_replacement`
 checks `dup2`/`dup3` target replacement versus exec in both entry orders, with
 unchanged actual target identity and descriptor maps on refusal, failed-return
 continuation and actual `dup2` replacement after release. Inherited PID labels
 in this component control are not actual child-process admission evidence.
+`FoundationTests.test_native_original_make_failed_open_and_duplicate_preserve_actual_output`
+runs a sealed original C recipe with real `O_EXCL`/`EEXIST`, self-target
+`dup3`/`EINVAL`, negative `F_DUPFD`/`EINVAL` and negative-target `dup2`/`EBADF`
+returns. The existing output remains exactly `final`/`0644`, stdout is `once`
+and stderr is empty. Failed-open flags and failed-duplicate source/kind/
+target/minimum/flags are bound to their admitted operation without a replay
+state change; mutated operand records with recomputed hashes refuse.
+Failed exec and foreign-replacement records require a live producer binding;
+moving failed exec before output creation with renumbered records/hashes
+refuses rather than inventing a preimage.
+`FoundationTests.test_native_writable_make_admission_failure_exhausts_whole_session`
+requires an invalid writable admission to fail and close the entire existing
+budget; a subsequent budget operation must refuse. The writable wrapper uses
+the same terminal-failure guard as the readonly wrapper.
+`FoundationTests.test_native_original_make_actual_forked_output_alias_and_parent_wire`
+runs a sealed original recipe whose real child inherits the output, duplicates
+it to FD7 and writes through the shared offset. The actual parent waits and
+closes its alias. Bytes must be `firstfinal`/`0644`, stdout `once`, and stderr
+empty; the saved parent/child IDs must match the real job tree. List, boolean
+and foreign parent-ID mutations with recomputed machine hashes refuse.
+This is actual fork/alias support, not a parked concurrent exec/replacement
+race control.
 Exec entry reserves the closing descriptions in the existing operation map,
 excluding conflicting lock/mode/alias-close operations before kernel mutation;
 successful exec verifies actual missing/surviving FDs and preserves one object

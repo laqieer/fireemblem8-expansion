@@ -5580,14 +5580,22 @@ class FoundationTests(unittest.TestCase):
             trace = observed["read_trace"]
             self.assertEqual(trace["version"], read_epochs.WRITABLE_VERSION)
             self.assertEqual(trace["output_authority"]["paths"], ["result"])
-            self.assertEqual(trace["output_authority"]["effects"], sorted(effects, key=lambda row: row["sequence"]))
+            self.assertEqual(set(trace["output_authority"]), {"paths", "jobs"})
+            self.assertEqual(read_epochs.native_output_effects(trace), sorted(effects, key=lambda row: row["sequence"]))
+            redundant = json.loads(json.dumps(trace))
+            redundant["output_authority"]["effects"] = read_epochs.native_output_effects(redundant)
+            self.assertGreater(len(encoded(redundant)), len(encoded(trace)))
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "output authority"):
+                read_epochs.validate_trace(
+                    redundant, redundant["scope"], count_limit=100000, file_limit=10000000,
+                )
             read_epochs.validate_trace(
                 trace, trace["scope"], count_limit=100000, file_limit=10000000,
             )
             for field, value in (("fd", 999), ("revision", 100), ("path", "/repo/other"), ("result", 0)):
                 with self.subTest(archive_field=field):
                     invalid = json.loads(json.dumps(trace))
-                    effect = next(row for row in invalid["output_authority"]["effects"] if row["kind"] == "output-write")
+                    effect = next(row for row in read_epochs.native_output_effects(invalid) if row["kind"] == "output-write")
                     effect[field] = value
                     machine = next(
                         row for row in invalid["machine"]["events"]
@@ -5635,6 +5643,128 @@ class FoundationTests(unittest.TestCase):
                             )
                 self.assert_clean(session)
 
+    def test_native_original_make_failed_open_and_duplicate_preserve_actual_output(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <unistd.h>\n#include <fcntl.h>\n#include <errno.h>\n"
+            "#include <sys/syscall.h>\nint main(void){int fd;"
+            "fd=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"final\",5)!=5)return 1;"
+            "if(open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644)!=-1||errno!=EEXIST)return 2;"
+            "if(syscall(SYS_dup3,fd,fd,0)!=-1||errno!=EINVAL)return 3;"
+            "if(fcntl(fd,F_DUPFD,-1)!=-1||errno!=EINVAL)return 4;"
+            "if(dup2(fd,-1)!=-1||errno!=EBADF)return 5;"
+            "if(close(fd)||write(1,\"once\",4)!=4)return 6;return 0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("result",))
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), commands=Commands(), native_tool=tool,
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"once", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
+            trace = observed["read_trace"]
+            failures = [
+                row for row in read_epochs.native_output_effects(trace)
+                if row["kind"] == "output-operation-failed"
+            ]
+            self.assertEqual([(row["operation"], row["result"]) for row in failures], [
+                ("open", -errno.EEXIST), ("dup", -errno.EINVAL),
+                ("dup", -errno.EINVAL), ("dup", -errno.EBADF),
+            ])
+            for operation, field, value in (
+                ("open", "flags", os.O_APPEND), ("open", "source", "/repo/other"),
+                ("dup", "descriptor", 999), ("dup", "duplicate_kind", []),
+                ("dup", "target", True), ("dup", "flags", os.O_APPEND),
+            ):
+                with self.subTest(operation=operation, field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    event = next(
+                        row for row in read_epochs.native_output_effects(invalid)
+                        if row["kind"] == "output-operation-failed" and row["operation"] == operation
+                    )
+                    event[field] = value
+                    machine = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == event["sequence"]
+                    )
+                    machine["sha256"] = hashlib.sha256(encoded(event)).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_writable_make_admission_failure_exhausts_whole_session(self):
+        self.add("Makefile", "all:\n\t@printf final > result\n")
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(MakeProbeError, "exact output paths"):
+                session._native_make_writable("all", outputs=())
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget exhausted"):
+                session.budget.remaining()
+        self.assert_clean(session)
+
+    def test_native_original_make_actual_forked_output_alias_and_parent_wire(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <unistd.h>\n#include <fcntl.h>\n#include <sys/wait.h>\n"
+            "int main(void){int fd,status;pid_t child;"
+            "fd=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"first\",5)!=5)return 1;child=fork();if(child<0)return 2;"
+            "if(!child){if(dup2(fd,7)!=7||write(7,\"final\",5)!=5||close(7))_exit(3);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||!WIFEXITED(status)||WEXITSTATUS(status))return 4;"
+            "if(close(fd)||write(1,\"once\",4)!=4)return 5;return 0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("result",))
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), commands=Commands(), native_tool=tool,
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"once", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"firstfinal", 0o644)])
+            trace = observed["read_trace"]
+            job, = trace["output_authority"]["jobs"]
+            inherited, = [
+                row for row in read_epochs.native_output_effects(trace) if row["kind"] == "output-inherit"
+            ]
+            self.assertEqual(inherited["parent"], job["pid"])
+            self.assertNotEqual(inherited["pid"], job["pid"])
+            self.assertIn(inherited["pid"], [row.get("child") for row in job["tree"]])
+            self.assertTrue(any(
+                row["kind"] == "output-write" and row["pid"] == inherited["pid"] and row["fd"] == 7
+                for row in read_epochs.native_output_effects(trace)
+            ))
+            for parent in ([], True, 99999999):
+                with self.subTest(parent=parent):
+                    invalid = json.loads(json.dumps(trace))
+                    effect = next(row for row in read_epochs.native_output_effects(invalid) if row["kind"] == "output-inherit")
+                    effect["parent"] = parent
+                    machine = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == effect["sequence"]
+                    )
+                    machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "malformed parent"):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
     def test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model(self):
         from scripts.validation_ownership import read_epochs
         recipe = "printf first > result; printf final > result; printf once"
@@ -5651,14 +5781,49 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual((completed.stdout, completed.stderr), (b"once", b""))
             self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
             trace = observed["read_trace"]
-            effects = trace["output_authority"]["effects"]
+            effects = read_epochs.native_output_effects(trace)
             truncated, = [row for row in effects if row["kind"] == "output-truncate"]
             self.assertEqual(truncated["identity"][3], 0)
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            active_writer = json.loads(json.dumps(trace))
+            machine = active_writer["machine"]["events"]
+            index = next(
+                index for index, row in enumerate(machine)
+                if row["kind"] == "native-output" and row["event"]["kind"] == "output-truncate"
+            )
+            previous = [
+                row["event"] for row in machine[:index]
+                if row["kind"] == "native-output" and row["event"]["kind"] == "output-write"
+            ][-1]
+            opened = dict(next(row for row in effects if row["kind"] == "output-open"))
+            opened.update(
+                fd=999, description=max(row.get("description", 0) for row in effects) + 1,
+                identity=previous["identity"], revision=previous["revision"],
+            )
+            extra = dict(machine[index])
+            extra["event"] = opened
+            machine.insert(index, extra)
+            closed = {key: truncated[key] for key in (
+                "sequence", "owner", "serial", "revision", "path", "pid",
+            )}
+            closed.update(kind="output-close", fd=999, description=opened["description"])
+            extra = dict(machine[index + 2])
+            extra["event"] = closed
+            machine.insert(index + 3, extra)
+            for number, row in enumerate(read_epochs.native_output_effects(active_writer), 1):
+                row["sequence"] = number
+            for number, row in enumerate(machine, 1):
+                row["seq"] = number
+                if row["kind"] == "native-output":
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "truncating open"):
+                read_epochs.validate_trace(
+                    active_writer, active_writer["scope"], count_limit=100000, file_limit=10000000,
+                )
             for field, value in (("revision", 100), ("fd", 999), ("identity", truncated["identity"][:3] + [1] + truncated["identity"][4:])):
                 with self.subTest(truncate_field=field):
                     invalid = json.loads(json.dumps(trace))
-                    effect = next(row for row in invalid["output_authority"]["effects"] if row["kind"] == "output-truncate")
+                    effect = next(row for row in read_epochs.native_output_effects(invalid) if row["kind"] == "output-truncate")
                     effect[field] = value
                     machine = next(
                         row for row in invalid["machine"]["events"]
@@ -5673,7 +5838,7 @@ class FoundationTests(unittest.TestCase):
             for result in (-errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT):
                 with self.subTest(released_close_errno=result):
                     compatible = json.loads(json.dumps(trace))
-                    effect = next(row for row in compatible["output_authority"]["effects"] if row["kind"] == "output-close")
+                    effect = next(row for row in read_epochs.native_output_effects(compatible) if row["kind"] == "output-close")
                     del effect["description"]
                     effect.update(kind="output-close-failed", result=result)
                     machine = next(
@@ -5688,14 +5853,11 @@ class FoundationTests(unittest.TestCase):
             for result in (-errno.EBADF, -errno.EINVAL):
                 with self.subTest(close_errno=result):
                     invalid = json.loads(json.dumps(trace))
-                    index = next(
-                        index for index, row in enumerate(invalid["output_authority"]["effects"])
-                        if row["kind"] == "output-close"
+                    original = next(
+                        row for row in read_epochs.native_output_effects(invalid) if row["kind"] == "output-close"
                     )
-                    original = invalid["output_authority"]["effects"][index]
                     failure = {key: value for key, value in original.items() if key != "description"}
                     failure.update(kind="output-close-failed", result=result)
-                    invalid["output_authority"]["effects"].insert(index, failure)
                     machine_index = next(
                         index for index, row in enumerate(invalid["machine"]["events"])
                         if row["kind"] == "native-output" and row["event"]["sequence"] == original["sequence"]
@@ -5703,13 +5865,11 @@ class FoundationTests(unittest.TestCase):
                     mirror = dict(invalid["machine"]["events"][machine_index])
                     mirror["event"] = failure
                     invalid["machine"]["events"].insert(machine_index, mirror)
-                    for number, row in enumerate(invalid["output_authority"]["effects"], 1):
+                    for number, row in enumerate(read_epochs.native_output_effects(invalid), 1):
                         row["sequence"] = number
-                    mirrored = iter(invalid["output_authority"]["effects"])
                     for number, row in enumerate(invalid["machine"]["events"], 1):
                         row["seq"] = number
                         if row["kind"] == "native-output":
-                            row["event"] = next(mirrored)
                             row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
                     with self.assertRaisesRegex(read_epochs.ReadEpochError, "released-FD errno"):
                         read_epochs.validate_trace(
@@ -5737,7 +5897,7 @@ class FoundationTests(unittest.TestCase):
                 observe_runtime_completions=True, commands=Commands(),
             )
             jobs = observed["read_trace"]["output_authority"]["jobs"]
-            effects = observed["read_trace"]["output_authority"]["effects"]
+            effects = read_epochs.native_output_effects(observed["read_trace"])
             self.assertEqual(completed.stdout, b"firstsecond")
             self.assertEqual(completed.stderr, b"")
             self.assertEqual(requests, [("/bin/sh", "-c", row) for row in recipes])
@@ -5753,14 +5913,14 @@ class FoundationTests(unittest.TestCase):
                 self.assertTrue(rows)
                 self.assertEqual({row["owner"] for row in rows}, {job["sequence"]})
             invalid = json.loads(json.dumps(observed["read_trace"]))
-            opens = [row for row in invalid["output_authority"]["effects"] if row["kind"] == "output-open"]
+            opens = [row for row in read_epochs.native_output_effects(invalid) if row["kind"] == "output-open"]
             first_description, second_description = [row["description"] for row in opens]
-            for effect in invalid["output_authority"]["effects"]:
+            for effect in read_epochs.native_output_effects(invalid):
                 if effect.get("description") == second_description:
                     effect["description"] = first_description
             for machine in invalid["machine"]["events"]:
                 if machine["kind"] == "native-output":
-                    effect = invalid["output_authority"]["effects"][machine["event"]["sequence"] - 1]
+                    effect = machine["event"]
                     machine["event"] = effect
                     machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
             with self.assertRaisesRegex(read_epochs.ReadEpochError, "reused a live descriptor"):
@@ -5828,7 +5988,7 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(completed.stderr, b"")
                     self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
                     trace = observed["read_trace"]
-                    effects = trace["output_authority"]["effects"]
+                    effects = read_epochs.native_output_effects(trace)
                     opens = [row for row in effects if row["kind"] == "output-open"]
                     self.assertEqual(len(opens), 2)
                     self.assertEqual(opens[0]["serial"], opens[1]["serial"])
@@ -5841,11 +6001,33 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(any(row["kind"] == "output-close" and row["fd"] == 5 for row in effects), mode == "retain")
                     failures = [row for row in effects if row["kind"] == "output-operation-failed"]
                     self.assertEqual([(row["operation"], row["result"]) for row in failures], [("exec", -errno.EFAULT)])
+                    premature = json.loads(json.dumps(trace))
+                    machine_events = premature["machine"]["events"]
+                    failure_index = next(
+                        index for index, row in enumerate(machine_events)
+                        if row["kind"] == "native-output"
+                        and row["event"]["kind"] == "output-operation-failed"
+                    )
+                    failure = machine_events.pop(failure_index)
+                    first_output = next(
+                        index for index, row in enumerate(machine_events) if row["kind"] == "native-output"
+                    )
+                    machine_events.insert(first_output, failure)
+                    for number, row in enumerate(read_epochs.native_output_effects(premature), 1):
+                        row["sequence"] = number
+                    for number, row in enumerate(machine_events, 1):
+                        row["seq"] = number
+                        if row["kind"] == "native-output":
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "live source binding"):
+                        read_epochs.validate_trace(
+                            premature, premature["scope"], count_limit=100000, file_limit=10000000,
+                        )
                     for generation in (1, 3, True):
                         with self.subTest(exec_generation=generation):
                             invalid = json.loads(json.dumps(trace))
                             effect = next(
-                                row for row in invalid["output_authority"]["effects"]
+                                row for row in read_epochs.native_output_effects(invalid)
                                 if row["kind"] == "output-exec-close"
                             )
                             effect["generation"] = generation
@@ -5862,12 +6044,12 @@ class FoundationTests(unittest.TestCase):
                                 )
                     invalid = json.loads(json.dumps(trace))
                     old, new = [row["description"] for row in opens]
-                    for effect in invalid["output_authority"]["effects"]:
+                    for effect in read_epochs.native_output_effects(invalid):
                         if effect.get("description") == new:
                             effect["description"] = old
                     for machine in invalid["machine"]["events"]:
                         if machine["kind"] == "native-output":
-                            effect = invalid["output_authority"]["effects"][machine["event"]["sequence"] - 1]
+                            effect = machine["event"]
                             machine["event"] = effect
                             machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
                     with self.assertRaisesRegex(read_epochs.ReadEpochError, "reused a live descriptor"):

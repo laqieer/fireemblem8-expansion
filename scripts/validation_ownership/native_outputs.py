@@ -53,7 +53,15 @@ class NativeOutputObserver:
         self.sequence += 1
         row = {"sequence": self.sequence, "kind": kind, **fields}
         if self.policy.mode == "make":
-            self.policy.read_trace.output_events.append(row)
+            if kind == "output-operation-failed":
+                operation = self.custody.pending[row["pid"]]
+                if operation.kind == "open":
+                    row["flags"] = operation.flags
+                elif operation.kind == "dup":
+                    row.update(
+                        descriptor=operation.descriptor, duplicate_kind=operation.duplicate_kind,
+                        target=operation.target, minimum=operation.minimum, flags=operation.flags,
+                    )
             job = self.policy.native_jobs[row["owner"]]
             self.policy.read_trace.machine_event(
                 "native-output", job["pid"], dispatch=row["owner"],

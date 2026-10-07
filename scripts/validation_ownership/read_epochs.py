@@ -1883,10 +1883,14 @@ def _read_event_keys(version):
     return keys
 
 
+def native_output_effects(trace):
+    return [row["event"] for row in trace["machine"]["events"] if row["kind"] == "native-output"]
+
+
 def validate_native_output_authority(trace, *, count_limit, file_limit, reserve):
     authority = trace["output_authority"]
     if (
-        not isinstance(authority, dict) or set(authority) != {"paths", "jobs", "effects"}
+        not isinstance(authority, dict) or set(authority) != {"paths", "jobs"}
         or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit for key in authority)
         or not authority["paths"]
         or any(
@@ -1911,8 +1915,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             raise ReadEpochError("native output plan conflicts with immutable source or another output")
     jobs = {}
     machine = trace["machine"]["events"]
-    if authority["effects"] != [row["event"] for row in machine if row["kind"] == "native-output"]:
-        raise ReadEpochError("native output effects differ from their actual machine observations")
+    effects = native_output_effects(trace)
     for number, job in enumerate(authority["jobs"], 1):
         if (
             not isinstance(job, dict) or set(job) != {"sequence", "pid", "admission", "tree"}
@@ -1957,21 +1960,62 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         "output-inherit": {"parent", "pid", "fd", "description"},
     }
     objects, bindings, descriptions = {}, {}, set()
-    for number, row in enumerate(authority["effects"], 1):
+    for number, row in enumerate(effects, 1):
         if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
+            operation = row.get("operation")
+            extra = {"flags"} if operation == "open" else {
+                "descriptor", "duplicate_kind", "target", "minimum", "flags",
+            } if operation == "dup" else set()
             if (
-                set(row) != {"sequence", "kind", "owner", "pid", "operation", "source", "destination", "result"}
+                set(row) != {"sequence", "kind", "owner", "pid", "operation", "source", "destination", "result"} | extra
                 or type(row["sequence"]) is not int or row["sequence"] != number
                 or type(row["owner"]) is not int or row["owner"] not in jobs
                 or not isinstance(row["operation"], str)
-                or row["operation"] not in {"duplicate-release", "exec"} or row["destination"] is not None
+                or row["operation"] not in {"open", "dup", "duplicate-release", "exec"} or row["destination"] is not None
                 or not isinstance(row["source"], str)
-                or row["source"] not in {"/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]}
+                or operation != "dup" and row["source"] not in {
+                    "/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]
+                }
                 or type(row["pid"]) is not int
                 or row["pid"] not in {event["pid"] for event in jobs[row["owner"]]["tree"]}
                 or type(row["result"]) is not int or not -4095 <= row["result"] < 0
             ):
                 raise ReadEpochError("native failed descriptor transition lost its actual job or preimage")
+            if operation == "open":
+                if (
+                    type(row["flags"]) is not int or row["flags"] < 0
+                    or row["flags"] & os.O_APPEND or row["flags"] & os.O_TMPFILE == os.O_TMPFILE
+                    or row["flags"] & os.O_TRUNC and any(
+                        binding[2] and objects[binding[0]]["path"] == row["source"]
+                        for binding in bindings.values()
+                    )
+                ):
+                    raise ReadEpochError("native failed open changed its admitted flags or active writer preimage")
+            elif operation == "dup":
+                kind, target, minimum, flags = (
+                    row["duplicate_kind"], row["target"], row["minimum"], row["flags"],
+                )
+                binding = bindings.get((row["pid"], row["descriptor"])) if type(row["descriptor"]) is int else None
+                if (
+                    binding is None or objects[binding[0]]["owner"] != row["owner"]
+                    or row["source"] != "source-fd:" + str(row["descriptor"])
+                    or not isinstance(kind, str) or kind not in {"dup", "dup2", "dup3", "fcntl-dupfd", "fcntl-dupfd-cloexec"}
+                    or type(flags) is not int or flags not in ({0, os.O_CLOEXEC} if kind == "dup3" else {0})
+                    or kind in {"dup2", "dup3"} and (
+                        type(target) is not int or not -(1 << 31) <= target < 1 << 31 or minimum is not None
+                    )
+                    or kind == "dup" and (target is not None or minimum is not None)
+                    or kind.startswith("fcntl-") and (
+                        target is not None or type(minimum) is not int or not -(1 << 31) <= minimum < 1 << 31
+                    )
+                ):
+                    raise ReadEpochError("native failed duplicate changed its actual source or operand plan")
+            elif not any(
+                pid == row["pid"] and objects[binding[0]]["owner"] == row["owner"]
+                and objects[binding[0]]["path"] == row["source"]
+                for (pid, descriptor), binding in bindings.items()
+            ):
+                raise ReadEpochError("native failed descriptor transition lost its live source binding")
             continue
         if (
             not isinstance(row, dict) or not isinstance(row.get("kind"), str) or row["kind"] not in fields
@@ -2032,9 +2076,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         elif item is None or row["owner"] != item["owner"] or row["path"] != item["path"]:
             raise ReadEpochError("native output effect lacks its issued live object")
         elif kind == "output-truncate":
-            following = authority["effects"][number] if number < len(authority["effects"]) else None
+            following = effects[number] if number < len(effects) else None
             if (
                 row["identity"][:3] != item["identity"][:3]
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
                 or row["identity"][3] != 0 or row["identity"][6] != item["identity"][6]
                 or row["revision"] != item["revision"] + 1
                 or not isinstance(following, dict) or following.get("kind") != "output-open"
@@ -2064,6 +2109,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 raise ReadEpochError("native output settlement changed its observed preimage")
             item["settled"] = True
         elif kind == "output-inherit":
+            if type(row["parent"]) is not int or row["parent"] not in pids:
+                raise ReadEpochError("native inherited output has a foreign or malformed parent")
             binding = bindings.get((row["parent"], row["fd"]))
             if binding is None or binding[:2] != (serial, row["description"]):
                 raise ReadEpochError("native inherited output lost its original description")
