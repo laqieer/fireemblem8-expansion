@@ -966,4 +966,3 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual(jobs[0]["argv"], ["/bin/sh", "-c", "v=original; printf '%s' \"$v\""])
             self.assertEqual(jobs[0]["cwd"], "/repo")
         self.assert_clean(session)
-
