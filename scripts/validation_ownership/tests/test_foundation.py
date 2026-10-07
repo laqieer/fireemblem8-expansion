@@ -6764,6 +6764,44 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(after, before | (1 << 16) if name == "eflags" else before)
         self.assert_clean(session)
 
+    def test_native_completion_variable_payload_boundaries(self):
+        name = "V" * 128
+        for runtime in (False, True):
+            for multibyte in (False, True):
+                for size in (65535, 65536, 65537):
+                    value = (
+                        chr(0xE9) * (size // 2) + ("x" if size % 2 else "")
+                        if multibyte else "x" * size
+                    )
+                    self.assertEqual(len(value.encode()), size)
+                    self.add("Makefile", (
+                        f"{name} := {value}\nSELECTED := $({name})\n"
+                        "SELECTED_ALIAS := $(SELECTED)\nall: ; @:\n"
+                    ))
+                    session = self.session()
+                    with self.subTest(runtime=runtime, multibyte=multibyte, size=size), session:
+                        options = {
+                            "observe_reads": True,
+                            "observe_runtime_completions" if runtime else "observe_completions": True,
+                        }
+                        if size > 65536:
+                            with self.assertRaisesRegex(MakeProbeError, "bounded|exceeds|malformed"):
+                                session._native_make_readonly("all", **options)
+                            self.assertTrue(session.budget.failed)
+                        else:
+                            completed, _, observed = session._native_make_readonly("all", **options)
+                            self.assertEqual(completed.stdout, b"")
+                            self.assertEqual(completed.stderr, b"")
+                            kind = "effect-completion" if runtime else "assignment-completion"
+                            bindings = [
+                                row["variable"] for row in observed["read_trace"]["events"]
+                                if row["kind"] == kind and row["variable"][0] in {name, "SELECTED"}
+                            ]
+                            self.assertEqual({row[0] for row in bindings}, {name, "SELECTED"})
+                            self.assertTrue(all(row[1] == value for row in bindings))
+                            self.assertFalse(session.budget.failed)
+                    self.assert_clean(session)
+
     def test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose(self):
         self.add("Makefile", (
             "VALUE := original\n$(eval SECOND := $(VALUE))\n"

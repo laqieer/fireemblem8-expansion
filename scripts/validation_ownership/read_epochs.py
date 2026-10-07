@@ -1093,7 +1093,7 @@ def original_variable(memory, pointer, string):
         raise ReadEpochError("ordinary original assignment returned no effective variable")
     name_ptr, value_ptr, filename, line, offset, length, flags = struct.unpack(
         "<QQQQQII", memory(pointer, 48))
-    name, value = string(name_ptr, 129), string(value_ptr, 65536)
+    name, value = string(name_ptr, 129), string(value_ptr, 65537)
     if name is None or value is None or len(name.encode()) != length:
         raise ReadEpochError("completed original variable lacks its bounded raw name/value")
     return list(variable_row([name, value, flags, string(filename, 4096), line, offset]))

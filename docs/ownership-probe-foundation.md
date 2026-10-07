@@ -1481,6 +1481,20 @@ Actual shell machine executions carry the original native dispatch sequence
 and must match every completed readonly job's sequence/PID. Machine shape
 alone cannot substitute for that cross-binding.
 
+The shared effective-variable decoder admits names up to 128 UTF-8 bytes and
+values up to 65,536 UTF-8 bytes. Its bounded native string reads include one
+additional byte for the terminating NUL; this does not increase the payload
+limit. Both static assignment completion and runtime effect completion use
+this decoder. For the #270 native completion case, run
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_variable_payload_boundaries`.
+It executes original GNU Make with 128-byte names and ASCII or multibyte
+values: 65,535 and 65,536 payload bytes must survive unchanged through both
+completion routes, while 65,537 bytes must refuse and retire owned state.
+The pre-fix decoder rejects every 65,536-byte positive because it has no space
+to observe the NUL. This host-only boundary has no ROM/RAM/save/profile impact
+and does not qualify generated-source custody or the original eight-query
+family.
+
 From the same clean Linux x86-64 host checkout with admitted GNU Make 4.3 and
 the existing namespace launcher, run these `FoundationTests` controls:
 
