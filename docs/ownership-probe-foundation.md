@@ -86,6 +86,14 @@ prevents later completion, including after successful settlement, final close
 or physical source-pin release. Cleanup of an unreturned operation or unreleased
 source still closes its owned resources but retains incomplete lifecycle; it
 cannot manufacture a successful source return or operation outcome.
+Fork observations preflight the entire tracked descriptor set, including later
+collisions and repeated inputs, and fund all copies before installing any child
+binding. A validation or charge failure emits no inherited prefix and changes
+neither parent's nor child's writer/binding set. A later event failure remains
+sticky-incomplete rather than pretending the actual kernel fork rolled back.
+Pure-status `close`, rename and unlink returns require integer zero for success
+or a bounded negative kernel error: positive, Boolean, float and null evidence
+cannot retire a descriptor or transfer a version.
 
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
@@ -101,6 +109,11 @@ different returned object, lose final event evidence or treat source/operation
 cancellation as complete. Error-injection and modeled-child-inheritance
 controls test the component observation contract, not actual native supervisor
 authority; modeled late I/O errors do not prove filesystem-induced errors.
+Also require malformed fork-set and aggregate-budget controls to leave the
+complete binding/writer map and event count unchanged, alongside the actual
+successful fork/child-retirement control. Malformed status returns must leave
+bindings, versions, content and events unchanged; only the real subsequent
+zero-return close/rename/unlink control may advance them.
 
 These adapters are internal observations, not output-plan authorization.
 The supervisor must derive their operands from the existing sealed Command,

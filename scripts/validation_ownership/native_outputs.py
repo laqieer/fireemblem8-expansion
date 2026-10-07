@@ -217,6 +217,7 @@ class NativeOutputs:
 
     def leave_replace(self, operation, result):
         self._operation(operation, "replace")
+        self._status_result(result)
         if result < 0:
             self._failed(operation, result)
             return
@@ -237,6 +238,7 @@ class NativeOutputs:
 
     def leave_remove(self, operation, result):
         self._operation(operation, "remove")
+        self._status_result(result)
         if result < 0:
             self._failed(operation, result)
             return
@@ -471,16 +473,21 @@ class NativeOutputs:
 
     def inherited(self, parent, child, descriptors):
         self._usable()
+        copies = {}
         for descriptor in descriptors:
+            self.deadline()
             original, copied = (parent, descriptor), (child, descriptor)
             item = self.descriptors.get(original)
             if item is None:
                 continue
-            if copied in self.descriptors:
+            if copied in self.descriptors or copied in copies:
                 raise NativeOutputError("native output fork reused a live descriptor")
-            self.charge(64)
+            copies[copied] = (item, original in item.writers)
+        self.charge(64 * len(copies))
+        for copied, (item, writing) in copies.items():
+            descriptor = copied[1]
             self.descriptors[copied] = item
-            if original in item.writers:
+            if writing:
                 item.writers.add(copied)
             self._event("output-inherit", item, parent=parent, pid=child, fd=descriptor)
 
@@ -542,8 +549,14 @@ class NativeOutputs:
         item.pending_writer = None
         self._event("output-write", item, pid=pid, fd=descriptor, result=result, identity=list(identity))
 
+    @staticmethod
+    def _status_result(result):
+        if type(result) is not int or not -4095 <= result <= 0:
+            raise NativeOutputError("native status return must be integer zero or a kernel error")
+
     def closed(self, pid, descriptor, result):
         self._usable()
+        self._status_result(result)
         if result < 0:
             item = self.descriptors.get((pid, descriptor))
             if item is None or result == -errno.EBADF:
@@ -609,6 +622,7 @@ class NativeOutputs:
     def replaced(self, *, owner, source, destination, source_pin, retired_pin, result):
         """Record a stopped successful rename and its exact replaced inode."""
         self._usable()
+        self._status_result(result)
         item = self.objects.get(source)
         old = self.objects.get(destination)
         if (
@@ -648,6 +662,7 @@ class NativeOutputs:
 
     def removed(self, *, owner, path, pin, result):
         self._usable()
+        self._status_result(result)
         item = self.objects.get(path)
         if item is None or item.owner != owner or item.retired or item.writers:
             raise NativeOutputError("native output removal lacks its settled owned object")

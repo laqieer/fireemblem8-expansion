@@ -5243,6 +5243,108 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.assertNotIn("missing/output", self.outputs.objects)
         self.outputs.finish()
 
+    def test_fork_preflight_collision_duplicate_and_budget_preserve_whole_binding_set(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for failure in ("later-collision", "duplicate-input", "aggregate-budget"):
+            with self.subTest(failure=failure):
+                self.outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                self.addCleanup(self.outputs.close)
+                first = self.create(failure + ".first", b"first")
+                second = self.create(failure + ".second", b"second")
+                for descriptor, path in ((first, failure + ".first"), (second, failure + ".second")):
+                    self.outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor, path=path, writing=True,
+                    )
+                if failure == "later-collision":
+                    self.outputs.inherited(1, 2, (second,))
+                before = dict(self.outputs.descriptors)
+                writers = {item.serial: frozenset(item.writers) for item in self.outputs.versions}
+                event_count = len(self.events)
+                requested = (first, first) if failure == "duplicate-input" else (first, second)
+                if failure == "aggregate-budget":
+                    available = 64
+                    def charge(amount):
+                        nonlocal available
+                        self.charge(amount)
+                        if amount > available:
+                            raise RuntimeError("fork aggregate budget exhausted")
+                        available -= amount
+                    self.outputs.charge = charge
+                    error = RuntimeError
+                else:
+                    error = NativeOutputError
+                with self.assertRaises(error):
+                    self.outputs.inherited(1, 2, requested)
+                self.assertEqual(self.outputs.descriptors, before)
+                self.assertEqual(
+                    {item.serial: frozenset(item.writers) for item in self.outputs.versions}, writers,
+                )
+                self.assertEqual(len(self.events), event_count)
+                self.assertEqual(os.pread(first, 65536, 0), b"first")
+                self.assertEqual(os.pread(second, 65536, 0), b"second")
+                self.outputs.close()
+                with self.assertRaises(NativeOutputError):
+                    self.outputs.finish()
+
+    def test_close_rejects_nonzero_boolean_and_noninteger_status_without_retirement(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        retained = self.create("close-status", b"retained")
+        with os.fdopen(os.dup(retained), "r+b", buffering=0) as writer:
+            descriptor = writer.fileno()
+            item = self.outputs.opened(
+                owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                path="close-status", writing=True,
+            )
+            identity, digest = item.identity, item.sha256
+            events = len(self.events)
+            for result in (1, True, False, None, "0", 0.0, -4096):
+                with self.subTest(result=result):
+                    with self.assertRaises(NativeOutputError):
+                        self.outputs.closed(1, descriptor, result)
+                    self.assertIs(self.outputs.descriptors[(1, descriptor)], item)
+                    self.assertEqual(item.writers, {(1, descriptor)})
+                    self.assertEqual((item.identity, item.sha256), (identity, digest))
+                    self.assertEqual(len(self.events), events)
+                    self.assertEqual(os.pread(descriptor, 65536, 0), b"retained")
+        self.outputs.closed(1, descriptor, 0)
+        self.assertFalse(item.writers)
+        self.assertEqual(item.sha256, hashlib.sha256(b"retained").hexdigest())
+        self.outputs.finish()
+
+    def test_rename_unlink_status_siblings_refuse_malformed_returns_before_transfer(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        old = self.create("status-target", b"old")
+        new = self.create("status-temporary", b"new")
+        operation = self.outputs.enter_replace(
+            owner=1, pid=1, source="status-temporary", destination="status-target",
+            source_pin=new, retired_pin=old,
+        )
+        os.replace(self.root / "status-temporary", self.root / "status-target")
+        before = dict(self.outputs.objects)
+        events = len(self.events)
+        for result in (1, True, False, None, "0", 0.0, -4096):
+            with self.subTest(operation="replace", result=result):
+                with self.assertRaises(NativeOutputError):
+                    self.outputs.leave_replace(operation, result)
+                self.assertEqual(self.outputs.objects, before)
+                self.assertEqual(len(self.events), events)
+        self.outputs.leave_replace(operation, 0)
+        operation = self.outputs.enter_remove(owner=1, pid=1, path="status-target", pin=new)
+        os.unlink(self.root / "status-target")
+        before = dict(self.outputs.objects)
+        events = len(self.events)
+        for result in (1, True, False, None, "0", 0.0, -4096):
+            with self.subTest(operation="remove", result=result):
+                with self.assertRaises(NativeOutputError):
+                    self.outputs.leave_remove(operation, result)
+                self.assertEqual(self.outputs.objects, before)
+                self.assertEqual(len(self.events), events)
+        self.outputs.leave_remove(operation, 0)
+        self.outputs.finish()
+
     def test_actual_fork_descriptor_inheritance_keeps_writer_until_child_retirement(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = os.open(self.root / "inherited", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
