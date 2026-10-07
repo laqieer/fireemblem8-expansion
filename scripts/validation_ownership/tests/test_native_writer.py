@@ -149,6 +149,80 @@ class NativeWriterTests(unittest.TestCase):
                 )
         self.assert_clean(session)
 
+    def test_native_original_make_overwrite_return_is_bound_to_its_stopped_request(self):
+        from scripts.validation_ownership import read_epochs
+        recipe = "printf '%0100d' 0 > result; printf final 1<>result"
+        self.add("Makefile", "all:\n\t@" + recipe + "\n")
+        class Commands:
+            def __getitem__(self, argv):
+                return Command(argv, outputs=("result",))
+        session = self.session()
+        with session:
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), observe_reads=True,
+                observe_runtime_completions=True, commands=Commands(),
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual(
+                [(item.path, item.data, item.mode) for item in generated],
+                [("result", b"final" + b"0" * 95, 0o644)],
+            )
+            trace = observed["read_trace"]
+            writes = [row for row in read_epochs.native_output_effects(trace) if row["kind"] == "output-write"]
+            self.assertEqual([row["result"] for row in writes], [100, 5])
+            self.assertEqual([row["identity"][3] for row in writes], [100, 100])
+            entries = [row for row in read_epochs.native_output_effects(trace) if row["kind"] == "output-write-entry"]
+            self.assertEqual([row["requested_count"] for row in entries], [100, 5])
+            self.assertEqual([row["offset"] for row in entries], [0, 0])
+            self.assertEqual([row["request"] for row in entries], [row["request"] for row in writes])
+            for kind, field, value in (
+                ("output-write", "result", 6),
+                ("output-write", "request", entries[0]["request"]),
+                ("output-write", "request", True),
+                ("output-write-entry", "request", entries[0]["request"]),
+                ("output-write-entry", "requested_count", 4),
+                ("output-write-entry", "requested_count", True),
+                ("output-write-entry", "offset", 10000000),
+                ("output-write-entry", "description", 999),
+                ("output-write-entry", "fd", 999),
+                ("output-write-entry", "revision", 999),
+                ("output-write-entry", "identity", entries[0]["identity"]),
+            ):
+                with self.subTest(kind=kind, field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    row = [
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["kind"] == kind
+                    ][1]
+                    row["event"][field] = value
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            for missing in ("output-write-entry", "output-write"):
+                with self.subTest(missing=missing):
+                    invalid = json.loads(json.dumps(trace))
+                    rows = invalid["machine"]["events"]
+                    removed = [
+                        row for row in rows
+                        if row["kind"] == "native-output" and row["event"]["kind"] == missing
+                    ][1]
+                    rows.remove(removed)
+                    effect_number = 0
+                    for number, row in enumerate(rows, 1):
+                        row["seq"] = number
+                        if row["kind"] == "native-output":
+                            effect_number += 1
+                            row["event"]["sequence"] = effect_number
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    expected = "stopped request" if missing == "output-write-entry" else "pending write return"
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, expected):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
     def test_native_original_make_remakes_and_reads_generated_include_once(self):
         from scripts.validation_ownership import read_epochs
         recipe = "printf 'VALUE := produced\\n' > generated.mk"

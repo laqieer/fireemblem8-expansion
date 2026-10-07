@@ -475,6 +475,28 @@ prior-version retirement, produced
 executable admission and the original all-plus-eight case remain incomplete.
 No renderer request/publication event or v1 source-effects journal is fabricated.
 
+Every observed native write emits `output-write-entry` in that same machine
+stream before the kernel proceeds. It binds a chronological request ID to the
+actual writable PID/FD/open-description, object/version, preimage identity,
+offset and requested byte count. Successful, zero-byte and failed returns
+consume that exact request once. Replay checks the requested count rather than
+using file extent as a substitute, and checks the resulting extent against
+the old extent and actual returned range. Missing, stale, reused or unfinished
+requests refuse. These are structural observations, not signed archive data.
+
+Run `NativeWriterTests.test_native_original_make_overwrite_return_is_bound_to_its_stopped_request`
+from a clean fixture. Its original recipe creates 100 zero characters, then
+overwrites only five bytes at offset zero without truncation. The two observed
+requests and returns are 100 and 5, and the final regular file is `final`
+followed by 95 zero characters, mode 0644, with empty stdout/stderr. The
+pre-fix negative control changes only the second saved return to 6 and
+recomputes the machine payload hash: extent-only replay accepts it, but paired
+request replay must refuse. The same test exercises rehashed malformed counts,
+borrowed request IDs, changed descriptor/preimage bindings and missing
+entry/return records. Existing failed, zero-byte, partial and positional write
+controls remain required; this does not qualify namespace or original-eight
+production.
+
 The original Make consumer pins a current settled output at its actual source
 `fopen` entry through the existing `NativeOutputs` source lease. It does not
 borrow the producer's expired PID or turn Make into a writer. A v6

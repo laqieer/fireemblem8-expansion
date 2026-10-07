@@ -448,6 +448,7 @@ class NativeOperation:
     closing_descriptions: tuple = ()
     parents: tuple[str, ...] = ()
     description: OpenDescription | None = None
+    request: int | None = None
 
 
 class NativeOutputs:
@@ -460,6 +461,7 @@ class NativeOutputs:
         self.emit = emit
         self.serial = 0
         self.description_serial = 0
+        self.write_serial = 0
         self.objects = {}
         self.directories = {}
         self.versions = []
@@ -883,12 +885,20 @@ class NativeOutputs:
                 item.expected = bytearray(initial)
             before = bytes(item.expected[offset:offset + len(data)])
             self.charge(len(before))
+            self.write_serial += 1
             operation = NativeOperation(
                 operation.owner, pid, operation.kind, operation.source,
                 operation.destination, operation.flags, operation.operands,
                 descriptor=descriptor, offset=offset, data=data, before=before,
+                request=self.write_serial,
             )
             self.pending[pid] = operation
+            self._event(
+                "output-write-entry", item, pid=pid, fd=descriptor,
+                request=operation.request, requested_count=len(data), offset=offset,
+                description=item.descriptions[(pid, descriptor)].serial,
+                identity=list(operation.operands[0][2]),
+            )
             return operation
         except BaseException as error:
             item.pending_writer = None
@@ -1432,11 +1442,13 @@ class NativeOutputs:
             or item.pending_writer != (pid, descriptor)
         ):
             raise NativeOutputError("native output completion has no owned writer")
+        operation = self.pending.get(pid)
+        request = {"request": operation.request} if operation is not None and operation.kind == "write" else {}
         if result < 0:
             if self._identity(pin) != item.identity:
                 raise NativeOutputError("failed native output write changed its object")
             item.pending_writer = None
-            self._event("output-write-failed", item, pid=pid, fd=descriptor, result=result)
+            self._event("output-write-failed", item, pid=pid, fd=descriptor, result=result, **request)
             return
         identity = self._identity(pin)
         if result == 0 and identity != item.identity:
@@ -1450,7 +1462,7 @@ class NativeOutputs:
             item.identity = identity
             item.sha256 = None
         item.pending_writer = None
-        self._event("output-write", item, pid=pid, fd=descriptor, result=result, identity=list(identity))
+        self._event("output-write", item, pid=pid, fd=descriptor, result=result, identity=list(identity), **request)
 
     @staticmethod
     def _status_result(result):

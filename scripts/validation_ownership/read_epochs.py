@@ -1985,9 +1985,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     common = {"sequence", "kind", "owner", "serial", "revision", "path"}
     fields = {
         "output-open": {"pid", "fd", "operation_owner", "identity", "writing", "description"},
-        "output-write": {"pid", "fd", "result", "identity"},
+        "output-write-entry": {"pid", "fd", "request", "requested_count", "offset", "description", "identity"},
+        "output-write": {"pid", "fd", "request", "result", "identity"},
         "output-truncate": {"pid", "fd", "identity"},
-        "output-write-failed": {"pid", "fd", "result"},
+        "output-write-failed": {"pid", "fd", "request", "result"},
         "output-settled": {"identity", "sha256"},
         "output-close": {"pid", "fd", "description"},
         "output-exec-close": {"pid", "fd", "description", "generation"},
@@ -1997,6 +1998,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         "output-inherit": {"parent", "pid", "fd", "description"},
     }
     objects, bindings, descriptions, readers = {}, {}, set(), {}
+    writes = {}
+    request_number = 0
     number = 0
     for observation in machine:
         if observation["kind"] == "generated-source-entry":
@@ -2028,6 +2031,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         number += 1
         row = observation["event"]
         if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
+            if type(row.get("pid")) is int and row["pid"] in writes:
+                raise ReadEpochError("native failed operation omitted its pending write return")
             operation = row.get("operation")
             extra = {"flags"} if operation == "open" else {
                 "descriptor", "duplicate_kind", "target", "minimum", "flags",
@@ -2125,6 +2130,21 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             raise ReadEpochError("native output effect has an invalid descriptor lineage")
         kind, serial = row["kind"], row["serial"]
         item = objects.get(serial)
+        pending = writes.get(row.get("pid"))
+        if pending is not None and kind not in {"output-write", "output-write-failed"}:
+            raise ReadEpochError("native output process omitted its pending write return")
+        if kind == "output-settled" and any(entry["serial"] == serial for entry in writes.values()):
+            raise ReadEpochError("native output settlement omitted its pending write return")
+        if kind in {"output-write", "output-write-failed"}:
+            if (
+                pending is None or type(row["request"]) is not int
+                or any(row[key] != pending[key] for key in ("request", "owner", "serial", "path", "pid", "fd"))
+                or bindings.get((row["pid"], row["fd"])) != (serial, pending["description"], True)
+                or item is None or item["identity"] != pending["identity"]
+                or item["revision"] != pending["revision"]
+            ):
+                raise ReadEpochError("native write return lost its stopped request or preimage")
+            del writes[row["pid"]]
         if kind == "output-open":
             if (
                 type(row["writing"]) is not bool or (row["pid"], row["fd"]) in bindings
@@ -2147,6 +2167,18 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             bindings[(row["pid"], row["fd"])] = serial, row["description"], row["writing"]
         elif item is None or row["owner"] != item["owner"] or row["path"] != item["path"]:
             raise ReadEpochError("native output effect lacks its issued live object")
+        elif kind == "output-write-entry":
+            if (
+                type(row["request"]) is not int or row["request"] != request_number + 1
+                or any(type(row[key]) is not int or not 0 <= row[key] <= file_limit for key in ("requested_count", "offset"))
+                or row["offset"] + row["requested_count"] > file_limit
+                or bindings.get((row["pid"], row["fd"])) != (serial, row["description"], True)
+                or row["identity"] != item["identity"] or row["revision"] != item["revision"]
+                or serial in readers.values() or any(entry["serial"] == serial for entry in writes.values())
+            ):
+                raise ReadEpochError("native write entry lost its bounded live descriptor and preimage")
+            request_number += 1
+            writes[row["pid"]] = row
         elif kind == "output-truncate":
             following = effects[number] if number < len(effects) else None
             if (
@@ -2169,7 +2201,11 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 binding is None or binding[0] != serial or not binding[2]
                 or serial in readers.values()
                 or type(row["result"]) is not int
-                or not 0 <= row["result"] <= min(file_limit, row["identity"][3])
+                or not 0 <= row["result"] <= pending["requested_count"]
+                or row["identity"][3] != (
+                    max(pending["identity"][3], pending["offset"] + row["result"])
+                    if row["result"] > 0 else pending["identity"][3]
+                )
                 or row["identity"][:3] != item["identity"][:3]
                 or row["identity"][6] != item["identity"][6]
                 or row["revision"] != item["revision"] + (row["identity"] != item["identity"])
@@ -2218,7 +2254,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 }:
                     raise ReadEpochError("native failed close lacks its supported released-FD errno")
                 del bindings[(row["pid"], row["fd"])]
-    if bindings or readers or any(not item["settled"] for item in objects.values()):
+    if bindings or readers or writes or any(not item["settled"] for item in objects.values()):
         raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
 
 

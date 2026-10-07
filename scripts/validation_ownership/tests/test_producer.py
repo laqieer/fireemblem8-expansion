@@ -6879,7 +6879,7 @@ class NativeOutputCustodyTests(unittest.TestCase):
         from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
         kinds = (
             "output-open", "output-inherit", "output-dup", "output-truncate",
-            "output-write", "output-write-failed", "output-settled", "output-close",
+            "output-write-entry", "output-write", "output-write-failed", "output-settled", "output-close",
             "output-close-failed", "output-source", "output-source-retired",
             "output-replace", "output-replace-failed", "output-retire", "output-remove-failed",
             "output-operation-failed",
@@ -6963,6 +6963,10 @@ class NativeOutputCustodyTests(unittest.TestCase):
                             duplicate = os.dup(descriptor)
                             self.addCleanup(os.close, duplicate)
                             action = lambda: self.outputs.leave_duplicate(operation, duplicate, pin=duplicate)
+                        elif failed_kind == "output-write-entry":
+                            action = lambda: self.outputs.enter_write(
+                                pid=1, descriptor=descriptor, pin=descriptor, data=b"new", offset=0,
+                            )
                         else:
                             self.outputs.before_write(1, descriptor, descriptor)
                             if failed_kind == "output-write":
