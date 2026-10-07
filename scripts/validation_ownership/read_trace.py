@@ -841,7 +841,10 @@ class NativeReadTrace:
             return
         current = self.active[-1]
         if descriptor < 0 and current.get("generated") is not None:
-            raise read_epochs.ReadEpochError("generated source stream failed after its pinned entry")
+            current.update(
+                relative=current["generated"].object.path.removeprefix("/repo/"),
+                custody={"kind": "native-output", "entry": current["generated_entry"]},
+            )
         snapshot = identity = None
         if descriptor >= 0:
             if current["source"] is not None or mode not in {"r", "re"}:
@@ -973,10 +976,12 @@ class NativeReadTrace:
             self.goals[pointer] = current["visit"]
         self.event("source-exit", **self.context(), visit=current["visit"], resolved=resolved,
                    flags=flags, error=error, source=current["source"])
-        if current["source"] is not None:
+        if current["source"] is not None or current.get("generated") is not None:
             self.machine_event(
                 "pin-retired", self.pid, visit=current["visit"], source=current["source"],
-                identity=list(current["identity"]),
+                identity=list(
+                    current["identity"] if current["source"] is not None else current["generated"].identity
+                ),
             )
         self.active.pop()
         if self.runtime:

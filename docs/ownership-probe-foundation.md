@@ -519,6 +519,18 @@ identity. Snapshot streams still require their full original identity.
 Failed descriptor operations bind their live PID to the current dispatch, not
 the original producer's exited process tree; operand objects still retain their
 original producer ownership.
+Settlement with a remaining writable binding is valid only immediately before
+the matching final close, exec closure, duplicate-target retirement or supported
+close-error return. Earlier duplicated-writer or readonly closes cannot
+authenticate settlement. A transferred settled object with no writer retains
+its existing replacement settlement.
+
+A failed generated fopen keeps its actual entry pin but creates no parsed-source
+snapshot. Its failed `source-open` binds the existing generated-entry custody;
+the matching actual source return emits `pin-retired` with a null parsed-source
+ID and the entry identity. This null-ID form is restricted to failed generated
+lifetimes. Snapshot failures cannot borrow it, and successful stream identity
+checks are unchanged.
 
 Run these source-built `NativeWriterTests` members from a clean temporary
 fixture; their setup compiles the original C recipe as a sealed fixture tool:
@@ -554,6 +566,18 @@ controls reject rather than borrowing the current actor's ownership.
 checks the complete operation matrix and both-order exact/template intersections,
 including concrete file ancestors; valid directory/child and PID retained-base
 plans remain accepted.
+`test_native_generated_optional_source_failed_open_retires_its_actual_entry_pin`
+uses an actual eager GNU shell job to create/mode-change the generated include.
+Its optional fopen returns EACCES; the actual return releases the old entry pin
+without inventing parsed bytes. A later recipe performs a real atomic replacement
+with `VALUE := final\n`, mode 0644. Missing/borrowed retirement and custody controls
+must refuse. An unreadable final artifact is not used as a capture fallback.
+`test_native_writer_settlement_binds_last_close_exec_duplicate_fork_and_death`
+checks ordinary close, dup, real fork, foreign-source duplicate target retirement,
+successful CLOEXEC exec and process death. Moving settlement before an earlier
+readonly close rejects in every mode. All four supported close-error records
+have controlled replay coverage, not claimed native errno generation.
+The fork/dup case also rejects settlement moved before a nonlast writer close.
 
 `test_native_original_make_replaces_pinned_generated_source_with_actual_recipe`
 starts with a missing generated include. Original Make invokes its creator

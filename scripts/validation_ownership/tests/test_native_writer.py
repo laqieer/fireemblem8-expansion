@@ -601,6 +601,27 @@ class NativeWriterTests(unittest.TestCase):
                 row["kind"] == "output-write" and row["pid"] == inherited["pid"] and row["fd"] == 7
                 for row in read_epochs.native_output_effects(trace)
             ))
+            premature = json.loads(json.dumps(trace))
+            events = premature["machine"]["events"]
+            settlement = next(
+                row for row in events if row["kind"] == "native-output" and row["event"]["kind"] == "output-settled"
+            )
+            events.remove(settlement)
+            earlier_close = next(
+                index for index, row in enumerate(events)
+                if row["kind"] == "native-output" and row["event"]["kind"] == "output-close"
+                and row["event"]["pid"] == inherited["pid"]
+            )
+            events.insert(earlier_close, settlement)
+            number = 0
+            for sequence, row in enumerate(events, 1):
+                row["seq"] = sequence
+                if row["kind"] == "native-output":
+                    number += 1
+                    row["event"]["sequence"] = number
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "settlement"):
+                read_epochs.validate_trace(premature, premature["scope"], count_limit=100000, file_limit=10000000)
             for phase in ("before-fork", "after-exit"):
                 with self.subTest(actor_phase=phase):
                     invalid = json.loads(json.dumps(trace))
@@ -1256,6 +1277,157 @@ class NativeWriterTests(unittest.TestCase):
                     with self.assertRaises(read_epochs.ReadEpochError):
                         read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
         self.assert_clean(session)
+
+    def test_native_generated_optional_source_failed_open_retires_its_actual_entry_pin(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n#include <fcntl.h>\n#include <unistd.h>\n#include <sys/stat.h>\n"
+            "#include <stdio.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd;if(argc!=2)return 2;"
+            "if(!strcmp(argv[1],\"replace\")){"
+            "fd=open(\"/repo/stage/tmp\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"VALUE := final\\n\",15)!=15||close(fd))return 3;"
+            "return rename(\"/repo/stage/tmp\",\"/repo/stage/generated.mk\");}"
+            "if(mkdir(\"/repo/stage\",0700))return 2;"
+            "fd=open(\"/repo/stage/generated.mk\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"VALUE := unreachable\\n\",21)!=21||fchmod(fd,0)||close(fd))return 1;"
+            "return 0;}\n"
+        ))
+        self.add("Makefile", "GENERATED := $(shell /native/tool seed)\n-include stage/generated.mk\nall:\n\t@/native/tool replace\n")
+        resources = (("directory", "stage"), ("temporary", "stage/tmp"))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("stage/generated.mk",), native_resources=resources)
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("stage/generated.mk",), native_resources=resources, native_tool=tool, commands=Commands(),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"VALUE := final\n", 0o644)])
+            trace = observed["read_trace"]
+            failed = [
+                row for row in trace["events"] if row["kind"] == "source-open"
+                and row["result"] == -errno.EACCES
+            ]
+            self.assertEqual(len(failed), 1)
+            self.assertIsNone(failed[0]["source"])
+            self.assertEqual(failed[0]["path"], "stage/generated.mk")
+            self.assertEqual(failed[0]["custody"]["kind"], "native-output")
+            entry = trace["machine"]["events"][failed[0]["custody"]["entry"] - 1]
+            retired = [
+                row for row in trace["machine"]["events"]
+                if row["kind"] == "pin-retired" and row["visit"] == entry["visit"]
+            ]
+            self.assertEqual(len(retired), 1)
+            self.assertIsNone(retired[0]["source"])
+            self.assertEqual(retired[0]["identity"], entry["identity"])
+            read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            for field, value in (
+                ("source", 1), ("identity", entry["identity"][:-1] + [0]),
+                ("visit", 999), ("pid", 999),
+            ):
+                invalid = json.loads(json.dumps(trace))
+                row = next(
+                    row for row in invalid["machine"]["events"]
+                    if row["kind"] == "pin-retired" and row["visit"] == entry["visit"]
+                )
+                row[field] = value
+                with self.subTest(retired_field=field):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            for custody in (None, {"kind": "snapshot"}, {"kind": "native-output", "entry": 1}):
+                invalid = json.loads(json.dumps(trace))
+                row = next(row for row in invalid["events"] if row["seq"] == failed[0]["seq"])
+                row["custody"] = custody
+                with self.subTest(failed_custody=custody):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+            invalid = json.loads(json.dumps(trace))
+            rows = invalid["machine"]["events"]
+            rows[:] = [row for row in rows if not (row["kind"] == "pin-retired" and row["visit"] == entry["visit"])]
+            for sequence, row in enumerate(rows, 1):
+                row["seq"] = sequence
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "pin retirement"):
+                read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+        self.assert_clean(session)
+
+    def test_native_writer_settlement_binds_last_close_exec_duplicate_fork_and_death(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sys/stat.h>\n#include <sys/wait.h>\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd,other,copy,status;pid_t child;"
+            "char *next[]={\"/native/tool\",\"finish\",0};"
+            "if(argc!=2)return 1;if(!strcmp(argv[1],\"finish\"))return 0;"
+            "if(mkdir(\"/repo/stage\",0700))return 2;"
+            "fd=open(\"/repo/stage/result\",O_CREAT|O_EXCL|O_WRONLY|O_CLOEXEC,0644);"
+            "if(fd<0||write(fd,\"final\",5)!=5)return 3;"
+            "other=open(\"/repo/stage/result\",O_RDONLY);if(other<0||close(other))return 4;"
+            "if(!strcmp(argv[1],\"close\")){if(close(fd))return 5;}"
+            "else if(!strcmp(argv[1],\"dup\")){copy=dup(fd);if(copy<0||close(fd)||close(copy))return 6;}"
+            "else if(!strcmp(argv[1],\"fork\")){child=fork();if(child<0)return 7;"
+            "if(!child){if(close(fd))_exit(8);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||status||close(fd))return 9;}"
+            "else if(!strcmp(argv[1],\"replace\")){copy=open(\"/dev/null\",O_RDONLY);"
+            "if(copy<0||dup2(copy,fd)!=fd||close(copy)||close(fd))return 10;}"
+            "else if(!strcmp(argv[1],\"exec\")){execv(next[0],next);return 11;}"
+            "return 0;}\n"
+        ))
+        resources = (("directory", "stage"),)
+        for mode, closing in (
+            ("close", "output-close"), ("dup", "output-close"), ("fork", "output-close"),
+            ("replace", "output-duplicate-release"), ("exec", "output-exec-close"), ("death", "output-close"),
+        ):
+            with self.subTest(mode=mode):
+                self.add("Makefile", "all:\n\t@/native/tool " + mode + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, outputs=("stage/result",), native_resources=resources)
+                    completed, _, observed, generated = session._native_make_writable(
+                        "all", outputs=("stage/result",), native_resources=resources,
+                        native_tool=tool, commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+                    self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
+                    trace = observed["read_trace"]
+                    effects = read_epochs.native_output_effects(trace)
+                    settlement, = [row for row in effects if row["kind"] == "output-settled"]
+                    self.assertEqual(effects[effects.index(settlement) + 1]["kind"], closing)
+                    invalid = json.loads(json.dumps(trace))
+                    rows = invalid["machine"]["events"]
+                    moved = next(row for row in rows if row["kind"] == "native-output" and row["event"]["kind"] == "output-settled")
+                    rows.remove(moved)
+                    earlier_close = next(
+                        index for index, row in enumerate(rows)
+                        if row["kind"] == "native-output" and row["event"]["kind"] == "output-close"
+                    )
+                    rows.insert(earlier_close, moved)
+                    number = 0
+                    for sequence, row in enumerate(rows, 1):
+                        row["seq"] = sequence
+                        if row["kind"] == "native-output":
+                            number += 1
+                            row["event"]["sequence"] = number
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "settlement"):
+                        read_epochs.validate_trace(invalid, invalid["scope"], count_limit=100000, file_limit=10000000)
+                    if mode == "close":
+                        for error in (errno.EINTR, errno.EIO, errno.ENOSPC, errno.EDQUOT):
+                            controlled = json.loads(json.dumps(trace))
+                            row = next(
+                                row for row in controlled["machine"]["events"]
+                                if row["kind"] == "native-output" and row["event"]["sequence"] == settlement["sequence"] + 1
+                            )
+                            row["event"].update(kind="output-close-failed", result=-error)
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                            read_epochs.validate_trace(controlled, controlled["scope"], count_limit=100000, file_limit=10000000)
+                self.assert_clean(session)
 
     def test_native_shared_lock_release_binds_close_exec_duplicate_fork_and_death(self):
         from scripts.validation_ownership import read_epochs

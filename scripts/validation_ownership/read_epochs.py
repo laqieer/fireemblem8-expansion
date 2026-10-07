@@ -1800,12 +1800,18 @@ def validate_machine_observations(value, trace, *, count_limit):
             ):
                 raise ReadEpochError("generated source pin lacks its actual Make entry")
         else:
+            failed_generated = (
+                trace["version"] == WRITABLE_VERSION and context is not None
+                and context["kind"] == "source-exit" and context["error"] > 0
+                and context["source"] is None and row["source"] is None
+            )
             if (
                 context is None or context["kind"] != "source-exit"
                 or pid != make_pid
-                or any(type(row[key]) is not int or row[key] <= 0 for key in ("visit", "source"))
+                or type(row["visit"]) is not int or row["visit"] <= 0
+                or not failed_generated and (type(row["source"]) is not int or row["source"] <= 0)
                 or (row["visit"], row["source"]) != (context["visit"], context["source"])
-                or context["error"] != 0 or row["visit"] in retired
+                or not failed_generated and context["error"] != 0 or row["visit"] in retired
             ):
                 raise ReadEpochError("native pin retirement lacks its successful source return")
             opens = [
@@ -1813,13 +1819,31 @@ def validate_machine_observations(value, trace, *, count_limit):
                 if event["kind"] == "source-open" and event["visit"] == row["visit"]
                 and event["source"] == row["source"]
             ]
-            if len(opens) != 1 or row["identity"] != opens[0]["identity"]:
+            if failed_generated:
+                entries = [
+                    entry for entry in value["events"][:number - 1]
+                    if entry["kind"] == "generated-source-entry" and entry["visit"] == row["visit"]
+                ]
+                if (
+                    len(opens) != 1 or len(entries) != 1
+                    or opens[0]["result"] != -context["error"]
+                    or opens[0]["custody"] != {"kind": "native-output", "entry": entries[0]["seq"]}
+                    or row["identity"] != entries[0]["identity"]
+                ):
+                    raise ReadEpochError("failed generated pin retirement lacks its actual open and entry")
+            elif len(opens) != 1 or row["identity"] != opens[0]["identity"]:
                 raise ReadEpochError("native retired pin identity differs from its actual open")
             retired.add(row["visit"])
     expected = {
         event["visit"] for event in trace["events"]
         if event["kind"] == "source-exit" and event["source"] is not None
     }
+    if trace["version"] == WRITABLE_VERSION:
+        expected.update(
+            event["visit"] for event in trace["events"]
+            if event["kind"] == "source-open" and event["result"] < 0
+            and isinstance(event["custody"], dict) and event["custody"].get("kind") == "native-output"
+        )
     if trace["version"] == WRITABLE_VERSION and {
         row["seq"] for row in value["events"] if row["kind"] == "generated-source-entry"
     } != {
@@ -2437,6 +2461,21 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         elif kind == "output-settled":
             if row["identity"] != item["identity"]:
                 raise ReadEpochError("native output settlement changed its observed preimage")
+            writers = [
+                (key, binding) for key, binding in bindings.items()
+                if binding[0] == serial and binding[2]
+            ]
+            if writers:
+                following = effects[number] if number < len(effects) else None
+                if (
+                    len(writers) != 1 or not isinstance(following, dict)
+                    or following.get("kind") not in {"output-close", "output-exec-close", "output-duplicate-release", "output-close-failed"}
+                    or (following.get("pid"), following.get("fd")) != writers[0][0]
+                    or following.get("serial") != serial
+                    or (following.get("kind") != "output-close-failed" or resources)
+                    and following.get("description") != writers[0][1][1]
+                ):
+                    raise ReadEpochError("native output settlement precedes its final writable retirement")
             item["settled"] = True
             item["sha256"] = row["sha256"]
         elif kind == "output-inherit":
@@ -2804,7 +2843,20 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                 opened_paths[event["visit"]] = path
                 source_kinds[source] = "file"
             elif path is not None or custody is not None:
-                raise ReadEpochError("failed runtime open claims source custody")
+                if (
+                    value["version"] != WRITABLE_VERSION or event["source"] is not None
+                    or event["identity"] is not None or not isinstance(path, str)
+                    or not isinstance(custody, dict) or set(custody) != {"kind", "entry"}
+                    or custody["kind"] != "native-output" or type(custody["entry"]) is not int
+                    or not 1 <= custody["entry"] <= len(value["machine"]["events"])
+                ):
+                    raise ReadEpochError("failed runtime open claims source custody")
+                entry = value["machine"]["events"][custody["entry"] - 1]
+                if (
+                    entry.get("kind") != "generated-source-entry" or entry["visit"] != event["visit"]
+                    or entry["trace_seq"] >= event["seq"] or entry["path"] != path
+                ):
+                    raise ReadEpochError("failed runtime open borrowed another generated entry")
         elif kind in {"source-exit", "pass-exit"}:
             expected = ("source", event["visit"]) if kind == "source-exit" else ("pass", event["pass"])
             if not stack or stack[-1] != expected:
