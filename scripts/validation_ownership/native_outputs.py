@@ -24,7 +24,7 @@ class NativeOutputError(MakeProbeError):
 
 
 class NativeOutputObserver:
-    """Observe native-tool capsule regular files at stopped kernel operations."""
+    """Observe admitted native jobs and tool capsules at stopped kernel operations."""
 
     def __init__(self, policy, paths):
         import sys
@@ -37,6 +37,7 @@ class NativeOutputObserver:
         for path in paths:
             relative_path(path)
         self.sequence = 0
+        self.prefix = "/repo/" if policy.mode == "make" else "/work/"
         self.custody = NativeOutputs(
             deadline=self.deadline, charge=policy.charge_metadata,
             file_limit=policy.config["file_limit"], emit=self.emit,
@@ -51,6 +52,13 @@ class NativeOutputObserver:
         import json
         self.sequence += 1
         row = {"sequence": self.sequence, "kind": kind, **fields}
+        if self.policy.mode == "make":
+            self.policy.read_trace.output_events.append(row)
+            job = self.policy.native_jobs[row["owner"]]
+            self.policy.read_trace.machine_event(
+                "native-output", job["pid"], dispatch=row["owner"],
+                event=row, sha256=hashlib.sha256(self.native.encoded(row)).hexdigest(),
+            )
         self.policy.observe(
             "accessed", "native-output:" + json.dumps(row, sort_keys=True, separators=(",", ":")),
         )
@@ -106,6 +114,31 @@ class NativeOutputObserver:
             raise NativeOutputError("native lock record differs from its exact file object")
         return fcntl.LOCK_SH if match[1] == b"READ" else fcntl.LOCK_EX
 
+    def successful_exec(self, pid, state):
+        operation, state.native_output_operation = state.native_output_operation, None
+        if operation is not None:
+            self.custody.complete_exec(operation)
+        for (process, descriptor), item in tuple(self.custody.descriptors.items()):
+            if process != pid:
+                continue
+            self.deadline()
+            self.policy.charge_metadata(128)
+            if descriptor not in state.fds:
+                try:
+                    os.stat(f"/proc/{pid}/fd/{descriptor}")
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise NativeOutputError("native exec omitted a surviving output descriptor")
+                self.custody.closed(
+                    pid, descriptor, 0, event_kind="output-exec-close", generation=state.native_execs,
+                )
+                self.policy.read_trace.fd_closed(pid, descriptor)
+                continue
+            actual = os.stat(f"/proc/{pid}/fd/{descriptor}")
+            if publication_identity(actual) != item.identity:
+                raise NativeOutputError("native exec retained a different output descriptor object")
+
     def entry(self, pid, state, registers):
         native = self.policy
         r = registers
@@ -115,18 +148,40 @@ class NativeOutputObserver:
         if n == 263 and unlink_flags not in {0, 0x200}:
             raise NativeOutputError("native unlinkat flags escape its finite file/directory operations")
         operation = None
-        if n in {2, 85, 257}:
+        owner = state.native_dispatch if self.policy.mode == "make" else 1
+        if n == 59 and self.policy.mode == "make":
+            closing = []
+            for process, selected in self.custody.descriptors:
+                if process != pid:
+                    continue
+                with open(f"/proc/{pid}/fdinfo/{selected}", "rb") as stream:
+                    data = stream.read(4097)
+                self.policy.charge_metadata(len(data))
+                if len(data) > 4096:
+                    raise NativeOutputError("native exec descriptor information exceeds its bound")
+                flags = [line.split(b":", 1)[1].strip() for line in data.splitlines() if line.startswith(b"flags:")]
+                if len(flags) != 1:
+                    raise NativeOutputError("native exec descriptor lacks its actual kernel flags")
+                if int(flags[0], 8) & os.O_CLOEXEC:
+                    closing.append(selected)
+            if closing:
+                operation = self.custody.enter_exec(pid=pid, descriptors=tuple(closing))
+        elif n in {2, 85, 257}:
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC if n == 85 else c if n == 257 else b
             path = state.pending[1]
+            if self.policy.mode == "make" and path not in {
+                "/repo/" + name for name in self.policy.config["native_output_paths"]
+            }:
+                return
             if flags & os.O_TMPFILE == os.O_TMPFILE:
                 raise NativeOutputError("native anonymous temporary output transitions are not implemented")
-            if path.startswith("/work/"):
+            if path.startswith(self.prefix):
                 pin = self.operand(path)
                 try:
                     if pin is not None and not stat.S_ISREG(os.fstat(pin).st_mode):
                         return
                     operation = self.custody.enter_open(
-                        owner=1, pid=pid, path=path, flags=flags, pin=pin,
+                        owner=owner, pid=pid, path=path, flags=flags, pin=pin,
                     )
                 finally:
                     if pin is not None:
@@ -193,18 +248,24 @@ class NativeOutputObserver:
                     flags=c if n == 292 else 0,
                 )
         elif n in {33, 292} and (pid, native_int(b)) in self.custody.descriptors:
-            raise NativeOutputError("native output replacement by an untracked descriptor is not admitted")
+            if self.policy.mode != "make":
+                raise NativeOutputError("native output replacement by an untracked descriptor is not admitted")
+            source = os.stat(f"/proc/{pid}/fd/{descriptor}")
+            operation = self.custody.enter_duplicate_release(
+                pid=pid, descriptor=descriptor, target=native_int(b),
+                identity=(source.st_dev, source.st_ino, source.st_mode),
+            )
         elif n in {82, 264, 316}:
             source = native.path(pid, state, a if n == 82 else b, -100 if n == 82 else native_signed(a), follow_final=False)
             destination = native.path(pid, state, b if n == 82 else d, -100 if n == 82 else native_signed(c), follow_final=False)
-            if source.startswith("/work/") and destination.startswith("/work/"):
+            if source.startswith(self.prefix) and destination.startswith(self.prefix):
                 native.check(state, source, "write")
                 native.check(state, destination, "write")
                 first, second = self.operand(source), None
                 try:
                     second = self.operand(destination)
                     operation = self.custody.enter_replace(
-                        owner=1, pid=pid, source=source, destination=destination,
+                        owner=owner, pid=pid, source=source, destination=destination,
                         source_pin=first, retired_pin=second, flags=e if n == 316 else 0,
                     )
                 finally:
@@ -219,24 +280,24 @@ class NativeOutputObserver:
                 pid, state, b if n in {258, 263} else a,
                 native_signed(a) if n in {258, 263} else -100, follow_final=False,
             )
-            if path.startswith("/work/"):
+            if path.startswith(self.prefix):
                 pin = self.operand(path)
                 try:
                     if n in {83, 258}:
                         operation = self.custody.enter_mkdir(
-                            owner=1, pid=pid, path=path, pin=pin, mode=c if n == 258 else b,
+                            owner=owner, pid=pid, path=path, pin=pin, mode=c if n == 258 else b,
                         )
                     else:
-                        operation = self.custody.enter_rmdir(owner=1, pid=pid, path=path, pin=pin)
+                        operation = self.custody.enter_rmdir(owner=owner, pid=pid, path=path, pin=pin)
                 finally:
                     if pin is not None:
                         os.close(pin)
         elif n == 87 or n == 263 and unlink_flags == 0:
             path = native.path(pid, state, a if n == 87 else b, -100 if n == 87 else native_signed(a), follow_final=False)
-            if path.startswith("/work/"):
+            if path.startswith(self.prefix):
                 pin = self.operand(path)
                 try:
-                    operation = self.custody.enter_remove(owner=1, pid=pid, path=path, pin=pin)
+                    operation = self.custody.enter_remove(owner=owner, pid=pid, path=path, pin=pin)
                 finally:
                     if pin is not None:
                         os.close(pin)
@@ -281,6 +342,14 @@ class NativeOutputObserver:
                 finally:
                     if pin is not None:
                         os.close(pin)
+            elif operation.kind == "duplicate-release":
+                info = None if result < 0 else os.stat(f"/proc/{pid}/fd/{result}")
+                self.custody.leave_duplicate_release(
+                    operation, result=result,
+                    identity=None if info is None else (info.st_dev, info.st_ino, info.st_mode),
+                )
+            elif operation.kind == "exec":
+                self.custody.fail_exec(operation, result=result)
             elif operation.kind == "mkdir":
                 pin = None if result < 0 else self.operand(operation.source, directory=True)
                 try:
@@ -362,6 +431,8 @@ class NativeOperation:
     duplicate_kind: str | None = None
     target: int | None = None
     minimum: int | None = None
+    replacement_identity: tuple | None = None
+    closing_descriptions: tuple = ()
     parents: tuple[str, ...] = ()
     description: OpenDescription | None = None
 
@@ -877,6 +948,7 @@ class NativeOutputs:
         if old is not None and target != descriptor:
             if old.pending_writer is not None:
                 raise NativeOutputError("native duplicate target overlaps an unfinished writer")
+            self._close_available(old, (pid, target))
             bindings.append(("target-fd:" + str(target), old.descriptor, old))
         operation = self._begin(
             item.owner, pid, "dup", bindings[0][0], flags=flags, bindings=bindings,
@@ -885,6 +957,7 @@ class NativeOutputs:
             operation.owner, pid, operation.kind, operation.source,
             operation.destination, operation.flags, operation.operands, descriptor=descriptor,
             duplicate_kind=kind, target=target, minimum=minimum,
+            description=old.descriptions[(pid, target)] if old is not None and target != descriptor else None,
         )
         self.pending[pid] = operation
         return operation
@@ -941,10 +1014,7 @@ class NativeOutputs:
         ):
             raise NativeOutputError("native flock lacks its finite bound descriptor operation")
         description = item.descriptions[(pid, descriptor)]
-        if any(
-            active.kind == "close" and active.description is description
-            for active in self.pending.values()
-        ):
+        if self._description_closing(description):
             raise NativeOutputError("native flock overlaps an unfinished close on its description")
         if description.pending is not None or item.pending_writer is not None or observed != description.lock:
             raise NativeOutputError("native flock differs from its live open-file description")
@@ -1004,6 +1074,45 @@ class NativeOutputs:
             for active in self.pending.values()
         )
 
+    def _description_closing(self, description):
+        return any(
+            active.kind in {"close", "duplicate-release", "dup"} and active.description is description
+            or any(selected is description for selected in active.closing_descriptions)
+            for active in self.pending.values()
+        )
+
+    def enter_exec(self, *, pid, descriptors):
+        bindings, descriptions, owner = [], [], None
+        for descriptor in descriptors:
+            binding = (pid, descriptor)
+            item = self.descriptors.get(binding)
+            if item is None:
+                raise NativeOutputError("native exec closure lost its actual output descriptor")
+            self._close_available(item, binding)
+            description = item.descriptions[binding]
+            if self._description_closing(description) or owner is not None and item.owner != owner:
+                raise NativeOutputError("native exec closure overlaps another description transition or owner")
+            owner = item.owner
+            bindings.append(("exec-fd:" + str(descriptor), item.descriptor, item))
+            descriptions.append(description)
+        if not bindings:
+            raise NativeOutputError("native exec closure has no issued descriptors")
+        operation = self._begin(owner, pid, "exec", bindings[0][2].path, bindings=tuple(bindings))
+        operation = NativeOperation(
+            operation.owner, pid, operation.kind, operation.source, None, 0, operation.operands,
+            closing_descriptions=tuple(descriptions),
+        )
+        self.pending[pid] = operation
+        return operation
+
+    def complete_exec(self, operation):
+        self._operation(operation, "exec")
+        self._end(operation)
+
+    def fail_exec(self, operation, *, result):
+        self._operation(operation, "exec")
+        self._failed(operation, result)
+
     def enter_close(self, *, pid, descriptor):
         self._usable()
         binding = (pid, descriptor)
@@ -1022,6 +1131,34 @@ class NativeOutputs:
         self.pending[pid] = operation
         return operation
 
+    def enter_duplicate_release(self, *, pid, descriptor, target, identity):
+        binding = (pid, target)
+        item = self.descriptors.get(binding)
+        if item is None or (pid, descriptor) in self.descriptors:
+            raise NativeOutputError("native duplicate release lacks its foreign source and owned target")
+        self._close_available(item, binding)
+        operation = self._begin(
+            item.owner, pid, "duplicate-release", item.path,
+            bindings=(("duplicate-target:" + str(target), item.descriptor, item),),
+        )
+        operation = NativeOperation(
+            operation.owner, pid, operation.kind, operation.source, None, 0,
+            operation.operands, descriptor=descriptor, target=target,
+            description=item.descriptions[binding], replacement_identity=identity,
+        )
+        self.pending[pid] = operation
+        return operation
+
+    def leave_duplicate_release(self, operation, *, result, identity):
+        self._operation(operation, "duplicate-release")
+        if result < 0:
+            self._failed(operation, result)
+            return
+        if result != operation.target or identity != operation.replacement_identity:
+            raise NativeOutputError("native duplicate release differs from its actual source descriptor")
+        self.closed(operation.pid, operation.target, 0, event_kind="output-duplicate-release")
+        self._end(operation)
+
     def leave_close(self, operation, *, result):
         self._operation(operation, "close")
         self.closed(operation.pid, operation.descriptor, result)
@@ -1032,6 +1169,11 @@ class NativeOutputs:
             raise NativeOutputError("native output close overlaps an unfinished write")
         if item.descriptions[binding].pending is not None:
             raise NativeOutputError("native output close overlaps an unfinished flock")
+        if any(
+            any(selected is item.descriptions[binding] for selected in active.closing_descriptions)
+            for active in self.pending.values()
+        ):
+            raise NativeOutputError("native output close overlaps an unfinished exec closure")
         if self._pending_mode(item):
             raise NativeOutputError("native output close overlaps an unfinished mode transition")
 
@@ -1302,7 +1444,7 @@ class NativeOutputs:
         if type(result) is not int or not -4095 <= result <= 0:
             raise NativeOutputError("native status return must be integer zero or a kernel error")
 
-    def closed(self, pid, descriptor, result):
+    def closed(self, pid, descriptor, result, *, event_kind="output-close", generation=None):
         self._usable()
         self._status_result(result)
         if result < 0:
@@ -1333,7 +1475,8 @@ class NativeOutputs:
                 self._settle(item)
             if result >= 0:
                 self._event(
-                    "output-close", item, pid=pid, fd=descriptor, description=description.serial,
+                    event_kind, item, pid=pid, fd=descriptor, description=description.serial,
+                    **({"generation": generation} if generation is not None else {}),
                 )
 
     def retire_process(self, pid):

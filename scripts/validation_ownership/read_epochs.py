@@ -16,12 +16,12 @@ from typing import NamedTuple
 
 if __package__:
     from . import make_lexical
-    from .authority import encoded
+    from .authority import encoded, relative_path
     from .budget import MakeProbeError
     from .producer_channel import ChannelError, validate_publication_identity
 else:
     import make_lexical
-    from authority import encoded
+    from authority import encoded, relative_path
     from budget import MakeProbeError
     from producer_channel import ChannelError, validate_publication_identity
 
@@ -31,6 +31,7 @@ NORETURN = frozenset({"fatal", "die", "out_of_memory", "__stack_chk_fail", "__as
 MAX_INSTRUCTIONS = 4096
 COMPLETION_VERSION = 4
 RUNTIME_VERSION = 5
+WRITABLE_VERSION = 6
 
 
 class ReadEpochError(MakeProbeError):
@@ -1324,7 +1325,7 @@ def reconstruct_archive(trace, *, budget):
                 number, started["parent"], started["name"], started["flags"], ended["flags"],
                 started["seq"], ended["seq"], ended["resolved"], ended["error"],
                 None if ended["source"] is None else sources[ended["source"]], tuple(visit["opens"]),
-                runtime_location_value(started.get("location")) if trace["version"] == RUNTIME_VERSION
+                runtime_location_value(started.get("location")) if trace["version"] in {RUNTIME_VERSION, WRITABLE_VERSION}
                 else None if started.get("location") is None else tuple(started["location"]),
             ))
         passes.append(OriginalPass(
@@ -1339,9 +1340,9 @@ def reconstruct_archive(trace, *, budget):
         ))
     return OriginalArchive(
         trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
-        tuple(trace["selection"]["names"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION}
+        tuple(trace["selection"]["names"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION}
         else tuple(tuple(row) for row in trace.get("selection", ())),
-        tuple(trace["selection"]["inventory"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION} else (),
+        tuple(trace["selection"]["inventory"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION} else (),
     )
 
 
@@ -1527,7 +1528,7 @@ def validate_machine_observations(value, trace, *, count_limit):
         "native-policy": {"dispatch", "child", "context", "ignored", "status"},
     }
     purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
-    runtime = trace["version"] == RUNTIME_VERSION
+    runtime = trace["version"] in {RUNTIME_VERSION, WRITABLE_VERSION}
     if runtime:
         fields["execute"] |= {"input_sha256"}
         purposes |= {"effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return", "expansion-entry", "expansion-return"}
@@ -1537,6 +1538,8 @@ def validate_machine_observations(value, trace, *, count_limit):
             "expansion-input": {"expansion", "sha256"},
             "native-tree": {"dispatch", "event", "sha256"},
         })
+    if trace["version"] == WRITABLE_VERSION:
+        fields["native-output"] = {"dispatch", "event", "sha256"}
     runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer", "expansion-input")}
     postread_guards = set()
     armed, retired = {}, set()
@@ -1724,6 +1727,25 @@ def validate_machine_observations(value, trace, *, count_limit):
             elif event.get("kind") == "start" and (prior_pid is None or prior_pid["kind"] != "clear"):
                 raise ReadEpochError("native tree start omitted its inherited register clear")
             native_trees[dispatch].append(event)
+        elif kind == "native-output":
+            dispatch, event = row["dispatch"], row["event"]
+            if (
+                type(dispatch) is not int or dispatch not in native_roots
+                or native_roots[dispatch]["pid"] != pid
+                or not isinstance(event, dict) or event.get("owner") != dispatch
+                or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
+            ):
+                raise ReadEpochError("native output machine event lost its actual job binding")
+            if event.get("kind") == "output-exec-close":
+                execs = [
+                    prior for prior in native_trees[dispatch]
+                    if prior.get("kind") == "exec" and prior.get("pid") == event.get("pid")
+                ]
+                if (
+                    not execs or type(event.get("generation")) is not int
+                    or execs[-1]["generation"] != event["generation"]
+                ):
+                    raise ReadEpochError("native exec output closure lacks its successful actual image generation")
         elif kind in runtime_bindings:
             event_kind = {
                 "effect-input": "effect-entry", "effect-result": "effect-completion",
@@ -1848,22 +1870,240 @@ def _read_event_keys(version):
         "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
         "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
     }
-    if version in {3, COMPLETION_VERSION, RUNTIME_VERSION}:
+    if version in {3, COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION}:
         keys["source-entry"] |= {"location"}
     if version in {3, COMPLETION_VERSION}:
         keys["assignment-completion"] = {
             "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
         }
-    if version in {COMPLETION_VERSION, RUNTIME_VERSION}:
+    if version in {COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION}:
         keys["source-open"] |= {"path", "custody"}
-    if version == RUNTIME_VERSION:
+    if version in {RUNTIME_VERSION, WRITABLE_VERSION}:
         keys["complete"] |= {"effects", "evaluations", "expansions"}
     return keys
 
 
+def validate_native_output_authority(trace, *, count_limit, file_limit, reserve):
+    authority = trace["output_authority"]
+    if (
+        not isinstance(authority, dict) or set(authority) != {"paths", "jobs", "effects"}
+        or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit for key in authority)
+        or not authority["paths"]
+        or any(
+            not isinstance(path, str) or not path or path.startswith("/")
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+            for path in authority["paths"]
+        )
+        or len(set(authority["paths"])) != len(authority["paths"])
+    ):
+        raise ReadEpochError("malformed native output authority")
+    reserve(len(encoded(authority)))
+    for path in authority["paths"]:
+        try:
+            relative_path(path)
+        except MakeProbeError as error:
+            raise ReadEpochError(f"native output plan has an invalid path: {error}") from error
+        if any(
+            path == source["path"] or path.startswith(source["path"] + "/")
+            or source["path"].startswith(path + "/")
+            for source in trace["selection"]["inventory"]
+        ) or any(other != path and other.startswith(path + "/") for other in authority["paths"]):
+            raise ReadEpochError("native output plan conflicts with immutable source or another output")
+    jobs = {}
+    machine = trace["machine"]["events"]
+    if authority["effects"] != [row["event"] for row in machine if row["kind"] == "native-output"]:
+        raise ReadEpochError("native output effects differ from their actual machine observations")
+    for number, job in enumerate(authority["jobs"], 1):
+        if (
+            not isinstance(job, dict) or set(job) != {"sequence", "pid", "admission", "tree"}
+            or type(job["sequence"]) is not int or job["sequence"] != number
+            or type(job["pid"]) is not int or job["pid"] < 1
+            or not isinstance(job["tree"], list) or not job["tree"]
+            or not isinstance(job["admission"], dict)
+            or set(job["admission"]) != {"owner", "input_sha256", "outputs"}
+        ):
+            raise ReadEpochError("native output job lacks its closed dispatch binding")
+        admission = job["admission"]
+        if (
+            any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
+                for key in ("owner", "input_sha256"))
+            or not isinstance(admission["outputs"], list)
+            or any(not isinstance(path, str) or path not in authority["paths"] for path in admission["outputs"])
+            or len(set(admission["outputs"])) != len(admission["outputs"])
+            or job["tree"] != [
+                row["event"] for row in machine
+                if row["kind"] == "native-tree" and row["dispatch"] == number
+            ]
+            or not any(
+                row["kind"] == "execute" and row["dispatch"] == number
+                and row["pid"] == job["pid"] and row["input_sha256"] == admission["input_sha256"]
+                for row in machine
+            )
+        ):
+            raise ReadEpochError("native output job differs from its actual machine lifecycle")
+        jobs[number] = job
+    common = {"sequence", "kind", "owner", "serial", "revision", "path"}
+    fields = {
+        "output-open": {"pid", "fd", "operation_owner", "identity", "writing", "description"},
+        "output-write": {"pid", "fd", "result", "identity"},
+        "output-truncate": {"pid", "fd", "identity"},
+        "output-write-failed": {"pid", "fd", "result"},
+        "output-settled": {"identity", "sha256"},
+        "output-close": {"pid", "fd", "description"},
+        "output-exec-close": {"pid", "fd", "description", "generation"},
+        "output-duplicate-release": {"pid", "fd", "description"},
+        "output-close-failed": {"pid", "fd", "result"},
+        "output-dup": {"pid", "fd", "result", "description"},
+        "output-inherit": {"parent", "pid", "fd", "description"},
+    }
+    objects, bindings, descriptions = {}, {}, set()
+    for number, row in enumerate(authority["effects"], 1):
+        if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
+            if (
+                set(row) != {"sequence", "kind", "owner", "pid", "operation", "source", "destination", "result"}
+                or type(row["sequence"]) is not int or row["sequence"] != number
+                or type(row["owner"]) is not int or row["owner"] not in jobs
+                or not isinstance(row["operation"], str)
+                or row["operation"] not in {"duplicate-release", "exec"} or row["destination"] is not None
+                or not isinstance(row["source"], str)
+                or row["source"] not in {"/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]}
+                or type(row["pid"]) is not int
+                or row["pid"] not in {event["pid"] for event in jobs[row["owner"]]["tree"]}
+                or type(row["result"]) is not int or not -4095 <= row["result"] < 0
+            ):
+                raise ReadEpochError("native failed descriptor transition lost its actual job or preimage")
+            continue
+        if (
+            not isinstance(row, dict) or not isinstance(row.get("kind"), str) or row["kind"] not in fields
+            or set(row) != common | fields[row["kind"]]
+            or type(row["sequence"]) is not int or row["sequence"] != number
+            or any(type(row[key]) is not int or row[key] < 1 for key in ("owner", "serial"))
+            or type(row["revision"]) is not int or row["revision"] < 0
+            or row["owner"] not in jobs or not isinstance(row["path"], str)
+            or row["path"] not in {"/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]}
+        ):
+            raise ReadEpochError("native output effect escapes its actual job plan")
+        job = jobs[row["owner"]]
+        pids = {job["pid"]} | {event["pid"] for event in job["tree"]} | {
+            event["child"] for event in job["tree"] if "child" in event
+        }
+        if "pid" in row and (type(row["pid"]) is not int or row["pid"] not in pids):
+            raise ReadEpochError("native output effect borrowed another dispatch process")
+        if "identity" in row and (
+            not isinstance(row["identity"], list) or len(row["identity"]) != 7
+            or any(type(value) is not int for value in row["identity"])
+        ):
+            raise ReadEpochError("native output effect has a malformed inode identity")
+        if "identity" in row:
+            identity = row["identity"]
+            try:
+                validate_publication_identity(identity, identity[2] & 0o777, identity[3])
+            except ChannelError as error:
+                raise ReadEpochError(f"native output effect has an invalid object identity: {error}") from error
+            if identity[3] > file_limit:
+                raise ReadEpochError("native output effect exceeds its original file bound")
+        if "sha256" in row and (
+            not isinstance(row["sha256"], str) or re.fullmatch("[0-9a-f]{64}", row["sha256"]) is None
+        ):
+            raise ReadEpochError("native settled output lacks its exact content digest")
+        if "operation_owner" in row and row["operation_owner"] != row["owner"]:
+            raise ReadEpochError("native output open borrowed another producer")
+        if any(
+            type(row[key]) is not int or row[key] < 0 for key in ("fd", "description")
+            if key in row
+        ) or "description" in row and row["description"] == 0:
+            raise ReadEpochError("native output effect has an invalid descriptor lineage")
+        kind, serial = row["kind"], row["serial"]
+        item = objects.get(serial)
+        if kind == "output-open":
+            if (
+                type(row["writing"]) is not bool or (row["pid"], row["fd"]) in bindings
+                or row["description"] in descriptions
+            ):
+                raise ReadEpochError("native output open reused a live descriptor")
+            descriptions.add(row["description"])
+            if item is None:
+                item = {"owner": row["owner"], "path": row["path"], "revision": row["revision"],
+                        "identity": row["identity"], "settled": False}
+                objects[serial] = item
+            elif any(row[key] != item[key] for key in ("owner", "path", "revision", "identity")):
+                raise ReadEpochError("native output open adopted a different produced object")
+            bindings[(row["pid"], row["fd"])] = serial, row["description"], row["writing"]
+        elif item is None or row["owner"] != item["owner"] or row["path"] != item["path"]:
+            raise ReadEpochError("native output effect lacks its issued live object")
+        elif kind == "output-truncate":
+            following = authority["effects"][number] if number < len(authority["effects"]) else None
+            if (
+                row["identity"][:3] != item["identity"][:3]
+                or row["identity"][3] != 0 or row["identity"][6] != item["identity"][6]
+                or row["revision"] != item["revision"] + 1
+                or not isinstance(following, dict) or following.get("kind") != "output-open"
+                or any(following.get(key) != row[key] for key in (
+                    "owner", "serial", "revision", "path", "pid", "fd", "identity",
+                ))
+                or following.get("writing") is not True
+            ):
+                raise ReadEpochError("native truncating open lost its paired object transition")
+            item.update(identity=row["identity"], revision=row["revision"], settled=False)
+        elif kind == "output-write":
+            binding = bindings.get((row["pid"], row["fd"]))
+            if (
+                binding is None or binding[0] != serial or not binding[2]
+                or type(row["result"]) is not int or row["result"] < 0
+                or row["identity"][:3] != item["identity"][:3]
+                or row["identity"][6] != item["identity"][6]
+                or row["revision"] != item["revision"] + (row["identity"] != item["identity"])
+                or row["result"] == 0 and row["identity"] != item["identity"]
+            ):
+                raise ReadEpochError("native output write changed its binding or unrelated identity")
+            item.update(identity=row["identity"], revision=row["revision"], settled=False)
+        elif row["revision"] != item["revision"]:
+            raise ReadEpochError("native output effect borrowed a stale content revision")
+        elif kind == "output-settled":
+            if row["identity"] != item["identity"]:
+                raise ReadEpochError("native output settlement changed its observed preimage")
+            item["settled"] = True
+        elif kind == "output-inherit":
+            binding = bindings.get((row["parent"], row["fd"]))
+            if binding is None or binding[:2] != (serial, row["description"]):
+                raise ReadEpochError("native inherited output lost its original description")
+            target = (row["pid"], row["fd"])
+            if target in bindings:
+                raise ReadEpochError("native inherited output reused a live descriptor")
+            bindings[target] = binding
+        else:
+            binding = bindings.get((row["pid"], row["fd"]))
+            if binding is None or binding[0] != serial:
+                raise ReadEpochError("native output return lost its actual descriptor")
+            if kind == "output-dup":
+                target = (row["pid"], row["result"])
+                if type(row["result"]) is not int or row["result"] < 0 or binding[1] != row["description"]:
+                    raise ReadEpochError("native duplicate output changed its description")
+                if target != (row["pid"], row["fd"]) and target in bindings:
+                    raise ReadEpochError("native duplicate output reused an unretired descriptor")
+                bindings[target] = binding
+            elif kind in {"output-close", "output-exec-close", "output-duplicate-release"}:
+                if binding[1] != row["description"]:
+                    raise ReadEpochError("native output retirement changed its description")
+                del bindings[(row["pid"], row["fd"])]
+            elif kind == "output-write-failed":
+                if not binding[2] or type(row["result"]) is not int or not -4095 <= row["result"] < 0:
+                    raise ReadEpochError("native failed write lacks its writable binding and errno")
+            elif kind == "output-close-failed":
+                if type(row["result"]) is not int or row["result"] not in {
+                    -errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT,
+                }:
+                    raise ReadEpochError("native failed close lacks its supported released-FD errno")
+                del bindings[(row["pid"], row["fd"])]
+    if bindings or any(not item["settled"] for item in objects.values()):
+        raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
+
+
 def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
     if (
-        set(value) != {"version", "scope", "events", "sources", "complete", "selection", "machine"}
+        set(value) != {"version", "scope", "events", "sources", "complete", "selection", "machine"} | (
+            {"output_authority"} if value["version"] == WRITABLE_VERSION else set()
+        )
         or value["scope"] != scope or value["complete"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
         or not isinstance(value["sources"], list) or len(value["sources"]) > count_limit
@@ -2149,11 +2389,13 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
     )
     reserve(len(encoded(value["machine"])))
     validate_machine_observations(value["machine"], value, count_limit=count_limit)
+    if value["version"] == WRITABLE_VERSION:
+        validate_native_output_authority(value, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return value
 
 
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
-    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] == RUNTIME_VERSION:
+    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] in {RUNTIME_VERSION, WRITABLE_VERSION}:
         return validate_runtime_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return _validate_read_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
 

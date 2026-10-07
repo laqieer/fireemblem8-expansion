@@ -1224,7 +1224,7 @@ class ProbeSession:
         if native_admission_handler is not None and (
             mode != "make" or not native_runtime or not runtime_completions
             or producer_handler is not None or publication_observer is not None
-            or repository_outputs or not callable(native_admission_handler)
+            or repository_outputs and not native_output_paths or not callable(native_admission_handler)
         ):
             raise MakeProbeError("native Command admission requires unmapped runtime observation")
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1254,6 +1254,11 @@ class ProbeSession:
             ] + self._compiler_source_mounts(root, repository_outputs)
         elif cwd != "/repo" or initial_executable is not None:
             raise MakeProbeError("original compiler execution options require declared repository output")
+        if native_output_paths and mode == "make":
+            if original_tool is not None:
+                raise MakeProbeError("native produced tool admission is not yet supported with output authority")
+            mounts = [item for item in mounts if item["target"] != "/repo"]
+            mounts.extend(self._compiler_source_mounts(root, self._output_paths(native_output_paths)))
         if original_tool is not None:
             binary = self._sealed_native_tool_bytes(original_tool)
             if (
@@ -1303,6 +1308,7 @@ class ProbeSession:
                 or any(
                     item["target"] == "/" or (
                         item["target"].startswith("/repo/") and original_tool is None
+                        and not native_output_paths
                     ) for item in mounts
                 )
             ):
@@ -1379,11 +1385,11 @@ class ProbeSession:
                 for path, identity in native_metadata_directories
             ]
         if read_abi is not None:
-            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION
+            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION
             if not native_runtime:
                 raise MakeProbeError("source read observation requires original readonly native execution")
             config["read_epochs"] = {
-                "version": RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
+                "version": WRITABLE_VERSION if native_output_paths else RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
                 "scope": self.base.name + "/" + root.name, "abi": read_abi,
             }
             if read_selection is not None:
@@ -1395,7 +1401,10 @@ class ProbeSession:
                 raise MakeProbeError("dependency profile requires compiler confinement")
             config["dependency"] = dependency
         if native_output_paths:
-            if mode != "command" or argv[0] != "/native/tool" or native_runtime:
+            if not (
+                mode == "command" and argv[0] == "/native/tool" and not native_runtime
+                or mode == "make" and native_runtime and native_admission_handler is not None
+            ):
                 raise MakeProbeError("native output observation requires the issued native-tool capsule")
             config["native_output_paths"] = list(self._output_paths(native_output_paths))
         counter_names = {
@@ -1513,11 +1522,23 @@ class ProbeSession:
                     raise MakeProbeError("native Command admission requires canonical repository CWD")
                 settle(request["counters"])
                 sequence += 1
-                owner = native_admission_handler(request["path"], inputs)
+                authorization = native_admission_handler(request["path"], inputs)
+                if native_output_paths:
+                    if (
+                        not isinstance(authorization, dict) or set(authorization) != {"owner", "outputs"}
+                        or not isinstance(authorization["outputs"], list)
+                        or any(path not in native_output_paths for path in authorization["outputs"])
+                        or len(set(authorization["outputs"])) != len(authorization["outputs"])
+                    ):
+                        raise MakeProbeError("native Command admission lacks its exact output plan")
+                    owner = authorization["owner"]
+                else:
+                    owner = authorization
                 if not isinstance(owner, str) or re.fullmatch("[0-9a-f]{64}", owner) is None:
                     raise MakeProbeError("native Command admission lacks its exact issued binding")
                 admission = {
                     "owner": owner, "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(),
+                    **({"outputs": authorization["outputs"]} if native_output_paths else {}),
                 }
                 native_authorizations[sequence] = (request["path"], inputs, admission)
                 self.budget.charge("cache", len(encoded(native_authorizations[sequence])))
@@ -2470,12 +2491,22 @@ class ProbeSession:
         return variables, cli, environment
 
     @terminal_failure
-    def _native_make_readonly(
+    def _native_make_readonly(self, target, **kwargs):
+        if kwargs.get("writable_outputs"):
+            raise MakeProbeError("readonly native Make cannot request writable output authority")
+        return self._native_make_run(target, **kwargs)
+
+    def _native_make_writable(self, target, *, outputs, **kwargs):
+        if not outputs:
+            raise MakeProbeError("native writable Make requires exact output paths")
+        return self._native_make_run(target, writable_outputs=outputs, **kwargs)
+
+    def _native_make_run(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
         original_tool=False, native_metadata_directories=(),
-        commands=None,
+        commands=None, writable_outputs=(),
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2490,6 +2521,11 @@ class ProbeSession:
             raise MakeProbeError("invalid native read observation request or completion dependency")
         if commands is not None and not observe_runtime_completions:
             raise MakeProbeError("native Command admission requires complete runtime job inputs")
+        writable_outputs = self._output_paths(writable_outputs)
+        if writable_outputs and commands is None:
+            raise MakeProbeError("native writable Make requires original Command admission")
+        if writable_outputs and not (observe_reads and observe_runtime_completions):
+            raise MakeProbeError("native writable Make requires its complete v6 source/job observations")
         frozen_snapshot, frozen_tree = self.snapshot, self.tree
 
         def admit(path, inputs):
@@ -2505,13 +2541,16 @@ class ProbeSession:
                 type(command) is not Command or type(command.argv) is not tuple
                 or command.argv != tuple(inputs["argv"]) or inputs["cwd"] != "/repo"
                 or type(command.dependency_only) is not bool or command.dependency_only
-                or command.outputs or command.publication_policy != "replace"
+                or (command.outputs and not writable_outputs) or command.publication_policy != "replace"
                 or any(type(value) is not tuple for value in (
                     command.code, command.sources, command.directories, command.outputs,
                 ))
             ):
                 raise MakeProbeError("native readonly Command differs from actual argv or requests output authority")
             Command.__post_init__(command)
+            outputs = self._output_paths(command.outputs)
+            if any(name not in writable_outputs for name in outputs):
+                raise MakeProbeError("native Command outputs escape its issued namespace")
             sources = self.sources(command.sources) if command.sources else ()
             for name in (*command.code, *sources):
                 relative_path(name)
@@ -2534,9 +2573,11 @@ class ProbeSession:
             payload = encoded([
                 self.snapshot.digest, path, runtime_identity, tool_identity,
                 inputs, command.code, sources, directories,
+                *([outputs] if writable_outputs else []),
             ])
             self.budget.charge("cache", len(payload))
-            return hashlib.sha256(payload).hexdigest()
+            owner = hashlib.sha256(payload).hexdigest()
+            return {"owner": owner, "outputs": list(outputs)} if writable_outputs else owner
         if (
             not isinstance(native_executables, tuple)
             or len(native_executables) > self.budget.limits.entries
@@ -2706,6 +2747,7 @@ class ProbeSession:
                 runtime_completions=observe_runtime_completions,
                 original_tool=native_tool if original_tool else None,
                 native_admission_handler=admit if commands is not None else None,
+                native_output_paths=writable_outputs,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     *(self._mount(Path(path), path) for path, identity in metadata_directories
@@ -2722,6 +2764,35 @@ class ProbeSession:
             semantics = _read_observation(
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )
+            if writable_outputs:
+                generated = []
+                for name in writable_outputs:
+                    path = root.parent / (root.name + "-sources") / name
+                    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                    try:
+                        before = os.fstat(descriptor)
+                        if not stat.S_ISREG(before.st_mode) or before.st_mode & 0o7000:
+                            raise MakeProbeError("native Make produced a nonregular or special-mode output")
+                        data = self.budget.read_bytes(path, "control")
+                        if (
+                            publication_identity(os.fstat(descriptor)) != publication_identity(before)
+                            or publication_identity(os.stat(path, follow_symlinks=False)) != publication_identity(before)
+                        ):
+                            raise MakeProbeError("native Make output changed during bounded capture")
+                        settlements = [
+                            row for row in observed["read_trace"]["output_authority"]["effects"]
+                            if row["kind"] == "output-settled" and row["path"] == "/repo/" + name
+                        ]
+                        if (
+                            not settlements or settlements[-1]["identity"] != list(publication_identity(before))
+                            or settlements[-1]["sha256"] != hashlib.sha256(data).hexdigest()
+                        ):
+                            raise MakeProbeError("native Make capture differs from its actual settled producer version")
+                        generated.append(GeneratedFile(name, data, stat.S_IMODE(before.st_mode)))
+                    finally:
+                        os.close(descriptor)
+                generated = tuple(generated)
+                return completed, semantics, observed, generated
             return completed, semantics, observed
 
     def _compiler_source_mounts(self, root, outputs):

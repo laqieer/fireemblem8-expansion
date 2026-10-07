@@ -426,8 +426,7 @@ by successful paired continuation and exact settled source capture. Repeated
 facade writes before paired entry remain a positive compatibility control.
 The inherited component labels do not establish actual child-job authority.
 
-This intermediate adapter applies only to the existing `/native/tool` command
-capsule, not original native Make jobs. It retains final exact output capture
+The `/native/tool` command capsule adapter retains final exact output capture
 and reports charged, sequenced output events through the existing supervisor
 observation transport; those events are not yet generated-source machine/
 host/archive qualification. Existing `Policy.check` capsule authority remains
@@ -438,12 +437,90 @@ Final capture still requires every declared output to exist and rejects
 undeclared leftovers. Original native Make still needs its source-derived
 finite effect domains; the capsule's existing authority is not such a domain.
 Append, anonymous `O_TMPFILE` opens (including the work root and nested
-directories), standalone truncation, mode/ownership changes, hardlinks, and
+directories), standalone truncation, other mode/ownership changes, hardlinks, and
 replacement of a tracked output FD by an untracked FD refuse rather than
 inventing an observed transition.
 These limitations still need reconciliation with the original producer effect
 plans before #275 acceptance; they do not establish a new supported restriction
 on the original Make backend.
+
+The first original native Make writer now uses the same admission channel and
+object model through `_native_make_writable(..., outputs=..., commands=...)`.
+This is an incomplete internal integration seam, not #275 qualification.
+Each resolver returns the actual argv's `Command` with exact output paths;
+the complete sealed code/input/runtime closure and output list bind the owner.
+The actual pre-spawn dispatch carries that closed output list, and fork
+descendants retain the actual dispatch. A union of declared paths selects
+private writable ancestors with existing maximal immutable source islands;
+it does not grant every job the union. File opens/writes require the job's
+exact output; this first wire family does not yet admit directory or other
+namespace/mode mutations, even under a writable ancestor.
+Tracked source collisions and another job's output refuse before mutation.
+
+This lane uses explicit wire version 6. Immutable version 5 still rejects
+output authority and retains its original closed schema/read-only backing.
+Version 6 records closed output plans, original job/input/PID/tree bindings
+and paired output effects mirrored into machine observations. Standalone
+validation checks machine/job/effect agreement, descriptor description
+lifetimes, content revisions and terminal retirement/settlement. Exec closure
+also binds the already observed successful job image generation. Host artifact
+capture additionally agrees with the actual settled inode and content digest;
+it is not an intermediate generated-source observation.
+The initial format only admits the implemented regular-file open/write/
+duplicate/replacement/close/exec-closure/settlement family. Generated Make source opens, shared lock
+roles, temporary namespace plans, prior-version retirement, produced
+executable admission and the original all-plus-eight case remain incomplete.
+No renderer request/publication event or v1 source-effects journal is fabricated.
+Truncation through a supported `O_TRUNC` open carries the same inode/mode/link
+count, zero size and next revision into its paired writable open. This does not
+admit standalone truncation. Failed-close replay accepts only the live model's
+released-FD `EINTR`, `EIO`, `ENOSPC` and `EDQUOT` outcomes, retiring each binding.
+
+Run `FoundationTests.test_native_original_make_job_writes_only_its_admitted_output_once`,
+`FoundationTests.test_native_original_make_distinct_jobs_bind_their_actual_output_owners`
+and `FoundationTests.test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions`.
+Actual original shell recipes must run once, produce exact stdout/stderr,
+output bytes/mode and distinct real job PID/owner bindings, and clean the
+private filesystem. The standalone controls change descriptor, revision and
+path while preserving both machine mirror and hash; each still refuses.
+Immutable v5 rejects the v6 authority payload. Negative actual invocations
+exercise readonly admission, another job's output, undeclared paths and tracked
+source collision. Shell redirection restoration pairs an actual foreign
+descriptor's duplication onto a tracked output, retires only the old binding,
+and preserves the restored stdout. The capsule still refuses that operation.
+`FoundationTests.test_native_original_make_first_wire_refuses_unimplemented_namespace_mutations`
+runs a sealed C recipe that directly calls `mkdir` and `symlink` on the issued
+path. Both refuse before mutation without an external utility's additional
+runtime probes; the symlink reaches the existing symlink prohibition.
+`FoundationTests.test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model`
+runs `printf first > result; printf final > result; printf once` as one original
+recipe. Final bytes must be `final`, mode `0644`, stdout `once`, and stderr empty.
+Hash/mirror-preserving mutations of truncation revision, FD and size refuse.
+Inserted `EBADF`/`EINVAL` close-failure events refuse; transformations to the
+four accepted released-FD outcomes pass replay. These archive transformations
+are not evidence of naturally occurring kernel close errors.
+`NativeOutputCustodyTests.test_foreign_duplicate_release_preserves_failed_target_and_retires_actual_replacement`
+uses actual `dup2`, stale/copied-token refusal, an explicitly injected failed
+return with unchanged target, and component inherited-description exclusion.
+`FoundationTests.test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec`
+uses a sealed C fixture as the original Make recipe, not a newly produced tool.
+Separate opens of one inode issue distinct descriptions; dup shares one.
+Actual `execve` with an invalid environment address returns `EFAULT` and
+preserves all output FDs. The following successful reexec closes
+`O_CLOEXEC`/`F_SETFD(FD_CLOEXEC)` bindings before the new image reuses FD3 for
+`/dev/null`. An unflagged alias survives reexec and retires at actual exit.
+Archive controls change the actual closure generation to a prior or future
+image or a boolean while preserving the machine mirror/hash; each refuses.
+`NativeOutputCustodyTests.test_exec_closure_and_target_duplicates_refuse_both_entry_orders_before_replacement`
+checks `dup2`/`dup3` target replacement versus exec in both entry orders, with
+unchanged actual target identity and descriptor maps on refusal, failed-return
+continuation and actual `dup2` replacement after release. Inherited PID labels
+in this component control are not actual child-process admission evidence.
+Exec entry reserves the closing descriptions in the existing operation map,
+excluding conflicting lock/mode/alias-close operations before kernel mutation;
+successful exec verifies actual missing/surviving FDs and preserves one object
+model. Mirror/hash-preserving zero-byte-write and same-inode/different-object
+description-alias mutants must refuse in standalone v6 validation.
 
 Run
 `python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_observes_actual_fork_dup_writes_and_atomic_retirement scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_preserves_output_refusals`.

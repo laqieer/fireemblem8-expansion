@@ -5539,6 +5539,343 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(all(row["waited"] and row["returncode"] == 0 for row in jobs))
         self.assert_clean(session)
 
+    def test_native_original_make_job_writes_only_its_admitted_output_once(self):
+        from scripts.validation_ownership import read_epochs
+        recipe = "printf final > result; printf once"
+        self.add("Makefile", "all:\n\t@" + recipe + "\n")
+        requests = []
+        class Commands:
+            def __getitem__(self, argv):
+                requests.append(argv)
+                return Command(argv, outputs=("result",))
+        session = self.session()
+        with session:
+            completed, semantics, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), observe_reads=True,
+                observe_runtime_completions=True, commands=Commands(),
+            )
+            self.assertEqual(completed.stdout, b"once")
+            self.assertEqual(completed.stderr, b"")
+            self.assertEqual(
+                [(item.path, item.data, item.mode) for item in generated],
+                [("result", b"final", 0o644)],
+            )
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "original writer job")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(requests, [("/bin/sh", "-c", recipe)])
+            self.assertEqual(len(jobs), 1)
+            job, = jobs
+            self.assertEqual(job["admission"]["outputs"], ["result"])
+            self.assertTrue(job["waited"])
+            self.assertEqual(job["returncode"], 0)
+            effects = [
+                parse_json(row.removeprefix("native-output:").encode(), "original writer effect")
+                for row in observed["accessed"] if row.startswith("native-output:")
+            ]
+            self.assertTrue(effects)
+            self.assertTrue(all(row["owner"] == job["sequence"] for row in effects))
+            self.assertTrue(any(row["kind"] == "output-write" and row["pid"] == job["pid"] for row in effects))
+            trace = observed["read_trace"]
+            self.assertEqual(trace["version"], read_epochs.WRITABLE_VERSION)
+            self.assertEqual(trace["output_authority"]["paths"], ["result"])
+            self.assertEqual(trace["output_authority"]["effects"], sorted(effects, key=lambda row: row["sequence"]))
+            read_epochs.validate_trace(
+                trace, trace["scope"], count_limit=100000, file_limit=10000000,
+            )
+            for field, value in (("fd", 999), ("revision", 100), ("path", "/repo/other"), ("result", 0)):
+                with self.subTest(archive_field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    effect = next(row for row in invalid["output_authority"]["effects"] if row["kind"] == "output-write")
+                    effect[field] = value
+                    machine = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == effect["sequence"]
+                    )
+                    machine["event"] = effect
+                    machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            immutable = json.loads(json.dumps(trace))
+            immutable["version"] = read_epochs.RUNTIME_VERSION
+            with self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(
+                    immutable, immutable["scope"], count_limit=100000, file_limit=10000000,
+                )
+        self.assert_clean(session)
+
+    def test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions(self):
+        self.add("Makefile", "all:\n\t@printf final > result\n")
+        for outputs, command_outputs, readonly, expected in (
+            (("result",), ("result",), True, "requests output authority"),
+            (("result",), (), True, "readonly native Make filesystem write denied"),
+            (("result", "other"), ("other",), False, "issued output authority"),
+            (("other",), ("result",), False, "escape its issued namespace"),
+            (("Makefile",), ("Makefile",), False, "conflicts with immutable source"),
+        ):
+            with self.subTest(outputs=outputs, command_outputs=command_outputs, readonly=readonly):
+                class Commands:
+                    def __getitem__(self, argv):
+                        return Command(argv, outputs=command_outputs)
+                session = self.session()
+                with session:
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        if readonly:
+                            session._native_make_readonly(
+                                "all", observe_reads=True, observe_runtime_completions=True,
+                                commands=Commands(),
+                            )
+                        else:
+                            session._native_make_writable(
+                                "all", outputs=outputs, observe_reads=True,
+                                observe_runtime_completions=True, commands=Commands(),
+                            )
+                self.assert_clean(session)
+
+    def test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model(self):
+        from scripts.validation_ownership import read_epochs
+        recipe = "printf first > result; printf final > result; printf once"
+        self.add("Makefile", "all:\n\t@" + recipe + "\n")
+        class Commands:
+            def __getitem__(self, argv):
+                return Command(argv, outputs=("result",))
+        session = self.session()
+        with session:
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), commands=Commands(), observe_reads=True,
+                observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"once", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
+            trace = observed["read_trace"]
+            effects = trace["output_authority"]["effects"]
+            truncated, = [row for row in effects if row["kind"] == "output-truncate"]
+            self.assertEqual(truncated["identity"][3], 0)
+            read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            for field, value in (("revision", 100), ("fd", 999), ("identity", truncated["identity"][:3] + [1] + truncated["identity"][4:])):
+                with self.subTest(truncate_field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    effect = next(row for row in invalid["output_authority"]["effects"] if row["kind"] == "output-truncate")
+                    effect[field] = value
+                    machine = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == effect["sequence"]
+                    )
+                    machine["event"] = effect
+                    machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "truncating open"):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            for result in (-errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT):
+                with self.subTest(released_close_errno=result):
+                    compatible = json.loads(json.dumps(trace))
+                    effect = next(row for row in compatible["output_authority"]["effects"] if row["kind"] == "output-close")
+                    del effect["description"]
+                    effect.update(kind="output-close-failed", result=result)
+                    machine = next(
+                        row for row in compatible["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == effect["sequence"]
+                    )
+                    machine["event"] = effect
+                    machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                    read_epochs.validate_trace(
+                        compatible, compatible["scope"], count_limit=100000, file_limit=10000000,
+                    )
+            for result in (-errno.EBADF, -errno.EINVAL):
+                with self.subTest(close_errno=result):
+                    invalid = json.loads(json.dumps(trace))
+                    index = next(
+                        index for index, row in enumerate(invalid["output_authority"]["effects"])
+                        if row["kind"] == "output-close"
+                    )
+                    original = invalid["output_authority"]["effects"][index]
+                    failure = {key: value for key, value in original.items() if key != "description"}
+                    failure.update(kind="output-close-failed", result=result)
+                    invalid["output_authority"]["effects"].insert(index, failure)
+                    machine_index = next(
+                        index for index, row in enumerate(invalid["machine"]["events"])
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == original["sequence"]
+                    )
+                    mirror = dict(invalid["machine"]["events"][machine_index])
+                    mirror["event"] = failure
+                    invalid["machine"]["events"].insert(machine_index, mirror)
+                    for number, row in enumerate(invalid["output_authority"]["effects"], 1):
+                        row["sequence"] = number
+                    mirrored = iter(invalid["output_authority"]["effects"])
+                    for number, row in enumerate(invalid["machine"]["events"], 1):
+                        row["seq"] = number
+                        if row["kind"] == "native-output":
+                            row["event"] = next(mirrored)
+                            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "released-FD errno"):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_original_make_distinct_jobs_bind_their_actual_output_owners(self):
+        from scripts.validation_ownership import read_epochs
+        recipes = (
+            "printf '%s' \"$$\" > first; printf first",
+            "printf '%s' \"$$\" > second; printf second",
+        )
+        self.add("Makefile", "all:\n" + "".join("\t@" + row.replace("$", "$$") + "\n" for row in recipes))
+        requests = []
+        class Commands:
+            def __getitem__(self, argv):
+                requests.append(argv)
+                index = recipes.index(argv[-1])
+                return Command(argv, outputs=(("first", "second")[index],))
+        session = self.session()
+        with session:
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("first", "second"), observe_reads=True,
+                observe_runtime_completions=True, commands=Commands(),
+            )
+            jobs = observed["read_trace"]["output_authority"]["jobs"]
+            effects = observed["read_trace"]["output_authority"]["effects"]
+            self.assertEqual(completed.stdout, b"firstsecond")
+            self.assertEqual(completed.stderr, b"")
+            self.assertEqual(requests, [("/bin/sh", "-c", row) for row in recipes])
+            self.assertEqual(len(jobs), 2)
+            self.assertNotEqual(jobs[0]["pid"], jobs[1]["pid"])
+            self.assertNotEqual(jobs[0]["admission"]["owner"], jobs[1]["admission"]["owner"])
+            self.assertEqual(
+                [(row.path, row.data, row.mode) for row in generated],
+                [(name, str(job["pid"]).encode(), 0o644) for name, job in zip(("first", "second"), jobs)],
+            )
+            for name, job in zip(("first", "second"), jobs):
+                rows = [row for row in effects if row["path"] == "/repo/" + name]
+                self.assertTrue(rows)
+                self.assertEqual({row["owner"] for row in rows}, {job["sequence"]})
+            invalid = json.loads(json.dumps(observed["read_trace"]))
+            opens = [row for row in invalid["output_authority"]["effects"] if row["kind"] == "output-open"]
+            first_description, second_description = [row["description"] for row in opens]
+            for effect in invalid["output_authority"]["effects"]:
+                if effect.get("description") == second_description:
+                    effect["description"] = first_description
+            for machine in invalid["machine"]["events"]:
+                if machine["kind"] == "native-output":
+                    effect = invalid["output_authority"]["effects"][machine["event"]["sequence"] - 1]
+                    machine["event"] = effect
+                    machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "reused a live descriptor"):
+                read_epochs.validate_trace(
+                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                )
+        self.assert_clean(session)
+
+    def test_native_original_make_first_wire_refuses_unimplemented_namespace_mutations(self):
+        self.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n#include <unistd.h>\n#include <sys/stat.h>\n"
+            "#include <string.h>\nint main(int argc,char **argv){if(argc!=2)return 2;"
+            "if(!strcmp(argv[1],\"mkdir\"))return mkdir(\"/repo/result\",0700);"
+            "return symlink(\"/dev/null\",\"/repo/result\");}\n"
+        ))
+        for command, expected in (
+            ("symlink", "candidate symlink creation is forbidden"),
+            ("mkdir", "issued output authority"),
+        ):
+            with self.subTest(command=command):
+                self.add("Makefile", "all:\n\t@/native/tool " + command + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, outputs=("result",))
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session._native_make_writable(
+                            "all", outputs=("result",), native_tool=tool,
+                            commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assert_clean(session)
+
+    def test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "#include <errno.h>\n#include <sys/syscall.h>\n"
+            "int main(int argc,char **argv){int fd,other,copy;char *next[]={\"/native/tool\",\"next\",0};"
+            "if(argc!=2)return 1;if(!strcmp(argv[1],\"next\")){fd=open(\"/dev/null\",O_RDONLY);"
+            "if(fd!=3||write(1,\"once\",4)!=4||close(fd))return 2;return 0;}"
+            "fd=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY|O_CLOEXEC,0644);"
+            "if(fd!=3)return 3;other=open(\"/repo/result\",O_RDONLY|O_CLOEXEC);"
+            "if(other!=4)return 4;copy=dup(fd);if(copy!=5||write(copy,\"final\",5)!=5)return 5;"
+            "if(!strcmp(argv[1],\"close\")&&fcntl(copy,F_SETFD,FD_CLOEXEC))return 6;"
+            "if(syscall(SYS_execve,next[0],next,(char **)1)!=-1||errno!=EFAULT"
+            "||fcntl(fd,F_GETFD)!=FD_CLOEXEC||fcntl(other,F_GETFD)!=FD_CLOEXEC)return 8;"
+            "execv(next[0],next);return 7;}\n"
+        ))
+        for mode in ("close", "retain"):
+            with self.subTest(mode=mode):
+                self.add("Makefile", "all:\n\t@/native/tool " + mode + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, outputs=("result",))
+                    completed, _, observed, generated = session._native_make_writable(
+                        "all", outputs=("result",), native_tool=tool, commands=Commands(),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(completed.stdout, b"once")
+                    self.assertEqual(completed.stderr, b"")
+                    self.assertEqual([(row.data, row.mode) for row in generated], [(b"final", 0o644)])
+                    trace = observed["read_trace"]
+                    effects = trace["output_authority"]["effects"]
+                    opens = [row for row in effects if row["kind"] == "output-open"]
+                    self.assertEqual(len(opens), 2)
+                    self.assertEqual(opens[0]["serial"], opens[1]["serial"])
+                    self.assertNotEqual(opens[0]["description"], opens[1]["description"])
+                    closures = [row for row in effects if row["kind"] == "output-exec-close"]
+                    self.assertEqual({row["fd"] for row in closures}, {3, 4, 5} if mode == "close" else {3, 4})
+                    self.assertEqual({row["generation"] for row in closures}, {2})
+                    job, = trace["output_authority"]["jobs"]
+                    self.assertEqual([row["generation"] for row in job["tree"] if row["kind"] == "exec"], [1, 2])
+                    self.assertEqual(any(row["kind"] == "output-close" and row["fd"] == 5 for row in effects), mode == "retain")
+                    failures = [row for row in effects if row["kind"] == "output-operation-failed"]
+                    self.assertEqual([(row["operation"], row["result"]) for row in failures], [("exec", -errno.EFAULT)])
+                    for generation in (1, 3, True):
+                        with self.subTest(exec_generation=generation):
+                            invalid = json.loads(json.dumps(trace))
+                            effect = next(
+                                row for row in invalid["output_authority"]["effects"]
+                                if row["kind"] == "output-exec-close"
+                            )
+                            effect["generation"] = generation
+                            machine = next(
+                                row for row in invalid["machine"]["events"]
+                                if row["kind"] == "native-output"
+                                and row["event"]["sequence"] == effect["sequence"]
+                            )
+                            machine["event"] = effect
+                            machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                            with self.assertRaisesRegex(read_epochs.ReadEpochError, "actual image generation"):
+                                read_epochs.validate_trace(
+                                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                                )
+                    invalid = json.loads(json.dumps(trace))
+                    old, new = [row["description"] for row in opens]
+                    for effect in invalid["output_authority"]["effects"]:
+                        if effect.get("description") == new:
+                            effect["description"] = old
+                    for machine in invalid["machine"]["events"]:
+                        if machine["kind"] == "native-output":
+                            effect = invalid["output_authority"]["effects"][machine["event"]["sequence"] - 1]
+                            machine["event"] = effect
+                            machine["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "reused a live descriptor"):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+                self.assert_clean(session)
+
     def test_native_command_owner_binds_different_sealed_tools_and_captured_host_images(self):
         self.add("first.c", '#include <stdio.h>\nint main(void) { puts("first"); return 0; }\n')
         self.add("second.c", '#include <stdio.h>\nint main(void) { puts("second"); return 0; }\n')

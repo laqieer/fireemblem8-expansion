@@ -5490,6 +5490,112 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.closed(3, independent, 0)
         self.outputs.finish()
 
+    def test_foreign_duplicate_release_preserves_failed_target_and_retires_actual_replacement(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        target = os.open(self.root / "foreign-duplicate", os.O_CREAT | os.O_RDWR, 0o600)
+        source = os.open(self.root / "foreign-source", os.O_CREAT | os.O_RDWR, 0o600)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=target, pin=target, path="foreign-duplicate", writing=True,
+        )
+        info = os.fstat(source)
+        identity = (info.st_dev, info.st_ino, info.st_mode)
+        operation = self.outputs.enter_duplicate_release(
+            pid=1, descriptor=source, target=target, identity=identity,
+        )
+        with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+            self.outputs.leave_duplicate_release(replace(operation), result=target, identity=identity)
+        self.outputs.leave_duplicate_release(operation, result=-errno.EINVAL, identity=None)
+        self.assertIn((1, target), self.outputs.descriptors)
+        self.assertNotEqual(os.fstat(target).st_ino, info.st_ino)
+        operation = self.outputs.enter_duplicate_release(
+            pid=1, descriptor=source, target=target, identity=identity,
+        )
+        self.outputs.inherited(1, 2, (target,))
+        with self.assertRaisesRegex(NativeOutputError, "unfinished close"):
+            self.outputs.enter_lock(pid=2, descriptor=target, flags=fcntl.LOCK_EX, observed=0)
+        os.dup2(source, target)
+        self.outputs.leave_duplicate_release(operation, result=target, identity=identity)
+        self.assertNotIn((1, target), self.outputs.descriptors)
+        self.assertEqual(os.fstat(target).st_ino, info.st_ino)
+        self.outputs.closed(2, target, 0)
+        with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+            self.outputs.leave_duplicate_release(operation, result=target, identity=identity)
+        os.close(target)
+        os.close(source)
+        self.outputs.finish()
+
+    def test_exec_closure_reserves_shared_descriptions_and_failed_return_preserves_bindings(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "exec-closure", os.O_CREAT | os.O_RDWR, 0o600)
+        copied = os.dup(descriptor)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="exec-closure", writing=True,
+        )
+        self.outputs.duplicated(1, descriptor, copied)
+        self.outputs.inherited(1, 2, (copied,))
+        operation = self.outputs.enter_exec(pid=1, descriptors=(descriptor,))
+        with self.assertRaisesRegex(NativeOutputError, "unfinished close"):
+            self.outputs.enter_lock(pid=2, descriptor=copied, flags=fcntl.LOCK_EX, observed=0)
+        with self.assertRaisesRegex(NativeOutputError, "unfinished exec closure"):
+            self.outputs.enter_close(pid=2, descriptor=copied)
+        with self.assertRaisesRegex(NativeOutputError, "exclusive owned"):
+            self.outputs.enter_mode(pid=2, descriptor=copied, mode=0o755)
+        with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+            self.outputs.fail_exec(replace(operation), result=-errno.EFAULT)
+        self.outputs.fail_exec(operation, result=-errno.EFAULT)
+        self.assertFalse(self.outputs.pending)
+        self.assertIn((1, descriptor), self.outputs.descriptors)
+        self.assertIn((2, copied), self.outputs.descriptors)
+        self.assertEqual(stat.S_IMODE(os.fstat(descriptor).st_mode), 0o600)
+        lock = self.outputs.enter_lock(pid=2, descriptor=copied, flags=fcntl.LOCK_EX, observed=0)
+        with self.assertRaisesRegex(NativeOutputError, "unfinished flock"):
+            self.outputs.enter_exec(pid=1, descriptors=(descriptor,))
+        fcntl.flock(copied, fcntl.LOCK_EX)
+        self.outputs.leave_lock(lock, result=0, observed=fcntl.LOCK_EX)
+        os.close(copied)
+        self.outputs.closed(1, copied, 0)
+        self.outputs.closed(2, copied, 0)
+        os.close(descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
+    def test_exec_closure_and_target_duplicates_refuse_both_entry_orders_before_replacement(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        source = os.open(self.root / "exec-source", os.O_CREAT | os.O_RDWR, 0o600)
+        target = os.open(self.root / "exec-target", os.O_CREAT | os.O_RDWR, 0o600)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=source, pin=source, path="exec-source", writing=True,
+        )
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=target, pin=target, path="exec-target", writing=True,
+        )
+        self.outputs.inherited(1, 2, (source, target))
+        for kind in ("dup2", "dup3"):
+            with self.subTest(kind=kind):
+                identity = os.fstat(target)
+                entry = self.outputs.enter_exec(pid=1, descriptors=(target,))
+                with self.assertRaisesRegex(NativeOutputError, "unfinished exec closure"):
+                    self.outputs.enter_duplicate(pid=2, descriptor=source, kind=kind, target=target)
+                self.assertEqual(os.fstat(target), identity)
+                self.assertIs(self.outputs.descriptors[(2, target)], self.outputs.descriptors[(1, target)])
+                self.outputs.fail_exec(entry, result=-errno.EFAULT)
+                duplicate = self.outputs.enter_duplicate(pid=2, descriptor=source, kind=kind, target=target)
+                with self.assertRaisesRegex(NativeOutputError, "description transition"):
+                    self.outputs.enter_exec(pid=1, descriptors=(target,))
+                self.assertEqual(os.fstat(target), identity)
+                self.outputs.leave_duplicate(duplicate, -errno.EINVAL)
+                entry = self.outputs.enter_exec(pid=1, descriptors=(target,))
+                self.outputs.fail_exec(entry, result=-errno.EFAULT)
+        duplicate = self.outputs.enter_duplicate(pid=2, descriptor=source, kind="dup2", target=target)
+        self.assertEqual(os.dup2(source, target), target)
+        self.outputs.leave_duplicate(duplicate, target, pin=target)
+        self.assertEqual(os.fstat(source).st_ino, os.fstat(target).st_ino)
+        for descriptor in (source, target):
+            os.close(descriptor)
+            self.outputs.closed(1, descriptor, 0)
+            self.outputs.closed(2, descriptor, 0)
+        self.outputs.finish()
+
     def test_paired_close_excludes_mode_entry_until_the_actual_kernel_return(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = os.open(self.root / "paired-close-mode", os.O_CREAT | os.O_RDWR, 0o600)
