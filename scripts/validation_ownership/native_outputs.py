@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import errno
 import hashlib
 import os
 import stat
@@ -77,8 +78,14 @@ class NativeOutputs:
         self.descriptors = {}
         self.pins = {}
         self.pending = {}
+        self.closed_state = False
+
+    def _usable(self):
+        if self.closed_state:
+            raise NativeOutputError("native output custody is terminal after owned cleanup")
 
     def _begin(self, owner, pid, kind, source, destination=None, flags=0, pins=()):
+        self._usable()
         if type(owner) is not int or owner < 1 or type(pid) is not int or pid < 1:
             raise NativeOutputError("native operation lacks its issued producer/process")
         if pid in self.pending:
@@ -109,6 +116,7 @@ class NativeOutputs:
             raise
 
     def _operation(self, operation, kind):
+        self._usable()
         if (
             not isinstance(operation, NativeOperation)
             or self.pending.get(operation.pid) is not operation or operation.kind != kind
@@ -140,6 +148,7 @@ class NativeOutputs:
         self._end(operation)
 
     def enter_open(self, *, owner, pid, path, flags, pin):
+        self._usable()
         if type(flags) is not int or flags < 0 or flags & os.O_TMPFILE == os.O_TMPFILE:
             raise NativeOutputError("native output open has unsupported flags")
         item = self.objects.get(path)
@@ -184,6 +193,7 @@ class NativeOutputs:
         return item
 
     def enter_replace(self, *, owner, pid, source, destination, source_pin, retired_pin):
+        self._usable()
         if source == destination:
             raise NativeOutputError("native replacement lacks distinct declared operands")
         for path in (source, destination):
@@ -209,6 +219,7 @@ class NativeOutputs:
         self._end(operation)
 
     def enter_remove(self, *, owner, pid, path, pin):
+        self._usable()
         item = self.objects.get(path)
         if item is not None and item.writers:
             raise NativeOutputError("native removal overlaps an active writer")
@@ -239,6 +250,7 @@ class NativeOutputs:
         return bytes(data)
 
     def enter_write(self, *, pid, descriptor, pin, data, offset):
+        self._usable()
         if (
             not isinstance(data, bytes) or len(data) > self.file_limit
             or type(offset) is not int or not 0 <= offset <= self.file_limit
@@ -307,6 +319,7 @@ class NativeOutputs:
         self._end(operation)
 
     def _identity(self, descriptor):
+        self._usable()
         self.deadline()
         info = os.fstat(descriptor)
         self.charge(128)
@@ -399,6 +412,7 @@ class NativeOutputs:
         return item
 
     def inherited(self, parent, child, descriptors):
+        self._usable()
         for descriptor in descriptors:
             original, copied = (parent, descriptor), (child, descriptor)
             item = self.descriptors.get(original)
@@ -413,6 +427,7 @@ class NativeOutputs:
             self._event("output-inherit", item, parent=parent, pid=child, fd=descriptor)
 
     def duplicated(self, pid, original, result):
+        self._usable()
         item = self.descriptors.get((pid, original))
         if item is None:
             raise NativeOutputError("native output duplicate has no owned descriptor")
@@ -429,6 +444,7 @@ class NativeOutputs:
         self._event("output-dup", item, pid=pid, fd=original, result=result)
 
     def before_write(self, pid, descriptor, pin):
+        self._usable()
         binding = (pid, descriptor)
         item = self.descriptors.get(binding)
         if (
@@ -441,6 +457,7 @@ class NativeOutputs:
         return item
 
     def written(self, pid, descriptor, pin, result):
+        self._usable()
         item = self.descriptors.get((pid, descriptor))
         if (
             item is None or (pid, descriptor) not in item.writers
@@ -468,11 +485,14 @@ class NativeOutputs:
         self._event("output-write", item, pid=pid, fd=descriptor, result=result, identity=list(identity))
 
     def closed(self, pid, descriptor, result):
+        self._usable()
         if result < 0:
             item = self.descriptors.get((pid, descriptor))
-            if item is not None:
-                self._event("output-close-failed", item, pid=pid, fd=descriptor, result=result)
-            return
+            if item is None or result == -errno.EBADF:
+                raise NativeOutputError("failed native close contradicts its live owned descriptor")
+            if result not in {-errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT}:
+                raise NativeOutputError("native close has an unsupported Linux error outcome")
+            self._event("output-close-failed", item, pid=pid, fd=descriptor, result=result)
         binding = (pid, descriptor)
         item = self.descriptors.get(binding)
         if item is not None and item.pending_writer == binding:
@@ -483,14 +503,17 @@ class NativeOutputs:
             item.writers.discard(binding)
             if writer and not item.writers:
                 self._settle(item)
-            self._event("output-close", item, pid=pid, fd=descriptor)
+            if result >= 0:
+                self._event("output-close", item, pid=pid, fd=descriptor)
 
     def retire_process(self, pid):
+        self._usable()
         for process, descriptor in tuple(self.descriptors):
             if process == pid:
                 self.closed(pid, descriptor, 0)
 
     def capture(self, *, owner, path, descriptor):
+        self._usable()
         item = self.objects.get(path)
         if item is None or item.owner != owner or item.retired or item.writers:
             raise NativeOutputError("native generated source has no settled owned version")
@@ -609,6 +632,8 @@ class NativeOutputs:
 
     def close(self):
         """Close owned object/source pins, never borrowed tracee FD integers."""
+        if self.closed_state:
+            return
         def close_source(descriptor, source):
             source.closed = True
             source.object.readers.discard(descriptor)
@@ -619,10 +644,13 @@ class NativeOutputs:
             descriptor, item.descriptor = item.descriptor, -1
             os.close(descriptor)
 
-        finish_cleanup([
-            *(lambda operation=operation: self._end(operation)
-              for operation in tuple(self.pending.values())),
-            *(lambda descriptor=descriptor, source=source: close_source(descriptor, source)
-              for descriptor, source in tuple(self.pins.items())),
-            *(lambda item=item: close_object(item) for item in self.versions if item.descriptor >= 0),
-        ])
+        try:
+            finish_cleanup([
+                *(lambda operation=operation: self._end(operation)
+                  for operation in tuple(self.pending.values())),
+                *(lambda descriptor=descriptor, source=source: close_source(descriptor, source)
+                  for descriptor, source in tuple(self.pins.items())),
+                *(lambda item=item: close_object(item) for item in self.versions if item.descriptor >= 0),
+            ])
+        finally:
+            self.closed_state = True

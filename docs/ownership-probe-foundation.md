@@ -60,6 +60,14 @@ regions and sparse gaps, rather than attributing every content change to a
 nonzero return. Failed duplication creates no negative descriptor binding.
 Copied, stale and overlapping operation tokens refuse; terminal cleanup closes
 pending owned pins as well as the shared object/source pins.
+Owned teardown is terminal, not a resumable cancellation. It preserves any
+unfinished borrowed descriptor/writer as failed diagnostic state and explicitly
+refuses subsequent transitions; inventory completion cannot turn that state
+into successful observation. On the supported Linux host, late `close` errors
+`EINTR`, `EIO`, `ENOSPC` and `EDQUOT` retire the valid borrowed descriptor while
+retaining the failure event; `EBADF` contradicts a live owned binding.
+The late-error controls use actual descriptor close/release with a modeled
+error return. They do not claim a real filesystem-induced I/O error.
 These adapters are internal observations, not output-plan authorization.
 The supervisor must derive their operands from the existing sealed Command,
 actual job and finite output plan and supply actual stopped syscall inputs.

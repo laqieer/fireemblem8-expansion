@@ -4670,6 +4670,74 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.closed(1, descriptor, 0)
         self.outputs.finish()
 
+    def test_linux_late_close_error_retires_released_descriptor_without_retry(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        for error in (errno.EINTR, errno.EIO, errno.ENOSPC, errno.EDQUOT):
+            with self.subTest(error=error):
+                path = "late-close-" + str(error)
+                descriptor = os.open(self.root / path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+                self.outputs.opened(
+                    owner=1, pid=1, descriptor=descriptor, pin=descriptor, path=path, writing=True,
+                )
+                self.outputs.before_write(1, descriptor, descriptor)
+                result = os.write(descriptor, b"retained")
+                self.outputs.written(1, descriptor, descriptor, result)
+                os.close(descriptor)
+                with self.assertRaises(OSError) as released:
+                    os.fstat(descriptor)
+                self.assertEqual(released.exception.errno, errno.EBADF)
+                self.outputs.closed(1, descriptor, -error)
+                self.assertNotIn((1, descriptor), self.outputs.descriptors)
+                item = self.outputs.objects[path]
+                self.assertFalse(item.writers)
+                self.assertEqual(item.sha256, hashlib.sha256(b"retained").hexdigest())
+                self.assertTrue(any(
+                    row["kind"] == "output-close-failed" and row["result"] == -error
+                    for row in self.events
+                ))
+                self.outputs.finish()
+        descriptor = os.open(self.root / "late-close-guard", os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, descriptor)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="late-close-guard", writing=True,
+        )
+        with self.assertRaisesRegex(NativeOutputError, "contradicts"):
+            self.outputs.closed(1, descriptor, -errno.EBADF)
+        self.assertIn((1, descriptor), self.outputs.descriptors)
+
+    def test_failed_write_cleanup_is_terminal_not_resumable_cancellation(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("terminal-write", b"original")
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="terminal-write", writing=True,
+        )
+        operation = self.outputs.enter_write(
+            pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
+        )
+        result = os.pwrite(descriptor, b"NEW", 0)
+        os.pwrite(descriptor, b"OTHER", 3)
+        with self.assertRaisesRegex(NativeOutputError, "outside its actual"):
+            self.outputs.leave_write(operation, result)
+        item = self.outputs.objects["terminal-write"]
+        self.outputs.close()
+        self.assertEqual(item.pending_writer, (1, descriptor))
+        self.assertFalse(self.outputs.pending)
+        self.assertEqual(item.descriptor, -1)
+        self.assertEqual(os.pread(descriptor, 65536, 0), b"NEWOTHER")
+        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.finish()
+        for action in (
+            lambda: self.outputs.closed(1, descriptor, 0),
+            lambda: self.outputs.enter_write(
+                pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
+            ),
+            lambda: self.outputs.leave_write(operation, result),
+            lambda: self.outputs.inherited(1, 2, (descriptor,)),
+        ):
+            with self.assertRaisesRegex(NativeOutputError, "terminal"):
+                action()
+        self.outputs.close()
+
     def test_entry_return_failed_open_preserves_existing_and_absent_operands(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = self.create("existing", b"retained")
@@ -5009,8 +5077,10 @@ class NativeOutputCustodyTests(unittest.TestCase):
                     self.assertEqual(os.pread(descriptor, len(data), 0), data)
                     with self.assertRaisesRegex(NativeOutputError, "active"):
                         outputs.finish()
-                outputs.retire_process(pid)
-                outputs.finish()
+                with self.assertRaisesRegex(NativeOutputError, "terminal"):
+                    outputs.retire_process(pid)
+                with self.assertRaisesRegex(NativeOutputError, "active"):
+                    outputs.finish()
 
     def test_actual_later_write_has_distinct_version_after_previous_reader_retires(self):
         descriptor = self.create("generated.mk", b"VALUE := first\n")
@@ -5032,9 +5102,14 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.finish()
 
     def test_actual_metadata_restored_mutation_cannot_borrow_atomic_retirement(self):
-        from scripts.validation_ownership.native_outputs import NativeOutputError
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
         for operation in ("replace", "remove"):
             with self.subTest(operation=operation):
+                self.outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                self.addCleanup(self.outputs.close)
                 path = operation + ".mk"
                 descriptor = self.create(path, b"VALUE := original\n")
                 source = self.outputs.capture(owner=1, path=path, descriptor=descriptor)
