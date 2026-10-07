@@ -106,6 +106,13 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual(trace["output_authority"]["paths"], ["result"])
             self.assertEqual(set(trace["output_authority"]), {"paths", "jobs"})
             self.assertEqual(read_epochs.native_output_effects(trace), sorted(effects, key=lambda row: row["sequence"]))
+            read_epochs.validate_native_output_authority(
+                trace, count_limit=100000, file_limit=5, reserve=lambda size: None,
+            )
+            with self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_native_output_authority(
+                    trace, count_limit=100000, file_limit=4, reserve=lambda size: None,
+                )
             redundant = json.loads(json.dumps(trace))
             redundant["output_authority"]["effects"] = read_epochs.native_output_effects(redundant)
             self.assertGreater(len(encoded(redundant)), len(encoded(trace)))
@@ -116,8 +123,11 @@ class NativeWriterTests(unittest.TestCase):
             read_epochs.validate_trace(
                 trace, trace["scope"], count_limit=100000, file_limit=10000000,
             )
-            for field, value in (("fd", 999), ("revision", 100), ("path", "/repo/other"), ("result", 0)):
-                with self.subTest(archive_field=field):
+            for field, value in (
+                ("fd", 999), ("revision", 100), ("path", "/repo/other"),
+                ("result", 0), ("result", 6), ("result", 10000001),
+            ):
+                with self.subTest(archive_field=field, value=value):
                     invalid = json.loads(json.dumps(trace))
                     effect = next(row for row in read_epochs.native_output_effects(invalid) if row["kind"] == "output-write")
                     effect[field] = value

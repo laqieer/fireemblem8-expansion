@@ -516,6 +516,10 @@ Actual original shell recipes must run once, produce exact stdout/stderr,
 output bytes/mode and distinct real job PID/owner bindings, and clean the
 private filesystem. The standalone controls change descriptor, revision and
 path while preserving the machine record's hash; each still refuses.
+Successful write results must be exact integers bounded by both the existing
+per-file limit and the resulting regular-file extent. The actual five-byte
+output replays at limit five and refuses limit four; rehashed result six and
+above-limit result mutations also refuse.
 Immutable v5 rejects the v6 authority payload. Negative actual invocations
 exercise readonly admission, another job's output, undeclared paths and tracked
 source collision. Shell redirection restoration pairs an actual foreign

@@ -2168,7 +2168,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             if (
                 binding is None or binding[0] != serial or not binding[2]
                 or serial in readers.values()
-                or type(row["result"]) is not int or row["result"] < 0
+                or type(row["result"]) is not int
+                or not 0 <= row["result"] <= min(file_limit, row["identity"][3])
                 or row["identity"][:3] != item["identity"][:3]
                 or row["identity"][6] != item["identity"][6]
                 or row["revision"] != item["revision"] + (row["identity"] != item["identity"])
