@@ -4785,7 +4785,8 @@ class NativeOutputCustodyTests(unittest.TestCase):
         with self.assertRaisesRegex(NativeOutputError, "active"):
             self.outputs.finish()
         self.outputs.close()
-        self.outputs.finish()
+        with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+            self.outputs.finish()
 
     def test_entry_return_owned_atomic_replace_and_remove_retire_old_source(self):
         old = self.create("output", b"old")
@@ -4857,22 +4858,351 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.opened(
             owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="dup", writing=False,
         )
-        operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+        operation = self.outputs.enter_duplicate(
+            pid=1, descriptor=descriptor, kind="fcntl-dupfd", minimum=-1,
+        )
         with self.assertRaises(OSError) as failed:
             fcntl.fcntl(descriptor, fcntl.F_DUPFD, -1)
         self.outputs.leave_duplicate(operation, -failed.exception.errno)
         self.assertEqual(set(self.outputs.descriptors), {(1, descriptor)})
         operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
         duplicated = os.dup(descriptor)
-        self.outputs.leave_duplicate(operation, duplicated)
+        self.outputs.leave_duplicate(operation, duplicated, pin=duplicated)
         self.assertEqual(os.pread(duplicated, 65536, 0), b"retained")
         os.close(duplicated)
         self.outputs.closed(1, duplicated, 0)
-        operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+        operation = self.outputs.enter_duplicate(
+            pid=1, descriptor=descriptor, kind="dup2", target=descriptor,
+        )
         result = os.dup2(descriptor, descriptor)
-        self.outputs.leave_duplicate(operation, result)
+        self.outputs.leave_duplicate(operation, result, pin=descriptor)
         self.outputs.closed(1, descriptor, 0)
         self.outputs.finish()
+
+    def test_duplicate_kinds_bind_actual_target_source_and_inherited_writer_lifetime(self):
+        import ctypes
+        import fcntl
+        from scripts.validation_ownership.native_outputs import NativeOutputs
+        libc = ctypes.CDLL(None, use_errno=True)
+        for kind in ("dup", "dup2", "dup3", "fcntl-dupfd", "fcntl-dupfd-cloexec"):
+            with self.subTest(kind=kind):
+                self.outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                self.addCleanup(self.outputs.close)
+                retained = self.create(kind + ".source", b"source")
+                original = os.dup(retained)
+                self.outputs.opened(
+                    owner=1, pid=1, descriptor=original, pin=original,
+                    path=kind + ".source", writing=True,
+                )
+                target = None
+                minimum = 80 if kind.startswith("fcntl-") else None
+                flags = os.O_CLOEXEC if kind == "dup3" else 0
+                if kind in {"dup2", "dup3"}:
+                    other = self.create(kind + ".target", b"previous")
+                    target = os.dup(other)
+                    previous = self.outputs.opened(
+                        owner=1, pid=1, descriptor=target, pin=target,
+                        path=kind + ".target", writing=True,
+                    )
+                operation = self.outputs.enter_duplicate(
+                    pid=1, descriptor=original, kind=kind, target=target,
+                    minimum=minimum, flags=flags,
+                )
+                if kind == "dup":
+                    returned = os.dup(original)
+                elif kind == "dup2":
+                    returned = os.dup2(original, target)
+                elif kind == "dup3":
+                    returned = libc.dup3(original, target, flags)
+                    self.assertGreaterEqual(returned, 0)
+                else:
+                    command = fcntl.F_DUPFD_CLOEXEC if kind.endswith("-cloexec") else fcntl.F_DUPFD
+                    returned = fcntl.fcntl(original, command, minimum)
+                    self.assertGreaterEqual(returned, minimum)
+                self.outputs.leave_duplicate(operation, returned, pin=returned)
+                item = self.outputs.objects[kind + ".source"]
+                self.assertIs(self.outputs.descriptors[(1, returned)], item)
+                self.assertEqual(item.writers, {(1, original), (1, returned)})
+                self.assertEqual(os.pread(returned, 65536, 0), b"source")
+                if kind in {"dup2", "dup3"}:
+                    self.assertEqual(returned, target)
+                    self.assertFalse(previous.writers)
+                    self.assertEqual(previous.sha256, hashlib.sha256(b"previous").hexdigest())
+                if kind in {"dup3", "fcntl-dupfd-cloexec"}:
+                    self.assertTrue(fcntl.fcntl(returned, fcntl.F_GETFD) & fcntl.FD_CLOEXEC)
+                os.close(original)
+                self.outputs.closed(1, original, 0)
+                self.assertEqual(item.writers, {(1, returned)})
+                os.close(returned)
+                self.outputs.closed(1, returned, 0)
+                self.assertFalse(item.writers)
+                self.assertEqual(item.sha256, hashlib.sha256(b"source").hexdigest())
+                self.outputs.finish()
+
+    def test_duplicate_return_refuses_wrong_target_source_pin_and_minimum(self):
+        import fcntl
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        source = self.create("dup-source", b"source")
+        other = self.create("dup-other", b"other")
+        target = os.dup(other)
+        self.addCleanup(os.close, target)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=source, pin=source, path="dup-source", writing=False,
+        )
+        previous = self.outputs.opened(
+            owner=1, pid=1, descriptor=target, pin=target, path="dup-other", writing=False,
+        )
+        operation = self.outputs.enter_duplicate(pid=1, descriptor=source, kind="dup2", target=target)
+        returned = os.dup2(source, target)
+        for result, pin, reason in (
+            (other, returned, "requested FD"),
+            (returned, other, "exact source"),
+        ):
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(NativeOutputError, reason):
+                    self.outputs.leave_duplicate(operation, result, pin=pin)
+                self.assertIs(self.outputs.descriptors[(1, target)], previous)
+        with self.assertRaisesRegex(NativeOutputError, "foreign"):
+            self.outputs.leave_duplicate(replace(operation), returned, pin=returned)
+        self.outputs.leave_duplicate(operation, returned, pin=returned)
+        with self.assertRaisesRegex(NativeOutputError, "stale"):
+            self.outputs.leave_duplicate(operation, returned, pin=returned)
+        self.outputs.closed(1, target, 0)
+        operation = self.outputs.enter_duplicate(
+            pid=1, descriptor=source, kind="fcntl-dupfd", minimum=80,
+        )
+        returned = fcntl.fcntl(source, fcntl.F_DUPFD, 80)
+        self.addCleanup(os.close, returned)
+        with self.assertRaisesRegex(NativeOutputError, "requested FD"):
+            self.outputs.leave_duplicate(operation, target, pin=returned)
+        self.outputs.leave_duplicate(operation, returned, pin=returned)
+        self.outputs.closed(1, returned, 0)
+        self.outputs.closed(1, source, 0)
+        self.outputs.finish()
+
+    def test_duplicate_noop_failed_same_fd_dup3_and_retired_readable_object(self):
+        import ctypes
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("retired-dup", b"retained")
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+            path="retired-dup", writing=False,
+        )
+        operation = self.outputs.enter_duplicate(
+            pid=1, descriptor=descriptor, kind="dup3", target=descriptor,
+        )
+        libc = ctypes.CDLL(None, use_errno=True)
+        self.assertEqual(libc.dup3(descriptor, descriptor, 0), -1)
+        self.assertEqual(ctypes.get_errno(), errno.EINVAL)
+        self.outputs.leave_duplicate(operation, -errno.EINVAL)
+        os.unlink(self.root / "retired-dup")
+        self.outputs.removed(owner=1, path="retired-dup", pin=descriptor, result=0)
+        operation = self.outputs.enter_duplicate(
+            pid=1, descriptor=descriptor, kind="dup2", target=descriptor,
+        )
+        result = os.dup2(descriptor, descriptor)
+        self.outputs.leave_duplicate(operation, result, pin=descriptor)
+        self.assertEqual(set(self.outputs.descriptors), {(1, descriptor)})
+        operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+        returned = os.dup(descriptor)
+        self.addCleanup(os.close, returned)
+        with self.assertRaisesRegex(NativeOutputError, "requested FD"):
+            self.outputs.leave_duplicate(operation, descriptor, pin=descriptor)
+        self.outputs.leave_duplicate(operation, returned, pin=returned)
+        self.assertEqual(os.pread(returned, 65536, 0), b"retained")
+        self.assertTrue(self.outputs.descriptors[(1, returned)].retired)
+        self.outputs.closed(1, returned, 0)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
+    def test_failed_final_close_and_source_return_events_remain_incomplete(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for failed_kind in ("output-close", "output-source-retired"):
+            with self.subTest(kind=failed_kind):
+                self.outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                self.addCleanup(self.outputs.close)
+                retained = self.create(failed_kind, b"event input")
+                source = None
+                if failed_kind == "output-close":
+                    descriptor = os.dup(retained)
+                    self.outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                        path=failed_kind, writing=True,
+                    )
+                    os.close(descriptor)
+                else:
+                    source = self.outputs.capture(owner=1, path=failed_kind, descriptor=retained)
+
+                def emit(kind, **fields):
+                    if kind == failed_kind:
+                        raise RuntimeError("final event publication exhausted")
+                    self.events.append({"kind": kind, **fields})
+
+                self.outputs.emit = emit
+                with self.assertRaisesRegex(RuntimeError, "final event"):
+                    if source is None:
+                        self.outputs.closed(1, descriptor, 0)
+                    else:
+                        self.outputs.release(source)
+                self.assertFalse(self.outputs.descriptors)
+                self.assertFalse(self.outputs.pins)
+                self.assertFalse(self.outputs.objects[failed_kind].readers)
+                self.assertIsNotNone(self.outputs.objects[failed_kind].sha256)
+                with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+                    self.outputs.finish()
+                self.outputs.close()
+                with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+                    self.outputs.finish()
+                with self.assertRaisesRegex(NativeOutputError, "terminal"):
+                    self.outputs.retire_process(1)
+
+    def test_event_failure_latches_every_output_transition_without_laundering_cleanup(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        kinds = (
+            "output-open", "output-inherit", "output-dup", "output-truncate",
+            "output-write", "output-write-failed", "output-settled", "output-close",
+            "output-close-failed", "output-source", "output-source-retired",
+            "output-replace", "output-replace-failed", "output-retire", "output-remove-failed",
+            "output-operation-failed",
+        )
+        for failed_kind in kinds:
+            with self.subTest(kind=failed_kind):
+                self.outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                self.addCleanup(self.outputs.close)
+                path = failed_kind + ".input"
+                retained = self.create(path, b"input")
+                if failed_kind == "output-open":
+                    descriptor = os.dup(retained)
+                    self.addCleanup(os.close, descriptor)
+                    action = lambda: self.outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor, path=path, writing=False,
+                    )
+                elif failed_kind == "output-source":
+                    action = lambda: self.outputs.capture(owner=1, path=path, descriptor=retained)
+                elif failed_kind == "output-source-retired":
+                    source = self.outputs.capture(owner=1, path=path, descriptor=retained)
+                    action = lambda: self.outputs.release(source)
+                elif failed_kind == "output-operation-failed":
+                    operation = self.outputs.enter_remove(
+                        owner=1, pid=1, path=path + ".absent", pin=None,
+                    )
+                    with self.assertRaises(FileNotFoundError) as absent:
+                        os.unlink(self.root / (path + ".absent"))
+                    result = -absent.exception.errno
+                    action = lambda: self.outputs.leave_remove(operation, result)
+                elif failed_kind == "output-truncate":
+                    operation = self.outputs.enter_open(
+                        owner=1, pid=1, path=path, flags=os.O_WRONLY | os.O_TRUNC, pin=retained,
+                    )
+                    descriptor = os.open(self.root / path, os.O_WRONLY | os.O_TRUNC)
+                    self.addCleanup(os.close, descriptor)
+                    action = lambda: self.outputs.leave_open(operation, result=descriptor, pin=retained)
+                elif failed_kind in {"output-replace", "output-replace-failed"}:
+                    temporary = self.create(path + ".tmp", b"replacement")
+                    if failed_kind == "output-replace":
+                        operation = self.outputs.enter_replace(
+                            owner=1, pid=1, source=path + ".tmp", destination=path,
+                            source_pin=temporary, retired_pin=retained,
+                        )
+                        os.replace(self.root / (path + ".tmp"), self.root / path)
+                        action = lambda: self.outputs.leave_replace(operation, 0)
+                    else:
+                        with self.assertRaises(NotADirectoryError) as failed:
+                            os.replace(self.root / (path + ".tmp"), self.root / path / "child")
+                        result = -failed.exception.errno
+                        action = lambda: self.outputs.replaced(
+                            owner=1, source=path + ".tmp", destination=path + "/child",
+                            source_pin=temporary, retired_pin=None, result=result,
+                        )
+                elif failed_kind == "output-retire":
+                    os.unlink(self.root / path)
+                    action = lambda: self.outputs.removed(owner=1, path=path, pin=retained, result=0)
+                elif failed_kind == "output-remove-failed":
+                    # Controlled unchanged-object failure; not a real filesystem EACCES claim.
+                    action = lambda: self.outputs.removed(
+                        owner=1, path=path, pin=retained, result=-errno.EACCES,
+                    )
+                else:
+                    descriptor = os.dup(retained)
+                    self.outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor, path=path, writing=True,
+                    )
+                    if failed_kind in {"output-settled", "output-close", "output-close-failed"}:
+                        os.close(descriptor)
+                        result = -errno.EIO if failed_kind == "output-close-failed" else 0
+                        action = lambda: self.outputs.closed(1, descriptor, result)
+                    else:
+                        self.addCleanup(os.close, descriptor)
+                        if failed_kind == "output-inherit":
+                            # Model child binding only; real native fork evidence remains outstanding.
+                            action = lambda: self.outputs.inherited(1, 2, (descriptor,))
+                        elif failed_kind == "output-dup":
+                            operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+                            duplicate = os.dup(descriptor)
+                            self.addCleanup(os.close, duplicate)
+                            action = lambda: self.outputs.leave_duplicate(operation, duplicate, pin=duplicate)
+                        else:
+                            self.outputs.before_write(1, descriptor, descriptor)
+                            if failed_kind == "output-write":
+                                result = os.pwrite(descriptor, b"new", 0)
+                            else:
+                                with self.assertRaises(OSError) as failed:
+                                    os.pwrite(descriptor, b"new", -1)
+                                result = -failed.exception.errno
+                            action = lambda: self.outputs.written(1, descriptor, descriptor, result)
+                attempted = []
+
+                def emit(kind, **fields):
+                    if kind == failed_kind:
+                        attempted.append(kind)
+                        raise RuntimeError("transition event exhausted")
+                    self.events.append({"kind": kind, **fields})
+
+                self.outputs.emit = emit
+                with self.assertRaisesRegex(RuntimeError, "transition event"):
+                    action()
+                self.assertEqual(len(attempted), 1)
+                with self.assertRaises(NativeOutputError):
+                    self.outputs.finish()
+                self.outputs.close()
+                with self.assertRaises(NativeOutputError):
+                    self.outputs.finish()
+                with self.assertRaisesRegex(NativeOutputError, "terminal"):
+                    self.outputs.capture(owner=1, path=path, descriptor=retained)
+
+    def test_cleanup_of_unreturned_absent_operations_cannot_qualify_completion(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for kind in ("open", "replace", "remove"):
+            with self.subTest(kind=kind):
+                outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                self.addCleanup(outputs.close)
+                if kind == "open":
+                    outputs.enter_open(owner=1, pid=1, path="absent", flags=os.O_CREAT | os.O_RDWR, pin=None)
+                elif kind == "replace":
+                    outputs.enter_replace(
+                        owner=1, pid=1, source="absent", destination="destination",
+                        source_pin=None, retired_pin=None,
+                    )
+                else:
+                    outputs.enter_remove(owner=1, pid=1, path="absent", pin=None)
+                outputs.close()
+                self.assertFalse(outputs.pending)
+                self.assertFalse(outputs.objects)
+                self.assertFalse(outputs.descriptors)
+                with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+                    outputs.finish()
 
     def test_actual_atomic_replacement_preserves_old_source_and_current_version(self):
         old = self.create("generated.mk", b"VALUE := old\n")
@@ -5001,7 +5331,8 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.assertFalse(source.closed)
         self.outputs.close()
         self.assertTrue(source.closed)
-        self.outputs.finish()
+        with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+            self.outputs.finish()
 
     def test_actual_unlink_preserves_pinned_bytes_and_rejects_copied_pin(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
@@ -5020,6 +5351,7 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.finish()
 
     def test_source_event_failure_releases_capture_without_stale_owned_pin(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = self.create("include.mk", b"VALUE := input\n")
 
         def refuse(kind, **fields):
@@ -5031,7 +5363,8 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.assertFalse(self.outputs.pins)
         self.assertFalse(self.outputs.objects["include.mk"].readers)
         self.outputs.close()
-        self.outputs.finish()
+        with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+            self.outputs.finish()
 
     def test_readonly_settlement_failure_preserves_actual_binding_and_owned_pin_cleanup(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
@@ -5134,12 +5467,12 @@ class NativeOutputCustodyTests(unittest.TestCase):
                     self.assertIsNone(item.sha256)
                     self.assertNotIn("output-settled", events)
                     self.assertEqual(os.pread(owned, len(data), 0), data)
-                    with self.assertRaisesRegex(NativeOutputError, "unsettled"):
+                    with self.assertRaises(NativeOutputError):
                         outputs.finish()
                     outputs.close()
                     with self.assertRaises(OSError):
                         os.fstat(owned)
-                    with self.assertRaisesRegex(NativeOutputError, "unsettled"):
+                    with self.assertRaises(NativeOutputError):
                         outputs.finish()
 
     def test_terminal_cleanup_refuses_low_level_open_retirement_and_source_release(self):
@@ -5303,6 +5636,7 @@ class NativeOutputCustodyTests(unittest.TestCase):
                 self.assertEqual(self.outputs.objects[operation].identity, preceding)
 
     def test_cleanup_closes_owned_object_and_source_pins_not_borrowed_descriptor(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
         borrowed = self.create("output", b"owned bytes")
         source = self.outputs.capture(owner=1, path="output", descriptor=borrowed)
         object_pin = self.outputs.objects["output"].descriptor
@@ -5315,7 +5649,8 @@ class NativeOutputCustodyTests(unittest.TestCase):
                 os.fstat(descriptor)
             self.assertEqual(closed.exception.errno, errno.EBADF)
         self.outputs.close()
-        self.outputs.finish()
+        with self.assertRaisesRegex(NativeOutputError, "incomplete"):
+            self.outputs.finish()
 
 
 if __name__ == "__main__":

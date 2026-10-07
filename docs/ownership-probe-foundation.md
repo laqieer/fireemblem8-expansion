@@ -58,6 +58,12 @@ for absent operands. Write entry retains the actual payload, offset and bounded
 preimage; return compares the exact resulting bytes, including unchanged
 regions and sparse gaps, rather than attributing every content change to a
 nonzero return. Failed duplication creates no negative descriptor binding.
+Duplication entry retains the actual `dup`, `dup2`, `dup3`, `F_DUPFD` or
+`F_DUPFD_CLOEXEC` kind, requested target/minimum and exact source/target object
+pins. A successful return must identify the actual source object and requested
+target or minimum; allocating duplication cannot overwrite an existing binding.
+`dup2` same-FD success and `dup3` same-FD failure remain distinct. Retired but
+still-readable objects can be duplicated without inventing a live pathname.
 Copied, stale and overlapping operation tokens refuse; terminal cleanup closes
 pending owned pins as well as the shared object/source pins.
 Owned teardown is terminal, not a resumable cancellation. It preserves any
@@ -74,6 +80,28 @@ unsettled even though the actual descriptor has been released. Final inventory
 completion rejects that state before and after owned teardown. Digest admission
 occurs only after the settlement event succeeds; a previously settled digest
 cannot authorize a failed later settlement.
+The existing model keeps one sticky incomplete-lifecycle state, not a second
+receipt or output registry. Every event-publication exception propagates and
+prevents later completion, including after successful settlement, final close
+or physical source-pin release. Cleanup of an unreturned operation or unreleased
+source still closes its owned resources but retains incomplete lifecycle; it
+cannot manufacture a successful source return or operation outcome.
+
+For the held component regression family, run the class command above from
+a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
+variants to preserve exact source bytes, inherited writer membership and final
+settlement, with `dup2`/`dup3` rebinding preserving the old target's settled
+bytes. Wrong targets, returned-object pins, minimums and copied/stale return
+tokens must refuse without rebinding another tracked descriptor. Inject an
+event callback failure into each transition: after physical final close or
+source release and after owned teardown, completion must still refuse.
+Teardown of absent-open/rename/unlink operations without their returns must
+also refuse despite an otherwise empty inventory. Pre-fix controls admit a
+different returned object, lose final event evidence or treat source/operation
+cancellation as complete. Error-injection and modeled-child-inheritance
+controls test the component observation contract, not actual native supervisor
+authority; modeled late I/O errors do not prove filesystem-induced errors.
+
 These adapters are internal observations, not output-plan authorization.
 The supervisor must derive their operands from the existing sealed Command,
 actual job and finite output plan and supply actual stopped syscall inputs.

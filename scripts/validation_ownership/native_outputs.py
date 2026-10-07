@@ -62,6 +62,9 @@ class NativeOperation:
     offset: int | None = None
     data: bytes | None = None
     before: bytes | None = None
+    duplicate_kind: str | None = None
+    target: int | None = None
+    minimum: int | None = None
 
 
 class NativeOutputs:
@@ -79,12 +82,13 @@ class NativeOutputs:
         self.pins = {}
         self.pending = {}
         self.closed_state = False
+        self.incomplete = None
 
     def _usable(self):
-        if self.closed_state:
-            raise NativeOutputError("native output custody is terminal after owned cleanup")
+        if self.closed_state or self.incomplete is not None:
+            raise NativeOutputError("native output custody is terminal after cleanup or incomplete lifecycle")
 
-    def _begin(self, owner, pid, kind, source, destination=None, flags=0, pins=()):
+    def _begin(self, owner, pid, kind, source, destination=None, flags=0, pins=(), bindings=()):
         self._usable()
         if type(owner) is not int or owner < 1 or type(pid) is not int or pid < 1:
             raise NativeOutputError("native operation lacks its issued producer/process")
@@ -104,6 +108,12 @@ class NativeOutputs:
                     raise NativeOutputError("native operation entry differs from its owned operand")
                 pin = os.dup(descriptor)
                 operands.append((path, pin, identity, item))
+            for label, descriptor, item in bindings:
+                identity = self._identity(descriptor)
+                if identity != item.identity:
+                    raise NativeOutputError("native operation entry differs from its bound descriptor")
+                pin = os.dup(descriptor)
+                operands.append((label, pin, identity, item))
             self.charge(256 + 128 * len(operands))
             operation = NativeOperation(owner, pid, kind, source, destination, flags, tuple(operands))
             self.pending[pid] = operation
@@ -140,7 +150,7 @@ class NativeOutputs:
                     raise NativeOutputError("failed native operation changed its entry operand")
                 if item.sha256 is not None:
                     self._verify_settled(item, identity)
-        self.emit(
+        self._emit(
             "output-operation-failed", owner=operation.owner, pid=operation.pid,
             operation=operation.kind, source=operation.source,
             destination=operation.destination, result=result,
@@ -294,27 +304,65 @@ class NativeOutputs:
         self.written(operation.pid, operation.descriptor, pin, result)
         self._end(operation)
 
-    def enter_duplicate(self, *, pid, descriptor):
+    def enter_duplicate(self, *, pid, descriptor, kind="dup", target=None, minimum=None, flags=0):
+        self._usable()
         item = self.descriptors.get((pid, descriptor))
         if item is None:
             raise NativeOutputError("native duplicate entry lacks its actual owned descriptor")
+        if (
+            kind not in {"dup", "dup2", "dup3", "fcntl-dupfd", "fcntl-dupfd-cloexec"}
+            or type(flags) is not int
+            or flags not in ({0, os.O_CLOEXEC} if kind == "dup3" else {0})
+            or kind in {"dup2", "dup3"} and (
+                type(target) is not int or not -(1 << 31) <= target < 1 << 31 or minimum is not None
+            )
+            or kind == "dup" and (target is not None or minimum is not None)
+            or kind.startswith("fcntl-") and (
+                target is not None or type(minimum) is not int or not -(1 << 31) <= minimum < 1 << 31
+            )
+        ):
+            raise NativeOutputError("native duplicate entry lacks its exact kind/target/minimum")
+        bindings = [("source-fd:" + str(descriptor), item.descriptor, item)]
+        old = self.descriptors.get((pid, target)) if target is not None else None
+        if old is not None and target != descriptor:
+            if old.pending_writer is not None:
+                raise NativeOutputError("native duplicate target overlaps an unfinished writer")
+            bindings.append(("target-fd:" + str(target), old.descriptor, old))
         operation = self._begin(
-            item.owner, pid, "dup", item.path, pins=((item.path, item.descriptor),),
+            item.owner, pid, "dup", bindings[0][0], flags=flags, bindings=bindings,
         )
         operation = NativeOperation(
             operation.owner, pid, operation.kind, operation.source,
             operation.destination, operation.flags, operation.operands, descriptor=descriptor,
+            duplicate_kind=kind, target=target, minimum=minimum,
         )
         self.pending[pid] = operation
         return operation
 
-    def leave_duplicate(self, operation, result):
+    def leave_duplicate(self, operation, result, *, pin=None):
         self._operation(operation, "dup")
         if type(result) is not int:
             raise NativeOutputError("native duplicate return is not a kernel descriptor/status")
         if result < 0:
+            if pin is not None:
+                raise NativeOutputError("failed native duplicate claims a returned descriptor pin")
             self._failed(operation, result)
             return
+        if (
+            result >= 1 << 31 or pin is None
+            or operation.duplicate_kind in {"dup2", "dup3"} and result != operation.target
+            or operation.duplicate_kind == "dup3" and result == operation.descriptor
+            or operation.duplicate_kind not in {"dup2", "dup3"} and (
+                result == operation.descriptor or (operation.pid, result) in self.descriptors
+                or operation.minimum is not None and (operation.minimum < 0 or result < operation.minimum)
+            )
+        ):
+            raise NativeOutputError("native duplicate return differs from its requested FD operation")
+        for _, operand, identity, _ in operation.operands:
+            if self._identity(operand) != identity:
+                raise NativeOutputError("native duplicate return changed its exact entry object")
+        if self._identity(pin) != operation.operands[0][2]:
+            raise NativeOutputError("native duplicate return pin differs from its exact source object")
         self.duplicated(operation.pid, operation.descriptor, result)
         self._end(operation)
 
@@ -330,8 +378,15 @@ class NativeOutputs:
             raise NativeOutputError("native output is not a bounded regular object")
         return publication_identity(info)
 
+    def _emit(self, kind, **fields):
+        try:
+            self.emit(kind, **fields)
+        except BaseException:
+            self.incomplete = "unpublished " + kind
+            raise
+
     def _event(self, kind, item, **fields):
-        self.emit(
+        self._emit(
             kind, owner=item.owner, serial=item.serial, revision=item.revision, path=item.path,
             **fields,
         )
@@ -635,6 +690,8 @@ class NativeOutputs:
             item.readers or item.writers or item.pending_writer is not None for item in self.versions
         ):
             raise NativeOutputError("native output custody ended with active descriptors/pins")
+        if self.incomplete is not None:
+            raise NativeOutputError("native output custody is incomplete: " + self.incomplete)
         if any(item.sha256 is None for item in self.versions):
             raise NativeOutputError("native output custody ended with unsettled content")
 
@@ -642,6 +699,10 @@ class NativeOutputs:
         """Close owned object/source pins, never borrowed tracee FD integers."""
         if self.closed_state:
             return
+        if self.pending or self.descriptors or self.pins or any(
+            item.readers or item.writers or item.pending_writer is not None for item in self.versions
+        ):
+            self.incomplete = self.incomplete or "terminal cleanup preceded observed lifecycle returns"
         def close_source(descriptor, source):
             source.closed = True
             source.object.readers.discard(descriptor)
