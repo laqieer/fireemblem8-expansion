@@ -4636,6 +4636,176 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.closed(pid, descriptor, 0)
         return pin
 
+    def test_entry_return_creating_and_truncating_open_preserve_exact_object(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+        creating = self.outputs.enter_open(owner=1, pid=1, path="entry.mk", flags=flags, pin=None)
+        descriptor = os.open(self.root / "entry.mk", flags, 0o600)
+        with os.fdopen(descriptor, "wb", buffering=0):
+            item = self.outputs.leave_open(creating, result=descriptor, pin=descriptor)
+            self.outputs.before_write(1, descriptor, descriptor)
+            result = os.write(descriptor, b"VALUE := before\n")
+            self.outputs.written(1, descriptor, descriptor, result)
+            retained = os.dup(descriptor)
+            self.addCleanup(os.close, retained)
+        self.outputs.closed(1, descriptor, 0)
+        source = self.outputs.capture(owner=1, path="entry.mk", descriptor=retained)
+        with self.assertRaisesRegex(NativeOutputError, "destroy"):
+            self.outputs.enter_open(
+                owner=1, pid=1, path="entry.mk", flags=os.O_WRONLY | os.O_TRUNC, pin=retained,
+            )
+        self.assertEqual((self.root / "entry.mk").read_bytes(), b"VALUE := before\n")
+        self.outputs.release(source)
+        serial, revision = item.serial, item.revision
+        truncating = self.outputs.enter_open(
+            owner=1, pid=1, path="entry.mk", flags=os.O_WRONLY | os.O_TRUNC, pin=retained,
+        )
+        descriptor = os.open(self.root / "entry.mk", os.O_WRONLY | os.O_TRUNC)
+        with os.fdopen(descriptor, "wb", buffering=0):
+            returned = self.outputs.leave_open(truncating, result=descriptor, pin=retained)
+            self.assertIs(returned, item)
+            self.assertEqual((item.serial, item.revision), (serial, revision + 1))
+            self.assertEqual(item.identity[3], 0)
+            self.assertEqual(os.pread(retained, 65536, 0), b"")
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
+    def test_entry_return_failed_open_preserves_existing_and_absent_operands(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("existing", b"retained")
+        item = self.outputs.objects["existing"]
+        identity, revision = item.identity, item.revision
+        for path, pin, flags in (
+            ("existing", descriptor, os.O_WRONLY | os.O_CREAT | os.O_EXCL),
+            ("absent", None, os.O_RDONLY),
+        ):
+            with self.subTest(path=path):
+                operation = self.outputs.enter_open(owner=1, pid=1, path=path, flags=flags, pin=pin)
+                with self.assertRaises(OSError) as failed:
+                    os.open(self.root / path, flags, 0o600)
+                self.outputs.leave_open(operation, result=-failed.exception.errno)
+                self.assertEqual((item.identity, item.revision), (identity, revision))
+                self.assertNotIn("absent", self.outputs.objects)
+                self.assertFalse(self.outputs.pending)
+                with self.assertRaisesRegex(NativeOutputError, "stale"):
+                    self.outputs.leave_open(operation, result=-failed.exception.errno)
+        self.outputs.finish()
+
+    def test_entry_return_failed_absent_rename_and_unlink_keep_no_change_evidence(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        operation = self.outputs.enter_replace(
+            owner=1, pid=1, source="missing.tmp", destination="output",
+            source_pin=None, retired_pin=None,
+        )
+        with self.assertRaises(FileNotFoundError) as failed:
+            os.rename(self.root / "missing.tmp", self.root / "output")
+        self.outputs.leave_replace(operation, -failed.exception.errno)
+        operation = self.outputs.enter_remove(owner=1, pid=1, path="missing.tmp", pin=None)
+        with self.assertRaises(FileNotFoundError) as failed:
+            os.unlink(self.root / "missing.tmp")
+        self.outputs.leave_remove(operation, -failed.exception.errno)
+        self.assertEqual([event["operation"] for event in self.events], ["replace", "remove"])
+        self.assertTrue(all(event["result"] == -errno.ENOENT for event in self.events))
+        self.assertFalse(self.outputs.objects)
+        self.assertFalse(self.outputs.versions)
+        self.outputs.finish()
+        operation = self.outputs.enter_remove(owner=1, pid=1, path="missing.tmp", pin=None)
+        with self.assertRaisesRegex(NativeOutputError, "foreign"):
+            self.outputs.leave_remove(replace(operation), -errno.ENOENT)
+        with self.assertRaisesRegex(NativeOutputError, "exact owned"):
+            self.outputs.leave_remove(operation, 0)
+        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.finish()
+        self.outputs.close()
+        self.outputs.finish()
+
+    def test_entry_return_owned_atomic_replace_and_remove_retire_old_source(self):
+        old = self.create("output", b"old")
+        source = self.outputs.capture(owner=1, path="output", descriptor=old)
+        new = self.create("output.tmp", b"new")
+        operation = self.outputs.enter_replace(
+            owner=1, pid=1, source="output.tmp", destination="output",
+            source_pin=new, retired_pin=old,
+        )
+        os.replace(self.root / "output.tmp", self.root / "output")
+        self.outputs.leave_replace(operation, 0)
+        self.assertEqual(os.pread(source.descriptor, 65536, 0), b"old")
+        self.outputs.release(source)
+        operation = self.outputs.enter_remove(owner=1, pid=1, path="output", pin=new)
+        os.unlink(self.root / "output")
+        self.outputs.leave_remove(operation, 0)
+        self.assertFalse(self.outputs.objects)
+        self.assertFalse(self.outputs.pending)
+        self.outputs.finish()
+
+    def test_entry_return_write_attributes_exact_payload_offset_and_sparse_bytes(self):
+        descriptor = self.create("write", b"original")
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="write", writing=True,
+        )
+        for data, offset in ((b"NEW", 2), (b"tail", 12)):
+            with self.subTest(offset=offset):
+                operation = self.outputs.enter_write(
+                    pid=1, descriptor=descriptor, pin=descriptor, data=data, offset=offset,
+                )
+                result = os.pwrite(descriptor, data, offset)
+                self.outputs.leave_write(operation, result)
+        self.assertEqual(os.pread(descriptor, 65536, 0), b"orNEWnal\0\0\0\0tail")
+        operation = self.outputs.enter_write(
+            pid=1, descriptor=descriptor, pin=descriptor, data=b"denied", offset=0,
+        )
+        with self.assertRaises(OSError) as failed:
+            os.pwrite(descriptor, b"denied", -1)
+        self.outputs.leave_write(operation, -failed.exception.errno)
+        self.assertFalse(self.outputs.pending)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
+    def test_entry_return_nonzero_write_cannot_absorb_unrelated_content(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("write", b"original")
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="write", writing=True,
+        )
+        operation = self.outputs.enter_write(
+            pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
+        )
+        result = os.pwrite(descriptor, b"NEW", 0)
+        os.pwrite(descriptor, b"OTHER", 3)
+        with self.assertRaisesRegex(NativeOutputError, "outside its actual"):
+            self.outputs.leave_write(operation, result)
+        with self.assertRaisesRegex(NativeOutputError, "active"):
+            self.outputs.finish()
+        self.assertIs(self.outputs.pending[1], operation)
+        own_pin = operation.operands[0][1]
+        self.outputs.close()
+        with self.assertRaises(OSError):
+            os.fstat(own_pin)
+        self.assertEqual(os.pread(descriptor, 65536, 0), b"NEWOTHER")
+
+    def test_entry_return_failed_duplicate_does_not_install_negative_binding(self):
+        import fcntl
+        descriptor = self.create("dup", b"retained")
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="dup", writing=False,
+        )
+        operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+        with self.assertRaises(OSError) as failed:
+            fcntl.fcntl(descriptor, fcntl.F_DUPFD, -1)
+        self.outputs.leave_duplicate(operation, -failed.exception.errno)
+        self.assertEqual(set(self.outputs.descriptors), {(1, descriptor)})
+        operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+        duplicated = os.dup(descriptor)
+        self.outputs.leave_duplicate(operation, duplicated)
+        self.assertEqual(os.pread(duplicated, 65536, 0), b"retained")
+        os.close(duplicated)
+        self.outputs.closed(1, duplicated, 0)
+        operation = self.outputs.enter_duplicate(pid=1, descriptor=descriptor)
+        result = os.dup2(descriptor, descriptor)
+        self.outputs.leave_duplicate(operation, result)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
     def test_actual_atomic_replacement_preserves_old_source_and_current_version(self):
         old = self.create("generated.mk", b"VALUE := old\n")
         source = self.outputs.capture(owner=1, path="generated.mk", descriptor=old)

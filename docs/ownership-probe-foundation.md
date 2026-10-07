@@ -50,6 +50,21 @@ absorb mode/link changes. Cleanup closes owned object/source pins, never the
 borrowed tracee descriptor integers.
 Zero-byte write returns preserve the complete entry identity and cannot absorb
 an unrelated intervening content write.
+The redesign's internal entry/return surface owns one pending operation per
+process. It retains entry object pins and open flags before actual creation or
+truncation, refuses destructive opens before an active source pin is changed,
+and records paired failed opens, renames and removals without invented objects
+for absent operands. Write entry retains the actual payload, offset and bounded
+preimage; return compares the exact resulting bytes, including unchanged
+regions and sparse gaps, rather than attributing every content change to a
+nonzero return. Failed duplication creates no negative descriptor binding.
+Copied, stale and overlapping operation tokens refuse; terminal cleanup closes
+pending owned pins as well as the shared object/source pins.
+These adapters are internal observations, not output-plan authorization.
+The supervisor must derive their operands from the existing sealed Command,
+actual job and finite output plan and supply actual stopped syscall inputs.
+Full production integration and unchanged original eight-query budget fitness
+remain required; the architecture hold is not cleared by these component cases.
 Settlement or event-budget failure propagates without a successful admission.
 Because the kernel open has already succeeded, its borrowed binding remains
 diagnostic state until actual retirement; cleanup closes its owned duplicate

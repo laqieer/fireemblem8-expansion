@@ -48,6 +48,21 @@ class SourcePin:
     closed: bool = False
 
 
+@dataclass(frozen=True)
+class NativeOperation:
+    owner: int
+    pid: int
+    kind: str
+    source: str
+    destination: str | None
+    flags: int
+    operands: tuple
+    descriptor: int | None = None
+    offset: int | None = None
+    data: bytes | None = None
+    before: bytes | None = None
+
+
 class NativeOutputs:
     """Internal state keyed by issued producer; supervisor binds actual jobs."""
 
@@ -61,6 +76,235 @@ class NativeOutputs:
         self.versions = []
         self.descriptors = {}
         self.pins = {}
+        self.pending = {}
+
+    def _begin(self, owner, pid, kind, source, destination=None, flags=0, pins=()):
+        if type(owner) is not int or owner < 1 or type(pid) is not int or pid < 1:
+            raise NativeOutputError("native operation lacks its issued producer/process")
+        if pid in self.pending:
+            raise NativeOutputError("native operation overlaps its unfinished kernel return")
+        operands = []
+        try:
+            for path, descriptor in pins:
+                item = self.objects.get(path)
+                if descriptor is None:
+                    if item is not None:
+                        raise NativeOutputError("native operation absence contradicts its owned object")
+                    operands.append((path, None, None, None))
+                    continue
+                identity = self._identity(descriptor)
+                if item is None or item.owner != owner or item.retired or identity != item.identity:
+                    raise NativeOutputError("native operation entry differs from its owned operand")
+                pin = os.dup(descriptor)
+                operands.append((path, pin, identity, item))
+            self.charge(256 + 128 * len(operands))
+            operation = NativeOperation(owner, pid, kind, source, destination, flags, tuple(operands))
+            self.pending[pid] = operation
+            return operation
+        except BaseException as error:
+            finish_cleanup(
+                [lambda pin=pin: os.close(pin) for _, pin, _, _ in operands if pin is not None],
+                primary=error,
+            )
+            raise
+
+    def _operation(self, operation, kind):
+        if (
+            not isinstance(operation, NativeOperation)
+            or self.pending.get(operation.pid) is not operation or operation.kind != kind
+        ):
+            raise NativeOutputError("native operation return is foreign, stale or unpaired")
+        self.deadline()
+
+    def _end(self, operation):
+        del self.pending[operation.pid]
+        finish_cleanup([
+            lambda pin=pin: os.close(pin)
+            for _, pin, _, _ in operation.operands if pin is not None
+        ])
+
+    def _failed(self, operation, result):
+        if type(result) is not int or not -4095 <= result < 0:
+            raise NativeOutputError("native failed operation has no actual kernel error")
+        for _, pin, identity, item in operation.operands:
+            if pin is not None:
+                if self._identity(pin) != identity:
+                    raise NativeOutputError("failed native operation changed its entry operand")
+                if item.sha256 is not None:
+                    self._verify_settled(item, identity)
+        self.emit(
+            "output-operation-failed", owner=operation.owner, pid=operation.pid,
+            operation=operation.kind, source=operation.source,
+            destination=operation.destination, result=result,
+        )
+        self._end(operation)
+
+    def enter_open(self, *, owner, pid, path, flags, pin):
+        if type(flags) is not int or flags < 0 or flags & os.O_TMPFILE == os.O_TMPFILE:
+            raise NativeOutputError("native output open has unsupported flags")
+        item = self.objects.get(path)
+        writing = bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
+        if item is not None and writing and (
+            item.readers or flags & os.O_TRUNC and (item.writers or item.pending_writer is not None)
+        ):
+            raise NativeOutputError("native output open would destroy an active source/writer version")
+        return self._begin(owner, pid, "open", path, flags=flags, pins=((path, pin),))
+
+    def leave_open(self, operation, *, result, pin=None):
+        self._operation(operation, "open")
+        if result < 0:
+            if pin is not None:
+                raise NativeOutputError("failed native open claims a returned descriptor pin")
+            self._failed(operation, result)
+            return None
+        if type(result) is not int or pin is None:
+            raise NativeOutputError("native open return lacks its actual descriptor pin")
+        _, before_pin, before, item = operation.operands[0]
+        identity = self._identity(pin)
+        if item is not None and operation.flags & os.O_TRUNC:
+            if (
+                identity[:3] != before[:3] or identity[3] != 0 or identity[6] != before[6]
+                or self._identity(before_pin) != identity
+            ):
+                raise NativeOutputError("native truncate return differs from its exact entry object")
+            item.identity = identity
+            item.revision += 1
+            item.sha256 = None
+            self._event("output-truncate", item, pid=operation.pid, fd=result, identity=list(identity))
+        elif item is not None and identity != before:
+            raise NativeOutputError("native open absorbed an undeclared object change")
+        elif item is None and not operation.flags & os.O_CREAT:
+            raise NativeOutputError("native output appeared without a creating open")
+        item = self.opened(
+            owner=operation.owner, pid=operation.pid, descriptor=result, pin=pin,
+            path=operation.source,
+            writing=bool(operation.flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC)),
+        )
+        self._end(operation)
+        return item
+
+    def enter_replace(self, *, owner, pid, source, destination, source_pin, retired_pin):
+        if source == destination:
+            raise NativeOutputError("native replacement lacks distinct declared operands")
+        for path in (source, destination):
+            item = self.objects.get(path)
+            if item is not None and (item.writers or path == source and item.readers):
+                raise NativeOutputError("native replacement overlaps an active writer/source")
+        return self._begin(
+            owner, pid, "replace", source, destination,
+            pins=((source, source_pin), (destination, retired_pin)),
+        )
+
+    def leave_replace(self, operation, result):
+        self._operation(operation, "replace")
+        if result < 0:
+            self._failed(operation, result)
+            return
+        if result != 0 or operation.operands[0][1] is None:
+            raise NativeOutputError("native replacement success lacks its exact source object")
+        self.replaced(
+            owner=operation.owner, source=operation.source, destination=operation.destination,
+            source_pin=operation.operands[0][1], retired_pin=operation.operands[1][1], result=result,
+        )
+        self._end(operation)
+
+    def enter_remove(self, *, owner, pid, path, pin):
+        item = self.objects.get(path)
+        if item is not None and item.writers:
+            raise NativeOutputError("native removal overlaps an active writer")
+        return self._begin(owner, pid, "remove", path, pins=((path, pin),))
+
+    def leave_remove(self, operation, result):
+        self._operation(operation, "remove")
+        if result < 0:
+            self._failed(operation, result)
+            return
+        pin = operation.operands[0][1]
+        if result != 0 or pin is None:
+            raise NativeOutputError("native removal success lacks its exact owned object")
+        self.removed(owner=operation.owner, path=operation.source, pin=pin, result=result)
+        self._end(operation)
+
+    def _bytes(self, pin, identity):
+        self.charge(identity[3])
+        data = bytearray()
+        while len(data) < identity[3]:
+            self.deadline()
+            block = os.pread(pin, min(65536, identity[3] - len(data)), len(data))
+            if not block:
+                raise NativeOutputError("native operation entry content was truncated")
+            data.extend(block)
+        if self._identity(pin) != identity:
+            raise NativeOutputError("native operation content changed during observation")
+        return bytes(data)
+
+    def enter_write(self, *, pid, descriptor, pin, data, offset):
+        if (
+            not isinstance(data, bytes) or len(data) > self.file_limit
+            or type(offset) is not int or not 0 <= offset <= self.file_limit
+            or offset + len(data) > self.file_limit
+        ):
+            raise NativeOutputError("native write entry lacks bounded actual bytes/offset")
+        if pid in self.pending:
+            raise NativeOutputError("native write overlaps an unfinished kernel operation")
+        item = self.before_write(pid, descriptor, pin)
+        operation = self._begin(
+            item.owner, pid, "write", item.path, pins=((item.path, pin),),
+        )
+        before = self._bytes(operation.operands[0][1], operation.operands[0][2])
+        self.charge(len(data) + len(before))
+        operation = NativeOperation(
+            operation.owner, pid, operation.kind, operation.source,
+            operation.destination, operation.flags, operation.operands,
+            descriptor=descriptor, offset=offset, data=data, before=before,
+        )
+        self.pending[pid] = operation
+        return operation
+
+    def leave_write(self, operation, result):
+        self._operation(operation, "write")
+        if type(result) is not int or result < -4095 or result > len(operation.data):
+            raise NativeOutputError("native write return exceeds its actual entry bytes")
+        pin = operation.operands[0][1]
+        identity = self._identity(pin)
+        actual = self._bytes(pin, identity)
+        expected = operation.before
+        if result > 0:
+            offset = operation.offset
+            expected = (
+                operation.before[:offset]
+                + b"\0" * max(0, offset - len(operation.before))
+                + operation.data[:result]
+                + operation.before[offset + result:]
+            )
+        if actual != expected:
+            raise NativeOutputError("native write return absorbed bytes outside its actual kernel effect")
+        self.written(operation.pid, operation.descriptor, pin, result)
+        self._end(operation)
+
+    def enter_duplicate(self, *, pid, descriptor):
+        item = self.descriptors.get((pid, descriptor))
+        if item is None:
+            raise NativeOutputError("native duplicate entry lacks its actual owned descriptor")
+        operation = self._begin(
+            item.owner, pid, "dup", item.path, pins=((item.path, item.descriptor),),
+        )
+        operation = NativeOperation(
+            operation.owner, pid, operation.kind, operation.source,
+            operation.destination, operation.flags, operation.operands, descriptor=descriptor,
+        )
+        self.pending[pid] = operation
+        return operation
+
+    def leave_duplicate(self, operation, result):
+        self._operation(operation, "dup")
+        if type(result) is not int:
+            raise NativeOutputError("native duplicate return is not a kernel descriptor/status")
+        if result < 0:
+            self._failed(operation, result)
+            return
+        self.duplicated(operation.pid, operation.descriptor, result)
+        self._end(operation)
 
     def _identity(self, descriptor):
         self.deadline()
@@ -358,7 +602,7 @@ class NativeOutputs:
         self._event("output-source-retired", source.object, sha256=source.sha256)
 
     def finish(self):
-        if self.descriptors or self.pins or any(
+        if self.pending or self.descriptors or self.pins or any(
             item.readers or item.writers or item.pending_writer is not None for item in self.versions
         ):
             raise NativeOutputError("native output custody ended with active descriptors/pins")
@@ -376,6 +620,8 @@ class NativeOutputs:
             os.close(descriptor)
 
         finish_cleanup([
+            *(lambda operation=operation: self._end(operation)
+              for operation in tuple(self.pending.values())),
             *(lambda descriptor=descriptor, source=source: close_source(descriptor, source)
               for descriptor, source in tuple(self.pins.items())),
             *(lambda item=item: close_object(item) for item in self.versions if item.descriptor >= 0),
