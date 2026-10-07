@@ -3006,20 +3006,27 @@ class FoundationTests(unittest.TestCase):
 
     def test_native_readonly_unadmitted_sigkill_termination_refuses(self):
         self.add("Makefile", ".PHONY: all\nall:\n\t-@v=ignored; kill -PIPE $$$$\n")
+        receipt = self.directory / "foreign-sigkill-return.json"
         body = (
             "original=guard.Policy.signal_target\n"
             "def foreign(pid,*targets):\n"
             " original(pid,*targets)\n"
-            " os.kill(pid,9)\n"
+            " returned=os.kill(pid,9)\n"
+            f" Path({str(receipt)!r}).write_text(json.dumps("
+            "{'pid':pid,'targets':list(targets),'signal':9,'return':returned}))\n"
             "guard.Policy.signal_target=staticmethod(foreign)\n"
         )
         session = self.session()
-        with self.native_supervisor(body), self.assertRaisesRegex(
-            MakeProbeError,
-            "native SIGKILL lacks an actual successful self-send outcome|ptrace request .*No such process",
-        ):
+        with self.native_supervisor(body), self.assertRaises(MakeProbeError):
             with session:
                 session._native_make_readonly("all")
+        observed = json.loads(receipt.read_bytes())
+        self.assertGreater(observed["pid"], 0)
+        self.assertTrue(observed["targets"])
+        self.assertEqual(set(observed["targets"]), {observed["pid"]})
+        self.assertEqual(observed["signal"], signal.SIGKILL)
+        self.assertIsNone(observed["return"])
+        self.assertTrue(session.budget.failed)
         self.assert_clean(session)
 
     def test_native_readonly_failed_queued_signal_cannot_admit_foreign_sigkill(self):

@@ -83,6 +83,10 @@ GCC/C++ host tools and namespace/ptrace launcher:
    remain valid. Retain the documented source-frame/pin, callback/register,
    job/signal, stale-view, runtime/tool, failure-envelope, cancellation and
    resource controls below; the integrated positive does not replace them.
+   The foreign SIGKILL control requires the actual successful supervisor
+   kill-return receipt, a failed probe/budget and complete owned teardown.
+   Kernel stop ordering may change its denial diagnostic, never its refusal;
+   the admitted self-SIGKILL controls separately preserve legitimate outcomes.
 3. Run its `test_native_completion_variable_payload_boundaries` and
    `test_native_target_payload_boundaries`. Exact admitted UTF-8 byte payloads
    survive both consumer families; oversized payloads refuse. Filesystem path
