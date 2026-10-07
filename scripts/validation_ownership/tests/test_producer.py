@@ -2,6 +2,7 @@
 
 import hashlib
 import errno
+import fcntl
 import gc
 import json
 import os
@@ -1754,6 +1755,92 @@ class ProducerTests(unittest.TestCase):
                     with self.assertRaisesRegex(MakeProbeError, "unlinkat flags escape"):
                         session.native(tool, (str(flags),), outputs=("result",))
                 self.fixture.assert_clean(session)
+
+    def test_native_capsule_flock_tracks_distinct_opens_duplicates_and_actual_fork_descriptions(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <errno.h>\n#include <stdlib.h>\n#include <sys/file.h>\n"
+            "#include <sys/wait.h>\n#include <sys/syscall.h>\n"
+            "static unsigned long extra;"
+            "static int lock(int fd,int flags){return syscall(SYS_flock,(unsigned long)fd|extra,"
+            "(unsigned long)flags|extra);}\n"
+            "int main(int argc,char **argv){int a,b,copy,status;pid_t child;"
+            "if(argc!=2)return 13;extra=strtoull(argv[1],0,0);"
+            "a=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);"
+            "if(a<0||write(a,\"final\",5)!=5)return 1;"
+            "copy=dup(a);b=open(\"/work/result\",O_RDWR);if(copy<0||b<0)return 2;"
+            "if(lock(a,LOCK_SH)||lock(b,LOCK_SH))return 3;"
+            "if(lock(copy,LOCK_EX|LOCK_NB)!=-1||errno!=EWOULDBLOCK)return 4;"
+            "if(lock(b,LOCK_UN)||lock(copy,LOCK_EX|LOCK_NB))return 5;"
+            "child=fork();if(child<0)return 6;"
+            "if(!child){if(lock(a,LOCK_UN))_exit(7);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||status)return 8;"
+            "if(lock(b,LOCK_EX|LOCK_NB)||lock(b,LOCK_UN)||lock(a,LOCK_EX))return 9;"
+            "if(close(a))return 10;"
+            "if(lock(b,LOCK_EX|LOCK_NB)!=-1||errno!=EWOULDBLOCK)return 11;"
+            "if(dup2(b,copy)!=copy||lock(b,LOCK_EX|LOCK_NB)||close(b)||close(copy))return 12;"
+            "puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        reports = []
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            execute = session._sandbox_run
+            def record(root, **kwargs):
+                result = execute(root, **kwargs)
+                if kwargs["mode"] == "command":
+                    reports.append(result[1])
+                return result
+            with patch.object(session, "_sandbox_run", record):
+                output = session.native(tool, ("0",), outputs=("result",))
+            self.assertEqual(output.stdout, b"once\n")
+            self.assertEqual([(item.path, item.data, item.mode) for item in output.generated], [
+                ("result", b"final", 0o600),
+            ])
+            self.assertEqual(len(reports), 1)
+            report = reports[0]
+            rows = sorted(
+                (json.loads(value.removeprefix("native-output:")) for value in report["accessed"]
+                 if value.startswith("native-output:")),
+                key=lambda row: row["sequence"],
+            )
+            locks = [row for row in rows if row["kind"] == "output-lock"]
+            self.assertEqual(len(locks), 11)
+            first, second = locks[:2]
+            self.assertNotEqual(first["description"], second["description"])
+            self.assertEqual((first["mode"], second["mode"]), (fcntl.LOCK_SH, fcntl.LOCK_SH))
+            self.assertEqual(
+                (locks[2]["description"], locks[2]["result"], locks[2]["mode"]),
+                (first["description"], -errno.EAGAIN, 0),
+            )
+            self.assertEqual(locks[5]["description"], first["description"])
+            self.assertNotEqual(locks[5]["pid"], first["pid"])
+            self.assertEqual(locks[5]["mode"], 0)
+            failures = [row for row in locks if row["result"] < 0]
+            self.assertEqual([row["mode"] for row in failures], [0, 0])
+            releases = [row for row in rows if row["kind"] == "output-lock-release"]
+            self.assertEqual(
+                [(row["description"], row["mode"]) for row in releases],
+                [(first["description"], fcntl.LOCK_EX), (second["description"], fcntl.LOCK_EX)],
+            )
+            self.assertEqual(report["processes"], 2)
+            with patch.object(session, "_sandbox_run", record):
+                for upper in (1 << 32, 1 << 63):
+                    high = session.native(tool, (str(upper),), outputs=("result",))
+                    self.assertEqual(high.stdout, output.stdout)
+                    self.assertEqual(high.generated, output.generated)
+            self.assertEqual(len(reports), 3)
+            for report in reports[1:]:
+                high_rows = [
+                    json.loads(value.removeprefix("native-output:")) for value in report["accessed"]
+                    if value.startswith("native-output:")
+                ]
+                high_locks = [row for row in high_rows if row["kind"] == "output-lock"]
+                self.assertEqual(len(high_locks), 11)
+                self.assertEqual(sorted((row["flags"], row["result"], row["mode"]) for row in high_locks),
+                                 sorted((row["flags"], row["result"], row["mode"]) for row in locks))
+        self.fixture.assert_clean(session)
 
     def test_native_capsule_injected_late_close_retires_both_fd_maps_for_actual_binding_family(self):
         self.fixture.add("native.c", (
@@ -5145,6 +5232,149 @@ class NativeOutputCustodyTests(unittest.TestCase):
             self.outputs.written(pid, descriptor, pin, result)
         self.outputs.closed(pid, descriptor, 0)
         return pin
+
+    def test_real_flock_descriptions_distinguish_open_aliases_and_failed_conversion(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputObserver
+        pin = self.create("lock", b"content")
+        descriptors = []
+        try:
+            for _ in range(2):
+                descriptor = os.open(self.root / "lock", os.O_RDWR)
+                descriptors.append(descriptor)
+                self.outputs.opened(
+                    owner=1, pid=os.getpid(), descriptor=descriptor, pin=descriptor,
+                    path="lock", writing=True,
+                )
+            first, second = descriptors
+            copied = os.dup(first)
+            descriptors.append(copied)
+            self.outputs.duplicated(os.getpid(), first, copied)
+            item = self.outputs.objects["lock"]
+            one = item.descriptions[(os.getpid(), first)]
+            two = item.descriptions[(os.getpid(), second)]
+            self.assertIs(item.descriptions[(os.getpid(), copied)], one)
+            self.assertIsNot(one, two)
+            observer = object.__new__(NativeOutputObserver)
+            observer.policy = type("Policy", (), {"charge_metadata": self.charge})()
+            def perform(descriptor, flags):
+                operation = self.outputs.enter_lock(
+                    pid=os.getpid(), descriptor=descriptor, flags=flags,
+                    observed=observer.lock_mode(os.getpid(), descriptor, item.identity),
+                )
+                try:
+                    fcntl.flock(descriptor, flags)
+                    result = 0
+                except OSError as error:
+                    result = -error.errno
+                mode = observer.lock_mode(os.getpid(), descriptor, item.identity)
+                self.outputs.leave_lock(operation, result=result, observed=mode)
+                return result
+            self.assertEqual(perform(first, fcntl.LOCK_SH), 0)
+            self.assertEqual(perform(second, fcntl.LOCK_SH), 0)
+            self.assertEqual(perform(copied, fcntl.LOCK_EX | fcntl.LOCK_NB), -errno.EAGAIN)
+            self.assertEqual(one.lock, 0)
+            self.assertEqual(two.lock, fcntl.LOCK_SH)
+            self.assertEqual(perform(second, fcntl.LOCK_UN), 0)
+            self.assertEqual(perform(first, fcntl.LOCK_EX), 0)
+            os.close(first)
+            descriptors.remove(first)
+            self.outputs.closed(os.getpid(), first, 0)
+            self.assertEqual(one.lock, fcntl.LOCK_EX)
+            self.assertEqual(perform(second, fcntl.LOCK_EX | fcntl.LOCK_NB), -errno.EAGAIN)
+            self.assertEqual(perform(copied, fcntl.LOCK_UN), 0)
+            self.assertEqual(perform(second, fcntl.LOCK_EX | fcntl.LOCK_NB), 0)
+            self.assertEqual(os.pread(pin, 7, 0), b"content")
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
+                self.outputs.closed(os.getpid(), descriptor, 0)
+        self.assertEqual(one.bindings, set())
+        self.assertEqual(two.bindings, set())
+        self.assertEqual((one.lock, two.lock), (0, 0))
+        self.assertEqual(item.descriptions, {})
+        self.outputs.finish()
+
+    def test_flock_rejects_unobserved_modes_content_invalid_flags_and_borrowed_returns(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        for failure in ("mode", "content", "identity"):
+            with self.subTest(failure=failure):
+                outputs = NativeOutputs(
+                    deadline=self.deadline, charge=self.charge, file_limit=65536,
+                    emit=lambda kind, **fields: self.events.append({"kind": kind, **fields}),
+                )
+                descriptor = os.open(
+                    self.root / ("lock-" + failure), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600,
+                )
+                try:
+                    outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                        path="lock-" + failure, writing=True,
+                    )
+                    description = outputs.objects["lock-" + failure].descriptions[(1, descriptor)]
+                    before = len(self.events)
+                    for flags in (0, 3, fcntl.LOCK_UN | fcntl.LOCK_NB, 16, -1, True):
+                        with self.assertRaisesRegex(NativeOutputError, "finite bound"):
+                            outputs.enter_lock(pid=1, descriptor=descriptor, flags=flags, observed=0)
+                        self.assertFalse(outputs.pending)
+                        self.assertEqual(description.lock, 0)
+                    operation = outputs.enter_lock(
+                        pid=1, descriptor=descriptor, flags=fcntl.LOCK_EX, observed=0,
+                    )
+                    with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+                        outputs.leave_lock(replace(operation), result=0, observed=fcntl.LOCK_EX)
+                    copied = os.dup(descriptor)
+                    try:
+                        outputs.duplicated(1, descriptor, copied)
+                        with self.assertRaisesRegex(NativeOutputError, "live open-file description"):
+                            outputs.enter_lock(pid=1, descriptor=copied, flags=fcntl.LOCK_UN, observed=0)
+                    finally:
+                        os.close(copied)
+                    with self.assertRaisesRegex(NativeOutputError, "unfinished flock"):
+                        outputs.closed(1, descriptor, 0)
+                    fcntl.flock(descriptor, fcntl.LOCK_EX)
+                    if failure == "content":
+                        os.pwrite(descriptor, b"unobserved", 0)
+                    elif failure == "identity":
+                        os.fchmod(descriptor, 0o640)
+                    with self.assertRaisesRegex(NativeOutputError, "flock (changed|return differs)"):
+                        outputs.leave_lock(
+                            operation, result=0,
+                            observed=0 if failure == "mode" else fcntl.LOCK_EX,
+                        )
+                    self.assertEqual(description.lock, 0)
+                    self.assertEqual(description.pending, 1)
+                    self.assertFalse(any(row["kind"] == "output-lock" for row in self.events[before:]))
+                    outputs.close()
+                    self.assertEqual(description.bindings, set())
+                    self.assertEqual((description.lock, description.pending), (0, None))
+                    self.assertEqual(outputs.objects["lock-" + failure].descriptions, {})
+                    self.assertEqual(os.fstat(descriptor).st_ino, os.stat(self.root / ("lock-" + failure)).st_ino)
+                    with self.assertRaisesRegex(NativeOutputError, "incomplete|active"):
+                        outputs.finish()
+                finally:
+                    outputs.close()
+                    os.close(descriptor)
+
+    def test_flock_last_released_late_close_retires_description_without_retry(self):
+        descriptor = os.open(self.root / "locked-late-close", os.O_CREAT | os.O_RDWR, 0o600)
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+            path="locked-late-close", writing=True,
+        )
+        item = self.outputs.objects["locked-late-close"]
+        description = item.descriptions[(1, descriptor)]
+        operation = self.outputs.enter_lock(pid=1, descriptor=descriptor, flags=fcntl.LOCK_EX, observed=0)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        self.outputs.leave_lock(operation, result=0, observed=fcntl.LOCK_EX)
+        os.close(descriptor)
+        self.outputs.closed(1, descriptor, -errno.EIO)
+        self.assertEqual(description.bindings, set())
+        self.assertEqual(description.lock, 0)
+        self.assertFalse(item.descriptions)
+        self.assertEqual([row["mode"] for row in self.events if row["kind"] == "output-lock-release"], [
+            fcntl.LOCK_EX,
+        ])
+        self.outputs.finish()
 
     def test_pending_namespace_excludes_raced_creation_and_all_conflicting_action_siblings(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError

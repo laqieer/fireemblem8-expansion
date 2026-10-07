@@ -300,6 +300,44 @@ The pre-fix full-register comparison skips custody for the upper-bit operands.
 Require complete session cleanup after every positive and refused invocation.
 These capsule controls do not qualify original native Make or generated v6.
 
+Regular output descriptor bindings retain actual observed open-file-description
+lineage: each successful open is distinct, whereas duplication and actual
+fork inheritance share a description. Paired `flock` observes its exact
+descriptor, operation, file identity/content and kernel `/proc/PID/fdinfo`
+lock mode. Shared/exclusive acquisition, nonblocking contention and explicit
+unlock are supported. A failed Linux shared-to-exclusive conversion releases
+the prior shared lock; report the observed unlocked mode rather than inventing
+unchanged lock ownership. Closing one alias does not release its description's
+lock; last close, dup2 replacement and process exit retire the appropriate
+binding. Unsupported flags, unobserved mode/content changes and overlapping
+description operations refuse. Terminal cleanup releases model state and
+owned pins without closing borrowed tracee descriptor numbers.
+
+Run `ProducerTests.test_native_capsule_flock_tracks_distinct_opens_duplicates_and_actual_fork_descriptions`
+and `NativeOutputCustodyTests` from a clean fixture with `python3 -m unittest`.
+The actual C invocation must acquire shared locks through two independent
+opens of one inode, fail a nonblocking conversion with real `EWOULDBLOCK`,
+release the shared lock as Linux does, and acquire exclusive after explicit
+unlock. A real fork child must unlock the inherited description, permitting
+the parent's independent open to acquire it. One alias close must retain the
+lock; dup2 replacement of the last alias and final close release the two
+distinct description locks. Require eleven parsed paired lock returns,
+distinct description identities for separate opens, shared identity through
+dup/fork, two actual contention failures, final bytes `final`, mode `0600`,
+stdout `once`, and complete descendant/session cleanup.
+Repeat with bit-32 and bit-63 additions to the actual syscall descriptor and
+flag operands; kernel-width normalization must preserve all eleven mode/
+flag/result observations and exact generated output.
+Component controls
+reject invalid flags, copied returns, overlapping aliases, false mode reports,
+content/mode mutation and unobserved terminal lifecycles; an injected late
+close after an actual kernel close retires the last locked description.
+The pre-extension capsule executes flock but emits no paired lock evidence.
+This intermediate capsule lineage does not yet authorize a shared lock across
+distinct native Make owners or reconcile a successful post-bootstrap exec.
+Those production resource roles and generated-source wire contracts remain
+required before #275 acceptance.
+
 Paired writes retain one charged expected byte image for each writer lifetime,
 initialized from its actual pinned object. Each return checks exact size,
 identity/mode and the requested range, including unwritten suffixes after

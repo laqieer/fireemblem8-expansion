@@ -83,6 +83,29 @@ class NativeOutputObserver:
             count -= size
         return b"".join(parts)
 
+    def lock_mode(self, pid, descriptor, identity):
+        import re
+        with open(f"/proc/{pid}/fdinfo/{descriptor}", "rb") as stream:
+            data = stream.read(4097)
+        self.policy.charge_metadata(len(data))
+        if len(data) > 4096:
+            raise NativeOutputError("native lock descriptor information exceeds its bound")
+        locks = [line for line in data.splitlines() if line.startswith(b"lock:")]
+        if not locks:
+            return 0
+        if len(locks) != 1:
+            raise NativeOutputError("native descriptor has multiple unsupported lock records")
+        match = re.fullmatch(
+            rb"lock:\s+\d+: FLOCK\s+ADVISORY\s+(READ|WRITE)\s+\d+\s+"
+            rb"([0-9a-fA-F]+):([0-9a-fA-F]+):(\d+)\s+0 EOF",
+            locks[0],
+        )
+        if match is None or (
+            int(match[2], 16), int(match[3], 16), int(match[4])
+        ) != (os.major(identity[0]), os.minor(identity[0]), identity[1]):
+            raise NativeOutputError("native lock record differs from its exact file object")
+        return fcntl.LOCK_SH if match[1] == b"READ" else fcntl.LOCK_EX
+
     def entry(self, pid, state, registers):
         native = self.policy
         r = registers
@@ -144,6 +167,12 @@ class NativeOutputObserver:
                 os.close(pin)
         elif n == 3 and (pid, descriptor) in self.custody.descriptors:
             state.native_output_close = descriptor
+        elif n == 73 and (pid, descriptor) in self.custody.descriptors:
+            item = self.custody.descriptors[(pid, descriptor)]
+            operation = self.custody.enter_lock(
+                pid=pid, descriptor=descriptor, flags=native_int(b),
+                observed=self.lock_mode(pid, descriptor, item.identity),
+            )
         elif n in {32, 33, 292, 72} and (pid, descriptor) in self.custody.descriptors:
             if n == 72 and b not in {0, 1030}:
                 if b == fcntl.F_SETFL and c & os.O_APPEND:
@@ -254,6 +283,11 @@ class NativeOutputObserver:
                         os.close(pin)
             elif operation.kind == "rmdir":
                 self.custody.leave_rmdir(operation, result)
+            elif operation.kind == "lock":
+                self.custody.leave_lock(
+                    operation, result=result,
+                    observed=self.lock_mode(pid, operation.descriptor, operation.operands[0][2]),
+                )
             else:
                 raise NativeOutputError("native output supervisor lost its operation kind")
 def native_signed(value):
@@ -263,6 +297,14 @@ def native_signed(value):
 def native_int(value):
     value &= (1 << 32) - 1
     return value - (1 << 32) if value & (1 << 31) else value
+
+
+@dataclass
+class OpenDescription:
+    serial: int
+    bindings: set[tuple[int, int]] = field(default_factory=set)
+    lock: int = 0
+    pending: int | None = None
 
 
 @dataclass
@@ -280,6 +322,7 @@ class OutputObject:
     retired: bool = False
     expected: bytearray | None = None
     entries: tuple[str, ...] | None = None
+    descriptions: dict[tuple[int, int], OpenDescription] = field(default_factory=dict)
 
 
 @dataclass
@@ -311,6 +354,7 @@ class NativeOperation:
     target: int | None = None
     minimum: int | None = None
     parents: tuple[str, ...] = ()
+    description: OpenDescription | None = None
 
 
 class NativeOutputs:
@@ -322,6 +366,7 @@ class NativeOutputs:
         self.file_limit = file_limit
         self.emit = emit
         self.serial = 0
+        self.description_serial = 0
         self.objects = {}
         self.directories = {}
         self.versions = []
@@ -458,6 +503,8 @@ class NativeOutputs:
                     "output-directory-change", item, pid=operation.pid, operation=operation.kind,
                     identity=list(identity),
                 )
+        if operation.description is not None:
+            operation.description.pending = None
         del self.pending[operation.pid]
         finish_cleanup([
             lambda pin=pin: os.close(pin)
@@ -868,6 +915,72 @@ class NativeOutputs:
             raise NativeOutputError("native output is not a bounded regular object")
         return publication_identity(info)
 
+    def enter_lock(self, *, pid, descriptor, flags, observed):
+        self._usable()
+        item = self.descriptors.get((pid, descriptor))
+        if (
+            item is None or type(flags) is not int
+            or flags not in {
+                fcntl.LOCK_SH, fcntl.LOCK_EX, fcntl.LOCK_UN,
+                fcntl.LOCK_SH | fcntl.LOCK_NB, fcntl.LOCK_EX | fcntl.LOCK_NB,
+            }
+            or type(observed) is not int or observed not in {0, fcntl.LOCK_SH, fcntl.LOCK_EX}
+        ):
+            raise NativeOutputError("native flock lacks its finite bound descriptor operation")
+        description = item.descriptions[(pid, descriptor)]
+        if description.pending is not None or item.pending_writer is not None or observed != description.lock:
+            raise NativeOutputError("native flock differs from its live open-file description")
+        operation = self._begin(
+            item.owner, pid, "lock", item.path, flags=flags,
+            bindings=(("lock-fd:" + str(descriptor), item.descriptor, item),),
+        )
+        try:
+            before = self._digest(operation.operands[0][1], operation.operands[0][2]).encode("ascii")
+            operation = NativeOperation(
+                operation.owner, pid, operation.kind, operation.source, None,
+                flags, operation.operands, descriptor=descriptor, before=before,
+                description=description,
+            )
+            self.pending[pid] = operation
+            description.pending = pid
+            return operation
+        except BaseException as error:
+            finish_cleanup([lambda: self._end(operation, success=False)], primary=error)
+            raise
+
+    def leave_lock(self, operation, *, result, observed):
+        self._operation(operation, "lock")
+        self._status_result(result)
+        if type(observed) is not int or observed not in {0, fcntl.LOCK_SH, fcntl.LOCK_EX}:
+            raise NativeOutputError("native flock return lacks its observed kernel lock mode")
+        description = operation.description
+        item = self.descriptors.get((operation.pid, operation.descriptor))
+        if (
+            item is None or item.descriptions.get((operation.pid, operation.descriptor)) is not description
+            or description.pending != operation.pid
+        ):
+            raise NativeOutputError("native flock return lost its exact open-file description")
+        pin, identity = operation.operands[0][1:3]
+        if self._identity(pin) != identity or self._digest(pin, identity).encode("ascii") != operation.before:
+            raise NativeOutputError("native flock changed its file content or identity")
+        requested = operation.flags & ~fcntl.LOCK_NB
+        target = 0 if requested == fcntl.LOCK_UN else requested
+        if result < 0:
+            if result not in {-errno.EAGAIN, -errno.EINTR} or requested == fcntl.LOCK_UN:
+                raise NativeOutputError("native flock has an unsupported kernel failure")
+            if result == -errno.EAGAIN and not operation.flags & fcntl.LOCK_NB:
+                raise NativeOutputError("native blocking flock claims a nonblocking failure")
+            # Linux lock conversion releases the prior lock before retrying.
+            target = description.lock if description.lock == requested else 0
+        if observed != target:
+            raise NativeOutputError("native flock return differs from its observed kernel lock")
+        description.lock = observed
+        self._event(
+            "output-lock", item, pid=operation.pid, fd=operation.descriptor,
+            description=description.serial, flags=operation.flags, result=result, mode=observed,
+        )
+        self._end(operation)
+
     def _emit(self, kind, **fields):
         try:
             self.emit(kind, **fields)
@@ -952,15 +1065,18 @@ class NativeOutputs:
             raise NativeOutputError("native output open differs from its live owned object")
         if writing and item.readers:
             raise NativeOutputError("native output writer overlaps a pinned source read")
-        self.charge(64)
+        self.charge(192)
         self.descriptors[binding] = item
+        self.description_serial += 1
+        description = OpenDescription(self.description_serial, {binding})
+        item.descriptions[binding] = description
         if writing:
             item.writers.add(binding)
         elif item.sha256 is None and not item.writers:
             self._settle(item)
         self._event(
             "output-open", item, pid=pid, fd=descriptor, operation_owner=owner,
-            identity=list(identity), writing=writing,
+            identity=list(identity), writing=writing, description=description.serial,
         )
         return item
 
@@ -980,9 +1096,15 @@ class NativeOutputs:
         for copied, (item, writing) in copies.items():
             descriptor = copied[1]
             self.descriptors[copied] = item
+            description = item.descriptions[(parent, descriptor)]
+            description.bindings.add(copied)
+            item.descriptions[copied] = description
             if writing:
                 item.writers.add(copied)
-            self._event("output-inherit", item, parent=parent, pid=child, fd=descriptor)
+            self._event(
+                "output-inherit", item, parent=parent, pid=child, fd=descriptor,
+                description=description.serial,
+            )
 
     def duplicated(self, pid, original, result):
         self._usable()
@@ -990,16 +1112,24 @@ class NativeOutputs:
         if item is None:
             raise NativeOutputError("native output duplicate has no owned descriptor")
         if result == original:
-            self._event("output-dup", item, pid=pid, fd=original, result=result)
+            self._event(
+                "output-dup", item, pid=pid, fd=original, result=result,
+                description=item.descriptions[(pid, original)].serial,
+            )
             return
         copied = (pid, result)
         if copied in self.descriptors:
             self.closed(pid, result, 0)
         self.charge(64)
         self.descriptors[copied] = item
+        description = item.descriptions[(pid, original)]
+        description.bindings.add(copied)
+        item.descriptions[copied] = description
         if (pid, original) in item.writers:
             item.writers.add(copied)
-        self._event("output-dup", item, pid=pid, fd=original, result=result)
+        self._event(
+            "output-dup", item, pid=pid, fd=original, result=result, description=description.serial,
+        )
 
     def before_write(self, pid, descriptor, pin):
         return self._claim_writer(pid, descriptor, pin, paired=False)
@@ -1072,14 +1202,27 @@ class NativeOutputs:
         item = self.descriptors.get(binding)
         if item is not None and item.pending_writer == binding:
             raise NativeOutputError("native output close overlaps an unfinished write")
+        if item is not None and item.descriptions[binding].pending is not None:
+            raise NativeOutputError("native output close overlaps an unfinished flock")
         item = self.descriptors.pop(binding, None)
         if item is not None:
+            description = item.descriptions.pop(binding)
+            description.bindings.remove(binding)
+            if not description.bindings:
+                mode, description.lock = description.lock, 0
+                if mode:
+                    self._event(
+                        "output-lock-release", item, pid=pid, fd=descriptor,
+                        description=description.serial, mode=mode,
+                    )
             writer = binding in item.writers
             item.writers.discard(binding)
             if writer and not item.writers:
                 self._settle(item)
             if result >= 0:
-                self._event("output-close", item, pid=pid, fd=descriptor)
+                self._event(
+                    "output-close", item, pid=pid, fd=descriptor, description=description.serial,
+                )
 
     def retire_process(self, pid):
         self._usable()
@@ -1240,6 +1383,11 @@ class NativeOutputs:
         def close_object(item):
             descriptor, item.descriptor = item.descriptor, -1
             item.expected = None
+            for description in item.descriptions.values():
+                description.bindings.clear()
+                description.lock = 0
+                description.pending = None
+            item.descriptions.clear()
             os.close(descriptor)
 
         try:

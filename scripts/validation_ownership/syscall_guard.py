@@ -2362,7 +2362,7 @@ class Policy:
         elif n == 3:
             state.pending = ("close", ctypes.c_int(a).value)
         elif n in {8, 74, 75, 73}:
-            self.check_fd(state, a, "read", r)
+            self.check_fd(state, ctypes.c_int(a).value if n == 73 else a, "read", r)
         elif n in {78, 217}:
             path = self.check_fd(state, a, "directory", r)
             if c > SYSCALL_MEMORY_LIMIT:
