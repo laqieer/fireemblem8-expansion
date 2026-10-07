@@ -121,13 +121,13 @@ def replace_memory(pid, address, data):
         offset += amount
 
 
-def cstring(pid, address):
+def cstring(pid, address, *, limit=4096):
     if not address:
         raise Violation("null pathname")
     result = bytearray()
-    while len(result) < 4096:
+    while len(result) < limit:
         cursor = address + len(result)
-        count = min(8 - (cursor & 7), 4096 - len(result))
+        count = min(8 - (cursor & 7), limit - len(result))
         word = memory(pid, cursor, count)
         if b"\0" in word:
             result.extend(word.split(b"\0", 1)[0])
@@ -855,7 +855,7 @@ class Policy:
 
     def observe_native_job_context(self, pid, state, pointer, size):
         row, (_, target_pointer, command_line) = self.native_job_frame(pid, state, pointer, size)
-        target = cstring(pid, target_pointer) if target_pointer else None
+        target = cstring(pid, target_pointer, limit=4097) if target_pointer else None
         if command_line >= 1 << 32 or target_pointer and not target or not target_pointer and command_line:
             raise Violation("invalid native job target or command index")
         if target is not None:

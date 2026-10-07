@@ -6802,6 +6802,53 @@ class FoundationTests(unittest.TestCase):
                             self.assertFalse(session.budget.failed)
                     self.assert_clean(session)
 
+    def test_native_target_payload_boundaries(self):
+        for runtime in (False, True):
+            for multibyte in (False, True):
+                for size in (4095, 4096, 4097):
+                    target = (
+                        chr(0xE9) * (size // 2) + ("x" if size % 2 else "")
+                        if multibyte else "x" * size
+                    )
+                    self.assertEqual(len(target.encode()), size)
+                    self.add("Makefile", (
+                        ".SECONDEXPANSION:\n"
+                        f".PHONY: all {target}\nall: {target}\n"
+                        f"{target}: $$(if $$(filter missing,never),missing)\n"
+                        "\t@printf target-ok; :\n"
+                    ))
+                    session = self.session()
+                    with self.subTest(runtime=runtime, multibyte=multibyte, size=size), session:
+                        options = {
+                            "observe_reads": True,
+                            "observe_runtime_completions": runtime,
+                        }
+                        if size > 4096:
+                            with self.assertRaisesRegex(MakeProbeError, "bound|target"):
+                                session._native_make_readonly("all", **options)
+                            self.assertTrue(session.budget.failed)
+                        else:
+                            completed, _, observed = session._native_make_readonly("all", **options)
+                            self.assertEqual(completed.stdout, b"target-ok")
+                            self.assertEqual(completed.stderr, b"")
+                            jobs = [
+                                parse_json(row.removeprefix("native-job:").encode(), "actual native job")
+                                for row in observed["accessed"] if row.startswith("native-job:")
+                            ]
+                            recipes = [
+                                row["context"]["target"] for row in jobs
+                                if row["context"]["kind"] == "recipe"
+                            ]
+                            self.assertEqual(recipes, [target])
+                            if runtime:
+                                families = {
+                                    row["family"] for row in observed["read_trace"]["events"]
+                                    if row["kind"] == "expansion-entry" and row["target"] == target
+                                }
+                                self.assertEqual(families, {"recipe", "secondary"})
+                            self.assertFalse(session.budget.failed)
+                    self.assert_clean(session)
+
     def test_native_runtime_callback_and_restoration_mutations_refuse_each_new_purpose(self):
         self.add("Makefile", (
             "VALUE := original\n$(eval SECOND := $(VALUE))\n"

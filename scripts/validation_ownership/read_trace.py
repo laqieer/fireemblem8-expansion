@@ -498,7 +498,7 @@ class NativeReadTrace:
                 raise read_epochs.ReadEpochError("runtime secondary lost its original file/target loop")
         else:
             raise read_epochs.ReadEpochError("runtime expansion has a foreign actual caller")
-        target = self.string(self.number(registers.rsi), 4096)
+        target = self.string(self.number(registers.rsi), 4097)
         text = self.string(registers.rdi, self.config["file_limit"] + 1)
         if not target or text is None or not isinstance(state.cwd, str) or not state.cwd.startswith("/"):
             raise read_epochs.ReadEpochError("runtime expansion lacks bounded original target/input/CWD")

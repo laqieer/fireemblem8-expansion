@@ -1495,6 +1495,17 @@ to observe the NUL. This host-only boundary has no ROM/RAM/save/profile impact
 and does not qualify generated-source custody or the original eight-query
 family.
 
+Non-filesystem target payloads similarly admit 4,096 UTF-8 bytes, with a
+separate byte for the NUL in both recipe/secondary expansion and job-context
+readers. Run `FoundationTests.test_native_target_payload_boundaries` through
+the same unittest module: a phony target reached from `all` uses ASCII or
+multibyte names of 4,095, 4,096 and 4,097 bytes. With runtime completion enabled
+and disabled, the first two produce exactly `target-ok` and preserve the exact
+recipe-job target. Runtime observation also retains both recipe and secondary
+expansion targets. Oversized names refuse and clean owned state. The pre-fix
+readers reject all four 4,096-byte positives. Filesystem pathname admission
+and its NUL-inclusive 4,096-byte read bound remain unchanged.
+
 From the same clean Linux x86-64 host checkout with admitted GNU Make 4.3 and
 the existing namespace launcher, run these `FoundationTests` controls:
 
