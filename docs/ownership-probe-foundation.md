@@ -141,12 +141,16 @@ monotonic dispatch is bound to the actual clone, exec entry, runtime v5
 exec-stop inputs and complete returned job. Repeated equal argv means repeated
 real jobs, not deduplicated/replayed results. The final channel report must
 cover every issued authorization and completed actual job.
-The owner payload also binds the SHA-256 of the selected captured executable
-bytes, frozen before resolving a Command, and the active native tool's digest,
-source inputs and original placement when applicable. Hashing and the complete
-encoded payload use the existing shared budget. Different sealed tools or
-captured host images cannot alias merely because argv and pathname agree;
-repeated execution of the same image retains a stable owner.
+The owner payload binds one frozen identity of the complete captured runtime:
+Make, shell, descendant executables, interpreters/shared libraries, optional
+captured resources and their alias/absence/mode declarations, plus the admitted
+executable set. It also binds the active native tool's digest, source inputs
+and original placement, including when that tool is used by a descendant.
+Hashing and the complete encoded payload use the existing shared budget.
+Different sealed tools or captured code images cannot alias merely because
+the root argv and executable agree; repeating the same closure retains a
+stable owner. Managed Python runtime directory roots are named trusted readonly
+mounts, not sealed byte captures; this binding does not claim otherwise.
 Directory declarations use the existing `_directories` authority, including
 the repository root `"."`, and their normalized set participates in the owner.
 The selected executable digest follows the same captured stock `/bin` alias
@@ -176,6 +180,11 @@ preserve its argv/stdout and complete one actual authorization, and bind equal
 normalized directory sets identically. Absent, file-valued and escaping
 directory declarations must refuse. The pre-fix controls reject valid root
 directories and fail aliased shell admission with a missing executable digest.
+`test_native_command_owner_binds_descendant_tools_and_shared_library_closure`
+must execute differing real shell-launched tools with distinct owners and keep
+owners distinct when a captured non-root shared-library image changes without
+changing stdout. Repeating the original closure must restore its original
+owner. The root-only pre-fix binding aliases both controls.
 
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`

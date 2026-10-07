@@ -2521,14 +2521,12 @@ class ProbeSession:
                 self._sealed_native_tool_bytes(command.native_tool)
             self.budget.remaining()
             tool_identity = None
-            if native_tool is not None and (
-                command.native_tool is not None or path == tool_path
-            ):
+            if native_tool is not None:
                 tool_identity = (
                     native_tool.digest, native_tool.inputs, native_tool.original_output,
                 )
             payload = encoded([
-                self.snapshot.digest, path, executable_digests[path], tool_identity,
+                self.snapshot.digest, path, runtime_identity, tool_identity,
                 inputs, command.code, sources, directories,
             ])
             self.budget.charge("cache", len(payload))
@@ -2617,13 +2615,31 @@ class ProbeSession:
             runtime[tool_path] = binary
             native_executables = (*native_executables, tool_path)
         native_runtime = tuple(sorted(runtime.items()))
-        executable_digests = {}
+        runtime_identity = None
         if commands is not None:
-            for path in ("/bin/sh", *native_executables):
+            images = []
+            for kind, rows in (("make", self.make_runtime), ("native", native_runtime)):
+                for path, data in rows:
+                    self.budget.remaining()
+                    self.budget.charge("total", len(data))
+                    images.append((kind, path, hashlib.sha256(data).hexdigest()))
+            resources = []
+            for item in self.runtime_inputs:
                 self.budget.remaining()
-                self.budget.charge("total", len(runtime[path]))
-                executable_digests[path] = hashlib.sha256(runtime[path]).hexdigest()
-            executable_digests[self._native_shell_path()] = executable_digests["/bin/sh"]
+                digest = None
+                if item.data is not None:
+                    self.budget.charge("total", len(item.data))
+                    digest = hashlib.sha256(item.data).hexdigest()
+                resources.append((
+                    item.path, item.canonical, item.mode, digest, item.parents, item.aliases,
+                ))
+            closure = encoded([
+                sorted(images), sorted(resources),
+                sorted((self._native_shell_path(), *native_executables)),
+                runtime_directories, metadata_directories,
+            ])
+            self.budget.charge("cache", len(closure))
+            runtime_identity = hashlib.sha256(closure).hexdigest()
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(
             completions=observe_completions or observe_runtime_completions,
