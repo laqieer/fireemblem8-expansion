@@ -24,7 +24,7 @@ class NativeOutputError(MakeProbeError):
 
 
 class NativeOutputObserver:
-    """Bind exact native-tool capsule outputs to stopped kernel operations."""
+    """Observe native-tool capsule regular files at stopped kernel operations."""
 
     def __init__(self, policy, paths):
         import sys
@@ -34,15 +34,8 @@ class NativeOutputObserver:
             from authority import relative_path
         self.policy = policy
         self.native = sys.modules[type(policy).__module__]
-        self.paths = frozenset("/work/" + relative_path(path) for path in paths)
-        self.parents = {"/work"} | {
-            os.path.dirname(path) for path in self.paths
-        }
-        for path in self.paths:
-            parent = os.path.dirname(path)
-            while parent != "/work":
-                self.parents.add(parent)
-                parent = os.path.dirname(parent)
+        for path in paths:
+            relative_path(path)
         self.sequence = 0
         self.custody = NativeOutputs(
             deadline=self.deadline, charge=policy.charge_metadata,
@@ -77,35 +70,44 @@ class NativeOutputObserver:
         except FileNotFoundError:
             return None
 
-    def require_path(self, path):
-        if path not in self.paths:
-            raise NativeOutputError("native output operation is outside its exact Command outputs")
+    def buffer(self, pid, pointer, count):
+        parts = []
+        while count:
+            self.deadline()
+            size = min(count, self.native.SYSCALL_MEMORY_LIMIT)
+            self.policy.charge_metadata(size)
+            parts.append(self.native.memory(pid, pointer, size))
+            pointer += size
+            count -= size
+        return b"".join(parts)
 
     def entry(self, pid, state, registers):
         native = self.policy
         r = registers
         n, a, b, c, d, e = r.orig_rax, r.rdi, r.rsi, r.rdx, r.r10, r.r8
+        descriptor = native_int(a)
         operation = None
         if n in {2, 85, 257}:
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC if n == 85 else c if n == 257 else b
             path = state.pending[1]
-            writing = bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC))
-            if path.startswith("/work/") and writing:
-                self.require_path(path)
-            if path in self.paths:
+            if flags & os.O_TMPFILE == os.O_TMPFILE:
+                raise NativeOutputError("native anonymous temporary output transitions are not implemented")
+            if path.startswith("/work/"):
                 pin = self.operand(path)
                 try:
+                    if pin is not None and not stat.S_ISREG(os.fstat(pin).st_mode):
+                        return
                     operation = self.custody.enter_open(
                         owner=1, pid=pid, path=path, flags=flags, pin=pin,
                     )
                 finally:
                     if pin is not None:
                         os.close(pin)
-        elif n in {1, 18, 20} and (pid, a) in self.custody.descriptors:
-            pin = self.pin(pid, a)
+        elif n in {1, 18, 20} and (pid, descriptor) in self.custody.descriptors:
+            pin = self.pin(pid, descriptor)
             try:
                 info = {}
-                with open(f"/proc/{pid}/fdinfo/{a}", encoding="ascii") as stream:
+                with open(f"/proc/{pid}/fdinfo/{descriptor}", encoding="ascii") as stream:
                     for line in stream:
                         key, value = line.split(":", 1)
                         info[key] = value.strip()
@@ -115,8 +117,7 @@ class NativeOutputObserver:
                 if n == 20:
                     if c > 1024:
                         raise NativeOutputError("native output writev exceeds its vector bound")
-                    native.charge_metadata(c * 16)
-                    vectors = self.native.memory(pid, b, c * 16)
+                    vectors = self.buffer(pid, b, c * 16)
                     parts, size = [], 0
                     for offset in range(0, len(vectors), 16):
                         pointer = int.from_bytes(vectors[offset:offset + 8], "little")
@@ -124,23 +125,21 @@ class NativeOutputObserver:
                         size += count
                         if size > self.custody.file_limit:
                             raise NativeOutputError("native output writev exceeds its file bound")
-                        native.charge_metadata(count)
-                        parts.append(self.native.memory(pid, pointer, count))
+                        parts.append(self.buffer(pid, pointer, count))
                     data = b"".join(parts)
                 else:
                     if c > self.custody.file_limit:
                         raise NativeOutputError("native output write exceeds its file bound")
-                    native.charge_metadata(c)
-                    data = self.native.memory(pid, b, c)
+                    data = self.buffer(pid, b, c)
                 offset = native_signed(d) if n == 18 else int(info["pos"])
                 operation = self.custody.enter_write(
-                    pid=pid, descriptor=a, pin=pin, data=data, offset=offset,
+                    pid=pid, descriptor=descriptor, pin=pin, data=data, offset=offset,
                 )
             finally:
                 os.close(pin)
-        elif n == 3 and (pid, a) in self.custody.descriptors:
-            state.native_output_close = a
-        elif n in {32, 33, 292, 72} and (pid, a) in self.custody.descriptors:
+        elif n == 3 and (pid, descriptor) in self.custody.descriptors:
+            state.native_output_close = descriptor
+        elif n in {32, 33, 292, 72} and (pid, descriptor) in self.custody.descriptors:
             if n == 72 and b not in {0, 1030}:
                 if b == fcntl.F_SETFL and c & os.O_APPEND:
                     raise NativeOutputError("native output append description change is not admitted")
@@ -149,18 +148,19 @@ class NativeOutputObserver:
                     n, "fcntl-dupfd" if b == 0 else "fcntl-dupfd-cloexec",
                 )
                 operation = self.custody.enter_duplicate(
-                    pid=pid, descriptor=a, kind=kind,
-                    target=b if n in {33, 292} else None,
-                    minimum=c if n == 72 else None, flags=c if n == 292 else 0,
+                    pid=pid, descriptor=descriptor, kind=kind,
+                    target=native_int(b) if n in {33, 292} else None,
+                    minimum=native_int(c) if n == 72 else None,
+                    flags=c if n == 292 else 0,
                 )
-        elif n in {33, 292} and (pid, b) in self.custody.descriptors:
+        elif n in {33, 292} and (pid, native_int(b)) in self.custody.descriptors:
             raise NativeOutputError("native output replacement by an untracked descriptor is not admitted")
         elif n in {82, 264, 316}:
             source = native.path(pid, state, a if n == 82 else b, -100 if n == 82 else native_signed(a), follow_final=False)
             destination = native.path(pid, state, b if n == 82 else d, -100 if n == 82 else native_signed(c), follow_final=False)
-            if source.startswith("/work/") or destination.startswith("/work/"):
-                self.require_path(source)
-                self.require_path(destination)
+            if source.startswith("/work/") and destination.startswith("/work/"):
+                native.check(state, source, "write")
+                native.check(state, destination, "write")
                 first, second = self.operand(source), None
                 try:
                     second = self.operand(destination)
@@ -178,23 +178,18 @@ class NativeOutputObserver:
         elif n == 87 or n == 263 and c == 0:
             path = native.path(pid, state, a if n == 87 else b, -100 if n == 87 else native_signed(a), follow_final=False)
             if path.startswith("/work/"):
-                self.require_path(path)
                 pin = self.operand(path)
                 try:
                     operation = self.custody.enter_remove(owner=1, pid=pid, path=path, pin=pin)
                 finally:
                     if pin is not None:
                         os.close(pin)
-        elif n in {83, 258}:
-            path = native.path(pid, state, a if n == 83 else b, -100 if n == 83 else native_signed(a), follow_final=False)
-            if path.startswith("/work/") and path not in self.parents:
-                raise NativeOutputError("native output directory is not a declared output ancestor")
         elif n in {76, 77, 90, 91, 92, 93, 94, 260, 268, 280}:
             path = state.fds.get(a) if n in {77, 91, 93} else native.path(
                 pid, state, b if n in {260, 268, 280} else a,
                 native_signed(a) if n in {260, 268, 280} else -100,
             )
-            if path in self.paths:
+            if path in self.custody.objects:
                 raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
         elif n in {86, 265}:
             raise NativeOutputError("native output hardlink transitions are not implemented")
@@ -233,6 +228,11 @@ class NativeOutputObserver:
 
 def native_signed(value):
     return value - (1 << 64) if value & (1 << 63) else value
+
+
+def native_int(value):
+    value &= (1 << 32) - 1
+    return value - (1 << 32) if value & (1 << 31) else value
 
 
 @dataclass

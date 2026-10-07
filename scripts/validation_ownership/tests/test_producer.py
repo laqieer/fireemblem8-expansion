@@ -1564,10 +1564,11 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(report["processes"], 2)
         self.fixture.assert_clean(session)
 
-    def test_native_capsule_refuses_unobserved_output_effects_before_kernel_entry(self):
+    def test_native_capsule_preserves_output_refusals(self):
         self.fixture.add("native.c", (
-            "#define _POSIX_C_SOURCE 200809L\n"
+            "#define _GNU_SOURCE\n"
             "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "#include <sys/stat.h>\n"
             "int main(int argc,char **argv){int fd,other;"
             "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0700);if(fd<0)return 1;"
             "if(argc!=2)return 2;"
@@ -1575,16 +1576,23 @@ class ProducerTests(unittest.TestCase):
             "else if(!strcmp(argv[1],\"append\"))other=fcntl(fd,F_SETFL,O_APPEND);"
             "else if(!strcmp(argv[1],\"truncate\"))other=ftruncate(fd,1);"
             "else if(!strcmp(argv[1],\"replace-fd\"))other=dup2(1,fd);"
+            "else if(!strcmp(argv[1],\"anonymous\"))other=open(\"/work\",O_TMPFILE|O_RDWR,0600);"
+            "else if(!strcmp(argv[1],\"nested-anonymous\")){if(mkdir(\"/work/tmp\",0700))return 3;"
+            "other=open(\"/work/tmp\",O_TMPFILE|O_RDWR,0600);}"
             "else other=link(\"/work/result\",\"/work/alias\");"
+            "if(!strcmp(argv[1],\"anonymous\")||!strcmp(argv[1],\"nested-anonymous\")){"
+            "if(other<0||write(other,\"hidden\",6)!=6||close(other))return 4;}"
             "(void)other;return 0;}\n"
         ))
         self.fixture.add("Makefile", "all: ;\n")
         for mutation, diagnostic in (
-            ("extra", "outside its exact Command outputs"),
+            ("extra", "undeclared or nonregular generated output"),
             ("append", "append description change"),
             ("truncate", "standalone truncate transition"),
             ("replace-fd", "untracked descriptor"),
             ("link", "hardlink transitions"),
+            ("anonymous", "anonymous temporary output transitions"),
+            ("nested-anonymous", "anonymous temporary output transitions"),
         ):
             with self.subTest(mutation=mutation):
                 with self.fixture.session(seconds=40) as session:
@@ -1592,6 +1600,74 @@ class ProducerTests(unittest.TestCase):
                     with self.assertRaisesRegex(MakeProbeError, diagnostic):
                         session.native(tool, (mutation,), outputs=("result",))
                 self.fixture.assert_clean(session)
+
+    def test_native_capsule_keeps_retired_intermediates_separate_from_final_outputs(self):
+        self.fixture.add("native.c", (
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <sys/stat.h>\n"
+            "int main(void){int fd;"
+            "fd=open(\"/work/discard\",O_CREAT|O_EXCL|O_WRONLY,0600);if(fd<0)return 2;"
+            "if(write(fd,\"discard\",7)!=7||close(fd)||unlink(\"/work/discard\"))return 3;"
+            "if(mkdir(\"/work/scratch\",0700))return 1;"
+            "fd=open(\"/work/scratch/result.tmp\",O_CREAT|O_EXCL|O_WRONLY,0600);if(fd<0)return 4;"
+            "if(write(fd,\"final\",5)!=5||close(fd))return 5;"
+            "if(rename(\"/work/scratch/result.tmp\",\"/work/result\")||rmdir(\"/work/scratch\"))return 6;"
+            "puts(\"once\");return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            output = session.native(tool, outputs=("result",))
+            self.assertEqual(output.stdout, b"once\n")
+            self.assertEqual([(item.path, item.data, item.mode) for item in output.generated], [
+                ("result", b"final", 0o600),
+            ])
+        self.fixture.assert_clean(session)
+
+    def test_native_capsule_large_and_zero_byte_write_family_matches_kernel_bytes(self):
+        self.fixture.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "#include <sys/uio.h>\n"
+            "static char data[70000];"
+            "int main(int argc,char **argv){int fd,zero=argc==2&&!strcmp(argv[1],\"zero\");"
+            "struct iovec parts[2]={{0,0},{data,sizeof(data)}};"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);if(fd<0)return 1;"
+            "if(zero&&(write(fd,0,0)||pwrite(fd,0,0,0)||writev(fd,parts,0)))return 2;"
+            "memset(data,'A',sizeof(data));if(write(fd,data,sizeof(data))!=sizeof(data))return 3;"
+            "memset(data,'B',sizeof(data));if(pwrite(fd,data,sizeof(data),70000)!=sizeof(data))return 4;"
+            "memset(data,'C',sizeof(data));"
+            "if(writev(fd,zero?parts:parts+1,zero?2:1)!=sizeof(data))return 5;"
+            "return close(fd);}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for mode in ("zero", "large"):
+            with self.subTest(mode=mode):
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    output = session.native(tool, (mode,), outputs=("result",))
+                    self.assertEqual(output.generated[0].data, b"A" * 70000 + b"C" * 70000)
+                self.fixture.assert_clean(session)
+
+    def test_native_capsule_negative_duplicate_operands_preserve_kernel_errors_and_fd(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <errno.h>\n"
+            "#include <sys/syscall.h>\n"
+            "int main(void){int fd;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);if(fd<0)return 1;"
+            "errno=0;if(syscall(SYS_dup2,fd,0xffffffffUL)!=-1||errno!=EBADF)return 2;"
+            "errno=0;if(syscall(SYS_dup3,fd,0xffffffffUL,0)!=-1||errno!=EBADF)return 3;"
+            "errno=0;if(syscall(SYS_fcntl,fd,F_DUPFD,0xffffffffUL)!=-1||errno!=EINVAL)return 4;"
+            "errno=0;if(syscall(SYS_fcntl,fd,F_DUPFD_CLOEXEC,0xffffffffUL)!=-1||errno!=EINVAL)return 5;"
+            "if(write(fd,\"kept\",4)!=4)return 6;return close(fd);}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        with self.fixture.session(seconds=40) as session:
+            tool = session.compile_native(("native.c",))
+            output = session.native(tool, outputs=("result",))
+            self.assertEqual(output.generated[0].data, b"kept")
+        self.fixture.assert_clean(session)
 
     def test_missing_direct_native_path_is_not_synthesized_into_the_make_view(self):
         self.fixture.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
