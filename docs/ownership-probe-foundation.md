@@ -68,6 +68,12 @@ into successful observation. On the supported Linux host, late `close` errors
 retaining the failure event; `EBADF` contradicts a live owned binding.
 The late-error controls use actual descriptor close/release with a modeled
 error return. They do not claim a real filesystem-induced I/O error.
+Final-writer descriptor retirement does not itself complete content settlement.
+A content-budget/stat/read or settlement-event failure leaves the object
+unsettled even though the actual descriptor has been released. Final inventory
+completion rejects that state before and after owned teardown. Digest admission
+occurs only after the settlement event succeeds; a previously settled digest
+cannot authorize a failed later settlement.
 These adapters are internal observations, not output-plan authorization.
 The supervisor must derive their operands from the existing sealed Command,
 actual job and finite output plan and supply actual stopped syscall inputs.

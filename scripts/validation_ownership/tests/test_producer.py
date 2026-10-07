@@ -5082,6 +5082,88 @@ class NativeOutputCustodyTests(unittest.TestCase):
                 with self.assertRaisesRegex(NativeOutputError, "active"):
                     outputs.finish()
 
+    def test_final_close_settlement_failure_never_completes_unsettled_content(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError, NativeOutputs
+        data = b"VALUE := closing writer\n"
+        for failure in ("content-budget", "settled-event"):
+            for result in (0, -errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT):
+                with self.subTest(failure=failure, result=result):
+                    path = f"{failure}-{abs(result)}"
+                    (self.root / path).write_bytes(data)
+                    armed = False
+                    events = []
+
+                    def charge(amount):
+                        self.charge(amount)
+                        if armed and failure == "content-budget" and amount == len(data):
+                            raise RuntimeError("close settlement budget exhausted")
+
+                    def emit(kind, **fields):
+                        if armed and failure == "settled-event" and kind == "output-settled":
+                            raise RuntimeError("close settlement event exhausted")
+                        events.append(kind)
+
+                    outputs = NativeOutputs(
+                        deadline=self.deadline, charge=charge, file_limit=65536, emit=emit,
+                    )
+                    self.addCleanup(outputs.close)
+                    descriptor = os.open(self.root / path, os.O_RDWR)
+                    outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                        path=path, writing=False,
+                    )
+                    outputs.closed(1, descriptor, 0)
+                    os.close(descriptor)
+                    descriptor = os.open(self.root / path, os.O_RDWR)
+                    item = outputs.opened(
+                        owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                        path=path, writing=True,
+                    )
+                    self.assertIsNotNone(item.sha256)
+                    events.clear()
+                    owned = item.descriptor
+                    os.close(descriptor)
+                    with self.assertRaises(OSError) as released:
+                        os.fstat(descriptor)
+                    self.assertEqual(released.exception.errno, errno.EBADF)
+                    armed = True
+                    with self.assertRaisesRegex(RuntimeError, "close settlement"):
+                        outputs.closed(1, descriptor, result)
+                    self.assertNotIn((1, descriptor), outputs.descriptors)
+                    self.assertFalse(item.writers)
+                    self.assertIsNone(item.sha256)
+                    self.assertNotIn("output-settled", events)
+                    self.assertEqual(os.pread(owned, len(data), 0), data)
+                    with self.assertRaisesRegex(NativeOutputError, "unsettled"):
+                        outputs.finish()
+                    outputs.close()
+                    with self.assertRaises(OSError):
+                        os.fstat(owned)
+                    with self.assertRaisesRegex(NativeOutputError, "unsettled"):
+                        outputs.finish()
+
+    def test_terminal_cleanup_refuses_low_level_open_retirement_and_source_release(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = self.create("terminal.mk", b"VALUE := terminal\n")
+        source = self.outputs.capture(owner=1, path="terminal.mk", descriptor=descriptor)
+        self.outputs.close()
+        for operation in (
+            lambda: self.outputs.opened(
+                owner=1, pid=1, descriptor=descriptor, pin=descriptor,
+                path="terminal.mk", writing=True,
+            ),
+            lambda: self.outputs.replaced(
+                owner=1, source="terminal.mk", destination="other.mk",
+                source_pin=descriptor, retired_pin=None, result=0,
+            ),
+            lambda: self.outputs.removed(
+                owner=1, path="terminal.mk", pin=descriptor, result=0,
+            ),
+            lambda: self.outputs.release(source),
+        ):
+            with self.assertRaisesRegex(NativeOutputError, "terminal"):
+                operation()
+
     def test_actual_later_write_has_distinct_version_after_previous_reader_retires(self):
         descriptor = self.create("generated.mk", b"VALUE := first\n")
         first = self.outputs.capture(owner=1, path="generated.mk", descriptor=descriptor)

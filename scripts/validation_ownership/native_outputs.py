@@ -371,11 +371,13 @@ class NativeOutputs:
     def _settle(self, item):
         if item.writers or item.pending_writer is not None or item.retired:
             raise NativeOutputError("native output settlement overlaps an active writer")
+        item.sha256 = None
         identity = self._identity(item.descriptor)
         if identity != item.identity:
             raise NativeOutputError("native output settlement absorbed an unobserved change")
-        item.sha256 = self._digest(item.descriptor, identity)
-        self._event("output-settled", item, identity=list(identity), sha256=item.sha256)
+        digest = self._digest(item.descriptor, identity)
+        self._event("output-settled", item, identity=list(identity), sha256=digest)
+        item.sha256 = digest
 
     def _verify_settled(self, item, identity):
         if item.sha256 is None or self._digest(item.descriptor, identity) != item.sha256:
@@ -383,6 +385,7 @@ class NativeOutputs:
 
     def opened(self, *, owner, pid, descriptor, pin, path, writing):
         """Bind an actual successful open to its kernel object, not pathname alone."""
+        self._usable()
         if type(owner) is not int or owner < 1 or type(writing) is not bool:
             raise NativeOutputError("native output open lacks its issued producer")
         identity = self._identity(pin)
@@ -550,6 +553,7 @@ class NativeOutputs:
 
     def replaced(self, *, owner, source, destination, source_pin, retired_pin, result):
         """Record a stopped successful rename and its exact replaced inode."""
+        self._usable()
         item = self.objects.get(source)
         old = self.objects.get(destination)
         if (
@@ -588,6 +592,7 @@ class NativeOutputs:
         self._event("output-replace", item, source=source, identity=list(moved))
 
     def removed(self, *, owner, path, pin, result):
+        self._usable()
         item = self.objects.get(path)
         if item is None or item.owner != owner or item.retired or item.writers:
             raise NativeOutputError("native output removal lacks its settled owned object")
@@ -608,6 +613,7 @@ class NativeOutputs:
         self._event("output-retire", item, identity=list(identity), destination=path)
 
     def release(self, source):
+        self._usable()
         if (
             source.closed or self.pins.get(source.descriptor) is not source
             or source.descriptor not in source.object.readers
@@ -629,6 +635,8 @@ class NativeOutputs:
             item.readers or item.writers or item.pending_writer is not None for item in self.versions
         ):
             raise NativeOutputError("native output custody ended with active descriptors/pins")
+        if any(item.sha256 is None for item in self.versions):
+            raise NativeOutputError("native output custody ended with unsettled content")
 
     def close(self):
         """Close owned object/source pins, never borrowed tracee FD integers."""
