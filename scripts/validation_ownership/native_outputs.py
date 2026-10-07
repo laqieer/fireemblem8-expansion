@@ -274,18 +274,27 @@ class NativeOutputs:
         if pid in self.pending:
             raise NativeOutputError("native write overlaps an unfinished kernel operation")
         item = self.before_write(pid, descriptor, pin)
-        operation = self._begin(
-            item.owner, pid, "write", item.path, pins=((item.path, pin),),
-        )
-        before = self._bytes(operation.operands[0][1], operation.operands[0][2])
-        self.charge(len(data) + len(before))
-        operation = NativeOperation(
-            operation.owner, pid, operation.kind, operation.source,
-            operation.destination, operation.flags, operation.operands,
-            descriptor=descriptor, offset=offset, data=data, before=before,
-        )
-        self.pending[pid] = operation
-        return operation
+        operation = None
+        try:
+            operation = self._begin(
+                item.owner, pid, "write", item.path, pins=((item.path, pin),),
+            )
+            before = self._bytes(operation.operands[0][1], operation.operands[0][2])
+            self.charge(len(data) + len(before))
+            operation = NativeOperation(
+                operation.owner, pid, operation.kind, operation.source,
+                operation.destination, operation.flags, operation.operands,
+                descriptor=descriptor, offset=offset, data=data, before=before,
+            )
+            self.pending[pid] = operation
+            return operation
+        except BaseException as error:
+            item.pending_writer = None
+            finish_cleanup(
+                [] if operation is None else [lambda: self._end(operation)],
+                primary=error,
+            )
+            raise
 
     def leave_write(self, operation, result):
         self._operation(operation, "write")

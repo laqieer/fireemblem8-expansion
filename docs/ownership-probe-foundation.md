@@ -98,6 +98,31 @@ Open descriptor/status and write byte-count/status returns likewise validate
 exact integer type and kernel bounds before comparison or mutation. Malformed
 decoded values raise the custody-layer error and retain the pending entry or
 writer; they cannot escape as a Python type error or clear incomplete evidence.
+Pre-syscall write-entry preparation failures clear their provisional writer
+and operation token and close only new owned operand pins. Actual borrowed
+output descriptors, settled identity/digest and version remain unchanged.
+This rollback applies before the kernel write, not to an actual failed write
+return or incomplete post-write settlement.
+
+The existing native production observer now captures original `posix_spawn`
+argv and canonical `/repo` CWD before spawning. Its private `VO_JOB_INPUTS`
+notification is authenticated at the existing observer instruction/role
+boundary, carried through the actual `Process` clone, and compared with the
+root exec syscall inputs before execution. Runtime v5 also compares the
+exec-stop command line against that pre-spawn value. Each argv pointer and
+string read is charged to the original shared observation budget. Root
+dispatch completion and successful root exec retire the pending value;
+descendant execs retain the existing actual-tree validation.
+
+This is an original-input binding seam, not writable-output permission,
+Command-plan admission, nested-Make support, or generated-source v6 evidence.
+The v5 machine/host/archive input schema remains unchanged. To reproduce the
+deterministic seam controls from a clean source tree, run
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_original_prespawn_inputs_bind_entry_and_exec_stop`.
+The original recipe must print `original`; omitted, repeated, foreign-sender,
+wrong-size, changed-argv/CWD and changed exec-stop bindings must refuse and
+clean the owned process tree. Existing original expansion, direct-executable
+and descendant pipeline cases are the positive compatibility controls.
 
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`

@@ -4830,6 +4830,72 @@ class NativeOutputCustodyTests(unittest.TestCase):
         self.outputs.closed(1, descriptor, 0)
         self.outputs.finish()
 
+    def test_write_entry_preparation_failure_releases_only_new_pins_and_writer_marker(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        charges = {
+            "entry-identity-charge": 1, "operand-identity-charge": 2, "begin-charge": 3,
+            "preimage-charge": 4, "post-read-identity-charge": 5, "payload-charge": 6,
+        }
+        for seam in (*charges, "preimage-read", "preimage-end"):
+            with self.subTest(seam=seam):
+                descriptor = self.create(seam, b"original")
+                item = self.outputs.opened(
+                    owner=1, pid=1, descriptor=descriptor, pin=descriptor, path=seam, writing=True,
+                )
+                before = item.identity, item.revision, item.sha256
+                events = len(self.events)
+                owned = []
+                duplicate = os.dup
+                def record(pin):
+                    value = duplicate(pin)
+                    owned.append(value)
+                    return value
+                charged = 0
+                def charge(amount):
+                    nonlocal charged
+                    charged += 1
+                    if charged == charges.get(seam):
+                        raise NativeOutputError("modeled entry quota exhausted")
+                    self.charge(amount)
+                pread = os.pread
+                def read(pin, size, offset):
+                    if seam == "preimage-read":
+                        raise OSError(errno.EIO, "modeled preimage read failure")
+                    return pread(pin, size, offset)
+                identity = self.outputs._identity
+                identities = 0
+                def checked(pin):
+                    nonlocal identities
+                    identities += 1
+                    if seam == "preimage-end" and identities == 3:
+                        raise NativeOutputError("modeled final preimage identity failure")
+                    return identity(pin)
+                with patch.object(os, "dup", record), patch.object(os, "pread", read), \
+                     patch.object(self.outputs, "charge", charge), \
+                     patch.object(self.outputs, "_identity", checked):
+                    with self.assertRaises((NativeOutputError, OSError)):
+                        self.outputs.enter_write(
+                            pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
+                        )
+                self.assertIsNone(item.pending_writer)
+                self.assertFalse(self.outputs.pending)
+                self.assertEqual((item.identity, item.revision, item.sha256), before)
+                self.assertEqual(item.writers, {(1, descriptor)})
+                self.assertEqual(len(self.events), events)
+                self.assertEqual(os.pread(descriptor, 65536, 0), b"original")
+                self.assertEqual(len(owned), 0 if charges.get(seam, 3) < 3 else 1)
+                for pin in owned:
+                    with self.assertRaises(OSError) as closed:
+                        os.fstat(pin)
+                    self.assertEqual(closed.exception.errno, errno.EBADF)
+                operation = self.outputs.enter_write(
+                    pid=1, descriptor=descriptor, pin=descriptor, data=b"NEW", offset=0,
+                )
+                self.outputs.leave_write(operation, os.pwrite(descriptor, b"NEW", 0))
+                self.outputs.closed(1, descriptor, 0)
+                self.assertEqual(os.pread(descriptor, 65536, 0), b"NEWginal")
+                self.outputs.finish()
+
     def test_entry_return_nonzero_write_cannot_absorb_unrelated_content(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = self.create("write", b"original")

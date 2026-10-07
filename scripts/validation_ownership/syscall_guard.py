@@ -49,6 +49,7 @@ else:
 
 LIBC = ctypes.CDLL(None, use_errno=True)
 VO_SOURCE_IO = 0x564F4D4B00000008
+VO_JOB_INPUTS = 0x564F4D4B00000009
 VO_JOB_CONTEXT = 0x564F4D4B00000006
 VO_JOB_POLICY = 0x564F4D4B00000007
 LIBC.ptrace.restype = ctypes.c_long
@@ -121,13 +122,15 @@ def replace_memory(pid, address, data):
         offset += amount
 
 
-def cstring(pid, address, *, limit=4096):
+def cstring(pid, address, *, limit=4096, charge=None):
     if not address:
         raise Violation("null pathname")
     result = bytearray()
     while len(result) < limit:
         cursor = address + len(result)
         count = min(8 - (cursor & 7), limit - len(result))
+        if charge is not None:
+            charge(count)
         word = memory(pid, cursor, count)
         if b"\0" in word:
             result.extend(word.split(b"\0", 1)[0])
@@ -239,6 +242,7 @@ class Process:
     native_dispatch: int | None = None
     native_parent: int | None = None
     native_execs: int = 0
+    native_inputs: tuple[str, dict] | None = None
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -249,6 +253,7 @@ class Process:
             memory_group=self.memory_group, memory_limit=self.memory_limit,
             dependency_image=self.dependency_image,
             native_dispatch=self.native_dispatch,
+            native_inputs=self.native_inputs,
         )
 
     def close(self):
@@ -550,10 +555,50 @@ class Policy:
         self.reserve_trace_observation()
         self.charge_metadata(len(encoded(row)))
 
+    def native_argv(self, pid, pointer):
+        if not pointer:
+            raise Violation("native dispatch has no original argv vector")
+        argv, size = [], 0
+        for index in range(1025):
+            if time.monotonic() >= self.config["deadline"]:
+                raise Violation("native input capture exhausted its original deadline")
+            self.charge_metadata(8)
+            address = int.from_bytes(memory(pid, pointer + 8 * index, 8), "little")
+            if not address:
+                inputs = read_epochs.native_execution_input(argv, "/repo")
+                self.charge_metadata(len(encoded(inputs)))
+                return inputs["argv"]
+            argument = cstring(pid, address, limit=65537 - size, charge=self.charge_metadata)
+            size += len(argument.encode("utf-8")) + 1
+            if size > 65536:
+                raise Violation("native dispatch argv exceeds its original byte bound")
+            argv.append(argument)
+        raise Violation("native dispatch argv exceeds its original word bound")
+
+    def observe_native_inputs(self, pid, state, pointer, size):
+        if (
+            not self.native_readonly or pid != self.make_pid or state.role != "make"
+            or not state.observer_ready or state.dispatch is not None
+            or state.native_dispatch is not None or state.native_inputs is not None or size != 16
+            or state.cwd != "/repo"
+        ):
+            raise Violation("native dispatch inputs lack their original pre-spawn owner")
+        self.charge_metadata(size)
+        frame = memory(pid, pointer, size)
+        path_pointer, argv_pointer = (
+            int.from_bytes(frame[offset:offset + 8], "little") for offset in (0, 8)
+        )
+        path = self.path(pid, state, path_pointer)
+        if path not in self.native_executables:
+            raise Violation("native dispatch inputs refer to an unadmitted executable")
+        inputs = read_epochs.native_execution_input(self.native_argv(pid, argv_pointer), state.cwd)
+        state.native_inputs = path, inputs
+
     def begin_native_job(self, pid, state, path):
         if (
             pid != self.make_pid or state.role != "make" or not state.observer_ready
             or state.native_dispatch is not None or path not in self.native_executables
+            or state.native_inputs is None or state.native_inputs[0] != path
         ):
             raise Violation("native job lacks its actual original Make dispatch")
         sequence = len(self.native_jobs) + 1
@@ -598,15 +643,21 @@ class Policy:
             except UnicodeDecodeError as error:
                 raise Violation("native job command line is not strict UTF-8") from error
             inputs = read_epochs.native_execution_input(argv, state.cwd)
+            if not descendant and (
+                state.native_inputs is None or state.native_inputs != (state.exec_path, inputs)
+            ):
+                raise Violation("native exec-stop inputs differ from original pre-spawn dispatch")
             self.native_job_event({"sequence": state.native_dispatch, **inputs})
             if not descendant:
                 row.update(inputs)
                 row["tree"] = []
             state.native_execs += 1
+            state.native_inputs = None
             return {
                 "kind": "exec", "pid": pid, "parent": state.native_parent,
                 "generation": state.native_execs, "path": state.exec_path, **inputs,
             }
+        state.native_inputs = None
 
     def native_tree_event(self, state, event):
         if self.read_trace is None or self.read_trace.version != 5:
@@ -2135,6 +2186,7 @@ class Policy:
         if n == 39 and a in {
             VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE,
             VO_SOURCE_IO, VO_JOB_CONTEXT, VO_JOB_POLICY,
+            VO_JOB_INPUTS,
         }:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
@@ -2186,6 +2238,8 @@ class Policy:
                     self.observe_native_job_context(pid, state, b, c)
                 elif a == VO_JOB_POLICY:
                     self.observe_native_job_policy(pid, state, b, c)
+                elif a == VO_JOB_INPUTS:
+                    self.observe_native_inputs(pid, state, b, c)
                 elif b:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
@@ -2200,6 +2254,7 @@ class Policy:
                         raise Violation("invalid Make dispatch completion")
                     state.dispatch = None
                     state.native_dispatch = None
+                    state.native_inputs = None
         elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
@@ -2349,6 +2404,9 @@ class Policy:
                 elif self.native_readonly and path in self.native_executables and state.dispatch:
                     if state.dispatch[0] != path:
                         raise Violation("native shell differs from authenticated Make dispatch")
+                    inputs = read_epochs.native_execution_input(self.native_argv(pid, b), state.cwd)
+                    if state.native_inputs is None or state.native_inputs != (path, inputs):
+                        raise Violation("native exec entry differs from original pre-spawn dispatch inputs")
                     role = "native"
                     state.exec_path = path
                     self.reserve_observation("accessed", "native-shell:" + str(pid) + ":" + path)

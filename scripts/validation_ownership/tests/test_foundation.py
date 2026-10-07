@@ -5498,6 +5498,97 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
+    def test_native_original_prespawn_inputs_bind_entry_and_exec_stop(self):
+        self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
+        cases = (
+            (
+                "original=guard.Policy.entry\n"
+                "def changed(self,pid,state,r):\n"
+                " if r.orig_rax==59 and state.dispatch is not None and self.native_readonly:\n"
+                "  pointer=int.from_bytes(guard.memory(pid,r.rsi+16,8),'little')\n"
+                "  text=guard.cstring(pid,pointer,limit=65536)\n"
+                "  offset=text.index('original')\n"
+                "  guard.replace_memory(pid,pointer+offset,b'foreign!')\n"
+                " return original(self,pid,state,r)\n"
+                "guard.Policy.entry=changed\n",
+                "native exec entry differs from original pre-spawn dispatch inputs",
+            ),
+            (
+                "guard.Policy.observe_native_inputs=lambda *args:None\n",
+                "native job lacks its actual original Make dispatch",
+            ),
+            (
+                "original=guard.Policy.observe_native_inputs\n"
+                "def changed(self,pid,state,pointer,size):\n"
+                " original(self,pid,state,pointer,size)\n"
+                " path,inputs=state.native_inputs\n"
+                " state.native_inputs=(path,{**inputs,'argv':['/bin/sh','-c','printf foreign']})\n"
+                "guard.Policy.observe_native_inputs=changed\n",
+                "native exec entry differs from original pre-spawn dispatch inputs",
+            ),
+            (
+                "original=guard.Policy.observe_native_inputs\n"
+                "def changed(self,pid,state,pointer,size):\n"
+                " original(self,pid,state,pointer,size)\n"
+                " path,inputs=state.native_inputs\n"
+                " state.native_inputs=(path,{**inputs,'cwd':'/foreign'})\n"
+                "guard.Policy.observe_native_inputs=changed\n",
+                "native exec entry differs from original pre-spawn dispatch inputs",
+            ),
+            (
+                "original=guard.Policy.observe_native_inputs\n"
+                "def changed(self,pid,state,pointer,size):\n"
+                " original(self,pid,state,pointer,size)\n"
+                " return original(self,pid,state,pointer,size)\n"
+                "guard.Policy.observe_native_inputs=changed\n",
+                "native dispatch inputs lack their original pre-spawn owner",
+            ),
+            (
+                "original=guard.Policy.observe_native_inputs\n"
+                "def changed(self,pid,state,pointer,size):return original(self,pid+1,state,pointer,size)\n"
+                "guard.Policy.observe_native_inputs=changed\n",
+                "native dispatch inputs lack their original pre-spawn owner",
+            ),
+            (
+                "original=guard.Policy.observe_native_inputs\n"
+                "def changed(self,pid,state,pointer,size):return original(self,pid,state,pointer,size-8)\n"
+                "guard.Policy.observe_native_inputs=changed\n",
+                "native dispatch inputs lack their original pre-spawn owner",
+            ),
+            (
+                "original=guard.Policy.bind_native_job\n"
+                "def changed(self,pid,state):\n"
+                " path,inputs=state.native_inputs\n"
+                " state.native_inputs=(path,{**inputs,'argv':['/bin/sh','-c','printf foreign']})\n"
+                " return original(self,pid,state)\n"
+                "guard.Policy.bind_native_job=changed\n",
+                "native exec-stop inputs differ from original pre-spawn dispatch",
+            ),
+        )
+        for body, error in cases:
+            session = self.session()
+            with self.subTest(error=error), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"original")
+            jobs = [
+                parse_json(row.removeprefix("native-job:").encode(), "original native input")
+                for row in observed["accessed"] if row.startswith("native-job:")
+            ]
+            self.assertEqual(len(jobs), 1)
+            self.assertEqual(jobs[0]["argv"], ["/bin/sh", "-c", "v=original; printf '%s' \"$v\""])
+            self.assertEqual(jobs[0]["cwd"], "/repo")
+        self.assert_clean(session)
+
     def test_native_runtime_job_execution_input_mutations_and_capture_failures_refuse(self):
         self.add("Makefile", "all: ; @v=original; printf '%s' \"$$v\"\n")
         for mutation in (
