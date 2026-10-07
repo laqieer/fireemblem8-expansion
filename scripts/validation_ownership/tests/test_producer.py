@@ -1669,6 +1669,98 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(output.generated[0].data, b"kept")
         self.fixture.assert_clean(session)
 
+    def test_native_capsule_renamed_readonly_fd_keeps_unsupported_mode_changes_guarded(self):
+        self.fixture.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <sys/stat.h>\n#include <sys/wait.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd,reader,status;pid_t child;"
+            "if(argc!=3)return 6;"
+            "fd=open(\"/work/tmp\",O_CREAT|O_EXCL|O_RDWR,0700);if(fd<0)return 1;"
+            "if(write(fd,\"kept\",4)!=4||close(fd))return 2;"
+            "reader=open(\"/work/tmp\",O_RDONLY);if(reader<0)return 3;"
+            "if(!strcmp(argv[2],\"duplicate\")){int copy=dup(reader);"
+            "if(copy<0||close(reader))return 7;reader=copy;}"
+            "if(!strcmp(argv[1],\"unlinked\")){if(unlink(\"/work/tmp\"))return 8;}"
+            "else if(rename(\"/work/tmp\",\"/work/result\"))return 4;"
+            "if(strcmp(argv[1],\"renamed\")){"
+            "fd=open(\"/work/tmp\",O_CREAT|O_EXCL|O_WRONLY,0700);if(fd<0)return 9;"
+            "if(write(fd,\"new\",3)!=3||close(fd)||rename(\"/work/tmp\",\"/work/result\"))return 10;}"
+            "if(!strcmp(argv[2],\"inherited\")){child=fork();if(child<0)return 11;"
+            "if(!child){if(fchmod(reader,0644)||close(reader))_exit(12);_exit(0);}"
+            "if(waitpid(child,&status,0)!=child||status)return 13;return close(reader);}"
+            "if(fchmod(reader,0644)||close(reader))return 5;return 0;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for lifetime in ("renamed", "replaced", "unlinked"):
+            for binding in ("original", "duplicate", "inherited"):
+                with self.subTest(lifetime=lifetime, binding=binding):
+                    with self.fixture.session(seconds=40) as session:
+                        tool = session.compile_native(("native.c",))
+                        with self.assertRaisesRegex(MakeProbeError, "mode/standalone truncate transition"):
+                            session.native(tool, (lifetime, binding), outputs=("result",))
+                    self.fixture.assert_clean(session)
+
+    def test_native_capsule_readonly_fds_do_not_pin_live_writer_content(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "#include <sys/stat.h>\n#include <sys/wait.h>\n"
+            "int main(int argc,char **argv){int fd,reader,pipes[2],status;pid_t child=0;"
+            "char bytes[9],token='x';struct stat info;"
+            "if(argc!=2)return 1;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR,0600);if(fd<0)return 2;"
+            "if(write(fd,\"first\",5)!=5)return 3;"
+            "if(!strcmp(argv[1],\"duplicate\")){int copy=dup(fd);"
+            "if(copy<0||close(fd))return 4;fd=copy;}"
+            "if(!strcmp(argv[1],\"inherited\")){if(pipe(pipes))return 5;child=fork();"
+            "if(child<0)return 6;"
+            "if(!child){if(close(pipes[1])||read(pipes[0],&token,1)!=1)return 7;"
+            "if(write(fd,\"next\",4)!=4||close(fd)||close(pipes[0]))return 8;_exit(0);}"
+            "if(close(pipes[0])||close(fd))return 9;}"
+            "reader=open(\"/work/result\",!strcmp(argv[1],\"path\")?O_PATH:O_RDONLY);"
+            "if(reader<0)return 10;"
+            "if(strcmp(argv[1],\"path\")&&(read(reader,bytes,5)!=5||memcmp(bytes,\"first\",5)))return 11;"
+            "if(child){if(write(pipes[1],&token,1)!=1||close(pipes[1]))return 12;"
+            "if(waitpid(child,&status,0)!=child||status)return 13;}"
+            "else if(write(fd,\"next\",4)!=4||close(fd))return 14;"
+            "if(!strcmp(argv[1],\"path\")){if(fstat(reader,&info)||info.st_size!=9)return 15;}"
+            "else if(lseek(reader,0,SEEK_SET)||read(reader,bytes,9)!=9||memcmp(bytes,\"firstnext\",9))return 16;"
+            "return close(reader);}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for mode in ("original", "duplicate", "inherited", "path"):
+            with self.subTest(mode=mode):
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    output = session.native(tool, (mode,), outputs=("result",))
+                    self.assertEqual(output.generated[0].data, b"firstnext")
+                    self.assertEqual(output.generated[0].mode, 0o600)
+                self.fixture.assert_clean(session)
+
+    def test_native_capsule_cloexec_fds_do_not_enable_root_or_descendant_reexec(self):
+        self.fixture.add("native.c", (
+            "#define _GNU_SOURCE\n"
+            "#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n"
+            "#include <sys/wait.h>\n"
+            "int main(int argc,char **argv){int fd,status;pid_t child;"
+            "char *again[]={\"/native/tool\",\"second\",0};if(argc!=2)return 1;"
+            "if(!strcmp(argv[1],\"second\"))return 2;"
+            "fd=open(\"/work/result\",O_CREAT|O_EXCL|O_RDWR|O_CLOEXEC,0600);if(fd<0)return 3;"
+            "if(write(fd,\"first\",5)!=5||fcntl(fd,F_SETFD,FD_CLOEXEC))return 4;"
+            "if(!strcmp(argv[1],\"descendant\")){child=fork();if(child<0)return 5;"
+            "if(child){if(waitpid(child,&status,0)!=child)return 6;return status?7:0;}}"
+            "execv(again[0],again);return 8;}\n"
+        ))
+        self.fixture.add("Makefile", "all: ;\n")
+        for mode in ("root", "descendant"):
+            with self.subTest(mode=mode):
+                with self.fixture.session(seconds=40) as session:
+                    tool = session.compile_native(("native.c",))
+                    with self.assertRaisesRegex(MakeProbeError, "registered command post-bootstrap exec denied"):
+                        session.native(tool, (mode,), outputs=("result",))
+                self.fixture.assert_clean(session)
+
     def test_missing_direct_native_path_is_not_synthesized_into_the_make_view(self):
         self.fixture.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
         self.fixture.add("Makefile", "all:\n\t+@tools/native\n")

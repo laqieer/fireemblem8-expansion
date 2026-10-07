@@ -185,11 +185,15 @@ class NativeOutputObserver:
                     if pin is not None:
                         os.close(pin)
         elif n in {76, 77, 90, 91, 92, 93, 94, 260, 268, 280}:
-            path = state.fds.get(a) if n in {77, 91, 93} else native.path(
-                pid, state, b if n in {260, 268, 280} else a,
-                native_signed(a) if n in {260, 268, 280} else -100,
-            )
-            if path in self.custody.objects:
+            if n in {77, 91, 93}:
+                observed = (pid, descriptor) in self.custody.descriptors
+            else:
+                path = native.path(
+                    pid, state, b if n in {260, 268, 280} else a,
+                    native_signed(a) if n in {260, 268, 280} else -100,
+                )
+                observed = path in self.custody.objects
+            if observed:
                 raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
         elif n in {86, 265}:
             raise NativeOutputError("native output hardlink transitions are not implemented")
@@ -705,7 +709,7 @@ class NativeOutputs:
         self.descriptors[binding] = item
         if writing:
             item.writers.add(binding)
-        elif item.sha256 is None:
+        elif item.sha256 is None and not item.writers:
             self._settle(item)
         self._event(
             "output-open", item, pid=pid, fd=descriptor, operation_owner=owner,

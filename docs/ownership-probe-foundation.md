@@ -262,6 +262,30 @@ kernel's signed 32-bit conversion before model/binding validation. Require
 adapter instead refused legitimate scratch paths, large/zero memory operands,
 and negative descriptor operands before the kernel could return normally.
 
+`test_native_capsule_renamed_readonly_fd_keeps_unsupported_mode_changes_guarded`
+covers renamed, replaced and unlinked regular objects through original,
+duplicated and inherited readonly FDs. Unsupported FD mutations select the
+actual `(pid, signed32_fd)` object binding, never the descriptor's stale recorded
+pathname. Each actual `fchmod` attempt must refuse before changing mode;
+the earlier adapter admitted all nine object/binding combinations.
+`test_native_capsule_readonly_fds_do_not_pin_live_writer_content` covers original,
+duplicated and inherited writers plus an `O_PATH` reader. Ordinary readonly
+tracee FDs can observe later writes; they are not immutable captured
+`SourcePin`s. Opening them does not force settlement while a writer remains
+live. Require original `first` bytes and later `firstnext` bytes (or size nine
+through `O_PATH`) using actual pipe synchronization and final mode `0600`.
+Settle at actual last-writer retirement; immutable captured-source exclusions
+remain unchanged. The earlier adapter refused all four live-writer cases.
+
+The current capsule admits only its initial native-tool exec, with exactly
+standard FDs. Existing policy rejects post-bootstrap root and descendant
+execs; cloning does not restore bootstrap authority.
+`test_native_capsule_cloexec_fds_do_not_enable_root_or_descendant_reexec`
+opens an actual `O_CLOEXEC` output, sets `FD_CLOEXEC` and attempts both reexec
+paths. Require refusal before kernel exec and complete process cleanup.
+This does not qualify the unfinished multi-exec native-Make lane, whose actual
+successful exec/descriptor reconciliation remains required.
+
 For the held component regression family, run the class command above from
 a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
 variants to preserve exact source bytes, inherited writer membership and final
