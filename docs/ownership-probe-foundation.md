@@ -531,6 +531,9 @@ Failed pathname operations also require the actor's current image operands,
 including resource-free failed opens and failed directory operations. A kernel
 error does not restore the root job's pathname plan. Failed descriptor
 operations instead retain their actual live-description bindings.
+Failed pathname records name their actual dispatch, not another valid job or
+the object's earlier creator. This does not transfer directory/file ownership
+or impose actor ownership on failed inherited-descriptor operations.
 
 Run `NativeWriterTests.test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority`
 for actual root reexec, child/grandchild and fork-only inherited writer/lock
@@ -547,6 +550,10 @@ for actual admitted failed open/mkdir/rmdir observations and controlled archive
 replay that moves those observations to a fork-only or operand-free exec actor.
 The archive mutations retain the original dispatch, preimages and admissions;
 they are not additional child kernel observations.
+Run `NativeWriterTests.test_native_failed_path_operation_owners_bind_actual_dispatch_without_reassigning_creators`
+for actual failed open/mkdir/rmdir/remove/replace and a second admitted job
+sharing the same finite plan. Reassigning only a failed record's owner to that
+other job must reject while preserving the actual actor, dispatch and preimages.
 Concrete template-generated file ancestors also conflict with directory, file
 or nested-template resources in either declaration order, and with immutable
 sources or retained outputs. Declared directory/child relationships remain

@@ -2255,11 +2255,14 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 or type(row["result"]) is not int or not -4095 <= row["result"] < 0
             ):
                 raise ReadEpochError("native failed descriptor transition lost its actual job or preimage")
-            if operation in {"open", "mkdir", "rmdir", "remove", "replace"} and (
-                not permitted(row["source"], operation)
-                or operation == "replace" and not permitted(row["destination"], "replace")
-            ):
-                raise ReadEpochError("native failed namespace operation escaped its resource role matrix for the current image")
+            if operation in {"open", "mkdir", "rmdir", "remove", "replace"}:
+                if row["owner"] != dispatch:
+                    raise ReadEpochError("native failed operation owner differs from its actual pathname dispatch")
+                if (
+                    not permitted(row["source"], operation)
+                    or operation == "replace" and not permitted(row["destination"], "replace")
+                ):
+                    raise ReadEpochError("native failed namespace operation escaped its resource role matrix for the current image")
             if resources:
                 if actor_job is None:
                     raise ReadEpochError("native failed operation lost its actual actor")
