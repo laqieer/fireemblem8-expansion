@@ -2668,6 +2668,20 @@ actual execution observations. Completion requests additionally require the
 existing complete machine section and exact child dispatch/PID agreement with
 these jobs. General trace consumers retain optional machine archives.
 
+The original native Make root, including a failed Make invocation, also captures
+exactly one kernel ptrace exit-stop status and compares that typed raw status
+with its actual terminal wait. This reuses the process-owned terminal field;
+it does not add a wire format or permit multiple roots in the existing protocol.
+For the terminal-lifecycle part of `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_make_root_kernel_terminal_matches_actual_wait`: successful Make
+must bind raw stop/wait 0, while a recipe exiting 3 must bind Make stop/wait 512
+and retain the failed invocation. Run
+`test_native_make_root_missing_changed_and_reused_terminal_refuse`: missing,
+non-integer, prematurely reused, and changed raw status with the same decoded
+exit code must refuse and release owned state. A detached descendant remains
+subject to the existing complete job-tree requirement; these checks do not
+turn incomplete descendant retirement into success.
+
 From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
 namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 

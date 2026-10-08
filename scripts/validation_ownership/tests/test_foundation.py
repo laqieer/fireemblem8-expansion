@@ -5924,6 +5924,84 @@ class FoundationTests(unittest.TestCase):
                 self.assertFalse(session.budget.failed)
             self.assert_clean(session)
 
+    def test_native_make_root_kernel_terminal_matches_actual_wait(self):
+        self.add("Makefile", ".PHONY: all failed\nall: ; @:\nfailed: ; @exit 3\n")
+        receipt = self.directory / "make-root-terminal.json"
+        body = (
+            "original=guard.Policy.native_sigkill_exit\n"
+            "waitpid=guard.os.waitpid\nroots={}\n"
+            "def outcome(self,pid,state,status):\n"
+            " result=original(self,pid,state,status)\n"
+            " if state.role=='make':\n"
+            "  roots[pid]={'pid':pid,'stop':status,'stored':state.native_exit_status}\n"
+            " return result\n"
+            "def waited(*args):\n"
+            " pid,status=waitpid(*args)\n"
+            " if pid in roots and (os.WIFEXITED(status) or os.WIFSIGNALED(status)):\n"
+            "  roots[pid]['wait']=status\n"
+            f"  Path({str(receipt)!r}).write_text(json.dumps(roots[pid]))\n"
+            " return pid,status\n"
+            "guard.Policy.native_sigkill_exit=outcome;guard.os.waitpid=waited\n"
+        )
+        for target, status in (("all", 0), ("failed", 2 << 8)):
+            session = self.session(seconds=10)
+            with self.subTest(target=target), self.native_supervisor(body), session:
+                if target == "failed":
+                    with self.assertRaisesRegex(MakeProbeError, "native GNU Make failed: 2"):
+                        session._native_make_readonly(
+                            target, observe_reads=True, observe_runtime_completions=True,
+                        )
+                else:
+                    completed, _, observed = session._native_make_readonly(
+                        target, observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"", b""))
+                    self.assertTrue(observed["read_trace"]["machine"]["closed"])
+                actual = json.loads(receipt.read_bytes())
+                self.assertGreater(actual["pid"], 0)
+                self.assertEqual(
+                    {key: actual[key] for key in ("stop", "stored", "wait")},
+                    dict.fromkeys(("stop", "stored", "wait"), status),
+                )
+            self.assert_clean(session)
+
+    def test_native_make_root_missing_changed_and_reused_terminal_refuse(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        receipt = self.directory / "make-root-terminal-mutation.json"
+        for mode in ("missing", "changed", "untyped", "reused"):
+            body = (
+                "original=guard.Policy.native_sigkill_exit\n"
+                "entry=guard.Policy.entry\n"
+                "def entered(self,pid,state,r):\n"
+                " result=entry(self,pid,state,r)\n"
+                f" if {mode!r}=='reused' and state.role=='make' and r.orig_rax==231:\n"
+                "  state.native_exit_status=0\n"
+                f"  Path({str(receipt)!r}).write_text(json.dumps({{'pid':pid,'syscall':r.orig_rax}}))\n"
+                " return result\n"
+                "def outcome(self,pid,state,status):\n"
+                " result=original(self,pid,state,status)\n"
+                " if state.role=='make':\n"
+                f"  Path({str(receipt)!r}).write_text(json.dumps({{'pid':pid,'stop':status}}))\n"
+                f"  state.native_exit_status=None if {mode!r}=='missing' else False if {mode!r}=='untyped' else 1<<16\n"
+                " return result\n"
+                "guard.Policy.entry=entered;guard.Policy.native_sigkill_exit=outcome\n"
+            )
+            session = self.session(seconds=10)
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(
+                    MakeProbeError, "reused its terminal kernel exit stop" if mode == "reused"
+                    else "terminal status differs from its actual kernel exit stop",
+                ):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                    )
+                actual = json.loads(receipt.read_bytes())
+                self.assertGreater(actual["pid"], 0)
+                self.assertEqual(actual.get("syscall") if mode == "reused" else actual["stop"],
+                                 231 if mode == "reused" else 0)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_runtime_sigkill_entry_attempt_and_outcome_mutations_refuse(self):
         self.add("Makefile", "all:\n\t-@v=ignored; kill -KILL $$$$\n"
                  "\t@v=done; printf '%s' \"$$v\"\n")

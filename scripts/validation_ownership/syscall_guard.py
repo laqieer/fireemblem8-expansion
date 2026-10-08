@@ -3054,7 +3054,9 @@ def supervise(config, drop_privileges):
             if policy.native_outputs is not None:
                 policy.native_outputs.actor, policy.native_outputs.dispatch = stopped, state.native_dispatch
                 policy.native_outputs.custody.retire_process(stopped)
-            if policy.native_readonly and state.role == "native" and state.native_exit_status != status:
+            if policy.native_readonly and (state.role == "native" or stopped == pid) and (
+                type(state.native_exit_status) is not int or state.native_exit_status != status
+            ):
                 raise Violation("native terminal status differs from its actual kernel exit stop")
             if policy.native_readonly and state.role == "native" and os.WIFSIGNALED(status):
                 terminated = os.WTERMSIG(status)
@@ -3096,7 +3098,7 @@ def supervise(config, drop_privileges):
             outcome = ctypes.c_ulong()
             policy.charge_metadata(ctypes.sizeof(outcome))
             ptrace(0x4201, stopped, 0, ctypes.byref(outcome))
-            if policy.native_readonly and state.role == "native":
+            if policy.native_readonly and (state.role == "native" or stopped == pid):
                 if state.native_exit_status is not None:
                     raise Violation("native process reused its terminal kernel exit stop")
                 state.native_exit_status = outcome.value
