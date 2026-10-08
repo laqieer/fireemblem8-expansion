@@ -531,6 +531,27 @@ Failed pathname operations also require the actor's current image operands,
 including resource-free failed opens and failed directory operations. A kernel
 error does not restore the root job's pathname plan. Failed descriptor
 operations instead retain their actual live-description bindings.
+The resource-free Make v6 writer wire does not support mode or lock
+transitions. Its `fchmod` attempts refuse at syscall admission rather than
+after an actual mode change. Every Make `flock` requires the issued
+`shared-lock` role, including when the global resource plan is empty.
+Ordinary resource-free writes remain supported. Native command capsules keep
+their separate existing mode and lock contract; resource-enabled Make
+inherited descriptions keep their existing authority across image changes.
+
+For this negative control, start a clean captured Makefile with only `result`
+as its admitted output and no resources. Invoke the actual native C fixture
+in `test_native_original_make_empty_resources_refuse_mode_and_lock_before_kernel`
+with `mode` and `lock`, each on original, duplicate, fork-inherited and
+exec-inherited descriptors. Require admission failure before its post-operation
+mode/lock observations can print, and complete probe cleanup. The pre-fix
+control changes the actual mode to 0644 or obtains the actual lock before a
+later wire rejection; locking a second open description observes EAGAIN.
+Repeat the resource-role positive/negative fixtures and command-capsule
+descriptor-mode/flock cases for real bytes, modes and lock contention.
+This scoped regression belongs to `TC-WORKFLOW-NATIVE-MAKE-001` and does not
+complete its original all-plus-eight production qualification.
+
 Failed pathname records name their actual dispatch, not another valid job or
 the object's earlier creator. This does not transfer directory/file ownership
 or impose actor ownership on failed inherited-descriptor operations.

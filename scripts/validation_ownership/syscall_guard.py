@@ -2242,6 +2242,7 @@ class Policy:
             operation == "write" and self.native_outputs is not None
             and state.role == "native" and state.native_stop is not None
             and state.kernel_call in {1, 18, 20, 91}
+            and (state.kernel_call != 91 or self.config.get("native_resources"))
         ):
             binding = (state.native_stop[0], descriptor)
             item = self.native_outputs.custody.descriptors.get(binding)

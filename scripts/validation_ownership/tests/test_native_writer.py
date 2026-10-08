@@ -2482,6 +2482,66 @@ class NativeWriterTests(unittest.TestCase):
                 self.assert_clean(session)
 
 
+    def test_native_original_make_empty_resources_refuse_mode_and_lock_before_kernel(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <sys/file.h>\n"
+            "#include <sys/stat.h>\n#include <sys/wait.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "#include <string.h>\n#include <errno.h>\n"
+            "int main(int argc,char **argv){int fd,other,rc,status;pid_t child;struct stat info;"
+            "if(argc!=3)return 1;fd=!strcmp(argv[2],\"inherited\")?3:"
+            "open(\"/repo/result\",O_CREAT|O_WRONLY,0600);if(fd<0)return 2;"
+            "if(!strcmp(argv[2],\"duplicate\")){other=dup(fd);"
+            "if(other<0||close(fd))return 7;fd=other;}"
+            "if(!strcmp(argv[2],\"fork\")){child=fork();if(child<0)return 8;"
+            "if(child){if(waitpid(child,&status,0)!=child)return 9;"
+            "return !WIFEXITED(status)||WEXITSTATUS(status)||close(fd);}}"
+            "if(!strcmp(argv[2],\"exec\")){argv[2]=\"inherited\";"
+            "execv(\"/native/tool\",argv);return 10;}"
+            "if(!strcmp(argv[1],\"mode\")){"
+            "if(fchmod(fd,0644)||fstat(fd,&info))return 3;"
+            "printf(\"mode:%o\\n\",info.st_mode&0777);}"
+            "else{if(flock(fd,LOCK_EX))return 4;"
+            "printf(\"lock:acquired\\n\");fflush(stdout);"
+            "other=open(\"/repo/result\",O_WRONLY);if(other<0)return 5;"
+            "rc=flock(other,LOCK_EX|LOCK_NB);"
+            "printf(\"lock:%d;errno:%d\\n\",rc,errno);if(close(other))return 6;}"
+            "return close(fd);}\n"
+        ))
+        cases = [
+            (mode, binding, expected)
+            for mode, expected in (
+                ("mode", "issued output authority"),
+                ("lock", "shared synchronization role"),
+            )
+            for binding in ("original", "duplicate", "fork", "exec")
+        ]
+        for mode, binding, expected in cases:
+            with self.subTest(mode=mode, binding=binding):
+                self.add("Makefile", "all:\n\t@/native/tool " + mode + " " + binding + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, outputs=("result",))
+                    completed = []
+                    original_run = session.budget.run
+                    def observe_run(*args, **kwargs):
+                        result = original_run(*args, **kwargs)
+                        if result.stdout.startswith((b"mode:", b"lock:")):
+                            completed.append(result.stdout)
+                        return result
+                    with patch.object(session.budget, "run", side_effect=observe_run):
+                        with self.assertRaisesRegex(MakeProbeError, expected):
+                            session._native_make_writable(
+                                "all", outputs=("result",), native_tool=tool,
+                                commands=Commands(), observe_reads=True,
+                                observe_runtime_completions=True,
+                            )
+                    self.assertEqual(completed, [])
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
     def test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec(self):
         from scripts.validation_ownership import read_epochs
         self.add("native.c", (

@@ -277,7 +277,9 @@ class NativeOutputObserver:
             state.native_output_close = descriptor
         elif n == 73 and (pid, descriptor) in self.custody.descriptors:
             item = self.custody.descriptors[(pid, descriptor)]
-            if self.policy.config.get("native_resources") and item.path not in self.custody.shared_paths:
+            if (
+                self.policy.mode == "make" or self.policy.config.get("native_resources")
+            ) and item.path not in self.custody.shared_paths:
                 raise NativeOutputError("native flock lacks its shared synchronization role")
             operation = self.custody.enter_lock(
                 pid=pid, descriptor=descriptor, flags=native_int(b),
