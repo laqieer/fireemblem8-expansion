@@ -2848,7 +2848,9 @@ def _parse_run(
             raise MetadataEditError(
                 f"Build run {run_id} in-progress chronology is invalid"
             )
-    elif run_started_at is not None or created_at > updated_at:
+    elif created_at > updated_at or run_started_at is not None and (
+        status != "queued" or not (created_at <= run_started_at <= updated_at)
+    ):
         raise MetadataEditError(f"Build run {run_id} queued chronology is invalid")
     if status == "completed" and refresh_terminal:
         refreshed_response = client.request(
