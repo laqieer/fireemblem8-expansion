@@ -12,10 +12,12 @@ import stat
 if __package__:
     from .budget import MakeProbeError
     from .lifecycle import finish_cleanup
+    from .native_resources import resource_role
     from .producer_channel import publication_identity
 else:
     from budget import MakeProbeError
     from lifecycle import finish_cleanup
+    from native_resources import resource_role
     from producer_channel import publication_identity
 
 
@@ -226,10 +228,6 @@ class NativeOutputObserver:
             if self.policy.mode == "make" and path not in {
                 "/repo/" + name for name in self.policy.config["native_output_paths"]
             }:
-                if __package__:
-                    from .native_resources import resource_role
-                else:
-                    from native_resources import resource_role
                 job = self.policy.native_jobs.get(owner)
                 if job is None or resource_role(job["admission"].get("resources", ()), path, job["pid"]) not in {
                     "temporary", "pid-temporary", "atomic-temporary", "shared-lock",
@@ -237,6 +235,13 @@ class NativeOutputObserver:
                     return
             if flags & os.O_TMPFILE == os.O_TMPFILE:
                 raise NativeOutputError("native anonymous temporary output transitions are not implemented")
+            if self.policy.mode == "make" and path in self.custody.shared_paths:
+                admission = state.native_admission or {}
+                job = self.policy.native_jobs.get(owner)
+                if job is None or resource_role(
+                    admission.get("resources", ()), path, job["pid"],
+                ) != "shared-lock":
+                    raise NativeOutputError("native shared lock open lacks its issued output authority")
             if path.startswith(self.prefix):
                 pin = self.operand(path)
                 try:
@@ -285,7 +290,11 @@ class NativeOutputObserver:
         elif n == 3 and (pid, descriptor) in self.custody.descriptors:
             operation = self.custody.enter_close(pid=pid, descriptor=descriptor)
             state.native_output_close = descriptor
-        elif n == 73 and (pid, descriptor) in self.custody.descriptors:
+        elif n == 73:
+            if (pid, descriptor) not in self.custody.descriptors:
+                if self.policy.mode == "make":
+                    raise NativeOutputError("native flock lacks its admitted or inherited description")
+                return
             item = self.custody.descriptors[(pid, descriptor)]
             if (
                 self.policy.mode == "make" or self.policy.config.get("native_resources")

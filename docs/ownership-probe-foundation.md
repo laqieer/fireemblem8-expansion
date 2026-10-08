@@ -574,6 +574,21 @@ Ordinary resource-free writes remain supported. Native command capsules keep
 their separate existing mode and lock contract; resource-enabled Make
 inherited descriptions keep their existing authority across image changes.
 
+A new shared-lock description, including an `O_RDONLY` open, requires the
+current image's exact `shared-lock` resource before the open reaches the kernel.
+The root job's resource union does not grant that role to descendants. `flock`
+requires an admitted or genuinely inherited tracked description; an otherwise
+readable immutable source is not a lock operand. This leaves existing inherited
+fork/exec/duplicate aliases usable without granting new pathname authority.
+For `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_shared_lock_new_readonly_description_requires_current_image_role`:
+an explicitly admitted readonly lock must complete with actual kernel result 0;
+an undeclared fresh readonly description and an untracked source description
+must reject before a lock return, with owned cleanup. The pre-fix control
+acquires the undeclared lock and refuses only during archive validation;
+the untracked source lock was accepted. Retain the inherited-description and
+close-range cases as positive controls across fork, exec and aliases.
+
 Native Make helpers may attempt the exact optional `/proc/self/maps` read or
 metadata probe only while that leaf is genuinely omitted from the immutable
 prepared guest. The candidate chroot has no proc mount; this is a guest

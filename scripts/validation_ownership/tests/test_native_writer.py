@@ -1024,6 +1024,11 @@ guard.supervise=measured_supervise
             "if(!strcmp(mode,\"foreign-replace\"))return rename(\"/repo/stage/second\",\"/repo/stage/tmp\");"
             "if(!strcmp(mode,\"foreign-mode\")){other=open(\"/repo/stage/second\",O_RDONLY);"
             "return other<0||fchmod(other,0600);}"
+            "if(!strcmp(mode,\"foreign-untracked-lock\")){other=open(\"/repo/Makefile\",O_RDONLY);"
+            "return other<0||flock(other,LOCK_EX|LOCK_NB)||flock(other,LOCK_UN)||close(other)||close(fd)||close(lock);}"
+            "if(!strcmp(mode,\"foreign-readonly-lock\")||!strcmp(mode,\"own-readonly-lock\")){"
+            "other=open(\"/repo/stage/lock\",O_RDONLY|O_NOFOLLOW);"
+            "return other<0||flock(other,LOCK_EX|LOCK_NB)||flock(other,LOCK_UN)||close(other)||close(fd)||close(lock);}"
             "if(!strcmp(mode,\"foreign-lock\"))other=open(\"/repo/stage/lock\",O_RDWR|O_NOFOLLOW);"
             "else if(!strcmp(mode,\"foreign-atomic\"))other=open(\"/repo/stage/.asset-manifest-write-abcdefgh\",O_CREAT|O_EXCL|O_WRONLY,0644);"
             "else if(!strcmp(mode,\"foreign-pid\")){"
@@ -1057,6 +1062,61 @@ guard.supervise=measured_supervise
             ("pid-temporary", "stage/second"), ("atomic-temporary", "stage/.asset-manifest-write-"),
         )
         return outputs, resources
+
+    def test_native_shared_lock_new_readonly_description_requires_current_image_role(self):
+        outputs, resources = self._native_image_operand_fixture()
+        for mode in ("foreign-readonly-lock", "foreign-untracked-lock", "own-readonly-lock"):
+            self.add("Makefile", "all:\n\t@MODE=" + mode + " /native/tool\n")
+            receipt = self.directory / ("lock-result-" + mode + ".json")
+            body = (
+                "original=guard.Policy.leave\n"
+                "def returned(self,pid,state,r):\n"
+                " if state.role=='native' and state.kernel_call==73 and state.native_execs==1:\n"
+                "  inputs=Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\\0')\n"
+                "  item=self.native_outputs.custody.descriptors.get((pid,guard.ctypes.c_int(r.rdi).value))\n"
+                "  description=None if item is None else item.descriptions[(pid,guard.ctypes.c_int(r.rdi).value)]\n"
+                "  if (description is None or not any(owner!=pid for owner,fd in description.bindings)) and len(inputs)>1 and inputs[1] in (b'foreign-readonly-lock',b'foreign-untracked-lock',b'own-readonly-lock'):\n"
+                f"   Path({str(receipt)!r}).write_text(json.dumps({{'pid':pid,'result':guard.signed(r.rax),'resources':state.native_admission['resources']}}))\n"
+                " return original(self,pid,state,r)\n"
+                "guard.Policy.leave=returned\n"
+            )
+            session = self.session()
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                tool = session.compile_native(("native.c",))
+                class Commands:
+                    def __getitem__(self, argv):
+                        helper = len(argv) == 4
+                        return Command(
+                            argv, native_tool=tool, outputs=() if helper else outputs,
+                            native_resources=(("shared-lock", "stage/lock"),) if helper and mode == "own-readonly-lock"
+                            else () if helper else resources,
+                        )
+                def run():
+                    return session._native_make_writable(
+                        "all", outputs=outputs, native_resources=resources, native_tool=tool,
+                        commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                    )
+                if mode.startswith("foreign-"):
+                    with self.assertRaises(MakeProbeError) as refused:
+                        run()
+                    self.assertFalse(
+                        receipt.exists(), receipt.read_text() if receipt.exists()
+                        else "undeclared image reached an actual flock return",
+                    )
+                    self.assertIn(
+                        "admitted or inherited description" if mode == "foreign-untracked-lock"
+                        else "issued output authority", str(refused.exception),
+                    )
+                    self.assertTrue(session.budget.failed)
+                else:
+                    completed, _, _, generated = run()
+                    self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"", b""))
+                    actual = json.loads(receipt.read_bytes())
+                    self.assertEqual(actual["result"], 0)
+                    self.assertEqual(actual["resources"], [["shared-lock", "stage/lock"]])
+                    self.assertEqual({row.path: row.data for row in generated},
+                                     {"stage/first": b"inherited", "stage/second": b""})
+            self.assert_clean(session)
 
     def test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority(self):
         from scripts.validation_ownership import read_epochs
