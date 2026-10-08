@@ -1493,10 +1493,12 @@ class Policy:
             start <= registers.rip < end for start, end in state.observer_ranges
         )
 
-    def resolve(self, name, *, follow_final=True):
+    def resolve(self, name, *, follow_final=True, native_maps_omission=False):
         # Only trusted, immutable symlinks remain: candidate symlinks and
         # ancestor relocation are forbidden. Resolve in the guest root, not
         # through the supervisor's host-root interpretation of absolute links.
+        if native_maps_omission and name != "/proc/self/maps":
+            raise Violation("native maps omission requires its exact optional spelling")
         pending = deque(name.split("/"))
         resolved = []
         links = 0
@@ -1508,13 +1510,14 @@ class Policy:
                 if resolved:
                     resolved.pop()
                 continue
-            if follow_final or pending:
+            if pending or follow_final and not native_maps_omission:
                 alias = "/" + "/".join((*resolved, part))
                 if (self.mode == "make" or self.config.get("metadata_validation")) and alias in self.config.get("runtime_aliases", ()):
                     spelling = posixpath.normpath(name)
                     if ".." in name.split("/") or (
                         spelling not in self.config["executables"] and not self.runtime_metadata(spelling)
                         and not (self.native_readonly and spelling == "/bin/sh")
+                        and not (native_maps_omission and alias == "/proc/self")
                     ):
                         raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
@@ -1535,7 +1538,21 @@ class Policy:
                     pending.extendleft(reversed(target.split("/")))
                     continue
             resolved.append(part)
-        return "/" + "/".join(resolved)
+        result = "/" + "/".join(resolved)
+        if native_maps_omission:
+            self.charge_metadata(128)
+            if (
+                re.fullmatch(r"/proc/(?:self|[1-9][0-9]*)/maps", result) is None
+                or self.source_mode(result) is not None
+            ):
+                raise Violation("native optional maps probe requires its genuinely omitted guest leaf")
+        return result
+
+    def native_maps_omission(self, state):
+        return (
+            self.mode == "make" and self.native_readonly and state.role == "native"
+            and state.path_context is not None and state.path_context[0] == "/proc/self/maps"
+        )
 
     def path(self, pid, state, address, dirfd=-100, *, follow_final=True):
         dirfd = ctypes.c_int(dirfd).value
@@ -1553,7 +1570,9 @@ class Policy:
                 raise Violation("relative path through a non-directory descriptor")
             name = base.rstrip("/") + "/" + name
         state.path_context = (spelling, dirfd, base)
-        return self.resolve(name, follow_final=follow_final)
+        return self.resolve(
+            name, follow_final=follow_final, native_maps_omission=self.native_maps_omission(state),
+        )
 
     def fd(self, state, fd):
         if fd not in state.fds:
@@ -1825,6 +1844,11 @@ class Policy:
         )
 
     def make_runtime_access(self, state, path, operation):
+        if (
+            self.native_maps_omission(state) and operation in {"read", "metadata"}
+            and path == self.resolve("/proc/self/maps", native_maps_omission=True)
+        ):
+            return
         if path in self.native_metadata_directories:
             if operation != "metadata":
                 raise Violation(f"metadata-only runtime operation denied: {operation} {path}")

@@ -539,6 +539,32 @@ Ordinary resource-free writes remain supported. Native command capsules keep
 their separate existing mode and lock contract; resource-enabled Make
 inherited descriptions keep their existing authority across image changes.
 
+Native Make helpers may attempt the exact optional `/proc/self/maps` read or
+metadata probe only while that leaf is genuinely omitted from the immutable
+prepared guest. The candidate chroot has no proc mount; this is a guest
+omission, not a claim that host maps is absent. The supervisor checks the
+resolved leaf without following a final symlink and leaves the actual kernel
+to return `ENOENT`. A present file, directory or symlink rejects before
+contents. Imported `/proc/mounts` aliases do not grant another PID's maps,
+parent/neighbor/child/dotdot spellings, writes or directory enumeration.
+No collector maps, fake map bytes, injected returns or live proc service are
+introduced. Observation uses the unchanged aggregate budget.
+
+Start with the clean captured C/Make fixture in
+`test_native_optional_maps_probe_observes_actual_guest_omission`, both without
+runtime mounts input and with only the optional `/proc/mounts` input.
+Its structured output must report actual `lstat` and `open` returns -1 with
+`ENOENT`, and no successful maps consumption. Runtime metadata projections
+do not necessarily contain this omitted probe; the fixture asserts the real
+function results rather than inventing such records.
+`test_native_optional_maps_probe_refuses_writes_and_other_spellings` is the
+negative control: native attempts must reject, not merely receive ENOENT.
+`test_native_optional_maps_omission_requires_absent_prepared_leaf_and_native_role`
+checks actual prepared leaf types, payload-read exclusion and role boundaries.
+The pre-fix positive case rejects both guest views. Ordinary GNU cmp startup
+uses this optional VMA probe; permitting its genuine no-proc fallback does
+not by itself complete original source/profile acceptance.
+
 An admitted native image may use flags-zero `close_range` on inherited
 `shared-lock` descriptions only while another process retains each description.
 The supervisor reserves the complete affected descriptor set before kernel

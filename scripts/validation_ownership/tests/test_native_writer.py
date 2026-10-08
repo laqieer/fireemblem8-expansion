@@ -26,6 +26,94 @@ class NativeRuntimeMetadataTests(unittest.TestCase):
     paths = ("/sys/fs/selinux", "/selinux", "/usr/share/locale")
     git_roots = ("/.git", "/HEAD")
 
+    def test_native_optional_maps_probe_observes_actual_guest_omission(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <errno.h>\n"
+            "#include <sys/stat.h>\n#include <stdio.h>\n"
+            "int main(void){struct stat info;int rc,error,fd,open_error;"
+            "rc=lstat(\"/proc/self/maps\",&info);error=errno;"
+            "fd=open(\"/proc/self/maps\",O_RDONLY);open_error=errno;"
+            "printf(\"{\\\"stat\\\":%d,\\\"stat_errno\\\":%d,\\\"open\\\":%d,\\\"open_errno\\\":%d}\\n\","
+            "rc,error,fd,open_error);return 0;}\n"
+        ))
+        self.add("Makefile", "all: ; @/native/tool\n")
+        for runtime_files in ((), ("/proc/mounts",)):
+            with self.subTest(runtime_files=runtime_files):
+                session = self.session(runtime_files=runtime_files)
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    completed, _, observed = session._native_make_readonly(
+                        "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                    )
+                    self.assertEqual(json.loads(completed.stdout), {
+                        "stat": -1, "stat_errno": errno.ENOENT,
+                        "open": -1, "open_errno": errno.ENOENT,
+                    })
+                    self.assertEqual(completed.stderr, b"")
+                    self.assertFalse(any(path.endswith("/maps") for path in observed["accessed"]))
+                self.assert_clean(session)
+
+    def test_native_optional_maps_probe_refuses_writes_and_other_spellings(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){if(argc!=3)return 1;"
+            "open(argv[2],!strcmp(argv[1],\"write\")?O_WRONLY|O_CREAT:O_RDONLY,0600);return 0;}\n"
+        ))
+        operations = [("read", path) for path in (
+            "/proc/self", "/proc/self/maps/child", "/proc/self/maps-neighbor",
+            "/proc/self/../self/maps", "/proc/1/maps", "/proc/thread-self/maps",
+        )] + [("write", "/proc/self/maps")]
+        for operation, path in operations:
+            with self.subTest(operation=operation, path=path):
+                self.add("Makefile", "all: ; @/native/tool " + operation + " " + path + "\n")
+                session = self.session(runtime_files=("/proc/mounts",))
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    with self.assertRaises(MakeProbeError):
+                        session._native_make_readonly(
+                            "all", native_tool=tool, observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assert_clean(session)
+
+    def test_native_optional_maps_omission_requires_absent_prepared_leaf_and_native_role(self):
+        from scripts.validation_ownership.syscall_guard import Process, Violation
+        policy = foundation.FoundationTests.observation_policy(self, mode="make", count=100)
+        policy.native_readonly = True
+        policy.config["forbidden_paths"] = []
+        policy.config["runtime_aliases"] = ["/proc/self"]
+        directory = self.directory / "proc/7"
+        directory.mkdir(parents=True)
+        (self.directory / "proc/self").symlink_to("7")
+        state = Process("native", path_context=("/proc/self/maps", -100, None))
+        self.assertTrue(policy.native_maps_omission(state))
+        path = policy.resolve("/proc/self/maps", native_maps_omission=True)
+        self.assertEqual(path, "/proc/7/maps")
+        policy.make_runtime_access(state, path, "read")
+        leaf = directory / "maps"
+        for kind in ("regular", "directory", "symlink"):
+            with self.subTest(kind=kind):
+                if kind == "regular":
+                    leaf.write_bytes(b"must-not-be-read")
+                elif kind == "directory":
+                    leaf.mkdir()
+                else:
+                    leaf.symlink_to("/proc/8/maps")
+                with patch.object(Path, "read_bytes", side_effect=AssertionError("maps payload read")):
+                    with self.assertRaisesRegex(Violation, "genuinely omitted guest leaf"):
+                        policy.resolve("/proc/self/maps", native_maps_omission=True)
+                leaf.rmdir() if kind == "directory" else leaf.unlink()
+        for role in ("make", "compiler", "command", "helper"):
+            with self.subTest(role=role):
+                actor = Process(role, path_context=state.path_context, observer_ready=True)
+                self.assertFalse(policy.native_maps_omission(actor))
+                with self.assertRaises(Violation):
+                    policy.make_runtime_access(actor, path, "read")
+        policy.native_readonly = False
+        self.assertFalse(policy.native_maps_omission(state))
+        policy.mode = "command"
+        policy.native_readonly = True
+        self.assertFalse(policy.native_maps_omission(state))
+
     def test_native_runtime_metadata_preserves_actual_type_and_absence(self):
         self.add("native.c", (
             "#define _GNU_SOURCE\n#include <errno.h>\n#include <stdio.h>\n#include <sys/vfs.h>\n"
