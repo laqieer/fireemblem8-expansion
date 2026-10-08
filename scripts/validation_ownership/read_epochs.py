@@ -3179,16 +3179,18 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
     if set(source_kinds) != set(snapshots):
         raise ReadEpochError("runtime trace has unused or unbound captured sources")
     mapping = {old: new for new, old in enumerate(sorted(number for number, kind in source_kinds.items() if kind == "file"), 1)}
-    basic_sources = []
+    basic_sources, basic_data = {}, {}
     for old, new in mapping.items():
         row = dict(snapshots[old][0])
         row["id"] = new
-        basic_sources.append(row)
+        basic_sources[new] = row
+        basic_data[new] = snapshots[old][1]
     for row in basic:
         if row["kind"] in {"source-open", "source-exit"} and row["source"] is not None:
             row["source"] = mapping[row["source"]]
-    _validate_read_trace(
-        {"version": 2, "scope": scope, "events": basic, "sources": basic_sources, "complete": True},
+    _validate_captured_read_events(
+        {"version": 2, "scope": scope, "events": basic, "sources": list(basic_sources.values()), "complete": True},
+        basic_sources, basic_data,
         scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve, expansion_projection=True,
     )
     reserve(len(encoded(value["machine"])))
@@ -3216,18 +3218,7 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
         or len(value["sources"]) > count_limit
     ):
         raise ReadEpochError("incomplete or foreign original read trace")
-    sources, source_indexes = {}, {}
-    selection = (
-        validate_completion_sites(value["selection"], count_limit=count_limit, file_limit=file_limit)
-        if value["version"] == 3 else
-        validate_completion_selection(value["selection"], count_limit=count_limit, file_limit=file_limit)
-        if value["version"] == COMPLETION_VERSION else []
-    )
-    selected = {tuple(row) for row in selection} if value["version"] == 3 else set()
-    selected_names = set(selection["names"]) if value["version"] == COMPLETION_VERSION else set()
-    inventory = {
-        row["path"]: row for row in selection.get("inventory", ())
-    } if value["version"] == COMPLETION_VERSION else {}
+    sources, source_data = {}, {}
     for row in value["sources"]:
         if (
             not isinstance(row, dict) or set(row) != {"id", "mode", "bytes", "sha256", "data"}
@@ -3246,13 +3237,35 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
         if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"] or base64.b64encode(data).decode() != row["data"]:
             raise ReadEpochError("original source snapshot differs from its captured bytes")
         sources[row["id"]] = row
+        source_data[row["id"]] = data
+    return _validate_captured_read_events(
+        value, sources, source_data, scope, count_limit=count_limit, file_limit=file_limit,
+        reserve=reserve, expansion_projection=expansion_projection,
+    )
+
+
+def _validate_captured_read_events(
+    value, sources, source_data, scope, *, count_limit, file_limit, reserve,
+    expansion_projection=False,
+):
+    """Validate lifetimes using bytes already checked by the enclosing trace decoder."""
+    source_indexes = {}
+    selection = (
+        validate_completion_sites(value["selection"], count_limit=count_limit, file_limit=file_limit)
+        if value["version"] == 3 else
+        validate_completion_selection(value["selection"], count_limit=count_limit, file_limit=file_limit)
+        if value["version"] == COMPLETION_VERSION else []
+    )
+    selected = {tuple(row) for row in selection} if value["version"] == 3 else set()
+    selected_names = set(selection["names"]) if value["version"] == COMPLETION_VERSION else set()
+    inventory = {
+        row["path"]: row for row in selection.get("inventory", ())
+    } if value["version"] == COMPLETION_VERSION else {}
 
     def source_span(number, first, last):
         if number not in source_indexes:
-            reserve(sources[number]["bytes"])
-            data = base64.b64decode(sources[number]["data"], validate=True)
             source_indexes[number] = _statement_index(
-                data, count_limit=count_limit, reserve=reserve,
+                source_data[number], count_limit=count_limit, reserve=reserve,
             )
         span = source_indexes[number].get(first)
         if span is None or span[2] != last:
@@ -3496,9 +3509,8 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
                             and re.fullmatch("[0-9a-f]{64}", custody["owner"]) is not None
                         ):
                             raise ReadEpochError("completion source open lacks exact snapshot/publication custody")
-                        data = base64.b64decode(source["data"], validate=True)
                         rows, references, dependencies = completion_source_facts(
-                            path, data, checkpoint=lambda: reserve(0),
+                            path, source_data[event["source"]], checkpoint=lambda: reserve(0),
                             count_limit=count_limit, charge=reserve,
                         )
                         require_completion_reference_closure(

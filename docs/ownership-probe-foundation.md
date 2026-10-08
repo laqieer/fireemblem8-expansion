@@ -1093,6 +1093,14 @@ Persistent native versions, produced executable admission and the original
 initial-plus-eight production runner remain incomplete; no component or
 exploratory original query qualifies `TC-WORKFLOW-NATIVE-MAKE-001`.
 
+Runtime trace validation decodes and checks each captured source once, then
+passes those same checked bytes to its internal read-lifetime projection.
+Standalone read traces still validate their own source envelopes, encoding,
+size and digest before the same lifetime validator runs. Statement indexes
+and completion facts use the checked bytes, not a second decoded copy.
+All event, custody, machine and issued-output checks remain mandatory; this
+internal allocation reuse changes neither the wire format nor any budget cap.
+
 ### TC-WORKFLOW-NATIVE-MAKE-001: preserve original native Make production and generated-source custody
 
 This is the indexed complete acceptance case for #270 and its coupled #275

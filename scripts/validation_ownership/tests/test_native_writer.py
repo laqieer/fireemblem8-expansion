@@ -24,6 +24,50 @@ class NativeReadonlyVariableTests(unittest.TestCase):
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
 
+    def test_runtime_projection_reuses_checked_source_bytes_and_preserves_rejections(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "# preserved source padding\n" * 5000 + "all:\n\t@v=recipe; printf once\n")
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual(completed.stdout, b"once")
+            self.assertEqual(completed.returncode, 0)
+            trace = observed["read_trace"]
+            self.assertGreater(sum(row["bytes"] for row in trace["sources"]), 100 * 1024)
+            charges = []
+            decoder = read_epochs.base64.b64decode
+            with patch.object(read_epochs.base64, "b64decode", wraps=decoder) as decode:
+                read_epochs.validate_trace(
+                    trace, trace["scope"], count_limit=100000, file_limit=10000000,
+                    reserve=charges.append,
+                )
+            for row in trace["sources"]:
+                self.assertEqual(
+                    sum(call.args[0] == row["data"] for call in decode.call_args_list), 1,
+                )
+                self.assertEqual(charges.count(row["bytes"]), 1)
+            for field, value in (
+                ("mode", 0o1000), ("bytes", trace["sources"][0]["bytes"] - 1),
+                ("sha256", "0" * 64), ("data", "!" + trace["sources"][0]["data"][1:]),
+            ):
+                with self.subTest(source_field=field):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["sources"][0][field] = value
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            invalid = json.loads(json.dumps(trace))
+            complete = next(row for row in invalid["events"] if row["kind"] == "complete")
+            complete["visits"] += 1
+            with self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.validate_trace(
+                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                )
+        self.assert_clean(session)
+
     def test_literal_reference_closure_preserves_gnu_global_and_target_values(self):
         self.add("Makefile", (
             "BASE := global\nB := short\nMID = ${BASE}\n"
