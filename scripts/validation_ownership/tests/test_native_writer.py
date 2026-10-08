@@ -1433,6 +1433,17 @@ class NativeWriterTests(unittest.TestCase):
                 if writable and status == 0:
                     self.assertEqual(report["read_trace"]["version"], read_epochs.WRITABLE_VERSION)
                     self.assertFalse(packets)
+                    self.assertFalse(any(
+                        value.startswith("native-output:") for value in report["accessed"]
+                    ))
+                    effects = read_epochs.native_output_effects(report["read_trace"])
+                    self.assertTrue(any(
+                        row["kind"] == "output-write" and row["result"] == 5 for row in effects
+                    ))
+                    self.assertTrue(any(
+                        row["kind"] == "output-settled" and row["path"] == "/repo/result"
+                        for row in effects
+                    ))
                     job, = report["native_jobs"]
                     self.assertNotIn("tree", job)
                     self.assertTrue(job["waited"])
@@ -1444,6 +1455,9 @@ class NativeWriterTests(unittest.TestCase):
                     self.assertEqual(job["returncode"], status)
                     if status:
                         self.assertNotIn("read_trace", report)
+                        self.assertTrue(any(
+                            value.startswith("native-output:") for value in report["accessed"]
+                        ))
                     else:
                         self.assertEqual(report["read_trace"]["version"], read_epochs.RUNTIME_VERSION)
                 self.assert_clean(session)
@@ -1462,6 +1476,11 @@ class NativeWriterTests(unittest.TestCase):
                 "job['tree']=[row['event'] for row in report['read_trace']['machine']['events']"
                 " if row['kind']=='native-tree' and row['dispatch']==job['sequence']];"
                 "report['accessed'].append('native-job:'+json.dumps(job))"
+            ),
+            "legacy-output": (
+                "event=next(row['event'] for row in report['read_trace']['machine']['events']"
+                " if row['kind']=='native-output');"
+                "report['accessed'].append('native-output:'+json.dumps(event))"
             ),
         }
         class Commands:
@@ -1519,10 +1538,10 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual(job["admission"]["outputs"], ["result"])
             self.assertTrue(job["waited"])
             self.assertEqual(job["returncode"], 0)
-            effects = [
-                parse_json(row.removeprefix("native-output:").encode(), "original writer effect")
-                for row in observed["accessed"] if row.startswith("native-output:")
-            ]
+            effects = read_epochs.native_output_effects(observed["read_trace"])
+            self.assertFalse(any(
+                row.startswith("native-output:") for row in observed["accessed"]
+            ))
             self.assertTrue(effects)
             self.assertTrue(all(row["owner"] == job["sequence"] for row in effects))
             self.assertTrue(any(row["kind"] == "output-write" and row["pid"] == job["pid"] for row in effects))

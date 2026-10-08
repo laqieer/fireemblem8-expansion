@@ -1819,6 +1819,7 @@ class ProbeSession:
                         not isinstance(structured_jobs, list)
                         or len(structured_jobs) > config["observation_count"]
                         or any(not isinstance(row, dict) for row in structured_jobs)
+                        or any(value.startswith("native-output:") for value in observed["accessed"])
                     ):
                         raise MakeProbeError("writable native report lacks its canonical job headers")
                 elif "native_jobs" in observed:

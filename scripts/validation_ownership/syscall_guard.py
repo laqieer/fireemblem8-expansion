@@ -3484,7 +3484,8 @@ def supervise(config, drop_privileges):
                             sys.getsizeof(headers) + sum(sys.getsizeof(row) for row in headers)
                         )
                         accessed = sorted(
-                            value for value in policy.accessed if not value.startswith("native-job:")
+                            value for value in policy.accessed
+                            if not value.startswith(("native-job:", "native-output:"))
                         )
                         policy.charge_metadata(sys.getsizeof(accessed))
                         native_job_headers, native_job_accessed = headers, accessed

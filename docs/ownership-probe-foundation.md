@@ -1113,6 +1113,13 @@ malformed retirement identities.
 The unmerged writable v6 output-authority job record contains only `sequence`,
 `pid` and `admission`. Its existing sequence selects the canonical `native-tree`
 machine events for that dispatch; no second serialized tree is admitted.
+Complete writable reports also omit the duplicated JSON-in-JSON
+`native-output:` packets from `accessed`: the checked canonical machine events
+retain every output operation and settlement. Mixed complete reports containing
+those packets are refused. Failed invocations retain their diagnostic packets,
+and standalone compiler capsules retain their existing report format. The
+supervisor still stores and charges the original observations; only the
+redundant successful transport copy is removed.
 The validator charges its temporary reference lists and checks all actual image
 admissions, actors, generated-source custody and output settlements against
 those events. Machine lifecycle validation and the host's independently issued
