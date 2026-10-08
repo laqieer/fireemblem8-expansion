@@ -2993,7 +2993,10 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                     raise ReadEpochError("failed runtime open claims source custody")
                 entry = value["machine"]["events"][custody["entry"] - 1]
                 if (
-                    entry.get("kind") != "generated-source-entry" or entry["visit"] != event["visit"]
+                    not isinstance(entry, dict) or entry.get("kind") != "generated-source-entry"
+                    or any(key not in entry for key in ("visit", "trace_seq", "path"))
+                    or type(entry["trace_seq"]) is not int
+                    or entry["visit"] != event["visit"]
                     or entry["trace_seq"] >= event["seq"] or entry["path"] != path
                 ):
                     raise ReadEpochError("failed runtime open borrowed another generated entry")

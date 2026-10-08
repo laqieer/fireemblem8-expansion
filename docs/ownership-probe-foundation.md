@@ -534,6 +534,14 @@ operations instead retain their actual live-description bindings.
 Failed pathname records name their actual dispatch, not another valid job or
 the object's earlier creator. This does not transfer directory/file ownership
 or impose actor ownership on failed inherited-descriptor operations.
+Failed generated-source opens validate the referenced machine entry before
+using its visit, path or trace sequence. Malformed entry objects, missing
+fields and noninteger sequences reject with `ReadEpochError`, as successful
+generated-source opens do. To exercise the negative control, preserve the
+actual optional-source EACCES trace and replace only its custody-selected
+entry with those malformed values; the original failed open and pin retirement
+remain the positive control in
+`test_native_generated_optional_source_failed_open_retires_its_actual_entry_pin`.
 
 Run `NativeWriterTests.test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority`
 for actual root reexec, child/grandchild and fork-only inherited writer/lock

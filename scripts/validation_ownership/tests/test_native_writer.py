@@ -1990,6 +1990,21 @@ class NativeWriterTests(unittest.TestCase):
             self.assertIsNone(retired[0]["source"])
             self.assertEqual(retired[0]["identity"], entry["identity"])
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            malformed_entries = [0, [], {"kind": "other"}]
+            for field in ("visit", "trace_seq", "path"):
+                malformed = dict(entry)
+                del malformed[field]
+                malformed_entries.append(malformed)
+            for sequence in (None, "1", [], True):
+                malformed_entries.append(dict(entry, trace_seq=sequence))
+            for malformed in malformed_entries:
+                invalid = json.loads(json.dumps(trace))
+                invalid["machine"]["events"][failed[0]["custody"]["entry"] - 1] = malformed
+                with self.subTest(failed_entry=malformed):
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
             temporary_source = json.loads(json.dumps(trace))
             temporary_source["output_authority"]["paths"] = ["stage/required-other"]
             role = ["temporary", "stage/generated.mk"]
