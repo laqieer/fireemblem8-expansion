@@ -2973,6 +2973,7 @@ def supervise(config, drop_privileges):
         policy.native_admit = admit_native
     main_status = None
     finished_trace = None
+    native_job_headers, native_job_accessed = None, None
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
         raise Violation("no remaining guest-process capacity")
     pid = os.fork()
@@ -3458,7 +3459,7 @@ def supervise(config, drop_privileges):
                         record.close()
                     processes.clear()
         def finish_trace():
-            nonlocal error, finished_trace
+            nonlocal error, finished_trace, native_job_headers, native_job_accessed
             if error is None and policy.native_outputs is not None:
                 try:
                     policy.native_outputs.finish()
@@ -3473,7 +3474,21 @@ def supervise(config, drop_privileges):
                     raise
             if error is None and main_status == 0 and policy.read_trace is not None:
                 try:
-                    finished_trace = policy.read_trace.finish()
+                    trace = policy.read_trace.finish()
+                    if trace["version"] == read_epochs.WRITABLE_VERSION:
+                        headers = [
+                            {key: value for key, value in row.items() if key != "tree"}
+                            for row in policy.native_jobs.values()
+                        ]
+                        policy.charge_metadata(
+                            sys.getsizeof(headers) + sum(sys.getsizeof(row) for row in headers)
+                        )
+                        accessed = sorted(
+                            value for value in policy.accessed if not value.startswith("native-job:")
+                        )
+                        policy.charge_metadata(sys.getsizeof(accessed))
+                        native_job_headers, native_job_accessed = headers, accessed
+                    finished_trace = trace
                 except BaseException as failure:
                     error = str(failure)
                     raise
@@ -3486,7 +3501,7 @@ def supervise(config, drop_privileges):
                 "error": error,
                 "consumed": sorted(policy.consumed),
                 "code_consumed": sorted(policy.code_consumed),
-                "accessed": sorted(policy.accessed),
+                "accessed": sorted(policy.accessed) if native_job_accessed is None else native_job_accessed,
                 "processes": policy.total_processes,
                 "live_process_peak": policy.live_process_peak,
                 "syscalls": policy.calls,
@@ -3500,6 +3515,8 @@ def supervise(config, drop_privileges):
             }
             if finished_trace is not None:
                 result["read_trace"] = finished_trace
+            if native_job_headers is not None:
+                result["native_jobs"] = native_job_headers
             if config.get("dependency"):
                 result["executed"] = policy.executed
             if channel is not None:

@@ -885,18 +885,10 @@ class NativeWriterTests(unittest.TestCase):
                    "  admission['resources'].append(['temporary','stage/tmp'])\n" if mutation == "resource" else
                    "  admission['sequence']=1\n")
                 + "  admission['owner']=native_command_owner(admission['closure'],admission['outputs'],admission['resources'])\n"
-                "  def update(tree):\n"
-                "   for event in tree:\n"
-                "    if event['kind']=='exec' and event['pid']==image['pid'] and event['generation']==image['generation']:\n"
-                "     event['admission']=admission.copy()\n"
                 "  for row in trace['machine']['events']:\n"
                 "   if row['kind']=='native-tree' and row['event']['kind']=='exec'"
                 " and row['event']['pid']==image['pid'] and row['event']['generation']==image['generation']:\n"
                 "    row['event']['admission']=admission.copy();row['sha256']=guard.hashlib.sha256(guard.encoded(row['event'])).hexdigest()\n"
-                "  for index,value in enumerate(report['accessed']):\n"
-                "   if value.startswith('native-job:'):\n"
-                "    job=json.loads(value.removeprefix('native-job:'));update(job['tree'])\n"
-                "    report['accessed'][index]='native-job:'+json.dumps(job)\n"
                 "  path.write_text(json.dumps(report))\n"
                 " return status\n"
                 "guard.supervise=altered\n"
@@ -1388,6 +1380,115 @@ class NativeWriterTests(unittest.TestCase):
         self.assert_clean(session)
 
 
+    def test_native_job_report_canonical_success_preserves_failed_and_readonly_packets(self):
+        from unittest.mock import patch
+        from scripts.validation_ownership import read_epochs
+
+        for writable, status in ((True, 0), (True, 1), (False, 0)):
+            with self.subTest(writable=writable, status=status):
+                recipe = ("printf final > result; " if writable else "") + (
+                    "v=once; printf '%s' \"$$v\"; exit " + str(status)
+                )
+                self.add("Makefile", "all:\n\t@" + recipe + "\n")
+                requests, reports = [], []
+                original_parse = make_probe.parse_json
+                def capture(raw, label):
+                    value = original_parse(raw, label)
+                    if label == "supervisor JSON":
+                        reports.append(value)
+                    return value
+                class Commands:
+                    def __getitem__(self, argv):
+                        requests.append(argv)
+                        return Command(argv, outputs=("result",) if writable else ())
+                session = self.session()
+                with session, patch.object(make_probe, "parse_json", capture):
+                    kwargs = dict(
+                        observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+                    )
+                    run = session._native_make_writable if writable else session._native_make_readonly
+                    if writable:
+                        kwargs["outputs"] = ("result",)
+                    if status:
+                        with self.assertRaises(MakeProbeError):
+                            run("all", **kwargs)
+                    else:
+                        if writable:
+                            completed, _, _, generated = run("all", **kwargs)
+                        else:
+                            completed, _, _ = run("all", **kwargs)
+                            generated = ()
+                        self.assertEqual(completed.stdout, b"once")
+                        self.assertEqual(completed.stderr, b"")
+                        self.assertEqual(
+                            [(row.path, row.data, row.mode) for row in generated],
+                            [("result", b"final", 0o644)] if writable else [],
+                        )
+                self.assertEqual(len(requests), 1)
+                report, = reports
+                packets = [
+                    parse_json(value.removeprefix("native-job:").encode(), "native job packet")
+                    for value in report["accessed"] if value.startswith("native-job:")
+                ]
+                if writable and status == 0:
+                    self.assertEqual(report["read_trace"]["version"], read_epochs.WRITABLE_VERSION)
+                    self.assertFalse(packets)
+                    job, = report["native_jobs"]
+                    self.assertNotIn("tree", job)
+                    self.assertTrue(job["waited"])
+                    self.assertEqual(job["returncode"], 0)
+                else:
+                    self.assertNotIn("native_jobs", report)
+                    job, = packets
+                    self.assertTrue(job["tree"])
+                    self.assertEqual(job["returncode"], status)
+                    if status:
+                        self.assertNotIn("read_trace", report)
+                    else:
+                        self.assertEqual(report["read_trace"]["version"], read_epochs.RUNTIME_VERSION)
+                self.assert_clean(session)
+
+    def test_native_job_report_refuses_malformed_or_mixed_canonical_headers(self):
+        self.add("Makefile", "all:\n\t@printf final > result; printf once\n")
+        mutations = {
+            "missing": "del report['native_jobs']",
+            "not-list": "report['native_jobs']={}",
+            "non-object": "report['native_jobs']=[None]",
+            "duplicate": "report['native_jobs'].append(report['native_jobs'][0].copy())",
+            "tree": "report['native_jobs'][0]['tree']=[]",
+            "sequence": "report['native_jobs'][0]['sequence']=999",
+            "legacy": (
+                "job=report['native_jobs'][0].copy();"
+                "job['tree']=[row['event'] for row in report['read_trace']['machine']['events']"
+                " if row['kind']=='native-tree' and row['dispatch']==job['sequence']];"
+                "report['accessed'].append('native-job:'+json.dumps(job))"
+            ),
+        }
+        class Commands:
+            def __getitem__(self, argv):
+                return Command(argv, outputs=("result",))
+        for name, mutation in mutations.items():
+            body = (
+                "import json\nfrom pathlib import Path\n"
+                "original=guard.supervise\n"
+                "def altered(config):\n"
+                " status=original(config)\n"
+                " if status==0:\n"
+                "  path=Path(config['report']);report=json.loads(path.read_text())\n"
+                "  " + mutation + "\n"
+                "  path.write_text(json.dumps(report))\n"
+                " return status\n"
+                "guard.supervise=altered\n"
+            )
+            session = self.session()
+            with self.subTest(mutation=name), self.native_supervisor(body), session:
+                with self.assertRaises(MakeProbeError):
+                    session._native_make_writable(
+                        "all", outputs=("result",), observe_reads=True,
+                        observe_runtime_completions=True, commands=Commands(),
+                    )
+            self.assert_clean(session)
+
     def test_native_original_make_job_writes_only_its_admitted_output_once(self):
         from scripts.validation_ownership import read_epochs
         recipe = "printf final > result; printf once"
@@ -1409,13 +1510,12 @@ class NativeWriterTests(unittest.TestCase):
                 [(item.path, item.data, item.mode) for item in generated],
                 [("result", b"final", 0o644)],
             )
-            jobs = [
-                parse_json(row.removeprefix("native-job:").encode(), "original writer job")
-                for row in observed["accessed"] if row.startswith("native-job:")
-            ]
+            jobs = observed["native_jobs"]
+            self.assertFalse(any(row.startswith("native-job:") for row in observed["accessed"]))
             self.assertEqual(requests, [("/bin/sh", "-c", recipe)])
             self.assertEqual(len(jobs), 1)
             job, = jobs
+            self.assertNotIn("tree", job)
             self.assertEqual(job["admission"]["outputs"], ["result"])
             self.assertTrue(job["waited"])
             self.assertEqual(job["returncode"], 0)
@@ -1434,7 +1534,10 @@ class NativeWriterTests(unittest.TestCase):
                 set(trace["output_authority"]["jobs"][0]), {"sequence", "pid", "admission"},
             )
             duplicated_tree = json.loads(json.dumps(trace))
-            duplicated_tree["output_authority"]["jobs"][0]["tree"] = job["tree"]
+            duplicated_tree["output_authority"]["jobs"][0]["tree"] = [
+                row["event"] for row in trace["machine"]["events"]
+                if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+            ]
             self.assertGreater(len(encoded(duplicated_tree)), len(encoded(trace)))
             with self.assertRaisesRegex(read_epochs.ReadEpochError, "closed dispatch"):
                 read_epochs.validate_trace(
@@ -2083,21 +2186,14 @@ class NativeWriterTests(unittest.TestCase):
                    "  trace['output_authority']['resources'].append(['temporary','unissued'])\n")
                 + "  admission['owner']=native_command_owner(admission['closure'],admission['outputs'],admission['resources'])\n"
                 "  root=trace['output_authority']['jobs'][0]\n"
-                "  def update(tree):\n"
-                "   for event in tree:\n"
-                "    if event['kind']=='exec' and event['pid']==root['pid'] and event['generation']==1:\n"
-                "     event['admission']=admission.copy()\n"
                 "  for event in trace['machine']['events']:\n"
                 "   if event['kind']=='execute' and not event['make'] and event['dispatch']==1:\n"
                 "    event['admission_owner']=admission['owner']\n"
                 "   if event['kind']=='native-tree' and event['event']['kind']=='exec'"
                 " and event['event']['pid']==root['pid'] and event['event']['generation']==1:\n"
                 "    event['event']['admission']=admission.copy();event['sha256']=guard.hashlib.sha256(guard.encoded(event['event'])).hexdigest()\n"
-                "  for index,value in enumerate(report['accessed']):\n"
-                "   if value.startswith('native-job:'):\n"
-                "    job=json.loads(value.removeprefix('native-job:'));update(job['tree'])\n"
-                "    if job['pid']==root['pid']:job['admission']=admission.copy()\n"
-                "    report['accessed'][index]='native-job:'+json.dumps(job)\n"
+                "  for job in report['native_jobs']:\n"
+                "   if job['pid']==root['pid']:job['admission']=admission.copy()\n"
                 "  path.write_text(json.dumps(report))\n"
                 " return status\n"
                 "guard.supervise=altered\n"

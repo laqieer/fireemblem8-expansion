@@ -1120,6 +1120,20 @@ Command/operand checks remain separate. This revises the unfinished v6 schema,
 not the delivered immutable foundation formats; stale duplicated-tree records
 fail closed rather than being accepted as a second authority.
 
+Complete successful writable v6 supervisor reports also use structured
+`native_jobs` headers instead of JSON-in-JSON `native-job:` packets with
+another tree copy. The host's independently issued configuration selects
+this format, and each sequence borrows the canonical machine events for its
+existing lifecycle, image and Command checks. New header and reference
+allocations are charged; already observed full packets remain charged, with
+no refund. Failed Make runs have no finished machine archive and retain full
+packets, as do delivered readonly formats. Run the canonical-job-report
+controls below: the actual successful writer returns `final` once with mode
+0644 and no duplicate packet/tree; the failed writer and successful readonly
+reader retain their full packets. Missing, malformed, duplicate, stale
+sequence and mixed legacy headers must refuse, while issued root/image
+admission mutations still reach their independent host checks.
+
 Native resource scope includes opaque immutable source roots as well as
 regular snapshot files. Gitlink paths remain protected even when absent or
 present as uninitialized empty directories; directory, concrete-file and

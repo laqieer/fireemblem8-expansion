@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from functools import wraps
+from itertools import chain
 from pathlib import Path, PurePosixPath
 from threading import get_ident, main_thread
 
@@ -1721,6 +1722,10 @@ class ProbeSession:
             if not report.is_file():
                 raise MakeProbeError(f"sandbox supervisor produced no result: {result.stderr!r}")
             observed = parse_json(self.budget.read_bytes(report, "control"), "supervisor JSON")
+            compact_jobs = (
+                read_abi is not None and bool(native_output_paths) and isinstance(observed, dict)
+                and observed.get("ok") is True and observed.get("returncode") == 0
+            )
             if not isinstance(observed, dict) or set(observed) != {
                 "ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                 "processes", "syscalls", "written_bytes", "created_files",
@@ -1731,7 +1736,7 @@ class ProbeSession:
             ) | (
                 {"read_trace"} if read_abi is not None and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
-            ):
+            ) | ({"native_jobs"} if compact_jobs else set()):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
             collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
@@ -1807,17 +1812,36 @@ class ProbeSession:
                     ):
                         raise MakeProbeError("native optional absence differs from its kernel metadata")
                 jobs, executions, dispatches, job_inputs, job_policies = {}, {}, [], {}, {}
-                for value in observed["accessed"]:
-                    if value.startswith("native-job:"):
-                        raw = value.removeprefix("native-job:").encode("utf-8")
-                        self.budget.charge("control", len(raw))
-                        job = parse_json(raw, "native job result")
+                trace = observed.get("read_trace")
+                if compact_jobs:
+                    structured_jobs = observed.get("native_jobs")
+                    if (
+                        not isinstance(structured_jobs, list)
+                        or len(structured_jobs) > config["observation_count"]
+                        or any(not isinstance(row, dict) for row in structured_jobs)
+                    ):
+                        raise MakeProbeError("writable native report lacks its canonical job headers")
+                elif "native_jobs" in observed:
+                    raise MakeProbeError("native job headers require a complete writable machine trace")
+                else:
+                    structured_jobs = ()
+                for value in chain(structured_jobs, observed["accessed"]):
+                    if isinstance(value, dict) or value.startswith("native-job:"):
+                        if compact_jobs:
+                            if not isinstance(value, dict):
+                                raise MakeProbeError("writable native report duplicates its canonical job headers")
+                            job = value
+                        else:
+                            raw = value.removeprefix("native-job:").encode("utf-8")
+                            self.budget.charge("control", len(raw))
+                            job = parse_json(raw, "native job result")
                         if (
                             not isinstance(job, dict) or type(job.get("pid")) is not int
                             or set(job) != {
                                 "sequence", "executable", "pid", "context", "returncode",
                                 "terminal_status", "waited", "ignored",
-                            } | ({"argv", "cwd", "tree"} if runtime_completions else set())
+                            } | ({"argv", "cwd"} if runtime_completions else set())
+                            | ({"tree"} if runtime_completions and not compact_jobs else set())
                             | ({"admission"} if native_admission_handler is not None else set())
                             or not 0 < job["pid"] < 1 << 31
                             or type(job["sequence"]) is not int or job["sequence"] <= 0
@@ -1827,6 +1851,13 @@ class ProbeSession:
                             or job["waited"] is not True or type(job["ignored"]) is not bool
                         ):
                             raise MakeProbeError("native job has incomplete or invalid lifecycle evidence")
+                        if compact_jobs:
+                            job = dict(job)
+                            job["tree"] = [
+                                row["event"] for row in trace["machine"]["events"]
+                                if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                            ]
+                            self.budget.charge("control", sys.getsizeof(job) + sys.getsizeof(job["tree"]))
                         context = job["context"]
                         from .read_epochs import ReadEpochError, native_job_context
                         try:
@@ -1884,7 +1915,7 @@ class ProbeSession:
                                 count_limit=config["observation_count"],
                                 writable=bool(native_output_paths),
                             )
-                            if observed["returncode"] == 0:
+                            if observed["returncode"] == 0 and not compact_jobs:
                                 machine_tree = [
                                     row["event"] for row in observed["read_trace"]["machine"]["events"]
                                     if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]

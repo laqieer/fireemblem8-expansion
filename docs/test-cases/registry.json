@@ -2507,6 +2507,10 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeGitlinkResourceTests scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_original_make_actual_forked_output_alias_and_parent_wire scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec -v",
           "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_job_report_canonical_success_preserves_failed_and_readonly_packets scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_job_report_refuses_malformed_or_mixed_canonical_headers scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_returned_image_plan_is_bound_to_independent_issued_authorization scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_returned_archive_owner_is_bound_to_issued_command -v",
+          "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
         }
       ]
     },
