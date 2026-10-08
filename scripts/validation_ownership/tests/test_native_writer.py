@@ -1945,7 +1945,10 @@ class NativeWriterTests(unittest.TestCase):
             ]
             self.assertEqual(inherited["parent"], job["pid"])
             self.assertNotEqual(inherited["pid"], job["pid"])
-            self.assertIn(inherited["pid"], [row.get("child") for row in job["tree"]])
+            self.assertIn(inherited["pid"], [
+                row["event"].get("child") for row in trace["machine"]["events"]
+                if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+            ])
             self.assertTrue(any(
                 row["kind"] == "output-write" and row["pid"] == inherited["pid"] and row["fd"] == 7
                 for row in read_epochs.native_output_effects(trace)
@@ -3268,7 +3271,11 @@ class NativeWriterTests(unittest.TestCase):
                     self.assertEqual({row["fd"] for row in closures}, {3, 4, 5} if mode == "close" else {3, 4})
                     self.assertEqual({row["generation"] for row in closures}, {2})
                     job, = trace["output_authority"]["jobs"]
-                    self.assertEqual([row["generation"] for row in job["tree"] if row["kind"] == "exec"], [1, 2])
+                    self.assertEqual([
+                        row["event"]["generation"] for row in trace["machine"]["events"]
+                        if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                        and row["event"]["kind"] == "exec"
+                    ], [1, 2])
                     self.assertEqual(any(row["kind"] == "output-close" and row["fd"] == 5 for row in effects), mode == "retain")
                     failures = [row for row in effects if row["kind"] == "output-operation-failed"]
                     self.assertEqual([(row["operation"], row["result"]) for row in failures], [("exec", -errno.EFAULT)])

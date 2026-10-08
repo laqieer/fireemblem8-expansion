@@ -2494,7 +2494,7 @@
       "interactions": "Depends on delivered #274 immutable foundation; #270 integrates this #275 extension before #180/#186 graph/report delivery. Shared Command, machine/archive and resource contracts must remain coherent. No independent gameplay feature conflict.",
       "save_compatibility": "Source-only; no ROM/RAM, save/config, localization, modern debug/release or archival game behavior change.",
       "cleanup": "Tests remove only their own capsules, pins and fixture paths. Retain original interrupted worktrees and failed evidence. Use the normal completed-worktree planner only after exact-master and remote-completion gates pass.",
-      "limitations": "Original 2148-source initial-plus-eight production qualification and its consolidated runner remain incomplete. Current component automation and exploratory 2146-source diagnostics are not substitutes. Mode0000 consumer test proves handled EACCES and validated lowlevel completion only; public exporter PermissionError remains explicit.",
+      "limitations": "Original 2148-source initial-plus-eight production qualification and its consolidated runner remain incomplete. Current component automation and exploratory diagnostics, including the restored frozen2148 pool, are not substitutes. Mode0000 consumer test proves handled EACCES and validated lowlevel completion only; public exporter PermissionError remains explicit.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget -v",
@@ -2502,6 +2502,10 @@
         },
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeReadonlyVariableTests scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_readonly_consumer_opens_settled_foreign_output_without_write_plan scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_resource_free_readonly_consumer_binds_actual_actor_and_creator scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_foreign_consumer_write_flags_still_refuse_without_output_plan scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_resource_free_foreign_consumer_write_flags_still_refuse scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_foreign_readonly_consumer_handles_actual_eacces_with_and_without_resources -v",
+          "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeGitlinkResourceTests scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_original_make_actual_forked_output_alias_and_parent_wire scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec -v",
           "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
         }
       ]
