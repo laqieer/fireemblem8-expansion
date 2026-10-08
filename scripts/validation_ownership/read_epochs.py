@@ -1515,6 +1515,144 @@ def validate_native_root(value, *, argv, cwd, environment, returncode, machine=N
     return value
 
 
+def native_request_plan(value, *, count_limit, file_limit):
+    if not isinstance(value, list) or not 1 <= len(value) <= count_limit:
+        raise ReadEpochError("finite native plan has an invalid request extent")
+    result = []
+    total_size = 0
+    for request in value:
+        if (
+            not isinstance(request, dict) or set(request) != {"argv", "cwd", "environment"}
+            or not isinstance(request["environment"], dict) or not request["environment"]
+            or any(
+                not isinstance(key, str) or not key or "=" in key or "\0" in key
+                or not isinstance(text, str) or "\0" in text
+                or any(0xD800 <= ord(char) <= 0xDFFF for char in key + text)
+                for key, text in request["environment"].items()
+            )
+        ):
+            raise ReadEpochError("finite native plan has invalid initial inputs")
+        native_execution_input(request["argv"], request["cwd"])
+        try:
+            size = len(encoded(request))
+        except UnicodeError as error:
+            raise ReadEpochError("finite native plan inputs are not UTF-8") from error
+        total_size += size
+        if total_size > file_limit:
+            raise ReadEpochError("finite native plan exceeds its existing file bound")
+        result.append((
+            tuple(request["argv"]), request["cwd"],
+            tuple(sorted(request["environment"].items())),
+        ))
+    return tuple(result)
+
+
+def validate_native_results(value, plan, trace, *, count_limit, file_limit, output_limit, reserve):
+    roots = trace["machine"].get("roots")
+    if (
+        trace["machine"]["version"] != 2 or not isinstance(value, list)
+        or len(value) != len(plan) or len(value) > count_limit
+        or not isinstance(roots, list) or len(roots) != len(plan)
+    ):
+        raise ReadEpochError("finite native results omit their complete root plan")
+
+    def captured(text):
+        if not isinstance(text, str) or len(text) > 4 * ((file_limit + 2) // 3):
+            raise ReadEpochError("finite native capture exceeds its existing file bound")
+        reserve(3 * ((len(text) + 3) // 4))
+        try:
+            data = base64.b64decode(text, validate=True)
+        except (ValueError, UnicodeError) as error:
+            raise ReadEpochError("finite native capture is not bounded base64") from error
+        if len(data) > file_limit or base64.b64encode(data).decode("ascii") != text:
+            raise ReadEpochError("finite native capture exceeds its existing file bound")
+        return data
+
+    total_output = 0
+    decoded = []
+    latest = {}
+    machine_index = 0
+    output_paths = {"/repo/" + path for path in trace.get("output_authority", {}).get("paths", ())}
+    reserve(
+        sys.getsizeof(latest) + sys.getsizeof(output_paths)
+        + sum(sys.getsizeof(path) for path in output_paths)
+    )
+    for ordinal, (row, request, boundary) in enumerate(zip(value, plan, roots), 1):
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"ordinal", "initial", "stdout", "stderr", "observation", "outputs"}
+            or type(row["ordinal"]) is not int or row["ordinal"] != ordinal
+            or row["initial"] != boundary["initial"]
+            or not isinstance(row["outputs"], list) or len(row["outputs"]) > count_limit
+        ):
+            raise ReadEpochError("finite native result has a foreign or reordered root")
+        argv, cwd, environment = request
+        validate_native_root(
+            row["initial"], argv=list(argv), cwd=cwd, environment=dict(environment), returncode=0,
+        )
+        stdout, stderr = captured(row["stdout"]), captured(row["stderr"])
+        total_output += len(stdout) + len(stderr)
+        if total_output > output_limit:
+            raise ReadEpochError("finite native results exceed their cumulative process output bound")
+        observation = captured(row["observation"])
+        while machine_index < boundary["last"]:
+            event = trace["machine"]["events"][machine_index]
+            machine_index += 1
+            if event["kind"] == "native-output":
+                effect = event["event"]
+                if effect["kind"] == "output-settled":
+                    before = sys.getsizeof(latest)
+                    latest[effect["path"]] = effect
+                    if sys.getsizeof(latest) > before:
+                        reserve(sys.getsizeof(latest))
+                elif effect["kind"] == "output-retire":
+                    latest.pop(effect["destination"], None)
+                elif effect["kind"] == "output-replace":
+                    previous = latest.pop(effect["source"], None)
+                    if previous is None:
+                        raise ReadEpochError("finite native output replacement lost its settlement")
+                    replacement = dict(effect, sha256=previous["sha256"])
+                    reserve(sys.getsizeof(replacement))
+                    latest[effect["path"]] = replacement
+        outputs = []
+        names = set()
+        for output in row["outputs"]:
+            if (
+                not isinstance(output, dict)
+                or set(output) != {"path", "owner", "serial", "revision", "identity", "data"}
+                or not isinstance(output["path"], str) or output["path"] in names
+                or output["path"] not in output_paths
+                or any(type(output[key]) is not int for key in ("owner", "serial", "revision"))
+                or not isinstance(output["identity"], list) or len(output["identity"]) != 7
+                or any(type(value) is not int for value in output["identity"])
+                or output["identity"][2] & 0o7000
+            ):
+                raise ReadEpochError("finite native output escapes its issued namespace")
+            data = captured(output["data"])
+            try:
+                validate_publication_identity(
+                    output["identity"], stat.S_IMODE(output["identity"][2]), len(data),
+                )
+            except ChannelError as error:
+                raise ReadEpochError(str(error)) from error
+            settlement = latest.get(output["path"])
+            if (
+                settlement is None
+                or any(output[key] != settlement[key] for key in (
+                    "path", "owner", "serial", "revision", "identity",
+                ))
+                or hashlib.sha256(data).hexdigest() != settlement["sha256"]
+            ):
+                raise ReadEpochError("finite native output differs from its actual settled version")
+            names.add(output["path"])
+            outputs.append((output["path"][6:], data, stat.S_IMODE(output["identity"][2])))
+        if names != latest.keys() & output_paths:
+            raise ReadEpochError("finite native result omitted an actual settled output")
+        decoded.append((stdout, stderr, observation, tuple(outputs)))
+        reserve(sys.getsizeof(outputs) + sys.getsizeof(decoded) + sys.getsizeof(decoded[-1]))
+    return tuple(decoded)
+
+
 def native_job_tree(events, job, parent, executables, *, count_limit, writable=False):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")
@@ -1709,6 +1847,13 @@ def native_machine_roots(value, trace, *, count_limit, reserve):
     return roots
 
 
+def native_root_owner(roots, execution):
+    index = bisect_right(roots, execution, key=lambda row: row["first_exec"]) - 1
+    if index < 0 or execution > roots[index]["last_exec"]:
+        raise ReadEpochError("finite native execution has no actual root owner")
+    return roots[index]["initial"]["pid"]
+
+
 def validate_machine_observations(value, trace, *, count_limit, reserve=lambda size: None):
     _machine_events(value, count_limit=count_limit)
     roots = native_machine_roots(
@@ -1717,10 +1862,7 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
     def make_owner(execution):
         if roots is None:
             return make_pid
-        index = bisect_right(roots, execution, key=lambda row: row["first_exec"]) - 1
-        if index < 0 or execution > roots[index]["last_exec"]:
-            raise ReadEpochError("finite native execution has no actual root owner")
-        return roots[index]["initial"]["pid"]
+        return native_root_owner(roots, execution)
     common = {"seq", "kind", "trace_seq", "pid", "exec", "pass"}
     fields = {
         "clear": {"registers"}, "arm": {"registers", "slots"},

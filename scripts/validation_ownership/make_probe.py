@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from functools import wraps
 from itertools import chain
 from pathlib import Path, PurePosixPath
+from subprocess import CompletedProcess
 from threading import get_ident, main_thread
 
 from .authority import (
@@ -1235,13 +1236,24 @@ class ProbeSession:
         runtime_completions=False, observe_root=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None, native_admission_handler=None,
-        native_output_paths=(), native_resources=(),
+        native_output_paths=(), native_resources=(), native_requests=None,
     ):
         self.budget.remaining()
         if type(observe_root) is not bool or observe_root and not (
             mode == "make" and native_runtime and read_abi is not None and runtime_completions
         ):
             raise MakeProbeError("native root observation requires native runtime completion")
+        finite_plan = None
+        if native_requests is not None:
+            if not observe_root:
+                raise MakeProbeError("finite native invocation requires actual root observation")
+            from .read_epochs import native_request_plan
+            finite_plan = native_request_plan(
+                native_requests, count_limit=self.budget.limits.entries,
+                file_limit=self.budget.limits.file_bytes,
+            )
+            if finite_plan[0] != (tuple(argv), cwd, tuple(sorted(environment.items()))):
+                raise MakeProbeError("finite native plan differs from its original first request")
         if native_admission_handler is not None and (
             mode != "make" or not native_runtime or not runtime_completions
             or producer_handler is not None or publication_observer is not None
@@ -1433,6 +1445,9 @@ class ProbeSession:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
             config["dependency"] = dependency
+        if finite_plan is not None:
+            config["native_requests"] = native_requests
+            config["native_output_limit"] = self.budget.limits.process_output_bytes
         if native_output_paths:
             if not (
                 mode == "command" and argv[0] == "/native/tool" and not native_runtime
@@ -1752,7 +1767,9 @@ class ProbeSession:
             ) | (
                 {"read_trace"} if read_abi is not None and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
-            ) | ({"native_jobs"} if compact_jobs else set()) | ({"native_root"} if observe_root else set()):
+            ) | ({"native_jobs"} if compact_jobs else set()) | ({"native_root"} if observe_root else set()) | (
+                {"native_results"} if finite_plan is not None else set()
+            ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
             collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
@@ -1790,7 +1807,7 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
-            if observe_root:
+            if observe_root and finite_plan is None:
                 from .read_epochs import validate_native_root
                 validate_native_root(
                     observed["native_root"], argv=argv, cwd=cwd, environment=environment,
@@ -1811,11 +1828,21 @@ class ProbeSession:
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
                     reserve=lambda size: self.budget.charge("control", size),
                 )
-                if observe_root:
+                if observe_root and finite_plan is None:
                     validate_native_root(
                         observed["native_root"], argv=argv, cwd=cwd, environment=environment,
                         returncode=observed["returncode"], machine=trace["machine"],
                     )
+                if finite_plan is not None:
+                    from .read_epochs import validate_native_results
+                    finite_captures = validate_native_results(
+                        observed["native_results"], finite_plan, trace,
+                        count_limit=config["observation_count"], file_limit=config["file_limit"],
+                        output_limit=config["native_output_limit"],
+                        reserve=lambda size: self.budget.charge("control", size),
+                    )
+                    if observed["native_root"] != trace["machine"]["roots"][-1]["initial"]:
+                        raise MakeProbeError("finite native result changed its final actual root")
                 for event in trace["events"]:
                     self.budget.remaining()
                     if (
@@ -1931,13 +1958,27 @@ class ProbeSession:
                             job_inputs[(job["sequence"], job["pid"])] = hashlib.sha256(encoded(inputs)).hexdigest()
                             parent = None
                             if observed["returncode"] == 0:
+                                machine = observed["read_trace"]["machine"]
+                                if machine["version"] == 2:
+                                    from .read_epochs import native_root_owner
+                                    actual_executions = [
+                                        row for row in machine["events"]
+                                        if row["kind"] == "execute" and not row["make"]
+                                        and row["dispatch"] == job["sequence"]
+                                    ]
+                                    if len(actual_executions) != 1:
+                                        raise MakeProbeError("native job tree lacks its actual execution")
+                                    parent = native_root_owner(
+                                        machine["roots"], actual_executions[0]["exec"],
+                                    )
                                 make_parents = {
                                     row["pid"] for row in observed["read_trace"]["machine"]["events"]
                                     if row["kind"] == "execute" and row["make"] is True
                                 }
-                                if len(make_parents) != 1:
+                                if parent is None and len(make_parents) != 1:
                                     raise MakeProbeError("native job tree lacks its original Make parent")
-                                parent = next(iter(make_parents))
+                                if parent is None:
+                                    parent = next(iter(make_parents))
                             native_job_tree(
                                 job["tree"], job, parent, config["native_executables"],
                                 count_limit=config["observation_count"],
@@ -2043,6 +2084,8 @@ class ProbeSession:
                 raise MakeProbeError("invalid trusted metadata comparison status")
             if mode != "make" and not metadata_validation and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
+            if finite_plan is not None and observed["returncode"] == 0:
+                return result, observed, finite_captures
             return result, observed
 
     @staticmethod
@@ -2674,12 +2717,40 @@ class ProbeSession:
             raise MakeProbeError("native writable Make requires exact output paths")
         return self._native_make_run(target, writable_outputs=outputs, **kwargs)
 
+    @terminal_failure
+    def _native_make_cohort(self, requests, *, variables=(), **kwargs):
+        if (
+            not isinstance(requests, tuple) or not 1 <= len(requests) <= self.budget.limits.entries
+            or any(
+                not isinstance(row, tuple) or len(row) != 3
+                or not isinstance(row[0], str) or not isinstance(row[1], str)
+                or not isinstance(row[2], tuple)
+                or any(
+                    not isinstance(assignment, tuple) or len(assignment) != 3
+                    or any(not isinstance(value, str) for value in assignment)
+                    for assignment in row[2]
+                )
+                for row in requests
+            )
+            or any(name in kwargs for name in (
+                "finite_requests", "target", "makefile", "assignments",
+                "observe_reads", "observe_runtime_completions", "observe_root",
+            ))
+        ):
+            raise MakeProbeError("finite native cohort requires an immutable complete request tuple")
+        target, makefile, assignments = requests[0]
+        return self._native_make_run(
+            target, makefile=makefile, assignments=assignments, variables=variables,
+            observe_reads=True, observe_runtime_completions=True, observe_root=True,
+            finite_requests=requests, **kwargs,
+        )
+
     def _native_make_run(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
         original_tool=False, native_metadata_directories=(),
-        commands=None, writable_outputs=(), native_resources=(), observe_root=False,
+        commands=None, writable_outputs=(), native_resources=(), observe_root=False, finite_requests=None,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2888,6 +2959,21 @@ class ProbeSession:
         ) if observe_completions or observe_runtime_completions else None
         if observe_reads:
             environment["VO_OBSERVE_READS"] = "1"
+        native_requests = None
+        if finite_requests is not None:
+            native_requests = []
+            for request_target, request_makefile, request_assignments in finite_requests:
+                _, request_cli, request_environment = self._make_request(
+                    request_target, request_makefile, variables, request_assignments, (),
+                )
+                native_requests.append({
+                    "argv": ["/usr/bin/make", "-f", request_makefile, *request_cli, request_target],
+                    "cwd": "/repo",
+                    "environment": {
+                        **request_environment, "VO_OBSERVE_NATIVE_READONLY": "1", "VO_OBSERVE_READS": "1",
+                    },
+                })
+            self.budget.charge("control", len(encoded(native_requests)) + sys.getsizeof(native_requests))
         root_name = f"native-readonly-root-{self.serial + 1}"
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
@@ -2929,7 +3015,7 @@ class ProbeSession:
             control.mkdir(mode=0o700)
             result_path = control / "result"
             result_path.touch()
-            completed, observed = self._sandbox_run(
+            sandbox_result = self._sandbox_run(
                 root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
                 environment=environment, native_runtime=native_runtime, read_abi=read_abi,
                 read_selection=read_selection,
@@ -2942,6 +3028,7 @@ class ProbeSession:
                 native_admission_handler=admit if commands is not None else None,
                 native_output_paths=writable_outputs,
                 native_resources=native_resources,
+                native_requests=native_requests,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     *(self._mount(Path(path), path) for path, identity in metadata_directories
@@ -2951,10 +3038,23 @@ class ProbeSession:
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],
             )
+            completed, observed = sandbox_result[:2]
             if completed.returncode:
                 raise MakeProbeError(
                     f"readonly native GNU Make failed: {completed.returncode}; {completed.stderr!r}"
                 )
+            if native_requests is not None:
+                captures = sandbox_result[2]
+                results = []
+                for request, capture, launch in zip(finite_requests, captures, native_requests):
+                    stdout, stderr, observation, outputs = capture
+                    self.budget.charge("output", len(stdout) + len(stderr))
+                    semantics = _read_observation(observation, request[0], variables)
+                    results.append((
+                        CompletedProcess(launch["argv"], 0, stdout, stderr),
+                        semantics, tuple(GeneratedFile(*output) for output in outputs),
+                    ))
+                return tuple(results), observed
             semantics = _read_observation(
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )

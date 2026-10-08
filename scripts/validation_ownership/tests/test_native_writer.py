@@ -582,6 +582,388 @@ class NativeWriterTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_native_finite_cohort_captures_distinct_actual_roots_and_inputs(self):
+        self.add("Makefile", (
+            ".PHONY: first second\n"
+            "first:\n\t@v=one; printf first; printf first-error >&2\n"
+            "second:\n\t@v=two; printf second; printf second-error >&2\n"
+        ))
+        session = self.session()
+        with session:
+            results, observed = session._native_make_cohort((
+                ("first", "Makefile", (("command-line", "VALUE", "one"),)),
+                ("second", "Makefile", (("environment", "VALUE", "two"),)),
+            ), variables=("MAKECMDGOALS", "VALUE"))
+            self.assertEqual(
+                [(result.stdout, result.stderr) for result, _, _ in results],
+                [(b"first", b"first-error"), (b"second", b"second-error")],
+            )
+            self.assertEqual(
+                [(semantics["domains"]["MAKECMDGOALS"]["value"], semantics["domains"]["VALUE"]["value"])
+                 for _, semantics, _ in results],
+                [("first", "one"), ("second", "two")],
+            )
+            roots = observed["read_trace"]["machine"]["roots"]
+            self.assertNotEqual(roots[0]["initial"]["pid"], roots[1]["initial"]["pid"])
+            self.assertEqual([row["initial"]["wait"] for row in roots], [0, 0])
+            self.assertEqual(roots[0]["last"] + 1, roots[1]["first"])
+            self.assertEqual([generated for _, _, generated in results], [(), ()])
+        self.assert_clean(session)
+
+    def test_native_finite_cohort_keeps_generated_versions_and_internal_reexec(self):
+        self.add("native.c", (
+            "#include <stdio.h>\n"
+            "int main(int n,char **a){FILE *f;if(n!=2)return 1;"
+            "f=fopen(\"generated.mk.tmp\",\"w\");if(!f)return 2;"
+            "if(fprintf(f,\"VALUE := %s\\n\",a[1])<0||fclose(f))return 3;"
+            "return rename(\"generated.mk.tmp\",\"generated.mk\")!=0;}\n"
+        ))
+        self.add("Makefile", (
+            "GENERATED := $(shell /native/tool $(MAKECMDGOALS))\n"
+            "include generated.mk\n"
+            ".PHONY: first second\nfirst second: ; @:\n"
+        ))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(
+                        argv, native_tool=tool,
+                        outputs=("generated.mk",) if argv[0] == "/native/tool" else (),
+                        native_resources=(("temporary", "generated.mk.tmp"),),
+                    )
+            results, observed = session._native_make_cohort((
+                ("first", "Makefile", ()), ("second", "Makefile", ()),
+            ), variables=("VALUE",), native_tool=tool, commands=Commands(),
+                writable_outputs=("generated.mk",),
+                native_resources=(("temporary", "generated.mk.tmp"),))
+            self.assertEqual(
+                [(files[0].path, files[0].data, files[0].mode) for _, _, files in results],
+                [("generated.mk", b"VALUE := first\n", 0o644),
+                 ("generated.mk", b"VALUE := second\n", 0o644)],
+            )
+            self.assertEqual(
+                [semantics["domains"]["VALUE"]["value"] for _, semantics, _ in results],
+                ["first", "second"],
+            )
+            opened = [
+                row for row in observed["read_trace"]["events"]
+                if row["kind"] == "source-open" and row["path"] == "generated.mk"
+            ]
+            self.assertEqual(len(opened), 2)
+            self.assertNotEqual(opened[0]["source"], opened[1]["source"])
+            from scripts.validation_ownership import read_epochs
+            plan = read_epochs.native_request_plan([
+                {key: row["initial"][key] for key in ("argv", "cwd", "environment")}
+                for row in observed["native_results"]
+            ], count_limit=32768, file_limit=16777216)
+            for mutation in (
+                "rows.pop()", "rows.reverse()", "rows[1]['ordinal']=False",
+                "rows[1]['initial']['pid']=rows[0]['initial']['pid']",
+                "rows[1]['initial']['argv'].append('FOREIGN=1')",
+                "rows[1]['initial']['environment']['FOREIGN']='1'",
+                "rows[1]['initial']['cwd']='/'", "rows[1]['initial']['wait']=256",
+                "rows[1]['outputs']=[]", "rows[1]['outputs'].append(dict(rows[1]['outputs'][0]))",
+                "rows[1]['outputs'][0]['data']=rows[0]['outputs'][0]['data']",
+                "rows[1]['outputs'][0]['serial']=True", "rows[1]['outputs'][0]['revision']+=1",
+                "rows[1]['outputs'][0]['identity'][2]^=1",
+                "rows[1]['outputs'][0]['identity'][3]+=1",
+                "rows[1]['outputs'][0]['path']='/repo/foreign'",
+                "rows[1]['stdout']='!'", "rows[1]['observation']=None",
+                "rows[1]['foreign']=1",
+            ):
+                invalid = json.loads(json.dumps(observed["native_results"]))
+                exec(mutation, {}, {"rows": invalid})
+                with self.subTest(mutation=mutation), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_native_results(
+                        invalid, plan, observed["read_trace"], count_limit=32768,
+                        file_limit=16777216, output_limit=1048576, reserve=lambda size: None,
+                    )
+        self.assert_clean(session)
+
+        self.add("Makefile", (
+            "-include generated.mk\n"
+            "generated.mk:\n\t@printf 'VALUE := produced\\n' > generated.mk\n"
+            "all: ; @:\n"
+        ))
+        session = self.session()
+        with session:
+            class ReexecCommands:
+                def __getitem__(self, argv):
+                    return Command(argv, outputs=("generated.mk",) if "generated.mk" in argv[-1] else ())
+            results, observed = session._native_make_cohort(
+                (("all", "Makefile", ()),), variables=("VALUE",),
+                commands=ReexecCommands(), writable_outputs=("generated.mk",),
+            )
+            root, = observed["read_trace"]["machine"]["roots"]
+            self.assertEqual((root["first_exec"], root["last_exec"]), (1, 2))
+            self.assertEqual(results[0][1]["domains"]["VALUE"]["value"], "produced")
+            self.assertEqual(results[0][2][0].data, b"VALUE := produced\n")
+        self.assert_clean(session)
+
+    def test_native_finite_cohort_failed_first_stops_before_successor(self):
+        self.add("Makefile", (
+            ".PHONY: failed second\nfailed: ; @printf failed-error >&2; exit 3\nsecond: ; @printf second\n"
+        ))
+        reports = []
+        session = self.session()
+        read = session.budget.read_bytes
+        def capture(path, category):
+            data = read(path, category)
+            if category == "control" and Path(path).name.startswith("report-"):
+                reports.append(json.loads(data))
+            return data
+        with session, patch.object(session.budget, "read_bytes", capture):
+            with self.assertRaisesRegex(MakeProbeError, "native GNU Make failed: 2.*failed-error"):
+                session._native_make_cohort((
+                    ("failed", "Makefile", ()), ("second", "Makefile", ()),
+                ))
+            self.assertEqual(reports[-1]["native_results"], [])
+            self.assertEqual(reports[-1]["native_root"]["argv"][-1], "failed")
+            self.assertEqual(reports[-1]["native_root"]["wait"], 512)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_finite_cohort_refuses_malformed_plans_before_launch(self):
+        self.add("Makefile", "all: ; @:\n")
+        for requests in (
+            (), [], [("all", "Makefile", ())],
+            (("all", "Makefile", []),), (("all", "Makefile", (("command-line", 1, "x"),)),),
+            (("all", "Makefile", ()), ("foreign", "absent.mk", ())),
+            (("all", "Makefile", ()), ("all", "Makefile", (("environment", "SHELL", "foreign"),))),
+        ):
+            session = self.session()
+            with self.subTest(requests=requests), session, patch.object(
+                session, "_sandbox_run", side_effect=AssertionError("invalid plan launched a capsule"),
+            ):
+                with self.assertRaises(MakeProbeError):
+                    session._native_make_cohort(requests)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_finite_cohort_failed_later_preserves_prefix_without_successor(self):
+        from base64 import b64decode
+        self.add("Makefile", (
+            ".PHONY: first failed third\nfirst: ; @v=once; printf first\n"
+            "failed: ; @printf failed-error >&2; exit 3\nthird: ; @printf forbidden\n"
+        ))
+        session = self.session()
+        reports = []
+        read = session.budget.read_bytes
+        def capture(path, category):
+            data = read(path, category)
+            if category == "control" and Path(path).name.startswith("report-"):
+                reports.append(json.loads(data))
+            return data
+        with session, patch.object(session.budget, "read_bytes", capture):
+            with self.assertRaisesRegex(MakeProbeError, "native GNU Make failed: 2.*failed-error"):
+                session._native_make_cohort((
+                    ("first", "Makefile", ()), ("failed", "Makefile", ()), ("third", "Makefile", ()),
+                ))
+            prefix, = reports[-1]["native_results"]
+            self.assertEqual(prefix["initial"]["argv"][-1], "first")
+            self.assertEqual(b64decode(prefix["stdout"], validate=True), b"first")
+            self.assertEqual(reports[-1]["native_root"]["argv"][-1], "failed")
+            self.assertNotEqual(prefix["initial"]["pid"], reports[-1]["native_root"]["pid"])
+            self.assertEqual(reports[-1]["native_root"]["wait"], 512)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_finite_cohort_enforces_one_cumulative_stdio_bound(self):
+        first, second = "a" * 1024, "b" * 1024
+        self.add("Makefile", (
+            ".PHONY: first second\n"
+            f"first: ; @i=0; while test $$i -lt 512; do printf '{first}'; i=$$((i+1)); done\n"
+            f"second: ; @i=0; while test $$i -lt 512; do printf '{second}' >&2; i=$$((i+1)); done\n"
+        ))
+        for limit in (1048576, 1048575):
+            session = self.session(process_output_bytes=limit)
+            with self.subTest(limit=limit), session:
+                if limit == 1048576:
+                    results, _ = session._native_make_cohort((
+                        ("first", "Makefile", ()), ("second", "Makefile", ()),
+                    ))
+                    self.assertEqual(
+                        [(completed.stdout, completed.stderr) for completed, _, _ in results],
+                        [(first.encode() * 512, b""), (b"", second.encode() * 512)],
+                    )
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "cumulative process output bound"):
+                        session._native_make_cohort((
+                            ("first", "Makefile", ()), ("second", "Makefile", ()),
+                        ))
+                    self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_finite_cohort_host_rejects_returned_root_and_observation_changes(self):
+        self.add("Makefile", ".PHONY: first second\nfirst second: ; @:\n")
+        for mutation in (
+            "row['native_results'].pop()",
+            "row['native_results'].reverse()",
+            "row['native_results'][1]['initial']['environment']['FOREIGN']='1'",
+            "row['native_root']['pid']+=1",
+            "row['native_results'][1]['observation']=row['native_results'][0]['observation']",
+        ):
+            session = self.session()
+            read = session.budget.read_bytes
+            def changed(path, category):
+                data = read(path, category)
+                if category == "control" and Path(path).name.startswith("report-"):
+                    row = json.loads(data)
+                    exec(mutation, {}, {"row": row})
+                    return encoded(row)
+                return data
+            with self.subTest(mutation=mutation), session, patch.object(session.budget, "read_bytes", changed):
+                with self.assertRaises(MakeProbeError):
+                    session._native_make_cohort((
+                        ("first", "Makefile", ()), ("second", "Makefile", ()),
+                    ), variables=("MAKECMDGOALS",))
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_finite_cohort_pending_source_and_deadline_block_successor(self):
+        self.add("Makefile", ".PHONY: first second\nfirst second: ; @:\n")
+        for pending in (True, False):
+            body = (
+                "retire=guard.NativeReadTrace.retire_root\n"
+                "def held(self):\n"
+                + (" self.invocations.append({'kind':'tester-unretired'})\n" if pending else "")
+                + " retire(self)\n"
+                + ("" if pending else " self.config['deadline']=guard.time.monotonic()-1\n")
+                + "guard.NativeReadTrace.retire_root=held\n"
+            )
+            session = self.session()
+            reports = []
+            read = session.budget.read_bytes
+            def capture(path, category):
+                data = read(path, category)
+                if category == "control" and Path(path).name.startswith("report-"):
+                    reports.append(json.loads(data))
+                return data
+            with self.subTest(pending=pending), self.native_supervisor(body), session, patch.object(
+                session.budget, "read_bytes", capture,
+            ):
+                with self.assertRaisesRegex(
+                    MakeProbeError, "incomplete actual state" if pending else "deadline exhausted before finite",
+                ):
+                    session._native_make_cohort((
+                        ("first", "Makefile", ()), ("second", "Makefile", ()),
+                    ))
+                self.assertEqual(reports[-1]["processes"], 1)
+                self.assertEqual(len(reports[-1]["native_results"]), 0 if pending else 1)
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_finite_cohort_large_write_bounds_actual_pipe_retention(self):
+        self.add("native.c", (
+            "#include <unistd.h>\nstatic char data[2*1024*1024];\n"
+            "int main(int n,char **a){return write(n==2&&a[1][0]=='2'?2:1,data,sizeof data)<0;}\n"
+        ))
+        self.add("Makefile", ".PHONY: first second\nfirst: ; @/native/tool $(FD)\nsecond: ; @:\n")
+        for descriptor in (1, 2):
+            self._check_finite_large_write(descriptor)
+
+    def _check_finite_large_write(self, descriptor):
+        receipt = self.directory / f"actual-finite-pipe-capture-{descriptor}.json"
+        body = (
+            "read=guard.os.read\n"
+            "total=0\n"
+            "def observed_read(fd,size):\n"
+            " global total\n"
+            " info=os.fstat(fd)\n"
+            " data=read(fd,size)\n"
+            " if guard.stat.S_ISFIFO(info.st_mode):\n"
+            "  total+=len(data)\n"
+            f"  Path({str(receipt)!r}).write_text(json.dumps({{'actual_pipe_read_bytes':total}}))\n"
+            " return data\n"
+            "guard.os.read=observed_read\n"
+        )
+        reports = []
+        session = self.session()
+        read = session.budget.read_bytes
+        def report(path, category):
+            data = read(path, category)
+            if category == "control" and Path(path).name.startswith("report-"):
+                reports.append(json.loads(data))
+            return data
+        with session, self.native_supervisor(body), patch.object(session.budget, "read_bytes", report):
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool)
+            with self.assertRaisesRegex(MakeProbeError, "cumulative process output bound"):
+                session._native_make_cohort((
+                    ("first", "Makefile", (("command-line", "FD", str(descriptor)),)),
+                    ("second", "Makefile", ()),
+                ), native_tool=tool, commands=Commands())
+            actual = json.loads(receipt.read_bytes())
+            self.assertEqual(actual["actual_pipe_read_bytes"], 1048577)
+            self.assertEqual(reports[-1]["native_results"], [])
+            self.assertEqual(reports[-1]["processes"], 2)
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
+    def test_native_finite_cohort_preserves_pipe_syscalls_and_inherited_dup_writes(self):
+        self.add("native.c", (
+            "#define _POSIX_C_SOURCE 200809L\n"
+            "#include <errno.h>\n#include <sys/stat.h>\n#include <sys/wait.h>\n"
+            "#include <unistd.h>\n"
+            "int main(void){struct stat s;char c;int fd;pid_t p;"
+            "if(fstat(1,&s)||!S_ISFIFO(s.st_mode))return 1;"
+            "errno=0;if(lseek(1,0,SEEK_SET)!=-1||errno!=ESPIPE)return 2;"
+            "errno=0;if(pwrite(1,\"x\",1,0)!=-1||errno!=ESPIPE)return 3;"
+            "errno=0;if(read(1,&c,1)!=-1||errno!=EBADF)return 4;"
+            "fd=dup(1);if(fd<0)return 5;p=fork();if(p<0)return 6;"
+            "if(!p){if(write(fd,\"child\",5)!=5)_exit(7);_exit(0);}"
+            "if(waitpid(p,0,0)!=p||write(fd,\"parent\",6)!=6)return 8;"
+            "return close(fd)!=0;}\n"
+        ))
+        self.add("Makefile", ".PHONY: first second\nfirst second: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool)
+            results, observed = session._native_make_cohort((
+                ("first", "Makefile", ()), ("second", "Makefile", ()),
+            ), native_tool=tool, commands=Commands())
+            self.assertEqual(
+                [(completed.returncode, completed.stdout, completed.stderr) for completed, _, _ in results],
+                [(0, b"childparent", b""), (0, b"childparent", b"")],
+            )
+            self.assertEqual(observed["processes"], 6)
+        self.assert_clean(session)
+
+    def test_native_finite_cohort_stdio_cap_does_not_lower_generated_file_allowance(self):
+        self.add("native.c", (
+            "#include <stdio.h>\nstatic char data[1024*1024+1];\n"
+            "int main(void){FILE *f=fopen(\"generated.bin\",\"w\");"
+            "if(!f)return 1;if(fwrite(data,1,sizeof data,f)!=sizeof data)return 2;"
+            "return fclose(f)!=0;}\n"
+        ))
+        self.add("Makefile", "all: ; @/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("generated.bin",))
+            results, observed = session._native_make_cohort(
+                (("all", "Makefile", ()),), native_tool=tool, commands=Commands(),
+                writable_outputs=("generated.bin",),
+            )
+            completed, _, generated = results[0]
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual(
+                [(item.path, item.mode, len(item.data)) for item in generated],
+                [("generated.bin", 0o644, 1048577)],
+            )
+            self.assertEqual(generated[0].data, bytes(1048577))
+            self.assertEqual(observed["native_results"][0]["outputs"][0]["identity"][3], 1048577)
+        self.assert_clean(session)
+
     def test_native_root_observation_binds_actual_initial_inputs_and_terminal(self):
         self.add("Makefile", ".PHONY: all failed\nall: ; @:\nfailed: ; @exit 3\n")
         for target in ("all", "failed"):

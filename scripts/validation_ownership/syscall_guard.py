@@ -9,6 +9,7 @@ this Python process. Mutable shared memory and namespace aliases reject.
 from __future__ import annotations
 
 import ctypes
+import base64
 import errno
 import hashlib
 import json
@@ -3012,41 +3013,119 @@ def supervise(config, drop_privileges):
     main_status = None
     finished_trace = None
     native_job_headers, native_job_accessed = None, None
+    finite_plan = None
+    finite_results = []
+    finite_streams = []
+    finite_output_bytes = 0
+    request_index = 0
+    def drain_native_stdio():
+        nonlocal finite_output_bytes
+        for stream in finite_streams:
+            while not stream[3]:
+                remaining = config["native_output_limit"] - finite_output_bytes
+                try:
+                    chunk = os.read(stream[0], min(65536, remaining + 1))
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    stream[3] = True
+                    break
+                if len(chunk) > remaining:
+                    raise Violation("finite native roots exceed their cumulative process output bound")
+                policy.charge_metadata(len(chunk) + sys.getsizeof(chunk))
+                finite_output_bytes += len(chunk)
+                previous_size = sys.getsizeof(stream[2])
+                stream[2].append(chunk)
+                if sys.getsizeof(stream[2]) > previous_size:
+                    policy.charge_metadata(sys.getsizeof(stream[2]))
+
+    def captured_stdio(stream):
+        size = sum(map(len, stream[2]))
+        policy.charge_metadata(size)
+        return b"".join(stream[2])
+
+    if "native_requests" in config:
+        if not config.get("native_root_observation"):
+            raise Violation("finite native requests require actual root observation")
+        finite_plan = read_epochs.native_request_plan(
+            config["native_requests"], count_limit=config["observation_count"],
+            file_limit=config["file_limit"],
+        )
+        if (
+            finite_plan[0] != (
+                tuple(config["argv"]), config.get("cwd", "/repo"),
+                tuple(sorted(config["environment"].items())),
+            )
+            or type(config.get("native_output_limit")) is not int
+            or not 0 < config["native_output_limit"] <= 1024 * 1024
+        ):
+            raise Violation("finite native plan differs from its original launch or output bound")
+        policy.charge_metadata(
+            len(encoded(config["native_requests"])) + sys.getsizeof(finite_plan)
+            + sum(sys.getsizeof(row) + sys.getsizeof(row[0]) + sys.getsizeof(row[2]) for row in finite_plan)
+            + sys.getsizeof(finite_results) + sys.getsizeof(finite_streams)
+        )
+        for _ in finite_plan:
+            policy.reserve_trace_observation()
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
         raise Violation("no remaining guest-process capacity")
-    pid = os.fork()
-    if pid == 0:
-        try:
-            os.chroot(config["root"])
-            os.chdir(config.get("cwd", "/repo"))
-            os.umask(0o022)
-            os.closerange(3, 65536)
-            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
-            resource.setrlimit(resource.RLIMIT_AS, (config["memory_limit"], config["memory_limit"]))
-            resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
-            cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
-            if policy.native_readonly:
-                for name in ("SIGPIPE", "SIGXFZ", "SIGXFSZ"):
-                    if hasattr(signal, name):
-                        signal.signal(getattr(signal, name), signal.SIG_DFL)
-            trace_me(drop_privileges)
-            os.execve(config.get("initial_executable", config["argv"][0]),
-                      config["argv"], config["environment"])
-        except BaseException as failure:
-            os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
-            os._exit(125)
-    processes[pid] = Process(
-        "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
-        memory_group=pid, pidfd=os.pidfd_open(pid), cwd=config.get("cwd", "/repo"),
-    )
-    if config.get("metadata_validation"):
-        processes[pid].helper_kind = VO_VALIDATE
-        processes[pid].metadata_index = 0
-    policy.total_processes = 1
-    policy.account_processes()
+    def spawn_root():
+        if finite_plan is not None:
+            if time.monotonic() >= config["deadline"]:
+                raise Violation("aggregate probe deadline exhausted before finite native root")
+            if policy.native_root is not None:
+                raise Violation("finite native root reused an unretired input record")
+            argv, cwd, environment = finite_plan[request_index]
+            config.update(argv=list(argv), cwd=cwd, environment=dict(environment))
+            policy.charge_metadata(sys.getsizeof(config["argv"]) + sys.getsizeof(config["environment"]))
+            for _ in range(2):
+                reader, writer = os.pipe2(os.O_CLOEXEC)
+                finite_streams.append([reader, writer, [], False])
+                os.set_blocking(reader, False)
+                policy.charge_metadata(sys.getsizeof(finite_streams) + sys.getsizeof(finite_streams[-1]))
+        child = os.fork()
+        if child == 0:
+            try:
+                if finite_plan is not None:
+                    os.dup2(finite_streams[0][1], 1)
+                    os.dup2(finite_streams[1][1], 2)
+                os.chroot(config["root"])
+                os.chdir(config.get("cwd", "/repo"))
+                os.umask(0o022)
+                os.closerange(3, 65536)
+                resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
+                resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
+                resource.setrlimit(resource.RLIMIT_AS, (config["memory_limit"], config["memory_limit"]))
+                resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
+                cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
+                resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+                if policy.native_readonly:
+                    for name in ("SIGPIPE", "SIGXFZ", "SIGXFSZ"):
+                        if hasattr(signal, name):
+                            signal.signal(getattr(signal, name), signal.SIG_DFL)
+                trace_me(drop_privileges)
+                os.execve(config.get("initial_executable", config["argv"][0]),
+                          config["argv"], config["environment"])
+            except BaseException as failure:
+                os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
+                os._exit(125)
+        if finite_plan is not None:
+            for stream in finite_streams:
+                os.close(stream[1])
+                stream[1] = None
+        processes[child] = Process(
+            "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
+            memory_group=child, pidfd=os.pidfd_open(child), cwd=config.get("cwd", "/repo"),
+        )
+        if config.get("metadata_validation"):
+            processes[child].helper_kind = VO_VALIDATE
+            processes[child].metadata_index = 0
+        policy.total_processes += 1
+        policy.account_processes()
+        return child
+
+    pid = None
     parking = False
 
     def resume(child):
@@ -3460,6 +3539,7 @@ def supervise(config, drop_privileges):
                 resume(child)
 
     try:
+        pid = spawn_root()
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
@@ -3471,21 +3551,114 @@ def supervise(config, drop_privileges):
         if "published" in config:
             policy.adopt_published(config["published"])
         ptrace(SYSCALL, pid)
-        while processes:
-            if time.monotonic() >= config["deadline"]:
-                raise Violation("aggregate probe deadline exhausted in syscall supervisor")
+        while True:
+            while processes:
+                if time.monotonic() >= config["deadline"]:
+                    raise Violation("aggregate probe deadline exhausted in syscall supervisor")
+                if finite_plan is not None:
+                    drain_native_stdio()
+                if channel is not None:
+                    channel.ensure_idle()
+                if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
+                    fulfill_producer()
+                    continue
+                stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
+                if stopped == 0:
+                    time.sleep(0.0001)
+                    continue
+                handle_stop(stopped, status)
+            if newborn_stops:
+                raise Violation("unresolved descendant at completion")
+            if finite_plan is not None:
+                drain_native_stdio()
+                if not all(stream[3] for stream in finite_streams):
+                    raise Violation("finite native root omitted its actual stdio writer EOF")
+            if finite_plan is not None and main_status != 0:
+                for stream, destination in zip(finite_streams, (sys.stdout.buffer, sys.stderr.buffer)):
+                    destination.write(captured_stdio(stream))
+                    destination.flush()
+                break
+            if finite_plan is None:
+                break
+            if (
+                vfork_waiters or policy.producer_requests
+                or policy.producer_issued != policy.producer_completed
+            ):
+                raise Violation("finite native root has pending descendant or channel state")
             if channel is not None:
                 channel.ensure_idle()
-            if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
-                fulfill_producer()
-                continue
-            stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
-            if stopped == 0:
-                time.sleep(0.0001)
-                continue
-            handle_stop(stopped, status)
-        if newborn_stops:
-            raise Violation("unresolved descendant at completion")
+            policy.read_trace.retire_root()
+
+            def capture(stream):
+                before = os.fstat(stream.fileno())
+                if before.st_size > config["file_limit"]:
+                    raise Violation("finite native capture exceeds its existing file bound")
+                policy.charge_metadata(before.st_size)
+                stream.seek(0)
+                data = stream.read(config["file_limit"] + 1)
+                if (
+                    len(data) != before.st_size
+                    or publication_identity(os.fstat(stream.fileno())) != publication_identity(before)
+                ):
+                    raise Violation("finite native capture changed after actual root retirement")
+                policy.charge_metadata(4 * ((len(data) + 2) // 3) + sys.getsizeof(""))
+                return base64.b64encode(data).decode("ascii")
+
+            stdio = []
+            for stream in finite_streams:
+                data = captured_stdio(stream)
+                policy.charge_metadata(4 * ((len(data) + 2) // 3) + sys.getsizeof(""))
+                stdio.append(base64.b64encode(data).decode("ascii"))
+            stdout, stderr = stdio
+            controls = [row for row in config["mounts"] if row["target"] == "/control"]
+            if len(controls) != 1:
+                raise Violation("finite native root lacks its original observation backing")
+            with (Path(controls[0]["source"]) / "result").open("rb") as stream:
+                observation = capture(stream)
+            outputs = []
+            if policy.native_outputs is not None:
+                for path in config["native_output_paths"]:
+                    item = policy.native_outputs.custody.objects.get("/repo/" + path)
+                    if item is None:
+                        continue
+                    with os.fdopen(os.dup(item.descriptor), "rb") as stream:
+                        data = capture(stream)
+                        if publication_identity(os.fstat(stream.fileno())) != item.identity:
+                            raise Violation("finite native output changed its settled FD identity")
+                    outputs.append({
+                        "path": item.path, "owner": item.owner, "serial": item.serial,
+                        "revision": item.revision, "identity": list(item.identity), "data": data,
+                    })
+            row = {
+                "ordinal": request_index + 1,
+                "initial": policy.read_trace.root_boundaries[-1]["initial"],
+                "stdout": stdout, "stderr": stderr, "observation": observation, "outputs": outputs,
+            }
+            policy.reserve_trace_observation()
+            policy.charge_metadata(len(encoded(row)) + sys.getsizeof(row) + sys.getsizeof(outputs))
+            finite_results.append(row)
+            policy.charge_metadata(sys.getsizeof(finite_results))
+            for stream in finite_streams:
+                os.close(stream[0])
+                stream[0] = None
+            finite_streams.clear()
+            if request_index + 1 == len(finite_plan):
+                break
+            if policy.total_processes >= config["descendant_limit"]:
+                raise Violation("finite native root exhausted its original process authority")
+            request_index += 1
+            main_status = None
+            policy.native_root = None
+            pid = spawn_root()
+            waited, status = os.waitpid(pid, 0)
+            if waited != pid or not os.WIFSTOPPED(status):
+                raise Violation("finite native root did not enter traced confinement")
+            for mapping in Path(f"/proc/{pid}/maps").read_text().splitlines():
+                if mapping.endswith("[heap]"):
+                    processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
+            ptrace(SETOPTIONS, pid, 0, OPTIONS)
+            policy.reserve_memory(pid, processes[pid], 0)
+            ptrace(SYSCALL, pid)
     except BaseException as failure:
         primary = failure
         error = str(failure)
@@ -3568,6 +3741,8 @@ def supervise(config, drop_privileges):
             }
             if config.get("native_root_observation"):
                 result["native_root"] = policy.native_root
+            if finite_plan is not None:
+                result["native_results"] = finite_results
             if finished_trace is not None:
                 result["read_trace"] = finished_trace
             if native_job_headers is not None:
@@ -3598,6 +3773,8 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, finish_channel, finish_trace, write_report,
+            *(lambda descriptor=descriptor: os.close(descriptor)
+              for stream in finite_streams for descriptor in stream[:2] if descriptor is not None),
             *([] if policy.native_outputs is None else [policy.native_outputs.custody.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
