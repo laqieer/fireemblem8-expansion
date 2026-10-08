@@ -1260,14 +1260,22 @@ planning uses existing bounded readonly selector/support probes, not a pure
 parser; their execution, metadata and captures spend the normal budget.
 It does not run a replacement producer or render a dependency file.
 
-Run these three `ProducerTests` selectors in
+Run these five `ProducerTests` selectors in
 `scripts.validation_ownership.tests.test_producer`:
 `test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families`,
 `test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands`,
-and `test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted`.
+`test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted`,
+`test_native_generated_dependency_plan_rejects_option_operands_before_probes`,
+and `test_native_generated_dependency_plan_preserves_argparse_literal_operands`.
 The compact finite fixture checks each complete module contract independently:
 exact argv and source/code/directory plans, output/temporary/ancestor roles,
 malformed or foreign options and exclusion of nonselected inputs. Preserve the
+original argparse operand boundary for every selector, target and depfile:
+option-like operands such as `--foreign`, `-x` and `--` must refuse before any
+readonly probe; literal `-` and negative-number operands remain accepted.
+The pre-fix planner accepted `--make-target --foreign`, whereas the original
+module exits 2 with a missing-argument diagnostic before producing output.
+Preserve the
 existing mapped all-three actual-output/remake and option/selector regressions
 as compatibility controls. These planner cases do not establish actual native
 module production or the required one-budget initial-plus-eight cohort.

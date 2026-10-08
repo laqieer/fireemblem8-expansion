@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import ast
 import importlib.util
 import json
@@ -565,9 +566,14 @@ def native_generated_dependency_command(session: ProbeSession, arguments):
         raise MakeProbeError("original generated dependency options require named values")
     option_values = {}
     expected = {option for option, _ in details["selectors"]} | {"--make-target", "--depfile"}
+    # Match argparse operand handling, including literal "-" and negative numbers.
+    value_parser = argparse.ArgumentParser(add_help=False)
     for index in range(0, len(options), 2):
         option, value = options[index:index + 2]
-        if option not in expected or option in option_values or not value:
+        if (
+            option not in expected or option in option_values or not value
+            or value_parser._parse_optional(value) is not None
+        ):
             raise MakeProbeError("original generated dependency option is unknown, duplicate or empty")
         option_values[option] = value
     if set(option_values) != expected:

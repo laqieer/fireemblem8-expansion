@@ -2525,7 +2525,7 @@
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
         {
-          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted -v",
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_rejects_option_operands_before_probes scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_preserves_argparse_literal_operands -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
         }
       ]

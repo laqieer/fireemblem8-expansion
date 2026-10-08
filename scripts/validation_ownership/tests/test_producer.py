@@ -5022,6 +5022,35 @@ class ProducerTests(unittest.TestCase):
             self.assertIn("data/objectives/ch1_objectives.json", command.sources)
         self.fixture.assert_clean(session)
 
+    def test_native_generated_dependency_plan_rejects_option_operands_before_probes(self):
+        cases = self.add_compact_generated_dependency_fixture()
+        with self.fixture.session(seconds=60) as session:
+            for case in cases:
+                argv = ("python3", "-m", case["module"], *(
+                    value for pair in case["options"].items() for value in pair
+                ), "--make-target", case["make_target"], "--depfile", case["depfile"])
+                for index in range(4, len(argv), 2):
+                    for value in ("--foreign", "--depfile", "-x", "--", "--source=value"):
+                        changed = (*argv[:index], value, *argv[index + 1:])
+                        with self.subTest(module=case["module"], option=argv[index - 1], value=value):
+                            before = session.budget.runs
+                            with self.assertRaises(MakeProbeError):
+                                native_generated_dependency_command(session, changed)
+                            self.assertEqual(session.budget.runs, before)
+        self.fixture.assert_clean(session)
+
+    def test_native_generated_dependency_plan_preserves_argparse_literal_operands(self):
+        case = self.add_compact_generated_dependency_fixture()[2]
+        with self.fixture.session(seconds=60) as session:
+            for value in ("-", "-1", "-.5"):
+                argv = ("python3", "-m", case["module"], *(
+                    part for pair in case["options"].items() for part in pair
+                ), "--make-target", value, "--depfile", "build/" + value)
+                command = native_generated_dependency_command(session, argv)
+                self.assertEqual(command.argv, argv)
+                self.assertEqual(command.outputs, ("build/" + value,))
+        self.fixture.assert_clean(session)
+
     def test_generated_dependency_command_reorders_named_options_and_rejects_key_drift(self):
         cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
         outputs = []
