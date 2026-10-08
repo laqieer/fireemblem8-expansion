@@ -2851,7 +2851,8 @@
       "title": "Defer PR metadata edits and reconcile lightweight continuity",
       "feature_id": "workflow-governance",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/199"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/199",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/277"
       ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-metadata-edit-race-001-defer-metadata-edits-and-reconcile-continuity",
@@ -2868,6 +2869,10 @@
       "cleanup": "No cleanup is required because the tests use only synthetic API responses and make no remote mutation.",
       "limitations": "GitHub cannot atomically combine intent creation, PATCH, metadata-version observation, confirmation creation, and workflow materialization. The immutable GitHub comment protocol recovers exact applied targets and proven rejected mutations without cross-subsystem timestamp ordering. Reconciliation/no-op additionally require the run/attempt-bound fingerprint of the original webhook's complete pre/target transition and a unique native metadata-version match. Earlier delayed unrelated runs cannot authorize this edit; absent proof, legacy bases/runs, same-second revision ambiguity, disagreeing field instants, duplicate matches, or an unproven competitor hold explicitly. No current-PR query can reconstruct a missing original trigger. A crash or failed abort write with no terminal cannot retrospectively prove rejection; an ambiguous pre-state remains held rather than duplicating PATCH. Title history and the newest-first body edit connection are bounded; incomplete or ambiguous history fails closed. No manual-only criterion or ARM runtime test applies.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_accepts_optional_ordered_start_without_full_evidence scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_rejects_invalid_chronology_and_conclusion -v",
+          "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
+        },
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v",
           "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
