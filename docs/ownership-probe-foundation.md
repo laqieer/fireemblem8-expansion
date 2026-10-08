@@ -554,6 +554,12 @@ Run `NativeWriterTests.test_native_failed_path_operation_owners_bind_actual_disp
 for actual failed open/mkdir/rmdir/remove/replace and a second admitted job
 sharing the same finite plan. Reassigning only a failed record's owner to that
 other job must reject while preserving the actual actor, dispatch and preimages.
+Run `NativeWriterTests.test_native_later_job_mkdir_preserves_earlier_directory_creator`
+for a later admitted job's actual `mkdir`/`EEXIST` against an earlier creator's
+directory, followed by its own child directory creation. The earlier creator
+and exact preimage remain unchanged; missing directory operands still refuse.
+This preserves original repeated `mkdir -p` ancestors without transferring
+ownership or widening remove/write authority.
 Concrete template-generated file ancestors also conflict with directory, file
 or nested-template resources in either declaration order, and with immutable
 sources or retained outputs. Declared directory/child relationships remain

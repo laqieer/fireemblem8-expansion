@@ -582,6 +582,7 @@ class NativeOutputs:
                     identity = self._identity(descriptor)
                 prior_version = (
                     kind == "replace" and path == destination
+                    or kind == "mkdir" and item is not None and item.entries is not None
                     or kind == "open" and path in self.shared_paths
                     or kind == "open" and not flags & (
                         os.O_WRONLY | os.O_RDWR | os.O_TRUNC | os.O_CREAT

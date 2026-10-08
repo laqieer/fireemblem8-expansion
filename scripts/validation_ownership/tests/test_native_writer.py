@@ -355,6 +355,67 @@ class NativeWriterTests(unittest.TestCase):
                             )
             self.assert_clean(session)
 
+    def test_native_later_job_mkdir_preserves_earlier_directory_creator(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("native.c", (
+            "#include <sys/stat.h>\n#include <errno.h>\n"
+            "int main(int argc,char **argv){(void)argv;if(argc==1){"
+            "return mkdir(\"/repo/stage\",0700)!=0;}"
+            "if(mkdir(\"/repo/stage\",0700)!=-1||errno!=EEXIST)return 2;"
+            "return mkdir(\"/repo/stage/next\",0700)!=0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool\n\t@/native/tool next\n\t@printf final > result\n")
+        resources = (("directory", "stage"), ("directory", "stage/next"))
+        for admitted in (True, False):
+            session = self.session()
+            with self.subTest(admitted=admitted), session:
+                tool = session.compile_native(("native.c",))
+                class Commands:
+                    def __getitem__(self, argv):
+                        if argv[0] == "/native/tool":
+                            selected = resources if admitted or len(argv) == 1 else (resources[1],)
+                            return Command(argv, native_tool=tool, native_resources=selected)
+                        return Command(argv, outputs=("result",))
+                if not admitted:
+                    self.addCleanup(self.assert_clean, session)
+                    with self.assertRaisesRegex(MakeProbeError, "write lacks its issued output authority"):
+                        session._native_make_writable(
+                            "all", outputs=("result",), native_resources=resources, native_tool=tool,
+                            commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                        )
+                    continue
+                completed, _, observed, generated = session._native_make_writable(
+                    "all", outputs=("result",), native_resources=resources, native_tool=tool,
+                    commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                )
+                self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+                self.assertEqual([(row.path, row.data, row.mode) for row in generated], [
+                    ("result", b"final", 0o644),
+                ])
+                trace = observed["read_trace"]
+                effects = read_epochs.native_output_effects(trace)
+                failed, = [row for row in effects if row["kind"] == "output-operation-failed"]
+                self.assertEqual((failed["owner"], failed["operation"], failed["result"]), (2, "mkdir", -errno.EEXIST))
+                created = [row for row in effects if row["kind"] == "output-mkdir"]
+                self.assertEqual([(row["owner"], row["path"]) for row in created], [
+                    (1, "/repo/stage"), (2, "/repo/stage/next"),
+                ])
+                first_identity = created[0]["identity"]
+                self.assertEqual(failed["preimages"][0], ["/repo/stage", first_identity, []])
+                for field, value in (("owner", 1), ("preimages", []), ("flags", 0)):
+                    invalid = json.loads(json.dumps(trace))
+                    machine = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["kind"] == "output-operation-failed"
+                    )
+                    machine["event"][field] = value
+                    machine["sha256"] = hashlib.sha256(encoded(machine["event"])).hexdigest()
+                    with self.subTest(field=field), self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            self.assert_clean(session)
+
     def test_native_command_admission_runs_original_jobs_once_without_replay(self):
         shell = "printf '%s' \"$$\""
         self.add("Makefile", (
