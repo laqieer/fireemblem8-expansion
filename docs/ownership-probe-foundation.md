@@ -1101,6 +1101,15 @@ and completion facts use the checked bytes, not a second decoded copy.
 All event, custody, machine and issued-output checks remain mandatory; this
 internal allocation reuse changes neither the wire format nor any budget cap.
 
+The session retains the decoded native Make read ABI as charged serialized
+bytes keyed by the captured executable digest and completion mode. Repeated
+queries validate a fresh decoded value against that exact image instead of
+rerunning objdump. The cache contains no source-view or invocation facts and
+therefore survives source-view selection, but is cleared at session teardown.
+Caller mutation cannot alter the retained value; malformed retained values
+still refuse. This eliminates repeated disassembly output, not accounting for
+actual observations, and does not qualify the original eight-query family.
+
 Writable v6 generated-source pin retirement records the object's current
 observed identity, including the changed ctime and zero link count after an
 atomic replacement while its reader remains open. Replay binds that identity

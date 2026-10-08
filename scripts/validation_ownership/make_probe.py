@@ -765,6 +765,7 @@ class ProbeSession:
         self.native_tools = {}
         self.native_runtimes = {}
         self.native_runtime_inputs = {}
+        self.native_read_abis = {}
         self.native_selection = None
         self.native_runtime_selection = None
         self.published_sources = {}
@@ -932,6 +933,7 @@ class ProbeSession:
             self.native_tools.clear()
             self.native_runtimes.clear()
             self.native_runtime_inputs.clear()
+            self.native_read_abis.clear()
             self.native_selection = None
             self.native_runtime_selection = None
             self.published_sources.clear()
@@ -3099,7 +3101,16 @@ class ProbeSession:
 
     def _native_read_abi(self, *, completions=False):
         from . import read_epochs
+        self.budget.remaining()
+        if self.base is None or self.snapshot is None or type(completions) is not bool:
+            raise MakeProbeError("native read ABI requires an active session and boolean completion mode")
         data = dict(self.make_runtime)["/usr/bin/make"]
+        self.budget.charge("total", len(data))
+        key = (hashlib.sha256(data).hexdigest(), completions)
+        if key in self.native_read_abis:
+            captured = self.native_read_abis[key]
+            self.budget.charge("cache", len(captured))
+            return read_epochs.validate_abi(parse_json(captured, "cached native read ABI"), data)
         path = self.base / "read-abi-make"
         path.write_bytes(data)
         image = read_epochs.Elf(data)
@@ -3122,7 +3133,11 @@ class ProbeSession:
         if second.returncode:
             raise MakeProbeError("cannot decode captured Make source reader")
         if not completions:
-            return read_epochs.make_abi(data, first.stdout, second.stdout)
+            result = read_epochs.make_abi(data, first.stdout, second.stdout)
+            captured = encoded(result)
+            self.budget.charge("cache", len(captured))
+            self.native_read_abis[key] = captured
+            return result
         source, _ = read_epochs.source_graph(image, target, read_epochs.instructions(second.stdout, image))
         evaluator = read_epochs.evaluator_target(image, source)
         third = self.budget.run(
@@ -3132,7 +3147,11 @@ class ProbeSession:
         )
         if third.returncode:
             raise MakeProbeError("cannot decode captured Make completion evaluator")
-        return read_epochs.make_abi(data, first.stdout, second.stdout, third.stdout)
+        result = read_epochs.make_abi(data, first.stdout, second.stdout, third.stdout)
+        captured = encoded(result)
+        self.budget.charge("cache", len(captured))
+        self.native_read_abis[key] = captured
+        return result
 
     @terminal_failure
     def make(

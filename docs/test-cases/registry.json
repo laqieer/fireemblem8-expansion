@@ -2511,6 +2511,10 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_job_report_canonical_success_preserves_failed_and_readonly_packets scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_job_report_refuses_malformed_or_mixed_canonical_headers scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_returned_image_plan_is_bound_to_independent_issued_authorization scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_returned_archive_owner_is_bound_to_issued_command -v",
           "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_read_abi_reuses_exact_image_without_disassembly_replay scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_runtime_effect_abi_binds_complete_machine_call_families scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_screening_view_isolation_and_restoration -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },
