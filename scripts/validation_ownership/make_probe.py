@@ -1423,6 +1423,7 @@ class ProbeSession:
             ):
                 raise MakeProbeError("native output observation requires the issued native-tool capsule")
             config["native_output_paths"] = list(self._output_paths(native_output_paths))
+            config["native_source_roots"] = list(self._native_source_roots())
             if native_resources:
                 config["native_resources"] = [list(row) for row in native_resources]
         counter_names = {
@@ -1945,6 +1946,7 @@ class ProbeSession:
                         if (
                             authority["paths"] != config["native_output_paths"]
                             or authority.get("resources", []) != config.get("native_resources", [])
+                            or set(authority.get("source_roots", [])) != set(config["native_source_roots"])
                             or any(
                                 job["admission"].get("sequence") not in native_authorizations
                                 or job["admission"] != native_authorizations[job["admission"]["sequence"]][2]
@@ -2059,6 +2061,10 @@ class ProbeSession:
                 raise MakeProbeError("generated output conflicts with immutable source")
         return names
 
+    def _native_source_roots(self):
+        return tuple(sorted(self.snapshot.gitlink_roots | {
+            path for path, entry in self.loader.entries.items() if entry.mode == "160000"
+        }))
 
     def _capture_outputs(self, root, names):
         if not names:
@@ -2636,7 +2642,9 @@ class ProbeSession:
             raise MakeProbeError("native resource roles require writable native Make")
         if len(native_resources) > self.budget.limits.entries:
             raise MakeProbeError("native resource plan exceeds its existing entry bound")
-        validate_resource_scope(native_resources, writable_outputs, self.snapshot.files)
+        validate_resource_scope(
+            native_resources, writable_outputs, (*self.snapshot.files, *self._native_source_roots()),
+        )
         if writable_outputs and commands is None:
             raise MakeProbeError("native writable Make requires original Command admission")
         if writable_outputs and not (observe_reads and observe_runtime_completions):

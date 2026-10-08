@@ -1019,6 +1019,7 @@ class NativeReadTrace:
             result["output_authority"] = {
                 "paths": self.config["native_output_paths"],
                 **({"resources": self.config["native_resources"]} if self.config.get("native_resources") else {}),
+                **({"source_roots": self.config["native_source_roots"]} if self.config.get("native_source_roots") else {}),
                 "jobs": [
                     {key: row[key] for key in ("sequence", "pid", "admission")}
                     for row in self.policy.native_jobs.values()

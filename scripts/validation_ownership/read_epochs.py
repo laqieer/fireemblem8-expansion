@@ -2124,6 +2124,7 @@ def native_output_effects(trace):
 def validate_native_output_authority(trace, *, count_limit, file_limit, reserve):
     authority = trace["output_authority"]
     resources = authority.get("resources", ()) if isinstance(authority, dict) else ()
+    source_roots = authority.get("source_roots", []) if isinstance(authority, dict) else []
     if __package__:
         from .native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope, require_retained_source, validate_terminal_resources
     else:
@@ -2135,7 +2136,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     if (
         not isinstance(authority, dict) or set(authority) != {"paths", "jobs"} | (
             {"resources"} if resources else set()
-        )
+        ) | ({"source_roots"} if source_roots else set())
         or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit for key in authority)
         or not authority["paths"]
         or any(
@@ -2146,9 +2147,23 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         or len(set(authority["paths"])) != len(authority["paths"])
     ):
         raise ReadEpochError("malformed native output authority")
+    if (
+        any(not isinstance(path, str) for path in source_roots)
+        or len(set(source_roots)) != len(source_roots)
+    ):
+        raise ReadEpochError("native output authority has invalid immutable source roots")
     reserve(len(encoded(authority)))
     try:
-        validate_resource_scope(resources, authority["paths"], (row["path"] for row in trace["selection"]["inventory"]))
+        for path in source_roots:
+            relative_path(path)
+        sources = tuple(row["path"] for row in trace["selection"]["inventory"])
+        reserve(sys.getsizeof(sources))
+        if source_roots:
+            root_paths = tuple(source_roots)
+            reserve(sys.getsizeof(root_paths))
+            sources += root_paths
+            reserve(sys.getsizeof(sources))
+        validate_resource_scope(resources, authority["paths"], sources)
     except MakeProbeError as error:
         raise ReadEpochError(str(error)) from error
     for path in authority["paths"]:
@@ -2157,9 +2172,9 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         except MakeProbeError as error:
             raise ReadEpochError(f"native output plan has an invalid path: {error}") from error
         if any(
-            path == source["path"] or path.startswith(source["path"] + "/")
-            or source["path"].startswith(path + "/")
-            for source in trace["selection"]["inventory"]
+            path == source or path.startswith(source + "/")
+            or source.startswith(path + "/")
+            for source in sources
         ) or any(other != path and other.startswith(path + "/") for other in authority["paths"]):
             raise ReadEpochError("native output plan conflicts with immutable source or another output")
     jobs = {}

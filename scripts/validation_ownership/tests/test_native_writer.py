@@ -68,6 +68,7 @@ class NativeReadonlyVariableTests(unittest.TestCase):
                 )
         self.assert_clean(session)
 
+
     def test_literal_reference_closure_preserves_gnu_global_and_target_values(self):
         self.add("Makefile", (
             "BASE := global\nB := short\nMID = ${BASE}\n"
@@ -3704,3 +3705,143 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual(jobs[0]["argv"], ["/bin/sh", "-c", "v=original; printf '%s' \"$v\""])
             self.assertEqual(jobs[0]["cwd"], "/repo")
         self.assert_clean(session)
+
+
+class NativeGitlinkResourceTests(unittest.TestCase):
+    setUp = foundation.FoundationTests.setUp
+    tearDown = foundation.FoundationTests.tearDown
+    add = foundation.FoundationTests.add
+    assert_clean = foundation.FoundationTests.assert_clean
+    gitlink_git = foundation.FoundationTests.gitlink_git
+    native_supervisor = foundation.FoundationTests.native_supervisor
+
+    def _gitlink_scope_fixture(self):
+        self.add("Makefile", "all:\n\t@printf final > result\n")
+        self.gitlink_git(self.root, "init", "--quiet")
+        self.gitlink_git(self.root, "config", "user.name", "Owned Fixture")
+        self.gitlink_git(self.root, "config", "user.email", "fixture@example.invalid")
+        self.gitlink_git(self.root, "add", "Makefile")
+        roots = ("vendor/module", "vendor/stamp.1.tmp", "vendor/.asset-manifest-write-abcd1234")
+        for path in roots:
+            self.gitlink_git(
+                self.root, "update-index", "--add", "--cacheinfo", "160000," + "1" * 40 + "," + path,
+            )
+        self.gitlink_git(self.root, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "native gitlink scope")
+        return roots
+
+    def test_actual_gitlink_resources_refuse_equal_ancestor_descendant_and_patterns(self):
+        roots = self._gitlink_scope_fixture()
+        plans = [
+            (kind, path) for kind in ("directory", "temporary", "shared-lock", "pid-temporary")
+            for path in ("vendor/module", "vendor", "vendor/module/tmp")
+        ] + [
+            ("pid-temporary", "vendor/stamp"),
+            ("atomic-temporary", "vendor/.asset-manifest-write-"),
+        ]
+        class Commands:
+            def __getitem__(self, argv):
+                return Command(argv, outputs=("result",))
+        for present in (False, True):
+            if present:
+                for path in roots:
+                    (self.root / path).mkdir(parents=True)
+            for resource in plans:
+                with self.subTest(present=present, resource=resource):
+                    budget = ProbeBudget()
+                    loader = foundation.AuthorityLoader(
+                        self.root, foundation.git_tree_entries(self.root, None, budget=budget),
+                        budget=budget,
+                    )
+                    session = foundation.ProbeSession(loader, scratch_root=self.scratch, budget=budget)
+                    with session, patch.object(
+                        session, "_sandbox_run", side_effect=AssertionError("gitlink collision reached dispatch"),
+                    ) as dispatch:
+                        with self.assertRaisesRegex(MakeProbeError, "conflicts with immutable source"):
+                            session._native_make_writable(
+                                "all", outputs=("result",), native_resources=(resource,),
+                                commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                            )
+                        dispatch.assert_not_called()
+                        self.assertFalse((self.root / "result").exists())
+                        if present:
+                            self.assertTrue(all(list((self.root / path).iterdir()) == [] for path in roots))
+                    self.assert_clean(session)
+
+    def test_gitlink_scope_replay_and_host_binding_preserve_disjoint_outputs(self):
+        from scripts.validation_ownership import read_epochs
+        roots = self._gitlink_scope_fixture()
+        resource = ("directory", "stage")
+        class Commands:
+            def __getitem__(self, argv):
+                return Command(argv, outputs=("result",), native_resources=(resource,))
+        def session_for_tree():
+            budget = ProbeBudget()
+            loader = foundation.AuthorityLoader(
+                self.root, foundation.git_tree_entries(self.root, None, budget=budget),
+                budget=budget,
+            )
+            return foundation.ProbeSession(loader, scratch_root=self.scratch, budget=budget)
+        def run(session):
+            return session._native_make_writable(
+                "all", outputs=("result",), native_resources=(resource,),
+                commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+            )
+        for present in (False, True):
+            if present:
+                for path in roots:
+                    (self.root / path).mkdir(parents=True)
+            session = session_for_tree()
+            with self.subTest(present=present), session:
+                completed, _, observed, generated = run(session)
+                self.assertEqual((completed.returncode, completed.stderr), (0, b""))
+                self.assertEqual([(row.path, row.data, row.mode) for row in generated], [("result", b"final", 0o644)])
+                trace = observed["read_trace"]
+                self.assertEqual(trace["output_authority"]["source_roots"], sorted(roots))
+                read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+                for collision in (
+                    ("directory", "vendor"), ("temporary", roots[0]),
+                    ("shared-lock", roots[0] + "/child"), ("pid-temporary", "vendor/stamp"),
+                    ("atomic-temporary", "vendor/.asset-manifest-write-"),
+                ):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["output_authority"]["resources"] = [list(collision)]
+                    with self.subTest(replay_collision=collision):
+                        with self.assertRaisesRegex(read_epochs.ReadEpochError, "conflicts with immutable source"):
+                            read_epochs.validate_native_output_authority(
+                                invalid, count_limit=100000, file_limit=10000000, reserve=lambda size: None,
+                            )
+                for invalid_roots in (None, [], [1], ["../escape"], [roots[0], roots[0]], ["result"]):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["output_authority"]["source_roots"] = invalid_roots
+                    with self.subTest(source_roots=invalid_roots):
+                        with self.assertRaises(read_epochs.ReadEpochError):
+                            read_epochs.validate_native_output_authority(
+                                invalid, count_limit=100000, file_limit=10000000, reserve=lambda size: None,
+                            )
+            self.assert_clean(session)
+        for mutation in ("omit", "remove", "add", "reorder"):
+            body = (
+                "original=guard.supervise\n"
+                "def altered(config,drop):\n"
+                " status=original(config,drop)\n"
+                " if config.get('native_output_paths') and status==0:\n"
+                "  path=Path(config['report']);report=json.loads(path.read_text())\n"
+                "  authority=report['read_trace']['output_authority']\n"
+                + ("  del authority['source_roots']\n" if mutation == "omit" else
+                   "  authority['source_roots'].pop()\n" if mutation == "remove" else
+                   "  authority['source_roots'].append('spare')\n" if mutation == "add" else
+                   "  authority['source_roots'].reverse()\n")
+                + "  path.write_text(json.dumps(report))\n"
+                " return status\n"
+                "guard.supervise=altered\n"
+            )
+            session = session_for_tree()
+            with self.subTest(returned_roots=mutation), self.native_supervisor(body), session:
+                if mutation == "reorder":
+                    completed, _, _, generated = run(session)
+                    self.assertEqual(completed.returncode, 0)
+                    self.assertEqual(generated[0].data, b"final")
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "returned archive differs"):
+                        run(session)
+            self.assert_clean(session)
