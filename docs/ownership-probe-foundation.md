@@ -1101,6 +1101,16 @@ and completion facts use the checked bytes, not a second decoded copy.
 All event, custody, machine and issued-output checks remain mandatory; this
 internal allocation reuse changes neither the wire format nor any budget cap.
 
+The unmerged writable v6 output-authority job record contains only `sequence`,
+`pid` and `admission`. Its existing sequence selects the canonical `native-tree`
+machine events for that dispatch; no second serialized tree is admitted.
+The validator charges its temporary reference lists and checks all actual image
+admissions, actors, generated-source custody and output settlements against
+those events. Machine lifecycle validation and the host's independently issued
+Command/operand checks remain separate. This revises the unfinished v6 schema,
+not the delivered immutable foundation formats; stale duplicated-tree records
+fail closed rather than being accepted as a second authority.
+
 ### TC-WORKFLOW-NATIVE-MAKE-001: preserve original native Make production and generated-source custody
 
 This is the indexed complete acceptance case for #270 and its coupled #275

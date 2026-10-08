@@ -1912,8 +1912,9 @@ class ProbeSession:
                     raise MakeProbeError("native job dispatch sequences are incomplete or reused")
                 if native_admission_handler is not None:
                     issued_images = (
-                        [event["admission"]["sequence"] for job in observed["read_trace"]["output_authority"]["jobs"]
-                         for event in job["tree"] if event["kind"] == "exec"]
+                        [row["event"]["admission"]["sequence"]
+                         for row in observed["read_trace"]["machine"]["events"]
+                         if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"]
                         if native_output_paths and observed["returncode"] == 0 else
                         [sequence for sequence, _ in dispatches]
                     )
@@ -1948,9 +1949,11 @@ class ProbeSession:
                                 job["admission"].get("sequence") not in native_authorizations
                                 or job["admission"] != native_authorizations[job["admission"]["sequence"]][2]
                                 or any(
-                                    event.get("admission", {}).get("sequence") not in native_authorizations
-                                    or event["admission"] != native_authorizations[event["admission"]["sequence"]][2]
-                                    for event in job["tree"] if event["kind"] == "exec"
+                                    row["event"].get("admission", {}).get("sequence") not in native_authorizations
+                                    or row["event"]["admission"] != native_authorizations[row["event"]["admission"]["sequence"]][2]
+                                    for row in observed["read_trace"]["machine"]["events"]
+                                    if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                                    and row["event"]["kind"] == "exec"
                                 )
                                 for job in authority["jobs"]
                             )

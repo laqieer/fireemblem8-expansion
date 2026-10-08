@@ -2165,18 +2165,26 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     jobs = {}
     machine = trace["machine"]["events"]
     effects = native_output_effects(trace)
-    for number, job in enumerate(authority["jobs"], 1):
+    for number, record in enumerate(authority["jobs"], 1):
         if (
-            not isinstance(job, dict) or set(job) != {"sequence", "pid", "admission", "tree"}
-            or type(job["sequence"]) is not int or job["sequence"] != number
-            or type(job["pid"]) is not int or job["pid"] < 1
-            or not isinstance(job["tree"], list) or not job["tree"]
-            or not isinstance(job["admission"], dict)
-            or set(job["admission"]) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
+            not isinstance(record, dict) or set(record) != {"sequence", "pid", "admission"}
+            or type(record["sequence"]) is not int or record["sequence"] != number
+            or type(record["pid"]) is not int or record["pid"] < 1
+            or not isinstance(record["admission"], dict)
+            or set(record["admission"]) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
                 {"resources"} if resources else set()
             )
         ):
             raise ReadEpochError("native output job lacks its closed dispatch binding")
+        tree = [
+            row["event"] for row in machine
+            if row["kind"] == "native-tree" and row["dispatch"] == number
+        ]
+        reserve(sys.getsizeof(tree))
+        if not tree:
+            raise ReadEpochError("native output job lacks its closed dispatch binding")
+        job = dict(record, tree=tree)
+        reserve(sys.getsizeof(job))
         admission = job["admission"]
         native_image_admission(
             admission, None, authority["paths"], resources, resource_field=bool(resources),
@@ -2205,10 +2213,6 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or not isinstance(admission["outputs"], list)
             or any(not isinstance(path, str) or path not in authority["paths"] for path in admission["outputs"])
             or len(set(admission["outputs"])) != len(admission["outputs"])
-            or job["tree"] != [
-                row["event"] for row in machine
-                if row["kind"] == "native-tree" and row["dispatch"] == number
-            ]
             or not any(
                 row["kind"] == "execute" and row["dispatch"] == number
                 and row["pid"] == job["pid"] and row["input_sha256"] == admission["input_sha256"]

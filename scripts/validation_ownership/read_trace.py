@@ -1020,7 +1020,7 @@ class NativeReadTrace:
                 "paths": self.config["native_output_paths"],
                 **({"resources": self.config["native_resources"]} if self.config.get("native_resources") else {}),
                 "jobs": [
-                    {key: row[key] for key in ("sequence", "pid", "admission", "tree")}
+                    {key: row[key] for key in ("sequence", "pid", "admission")}
                     for row in self.policy.native_jobs.values()
                 ],
             }

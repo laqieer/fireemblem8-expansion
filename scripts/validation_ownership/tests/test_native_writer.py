@@ -849,13 +849,16 @@ class NativeWriterTests(unittest.TestCase):
                         ("outputs", list(outputs)), ("resources", [list(row) for row in resources]),
                     ):
                         invalid = json.loads(json.dumps(trace))
-                        image = next((
-                            row for row in invalid["output_authority"]["jobs"][0]["tree"]
-                            if row["kind"] == "exec" and len(row["argv"]) == 4
+                        image_record = next((
+                            row for row in invalid["machine"]["events"]
+                            if row["kind"] == "native-tree" and row["dispatch"] == 1
+                            and row["event"]["kind"] == "exec" and len(row["event"]["argv"]) == 4
                         ), None)
-                        if image is None:
+                        if image_record is None:
                             continue
+                        image = image_record["event"]
                         image["admission"][field] = value
+                        image_record["sha256"] = hashlib.sha256(encoded(image)).hexdigest()
                         with self.subTest(image_field=field):
                             with self.assertRaises(read_epochs.ReadEpochError):
                                 read_epochs.validate_trace(
@@ -885,7 +888,6 @@ class NativeWriterTests(unittest.TestCase):
                 "   for event in tree:\n"
                 "    if event['kind']=='exec' and event['pid']==image['pid'] and event['generation']==image['generation']:\n"
                 "     event['admission']=admission.copy()\n"
-                "  for job in trace['output_authority']['jobs']:update(job['tree'])\n"
                 "  for row in trace['machine']['events']:\n"
                 "   if row['kind']=='native-tree' and row['event']['kind']=='exec'"
                 " and row['event']['pid']==image['pid'] and row['event']['generation']==image['generation']:\n"
@@ -1427,6 +1429,26 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual(trace["version"], read_epochs.WRITABLE_VERSION)
             self.assertEqual(trace["output_authority"]["paths"], ["result"])
             self.assertEqual(set(trace["output_authority"]), {"paths", "jobs"})
+            self.assertEqual(
+                set(trace["output_authority"]["jobs"][0]), {"sequence", "pid", "admission"},
+            )
+            duplicated_tree = json.loads(json.dumps(trace))
+            duplicated_tree["output_authority"]["jobs"][0]["tree"] = job["tree"]
+            self.assertGreater(len(encoded(duplicated_tree)), len(encoded(trace)))
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "closed dispatch"):
+                read_epochs.validate_trace(
+                    duplicated_tree, duplicated_tree["scope"],
+                    count_limit=100000, file_limit=10000000,
+                )
+            missing_tree = json.loads(json.dumps(trace))
+            for row in missing_tree["machine"]["events"]:
+                if row["kind"] == "native-tree":
+                    row["dispatch"] = 999
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "closed dispatch"):
+                read_epochs.validate_native_output_authority(
+                    missing_tree, count_limit=100000, file_limit=10000000,
+                    reserve=lambda size: None,
+                )
             self.assertEqual(read_epochs.native_output_effects(trace), sorted(effects, key=lambda row: row["sequence"]))
             read_epochs.validate_native_output_authority(
                 trace, count_limit=100000, file_limit=5, reserve=lambda size: None,
@@ -2938,9 +2960,6 @@ class NativeWriterTests(unittest.TestCase):
                 admission["owner"] = native_command_owner(
                     admission["closure"], admission["outputs"], admission["resources"],
                 )
-                for image in job["tree"]:
-                    if image["kind"] == "exec":
-                        image["admission"] = json.loads(json.dumps(admission))
                 for event in temporary_source["machine"]["events"]:
                     if event["kind"] == "execute" and not event["make"] and event["dispatch"] == job["sequence"]:
                         event["admission_owner"] = admission["owner"]
