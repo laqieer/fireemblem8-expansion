@@ -1433,6 +1433,36 @@ def native_image_admission(admission, inputs, outputs, resources, *, resource_fi
         raise ReadEpochError("native image operands differ from its issued Command owner")
 
 
+def _native_range_failure_binding(event, binding):
+    if (
+        event.get("owner") != binding[3] or event.get("source") != binding[2]
+        or event.get("destination") is not None
+    ):
+        raise ReadEpochError("native failed close_range changed its affected object binding")
+
+
+def _native_lock_range(event):
+    if (
+        set(event) != {"seq", "kind", "pid", "first", "last", "flags", "result", "bindings"}
+        or type(event["first"]) is not int or type(event["last"]) is not int
+        or not 0 <= event["first"] <= event["last"] < 1 << 32
+        or type(event["flags"]) is not int or event["flags"] != 0
+        or type(event["result"]) is not int or not -4095 <= event["result"] <= 0
+        or not isinstance(event["bindings"], list) or not event["bindings"]
+        or any(
+            not isinstance(binding, dict) or set(binding) != {"fd", "serial", "description"}
+            or any(type(binding[key]) is not int for key in binding)
+            or not event["first"] <= binding["fd"] <= event["last"]
+            or binding["serial"] < 1 or binding["description"] < 1
+            for binding in event["bindings"]
+        )
+        or [binding["fd"] for binding in event["bindings"]] != sorted({
+            binding["fd"] for binding in event["bindings"]
+        })
+    ):
+        raise ReadEpochError("native job tree has an invalid inherited lock close_range")
+
+
 def native_job_tree(events, job, parent, executables, *, count_limit, writable=False):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")
@@ -1451,6 +1481,7 @@ def native_job_tree(events, job, parent, executables, *, count_limit, writable=F
             "fork": {"child"}, "start": set(), "exit": {"status"},
             "signal": {"child", "code", "status"},
             "pipe-error": {"syscall", "error"},
+            **({"close-range": {"first", "last", "flags", "result", "bindings"}} if writable else {}),
         }
         if (
             kind not in fields or set(event) != {"seq", "kind", "pid"} | fields[kind]
@@ -1499,6 +1530,8 @@ def native_job_tree(events, job, parent, executables, *, count_limit, writable=F
                 or type(event["error"]) is not int or event["error"] != errno.EPIPE
             ):
                 raise ReadEpochError("native job tree has an invalid owned pipe error")
+        elif kind == "close-range":
+            _native_lock_range(event)
         elif kind == "exec":
             inputs = native_execution_input(event["argv"], event["cwd"])
             if writable:
@@ -1600,6 +1633,7 @@ def validate_machine_observations(value, trace, *, count_limit):
     make_pid = None
     make_execs, child_dispatches = set(), set()
     native_roots, native_trees = {}, {}
+    output_bindings, range_closure = {}, None
     native_policies = set()
     native_owners, native_cleared, previous_pid_events = {}, set(), {}
     for number, row in enumerate(value["events"], 1):
@@ -1788,6 +1822,32 @@ def validate_machine_observations(value, trace, *, count_limit):
                 raise ReadEpochError("native tree start omitted its inherited register clear")
             if event.get("kind") in {"exec", "start"}:
                 native_owners[pid] = (dispatch, True)
+            if event.get("kind") == "close-range":
+                _native_lock_range(event)
+                expected_bindings = [
+                    {"fd": descriptor, "serial": binding[0], "description": binding[1]}
+                    for (process, descriptor), binding in sorted(output_bindings.items())
+                    if process == pid and event["first"] <= descriptor <= event["last"]
+                ]
+                shared_paths = {
+                    "/repo/" + path
+                    for role, path in trace.get("output_authority", {}).get("resources", ())
+                    if role == "shared-lock"
+                }
+                if (
+                    range_closure is not None or event["bindings"] != expected_bindings
+                    or not expected_bindings
+                    or any(
+                        output_bindings[(pid, binding["fd"])][2] not in shared_paths
+                        or not any(
+                            process != pid and previous[:2] == (binding["serial"], binding["description"])
+                            for (process, _), previous in output_bindings.items()
+                        )
+                        for binding in expected_bindings
+                    )
+                ):
+                    raise ReadEpochError("native close_range lost its complete inherited lock bindings")
+                range_closure = (dispatch, pid, event["result"], list(expected_bindings))
             if trace["version"] == WRITABLE_VERSION and event.get("kind") == "exit":
                 del native_owners[pid]
                 native_cleared.discard(pid)
@@ -1821,6 +1881,54 @@ def validate_machine_observations(value, trace, *, count_limit):
                 )
             ):
                 raise ReadEpochError("native output event lacks its live job actor at the actual sequence")
+            if range_closure is not None:
+                expected_dispatch, expected_actor, result, pending_bindings = range_closure
+                if dispatch != expected_dispatch or actor != expected_actor:
+                    raise ReadEpochError("native close_range return lost its actual actor")
+                if result == 0:
+                    expected = pending_bindings.pop(0)
+                    if event.get("kind") != "output-range-close" or any(
+                        event.get(key) != expected[key] for key in expected
+                    ):
+                        raise ReadEpochError("native close_range omitted or changed its descriptor retirement")
+                    if not pending_bindings:
+                        range_closure = None
+                elif (
+                    event.get("kind") != "output-operation-failed"
+                    or event.get("operation") != "close-range" or event.get("result") != result
+                ):
+                    raise ReadEpochError("native close_range changed its failed descriptor lifetime")
+                else:
+                    _native_range_failure_binding(
+                        event, output_bindings[(actor, pending_bindings[0]["fd"])],
+                    )
+                    range_closure = None
+            elif event.get("kind") == "output-range-close":
+                raise ReadEpochError("native range closure lacks its actual close_range return")
+            if event.get("kind") in {"output-open", "output-inherit", "output-dup"}:
+                required_binding = {"serial", "description", "path", "owner", "fd"} | (
+                    {"result"} if event["kind"] == "output-dup" else set()
+                )
+                if (
+                    not required_binding <= event.keys() or type(actor) is not int
+                    or any(type(event[key]) is not int or event[key] < 1 for key in ("serial", "description", "owner"))
+                    or type(event["fd"]) is not int or event["fd"] < 0
+                    or event["path"] is not None and not isinstance(event["path"], str)
+                    or event["kind"] == "output-dup" and (
+                        type(event["result"]) is not int or event["result"] < 0
+                    )
+                ):
+                    raise ReadEpochError("native machine output has an invalid descriptor binding")
+                descriptor = event["result"] if event["kind"] == "output-dup" else event["fd"]
+                output_bindings[(actor, descriptor)] = (
+                    event["serial"], event["description"], event["path"], event["owner"],
+                )
+            elif event.get("kind") in {
+                "output-close", "output-range-close", "output-exec-close", "output-close-failed", "output-duplicate-release",
+            }:
+                if type(actor) is not int or type(event.get("fd")) is not int or event["fd"] < 0:
+                    raise ReadEpochError("native machine output has an invalid descriptor retirement")
+                output_bindings.pop((actor, event["fd"]), None)
             if event.get("kind") == "output-exec-close":
                 execs = [
                     prior for prior in native_trees[dispatch]
@@ -1945,6 +2053,8 @@ def validate_machine_observations(value, trace, *, count_limit):
         }
     ):
         raise ReadEpochError("native machine observations omit traps or live pin retirement")
+    if range_closure is not None:
+        raise ReadEpochError("native machine observations omit close_range completion")
     if native_policies != child_dispatches:
         raise ReadEpochError("native job machine observations omit completed policy bindings")
     if runtime and any(
@@ -2147,6 +2257,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     if resources:
         fields["output-settled"].add("pid")
         fields["output-close-failed"].add("description")
+        fields["output-range-close"] = {"pid", "fd", "description"}
         fields.update({
             "output-lock": {"pid", "fd", "description", "flags", "result", "mode"},
             "output-mode": {"pid", "fd", "mode", "identity"},
@@ -2243,7 +2354,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 or type(row["sequence"]) is not int or row["sequence"] != number
                 or type(row["owner"]) is not int or row["owner"] not in jobs
                 or not isinstance(row["operation"], str)
-                or row["operation"] not in {"open", "dup", "duplicate-release", "exec", "mkdir", "rmdir", "remove", "replace"}
+                or row["operation"] not in {"open", "dup", "duplicate-release", "exec", "close-range", "mkdir", "rmdir", "remove", "replace"}
                 or (not isinstance(row["destination"], str) if operation == "replace" else row["destination"] is not None)
                 or not isinstance(row["source"], str)
                 or operation != "dup" and row["source"] not in {
@@ -2633,9 +2744,17 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 if target != (row["pid"], row["fd"]) and target in bindings:
                     raise ReadEpochError("native duplicate output reused an unretired descriptor")
                 bindings[target] = binding
-            elif kind in {"output-close", "output-exec-close", "output-duplicate-release"}:
+            elif kind in {"output-close", "output-range-close", "output-exec-close", "output-duplicate-release"}:
                 if binding[1] != row["description"]:
                     raise ReadEpochError("native output retirement changed its description")
+                if kind == "output-range-close" and (
+                    role(row["path"]) != "shared-lock"
+                    or not any(
+                        process != row["pid"] and value[1] == binding[1]
+                        for (process, _), value in bindings.items()
+                    )
+                ):
+                    raise ReadEpochError("native range retirement lacks its surviving inherited lock binding")
                 if (
                     lock_modes.get(row["description"], 0)
                     and sum(value[1] == row["description"] for value in bindings.values()) == 1

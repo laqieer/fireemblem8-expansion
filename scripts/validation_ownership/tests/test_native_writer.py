@@ -386,6 +386,135 @@ class NativeWriterTests(unittest.TestCase):
                 with self.assertRaisesRegex(Violation, "admitted native image"):
                     policy.entry(1, Process(role), Registers(orig_rax=436, rdi=80, rsi=81))
 
+    def _inherited_lock_range_fixture(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/syscall.h>\n#include <sys/file.h>\n#include <sys/wait.h>\n"
+            "#include <poll.h>\n#include <errno.h>\n#include <stdlib.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd,other,status;pid_t child;"
+            "struct pollfd closed[2]={{80,POLLIN,0},{82,POLLIN,0}};"
+            "if(argc!=2&&argc!=3)return 1;if(argc==3){"
+            "if(!strcmp(argv[1],\"independent\")){other=open(\"/repo/shared.lock\",O_RDWR);"
+            "if(other<0)return 5;return syscall(SYS_close_range,(unsigned)other,(unsigned)other,0U)?6:0;}"
+            "other=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(other<0||dup2(other,81)!=81||close(other))return 7;"
+            "return syscall(SYS_close_range,!strcmp(argv[1],\"writer\")?81U:80U,82U,0U)?8:0;}"
+            "fd=open(\"/repo/shared.lock\",O_CREAT|O_RDWR,0600);"
+            "if(fd<0||flock(fd,LOCK_EX)||dup2(fd,80)!=80||dup2(fd,82)!=82"
+            "||dup2(fd,84)!=84)return 2;"
+            "if(!strcmp(argv[1],\"last\"))return syscall(SYS_close_range,80U,82U,0U)?3:0;"
+            "child=fork();if(child<0)return 4;if(!child){"
+            "if(!strcmp(argv[1],\"independent\")||!strcmp(argv[1],\"mixed\")"
+            "||!strcmp(argv[1],\"writer\")){char *next[]={\"/native/tool\",argv[1],\"child\",0};"
+            "execv(next[0],next);return 17;}"
+            "if(strcmp(argv[1],\"ok\"))return syscall(SYS_close_range,80U,82U,"
+            "(unsigned)strtoul(argv[1],0,10))?9:0;"
+            "if(syscall(SYS_close_range,82U,80U,0U)!=-1||errno!=EINVAL"
+            "||fcntl(80,F_GETFD)<0||fcntl(82,F_GETFD)<0)return 10;"
+            "if(syscall(SYS_close_range,80U,82U,0U))return 11;"
+            "if(poll(closed,2,0)!=2||closed[0].revents!=POLLNVAL"
+            "||closed[1].revents!=POLLNVAL||fcntl(84,F_GETFD)<0"
+            "||close(84)||close(fd))return 12;return 0;}"
+            "if(waitpid(child,&status,0)!=child||!WIFEXITED(status)||WEXITSTATUS(status))return 13;"
+            "other=open(\"/repo/shared.lock\",O_RDWR);"
+            "if(other<0||flock(other,LOCK_EX|LOCK_NB)!=-1||errno!=EWOULDBLOCK||close(other))return 14;"
+            "if(fcntl(80,F_GETFD)<0||fcntl(82,F_GETFD)<0||fcntl(84,F_GETFD)<0"
+            "||flock(fd,LOCK_UN)||close(80)||close(82)||close(84)||close(fd))return 15;"
+            "fd=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"ok\",2)!=2||close(fd))return 16;return 0;}\n"
+        ))
+
+    def test_native_close_range_retires_only_inherited_lock_aliases(self):
+        from scripts.validation_ownership import read_epochs
+        self._inherited_lock_range_fixture()
+        self.add("Makefile", "all:\n\t@/native/tool ok\n")
+        resources = (("shared-lock", "shared.lock"),)
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, outputs=("result",), native_resources=resources)
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), native_tool=tool, commands=Commands(),
+                native_resources=resources, observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"ok", 0o644)])
+            trace = observed["read_trace"]
+            closures = [
+                row for row in read_epochs.native_output_effects(trace)
+                if row["kind"] == "output-range-close"
+            ]
+            self.assertEqual([row["fd"] for row in closures], [80, 82])
+            self.assertEqual(len({row["description"] for row in closures}), 1)
+            for mutation in ("first", "last", "flags", "result", "fd", "serial", "description", "missing"):
+                with self.subTest(mutation=mutation):
+                    invalid = json.loads(json.dumps(trace))
+                    row = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-tree" and row["event"]["kind"] == "close-range"
+                    )
+                    event = row["event"]
+                    if mutation == "missing":
+                        event["bindings"].pop()
+                    elif mutation in {"fd", "serial", "description"}:
+                        event["bindings"][0][mutation] += 1
+                    else:
+                        event[mutation] = {"first": 81, "last": 81, "flags": 4, "result": 1}[mutation]
+                    row["sha256"] = hashlib.sha256(encoded(event)).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            invalid = json.loads(json.dumps(trace))
+            row = next(
+                row for row in invalid["machine"]["events"]
+                if row["kind"] == "native-output" and row["event"]["kind"] == "output-range-close"
+            )
+            row["event"]["kind"] = "output-close"
+            row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "descriptor retirement"):
+                read_epochs.validate_trace(
+                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                )
+            for actor in ([], {}, True, None):
+                with self.subTest(retirement_actor=actor):
+                    invalid = json.loads(json.dumps(trace))
+                    row = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["kind"] == "output-close"
+                    )
+                    row["event"]["pid"] = actor
+                    row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_close_range_refuses_noninherited_and_mixed_output_ranges(self):
+        self._inherited_lock_range_fixture()
+        resources = (("shared-lock", "shared.lock"),)
+        for mode in ("last", "independent", "writer", "mixed", "2", "4", "8"):
+            with self.subTest(mode=mode):
+                self.add("Makefile", "all:\n\t@/native/tool " + mode + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(
+                                argv, native_tool=tool, outputs=("result",), native_resources=resources,
+                            )
+                    expected = "close_range flags" if mode.isdigit() else "generated output descriptor"
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session._native_make_writable(
+                            "all", outputs=("result",), native_tool=tool, commands=Commands(),
+                            native_resources=resources, observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assert_clean(session)
+
     def _native_image_operand_fixture(self):
         self.add("native.c", (
             "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"

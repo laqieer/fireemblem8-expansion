@@ -2433,11 +2433,25 @@ class Policy:
                 raise Violation("close_range requires an admitted native image")
             if flags:
                 raise Violation("native close_range flags are not admitted")
-            if self.native_outputs is not None and any(
-                owner == pid and first <= descriptor <= last
-                for owner, descriptor in self.native_outputs.custody.descriptors
-            ):
-                raise Violation("native close_range intersects a generated output descriptor")
+            if self.native_outputs is not None:
+                custody = self.native_outputs.custody
+                selected = [
+                    (descriptor, item)
+                    for (owner, descriptor), item in custody.descriptors.items()
+                    if owner == pid and first <= descriptor <= last
+                ]
+                if selected and (
+                    not self.config.get("native_resources")
+                    or any(
+                        item.path not in custody.shared_paths
+                        or not any(
+                            process != pid
+                            for process, _ in item.descriptions[(pid, descriptor)].bindings
+                        )
+                        for descriptor, item in selected
+                    )
+                ):
+                    raise Violation("native close_range intersects a generated output descriptor")
             state.pending = ("close-range", tuple(
                 descriptor for descriptor in sorted(state.fds) if first <= descriptor <= last
             ))

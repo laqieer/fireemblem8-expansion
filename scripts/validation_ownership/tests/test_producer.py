@@ -5524,6 +5524,107 @@ class NativeOutputCustodyTests(unittest.TestCase):
         os.close(source)
         self.outputs.finish()
 
+    def test_inherited_lock_range_reserves_both_entry_orders_and_preserves_failed_bindings(self):
+        from scripts.validation_ownership.native_outputs import NativeOutputError
+        descriptor = os.open(self.root / "range-lock", os.O_CREAT | os.O_RDWR, 0o600)
+        self.outputs.shared_paths = frozenset({"range-lock"})
+        self.outputs.opened(
+            owner=1, pid=1, descriptor=descriptor, pin=descriptor, path="range-lock", writing=True,
+        )
+        self.outputs.inherited(1, 2, (descriptor,))
+        before = os.fstat(descriptor)
+        operation = self.outputs.enter_close_range(
+            pid=2, descriptors=(descriptor,), first=descriptor, last=descriptor,
+        )
+        for action in (
+            lambda: self.outputs.enter_close(pid=1, descriptor=descriptor),
+            lambda: self.outputs.enter_lock(pid=1, descriptor=descriptor, flags=fcntl.LOCK_EX, observed=0),
+            lambda: self.outputs.enter_mode(pid=1, descriptor=descriptor, mode=0o755),
+            lambda: self.outputs.enter_write(pid=1, descriptor=descriptor, pin=descriptor, data=b"x", offset=0),
+            lambda: self.outputs.enter_duplicate(pid=1, descriptor=descriptor, kind="dup"),
+            lambda: self.outputs.enter_exec(pid=1, descriptors=(descriptor,)),
+        ):
+            with self.assertRaises(NativeOutputError):
+                action()
+        with self.assertRaisesRegex(NativeOutputError, "foreign, stale or unpaired"):
+            self.outputs.leave_close_range(replace(operation), result=-errno.ENOSYS)
+        self.outputs.leave_close_range(operation, result=-errno.ENOSYS)
+        self.assertEqual(os.fstat(descriptor), before)
+        self.assertEqual(set(self.outputs.descriptors), {(1, descriptor), (2, descriptor)})
+        self.assertFalse(self.outputs.pending)
+        for kind in ("write", "lock", "mode", "exec", "dup"):
+            with self.subTest(pending=kind):
+                if kind == "write":
+                    active = self.outputs.enter_write(
+                        pid=1, descriptor=descriptor, pin=descriptor, data=b"x", offset=0,
+                    )
+                    finish = lambda: self.outputs.leave_write(active, -errno.EINTR)
+                elif kind == "lock":
+                    active = self.outputs.enter_lock(
+                        pid=1, descriptor=descriptor, flags=fcntl.LOCK_EX, observed=0,
+                    )
+                    finish = lambda: self.outputs.leave_lock(active, result=-errno.EINTR, observed=0)
+                elif kind == "mode":
+                    active = self.outputs.enter_mode(pid=1, descriptor=descriptor, mode=0o755)
+                    finish = lambda: self.outputs.leave_mode(active, result=-errno.EPERM)
+                elif kind == "exec":
+                    active = self.outputs.enter_exec(pid=1, descriptors=(descriptor,))
+                    finish = lambda: self.outputs.fail_exec(active, result=-errno.EFAULT)
+                else:
+                    active = self.outputs.enter_duplicate(pid=1, descriptor=descriptor, kind="dup")
+                    finish = lambda: self.outputs.leave_duplicate(active, -errno.EINVAL)
+                with self.assertRaises(NativeOutputError):
+                    self.outputs.enter_close_range(
+                        pid=2, descriptors=(descriptor,), first=descriptor, last=descriptor,
+                    )
+                finish()
+                self.assertFalse(self.outputs.pending)
+                self.assertEqual(os.fstat(descriptor), before)
+        operation = self.outputs.enter_close_range(
+            pid=2, descriptors=(descriptor,), first=descriptor, last=descriptor,
+        )
+        self.outputs.leave_close_range(operation, result=0)
+        self.assertEqual(set(self.outputs.descriptors), {(1, descriptor)})
+        os.close(descriptor)
+        self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
+    def test_inherited_lock_range_failure_binds_first_object_across_creators_and_outside_lock(self):
+        from scripts.validation_ownership import read_epochs
+        self.outputs.shared_paths = frozenset({"range-first", "range-outside"})
+        descriptors = []
+        for owner, path in ((1, "range-first"), (2, "range-outside")):
+            descriptor = os.open(self.root / path, os.O_CREAT | os.O_RDWR, 0o600)
+            descriptors.append(descriptor)
+            self.outputs.opened(
+                owner=owner, pid=1, descriptor=descriptor, pin=descriptor, path=path, writing=True,
+            )
+            self.outputs.inherited(1, 2, (descriptor,))
+        first, outside = descriptors
+        for selected in ((first, outside), (first,)):
+            with self.subTest(descriptors=selected):
+                operation = self.outputs.enter_close_range(
+                    pid=2, descriptors=selected, first=first, last=selected[-1],
+                )
+                self.outputs.leave_close_range(operation, result=-errno.ENOSYS)
+                event = self.events[-1]
+                self.assertEqual((event["owner"], event["source"]), (1, "range-first"))
+                item = self.outputs.descriptors[(2, first)]
+                binding = (item.serial, item.descriptions[(2, first)].serial, item.path, item.owner)
+                read_epochs._native_range_failure_binding(event, binding)
+                foreign = dict(event, owner=2, source="range-outside")
+                with self.assertRaisesRegex(read_epochs.ReadEpochError, "affected object binding"):
+                    read_epochs._native_range_failure_binding(foreign, binding)
+                self.assertEqual(
+                    set(self.outputs.descriptors),
+                    {(process, descriptor) for process in (1, 2) for descriptor in descriptors},
+                )
+        for descriptor in descriptors:
+            self.outputs.closed(2, descriptor, 0)
+            os.close(descriptor)
+            self.outputs.closed(1, descriptor, 0)
+        self.outputs.finish()
+
     def test_exec_closure_reserves_shared_descriptions_and_failed_return_preserves_bindings(self):
         from scripts.validation_ownership.native_outputs import NativeOutputError
         descriptor = os.open(self.root / "exec-closure", os.O_CREAT | os.O_RDWR, 0o600)

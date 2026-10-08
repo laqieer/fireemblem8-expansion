@@ -206,6 +206,16 @@ class NativeOutputObserver:
                     closing.append(selected)
             if closing:
                 operation = self.custody.enter_exec(pid=pid, descriptors=tuple(closing))
+        elif n == 436:
+            first, last = (value & 0xFFFFFFFF for value in (a, b))
+            closing = tuple(sorted(
+                selected for process, selected in self.custody.descriptors
+                if process == pid and first <= selected <= last
+            ))
+            if closing:
+                operation = self.custody.enter_close_range(
+                    pid=pid, descriptors=closing, first=first, last=last,
+                )
         elif n in {2, 85, 257}:
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC if n == 85 else c if n == 257 else b
             path = state.pending[1]
@@ -414,6 +424,32 @@ class NativeOutputObserver:
                 )
             elif operation.kind == "exec":
                 self.custody.fail_exec(operation, result=result)
+            elif operation.kind == "close-range":
+                self.custody._status_result(result)
+                bindings = []
+                for descriptor, description in zip(
+                    operation.closing_descriptors, operation.closing_descriptions,
+                ):
+                    self.deadline()
+                    self.policy.charge_metadata(128)
+                    item = self.custody.descriptors[(pid, descriptor)]
+                    try:
+                        actual = os.stat(f"/proc/{pid}/fd/{descriptor}")
+                    except FileNotFoundError:
+                        if result < 0:
+                            raise NativeOutputError("failed native close_range lost its live descriptor")
+                    else:
+                        if result == 0 or publication_identity(actual) != item.identity:
+                            raise NativeOutputError("native close_range returned a different descriptor lifetime")
+                    bindings.append({
+                        "fd": descriptor, "serial": item.serial, "description": description.serial,
+                    })
+                self.policy.native_tree_event(state, {
+                    "kind": "close-range", "pid": pid, "first": operation.range_bounds[0],
+                    "last": operation.range_bounds[1], "flags": 0, "result": result,
+                    "bindings": bindings,
+                })
+                self.custody.leave_close_range(operation, result=result)
             elif operation.kind == "mkdir":
                 pin = None if result < 0 else self.operand(operation.source, directory=True)
                 try:
@@ -498,6 +534,8 @@ class NativeOperation:
     minimum: int | None = None
     replacement_identity: tuple | None = None
     closing_descriptions: tuple = ()
+    closing_descriptors: tuple = ()
+    range_bounds: tuple = ()
     parents: tuple[str, ...] = ()
     description: OpenDescription | None = None
     request: int | None = None
@@ -1012,6 +1050,8 @@ class NativeOutputs:
         item = self.descriptors.get((pid, descriptor))
         if item is None:
             raise NativeOutputError("native duplicate entry lacks its actual owned descriptor")
+        if self._description_closing(item.descriptions[(pid, descriptor)]):
+            raise NativeOutputError("native duplicate source overlaps an unfinished descriptor closure")
         if (
             kind not in {"dup", "dup2", "dup3", "fcntl-dupfd", "fcntl-dupfd-cloexec"}
             or type(flags) is not int
@@ -1159,11 +1199,38 @@ class NativeOutputs:
     def _description_closing(self, description):
         return any(
             active.kind in {"close", "duplicate-release", "dup"} and active.description is description
+            or active.kind == "dup" and (
+                (item := self.descriptors.get((active.pid, active.descriptor))) is not None
+                and item.descriptions.get((active.pid, active.descriptor)) is description
+            )
             or any(selected is description for selected in active.closing_descriptions)
             for active in self.pending.values()
         )
 
     def enter_exec(self, *, pid, descriptors):
+        return self._enter_closure(pid=pid, descriptors=descriptors, kind="exec")
+
+    def enter_close_range(self, *, pid, descriptors, first, last):
+        if (
+            type(first) is not int or type(last) is not int or not 0 <= first <= last < 1 << 32
+            or tuple(sorted(set(descriptors))) != tuple(descriptors)
+            or any(not first <= descriptor <= last for descriptor in descriptors)
+        ):
+            raise NativeOutputError("native close_range lacks its exact ordered descriptor interval")
+        for descriptor in descriptors:
+            item = self.descriptors.get((pid, descriptor))
+            if (
+                item is None or item.path not in self.shared_paths
+                or not any(
+                    process != pid for process, _ in item.descriptions[(pid, descriptor)].bindings
+                )
+            ):
+                raise NativeOutputError("native close_range lacks its inherited shared-lock description")
+        return self._enter_closure(
+            pid=pid, descriptors=descriptors, kind="close-range", range_bounds=(first, last),
+        )
+
+    def _enter_closure(self, *, pid, descriptors, kind, range_bounds=()):
         bindings, descriptions, owner = [], [], None
         for descriptor in descriptors:
             binding = (pid, descriptor)
@@ -1172,17 +1239,20 @@ class NativeOutputs:
                 raise NativeOutputError("native exec closure lost its actual output descriptor")
             self._close_available(item, binding)
             description = item.descriptions[binding]
-            if self._description_closing(description) or owner is not None and item.owner != owner:
+            if self._description_closing(description) or kind == "exec" and owner is not None and item.owner != owner:
                 raise NativeOutputError("native exec closure overlaps another description transition or owner")
-            owner = item.owner
-            bindings.append(("exec-fd:" + str(descriptor), item.descriptor, item))
+            if owner is None:
+                owner = item.owner
+            bindings.append((kind + "-fd:" + str(descriptor), item.descriptor, item))
             descriptions.append(description)
         if not bindings:
             raise NativeOutputError("native exec closure has no issued descriptors")
-        operation = self._begin(owner, pid, "exec", bindings[0][2].path, bindings=tuple(bindings))
+        operation = self._begin(owner, pid, kind, bindings[0][2].path, bindings=tuple(bindings))
         operation = NativeOperation(
             operation.owner, pid, operation.kind, operation.source, None, 0, operation.operands,
             closing_descriptions=tuple(descriptions),
+            closing_descriptors=tuple(descriptors),
+            range_bounds=range_bounds,
         )
         self.pending[pid] = operation
         return operation
@@ -1194,6 +1264,16 @@ class NativeOutputs:
     def fail_exec(self, operation, *, result):
         self._operation(operation, "exec")
         self._failed(operation, result)
+
+    def leave_close_range(self, operation, *, result):
+        self._operation(operation, "close-range")
+        self._status_result(result)
+        if result < 0:
+            self._failed(operation, result)
+            return
+        self._end(operation)
+        for descriptor in operation.closing_descriptors:
+            self.closed(operation.pid, descriptor, 0, event_kind="output-range-close")
 
     def enter_close(self, *, pid, descriptor):
         self._usable()
@@ -1247,7 +1327,10 @@ class NativeOutputs:
         self._end(operation)
 
     def _close_available(self, item, binding):
-        if item.pending_writer == binding:
+        if item.pending_writer is not None and (
+            item.pending_writer == binding
+            or item.descriptions.get(item.pending_writer) is item.descriptions[binding]
+        ):
             raise NativeOutputError("native output close overlaps an unfinished write")
         if item.descriptions[binding].pending is not None:
             raise NativeOutputError("native output close overlaps an unfinished flock")
@@ -1482,6 +1565,7 @@ class NativeOutputs:
         if (
             item is None or binding not in item.writers or item.retired or item.readers
             or item.pending_writer is not None
+            or self._description_closing(item.descriptions[binding])
             or self._pending_mode(item)
             or self._identity(pin) != item.identity
         ):

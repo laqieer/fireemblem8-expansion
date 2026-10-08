@@ -539,6 +539,37 @@ Ordinary resource-free writes remain supported. Native command capsules keep
 their separate existing mode and lock contract; resource-enabled Make
 inherited descriptions keep their existing authority across image changes.
 
+An admitted native image may use flags-zero `close_range` on inherited
+`shared-lock` descriptions only while another process retains each description.
+The supervisor reserves the complete affected descriptor set before kernel
+entry, verifies successful disappearance (or failed-return preservation), and
+binds ordered `output-range-close` retirements to the actual `close-range`
+machine/tree return. These are not synthetic `close(2)` or exec observations.
+Ordinary generated writers, independent or last lock descriptions, mixed
+supported/unsupported intervals, resource-free generated descriptions, and
+nonzero flags still reject before kernel entry. Pending writes, modes, locks,
+duplicates and closures exclude overlapping description transitions.
+
+To reproduce this scoped regression, start with the clean captured C/Make
+fixture in `test_native_close_range_retires_only_inherited_lock_aliases` and
+run its `ok` input. The child first receives `EINVAL` for a reversed interval,
+with both bindings intact; then closes inherited descriptors 80 and 82 across
+a hole while descriptor 84 survives. Its parent must retain all bindings and
+the exclusive lock: an independently opened description still receives
+`EWOULDBLOCK`. Final cleanup produces exactly `ok` in `result`, mode 0644.
+Run `test_native_close_range_refuses_noninherited_and_mixed_output_ranges`
+with `last`, `independent`, `writer`, `mixed`, `2`, `4`, and `8` as negative
+controls. The custody test
+`test_inherited_lock_range_reserves_both_entry_orders_and_preserves_failed_bindings`
+injects failed return and overlapping transitions; it is state-model evidence,
+not an observed kernel failure. The modeled mixed-creator failure case
+`test_inherited_lock_range_failure_binds_first_object_across_creators_and_outside_lock`
+requires the first affected descriptor's creator/path pair, never another live
+lock outside the interval. Archive mutations must reject changed ranges,
+flags, status, descriptor identities, omitted siblings and unbound retirements.
+These cases cover the lock/subprocess compatibility seam only. They do not
+complete the original source/profile acceptance or the native workflow case.
+
 For this negative control, start a clean captured Makefile with only `result`
 as its admitted output and no resources. Invoke the actual native C fixture
 in `test_native_original_make_empty_resources_refuse_mode_and_lock_before_kernel`
