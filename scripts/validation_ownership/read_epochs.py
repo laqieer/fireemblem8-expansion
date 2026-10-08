@@ -2361,6 +2361,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                                    "destination": destination, "parents": parents,
                                    "readonly": readonly}
     number = 0
+    issued_serial = 0
     for observation in machine:
         if observation["kind"] == "native-tree":
             event = observation["event"]
@@ -2632,6 +2633,9 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         if kind == "output-mkdir":
             if row["owner"] != dispatch:
                 raise ReadEpochError("native directory owner differs from its creating dispatch")
+            if serial <= issued_serial:
+                raise ReadEpochError("native directory reused an issued custody serial")
+            issued_serial = serial
             if row["path"] in directories or row["identity"][6] != 2 or row["revision"] != 0 or serial in objects or any(item["serial"] == serial for item in directories.values()):
                 raise ReadEpochError("native mkdir reused an issued directory object")
             directories[row["path"]] = {
@@ -2733,6 +2737,9 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             if item is None:
                 if row["owner"] != dispatch:
                     raise ReadEpochError("native file owner differs from its creating dispatch")
+                if serial <= issued_serial:
+                    raise ReadEpochError("native file reused an issued custody serial")
+                issued_serial = serial
                 if any(
                     other["path"] == row["path"] or other["identity"][:2] == row["identity"][:2]
                     for other in objects.values()

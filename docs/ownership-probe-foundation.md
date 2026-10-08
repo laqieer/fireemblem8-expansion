@@ -781,9 +781,22 @@ checks are unchanged.
 Run these source-built `NativeWriterTests` members from a clean temporary
 fixture; their setup compiles the original C recipe as a sealed fixture tool:
 `test_native_original_make_directory_roles_preserve_actual_namespace_lifecycle`
-creates a directory, observes actual EEXIST, creates/removes a child, then
-returns only the final file. Rehashed directory actor/preimage/entry-set mutants
-must refuse.
+creates a directory, observes actual EEXIST, creates/removes a child, writes
+the final file, then creates/removes another child and returns only that file.
+Rehashed directory actor/preimage/entry-set mutants must refuse. For the
+custody-identity part of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), additionally
+replace the complete file/directory lifecycle's custody ID with a prior
+active directory, retired directory or file ID. All six direction/lifetime
+mutants must refuse; the pre-fix validator accepts file IDs reused from active
+and retired directories and a later directory reusing a retired directory ID.
+The actual observer issues directory and first-adopted file IDs from one
+increasing counter. Archive replay uses one high-water scalar to preserve
+that existing issuance contract even after directory removal, without a
+second object registry. Reopening an already issued file retains its ID;
+the resource-version case below is the positive control. Wire formats,
+production operations, budgets and legacy/default behavior are unchanged.
+These fixtures remove all owned state and have no additional dependencies
+or conflicts beyond the native resource lane.
 `test_native_original_make_resource_roles_separate_temporary_lock_and_final_versions`
 creates an atomic temporary, writes/chmods/closes/replaces it, then reopens the
 same lock from a distinct second job and removes its actual root-PID temporary.

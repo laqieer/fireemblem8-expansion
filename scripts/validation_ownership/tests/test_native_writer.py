@@ -3010,10 +3010,11 @@ guard.supervise=measured_supervise
             "if(mkdir(\"/repo/stage/empty\",0700)||rmdir(\"/repo/stage/empty\"))return 3;"
             "fd=open(\"/repo/stage/generated.mk\",O_CREAT|O_EXCL|O_WRONLY,0644);"
             "if(fd<0||write(fd,\"VALUE := native\\n\",16)!=16||close(fd))return 4;"
+            "if(mkdir(\"/repo/stage/later\",0700)||rmdir(\"/repo/stage/later\"))return 5;"
             "return 0;}\n"
         ))
         self.add("Makefile", "all:\n\t@/native/tool\n")
-        resources = (("directory", "stage"), ("directory", "stage/empty"))
+        resources = (("directory", "stage"), ("directory", "stage/empty"), ("directory", "stage/later"))
         session = self.session()
         with session:
             tool = session.compile_native(("native.c",))
@@ -3031,8 +3032,32 @@ guard.supervise=measured_supervise
             ])
             trace = observed["read_trace"]
             effects = read_epochs.native_output_effects(trace)
-            self.assertEqual(len([row for row in effects if row["kind"] == "output-mkdir"]), 2)
-            self.assertEqual(len([row for row in effects if row["kind"] == "output-rmdir"]), 1)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-mkdir"]), 3)
+            self.assertEqual(len([row for row in effects if row["kind"] == "output-rmdir"]), 2)
+            issued = {
+                row["path"]: row["serial"] for row in effects
+                if row["kind"] in {"output-mkdir", "output-open"}
+            }
+            for new, prior in (
+                ("/repo/stage/generated.mk", "/repo/stage"),
+                ("/repo/stage/generated.mk", "/repo/stage/empty"),
+                ("/repo/stage/empty", "/repo/stage"),
+                ("/repo/stage/later", "/repo/stage"),
+                ("/repo/stage/later", "/repo/stage/empty"),
+                ("/repo/stage/later", "/repo/stage/generated.mk"),
+            ):
+                with self.subTest(issuance=new, reused=prior):
+                    invalid = json.loads(json.dumps(trace))
+                    for machine in invalid["machine"]["events"]:
+                        if machine["kind"] == "native-output":
+                            row = machine["event"]
+                            if row.get("serial") == issued[new]:
+                                row["serial"] = issued[prior]
+                            machine["sha256"] = hashlib.sha256(encoded(row)).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
             failed, = [row for row in effects if row["kind"] == "output-operation-failed"]
             self.assertEqual((failed["operation"], failed["result"]), ("mkdir", -errno.EEXIST))
             for kind, field, value in (
