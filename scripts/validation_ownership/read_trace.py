@@ -987,9 +987,7 @@ class NativeReadTrace:
         if current["source"] is not None or current.get("generated") is not None:
             self.machine_event(
                 "pin-retired", self.pid, visit=current["visit"], source=current["source"],
-                identity=list(
-                    current["identity"] if current["source"] is not None else current["generated"].identity
-                ),
+                identity=list(self.source_identity(current)),
             )
         self.active.pop()
         if self.runtime:

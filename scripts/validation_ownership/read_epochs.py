@@ -1986,18 +1986,24 @@ def validate_machine_observations(value, trace, *, count_limit):
                 if event["kind"] == "source-open" and event["visit"] == row["visit"]
                 and event["source"] == row["source"]
             ]
-            if failed_generated:
+            generated = (
+                trace["version"] == WRITABLE_VERSION and len(opens) == 1
+                and isinstance(opens[0]["custody"], dict)
+                and opens[0]["custody"]["kind"] == "native-output"
+            )
+            if failed_generated or generated:
                 entries = [
                     entry for entry in value["events"][:number - 1]
                     if entry["kind"] == "generated-source-entry" and entry["visit"] == row["visit"]
                 ]
                 if (
                     len(opens) != 1 or len(entries) != 1
-                    or opens[0]["result"] != -context["error"]
+                    or failed_generated and opens[0]["result"] != -context["error"]
                     or opens[0]["custody"] != {"kind": "native-output", "entry": entries[0]["seq"]}
-                    or row["identity"] != entries[0]["identity"]
+                    or not isinstance(row["identity"], list) or len(row["identity"]) != 7
+                    or any(type(item) is not int for item in row["identity"])
                 ):
-                    raise ReadEpochError("failed generated pin retirement lacks its actual open and entry")
+                    raise ReadEpochError("generated pin retirement lacks its actual open and entry")
             elif len(opens) != 1 or row["identity"] != opens[0]["identity"]:
                 raise ReadEpochError("native retired pin identity differs from its actual open")
             retired.add(row["visit"])
@@ -2344,7 +2350,9 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             readers[visit] = serial
             continue
         if observation["kind"] == "pin-retired":
-            readers.pop(observation["visit"], None)
+            serial = readers.pop(observation["visit"], None)
+            if serial is not None and observation["identity"] != objects[serial]["identity"]:
+                raise ReadEpochError("generated pin retirement differs from its current generated version")
             continue
         if observation["kind"] != "native-output":
             continue

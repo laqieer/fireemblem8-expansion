@@ -1801,6 +1801,10 @@ class NativeWriterTests(unittest.TestCase):
                         self.assertFalse(outputs.pins)
                         self.assertFalse(trace.active)
                         self.assertEqual(trace.machine[-1]["kind"], "pin-retired")
+                        self.assertEqual(
+                            trace.machine[-1]["identity"],
+                            list(publication_identity(os.fstat(old))),
+                        )
                         outputs.finish()
                     else:
                         with self.assertRaises(MakeProbeError):
@@ -2638,7 +2642,37 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual((lease["identity"][6], retired["identity"][6]), (1, 0))
             returned = [row for row in trace["machine"]["events"] if row["kind"] == "pin-retired" and row["visit"] == lease["visit"]]
             self.assertEqual(len(returned), 1)
+            self.assertEqual(returned[0]["identity"], retired["identity"])
             read_epochs.validate_trace(trace, trace["scope"], count_limit=100000, file_limit=10000000)
+            for identity in (
+                lease["identity"], replaced["identity"], None, [],
+                [True] * 7, [*retired["identity"][:6], True],
+            ):
+                with self.subTest(retirement_identity=identity):
+                    invalid = json.loads(json.dumps(trace))
+                    invalid["machine"]["events"][returned[0]["seq"] - 1]["identity"] = identity
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+            immutable_pins = [
+                row for row in trace["events"] if row["kind"] == "source-open"
+                and row["source"] is not None and row["custody"]["kind"] == "snapshot"
+            ]
+            self.assertTrue(immutable_pins)
+            for immutable in immutable_pins:
+                for field in (3, 5, 6):
+                    with self.subTest(immutable_visit=immutable["visit"], retirement_field=field):
+                        invalid = json.loads(json.dumps(trace))
+                        pin, = [
+                            row for row in invalid["machine"]["events"]
+                            if row["kind"] == "pin-retired" and row["visit"] == immutable["visit"]
+                        ]
+                        pin["identity"][field] += 1
+                        with self.assertRaises(read_epochs.ReadEpochError):
+                            read_epochs.validate_trace(
+                                invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                            )
         self.assert_clean(session)
 
     def test_native_original_make_resource_roles_refuse_unissued_and_shared_content_effects(self):

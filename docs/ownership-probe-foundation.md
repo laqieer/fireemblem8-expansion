@@ -1101,6 +1101,15 @@ and completion facts use the checked bytes, not a second decoded copy.
 All event, custody, machine and issued-output checks remain mandatory; this
 internal allocation reuse changes neither the wire format nor any budget cap.
 
+Writable v6 generated-source pin retirement records the object's current
+observed identity, including the changed ctime and zero link count after an
+atomic replacement while its reader remains open. Replay binds that identity
+to the same generated serial's version at retirement, not its earlier entry
+identity or the replacement file. Immutable snapshot pins still require their
+original open identity. The physical descriptor and original-Make replacement
+controls below retain the old reader's bytes and reject stale, foreign or
+malformed retirement identities.
+
 The unmerged writable v6 output-authority job record contains only `sequence`,
 `pid` and `admission`. Its existing sequence selects the canonical `native-tree`
 machine events for that dispatch; no second serialized tree is admitted.
