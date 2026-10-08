@@ -21,6 +21,96 @@ class NativeWriterTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_native_close_range_preserves_outside_and_failed_bindings(self):
+        self.add("input", "data")
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/syscall.h>\n#include <poll.h>\n#include <errno.h>\n"
+            "int main(void){int fd;char byte;struct pollfd closed[2]={{80,POLLIN,0},{81,POLLIN,0}};"
+            "fd=open(\"/repo/input\",O_RDONLY);if(fd<0)return 1;"
+            "if(dup2(fd,80)!=80||dup2(fd,81)!=81||dup2(fd,82)!=82||close(fd))return 2;"
+            "if(syscall(SYS_close_range,82U,80U,0U)!=-1||errno!=EINVAL)return 3;"
+            "if(read(82,&byte,1)!=1||byte!='d')return 4;"
+            "if(syscall(SYS_close_range,80U,81U,0U))return 5;"
+            "if(poll(closed,2,0)!=2||closed[0].revents!=POLLNVAL||closed[1].revents!=POLLNVAL)return 6;"
+            "if(read(82,&byte,1)!=1||byte!='a'||close(82))return 7;"
+            "fd=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"ok\",2)!=2||close(fd))return 8;return 0;}\n"
+        ))
+        self.add("Makefile", "all:\n\t@/native/tool\n")
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    return Command(argv, native_tool=tool, sources=("input",), outputs=("result",))
+            completed, _, _, generated = session._native_make_writable(
+                "all", outputs=("result",), native_tool=tool, commands=Commands(),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"", b""))
+            self.assertEqual([(row.data, row.mode) for row in generated], [(b"ok", 0o644)])
+        self.assert_clean(session)
+
+    def test_native_close_range_refuses_managed_descriptions_and_flags(self):
+        self.add("input", "data")
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/syscall.h>\n#include <stdlib.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd;unsigned int flags;"
+            "if(argc!=2)return 1;flags=(unsigned int)strtoul(argv[1],0,10);"
+            "if(!strcmp(argv[1],\"generated\"))fd=open(\"/repo/result\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "else fd=open(\"/repo/input\",O_RDONLY);"
+            "if(fd<0||dup2(fd,80)!=80||close(fd))return 2;"
+            "return syscall(SYS_close_range,80U,80U,flags)?3:0;}\n"
+        ))
+        for mode in ("generated", "2", "4", "8"):
+            with self.subTest(mode=mode):
+                self.add("Makefile", "all:\n\t@/native/tool " + mode + "\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(argv, native_tool=tool, sources=("input",), outputs=("result",))
+                    expected = "generated output descriptor" if mode == "generated" else "close_range flags"
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session._native_make_writable(
+                            "all", outputs=("result",), native_tool=tool, commands=Commands(),
+                            observe_reads=True, observe_runtime_completions=True,
+                        )
+                self.assert_clean(session)
+
+    def test_native_close_range_process_bindings_retire_only_on_success(self):
+        from unittest.mock import Mock
+        from scripts.validation_ownership.syscall_guard import Process, Registers, Violation
+        policy = foundation.FoundationTests.observation_policy(self, mode="make")
+        policy.config.update(syscall_limit=100, write_limit=1)
+        policy.native_readonly = True
+        for result in (-errno.EINVAL, 0, 1):
+            with self.subTest(result=result):
+                state = Process("native", fds={2: "<stderr>", 80: "/repo/input", 81: "/repo/input", 82: "/repo/input"})
+                policy.read_trace = Mock()
+                registers = Registers(
+                    orig_rax=436, rdi=(1 << 32) | 80, rsi=(1 << 32) | 81, rdx=1 << 32,
+                )
+                policy.entry(1, state, registers)
+                registers.rax = result
+                if result == 1:
+                    with self.assertRaisesRegex(Violation, "invalid successful result"):
+                        policy.leave(1, state, registers)
+                else:
+                    policy.leave(1, state, registers)
+                self.assertEqual(set(state.fds), {2, 82} if result == 0 else {2, 80, 81, 82})
+                self.assertEqual(
+                    [call.args for call in policy.read_trace.fd_closed.call_args_list],
+                    [(1, 80), (1, 81)] if result == 0 else [],
+                )
+        for role in ("make", "compiler", "command", "helper"):
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(Violation, "admitted native image"):
+                    policy.entry(1, Process(role), Registers(orig_rax=436, rdi=80, rsi=81))
+
     def _native_image_operand_fixture(self):
         self.add("native.c", (
             "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"

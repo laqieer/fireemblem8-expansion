@@ -543,6 +543,27 @@ entry with those malformed values; the original failed open and pin retirement
 remain the positive control in
 `test_native_generated_optional_source_failed_open_retires_its_actual_entry_pin`.
 
+Original native subprocesses may use flags-zero `close_range` when its
+unsigned-int descriptor interval contains no tracked generated-output
+description. A successful kernel return retires known descriptors in that
+inclusive interval through the existing process/read-stream close bookkeeping;
+a failed return preserves them. Generated descriptions, CLOEXEC/UNSHARE or
+unknown flags, and nonnative callers still refuse before the syscall. This
+does not emit synthetic generated-close events or grant a batch output-close
+protocol. Original command argv and subprocess execution stay unchanged.
+
+For the scoped compatibility control, open one immutable input at descriptors
+80, 81 and 82. First request the reversed interval 82 to 80 and observe EINVAL
+plus a successful input read; then close 80 to 81 and observe both POLLNVAL
+results while descriptor 82 still reads the input. Finally produce `ok` at
+mode 0644 through the normal finite output plan. Independently put a generated
+description in the interval, or request flags 2, 4 or 8, and require explicit
+pre-kernel refusal with complete probe cleanup. These steps map to the three
+`test_native_close_range_*` cases in `test_native_writer`; paired process-state
+checks also require only successful returns to retire the corresponding
+read-stream bindings and apply the kernel's unsigned-int argument widths.
+This scoped case is not the unfinished original all-plus-eight qualification.
+
 Run `NativeWriterTests.test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority`
 for actual root reexec, child/grandchild and fork-only inherited writer/lock
 positives, explicitly admitted retained/temporary operands, an output-free

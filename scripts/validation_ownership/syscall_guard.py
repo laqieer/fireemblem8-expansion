@@ -2425,6 +2425,20 @@ class Policy:
                 state.pending = ("event", frame)
         elif n == 3:
             state.pending = ("close", ctypes.c_int(a).value)
+        elif n == 436:
+            first, last, flags = (value & 0xFFFFFFFF for value in (a, b, c))
+            if not self.native_readonly or state.role != "native":
+                raise Violation("close_range requires an admitted native image")
+            if flags:
+                raise Violation("native close_range flags are not admitted")
+            if self.native_outputs is not None and any(
+                owner == pid and first <= descriptor <= last
+                for owner, descriptor in self.native_outputs.custody.descriptors
+            ):
+                raise Violation("native close_range intersects a generated output descriptor")
+            state.pending = ("close-range", tuple(
+                descriptor for descriptor in sorted(state.fds) if first <= descriptor <= last
+            ))
         elif n in {8, 74, 75, 73}:
             self.check_fd(state, ctypes.c_int(a).value if n == 73 else a, "read", r)
         elif n in {78, 217}:
@@ -2768,6 +2782,11 @@ class Policy:
             state.fds[result] = value
         elif operation == "close":
             self.close_return(pid, state, value, result)
+        elif operation == "close-range":
+            if result != 0:
+                raise Violation("native close_range returned an invalid successful result")
+            for descriptor in value:
+                self.close_return(pid, state, descriptor, result)
         elif operation == "pipe":
             data = memory(pid, value, 8)
             for offset in (0, 4):
