@@ -1088,6 +1088,95 @@ mount, source-reader and machine/host/archive consumers are wired, this object
 model grants no native write authority and does not qualify
 TC-WORKFLOW-NATIVE-MAKE-001 or any original eight-query outcome.
 
+### TC-WORKFLOW-NATIVE-MAKE-001: preserve original native Make production and generated-source custody
+
+This is the indexed complete acceptance case for #270 and its coupled #275
+extension. **Registration is not qualification.** The original initial-family
+plus eight-query runner and production integration are still incomplete.
+The component commands below run from this source checkout; their success
+cannot clear that hold.
+
+Use Linux x86-64, GNU Make 4.3, trusted host GCC/C++, Git, CPython and the
+existing namespace/ptrace launcher. Start from a clean checkout and ordinary
+owned test scratch. Do not delete or overwrite another owner's scratch or the
+preserved interrupted #180 worktree. No ROM, emulator, save reset or GitHub
+credentials is needed. The immutable original fixture has 2,148 source files,
+the original four Make inputs and the issued original scanner. A smaller
+exploratory pool is not this fixture.
+
+1. Run the immutable positive and its documented adversarial procedure in
+   `TC-WORKFLOW-NATIVE-READONLY-001` below. Require actual original scanner
+   execution, source/job/machine agreement and aggregate-budget rejection.
+   This delivered foundation is a prerequisite, not writable qualification.
+2. Exercise the recursive-reference and readonly produced-consumer members:
+
+   ```bash
+   python3 -m unittest \
+     scripts.validation_ownership.tests.test_native_writer.NativeReadonlyVariableTests \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_readonly_consumer_opens_settled_foreign_output_without_write_plan \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_resource_free_readonly_consumer_binds_actual_actor_and_creator \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_foreign_consumer_write_flags_still_refuse_without_output_plan \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_resource_free_foreign_consumer_write_flags_still_refuse \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_foreign_readonly_consumer_handles_actual_eacces_with_and_without_resources -v
+   ```
+
+   GNU global/target values must agree with ordinary Make. Literal references
+   are observed without an extra effect; hidden effects and cycles refuse.
+   Consumers receive no write plan, read the settled creator's real bytes and
+   bind their own actor in both resource configurations. Write/create/truncate
+   flags and forged object/actor/parent records refuse. The actual mode0000
+   fixture handles EACCES and completes the validated lowlevel trace; its
+   public host exporter raises PermissionError. Do not call that public success.
+   Pre-fix references refuse observation, and valid readonly produced opens
+   refuse archive replay; those retained regressions are the negative controls.
+3. Require the complete original production family in one session, one
+   `ProbeBudget` and one original monotonic deadline. The initial semantic
+   family includes immediate/deferred/skipped/conditional/continued/recursive
+   assignments, repeated/nested includes and original remake/reexec. Then run
+   both `assets.mk` and `Makefile` for each tuple below, retaining original
+   commands and a canonical `/repo` CWD:
+
+   | Item-cap input | Resolved cap | Custom spells | Modern root | Manifest |
+   |---|---|---|---|---|
+   | empty | 0xCD | 0 | build/expansion-modern | assets/manifest.json |
+   | 0xCE | 0xCE | 0 | build/native-completion-alt | assets/manifest.json |
+   | empty | 0xCD | 1 | build/native-completion-custom | assets/manifests/custom-spell-reference.json |
+   | 0xCE | 0xCE | 1 | build/native-completion-alt-custom | assets/manifests/custom-spell-reference.json |
+
+   Observe `GENERATED_DATA_ITEM_CAP`, `ASSET_RESOLVED_ITEM_ID_CAP`,
+   `ASSET_MANIFEST_KEY`, `ASSET_PROFILE_KEY`, `ASSET_PROFILE_ROOT`,
+   `ASSET_OUTPUT_DIR` and `ASSET_DISCOVERY_MK`. Compare all applicable values,
+   stdout/stderr and every generated output's bytes/mode with the ordinary
+   original `/repo` reference, including manifests and selection stamps.
+   Require actual compiler/scanner execution, inherited `.dep` redirection,
+   temporary/lock/retirement families and every generated include version at
+   its successful source open. Bind actual argv/CWD, creator/actor/job/PID,
+   descriptor lifetime, source pin and kernel outcome across supervisor,
+   host and archive; final files alone are insufficient.
+4. Repeat the documented native writer/source/parent/descriptor negative
+   families: actual success/failure, foreign/stale/copied/replayed evidence,
+   active readers/writers, source mutation, cancellation, deadline and quota
+   exhaustion. Every rejection stays explicit and cleans owned resources
+   without inventing a successful kernel return or complete lifecycle.
+   All eight positive queries and their required controls remain mandatory.
+5. Record actual elapsed time, category byte use, process/teardown evidence
+   and total delivery cost. Require unchanged limits, no budget reset/refund,
+   no omitted accounting and no successful-prefix relabeling. At present
+   step 3 has no complete qualifying source runner; report **incomplete**
+   rather than treating the step 2 command or a renderer fixture as its result.
+   The original #180 profile fixture is retained design/regression evidence,
+   not a native qualification command in this component checkout.
+
+The catalog automation maps the currently executable components only.
+The full runner must be wired here before case acceptance. No subjective
+manual judgment is required. #274 is the delivered prerequisite; #270 and
+#180/#186 are dependent integration/delivery work. Shared Command,
+machine/archive and resource boundaries remain enforced. No gameplay,
+save/config, localization, ROM/RAM, modern debug/release or archival behavior
+changes. Fixture teardown owns its capsules and pins; failed evidence and
+interrupted worktrees remain until normal exact-master completion permits
+the existing conservative worktree cleanup.
+
 ### TC-WORKFLOW-NATIVE-READONLY-001: observe immutable native Make and original tools
 
 From a clean supported Linux x86-64 checkout with GNU Make 4.3, the existing
