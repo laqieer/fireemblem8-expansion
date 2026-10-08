@@ -4,13 +4,180 @@ import errno
 import hashlib
 import json
 import os
+from pathlib import Path
+import stat
+import subprocess
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership.authority import encoded, native_command_owner, parse_json
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership.authority import ENVIRONMENT, encoded, native_command_owner, parse_json
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
+
+
+class NativeRuntimeMetadataTests(unittest.TestCase):
+    setUp = foundation.FoundationTests.setUp
+    tearDown = foundation.FoundationTests.tearDown
+    add = foundation.FoundationTests.add
+    session = foundation.FoundationTests.session
+    assert_clean = foundation.FoundationTests.assert_clean
+    paths = ("/sys/fs/selinux", "/selinux", "/usr/share/locale")
+
+    def test_native_runtime_metadata_preserves_actual_type_and_absence(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <errno.h>\n#include <stdio.h>\n#include <sys/vfs.h>\n"
+            "int main(int argc,char **argv){struct statfs info;int rc;if(argc!=2)return 7;"
+            "rc=statfs(argv[1],&info);if(rc)printf(\"error:%d\\n\",errno);"
+            "else printf(\"type:%lx;size:%ld;readonly:%d\\n\",(unsigned long)info.f_type,"
+            "(long)info.f_bsize,!!(info.f_flags&1));return 0;}\n"
+        ))
+        for path in self.paths:
+            self.add("Makefile", "all: ; @/native/tool " + path + "\n")
+            session = self.session()
+            with self.subTest(path=path), session:
+                tool = session.compile_native(("native.c",))
+                ordinary = subprocess.run(
+                    (str(tool.path), path), cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, timeout=10, check=True,
+                )
+                completed, _, observed = session._native_make_readonly(
+                    "all", native_tool=tool, native_metadata_directories=(path,),
+                    observe_reads=True, observe_runtime_completions=True,
+                )
+                if Path(path).exists():
+                    self.assertEqual(completed.stdout.split(b";")[:2], ordinary.stdout.split(b";")[:2])
+                    self.assertEqual(completed.stdout.split(b";")[2], b"readonly:1\n")
+                    self.assertIn(path, observed["accessed"])
+                else:
+                    self.assertEqual(completed.stdout, ordinary.stdout)
+                    self.assertEqual(completed.stdout, f"error:{errno.ENOENT}\n".encode())
+                record, = [row for row in observed["metadata"] if row[0] == 137 and row[1] == path]
+                self.assertEqual(record[2:6], (0, 0, 120, 0))
+                self.assertEqual(record[6], 0 if Path(path).exists() else -errno.ENOENT)
+            self.assert_clean(session)
+
+    def test_native_runtime_metadata_has_no_content_or_descendant_authority(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <dirent.h>\n#include <fcntl.h>\n#include <string.h>\n"
+            "#include <sys/vfs.h>\n#include <unistd.h>\n#include <stdio.h>\n"
+            "int main(int argc,char **argv){struct statfs info;char path[512];if(argc!=3)return 7;"
+            "if(!strcmp(argv[1],\"read\"))open(argv[2],O_RDONLY);"
+            "else if(!strcmp(argv[1],\"list\"))opendir(argv[2]);"
+            "else if(!strcmp(argv[1],\"write\")){snprintf(path,sizeof(path),\"%s/test\",argv[2]);"
+            "open(path,O_WRONLY|O_CREAT,0600);}else statfs(argv[2],&info);return 0;}\n"
+        ))
+        operations = [
+            (operation, path, message) for path in self.paths for operation, message in (
+                ("read", "metadata-only runtime operation denied"),
+                ("list", "metadata-only runtime operation denied"),
+                ("write", "filesystem write denied"),
+            )
+        ] + [
+            ("metadata", path, "uncaptured Make runtime access") for path in (
+                "/sys/fs/selinux/child", "/sys/fs/other", "/selinux/child",
+                "/usr/share/locale/child", "/usr/share/locales",
+            )
+        ]
+        for operation, path, message in operations:
+            self.add("Makefile", "all: ; @/native/tool " + operation + " " + path + "\n")
+            session = self.session()
+            with self.subTest(operation=operation, path=path):
+                with self.assertRaisesRegex(MakeProbeError, message), session:
+                    tool = session.compile_native(("native.c",))
+                    session._native_make_readonly(
+                        "all", native_tool=tool, native_metadata_directories=self.paths,
+                    )
+                self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
+
+    def test_native_runtime_metadata_declarations_keep_exact_trust_and_identity(self):
+        from scripts.validation_ownership import make_probe
+        self.add("Makefile", "all: ; @:\n")
+        for declarations in (
+            ["/sys/fs/selinux"], ("/sys",), ("/sys/fs/selinux/child",),
+            ("/sys/fs/selinux", "/sys/fs/selinux"), (True,), ("/selinux/../selinux",),
+            ("/usr/share",), ("/usr/share/locale/child",), ("/usr/share/locales",),
+            ("/usr/share/locale", "/usr/share/locale"), ("/usr/share/locale/../locale",),
+        ):
+            session = self.session()
+            with self.subTest(declarations=declarations):
+                with self.assertRaisesRegex(MakeProbeError, "metadata directory"), session:
+                    session._native_make_readonly("all", native_metadata_directories=declarations)
+                self.assert_clean(session)
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        fixture = list(self.root.stat())
+        fixture[4] = fixture[5] = 0
+        fixture[0] = stat.S_IFDIR | 0o555
+        capture = make_probe._native_metadata_directory
+        for name in self.paths:
+            path = Path(name)
+            for field, value in ((4, os.getuid() + 1), (0, stat.S_IFDIR | 0o777), (0, stat.S_IFREG | 0o444)):
+                def changed(source, *args, **kwargs):
+                    if source != path:
+                        return original_stat(source, *args, **kwargs)
+                    fields = fixture.copy()
+                    fields[field] = value
+                    return os.stat_result(fields)
+                with self.subTest(path=name, field=field), patch.object(Path, "lstat", changed):
+                    with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                        capture(name, ProbeBudget())
+            def redirected(source, *args, **kwargs):
+                return path.parent if source == path else original_resolve(source, *args, **kwargs)
+            with self.subTest(path=name, alias=True), patch.object(Path, "resolve", redirected):
+                with self.assertRaisesRegex(MakeProbeError, "canonical"):
+                    capture(name, ProbeBudget())
+            calls = 0
+            def replaced(name, budget):
+                nonlocal calls
+                row = capture(name, budget)
+                calls += 1
+                if calls == 2:
+                    if row[1] is None:
+                        return row[0], (0, 1, stat.S_IFDIR | 0o555, 0, 0)
+                    identity = list(row[1])
+                    identity[1] += 1
+                    return row[0], tuple(identity)
+                return row
+            session = self.session()
+            with self.subTest(path=name, drift=True), patch.object(make_probe, "_native_metadata_directory", replaced):
+                with self.assertRaisesRegex(MakeProbeError, "changed before invocation"), session:
+                    session._native_make_readonly("all", native_metadata_directories=(name,))
+            self.assert_clean(session)
+
+    def test_native_runtime_metadata_supervisor_rejects_malformed_authority(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Violation
+        identity = [1, 2, stat.S_IFDIR | 0o555, 0, 0]
+        row = {"path": self.paths[0], "identity": identity}
+        invalid = (
+            {}, None, [None], [{**row, "path": []}], [{**row, "extra": 1}],
+            [{**row, "path": "/sys"}], [row, row], [row, row, row, row],
+            [{**row, "path": "/usr/share"}], [{**row, "path": "/usr/share/locale/child"}],
+            [{**row, "identity": True}], [{**row, "identity": identity[:-1]}],
+            [{**row, "identity": [True, *identity[1:]]}],
+            [{**row, "identity": [-1, *identity[1:]]}],
+            [{**row, "identity": [1 << 64, *identity[1:]]}],
+            [{**row, "identity": [1, 2, 1 << 32, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFREG | 0o444, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFDIR | 0o777, 0, 0]}],
+            [{**row, "identity": [1, 2, stat.S_IFDIR | 0o555, 1000, 0]}],
+        )
+        for path in self.paths:
+            for declaration in invalid:
+                selected = json.loads(json.dumps(declaration))
+                if isinstance(selected, list):
+                    for item in selected:
+                        if isinstance(item, dict) and item.get("path") == row["path"]:
+                            item["path"] = path
+                with self.subTest(path=path, declaration=selected):
+                    with self.assertRaisesRegex(Violation, "metadata-only directory authority"):
+                        Policy({
+                            "mode": "make", "native_readonly": True,
+                            "native_metadata_directories": selected,
+                        })
+
+    def test_native_runtime_metadata_absence_rejects_actual_replaced_backing(self):
+        foundation.FoundationTests.test_native_selinux_metadata_absence_rejects_actual_replaced_backing(self)
 
 
 class NativeWriterTests(unittest.TestCase):
