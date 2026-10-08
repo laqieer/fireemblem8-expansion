@@ -30,6 +30,10 @@ ENVIRONMENT = {
     "PYTHONDONTWRITEBYTECODE": "1",
 }
 
+NATIVE_METADATA_DIRECTORY_PATHS = frozenset((
+    "/sys/fs/selinux", "/selinux", "/usr/share/locale",
+))
+
 PYTHON_RUNTIME_DIRECTORY = re.compile(
     r"(?:/usr/lib/python[0-9]+\.[0-9]+(?:/dist-packages)?"
     r"|/usr/local/lib/python[0-9]+\.[0-9]+/dist-packages"

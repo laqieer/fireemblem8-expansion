@@ -26,7 +26,7 @@ from pathlib import Path, PurePosixPath
 from threading import get_ident, main_thread
 
 from .authority import (
-    AuthorityLoader, ENVIRONMENT, Frames, PYTHON_RUNTIME_DIRECTORY, Snapshot, _command_hash, _event_command,
+    AuthorityLoader, ENVIRONMENT, Frames, NATIVE_METADATA_DIRECTORY_PATHS, PYTHON_RUNTIME_DIRECTORY, Snapshot, _command_hash, _event_command,
     _read_event_frames, _read_events, encoded, native_command_owner, parse_json, relative_path,
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
@@ -517,8 +517,8 @@ def _capture_runtime_input(path, budget):
 
 
 def _native_metadata_directory(path, budget):
-    if path not in {"/sys/fs/selinux", "/selinux"}:
-        raise MakeProbeError("native metadata directory must name an exact standard SELinux mount")
+    if path not in NATIVE_METADATA_DIRECTORY_PATHS:
+        raise MakeProbeError("native metadata directory must name an exact supported runtime directory")
     budget.remaining()
     source = Path(path)
     if source.resolve(strict=False) != source:
@@ -2719,7 +2719,8 @@ class ProbeSession:
             _trusted_python_directory(path, self.budget) for path in native_runtime_directories
         )
         if (
-            not isinstance(native_metadata_directories, tuple) or len(native_metadata_directories) > 2
+            not isinstance(native_metadata_directories, tuple)
+            or len(native_metadata_directories) > len(NATIVE_METADATA_DIRECTORY_PATHS)
             or any(not isinstance(path, str) for path in native_metadata_directories)
             or len(set(native_metadata_directories)) != len(native_metadata_directories)
         ):

@@ -1989,7 +1989,7 @@ class FoundationTests(unittest.TestCase):
             " (long)info.f_bsize, !!(info.f_flags & 1));\n"
             " return 0;\n}\n"
         ))
-        for path in ("/sys/fs/selinux", "/selinux"):
+        for path in ("/sys/fs/selinux", "/selinux", "/usr/share/locale"):
             self.add("Makefile", "all: ; @/native/tool " + path + "\n")
             session = self.session()
             with self.subTest(path=path), session:
@@ -2018,32 +2018,39 @@ class FoundationTests(unittest.TestCase):
     def test_native_selinux_metadata_mount_has_no_content_or_descendant_authority(self):
         self.add("native.c", (
             "#define _GNU_SOURCE\n#include <dirent.h>\n#include <fcntl.h>\n#include <string.h>\n"
-            "#include <sys/vfs.h>\n#include <unistd.h>\n"
+            "#include <sys/vfs.h>\n#include <unistd.h>\n#include <stdio.h>\n"
             "int main(int argc, char **argv) {\n"
-            " struct statfs info;\n"
-            " if (argc != 2) return 7;\n"
-            " if (!strcmp(argv[1], \"read\")) open(\"/sys/fs/selinux\", O_RDONLY);\n"
-            " else if (!strcmp(argv[1], \"list\")) opendir(\"/sys/fs/selinux\");\n"
-            " else if (!strcmp(argv[1], \"write\")) open(\"/sys/fs/selinux/test\", O_WRONLY|O_CREAT, 0600);\n"
-            " else statfs(argv[1], &info);\n"
+            " struct statfs info; char path[512];\n"
+            " if (argc != 3) return 7;\n"
+            " if (!strcmp(argv[1], \"read\")) open(argv[2], O_RDONLY);\n"
+            " else if (!strcmp(argv[1], \"list\")) opendir(argv[2]);\n"
+            " else if (!strcmp(argv[1], \"write\")) {\n"
+            " snprintf(path, sizeof(path), \"%s/test\", argv[2]); open(path, O_WRONLY|O_CREAT, 0600);\n"
+            " } else statfs(argv[2], &info);\n"
             " return 0;\n}\n"
         ))
-        for operation, message in (
-            ("read", "metadata-only runtime operation denied"),
-            ("list", "metadata-only runtime operation denied"),
-            ("write", "filesystem write denied"),
-            ("/sys/fs/selinux/child", "uncaptured Make runtime access"),
-            ("/sys/fs/other", "uncaptured Make runtime access"),
-            ("/selinux/child", "uncaptured Make runtime access"),
-        ):
-            self.add("Makefile", "all: ; @/native/tool " + operation + "\n")
+        paths = ("/sys/fs/selinux", "/selinux", "/usr/share/locale")
+        operations = [
+            (operation, path, message) for path in paths for operation, message in (
+                ("read", "metadata-only runtime operation denied"),
+                ("list", "metadata-only runtime operation denied"),
+                ("write", "filesystem write denied"),
+            )
+        ] + [
+            ("metadata", path, "uncaptured Make runtime access") for path in (
+                "/sys/fs/selinux/child", "/sys/fs/other", "/selinux/child",
+                "/usr/share/locale/child", "/usr/share/locales",
+            )
+        ]
+        for operation, path, message in operations:
+            self.add("Makefile", "all: ; @/native/tool " + operation + " " + path + "\n")
             session = self.session()
-            with self.subTest(operation=operation):
+            with self.subTest(operation=operation, path=path):
                 with self.assertRaisesRegex(MakeProbeError, message), session:
                     tool = session.compile_native(("native.c",))
                     session._native_make_readonly(
                         "all", native_tool=tool,
-                        native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                        native_metadata_directories=paths,
                     )
                 self.assertTrue(session.budget.failed)
                 self.assert_clean(session)
@@ -2054,50 +2061,53 @@ class FoundationTests(unittest.TestCase):
         for declarations in (
             ["/sys/fs/selinux"], ("/sys",), ("/sys/fs/selinux/child",),
             ("/sys/fs/selinux", "/sys/fs/selinux"), (True,), ("/selinux/../selinux",),
+            ("/usr/share",), ("/usr/share/locale/child",), ("/usr/share/locales",),
+            ("/usr/share/locale", "/usr/share/locale"), ("/usr/share/locale/../locale",),
         ):
             session = self.session()
             with self.subTest(declarations=declarations):
                 with self.assertRaisesRegex(MakeProbeError, "metadata directory"), session:
                     session._native_make_readonly("all", native_metadata_directories=declarations)
                 self.assert_clean(session)
-        path = Path("/sys/fs/selinux")
         original_stat, original_resolve = Path.lstat, Path.resolve
         fixture = list(self.root.stat())
         fixture[4] = fixture[5] = 0
         fixture[0] = stat.S_IFDIR | 0o555
-        for field, value in ((4, os.getuid() + 1), (0, stat.S_IFDIR | 0o777), (0, stat.S_IFREG | 0o444)):
-            def changed(source, *args, **kwargs):
-                if source != path:
-                    return original_stat(source, *args, **kwargs)
-                fields = fixture.copy()
-                fields[field] = value
-                return os.stat_result(fields)
-            with self.subTest(field=field), patch.object(Path, "lstat", changed):
-                with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
-                    make_probe._native_metadata_directory(str(path), ProbeBudget())
-        def redirected(source, *args, **kwargs):
-            return Path("/sys/fs") if source == path else original_resolve(source, *args, **kwargs)
-        with patch.object(Path, "resolve", redirected):
-            with self.assertRaisesRegex(MakeProbeError, "canonical"):
-                make_probe._native_metadata_directory(str(path), ProbeBudget())
         capture = make_probe._native_metadata_directory
-        calls = 0
-        def replaced(name, budget):
-            nonlocal calls
-            row = capture(name, budget)
-            calls += 1
-            if calls == 2:
-                if row[1] is None:
-                    return row[0], (0, 1, stat.S_IFDIR | 0o555, 0, 0)
-                identity = list(row[1])
-                identity[1] += 1
-                return row[0], tuple(identity)
-            return row
-        session = self.session()
-        with patch.object(make_probe, "_native_metadata_directory", replaced):
-            with self.assertRaisesRegex(MakeProbeError, "changed before invocation"), session:
-                session._native_make_readonly("all", native_metadata_directories=(str(path),))
-        self.assert_clean(session)
+        for name in ("/sys/fs/selinux", "/selinux", "/usr/share/locale"):
+            path = Path(name)
+            for field, value in ((4, os.getuid() + 1), (0, stat.S_IFDIR | 0o777), (0, stat.S_IFREG | 0o444)):
+                def changed(source, *args, **kwargs):
+                    if source != path:
+                        return original_stat(source, *args, **kwargs)
+                    fields = fixture.copy()
+                    fields[field] = value
+                    return os.stat_result(fields)
+                with self.subTest(path=name, field=field), patch.object(Path, "lstat", changed):
+                    with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                        capture(name, ProbeBudget())
+            def redirected(source, *args, **kwargs):
+                return path.parent if source == path else original_resolve(source, *args, **kwargs)
+            with self.subTest(path=name, alias=True), patch.object(Path, "resolve", redirected):
+                with self.assertRaisesRegex(MakeProbeError, "canonical"):
+                    capture(name, ProbeBudget())
+            calls = 0
+            def replaced(name, budget):
+                nonlocal calls
+                row = capture(name, budget)
+                calls += 1
+                if calls == 2:
+                    if row[1] is None:
+                        return row[0], (0, 1, stat.S_IFDIR | 0o555, 0, 0)
+                    identity = list(row[1])
+                    identity[1] += 1
+                    return row[0], tuple(identity)
+                return row
+            session = self.session()
+            with self.subTest(path=name, drift=True), patch.object(make_probe, "_native_metadata_directory", replaced):
+                with self.assertRaisesRegex(MakeProbeError, "changed before invocation"), session:
+                    session._native_make_readonly("all", native_metadata_directories=(name,))
+            self.assert_clean(session)
 
     def test_native_original_find_with_exact_selinux_startup_resources(self):
         self.add("tree/a.txt", "original")
@@ -2166,7 +2176,8 @@ class FoundationTests(unittest.TestCase):
         row = {"path": "/sys/fs/selinux", "identity": identity}
         invalid = (
             {}, None, [None], [{**row, "path": []}], [{**row, "extra": 1}],
-            [{**row, "path": "/sys"}], [row, row], [row, row, row],
+            [{**row, "path": "/sys"}], [row, row], [row, row, row, row],
+            [{**row, "path": "/usr/share"}], [{**row, "path": "/usr/share/locale/child"}],
             [{**row, "identity": True}], [{**row, "identity": identity[:-1]}],
             [{**row, "identity": [True, *identity[1:]]}],
             [{**row, "identity": [-1, *identity[1:]]}],
@@ -2176,13 +2187,19 @@ class FoundationTests(unittest.TestCase):
             [{**row, "identity": [1, 2, stat.S_IFDIR | 0o777, 0, 0]}],
             [{**row, "identity": [1, 2, stat.S_IFDIR | 0o555, 1000, 0]}],
         )
-        for declaration in invalid:
-            with self.subTest(declaration=declaration):
-                with self.assertRaisesRegex(Violation, "metadata-only directory authority"):
-                    Policy({
-                        "mode": "make", "native_readonly": True,
-                        "native_metadata_directories": declaration,
-                    })
+        for path in ("/sys/fs/selinux", "/selinux", "/usr/share/locale"):
+            for declaration in invalid:
+                selected = json.loads(json.dumps(declaration))
+                if isinstance(selected, list):
+                    for item in selected:
+                        if isinstance(item, dict) and item.get("path") == row["path"]:
+                            item["path"] = path
+                with self.subTest(path=path, declaration=selected):
+                    with self.assertRaisesRegex(Violation, "metadata-only directory authority"):
+                        Policy({
+                            "mode": "make", "native_readonly": True,
+                            "native_metadata_directories": selected,
+                        })
 
     def test_native_selinux_metadata_absence_rejects_actual_replaced_backing(self):
         from scripts.validation_ownership.syscall_guard import Policy, Violation

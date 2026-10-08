@@ -28,7 +28,7 @@ from pathlib import Path
 if __package__:
     from . import read_epochs
     from .read_trace import NativeReadTrace
-    from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
+    from .authority import NATIVE_METADATA_DIRECTORY_PATHS, PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from .producer_channel import (
@@ -38,7 +38,7 @@ if __package__:
 else:
     import read_epochs
     from read_trace import NativeReadTrace
-    from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
+    from authority import NATIVE_METADATA_DIRECTORY_PATHS, PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
     from producer_channel import (
@@ -292,11 +292,12 @@ class Policy:
         self.native_executables = set(native_executables)
         metadata_directories = config.get("native_metadata_directories", [])
         if (
-            not isinstance(metadata_directories, list) or len(metadata_directories) > 2
+            not isinstance(metadata_directories, list)
+            or len(metadata_directories) > len(NATIVE_METADATA_DIRECTORY_PATHS)
             or any(
                 not isinstance(item, dict) or set(item) != {"path", "identity"}
                 or not isinstance(item["path"], str)
-                or item["path"] not in {"/sys/fs/selinux", "/selinux"}
+                or item["path"] not in NATIVE_METADATA_DIRECTORY_PATHS
                 or item["identity"] is not None and (
                     not isinstance(item["identity"], list) or len(item["identity"]) != 5
                     or any(type(value) is not int or value < 0 for value in item["identity"])
