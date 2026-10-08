@@ -1858,7 +1858,6 @@ def validate_machine_observations(value, trace, *, count_limit):
                 type(dispatch) is not int or dispatch not in native_roots
                 or native_roots[dispatch]["pid"] != pid
                 or not isinstance(event, dict)
-                or not trace.get("output_authority", {}).get("resources") and event.get("owner") != dispatch
                 or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
             ):
                 raise ReadEpochError("native output machine event lost its actual job binding")
@@ -2272,14 +2271,23 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     parent_returns = {}
     request_number = 0
     process_plans = {}
-    def parent_request(pid, operation, source, destination=None):
+    retained_paths = {"/repo/" + path for path in authority["paths"]}
+    def settled_retained_read(serial, path):
+        return (
+            type(serial) is int and serial in objects and objects[serial]["settled"]
+            and isinstance(path, str) and path in retained_paths and path == objects[serial]["path"]
+            and not any(binding[0] == serial and binding[2] for binding in bindings.values())
+            and not any(pending["serial"] == serial for pending in writes.values())
+        )
+    def parent_request(pid, operation, source, destination=None, *, readonly=False):
         parents = {
             path.rpartition("/")[0] for path in (source, destination)
             if path is not None and path.rpartition("/")[0] in directories
         }
         if parents:
             parent_returns[pid] = {"operation": operation, "source": source,
-                                   "destination": destination, "parents": parents}
+                                   "destination": destination, "parents": parents,
+                                   "readonly": readonly}
     number = 0
     for observation in machine:
         if observation["kind"] == "native-tree":
@@ -2338,10 +2346,25 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             return actor_job is not None and resource_operation(
                 image_resources, path, actor_job["pid"], image_outputs, operation,
             )
+        readonly_existing = (
+            isinstance(row, dict) and row.get("kind") == "output-open"
+            and row.get("writing") is False
+            and settled_retained_read(row.get("serial"), row.get("path"))
+            and not permitted(row["path"], "open")
+        )
         if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
             if type(row.get("pid")) is int and row["pid"] in writes:
                 raise ReadEpochError("native failed operation omitted its pending write return")
             operation = row.get("operation")
+            readonly_failed = (
+                operation == "open" and isinstance(row.get("source"), str)
+                and type(row.get("flags")) is int and row["flags"] >= 0
+                and not row["flags"] & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)
+                and row["flags"] & os.O_TMPFILE != os.O_TMPFILE
+                and any(
+                    settled_retained_read(serial, row["source"]) for serial in objects
+                )
+            )
             extra = {"flags"} if operation == "open" else {
                 "descriptor", "duplicate_kind", "target", "minimum", "flags",
             } if operation == "dup" else set()
@@ -2360,6 +2383,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 or operation != "dup" and row["source"] not in {
                     "/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]
                 } and not (actor_job is not None and role(row["source"]) is not None)
+                and not readonly_failed
                 or type(row["pid"]) is not int
                 or actor_job is None
                 or row["pid"] not in {event["pid"] for event in actor_job["tree"]}
@@ -2370,7 +2394,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 if row["owner"] != dispatch:
                     raise ReadEpochError("native failed operation owner differs from its actual pathname dispatch")
                 if (
-                    not permitted(row["source"], operation)
+                    not readonly_failed and not permitted(row["source"], operation)
                     or operation == "replace" and not permitted(row["destination"], "replace")
                 ):
                     raise ReadEpochError("native failed namespace operation escaped its resource role matrix for the current image")
@@ -2467,9 +2491,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 } and row["serial"] in objects
             )
             and not (row["kind"] == "output-directory-change" and row["path"] in directories)
+            and not readonly_existing
         ):
             raise ReadEpochError("native output effect escapes its actual job plan")
-        job = actor_job if resources else jobs[row["owner"]]
+        job = actor_job
         pids = {job["pid"]} | {event["pid"] for event in job["tree"]} | {
             event["child"] for event in job["tree"] if "child" in event
         }
@@ -2483,8 +2508,16 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         if "identity" in row:
             identity = row["identity"]
             if row["kind"] in {"output-mkdir", "output-rmdir", "output-directory-change"}:
+                parent = parent_returns.get(row.get("pid"))
+                directory = directories.get(row["path"])
+                readonly_parent = (
+                    row["kind"] == "output-directory-change" and parent is not None
+                    and parent["readonly"] and directory is not None
+                    and identity == row.get("before") == directory["identity"]
+                    and row.get("entries") == directory["entries"]
+                )
                 if (
-                    not resources or role(row["path"]) != "directory"
+                    not resources or role(row["path"]) != "directory" and not readonly_parent
                     or not stat.S_ISDIR(identity[2]) or identity[2] & 0o7000
                     or identity[2] & 0o700 != 0o700 or any(value < 0 for value in identity)
                 ):
@@ -2505,7 +2538,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             raise ReadEpochError("native settled output lacks its exact content digest")
         if "operation_owner" in row and (
             type(row["operation_owner"]) is not int
-            or row["operation_owner"] != (dispatch if resources else row["owner"])
+            or row["operation_owner"] != dispatch
         ):
             raise ReadEpochError("native output open borrowed another producer")
         if any(
@@ -2615,7 +2648,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             continue
         if kind == "output-open":
             if (
-                resources and not permitted(row["path"], "open")
+                resources and not readonly_existing and not permitted(row["path"], "open")
                 or
                 type(row["writing"]) is not bool or (row["pid"], row["fd"]) in bindings
                 or row["description"] in descriptions
@@ -2640,7 +2673,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 raise ReadEpochError("native shared lock acquired content writer authority")
             bindings[(row["pid"], row["fd"])] = serial, row["description"], row["writing"]
             if resources:
-                parent_request(row["pid"], "open", row["path"])
+                parent_request(row["pid"], "open", row["path"], readonly=readonly_existing)
         elif item is None or row["owner"] != item["owner"] or row["path"] != item["path"]:
             raise ReadEpochError("native output effect lacks its issued live object")
         elif kind == "output-mode":

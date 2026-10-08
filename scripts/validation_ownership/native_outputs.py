@@ -75,7 +75,7 @@ class NativeOutputObserver:
                         descriptor=operation.descriptor, duplicate_kind=operation.duplicate_kind,
                         target=operation.target, minimum=operation.minimum, flags=operation.flags,
                     )
-            dispatch = self.dispatch if self.policy.config.get("native_resources") else row["owner"]
+            dispatch = self.dispatch
             if self.policy.config.get("native_resources"):
                 row.setdefault("pid", self.actor)
                 if kind == "output-retire":

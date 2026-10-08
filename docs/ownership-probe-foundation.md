@@ -302,7 +302,42 @@ These capsule controls do not qualify original native Make or generated v6.
 
 Regular output descriptor bindings retain actual observed open-file-description
 lineage: each successful open is distinct, whereas duplication and actual
-fork inheritance share a description. Paired `flock` observes its exact
+fork inheritance share a description. A separate readonly consumer can acquire
+an already-settled retained object without an output/write plan. Actual machine
+dispatch always identifies the actor, including resource-free jobs; object
+owner continues to identify its creator. Replay requires the known exact
+path/version/identity and excludes active or pending writers. A paired parent
+return may omit the reader's directory role only when the already-issued
+directory identity, preimage and entries are completely unchanged. A failed
+readonly acquisition preserves its actual flags, actor, negative return and
+resource-backed operand preimages; write/create/truncate/append/tmpfile flags
+do not gain this exception.
+
+Run the two `NativeWriterTests` methods
+`test_native_readonly_consumer_opens_settled_foreign_output_without_write_plan`
+and `test_native_resource_free_readonly_consumer_binds_actual_actor_and_creator`
+from `scripts.validation_ownership.tests.test_native_writer` with
+`python3 -m unittest`. A real C creator writes/closes `produced`; a separate
+output-free consumer reads it and returns those exact bytes. Inspect generated
+bytes/mode, creator-versus-actor, distinct descriptions, seven open-record
+mutations and six unchanged-parent mutations. Run the two
+`test_native_foreign_consumer_write_flags_still_refuse_without_output_plan`
+and `test_native_resource_free_foreign_consumer_write_flags_still_refuse`
+controls: actual write/read-write/truncate/create attempts must refuse before
+kernel mutation in both configurations. The pre-extension valid readonly
+archive refuses the consumer's missing write plan.
+
+Run `test_native_foreign_readonly_consumer_handles_actual_eacces_with_and_without_resources`:
+a real mode-0000 produced file causes actual consumer `EACCES`, which it handles
+successfully. Require Make/supervisor completion, validated trace, unchanged
+terminal digest/mode and eight failed-record mutations rejected in both
+configurations. This proves low-level replay, not successful public output
+copy: the host exporter cannot read mode 0000 and the fixture explicitly
+preserves that `PermissionError`. No errno/permission injection is used.
+Every session must clean up. These component cases do not qualify the
+original production resolver, initial-all-plus-eight or architecture hold.
+
+Paired `flock` observes its exact
 descriptor, operation, file identity/content and kernel `/proc/PID/fdinfo`
 lock mode. Shared/exclusive acquisition, nonblocking contention and explicit
 unlock are supported. A failed Linux shared-to-exclusive conversion releases

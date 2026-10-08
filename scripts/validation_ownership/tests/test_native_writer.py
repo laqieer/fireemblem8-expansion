@@ -1076,6 +1076,224 @@ class NativeWriterTests(unittest.TestCase):
                         )
             self.assert_clean(session)
 
+    def test_native_readonly_consumer_opens_settled_foreign_output_without_write_plan(self):
+        self._readonly_consumer_fixture(with_directory=True)
+
+    def test_native_resource_free_readonly_consumer_binds_actual_actor_and_creator(self):
+        self._readonly_consumer_fixture(with_directory=False)
+
+    def _readonly_consumer_fixture(self, *, with_directory):
+        from scripts.validation_ownership import read_epochs
+        path = "stage/result" if with_directory else "result"
+        resources = (("directory", "stage"),) if with_directory else ()
+        mkdir = 'if(mkdir("/repo/stage",0700))return 2;' if with_directory else ""
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/stat.h>\n#include <string.h>\n"
+            "int main(int argc,char **argv){int fd;char data[16];ssize_t count;"
+            "if(argc!=2)return 1;if(!strcmp(argv[1],\"create\")){"
+            + mkdir +
+            "fd=open(\"/repo/" + path + "\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"produced\",8)!=8||close(fd))return 3;return 0;}"
+            "fd=open(\"/repo/" + path + "\",O_RDONLY);if(fd<0)return 4;"
+            "count=read(fd,data,sizeof(data));if(count!=8||write(1,data,count)!=count||close(fd))return 5;"
+            "return 0;}\n"
+        ))
+        self.add("Makefile", (
+            "all: " + path + "\n\t@/native/tool read\n"
+            + path + ":\n\t@/native/tool create\n"
+        ))
+        session = self.session()
+        with session:
+            tool = session.compile_native(("native.c",))
+            class Commands:
+                def __getitem__(self, argv):
+                    if argv[-1] == "create":
+                        return Command(
+                            argv, native_tool=tool, outputs=(path,), native_resources=resources,
+                        )
+                    return Command(argv, native_tool=tool)
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=(path,), native_resources=resources,
+                native_tool=tool, commands=Commands(), observe_reads=True,
+                observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"produced", b""))
+            self.assertEqual([(row.path, row.data, row.mode) for row in generated], [
+                (path, b"produced", 0o644),
+            ])
+            trace = observed["read_trace"]
+            opened = [row for row in read_epochs.native_output_effects(trace) if row["kind"] == "output-open"]
+            writer, reader = opened
+            self.assertTrue(writer["writing"])
+            self.assertFalse(reader["writing"])
+            self.assertEqual((reader["owner"], reader["serial"]), (writer["owner"], writer["serial"]))
+            self.assertNotEqual(reader["operation_owner"], reader["owner"])
+            self.assertNotEqual(reader["description"], writer["description"])
+            for field, value in (
+                ("writing", True), ("writing", 0), ("serial", 999), ("path", "/repo/other"),
+                ("owner", reader["operation_owner"]), ("revision", reader["revision"] + 1),
+                ("identity", [0] * 7),
+            ):
+                invalid = json.loads(json.dumps(trace))
+                event = next(
+                    row for row in invalid["machine"]["events"]
+                    if row["kind"] == "native-output" and row["event"]["sequence"] == reader["sequence"]
+                )
+                event["event"][field] = value
+                event["sha256"] = hashlib.sha256(encoded(event["event"])).hexdigest()
+                with self.subTest(field=field), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                    )
+            parents = [
+                row for row in read_epochs.native_output_effects(trace)
+                if row["kind"] == "output-directory-change" and row["sequence"] > reader["sequence"]
+            ]
+            self.assertEqual(len(parents), int(with_directory))
+            for parent in parents:
+                changed_identity = list(parent["identity"])
+                changed_identity[4] += 1
+                for field, value in (
+                    ("identity", changed_identity), ("before", changed_identity),
+                    ("entries", []), ("source", "/repo/stage/other"),
+                    ("operation", "remove"), ("destination", "/repo/stage/other"),
+                ):
+                    invalid = json.loads(json.dumps(trace))
+                    event = next(
+                        row for row in invalid["machine"]["events"]
+                        if row["kind"] == "native-output" and row["event"]["sequence"] == parent["sequence"]
+                    )
+                    event["event"][field] = value
+                    event["sha256"] = hashlib.sha256(encoded(event["event"])).hexdigest()
+                    with self.subTest(parent_field=field), self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_foreign_consumer_write_flags_still_refuse_without_output_plan(self):
+        self._foreign_consumer_write_flags(with_directory=True)
+
+    def test_native_resource_free_foreign_consumer_write_flags_still_refuse(self):
+        self._foreign_consumer_write_flags(with_directory=False)
+
+    def test_native_foreign_readonly_consumer_handles_actual_eacces_with_and_without_resources(self):
+        from scripts.validation_ownership import read_epochs
+        for with_directory in (False, True):
+            with self.subTest(with_directory=with_directory):
+                path = "stage/result" if with_directory else "result"
+                resources = (("directory", "stage"),) if with_directory else ()
+                mkdir = 'if(mkdir("/repo/stage",0700))return 2;' if with_directory else ""
+                self.add("native.c", (
+                    "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+                    "#include <sys/stat.h>\n#include <string.h>\n#include <errno.h>\n"
+                    "int main(int argc,char **argv){int fd;if(argc!=2)return 1;"
+                    "if(!strcmp(argv[1],\"create\")){" + mkdir +
+                    "fd=open(\"/repo/" + path + "\",O_CREAT|O_EXCL|O_WRONLY,0000);"
+                    "if(fd<0||write(fd,\"produced\",8)!=8||close(fd))return 3;return 0;}"
+                    "fd=open(\"/repo/" + path + "\",O_RDONLY);"
+                    "if(fd!=-1||errno!=EACCES)return 4;return write(1,\"denied\",6)!=6;}\n"
+                ))
+                self.add("Makefile", (
+                    "all: " + path + "\n\t@/native/tool read\n"
+                    + path + ":\n\t@/native/tool create\n"
+                ))
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            return Command(
+                                argv, native_tool=tool,
+                                outputs=(path,) if argv[-1] == "create" else (),
+                                native_resources=resources if argv[-1] == "create" else (),
+                            )
+                    original = session._sandbox_run
+                    returned = {}
+                    def capture(*args, **kwargs):
+                        result, observation = original(*args, **kwargs)
+                        returned.update(completed=result, observed=observation)
+                        return result, observation
+                    with patch.object(session, "_sandbox_run", side_effect=capture):
+                        with self.assertRaises(PermissionError):
+                            session._native_make_writable(
+                                "all", outputs=(path,), native_resources=resources,
+                                native_tool=tool, commands=Commands(), observe_reads=True,
+                                observe_runtime_completions=True,
+                            )
+                    completed, observed = returned["completed"], returned["observed"]
+                    self.assertEqual(completed.returncode, 0)
+                    self.assertEqual((completed.stdout, completed.stderr), (b"denied", b""))
+                    trace = observed["read_trace"]
+                    settled = [
+                        row for row in read_epochs.native_output_effects(trace)
+                        if row["kind"] == "output-settled" and row["path"] == "/repo/" + path
+                    ]
+                    self.assertTrue(settled)
+                    self.assertEqual(settled[-1]["sha256"], hashlib.sha256(b"produced").hexdigest())
+                    self.assertEqual(settled[-1]["identity"][2] & 0o777, 0)
+                    failed, = [
+                        row for row in read_epochs.native_output_effects(trace)
+                        if row["kind"] == "output-operation-failed"
+                    ]
+                    self.assertEqual((failed["result"], failed["flags"]), (-errno.EACCES, os.O_RDONLY))
+                    for field, value in (
+                        ("flags", os.O_WRONLY), ("flags", os.O_RDWR),
+                        ("flags", os.O_CREAT), ("flags", os.O_TRUNC), ("flags", True),
+                        ("owner", 1), ("source", "/repo/other"), ("result", 0),
+                    ):
+                        invalid = json.loads(json.dumps(trace))
+                        event = next(
+                            row for row in invalid["machine"]["events"]
+                            if row["kind"] == "native-output" and row["event"]["sequence"] == failed["sequence"]
+                        )
+                        event["event"][field] = value
+                        event["sha256"] = hashlib.sha256(encoded(event["event"])).hexdigest()
+                        with self.subTest(field=field), self.assertRaises(read_epochs.ReadEpochError):
+                            read_epochs.validate_trace(
+                                invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                            )
+                self.assert_clean(session)
+
+    def _foreign_consumer_write_flags(self, *, with_directory):
+        path = "stage/result" if with_directory else "result"
+        resources = (("directory", "stage"),) if with_directory else ()
+        mkdir = 'if(mkdir("/repo/stage",0700))return 2;' if with_directory else ""
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <fcntl.h>\n#include <unistd.h>\n"
+            "#include <sys/stat.h>\n#include <string.h>\n#include <stdlib.h>\n"
+            "int main(int argc,char **argv){int fd;if(argc!=2)return 1;"
+            "if(!strcmp(argv[1],\"create\")){" + mkdir +
+            "fd=open(\"/repo/" + path + "\",O_CREAT|O_EXCL|O_WRONLY,0644);"
+            "if(fd<0||write(fd,\"produced\",8)!=8||close(fd))return 3;return 0;}"
+            "fd=open(\"/repo/" + path + "\",atoi(argv[1]),0644);"
+            "if(fd<0)return 4;return write(fd,\"changed!\",8)!=8;}\n"
+        ))
+        for flags in (os.O_WRONLY, os.O_RDWR, os.O_RDONLY | os.O_TRUNC, os.O_RDONLY | os.O_CREAT):
+            with self.subTest(flags=flags):
+                self.add("Makefile", (
+                    "all: " + path + "\n\t@/native/tool " + str(flags) + "\n"
+                    + path + ":\n\t@/native/tool create\n"
+                ))
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            if argv[-1] == "create":
+                                return Command(
+                                    argv, native_tool=tool, outputs=(path,), native_resources=resources,
+                                )
+                            return Command(argv, native_tool=tool)
+                    with self.assertRaisesRegex(MakeProbeError, "native job write lacks its issued output authority"):
+                        session._native_make_writable(
+                            "all", outputs=(path,), native_resources=resources,
+                            native_tool=tool, commands=Commands(), observe_reads=True,
+                            observe_runtime_completions=True,
+                        )
+                self.assert_clean(session)
+
     def test_native_command_admission_runs_original_jobs_once_without_replay(self):
         shell = "printf '%s' \"$$\""
         self.add("Makefile", (
