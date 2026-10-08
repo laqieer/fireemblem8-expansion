@@ -1291,6 +1291,18 @@ native job, and check complete session teardown. This does not qualify the
 chapterobjectives directory-selector diagnostic exhausts the control budget;
 do not relabel the file-selector result as that directory scenario.
 
+Run `NativeReadonlyVariableTests.test_statement_index_charges_actual_growth_without_per_row_tables`
+in `scripts.validation_ownership.tests.test_native_writer` for immutable
+statement-index allocation accounting. Require unchanged parsed spans/digests
+and immutable mapping, complete conservative row charges, actual table
+allocation at initialization and every capacity growth, and the final proxy.
+Whole new capacities remain charged without refunds; do not manufacture a
+one-entry measurement dictionary per statement. The exact measured reduced
+control limit must succeed, while one byte less, malformed bytes and an
+exhausted physical-line bound must explicitly refuse. The pre-fix index charges
+514090 rather than 363778 bytes on this finite source. This allocation repair
+does not itself qualify the original top-level query or initial-plus-eight.
+
 The catalog automation maps the currently executable components only.
 The full runner must be wired here before case acceptance. No subjective
 manual judgment is required. #274 is the delivered prerequisite; #270 and

@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+import sys
+from types import MappingProxyType
 import unittest
 from unittest.mock import patch
 
@@ -23,6 +25,49 @@ class NativeReadonlyVariableTests(unittest.TestCase):
     add = foundation.FoundationTests.add
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
+
+    def test_statement_index_charges_actual_growth_without_per_row_tables(self):
+        from scripts.validation_ownership import read_epochs
+        source = b"FIRST := one\\\n two\n" + b"".join(
+            ("V%d := value%d\n" % (index, index)).encode() for index in range(1000)
+        )
+        expected, table_bytes = {}, sys.getsizeof({})
+        allocation_bytes = table_bytes
+        for logical, first, last, raw in read_epochs.physical_statements(source):
+            value = (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
+            allocation_bytes += (
+                sys.getsizeof(first) + sys.getsizeof(value)
+                + sum(sys.getsizeof(item) for item in value)
+            )
+            expected[first] = value
+            current_bytes = sys.getsizeof(expected)
+            if current_bytes != table_bytes:
+                allocation_bytes += current_bytes
+                table_bytes = current_bytes
+        allocation_bytes += sys.getsizeof(MappingProxyType(expected))
+        charges = []
+        observed = read_epochs._statement_index(source, reserve=charges.append)
+        self.assertEqual(dict(observed), expected)
+        self.assertEqual(observed[1][1:3], (1, 2))
+        self.assertEqual(sum(charges), allocation_bytes)
+        with self.assertRaises(TypeError):
+            observed[1] = observed[1]
+        for limit in (allocation_bytes, allocation_bytes - 1):
+            budget = ProbeBudget(make_probe.Limits(control_bytes=limit))
+            reserve = lambda size: budget.charge("control", size)
+            if limit == allocation_bytes:
+                self.assertEqual(
+                    dict(read_epochs._statement_index(source, reserve=reserve)), expected,
+                )
+                self.assertEqual(budget.bytes["control"], allocation_bytes)
+            else:
+                with self.assertRaisesRegex(MakeProbeError, "control byte budget exhausted"):
+                    read_epochs._statement_index(source, reserve=reserve)
+                self.assertTrue(budget.failed)
+        with self.assertRaisesRegex(read_epochs.ReadEpochError, "observation bound"):
+            read_epochs._statement_index(source, count_limit=1)
+        with self.assertRaisesRegex(read_epochs.ReadEpochError, "unsupported bytes"):
+            read_epochs._statement_index(b"V := \0")
 
     def test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only(self):
         runtime = "/usr/lib/python3/dist-packages"

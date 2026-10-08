@@ -1064,17 +1064,24 @@ def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=No
 
 def _statement_index(data, *, checkpoint=lambda: None, count_limit=None, reserve=lambda size: None):
     rows = {}
-    reserve(sys.getsizeof(rows))
+    table_bytes = sys.getsizeof(rows)
+    reserve(table_bytes)
     for logical, first, last, raw in physical_statements(
         data, checkpoint=checkpoint, count_limit=count_limit,
     ):
         value = (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
         reserve(
-            sys.getsizeof({None: None}) + sys.getsizeof(first) + sys.getsizeof(value)
+            sys.getsizeof(first) + sys.getsizeof(value)
             + sum(sys.getsizeof(item) for item in value),
         )
         rows[first] = value
-    return MappingProxyType(rows)
+        current_bytes = sys.getsizeof(rows)
+        if current_bytes > table_bytes:
+            reserve(current_bytes)
+            table_bytes = current_bytes
+    result = MappingProxyType(rows)
+    reserve(sys.getsizeof(result))
+    return result
 
 
 def variable_row(row):
