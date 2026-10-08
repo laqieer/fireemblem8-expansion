@@ -1702,10 +1702,16 @@ the same target/global scope, then flavor/raw-value metadata, before expansion.
 An effective deferred append binding explicitly refuses: its nearest raw value
 can hide an inherited parent's expression. The original variable-set pointer
 is restored after lookup; no append expression is interpreted or replayed.
-Simple and undefined bindings and literal recursive bindings remain supported.
-A recursive raw value containing `$` explicitly refuses before its contents
-are executed. This includes otherwise pure references and escaped dollar
-expressions: general recursive-expression observation remains unsupported.
+Simple and undefined bindings remain supported. Recursive bindings can contain
+literal `$(NAME)`/`${NAME}` and short `$_`/`$A` references from the shared
+`make_lexical` name grammar, plus escaped `$$`. An iterative walk screens the
+complete effective reference closure in the same global/target context before
+the original GNU expansion. Every reached binding receives the deferred-append
+check; simple values are never rescanned. Active-path cycles, functions,
+computed names, substitutions and malformed references refuse. Traversal uses
+the existing observation capacity and node bound, not an independent evaluator
+or a larger query budget. General recursive-expression observation remains
+unsupported.
 There is no builtin blacklist or alternative expression interpreter, and
 ordinary mapped observation retains its existing behavior.
 
@@ -1730,6 +1736,21 @@ after entering an inherited body. Run
 target simple dollar-bearing and literal recursive bindings and undefined
 values must remain correct, global bindings must retain their original scope,
 and ordinary mapped append must still return `parent tail`.
+
+Run `NativeReadonlyVariableTests` in
+`scripts.validation_ownership.tests.test_native_writer` with `python3 -m unittest`
+from a clean host checkout. Compare the successful real recipe output with
+ordinary GNU Make and inspect the parsed global and target domains: chained
+brace/parenthesis references, repeated shared nodes, short references, undefined
+dotted/hyphenated names and escaped dollars must preserve exact values and
+flavors, including the target override. The pre-extension observer returns 125
+after the legitimate recipe, rejecting these pure recursive values.
+Unused hidden info/shell effects after a safe branch, computed/substitution
+expressions, direct/indirect cycles and a referenced inherited deferred append
+must refuse before observation adds an effect. Each refused session must clean
+up completely. These component cases restore literal-reference observation;
+they do not qualify the original production resolver or initial-all-plus-eight
+contract and do not release its architecture hold.
 Retain the existing native shell-spawn refusal and original input/job/source/
 count controls. The mapped inode-identity control also retains its existing
 `readonly executable image` diagnostic and still rejects a zero inode.

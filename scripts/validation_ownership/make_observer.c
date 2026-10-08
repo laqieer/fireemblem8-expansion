@@ -490,47 +490,155 @@ static void name_expression(char *expression, size_t size, const char *form, con
         fail();
 }
 
+struct ReadonlyVariable
+{
+    char name[512];
+    char *raw;
+    size_t cursor;
+    int complete;
+    struct ReadonlyVariable *parent;
+    struct ReadonlyVariable *next;
+};
+
+static void recursive_observation_failure(void)
+{
+    static const char message[] = "unsupported readonly native recursive observation\n";
+    raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
+    fail();
+}
+
+static struct ReadonlyVariable *readonly_variable(
+    struct FileView *file, const char *name, struct ReadonlyVariable *parent, size_t *remaining)
+{
+    char expression[512];
+    char *flavor;
+    struct ReadonlyVariable *node;
+    struct VariableView *binding;
+    void *previous = current_variable_set_list;
+    size_t length = strlen(name);
+    if (length >= sizeof(node->name) || sizeof(*node) > *remaining)
+        recursive_observation_failure();
+    *remaining -= sizeof(*node);
+    node = calloc(1, sizeof(*node));
+    if (!node)
+        fail();
+    memcpy(node->name, name, length + 1);
+    node->parent = parent;
+    if (file)
+        current_variable_set_list = file->variables;
+    binding = lookup_variable(name, (unsigned int)length);
+    current_variable_set_list = previous;
+    /* $(value NAME) alone can hide an inherited deferred append body. */
+    if (binding && (binding->flags & VARIABLE_APPEND_FLAG))
+    {
+        static const char message[] = "unsupported readonly native append observation\n";
+        raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
+        fail();
+    }
+    name_expression(expression, sizeof(expression), "flavor ", name);
+    flavor = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+    if (!flavor)
+        fail();
+    if (!strcmp(flavor, "recursive"))
+    {
+        name_expression(expression, sizeof(expression), "value ", name);
+        node->raw = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
+        if (!node->raw)
+            fail();
+        length = strnlen(node->raw, *remaining + 1);
+        if (length >= *remaining)
+            recursive_observation_failure();
+        *remaining -= length + 1;
+    }
+    free(flavor);
+    return node;
+}
+
+static void readonly_variable_closure(struct FileView *file, const char *name)
+{
+    size_t remaining = capacity;
+    size_t count = 1;
+    struct ReadonlyVariable *nodes = readonly_variable(file, name, NULL, &remaining);
+    struct ReadonlyVariable *current = nodes;
+    while (current)
+    {
+        char reference[512];
+        const char *start;
+        size_t length;
+        struct ReadonlyVariable *found;
+        if (!current->raw || !current->raw[current->cursor])
+        {
+            current->complete = 1;
+            current = current->parent;
+            continue;
+        }
+        if (current->raw[current->cursor++] != '$')
+            continue;
+        start = current->raw + current->cursor;
+        if (*start == '$')
+        {
+            current->cursor++;
+            continue;
+        }
+        if (*start == '(' || *start == '{')
+        {
+            const char *end = strchr(start + 1, *start == '(' ? ')' : '}');
+            size_t first;
+            if (!end)
+                recursive_observation_failure();
+            start++;
+            length = (size_t)(end - start);
+            first = length && *start == '.' ? 1 : 0;
+            if (length <= first || !strchr(VO_SHORT_REFERENCE_CHARACTERS, start[first]))
+                recursive_observation_failure();
+            for (size_t index = first + 1; index < length; index++)
+            {
+                if (!strchr(VO_LITERAL_NAME_CHARACTERS, start[index]))
+                    recursive_observation_failure();
+            }
+            current->cursor = (size_t)(end - current->raw) + 1;
+        }
+        else
+        {
+            if (!*start || !strchr(VO_SHORT_REFERENCE_CHARACTERS, *start))
+                recursive_observation_failure();
+            length = 1;
+            current->cursor++;
+        }
+        if (length >= sizeof(reference))
+            recursive_observation_failure();
+        memcpy(reference, start, length);
+        reference[length] = 0;
+        for (found = nodes; found; found = found->next)
+            if (!strcmp(found->name, reference))
+                break;
+        if (found)
+        {
+            if (!found->complete)
+                recursive_observation_failure();
+            continue;
+        }
+        if (++count > MAX_NODES)
+            recursive_observation_failure();
+        found = readonly_variable(file, reference, current, &remaining);
+        found->next = nodes;
+        nodes = current = found;
+    }
+    while (nodes)
+    {
+        struct ReadonlyVariable *next = nodes->next;
+        free(nodes->raw);
+        free(nodes);
+        nodes = next;
+    }
+}
+
 static char *domain_value(struct FileView *file, const char *name)
 {
     char expression[512];
     char *value;
     if (native_readonly)
-    {
-        void *previous = current_variable_set_list;
-        struct VariableView *binding;
-        char *flavor;
-        if (file)
-            current_variable_set_list = file->variables;
-        binding = lookup_variable(name, (unsigned int)strlen(name));
-        current_variable_set_list = previous;
-        /* Deferred append can hide an inherited body from $(value NAME). */
-        if (binding && (binding->flags & VARIABLE_APPEND_FLAG))
-        {
-            static const char message[] = "unsupported readonly native append observation\n";
-            raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
-            fail();
-        }
-        name_expression(expression, sizeof(expression), "flavor ", name);
-        flavor = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
-        if (!flavor)
-            fail();
-        if (!strcmp(flavor, "recursive"))
-        {
-            char *raw;
-            name_expression(expression, sizeof(expression), "value ", name);
-            raw = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
-            if (!raw)
-                fail();
-            if (strchr(raw, '$'))
-            {
-                static const char message[] = "unsupported readonly native recursive observation\n";
-                raw_call(SYS_write, STDERR_FILENO, (long)message, sizeof(message) - 1);
-                fail();
-            }
-            free(raw);
-        }
-        free(flavor);
-    }
+        readonly_variable_closure(file, name);
     name_expression(expression, sizeof(expression), "", name);
     value = file ? allocated_variable_expand_for_file(expression, file) : gmk_expand(expression);
     if (!value)

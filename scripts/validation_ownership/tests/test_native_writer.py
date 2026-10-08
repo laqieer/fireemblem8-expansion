@@ -17,6 +17,84 @@ from scripts.validation_ownership.make_probe import Command
 from scripts.validation_ownership.tests import test_foundation as foundation
 
 
+class NativeReadonlyVariableTests(unittest.TestCase):
+    setUp = foundation.FoundationTests.setUp
+    tearDown = foundation.FoundationTests.tearDown
+    add = foundation.FoundationTests.add
+    session = foundation.FoundationTests.session
+    assert_clean = foundation.FoundationTests.assert_clean
+
+    def test_literal_reference_closure_preserves_gnu_global_and_target_values(self):
+        self.add("Makefile", (
+            "BASE := global\nB := short\nMID = ${BASE}\n"
+            "TOP = $(MID)/$(MID)/$B/$(.missing-name)/$$literal\n"
+            "all: BASE := target\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' '$(TOP)'\n"
+        ))
+        ordinary = subprocess.run(
+            ("/usr/bin/make", "-rR", "--no-print-directory", "-f", "Makefile", "all"),
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        session = self.session()
+        with session:
+            completed, semantics, _ = session._native_make_readonly(
+                "all", variables=("TOP", "MID", "BASE"),
+            )
+            self.assertEqual(completed.stdout, ordinary.stdout)
+            self.assertEqual(completed.stdout, b"target/target/short//$literal\n")
+            self.assertEqual(completed.stderr, ordinary.stderr)
+            self.assertEqual(semantics["domains"]["TOP"]["value"], "global/global/short//$literal")
+            target = next(row for row in semantics["files"] if row["target"] == "all")
+            self.assertEqual(target["variables"]["TOP"]["value"], "target/target/short//$literal")
+            self.assertEqual(target["variables"]["MID"]["value"], "target")
+            self.assertEqual(semantics["domains"]["TOP"]["flavor"], "recursive")
+        self.assert_clean(session)
+
+    def test_reference_closure_rejects_hidden_effects_and_cycles_before_expansion(self):
+        cases = (
+            "TOP = $(SAFE)$(HIDDEN)\nSAFE = $(BASE)\nBASE := safe\n"
+            "HIDDEN = $(info observer-only)\n",
+            "TOP = $(MIDDLE)\nMIDDLE = $(HIDDEN)\nHIDDEN = $(shell printf observer-only)\n",
+            "TOP = $($(SELECTOR))\nSELECTOR := HIDDEN\nHIDDEN = $(info observer-only)\n",
+            "TOP = $(BASE:x=y)\nBASE := x\n",
+            "TOP = $(TOP)\n",
+            "TOP = $(MIDDLE)\nMIDDLE = ${TOP}\n",
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                self.add("Makefile", source + ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' recipe\n")
+                session = self.session()
+                with session:
+                    original = session._sandbox_run
+                    completed = {}
+                    def capture(*args, **kwargs):
+                        result, observed = original(*args, **kwargs)
+                        completed["result"] = result
+                        return result, observed
+                    with patch.object(session, "_sandbox_run", side_effect=capture):
+                        with self.assertRaisesRegex(
+                            MakeProbeError, "unsupported readonly native recursive observation",
+                        ):
+                            session._native_make_readonly("all", variables=("TOP",))
+                    self.assertEqual(completed["result"].stdout, b"recipe\n")
+                    self.assertNotIn(b"observer-only", completed["result"].stderr)
+                self.assert_clean(session)
+
+    def test_reference_closure_checks_inherited_append_at_referenced_binding(self):
+        self.add("Makefile", (
+            "TOP = $(HIDDEN)\nHIDDEN = $(info observer-only)parent\n"
+            "all: HIDDEN += tail\n"
+            ".PHONY: all\nall:\n\t@v=recipe; printf '%s\\n' recipe\n"
+        ))
+        session = self.session()
+        with session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "unsupported readonly native append observation",
+            ):
+                session._native_make_readonly("all", variables=("TOP",))
+        self.assert_clean(session)
+
+
 class NativeRuntimeMetadataTests(unittest.TestCase):
     setUp = foundation.FoundationTests.setUp
     tearDown = foundation.FoundationTests.tearDown

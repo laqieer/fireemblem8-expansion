@@ -32,6 +32,7 @@ from .authority import (
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
+from .make_lexical import LITERAL_NAME_CHARACTERS, SHORT_REFERENCE_CHARACTERS
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
@@ -1055,7 +1056,11 @@ class ProbeSession:
     def _compile_interceptor(self):
         for source, flags, output in (
             ("shell_interceptor.c", ["-static"], "interceptor"),
-            ("make_observer.c", ["-shared", "-fPIC", "-fno-omit-frame-pointer"], "observer.so"),
+            ("make_observer.c", [
+                "-shared", "-fPIC", "-fno-omit-frame-pointer",
+                '-DVO_LITERAL_NAME_CHARACTERS="' + LITERAL_NAME_CHARACTERS + '"',
+                '-DVO_SHORT_REFERENCE_CHARACTERS="' + SHORT_REFERENCE_CHARACTERS + '"',
+            ], "observer.so"),
         ):
             destination = self.base / output
             command = [
