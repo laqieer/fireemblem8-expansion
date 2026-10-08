@@ -2079,7 +2079,6 @@ class NativeWriterTests(unittest.TestCase):
                 "   for event in tree:\n"
                 "    if event['kind']=='exec' and event['pid']==root['pid'] and event['generation']==1:\n"
                 "     event['admission']=admission.copy()\n"
-                "  update(root['tree'])\n"
                 "  for event in trace['machine']['events']:\n"
                 "   if event['kind']=='execute' and not event['make'] and event['dispatch']==1:\n"
                 "    event['admission_owner']=admission['owner']\n"
