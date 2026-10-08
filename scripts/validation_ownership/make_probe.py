@@ -1271,32 +1271,38 @@ class ProbeSession:
             ] + self._compiler_source_mounts(root, repository_outputs)
         elif cwd != "/repo" or initial_executable is not None:
             raise MakeProbeError("original compiler execution options require declared repository output")
-        if native_output_paths and mode == "make":
-            if original_tool is not None:
-                raise MakeProbeError("native produced tool admission is not yet supported with output authority")
-            mounts = [item for item in mounts if item["target"] != "/repo"]
-            mounts.extend(self._compiler_source_mounts(
-                root, self._output_paths(native_output_paths) + tuple(path for _, path in native_resources),
-            ))
+        tool_path = None
         if original_tool is not None:
             binary = self._sealed_native_tool_bytes(original_tool)
             if (
                 mode != "make" or not native_runtime or repository_outputs
                 or original_tool.original_output is None
                 or dict(native_runtime).get("/repo/" + original_tool.original_output) != binary
-                or any(
-                    item["target"] == "/" or item["target"].startswith("/repo/")
-                    for item in mounts
-                )
+                or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
             ):
                 raise MakeProbeError("original tool placement requires its exact readonly native runtime")
             tool_path = self._output_paths((original_tool.original_output,))[0]
+            if any(
+                name == tool_path or name.startswith(tool_path + "/") or tool_path.startswith(name + "/")
+                for name in native_output_paths
+            ):
+                raise MakeProbeError("native output conflicts with its issued readonly tool")
+            from .native_resources import validate_resource_scope
+            validate_resource_scope(native_resources, native_output_paths, (tool_path,))
+        if native_output_paths and mode == "make":
             mounts = [item for item in mounts if item["target"] != "/repo"]
-            source_mounts = self._compiler_source_mounts(root, (tool_path,))
-            source_mounts[0] = self._mount(
-                root.parent / (root.name + "-sources"), "/repo",
-            )
-            mounts.extend(source_mounts)
+            mounts.extend(self._compiler_source_mounts(
+                root, self._output_paths(native_output_paths) + tuple(path for _, path in native_resources)
+                + (() if tool_path is None else (tool_path,)),
+            ))
+        if tool_path is not None:
+            if not native_output_paths:
+                mounts = [item for item in mounts if item["target"] != "/repo"]
+                source_mounts = self._compiler_source_mounts(root, (tool_path,))
+                source_mounts[0] = self._mount(
+                    root.parent / (root.name + "-sources"), "/repo",
+                )
+                mounts.extend(source_mounts)
             backing = root.parent / (root.name + "-sources")
             destination = backing / tool_path
             destination.parent.mkdir(parents=True, exist_ok=True)

@@ -2517,6 +2517,10 @@
           "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_original_scaninc_and_writable_producer_share_one_native_make scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_writable_original_tool_rejects_output_and_resource_aliases -v",
+          "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_runtime_effect_abi_binds_complete_machine_call_families scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_screening_view_isolation_and_restoration -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }

@@ -1101,6 +1101,17 @@ and completion facts use the checked bytes, not a second decoded copy.
 All event, custody, machine and issued-output checks remain mandatory; this
 internal allocation reuse changes neither the wire format nor any budget cap.
 
+An already issued original native tool may execute at its original repository
+path in the same writable v6 Make invocation as a finite producer. The existing
+source-island scaffold excludes both the exact sealed tool leaf and the declared
+output/resource leaves; the tool is mounted readonly and executable while every
+captured source remains readonly. Output or resource declarations overlapping
+the tool refuse before dispatch. The original scaninc case compiles its actual
+sources, flags and CWD through `compile_native_command`, observes one original
+scanner exec in Make's shell expansion, then verifies the same Make query's
+finite output bytes and mode. This does not qualify in-Make tool compilation,
+persistent generated versions or the original eight-query runner.
+
 The session retains the decoded native Make read ABI as charged serialized
 bytes keyed by the captured executable digest and completion mode. Repeated
 queries validate a fresh decoded value against that exact image instead of

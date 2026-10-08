@@ -1538,6 +1538,79 @@ class NativeWriterTests(unittest.TestCase):
                     )
             self.assert_clean(session)
 
+    def test_original_scaninc_and_writable_producer_share_one_native_make(self):
+        from scripts.validation_ownership import read_epochs
+        compiler = foundation.FoundationTests.original_scaninc_command(self)
+        recipe = "printf '%s' '$(VALUE)' > result; printf once"
+        self.add("Makefile", (
+            "VALUE := $(shell tools/scaninc/scaninc -I include unit.c)\n"
+            ".PHONY: all\nall:\n\t@" + recipe + "\n"
+        ))
+        requests = []
+        session = self.session()
+        with session:
+            tool = session.compile_native_command(compiler, cwd="tools/scaninc")
+            class Commands:
+                def __getitem__(self, argv):
+                    requests.append(argv)
+                    if argv == ("tools/scaninc/scaninc", "-I", "include", "unit.c"):
+                        return Command(
+                            argv, sources=("unit.c", "include/sample.h"), native_tool=tool,
+                        )
+                    if argv == ("/bin/sh", "-c", recipe.replace("$(VALUE)", "include/sample.h")):
+                        return Command(argv, outputs=("result",))
+                    raise KeyError(argv)
+            completed, semantics, observed, generated = session._native_make_writable(
+                "all", outputs=("result",), variables=("VALUE",),
+                native_tool=tool, original_tool=True,
+                native_libraries=tuple("/lib/x86_64-linux-gnu/" + name for name in (
+                    "libstdc++.so.6", "libgcc_s.so.1", "libm.so.6",
+                )),
+                observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+            )
+            self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"once", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "include/sample.h")
+            self.assertEqual(
+                [(item.path, item.data, item.mode) for item in generated],
+                [("result", b"include/sample.h", 0o644)],
+            )
+            self.assertEqual(requests, [
+                ("tools/scaninc/scaninc", "-I", "include", "unit.c"),
+                ("/bin/sh", "-c", recipe.replace("$(VALUE)", "include/sample.h")),
+            ])
+            executed = [
+                row["event"] for row in observed["read_trace"]["machine"]["events"]
+                if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"
+                and row["event"]["path"] == "/repo/tools/scaninc/scaninc"
+            ]
+            self.assertEqual(len(executed), 1)
+            self.assertTrue(read_epochs.native_output_effects(observed["read_trace"]))
+            self.assertFalse((session.tree / "tools/scaninc/scaninc").exists())
+        self.assert_clean(session)
+
+    def test_writable_original_tool_rejects_output_and_resource_aliases(self):
+        for alias in ("output", "resource"):
+            with self.subTest(alias=alias):
+                self.add("tool.c", '#include <stdio.h>\nint main(void){puts("final");return 0;}\n')
+                self.add("Makefile", "all:\n\t@./reader > result\n")
+                session = self.session()
+                with session:
+                    tool = session.compile_native_command(Command(
+                        ("gcc", "tool.c", "-o", "reader"),
+                        code=("tool.c",), outputs=("reader",),
+                    ))
+                    class Commands:
+                        def __getitem__(self, argv):
+                            raise AssertionError("alias must refuse before original dispatch")
+                    with self.assertRaisesRegex(MakeProbeError, "conflicts with.*(tool|source)"):
+                        session._native_make_writable(
+                            "all", outputs=("reader",) if alias == "output" else ("result",),
+                            native_resources=(("shared-lock", "reader"),) if alias == "resource" else (),
+                            native_tool=tool, original_tool=True,
+                            observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+                        )
+                self.assert_clean(session)
+
     def test_native_original_make_job_writes_only_its_admitted_output_once(self):
         from scripts.validation_ownership import read_epochs
         recipe = "printf final > result; printf once"
