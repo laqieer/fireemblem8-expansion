@@ -1280,6 +1280,17 @@ existing mapped all-three actual-output/remake and option/selector regressions
 as compatibility controls. These planner cases do not establish actual native
 module production or the required one-budget initial-plus-eight cohort.
 
+Run `ProducerTests.test_native_original_dependency_modules_produce_actual_depfiles_once`
+for actual production of the three unchanged original modules with finite
+file selectors, matching the original Make operand form. Each module uses a
+separate unchanged session budget: compare complete depfile bytes/mode and
+stdout/stderr/status to the ordinary source CLI, retain the original quoted
+Make shell and module argv, require one actual kernel module exec and waited
+native job, and check complete session teardown. This does not qualify the
+2148-source cohort or native directory-selector resource fitness. The retained
+chapterobjectives directory-selector diagnostic exhausts the control budget;
+do not relabel the file-selector result as that directory scenario.
+
 The catalog automation maps the currently executable components only.
 The full runner must be wired here before case acceptance. No subjective
 manual judgment is required. #274 is the delivered prerequisite; #270 and
@@ -1322,7 +1333,20 @@ GCC/C++ host tools and namespace/ptrace launcher:
    `test_native_target_payload_boundaries`. Exact admitted UTF-8 byte payloads
    survive both consumer families; oversized payloads refuse. Filesystem path
    bounds stay unchanged. Preserve the original maximum-byte failure evidence.
-4. The existing `ownership-probe-test` CI owner runs the complete native suite
+4. Run
+   `NativeReadonlyVariableTests.test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only`
+   in `scripts.validation_ownership.tests.test_native_writer`. Declare the
+   existing readonly `/usr/lib/python3/dist-packages` managed directory and
+   require actual successful directory metadata for its exact
+   `/usr/lib/python3` ancestor. The existing `runtime_parents` mechanism carries
+   only exact declared ancestors, not neighbor or subtree authority.
+   Canonical parent reads, enumeration, writes, undeclared sibling metadata
+   and parent-spelled operands must refuse and clean owned state. Retain
+   `FoundationTests.test_native_readonly_python_site_resource_boundaries` and
+   `test_native_readonly_default_python_declared_site_startup` as compatibility
+   controls. The pre-fix original autoplaystrategies CLI refuses this parent
+   metadata. These parent declarations grant no content, execution or mount.
+5. The existing `ownership-probe-test` CI owner runs the complete native suite
    and exact selected-case inventory. No single positive, runtime capture or
    whole-suite label substitutes for the separate native source/job/budget/
    failure criteria. Tests create and retire only their own disposable inputs.

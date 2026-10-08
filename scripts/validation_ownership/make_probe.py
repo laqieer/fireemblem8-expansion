@@ -1378,6 +1378,8 @@ class ProbeSession:
                 parent for item in self.runtime_inputs for parent in (
                     *(name for name, _ in item.parents), *(str(name) for name in Path(item.canonical).parents),
                 )
+            } | {
+                str(parent) for root in native_runtime_directories for parent in Path(root).parents
             }),
             "mapping_entries": mapping_entries,
             "metadata_validation": metadata_validation,

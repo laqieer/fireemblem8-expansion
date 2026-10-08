@@ -2527,6 +2527,10 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_rejects_option_operands_before_probes scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_generated_dependency_plan_preserves_argparse_literal_operands -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_original_dependency_modules_produce_actual_depfiles_once -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
         }
       ]
     },
@@ -3869,7 +3873,8 @@
       "title": "Observe immutable native Make and original tools",
       "feature_id": "workflow-governance",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/274"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/274",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/275"
       ],
       "document": "docs/ownership-probe-foundation.md",
       "anchor": "tc-workflow-native-readonly-001-observe-immutable-native-make-and-original-tools",
@@ -3893,6 +3898,10 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_actual_write_and_foreign_execution_refuse scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_actual_completion_inventory_barrier_and_jobs scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_variable_payload_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_target_payload_boundaries -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeReadonlyVariableTests.test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_python_site_resource_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_default_python_declared_site_startup -v",
+          "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
         }
       ]
     },

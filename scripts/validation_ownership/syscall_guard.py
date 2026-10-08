@@ -1859,7 +1859,10 @@ class Policy:
             self.check_optional_make_spelling(state, path, operation)
             self.defer_observation(state, "accessed", path)
             return
-        if self.native_readonly and operation in {"read", "metadata"} and self.runtime_metadata(path):
+        if (
+            self.native_readonly and operation in {"read", "metadata"}
+            and self.runtime_metadata(path, parents=operation == "metadata")
+        ):
             self.check_optional_make_spelling(state, path, operation)
             self.defer_observation(state, "accessed", path)
             return

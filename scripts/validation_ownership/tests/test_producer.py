@@ -6,11 +6,13 @@ import fcntl
 import gc
 import json
 import os
+import shlex
 import signal
 import socket
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -4951,6 +4953,87 @@ class ProducerTests(unittest.TestCase):
             )
             self.assertEqual(len(observed.semantics["dynamic_commands"]), 3)
         self.fixture.assert_clean(session)
+
+    def test_native_original_dependency_modules_produce_actual_depfiles_once(self):
+        with self.fixture.owned_timezone_fixture():
+            self.check_native_original_dependency_modules()
+
+    def check_native_original_dependency_modules(self):
+        cases = self.add_generated_dependency_fixture()
+        runtime, resources = self.fixture.native_python_startup_fixture()
+        version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        for case in cases:
+            recipe = case["command"].replace(
+                '"testdata/objectives"', '"testdata/objectives/el_objectives.json"',
+            ).replace('"testdata/bundles"', '"testdata/bundles/el_bundle.json"')
+            argv = tuple(shlex.split(recipe))
+            self.fixture.add("Makefile", ".PHONY: all\nall:\n\t@" + recipe + "\n")
+            ordinary = subprocess.run(
+                argv, cwd=self.root,
+                env={**ENVIRONMENT, "TMPDIR": str(self.fixture.directory)},
+                capture_output=True, timeout=60,
+            )
+            self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+            expected = (self.root / case["depfile"]).read_bytes().replace(
+                os.fsencode(self.root), b"/repo",
+            )
+            expected_mode = (self.root / case["depfile"]).stat().st_mode & 0o777
+            session = self.fixture.session(runtime_files=(
+                *resources, "/usr/share/zoneinfo/UTC", "/proc/sys/crypto/fips_enabled",
+                "/usr/lib/ssl/openssl.cnf",
+                ENVIRONMENT["HOME"] + "/.local/lib/python" + version + "/site-packages",
+                "/etc/python" + version + "/sitecustomize.py",
+            ))
+            requests = []
+            with self.subTest(module=case["module"]), session:
+                command = native_generated_dependency_command(session, argv)
+                shell = ("/bin/sh", "-c", recipe)
+
+                class Commands:
+                    def __getitem__(self, actual):
+                        requests.append(actual)
+                        if actual == shell:
+                            return Command(
+                                actual, outputs=command.outputs,
+                                native_resources=command.native_resources,
+                            )
+                        if actual != argv:
+                            raise KeyError(actual)
+                        return command
+
+                completed, _, observed, generated = session._native_make_writable(
+                    "all", outputs=command.outputs, native_resources=command.native_resources,
+                    commands=Commands(), observe_reads=True, observe_runtime_completions=True,
+                    native_executables=("/usr/bin/python3",),
+                    native_libraries=tuple("/lib/x86_64-linux-gnu/" + name for name in (
+                        "libcrypto.so.3", "libbz2.so.1.0", "liblzma.so.5",
+                    )),
+                    native_runtime_directories=(
+                        runtime, "/usr/local/lib/python" + version + "/dist-packages",
+                        "/usr/lib/python3/dist-packages",
+                    ),
+                    native_metadata_directories=("/usr/share/locale",),
+                )
+                self.assertEqual(
+                    (completed.returncode, completed.stdout, completed.stderr),
+                    (ordinary.returncode, ordinary.stdout, ordinary.stderr),
+                )
+                self.assertEqual(requests, [shell, argv])
+                self.assertEqual(
+                    [(item.path, item.data, item.mode) for item in generated],
+                    [(case["depfile"], expected, expected_mode)],
+                )
+                job, = observed["native_jobs"]
+                self.assertEqual(job["argv"], list(shell))
+                self.assertEqual(job["returncode"], 0)
+                self.assertTrue(job["waited"])
+                executions = [
+                    row["event"] for row in observed["read_trace"]["machine"]["events"]
+                    if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"
+                    and row["event"]["argv"] == list(argv)
+                ]
+                self.assertEqual(len(executions), 1)
+            self.fixture.assert_clean(session)
 
     def test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families(self):
         cases = self.add_compact_generated_dependency_fixture()

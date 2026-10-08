@@ -24,6 +24,36 @@ class NativeReadonlyVariableTests(unittest.TestCase):
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
 
+    def test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only(self):
+        runtime = "/usr/lib/python3/dist-packages"
+        self.add("Makefile", (
+            ".PHONY: all\nall:\n"
+            "\t@test -d /usr/lib/python3 && printf '%s\\n' directory\n"
+        ))
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", native_runtime_directories=(runtime,),
+            )
+            self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"directory\n", b""))
+            self.assertIn("/usr/lib/python3", observed["accessed"])
+        self.assert_clean(session)
+
+        for command, path in (
+            ("read -r value < /usr/lib/python3", "/usr/lib/python3"),
+            ("printf '%s\\n' /usr/lib/python3/*", "/usr/lib/python3"),
+            ("test -d /usr/lib/python3-sibling", "/usr/lib/python3-sibling"),
+            ("printf changed > /usr/lib/python3/forbidden", "/usr/lib/python3/forbidden"),
+            ("test -d /usr/lib/python3/dist-packages/..", "/usr/lib/python3"),
+        ):
+            self.add("Makefile", ".PHONY: all\nall:\n\t@" + command + "\n")
+            session = self.session()
+            with self.subTest(command=command), session:
+                with self.assertRaisesRegex(MakeProbeError, "denied|uncaptured") as error:
+                    session._native_make_readonly("all", native_runtime_directories=(runtime,))
+                self.assertIn(path, str(error.exception))
+            self.assert_clean(session)
+
     def test_runtime_projection_reuses_checked_source_bytes_and_preserves_rejections(self):
         from scripts.validation_ownership import read_epochs
         self.add("Makefile", "# preserved source padding\n" * 5000 + "all:\n\t@v=recipe; printf once\n")
