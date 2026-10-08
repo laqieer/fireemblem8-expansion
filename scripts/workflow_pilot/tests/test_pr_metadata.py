@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata, reporter
@@ -7178,6 +7179,46 @@ class PullRequestMetadataTests(unittest.TestCase):
                     REPOSITORY,
                     PR_NUMBER,
                 )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+    def test_queued_run_accepts_optional_ordered_start_without_full_evidence(self):
+        for started in (None, "2026-09-04T00:00:00Z", "2026-09-04T00:00:02Z"):
+            with self.subTest(started=started):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full", active=True)
+                record.update(status="queued", run_started_at=started)
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                runs = pr_metadata.list_candidate_runs(client, state)
+                self.assertEqual(len(runs), 1)
+                self.assertEqual(runs[0].status, "queued")
+                self.assertIsNone(runs[0].conclusion)
+                self.assertEqual(
+                    runs[0].run_started_at,
+                    None if started is None else datetime.fromisoformat(started.replace("Z", "+00:00")),
+                )
+                self.assertEqual(runs[0].mode, "active-full")
+                self.assertIsNone(pr_metadata._latest_full(runs))
+
+    def test_queued_run_rejects_invalid_chronology_and_conclusion(self):
+        mutations = {
+            "before-created": {"run_started_at": "2026-09-03T23:59:59Z"},
+            "after-updated": {"run_started_at": "2026-09-04T00:00:04Z"},
+            "reversed-without-start": {
+                "run_started_at": None, "updated_at": "2026-09-03T23:59:59Z",
+            },
+            "malformed": {"run_started_at": "not-a-time"},
+            "noncanonical": {"run_started_at": "2026-09-04T00:00:00+00:00"},
+            "queued-success": {"conclusion": "success"},
+        }
+        for name, changes in mutations.items():
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full", active=True)
+                record.update(status="queued", **changes)
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
                 with self.assertRaises(pr_metadata.MetadataEditError):
                     pr_metadata.list_candidate_runs(client, state)
 

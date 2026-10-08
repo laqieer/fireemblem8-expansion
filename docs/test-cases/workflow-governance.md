@@ -2944,7 +2944,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 ## TC-WORKFLOW-METADATA-EDIT-RACE-001: Defer metadata edits and reconcile continuity
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #199](https://github.com/laqieer/fireemblem8-expansion/issues/199).
+  [issue #199](https://github.com/laqieer/fireemblem8-expansion/issues/199);
+  queued-run chronology regression
+  [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277).
 - **Supported configuration or artifact:** clean source checkout with Python
   3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
   token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
@@ -2959,6 +2961,21 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   required.
 
 ### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_accepts_optional_ordered_start_without_full_evidence scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_rejects_invalid_chronology_and_conclusion -v`.
+   Return a queued Build with no start timestamp, a start equal to creation,
+   and a later start within creation/update. Each must parse as queued with
+   no conclusion, remain active rather than successful full Build evidence,
+   and leave `_latest_full` unavailable. GitHub can populate `run_started_at`
+   while the run is still queued; it is not evidence that a job executed.
+   Return a start before creation or after update, reversed creation/update
+   with no start, malformed/noncanonical times, and a queued success conclusion.
+   Each must reject. The pre-fix negative control rejects both valid non-null
+   starts with `queued chronology is invalid`. Existing active/completed
+   chronology and exact-head/master delivery requirements remain unchanged.
+   This host-only regression uses the existing synthetic GitHub authority:
+   no token, ROM/runtime change, manual judgment, or cleanup is needed.
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v`.
