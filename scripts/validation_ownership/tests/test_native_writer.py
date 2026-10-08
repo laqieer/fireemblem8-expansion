@@ -582,6 +582,102 @@ class NativeWriterTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_native_register_workspace_reuses_storage_and_preserves_kernel_guards(self):
+        self.add("Makefile", (
+            "".join("V%d := value%d\n" % (index, index) for index in range(20))
+            + "all:\n\t@printf final > result; printf once\n"
+        ))
+        for negative, expected in (
+            ("none", None),
+            ("callback", "original read callback changed its register state"),
+            ("restoration", "original read register restoration failed kernel readback"),
+        ):
+            report = self.directory / ("register-captures-" + negative + ".json")
+            body = """
+import ctypes
+held=[]
+captures=[]
+active=False
+register_reads=0
+original_ptrace=guard.ptrace
+def measured_ptrace(request,pid,address=0,data=0):
+ global register_reads
+ result=original_ptrace(request,pid,address,data)
+ if active and request in {guard.GETREGS,0x4202}:
+  value=data._obj
+  held.append(value)
+  kind='register' if request==guard.GETREGS else 'siginfo'
+  captures.append([kind,id(value)])
+  if kind=='register':
+   register_reads+=1
+   if negative=='restoration' and register_reads==2:
+    value.rbx^=1
+ return result
+guard.ptrace=measured_ptrace
+original_trap=guard.NativeReadTrace.trap
+def measured_trap(self,*args):
+ global active,register_reads
+ active=True
+ register_reads=0
+ try:
+  return original_trap(self,*args)
+ finally:
+  active=False
+guard.NativeReadTrace.trap=measured_trap
+if negative=='callback':
+ original_caller=guard.NativeReadTrace.caller
+ def changed_caller(self,registers,target):
+  result=original_caller(self,registers,target)
+  registers.rbx^=1
+  return result
+ guard.NativeReadTrace.caller=changed_caller
+original_supervise=guard.supervise
+def measured_supervise(*args,**kwargs):
+ try:
+  return original_supervise(*args,**kwargs)
+ finally:
+  Path(report).write_text(json.dumps(captures))
+guard.supervise=measured_supervise
+"""
+            body = "negative=" + repr(negative) + "\nreport=" + repr(str(report)) + "\n" + body
+            session = self.session()
+            with self.subTest(negative=negative), session, self.native_supervisor(body):
+                request = dict(
+                    outputs=("result",), observe_reads=True, observe_runtime_completions=True,
+                    commands={
+                        ("/bin/sh", "-c", "printf final > result; printf once"): Command(
+                            ("/bin/sh", "-c", "printf final > result; printf once"),
+                            outputs=("result",),
+                        ),
+                    },
+                )
+                if expected is not None:
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session._native_make_writable("all", **request)
+                else:
+                    completed, _, observed, generated = session._native_make_writable("all", **request)
+                    self.assertEqual(
+                        (completed.returncode, completed.stdout, completed.stderr), (0, b"once", b""),
+                    )
+                    self.assertEqual(
+                        [(row.path, row.data, row.mode) for row in generated],
+                        [("result", b"final", 0o644)],
+                    )
+                    captures = json.loads(report.read_text())
+                    siginfo = [row[1] for row in captures if row[0] == "siginfo"]
+                    registers = [row[1] for row in captures if row[0] == "register"]
+                    traps = [
+                        row for row in observed["read_trace"]["machine"]["events"]
+                        if row["kind"] == "trap"
+                    ]
+                    self.assertGreater(len(traps), 20)
+                    self.assertEqual(len(siginfo), len(traps))
+                    self.assertEqual(len(registers), 2 * len(traps))
+                    self.assertEqual(len(set(siginfo)), 1)
+                    self.assertEqual(len(set(registers)), 2)
+            self.assert_clean(session)
+            report.unlink()
+
     def test_native_read_abi_reuses_exact_image_without_disassembly_replay(self):
         from scripts.validation_ownership import read_epochs
         budget = ProbeBudget()

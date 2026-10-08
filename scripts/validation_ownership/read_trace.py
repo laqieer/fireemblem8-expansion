@@ -111,6 +111,21 @@ class NativeReadTrace:
         self.invocations = []
         self.effects = self.evaluations = 0
         self.expansions = 0
+        previous_size = sys.getsizeof(self.__dict__)
+        self.register_work = (
+            self.native.Registers(), self.native.Registers(), self.native.Registers(),
+        )
+        self.register_views = tuple(memoryview(value).cast("B") for value in self.register_work)
+        self.siginfo_work = (ctypes.c_ubyte * 128)()
+        self.policy.charge_metadata(
+            sys.getsizeof(self.register_work) + sys.getsizeof(self.register_views)
+            + sum(ctypes.sizeof(value) + sys.getsizeof(value) for value in self.register_work)
+            + sum(sys.getsizeof(value) for value in self.register_views)
+            + ctypes.sizeof(self.siginfo_work) + sys.getsizeof(self.siginfo_work),
+        )
+        current_size = sys.getsizeof(self.__dict__)
+        if current_size > previous_size:
+            self.policy.charge_metadata(current_size)
 
     def machine_event(self, kind, pid, **fields):
         rows = getattr(self, "machine", None)
@@ -317,7 +332,7 @@ class NativeReadTrace:
         self.policy.charge_metadata(64)
         if pid != self.pid or state.role != "make" or self.bias is None:
             raise read_epochs.ReadEpochError("foreign process claimed an original read breakpoint")
-        info = (ctypes.c_ubyte * 128)()
+        info = self.siginfo_work
         self.policy.charge_metadata(ctypes.sizeof(info))
         self.native.ptrace(GETSIGINFO, pid, 0, ctypes.byref(info))
         if int.from_bytes(bytes(info[8:12]), "little", signed=True) != TRAP_HWBKPT:
@@ -325,11 +340,11 @@ class NativeReadTrace:
         status = self.debug(pid, 6)
         fired = status & 15
         indices = [index for index in range(4) if fired & (1 << index)]
-        registers = self.native.Registers()
+        registers, expected, restored = self.register_work
         self.policy.charge_metadata(ctypes.sizeof(registers))
         self.native.ptrace(self.native.GETREGS, pid, 0, ctypes.byref(registers))
         self.policy.charge_metadata(ctypes.sizeof(registers))
-        expected = self.native.Registers.from_buffer_copy(registers)
+        ctypes.memmove(ctypes.byref(expected), ctypes.byref(registers), ctypes.sizeof(registers))
         if len(indices) != 1 or self.slots.get(indices[0]) != registers.rip:
             raise read_epochs.ReadEpochError("original read breakpoint is stale or unissued")
         index = indices[0]
@@ -432,15 +447,12 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("original read trap has no issued slot purpose")
         registers.eflags |= 1 << 16
         expected.eflags |= 1 << 16
-        self.policy.charge_metadata(2 * ctypes.sizeof(registers))
-        if bytes(registers) != bytes(expected):
+        if self.register_views[0] != self.register_views[1]:
             raise read_epochs.ReadEpochError("original read callback changed its register state")
         self.native.ptrace(self.native.SETREGS, pid, 0, ctypes.byref(registers))
-        restored = self.native.Registers()
         self.policy.charge_metadata(ctypes.sizeof(restored))
         self.native.ptrace(self.native.GETREGS, pid, 0, ctypes.byref(restored))
-        self.policy.charge_metadata(2 * ctypes.sizeof(restored))
-        if bytes(restored) != bytes(expected):
+        if self.register_views[2] != self.register_views[1]:
             raise read_epochs.ReadEpochError("original read register restoration failed kernel readback")
         self.arm()
 
