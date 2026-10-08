@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from bisect import bisect_right
 import errno
 from collections import Counter
 import hashlib
@@ -1507,6 +1508,10 @@ def validate_native_root(value, *, argv, cwd, environment, returncode, machine=N
         row["pid"] for row in machine["events"] if row["kind"] == "execute" and row["make"]
     } != {value["pid"]}:
         raise ReadEpochError("native root report differs from its actual machine Make PID")
+    if machine is not None and machine["version"] == 2 and (
+        len(machine["roots"]) != 1 or machine["roots"][0]["initial"] != value
+    ):
+        raise ReadEpochError("native root report differs from its actual machine root inputs")
     return value
 
 
@@ -1638,16 +1643,84 @@ def native_job_context(value):
 
 def _machine_events(value, *, count_limit):
     if (
-        not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
-        or type(value["version"]) is not int or value["version"] != 1 or value["closed"] is not True
+        not isinstance(value, dict)
+        or type(value.get("version")) is not int or value["version"] not in {1, 2}
+        or set(value) != {"version", "events", "closed"} | ({"roots"} if value["version"] == 2 else set())
+        or value["closed"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
     ):
         raise ReadEpochError("incomplete native machine observations")
     return value["events"]
 
+def native_machine_roots(value, trace, *, count_limit, reserve):
+    roots = value["roots"]
+    if (
+        trace["version"] not in {RUNTIME_VERSION, WRITABLE_VERSION}
+        or not isinstance(roots, list) or not 1 <= len(roots) <= count_limit
+    ):
+        raise ReadEpochError("finite native machine lacks its complete root extent")
+    pids, next_machine, next_exec = set(), 1, 1
+    reserve(sys.getsizeof(pids))
+    for ordinal, row in enumerate(roots, 1):
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"ordinal", "initial", "first", "last", "first_exec", "last_exec"}
+            or any(type(row[key]) is not int for key in ("ordinal", "first", "last", "first_exec", "last_exec"))
+            or row["ordinal"] != ordinal or row["first"] != next_machine
+            or not row["first"] <= row["last"] <= len(value["events"])
+            or row["first_exec"] != next_exec
+            or not row["first_exec"] <= row["last_exec"] <= len(trace["events"])
+            or not isinstance(row["initial"], dict)
+        ):
+            raise ReadEpochError("finite native machine has a foreign or unordered root range")
+        initial = row["initial"]
+        if (
+            not {"argv", "cwd", "environment"} <= initial.keys()
+            or not isinstance(initial["environment"], dict)
+            or any(
+                not isinstance(key, str) or not key or "=" in key or "\0" in key
+                or not isinstance(item, str) or "\0" in item
+                or any(0xD800 <= ord(char) <= 0xDFFF for word in (key, item) for char in word)
+                for key, item in initial["environment"].items()
+            )
+        ):
+            raise ReadEpochError("finite native root has malformed initial inputs")
+        validate_native_root(
+            initial, argv=initial["argv"], cwd=initial["cwd"],
+            environment=initial["environment"], returncode=0,
+        )
+        if initial["pid"] in pids:
+            raise ReadEpochError("finite native machine reused an actual root PID")
+        first = value["events"][row["first"] - 1]
+        if (
+            not isinstance(first, dict)
+            or
+            first.get("kind") != "clear" or first.get("pid") != initial["pid"]
+            or first.get("exec") != row["first_exec"] - 1
+        ):
+            raise ReadEpochError("finite native root omits its actual initial register clear")
+        previous_size = sys.getsizeof(pids)
+        pids.add(initial["pid"])
+        if sys.getsizeof(pids) > previous_size:
+            reserve(sys.getsizeof(pids))
+        next_machine, next_exec = row["last"] + 1, row["last_exec"] + 1
+    if next_machine != len(value["events"]) + 1 or next_exec != trace["events"][-1]["execs"] + 1:
+        raise ReadEpochError("finite native machine omits actual root rows or executions")
+    return roots
 
-def validate_machine_observations(value, trace, *, count_limit):
+
+def validate_machine_observations(value, trace, *, count_limit, reserve=lambda size: None):
     _machine_events(value, count_limit=count_limit)
+    roots = native_machine_roots(
+        value, trace, count_limit=count_limit, reserve=reserve,
+    ) if value["version"] == 2 else None
+    def make_owner(execution):
+        if roots is None:
+            return make_pid
+        index = bisect_right(roots, execution, key=lambda row: row["first_exec"]) - 1
+        if index < 0 or execution > roots[index]["last_exec"]:
+            raise ReadEpochError("finite native execution has no actual root owner")
+        return roots[index]["initial"]["pid"]
     common = {"seq", "kind", "trace_seq", "pid", "exec", "pass"}
     fields = {
         "clear": {"registers"}, "arm": {"registers", "slots"},
@@ -1683,7 +1756,15 @@ def validate_machine_observations(value, trace, *, count_limit):
     output_bindings, range_closure = {}, None
     native_policies = set()
     native_owners, native_cleared, previous_pid_events = {}, set(), {}
+    root_index = 0
     for number, row in enumerate(value["events"], 1):
+        if roots is not None:
+            if number > roots[root_index]["last"]:
+                if native_policies != child_dispatches or range_closure is not None or output_bindings:
+                    raise ReadEpochError("finite native root crossed incomplete job or descriptor custody")
+                root_index += 1
+            root = roots[root_index]
+            make_pid = root["initial"]["pid"]
         if (
             not isinstance(row, dict) or not isinstance(row.get("kind"), str)
             or row["kind"] not in fields or set(row) != common | fields[row["kind"]]
@@ -1704,6 +1785,8 @@ def validate_machine_observations(value, trace, *, count_limit):
         ):
             raise ReadEpochError("native machine observation has a foreign trace context")
         kind, pid = row["kind"], row["pid"]
+        if roots is not None and not root["first_exec"] - 1 <= row["exec"] <= root["last_exec"]:
+            raise ReadEpochError("finite native machine row borrowed another root execution")
         prior_pid = previous_pid_events.get(pid)
         previous_pid_events[pid] = row
         if kind in {"clear", "arm"}:
@@ -1814,6 +1897,10 @@ def validate_machine_observations(value, trace, *, count_limit):
             ):
                 raise ReadEpochError("native execution lacks its immediately preceding child clear")
             if row["make"]:
+                if roots is not None and (
+                    pid != make_pid or not root["first_exec"] <= row["exec"] + 1 <= root["last_exec"]
+                ):
+                    raise ReadEpochError("finite native execution differs from its actual root")
                 make_execs.add((previous + 1, row["exec"] + 1, pid))
             else:
                 child_dispatches.add(row["dispatch"])
@@ -2098,9 +2185,9 @@ def validate_machine_observations(value, trace, *, count_limit):
     }
     if (
         retired != expected or (required != observed if runtime else not required <= observed)
-        or len(value["events"]) + len(trace["events"]) > count_limit
+        or len(value["events"]) + len(trace["events"]) + (len(roots) if roots is not None else 0) > count_limit
         or make_execs != {
-            (event["seq"], event["exec"], make_pid)
+            (event["seq"], event["exec"], make_owner(event["exec"]))
             for event in trace["events"] if event["kind"] == "exec"
         }
     ):
@@ -2140,7 +2227,7 @@ def validate_machine_observations(value, trace, *, count_limit):
                     "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
                     "executable": first["path"], "terminal_status": last["status"],
                     **({"admission": first.get("admission")} if trace["version"] == WRITABLE_VERSION else {}),
-                }, make_pid, {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
+                }, make_owner(native_roots[dispatch]["exec"]), {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
                 count_limit=count_limit,
                 writable=trace["version"] == WRITABLE_VERSION,
             )
@@ -3275,7 +3362,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve, expansion_projection=True,
     )
     reserve(len(encoded(value["machine"])))
-    validate_machine_observations(value["machine"], value, count_limit=count_limit)
+    validate_machine_observations(value["machine"], value, count_limit=count_limit, reserve=reserve)
     if value["version"] == WRITABLE_VERSION:
         validate_native_output_authority(value, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return value
@@ -3625,5 +3712,5 @@ def _validate_captured_read_events(
         raise ReadEpochError("original read trace has no complete terminal lifetime")
     if "machine" in value:
         reserve(len(encoded(value["machine"])))
-        validate_machine_observations(value["machine"], value, count_limit=count_limit)
+        validate_machine_observations(value["machine"], value, count_limit=count_limit, reserve=reserve)
     return value

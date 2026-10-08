@@ -673,6 +673,159 @@ class NativeWriterTests(unittest.TestCase):
                 self.assertTrue(session.budget.failed)
             self.assert_clean(session)
 
+    def test_native_finite_machine_root_keeps_actual_reexec_and_rejects_range_mutations(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "-include generated.mk\n"
+            "generated.mk:\n\t@printf 'VALUE := produced\\n' > generated.mk\n"
+            "all:\n\t@v=once; printf '%s' \"$$v\"\n"
+        ))
+        class Commands:
+            def __getitem__(self, argv):
+                return Command(argv, outputs=("generated.mk",) if "generated.mk" in argv[-1] else ())
+        body = (
+            "finish=guard.NativeReadTrace.finish\n"
+            "def finite_finish(self):\n"
+            " self.retire_root()\n"
+            " return finish(self)\n"
+            "guard.NativeReadTrace.finish=finite_finish\n"
+        )
+        session = self.session()
+        with self.native_supervisor(body), session:
+            completed, semantics, observed, generated = session._native_make_writable(
+                "all", outputs=("generated.mk",), commands=Commands(),
+                variables=("VALUE",), observe_reads=True, observe_runtime_completions=True,
+                observe_root=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (b"once", b""))
+            self.assertEqual(semantics["domains"]["VALUE"]["value"], "produced")
+            self.assertEqual([(row.path, row.data, row.mode) for row in generated], [
+                ("generated.mk", b"VALUE := produced\n", 0o644),
+            ])
+            trace = observed["read_trace"]
+            machine = trace["machine"]
+            root, = machine["roots"]
+            self.assertEqual(machine["version"], 2)
+            self.assertEqual((root["first"], root["last"]), (1, len(machine["events"])))
+            self.assertEqual((root["first_exec"], root["last_exec"]), (1, 2))
+            self.assertEqual(root["initial"], observed["native_root"])
+            for mutation in (
+                "roots.clear()", "roots.append(roots[0])", "roots[0]['ordinal']=2",
+                "roots[0]['first']=2", "roots[0]['last']-=1",
+                "roots[0]['first_exec']=2", "roots[0]['last_exec']=1",
+                "roots[0]['initial']['pid']=999", "roots[0]['initial']['wait']=512",
+                "roots[0]['initial']['exit_stop']=True",
+                "roots[0]['initial']['environment']['BAD']='\\x00'",
+                "roots[0]['extra']=0",
+            ):
+                with self.subTest(mutation=mutation):
+                    invalid = json.loads(json.dumps(trace))
+                    exec(mutation, {}, {"roots": invalid["machine"]["roots"]})
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
+        self.assert_clean(session)
+
+    def test_native_finite_machine_root_refuses_reused_or_incomplete_retirement(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        for incomplete in (False, True):
+            body = (
+                "finish=guard.NativeReadTrace.finish\n"
+                "def finite_finish(self):\n"
+                + (" self.invocations.append({'kind':'tester-unretired'})\n" if incomplete else
+                   " self.retire_root()\n")
+                + " self.retire_root()\n"
+                " return finish(self)\n"
+                "guard.NativeReadTrace.finish=finite_finish\n"
+            )
+            session = self.session()
+            with self.subTest(incomplete=incomplete), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(
+                    MakeProbeError, "incomplete actual state" if incomplete else "reused its completed actual range",
+                ):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+            self.assert_clean(session)
+
+    def test_native_finite_machine_root_charges_exact_retained_boundary(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        for insufficient in (False, True):
+            receipt = self.directory / ("finite-root-charge-" + str(insufficient) + ".json")
+            body = (
+                "finish=guard.NativeReadTrace.finish\n"
+                "retire=guard.NativeReadTrace.retire_root\n"
+                "def finite_finish(self):\n"
+                " initial=dict(self.policy.native_root,argv=list(self.policy.native_root['argv']),"
+                "environment=dict(self.policy.native_root['environment']))\n"
+                " row={'ordinal':1,'initial':initial,'first':1,'last':len(self.machine),"
+                "'first_exec':1,'last_exec':self.execs}\n"
+                " table=[];empty=sys.getsizeof(table);table.append(row)\n"
+                " expected=128+len(guard.encoded(row))+sys.getsizeof(initial)"
+                "+sys.getsizeof(initial['argv'])+sys.getsizeof(initial['environment'])"
+                "+empty+sys.getsizeof(table)\n"
+                " before=self.policy.observation_bytes;limit=self.config['observation_limit']\n"
+                f" self.config['observation_limit']=before+expected-int({insufficient!r})\n"
+                " try:retire(self)\n"
+                " finally:\n"
+                f"  Path({str(receipt)!r}).write_text(json.dumps({{'expected':expected,'charged':self.policy.observation_bytes-before}}))\n"
+                "  self.config['observation_limit']=limit\n"
+                " return finish(self)\n"
+                "guard.NativeReadTrace.finish=finite_finish\n"
+            )
+            session = self.session()
+            with self.subTest(insufficient=insufficient), self.native_supervisor(body), session:
+                if insufficient:
+                    with self.assertRaisesRegex(MakeProbeError, "metadata observation byte budget exhausted"):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                        )
+                    self.assertTrue(session.budget.failed)
+                else:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+                    self.assertEqual(completed.returncode, 0)
+                    self.assertEqual(observed["read_trace"]["machine"]["version"], 2)
+                actual = json.loads(receipt.read_bytes())
+                self.assertEqual(actual["charged"], actual["expected"])
+            self.assert_clean(session)
+
+    def test_native_finite_machine_root_host_binds_actual_initial_inputs(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        body = (
+            "finish=guard.NativeReadTrace.finish\n"
+            "def finite_finish(self):\n"
+            " self.retire_root()\n"
+            " return finish(self)\n"
+            "guard.NativeReadTrace.finish=finite_finish\n"
+        )
+        for mutation in (
+            "root['argv'].append('FOREIGN=1')",
+            "root['environment']['FOREIGN']='1'",
+            "root['cwd']='/'",
+        ):
+            session = self.session()
+            read = session.budget.read_bytes
+            def mutated(path, category):
+                data = read(path, category)
+                if category == "control" and Path(path).name.startswith("report-"):
+                    row = json.loads(data)
+                    root = row["read_trace"]["machine"]["roots"][0]["initial"]
+                    exec(mutation, {}, {"root": root})
+                    return encoded(row)
+                return data
+            with self.subTest(mutation=mutation), self.native_supervisor(body), session, patch.object(
+                session.budget, "read_bytes", mutated,
+            ):
+                with self.assertRaisesRegex(MakeProbeError, "machine root inputs"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_root_input_decoder_and_option_refuse_incomplete_contracts(self):
         from scripts.validation_ownership import read_epochs
         self.assertEqual(read_epochs.native_root_inputs(b"make\0all\0", b"A=one=two\0B=\0"),

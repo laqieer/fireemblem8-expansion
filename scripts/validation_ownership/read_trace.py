@@ -96,6 +96,7 @@ class NativeReadTrace:
         if not source.startswith((b"\x55\x48\x89\xe5", b"\xf3\x0f\x1e\xfa\x55\x48\x89\xe5")):
             raise read_epochs.ReadEpochError("source reader lacks its verified frame-pointer ABI")
         self.events, self.sources = [], []
+        self.root_boundaries = None
         self.pool = {}
         self.statement_indexes = {}
         self.execs = self.passes = self.visits = 0
@@ -1007,6 +1008,57 @@ class NativeReadTrace:
             if frame["kind"] != "source" or frame["visit"] != current["visit"]:
                 raise read_epochs.ReadEpochError("runtime source returned across an active invocation")
 
+    def retire_root(self):
+        policy = self.policy
+        if (
+            policy.processes or policy.newborn_stops or policy.producer_requests
+            or self.active or self.pass_frame is not None or self.io is not None
+            or self.pending_barrier is not None or self.invocations
+            or self.passes != self.execs or self.barriers != self.passes
+            or not self.runtime or policy.native_root is None
+            or policy.native_root["pid"] != self.pid
+        ):
+            raise read_epochs.ReadEpochError("finite native root ended with incomplete actual state")
+        policy.finish_native_jobs()
+        if policy.native_outputs is not None:
+            policy.native_outputs.finish()
+        read_epochs.validate_native_root(
+            policy.native_root, argv=self.config["argv"], cwd=self.config.get("cwd", "/repo"),
+            environment=self.config["environment"], returncode=0,
+        )
+        previous = self.root_boundaries[-1] if self.root_boundaries else None
+        row = {
+            "ordinal": len(self.root_boundaries or ()) + 1,
+            "initial": dict(
+                policy.native_root, argv=list(policy.native_root["argv"]),
+                environment=dict(policy.native_root["environment"]),
+            ),
+            "first": previous["last"] + 1 if previous else 1,
+            "last": len(self.machine),
+            "first_exec": previous["last_exec"] + 1 if previous else 1,
+            "last_exec": self.execs,
+        }
+        if (
+            row["first"] > row["last"] or row["first_exec"] > row["last_exec"]
+            or any(
+                previous["initial"]["pid"] == row["initial"]["pid"]
+                for previous in (self.root_boundaries or ())
+            )
+        ):
+            raise read_epochs.ReadEpochError("finite native root reused its completed actual range")
+        policy.reserve_trace_observation()
+        policy.charge_metadata(
+            len(encoded(row)) + sys.getsizeof(row["initial"])
+            + sys.getsizeof(row["initial"]["argv"]) + sys.getsizeof(row["initial"]["environment"])
+        )
+        if self.root_boundaries is None:
+            self.root_boundaries = []
+            policy.charge_metadata(sys.getsizeof(self.root_boundaries))
+        previous_size = sys.getsizeof(self.root_boundaries)
+        self.root_boundaries.append(row)
+        if sys.getsizeof(self.root_boundaries) > previous_size:
+            policy.charge_metadata(sys.getsizeof(self.root_boundaries))
+
     def finish(self):
         if (
             self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None
@@ -1024,7 +1076,11 @@ class NativeReadTrace:
             result["selection"] = [list(row) for row in self.selection]
         elif self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
             result["selection"] = self.selection
-            result["machine"] = {"version": 1, "events": self.machine, "closed": True}
+            result["machine"] = {
+                "version": 2 if self.root_boundaries else 1,
+                "events": self.machine, "closed": True,
+                **({"roots": self.root_boundaries} if self.root_boundaries else {}),
+            }
         if self.version == read_epochs.WRITABLE_VERSION:
             result["output_authority"] = {
                 "paths": self.config["native_output_paths"],
