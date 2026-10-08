@@ -4987,36 +4987,6 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
-    def test_native_read_abi_reuses_exact_image_without_disassembly_replay(self):
-        from scripts.validation_ownership import read_epochs
-        budget = ProbeBudget()
-        self.add("Makefile", "VALUE := original\nall: ; @:\n")
-        loader = self.capture_view(budget)
-        session = ProbeSession(loader, scratch_root=self.scratch, budget=budget)
-        with session:
-            start = session.budget.runs
-            plain = session._native_read_abi()
-            self.assertEqual(session.budget.runs - start, 2)
-            complete = session._native_read_abi(completions=True)
-            self.assertEqual(session.budget.runs - start, 5)
-            original = json.loads(json.dumps(complete))
-            complete["globals"].clear()
-            with patch.object(session.budget, "run", side_effect=AssertionError("disassembly replay")):
-                self.assertEqual(session._native_read_abi(), plain)
-                self.assertEqual(session._native_read_abi(completions=True), original)
-                with session.select_view(session.loader):
-                    self.assertEqual(session._native_read_abi(completions=True), original)
-                self.assertEqual(session._native_read_abi(completions=True), original)
-            self.assertEqual(session.budget.runs - start, 5)
-            key = next(key for key in session.native_read_abis if key[1])
-            invalid = json.loads(session.native_read_abis[key])
-            invalid["image_sha256"] = "0" * 64
-            session.native_read_abis[key] = encoded(invalid)
-            with self.assertRaises(read_epochs.ReadEpochError):
-                session._native_read_abi(completions=True)
-        self.assertEqual(session.native_read_abis, {})
-        self.assert_clean(session)
-
     def test_native_runtime_effect_abi_binds_complete_machine_call_families(self):
         from scripts.validation_ownership import read_epochs
         self.add("Makefile", "VALUE := original\nall: ; @:\n")

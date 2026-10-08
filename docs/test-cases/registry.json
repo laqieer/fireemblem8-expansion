@@ -2513,7 +2513,11 @@
           "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
         },
         {
-          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_read_abi_reuses_exact_image_without_disassembly_replay scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_runtime_effect_abi_binds_complete_machine_call_families scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_screening_view_isolation_and_restoration -v",
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_read_abi_reuses_exact_image_without_disassembly_replay -v",
+          "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_runtime_effect_abi_binds_complete_machine_call_families scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_completion_screening_view_isolation_and_restoration -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
