@@ -492,15 +492,7 @@ def _chapterbundle_support(session, module, bundle_source, bundle_sources):
     )
 
 
-def generated_dependency_command(
-    session: ProbeSession,
-    module: str,
-    *,
-    option_values,
-    make_target: str,
-    depfile: str,
-    code=(),
-):
+def _generated_dependency_inputs(session, module, option_values, code=()):
     details = GENERATED_DEPENDENCY_MODULES.get(module)
     if details is None:
         raise MakeProbeError(f"unsupported generated dependency module: {module}")
@@ -551,6 +543,64 @@ def generated_dependency_command(
         else:
             raise MakeProbeError(f"source declaration resolves no regular inputs: {relative}")
     files = tuple(sorted(set(files)))
+    return selector_arguments, reported, files, declared_directories, python_code
+
+
+def native_generated_dependency_command(session: ProbeSession, arguments):
+    """Plan the original dependency CLI without replacing its entrypoint."""
+    if (
+        not isinstance(arguments, (tuple, list)) or len(arguments) < 3
+        or len(arguments) > 13
+        or any(not isinstance(value, str) or "\0" in value for value in arguments)
+        or arguments[0] not in {"python3", PYTHON} or arguments[1] != "-m"
+    ):
+        raise MakeProbeError("invalid original generated dependency argv")
+    arguments = tuple(arguments)
+    module = arguments[2]
+    details = GENERATED_DEPENDENCY_MODULES.get(module)
+    if details is None:
+        raise MakeProbeError(f"unsupported generated dependency module: {module}")
+    options = arguments[3:]
+    if len(options) % 2:
+        raise MakeProbeError("original generated dependency options require named values")
+    option_values = {}
+    expected = {option for option, _ in details["selectors"]} | {"--make-target", "--depfile"}
+    for index in range(0, len(options), 2):
+        option, value = options[index:index + 2]
+        if option not in expected or option in option_values or not value:
+            raise MakeProbeError("original generated dependency option is unknown, duplicate or empty")
+        option_values[option] = value
+    if set(option_values) != expected:
+        raise MakeProbeError("original generated dependency options are incomplete")
+    relative_path(option_values.pop("--make-target"))
+    depfile = relative_path(option_values.pop("--depfile"))
+    _, _, files, directories, code = _generated_dependency_inputs(session, module, option_values)
+    modules = python_code_closure(session, "", code)
+    from .native_resources import resource_plan
+    resources = resource_plan((
+        *(("directory", parent.as_posix()) for parent in reversed(PurePosixPath(depfile).parents)
+          if parent.as_posix() != "."),
+        ("temporary", depfile + ".tmp"),
+    ))
+    return Command(
+        arguments, code=modules, sources=files, outputs=(depfile,),
+        directories=tuple(sorted(set(_directory_closure(directories)) | set(python_import_directories(modules)))),
+        native_resources=resources,
+    )
+
+
+def generated_dependency_command(
+    session: ProbeSession,
+    module: str,
+    *,
+    option_values,
+    make_target: str,
+    depfile: str,
+    code=(),
+):
+    selector_arguments, reported, files, declared_directories, python_code = (
+        _generated_dependency_inputs(session, module, option_values, code)
+    )
     source_identities = session.source_owners(files)
     return directory_python_command(
         session,

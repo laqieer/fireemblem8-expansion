@@ -40,6 +40,7 @@ from scripts.validation_ownership.python_commands import (
     _repository_report_path,
     directory_python_command,
     generated_dependency_command,
+    native_generated_dependency_command,
     python_code_closure,
     python_command,
 )
@@ -4949,6 +4950,76 @@ class ProducerTests(unittest.TestCase):
                 },
             )
             self.assertEqual(len(observed.semantics["dynamic_commands"]), 3)
+        self.fixture.assert_clean(session)
+
+    def test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families(self):
+        cases = self.add_compact_generated_dependency_fixture()
+        for case in cases:
+            with self.fixture.session(seconds=60) as session:
+                argv = ("python3", "-m", case["module"], *(
+                    value for pair in reversed(tuple(case["options"].items())) for value in pair
+                ), "--depfile", case["depfile"], "--make-target", case["make_target"])
+                native = native_generated_dependency_command(session, argv)
+                mapped = generated_dependency_command(
+                    session, case["module"], option_values=case["options"],
+                    make_target=case["make_target"], depfile=case["depfile"],
+                )
+                self.assertEqual(native.argv, argv)
+                self.assertEqual(native.sources, mapped.sources)
+                self.assertEqual(native.code, mapped.code)
+                self.assertEqual(native.directories, mapped.directories)
+                self.assertEqual(native.outputs, (case["depfile"],))
+                self.assertEqual(native.publication_policy, "replace")
+                self.assertEqual(
+                    native.native_resources[-1], ("temporary", case["depfile"] + ".tmp"),
+                )
+                self.assertEqual(
+                    {path for role, path in native.native_resources if role == "directory"},
+                    {parent.as_posix() for parent in Path(case["depfile"]).parents
+                     if parent.as_posix() != "."},
+                )
+            self.fixture.assert_clean(session)
+
+    def test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands(self):
+        case = self.add_compact_generated_dependency_fixture()[0]
+        argv = ("python3", "-m", case["module"], *(
+            value for pair in case["options"].items() for value in pair
+        ), "--make-target", case["make_target"], "--depfile", case["depfile"])
+        depfile = argv.index("--depfile") + 1
+        target = argv.index("--make-target") + 1
+        invalid = (
+            (), argv[:-1], argv + ("--depfile", case["depfile"]),
+            ("python3", "-c", "pass"),
+            ("/other/python", *argv[1:]),
+            (*argv[:2], "foreign.module", *argv[3:]),
+            (*argv[:3], "--unknown", "x", *argv[5:]),
+            (*argv[:3], argv[5], argv[4], *argv[5:]),
+            (*argv[:depfile], "../foreign.mk", *argv[depfile + 1:]),
+            (*argv[:target], "/foreign.o", *argv[target + 1:]),
+            (*argv[:depfile], "", *argv[depfile + 1:]),
+            (*argv[:depfile], "nul\0.mk", *argv[depfile + 1:]),
+        )
+        with self.fixture.session(seconds=60) as session:
+            for arguments in invalid:
+                with self.subTest(arguments=arguments):
+                    with self.assertRaises(MakeProbeError):
+                        native_generated_dependency_command(session, arguments)
+        self.fixture.assert_clean(session)
+
+    def test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted(self):
+        case = self.add_compact_generated_dependency_fixture()[0]
+        self.fixture.add("data/objectives/private.txt", "unselected\n")
+        self.fixture.add("data/objectives/ignored.bin", "unselected\n")
+        self.fixture.add("data/unselected.json", "{}\n")
+        with self.fixture.session(seconds=60) as session:
+            argv = ("python3", "-m", case["module"], *(
+                value for pair in case["options"].items() for value in pair
+            ), "--make-target", case["make_target"], "--depfile", case["depfile"])
+            command = native_generated_dependency_command(session, argv)
+            self.assertNotIn("data/objectives/private.txt", command.sources)
+            self.assertNotIn("data/objectives/ignored.bin", command.sources)
+            self.assertNotIn("data/unselected.json", command.sources)
+            self.assertIn("data/objectives/ch1_objectives.json", command.sources)
         self.fixture.assert_clean(session)
 
     def test_generated_dependency_command_reorders_named_options_and_rejects_key_drift(self):

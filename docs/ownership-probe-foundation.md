@@ -1251,6 +1251,27 @@ exploratory pool is not this fixture.
    The original #180 profile fixture is retained design/regression evidence,
    not a native qualification command in this component checkout.
 
+The original dependency CLI has a source-planning component,
+`python_commands.native_generated_dependency_command(session, argv)`. It
+preserves the passed `python3 -m` argv and option order for the existing three
+dependency modules, declares the actual depfile, its fixed `.tmp` and writable
+ancestors, and reuses the mapped adapter's input/code/directory planning. That
+planning uses existing bounded readonly selector/support probes, not a pure
+parser; their execution, metadata and captures spend the normal budget.
+It does not run a replacement producer or render a dependency file.
+
+Run these three `ProducerTests` selectors in
+`scripts.validation_ownership.tests.test_producer`:
+`test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families`,
+`test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands`,
+and `test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted`.
+The compact finite fixture checks each complete module contract independently:
+exact argv and source/code/directory plans, output/temporary/ancestor roles,
+malformed or foreign options and exclusion of nonselected inputs. Preserve the
+existing mapped all-three actual-output/remake and option/selector regressions
+as compatibility controls. These planner cases do not establish actual native
+module production or the required one-budget initial-plus-eight cohort.
+
 The catalog automation maps the currently executable components only.
 The full runner must be wired here before case acceptance. No subjective
 manual judgment is required. #274 is the delivered prerequisite; #270 and
