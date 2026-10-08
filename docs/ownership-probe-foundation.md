@@ -3002,6 +3002,26 @@ default-empty `ProbeSession(..., runtime_files=(... ,))` argument for Make's
 existing runtime discovery. It supports optional toolchain/header detection
 and metadata-only stock-tool recipe observation without host-directory grants:
 
+Original source-archive Git discovery may declare the exact root absences
+`runtime_files=("/.git", "/HEAD")`. Both names must be canonical and actually
+absent; present files, directories or aliases refuse without reading their
+content. Existing capture identity and aggregate budget/deadline checks apply.
+This preserves real Git execution and the application's existing handling of
+its nonrepository result, without importing host repository metadata.
+As with other immutable absent parents, metadata and reads beneath a missing
+name return actual ENOENT, not successful consumption. Neighbors, writes and
+directory enumeration receive no authority.
+
+For the scoped control, start with both names absent and compare actual native
+`lstat`/`open` results with the ordinary executable, including failed child
+probes. Require recorded metadata return ENOENT and no successful consumption.
+Try neighboring metadata and writes separately; both refuse. Isolated capture
+fixtures cover actual regular/directory/symlink types and absent-to-present
+identity changes, without writing either host root name.
+These controls are the three `test_native_git_root_*` methods in
+`test_native_writer.NativeRuntimeMetadataTests`; they are not the unfinished
+original initial-all-plus-eight qualification.
+
 ```python
 include_names = ("build-" + fixture.name, ".dep-" + fixture.name)
 with ProbeSession(

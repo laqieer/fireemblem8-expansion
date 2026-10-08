@@ -289,6 +289,9 @@ def _remove_owned_tree(path):
     finish_cleanup([remove])
 
 
+_GIT_ROOT_DISCOVERY_ABSENCES = frozenset({"/.git", "/HEAD"})
+
+
 def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
@@ -298,6 +301,7 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     kernel_filesystems = optional and path == "/proc/filesystems"
     task_mounts = optional and path == "/proc/mounts"
     selinux_config = optional and path == "/etc/selinux/config"
+    root_git = optional and path in _GIT_ROOT_DISCOVERY_ABSENCES
     task_directory = Path(f"/proc/{os.getpid()}")
     task_mount_file = task_directory / "mounts"
     openssl_config = optional and path in {"/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"}
@@ -305,13 +309,15 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
-        *((path,) if sitecustomize or kernel_fips or kernel_filesystems or selinux_config else ()),
+        *((path,) if sitecustomize or kernel_fips or kernel_filesystems or selinux_config or root_git else ()),
         *((path, str(task_mount_file)) if task_mounts else ()),
         *(("/etc/ssl/openssl.cnf",) if openssl_config else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     resolved = Path(path).resolve(strict=not optional)
+    if root_git and resolved.as_posix() != path:
+        raise MakeProbeError("Git discovery runtime probe must name its exact canonical absence")
     if sitecustomize and resolved.as_posix() != path:
         raise MakeProbeError("sitecustomize runtime input must be canonical")
     if kernel_fips and resolved.as_posix() != path:
@@ -457,6 +463,8 @@ def _capture_runtime_input(path, budget):
         before = None
         resource_before = None
     else:
+        if path in _GIT_ROOT_DISCOVERY_ABSENCES:
+            raise MakeProbeError("Git discovery runtime probe is not an actual absence")
         if path.startswith(ENVIRONMENT["HOME"] + "/"):
             raise MakeProbeError("default HOME runtime probe is not an actual absence")
         resource_before = before

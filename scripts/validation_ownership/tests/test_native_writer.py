@@ -10,6 +10,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.authority import ENVIRONMENT, encoded, native_command_owner, parse_json
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import Command
@@ -23,6 +24,7 @@ class NativeRuntimeMetadataTests(unittest.TestCase):
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
     paths = ("/sys/fs/selinux", "/selinux", "/usr/share/locale")
+    git_roots = ("/.git", "/HEAD")
 
     def test_native_runtime_metadata_preserves_actual_type_and_absence(self):
         self.add("native.c", (
@@ -178,6 +180,112 @@ class NativeRuntimeMetadataTests(unittest.TestCase):
 
     def test_native_runtime_metadata_absence_rejects_actual_replaced_backing(self):
         foundation.FoundationTests.test_native_selinux_metadata_absence_rejects_actual_replaced_backing(self)
+
+    def test_native_git_root_discovery_preserves_actual_absence_and_exact_scope(self):
+        for root in self.git_roots:
+            with self.assertRaises(FileNotFoundError):
+                Path(root).lstat()
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <errno.h>\n#include <fcntl.h>\n"
+            "#include <stdio.h>\n#include <string.h>\n#include <sys/stat.h>\n"
+            "#include <unistd.h>\nint main(int argc,char **argv){int rc;struct stat info;"
+            "if(argc!=3)return 1;errno=0;"
+            "if(!strcmp(argv[1],\"metadata\"))rc=lstat(argv[2],&info);"
+            "else rc=open(argv[2],!strcmp(argv[1],\"write\")?O_CREAT|O_WRONLY:O_RDONLY,0600);"
+            "printf(\"result:%d;errno:%d\\n\",rc,errno);return 0;}\n"
+        ))
+        cases = [
+            (root, operation, root + suffix, denied)
+            for root in self.git_roots for operation, suffix, denied in (
+                ("metadata", "", None), ("read", "", None),
+                ("metadata", "/HEAD", None), ("read", "/HEAD", None),
+                ("metadata", "-neighbor", "uncaptured Make runtime access"),
+                ("write", "", "filesystem write denied"),
+            )
+        ]
+        for root, operation, path, denied in cases:
+            with self.subTest(operation=operation, path=path):
+                self.add("Makefile", "all: ; @/native/tool " + operation + " " + path + "\n")
+                session = self.session(runtime_files=(root,))
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    def run():
+                        return session._native_make_readonly(
+                            "all", native_tool=tool,
+                            observe_reads=True, observe_runtime_completions=True,
+                        )
+                    if denied:
+                        with self.assertRaisesRegex(MakeProbeError, denied):
+                            run()
+                    else:
+                        ordinary = subprocess.run(
+                            (str(tool.path), operation, path), cwd=self.root,
+                            env=ENVIRONMENT, capture_output=True, timeout=10, check=True,
+                        )
+                        completed, _, observed = run()
+                        self.assertEqual(completed.stdout, ordinary.stdout)
+                        self.assertEqual(completed.stdout, f"result:-1;errno:{errno.ENOENT}\n".encode())
+                        self.assertEqual(completed.stderr, b"")
+                        self.assertNotIn(path, observed["accessed"])
+                        if operation == "metadata":
+                            record, = [row for row in observed["metadata"] if row[1] == path]
+                            self.assertEqual(record[6], -errno.ENOENT)
+                self.assert_clean(session)
+
+    def test_native_git_root_capture_refuses_present_types_without_reading_content(self):
+        self.add("root-git-file", b"not runtime content")
+        directory = self.root / "root-git-directory"
+        directory.mkdir()
+        alias = self.root / "root-git-alias"
+        alias.symlink_to(self.root / "root-git-file")
+        original_lstat = Path.lstat
+        cases = [
+            (root, backing) for root in self.git_roots
+            for backing in (self.root / "root-git-file", directory, alias)
+        ]
+        for root, backing in cases:
+            with self.subTest(root=root, backing=backing):
+                budget = ProbeBudget()
+                def lstat(path, *args, **kwargs):
+                    return original_lstat(backing if path == Path(root) else path, *args, **kwargs)
+                with patch.object(make_probe, "_trusted_runtime_path", return_value=Path(root)):
+                    with patch.object(Path, "lstat", lstat):
+                        with patch.object(budget, "read_bytes", side_effect=AssertionError("present Git input was read")):
+                            with self.assertRaisesRegex(MakeProbeError, "Git discovery runtime probe is not an actual absence"):
+                                make_probe._capture_runtime_input(root, budget)
+
+    def test_native_git_root_capture_binds_exact_optional_absence_and_replacement(self):
+        for root in self.git_roots:
+            resource = make_probe._capture_runtime_input(root, ProbeBudget())
+            self.assertEqual((resource.path, resource.data, resource.mode), (root, None, None))
+        cases = [
+            (path, optional) for root in self.git_roots for path, optional in (
+                (root, False), (root + "/HEAD", True), (root + "-other", True),
+                ("/." + root, True), ("/repo/.." + root, True),
+            )
+        ]
+        for path, optional in cases:
+            with self.subTest(path=path, optional=optional):
+                with self.assertRaises(MakeProbeError):
+                    make_probe._trusted_runtime_path(path, optional=optional)
+        self.add("replaced-root-git", b"replacement")
+        replacement = (self.root / "replaced-root-git").lstat()
+        original_lstat = Path.lstat
+        for root in self.git_roots:
+            with self.subTest(root=root):
+                calls = 0
+                def lstat(path, *args, **kwargs):
+                    nonlocal calls
+                    if path == Path(root):
+                        calls += 1
+                        if calls == 1:
+                            raise FileNotFoundError(errno.ENOENT, "actual absence")
+                        return replacement
+                    return original_lstat(path, *args, **kwargs)
+                with patch.object(make_probe, "_trusted_runtime_path", return_value=Path(root)):
+                    with patch.object(Path, "lstat", lstat):
+                        with self.assertRaisesRegex(MakeProbeError, "runtime input changed during capture"):
+                            make_probe._capture_runtime_input(root, ProbeBudget())
 
 
 class NativeWriterTests(unittest.TestCase):
