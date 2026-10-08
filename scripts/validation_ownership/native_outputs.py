@@ -377,14 +377,7 @@ class NativeOutputObserver:
                 )
                 observed = path in self.custody.objects
             if observed:
-                if n == 91 and self.policy.config.get("native_resources"):
-                    pin = self.pin(pid, descriptor)
-                    try:
-                        operation = self.custody.enter_mode(pid=pid, descriptor=descriptor, pin=pin, mode=b)
-                    finally:
-                        os.close(pin)
-                else:
-                    raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
+                raise NativeOutputError("native output mode/standalone truncate transition is not implemented")
         elif n in {86, 265}:
             raise NativeOutputError("native output hardlink transitions are not implemented")
         if operation is not None:
