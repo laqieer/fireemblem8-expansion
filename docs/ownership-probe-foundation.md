@@ -1083,10 +1083,15 @@ Settlement or event-budget failure propagates without a successful admission.
 Because the kernel open has already succeeded, its borrowed binding remains
 diagnostic state until actual retirement; cleanup closes its owned duplicate
 but does not invent a kernel rollback or make an active lifecycle complete.
-These controls are component evidence only. Until original owned exec/syscall,
-mount, source-reader and machine/host/archive consumers are wired, this object
-model grants no native write authority and does not qualify
-TC-WORKFLOW-NATIVE-MAKE-001 or any original eight-query outcome.
+These model controls remain component evidence only. The current internal
+`_native_make_writable` lane also wires this same model through
+`NativeOutputObserver` into actual owned jobs, syscall entry/return, finite
+output/resource mounts, generated-source pins and machine/host/archive
+validation, as exercised by the native writer procedures above. That live
+integration does not make these model controls end-to-end evidence.
+Persistent native versions, produced executable admission and the original
+initial-plus-eight production runner remain incomplete; no component or
+exploratory original query qualifies `TC-WORKFLOW-NATIVE-MAKE-001`.
 
 ### TC-WORKFLOW-NATIVE-MAKE-001: preserve original native Make production and generated-source custody
 
