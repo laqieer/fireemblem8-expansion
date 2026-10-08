@@ -2824,6 +2824,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             if item is None:
                 if row["owner"] != dispatch:
                     raise ReadEpochError("native file owner differs from its creating dispatch")
+                if row["revision"] != 0:
+                    raise ReadEpochError("native file has a forged initial revision")
                 if serial <= issued_serial:
                     raise ReadEpochError("native file reused an issued custody serial")
                 issued_serial = serial

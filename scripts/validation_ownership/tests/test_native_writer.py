@@ -3191,6 +3191,17 @@ guard.supervise=measured_supervise
                 row["path"]: row["serial"] for row in effects
                 if row["kind"] in {"output-mkdir", "output-open"}
             }
+            invalid = json.loads(json.dumps(trace))
+            for machine in invalid["machine"]["events"]:
+                if machine["kind"] == "native-output":
+                    row = machine["event"]
+                    if row.get("serial") == issued["/repo/stage/generated.mk"] and "revision" in row:
+                        row["revision"] += 7
+                    machine["sha256"] = hashlib.sha256(encoded(row)).hexdigest()
+            with self.assertRaisesRegex(read_epochs.ReadEpochError, "initial revision"):
+                read_epochs.validate_trace(
+                    invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                )
             for new, prior in (
                 ("/repo/stage/generated.mk", "/repo/stage"),
                 ("/repo/stage/generated.mk", "/repo/stage/empty"),
@@ -3309,6 +3320,18 @@ guard.supervise=measured_supervise
                 if creation["serial"] in seen:
                     continue
                 seen.add(creation["serial"])
+                with self.subTest(forged_initial_revision=creation["path"]):
+                    invalid = json.loads(json.dumps(trace))
+                    for row in invalid["machine"]["events"]:
+                        if row["kind"] == "native-output":
+                            effect = row["event"]
+                            if effect.get("serial") == creation["serial"] and "revision" in effect:
+                                effect["revision"] += 7
+                            row["sha256"] = hashlib.sha256(encoded(effect)).hexdigest()
+                    with self.assertRaises(read_epochs.ReadEpochError):
+                        read_epochs.validate_trace(
+                            invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
+                        )
                 with self.subTest(foreign_creator=creation["path"]):
                     invalid = json.loads(json.dumps(trace))
                     foreign = 2 if creation["owner"] == 1 else 1

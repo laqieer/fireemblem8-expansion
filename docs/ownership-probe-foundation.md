@@ -793,7 +793,15 @@ The actual observer issues directory and first-adopted file IDs from one
 increasing counter. Archive replay uses one high-water scalar to preserve
 that existing issuance contract even after directory removal, without a
 second object registry. Reopening an already issued file retains its ID;
-the resource-version case below is the positive control. Wire formats,
+the resource-version case below is the positive control.
+Initial directory and file issuance must start at revision zero; only the
+actual observed successful content/mode operation advances the lineage.
+Consistently offset every revision of the fresh retained file, atomic
+temporary, PID temporary and shared-lock lifecycle and refresh record checksums:
+all must reject even when later version transitions remain self-consistent.
+The pre-fix file consumer accepts those shifted lineages; directory refusal
+and genuine second-job lock reopening remain unchanged controls.
+Wire formats,
 production operations, budgets and legacy/default behavior are unchanged.
 These fixtures remove all owned state and have no additional dependencies
 or conflicts beyond the native resource lane.
