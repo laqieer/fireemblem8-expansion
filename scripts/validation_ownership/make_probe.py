@@ -1232,12 +1232,16 @@ class ProbeSession:
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
         native_executables=(), native_runtime_directories=(), native_metadata_directories=(),
-        runtime_completions=False,
+        runtime_completions=False, observe_root=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None, native_admission_handler=None,
         native_output_paths=(), native_resources=(),
     ):
         self.budget.remaining()
+        if type(observe_root) is not bool or observe_root and not (
+            mode == "make" and native_runtime and read_abi is not None and runtime_completions
+        ):
+            raise MakeProbeError("native root observation requires native runtime completion")
         if native_admission_handler is not None and (
             mode != "make" or not native_runtime or not runtime_completions
             or producer_handler is not None or publication_observer is not None
@@ -1411,6 +1415,8 @@ class ProbeSession:
                 {"path": path, "identity": None if identity is None else list(identity)}
                 for path, identity in native_metadata_directories
             ]
+            if observe_root:
+                config["native_root_observation"] = True
         if read_abi is not None:
             from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION
             if not native_runtime:
@@ -1746,7 +1752,7 @@ class ProbeSession:
             ) | (
                 {"read_trace"} if read_abi is not None and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
-            ) | ({"native_jobs"} if compact_jobs else set()):
+            ) | ({"native_jobs"} if compact_jobs else set()) | ({"native_root"} if observe_root else set()):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
             collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
@@ -1784,6 +1790,12 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
+            if observe_root:
+                from .read_epochs import validate_native_root
+                validate_native_root(
+                    observed["native_root"], argv=argv, cwd=cwd, environment=environment,
+                    returncode=observed["returncode"],
+                )
             if read_abi is not None and observed["returncode"] == 0:
                 from .read_epochs import validate_trace
                 trace, request = observed["read_trace"], config["read_epochs"]
@@ -1799,6 +1811,11 @@ class ProbeSession:
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
                     reserve=lambda size: self.budget.charge("control", size),
                 )
+                if observe_root:
+                    validate_native_root(
+                        observed["native_root"], argv=argv, cwd=cwd, environment=environment,
+                        returncode=observed["returncode"], machine=trace["machine"],
+                    )
                 for event in trace["events"]:
                     self.budget.remaining()
                     if (
@@ -2662,7 +2679,7 @@ class ProbeSession:
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
         native_libraries=(), observe_runtime_completions=False,
         original_tool=False, native_metadata_directories=(),
-        commands=None, writable_outputs=(), native_resources=(),
+        commands=None, writable_outputs=(), native_resources=(), observe_root=False,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
@@ -2670,6 +2687,7 @@ class ProbeSession:
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
             or type(observe_runtime_completions) is not bool
+            or type(observe_root) is not bool or observe_root and not observe_runtime_completions
             or type(original_tool) is not bool or original_tool and native_tool is None
             or (observe_completions or observe_runtime_completions) and not observe_reads
             or observe_completions and observe_runtime_completions
@@ -2919,6 +2937,7 @@ class ProbeSession:
                 native_runtime_directories=runtime_directories,
                 native_metadata_directories=metadata_directories,
                 runtime_completions=observe_runtime_completions,
+                observe_root=observe_root,
                 original_tool=native_tool if original_tool else None,
                 native_admission_handler=admit if commands is not None else None,
                 native_output_paths=writable_outputs,

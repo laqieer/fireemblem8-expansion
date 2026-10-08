@@ -582,6 +582,158 @@ class NativeWriterTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_native_root_observation_binds_actual_initial_inputs_and_terminal(self):
+        self.add("Makefile", ".PHONY: all failed\nall: ; @:\nfailed: ; @exit 3\n")
+        for target in ("all", "failed"):
+            session = self.session()
+            reports = []
+            read = session.budget.read_bytes
+            def capture(path, category):
+                data = read(path, category)
+                if category == "control" and Path(path).name.startswith("report-"):
+                    reports.append(json.loads(data))
+                return data
+            with self.subTest(target=target), session, patch.object(session.budget, "read_bytes", capture):
+                if target == "failed":
+                    with self.assertRaisesRegex(MakeProbeError, "native GNU Make failed: 2"):
+                        session._native_make_readonly(
+                            target, observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                        )
+                else:
+                    completed, _, observed = session._native_make_readonly(
+                        target, observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+                    self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"", b""))
+                    self.assertEqual(observed["native_root"], reports[-1]["native_root"])
+                    self.assertEqual({
+                        row["pid"] for row in observed["read_trace"]["machine"]["events"]
+                        if row["kind"] == "execute" and row["make"]
+                    }, {observed["native_root"]["pid"]})
+                root = reports[-1]["native_root"]
+                self.assertEqual(root["argv"], ["/usr/bin/make", "-f", "Makefile", target])
+                self.assertEqual(root["cwd"], "/repo")
+                self.assertEqual(root["environment"]["VO_OBSERVE_TARGET"], target)
+                self.assertEqual((root["version"], root["exit_stop"], root["wait"]),
+                                 (1, 512 if target == "failed" else 0, 512 if target == "failed" else 0))
+            self.assert_clean(session)
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertNotIn("native_root", observed)
+        self.assert_clean(session)
+
+    def test_native_root_initial_actual_input_changes_refuse(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        for mode in ("argv", "environment", "cwd"):
+            body = (
+                "original=guard.os.execve\n"
+                "def execute(path,argv,environment):\n"
+                " if path=='/usr/bin/make':\n"
+                f"  if {mode!r}=='argv':argv=[*argv,'FOREIGN=1']\n"
+                f"  if {mode!r}=='environment':environment={{**environment,'FOREIGN':'1'}}\n"
+                f"  if {mode!r}=='cwd':os.chdir('/')\n"
+                " return original(path,argv,environment)\n"
+                "guard.os.execve=execute\n"
+            )
+            session = self.session()
+            with self.subTest(mode=mode), self.native_supervisor(body), session:
+                with self.assertRaisesRegex(MakeProbeError, "native root actual"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_root_returned_shape_and_bindings_refuse(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        for mutation in (
+            "del row['native_root']", "row['native_root']=None",
+            "root['version']=2", "root['pid']+=1", "root['wait']=256",
+            "root['exit_stop']=None", "root['exit_stop']=False",
+            "root['argv'].append('FOREIGN=1')", "root['cwd']='/'",
+            "root['environment']['FOREIGN']='1'", "root['foreign']=1",
+        ):
+            session = self.session()
+            read = session.budget.read_bytes
+            def mutated(path, category):
+                data = read(path, category)
+                if category == "control" and Path(path).name.startswith("report-"):
+                    row = json.loads(data)
+                    root = row["native_root"]
+                    exec(mutation, {}, {"row": row, "root": root})
+                    return encoded(row)
+                return data
+            with self.subTest(mutation=mutation), session, patch.object(session.budget, "read_bytes", mutated):
+                with self.assertRaisesRegex(MakeProbeError, "native root report|malformed supervisor"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.assert_clean(session)
+
+    def test_native_root_input_decoder_and_option_refuse_incomplete_contracts(self):
+        from scripts.validation_ownership import read_epochs
+        self.assertEqual(read_epochs.native_root_inputs(b"make\0all\0", b"A=one=two\0B=\0"),
+                         (["make", "all"], {"A": "one=two", "B": ""}))
+        for command, environment in (
+            (b"", b"A=1\0"), (b"make", b"A=1\0"), (b"make\0", b"A=1"),
+            (b"make\0", b"A=1\0A=2\0"), (b"make\0", b"=1\0"),
+            (b"make\0", b"A\0"), (b"\xff\0", b"A=1\0"),
+        ):
+            with self.subTest(command=command, environment=environment), self.assertRaises(MakeProbeError):
+                read_epochs.native_root_inputs(command, environment)
+        self.add("Makefile", "all: ; @:\n")
+        for options in ({"observe_root": 1}, {"observe_root": True},
+                        {"observe_root": True, "observe_reads": True}):
+            session = self.session()
+            with self.subTest(options=options), session:
+                before = session.budget.runs
+                with self.assertRaisesRegex(MakeProbeError, "invalid native read observation"):
+                    session._native_make_readonly("all", **options)
+                self.assertEqual(session.budget.runs, before)
+            self.assert_clean(session)
+
+    def test_native_root_capture_keeps_exact_existing_metadata_budget(self):
+        self.add("Makefile", ".PHONY: all\nall: ; @:\n")
+        for insufficient in (False, True):
+            receipt = self.directory / ("root-charge-" + str(insufficient) + ".json")
+            body = (
+                "original=guard.Policy.observe_native_root\n"
+                "def captured(self,pid):\n"
+                " command=Path(f'/proc/{pid}/cmdline').read_bytes()\n"
+                " environment=Path(f'/proc/{pid}/environ').read_bytes()\n"
+                " argv,values=guard.read_epochs.native_root_inputs(command,environment)\n"
+                " row={'version':1,'pid':pid,'argv':argv,'cwd':self.config.get('cwd','/repo'),"
+                "'environment':values,'exit_stop':None,'wait':None}\n"
+                " size=len(command)+len(environment)+256+128+len(guard.encoded(row))\n"
+                " before=self.observation_bytes;limit=self.config['observation_limit']\n"
+                f" self.config['observation_limit']=before+size-int({insufficient!r})\n"
+                " try:return original(self,pid)\n"
+                " finally:\n"
+                f"  Path({str(receipt)!r}).write_text(json.dumps({{'expected':size,'charged':self.observation_bytes-before,'limit':self.config['observation_limit']-before}}))\n"
+                "  self.config['observation_limit']=limit\n"
+                "guard.Policy.observe_native_root=captured\n"
+            )
+            session = self.session()
+            with self.subTest(insufficient=insufficient), self.native_supervisor(body), session:
+                if insufficient:
+                    with self.assertRaisesRegex(MakeProbeError, "metadata observation byte budget exhausted"):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                        )
+                    self.assertTrue(session.budget.failed)
+                else:
+                    completed, _, _ = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_root=True,
+                    )
+                    self.assertEqual(completed.returncode, 0)
+                actual = json.loads(receipt.read_bytes())
+                self.assertEqual(actual["charged"], actual["expected"])
+                self.assertEqual(actual["limit"], actual["expected"] - int(insufficient))
+            self.assert_clean(session)
+
     def test_native_make_root_kernel_terminal_matches_actual_wait(self):
         self.add("Makefile", ".PHONY: all failed\nall: ; @:\nfailed: ; @exit 3\n")
         receipt = self.directory / "make-root-terminal.json"
@@ -2127,6 +2279,7 @@ guard.supervise=measured_supervise
             completed, semantics, observed, generated = session._native_make_writable(
                 "all", outputs=("generated.mk",), variables=("VALUE",),
                 observe_reads=True, observe_runtime_completions=True, commands=Commands(),
+                observe_root=True,
             )
             self.assertEqual(completed.stdout, b"once")
             self.assertEqual(completed.stderr, b"")
@@ -2138,6 +2291,12 @@ guard.supervise=measured_supervise
             self.assertEqual(requests.count(("/bin/sh", "-c", recipe)), 1)
             self.assertEqual(len(requests), 2)
             trace = observed["read_trace"]
+            executions = [
+                row for row in trace["machine"]["events"] if row["kind"] == "execute" and row["make"]
+            ]
+            self.assertEqual(len(executions), 2)
+            self.assertEqual({row["pid"] for row in executions}, {observed["native_root"]["pid"]})
+            self.assertEqual(observed["native_root"]["argv"], ["/usr/bin/make", "-f", "Makefile", "all"])
             opened = [
                 row for row in trace["events"]
                 if row["kind"] == "source-open" and row["path"] == "generated.mk"

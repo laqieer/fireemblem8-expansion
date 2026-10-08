@@ -1470,6 +1470,46 @@ def _native_lock_range(event):
         raise ReadEpochError("native job tree has an invalid inherited lock close_range")
 
 
+def native_root_inputs(command_line, environment):
+    def words(data):
+        if not isinstance(data, bytes) or not data or not data.endswith(b"\0"):
+            raise ReadEpochError("native root input lacks its complete NUL extent")
+        try:
+            return [word.decode("utf-8", "strict") for word in data[:-1].split(b"\0")]
+        except UnicodeDecodeError as error:
+            raise ReadEpochError("native root input is not strict UTF-8") from error
+
+    argv = words(command_line)
+    values = {}
+    for word in words(environment):
+        key, separator, value = word.partition("=")
+        if not separator or not key or key in values:
+            raise ReadEpochError("native root environment has an invalid or duplicate key")
+        values[key] = value
+    return argv, values
+
+
+def validate_native_root(value, *, argv, cwd, environment, returncode, machine=None):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"version", "pid", "argv", "cwd", "environment", "exit_stop", "wait"}
+        or type(value["version"]) is not int or value["version"] != 1
+        or type(value["pid"]) is not int or not 0 < value["pid"] < 1 << 31
+        or value["argv"] != argv or value["cwd"] != cwd or value["environment"] != environment
+        or type(value["exit_stop"]) is not int or type(value["wait"]) is not int
+        or not 0 <= value["wait"] < 1 << 32 or value["exit_stop"] != value["wait"]
+        or not (os.WIFEXITED(value["wait"]) or os.WIFSIGNALED(value["wait"]))
+        or type(returncode) is not int or os.waitstatus_to_exitcode(value["wait"]) != returncode
+    ):
+        raise ReadEpochError("native root report differs from its actual request or terminal")
+    native_execution_input(value["argv"], value["cwd"])
+    if machine is not None and {
+        row["pid"] for row in machine["events"] if row["kind"] == "execute" and row["make"]
+    } != {value["pid"]}:
+        raise ReadEpochError("native root report differs from its actual machine Make PID")
+    return value
+
+
 def native_job_tree(events, job, parent, executables, *, count_limit, writable=False):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")

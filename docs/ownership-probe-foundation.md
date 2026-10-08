@@ -2697,6 +2697,58 @@ exit code must refuse and release owned state. A detached descendant remains
 subject to the existing complete job-tree requirement; these checks do not
 turn incomplete descendant retirement into success.
 
+The internal native runtime-completion invocation additionally accepts the
+strict boolean `observe_root=False`. Selecting `True` adds one closed version-1
+`native_root` supervisor record with exactly `version`, `pid`, `argv`, `cwd`,
+`environment`, `exit_stop`, and `wait`. The supervisor captures the actual
+initial stopped root's complete NUL-delimited argv and environment through
+`/proc`, verifies strict UTF-8 and unique nonempty environment keys, and compares
+every value with the immutable request. It binds the actual CWD's device/inode
+to the requested sandbox directory before GNU Make executes. The final raw
+exit-stop and wait must agree; a successful completion archive also binds the
+record's PID to its actual machine Make executions. Incomplete observations
+remain unknown and cannot become successful root records.
+
+This option requires the existing native runtime-completion lane; it does not
+change the legacy machine or trace schemas, default report fields, gameplay,
+save compatibility, ROM/RAM, generated data, or localization. Captured bytes,
+CWD observation, reserved record, encoded report and terminal values consume
+the existing cumulative allowances without resets or refunds. Internal GNU
+Make re-execution retains the initial record and the same root PID; this is
+not a multi-root cohort format. Dependencies are the admitted native Make,
+runtime observer and namespace launcher; conflicts are non-native or
+non-runtime-completion invocations. There are no additional project features
+or services.
+
+For the root-input part of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), start from a
+clean Linux x86-64 checkout with those dependencies and run the following
+`NativeWriterTests` through the existing unittest runner. Each fixture removes
+its owned sandbox state:
+
+1. `test_native_root_observation_binds_actual_initial_inputs_and_terminal`:
+   select root observation for successful and failed original Make invocations;
+   require exact inputs and raw terminal 0 or 512. Disable it as the legacy
+   negative control and require the unchanged report field set.
+2. `test_native_root_initial_actual_input_changes_refuse` and
+   `test_native_root_returned_shape_and_bindings_refuse`: change actual initial
+   argv, environment or CWD, then independently alter returned schema, inputs,
+   PID or terminals. Every mismatch must refuse and clean up owned state.
+3. `test_native_root_input_decoder_and_option_refuse_incomplete_contracts`:
+   incomplete NUL extents, malformed UTF-8, duplicate/invalid environment keys
+   and unsupported or non-boolean observation selections must reject.
+4. `test_native_root_capture_keeps_exact_existing_metadata_budget`: permit
+   exactly the actual capture/record cost, then reduce that remaining allowance
+   by one byte. The former passes; the latter fails the existing metadata
+   boundary and retains a failed budget.
+5. `test_native_original_make_remakes_and_reads_generated_include_once`:
+   generate and read `generated.mk` with root observation enabled. Require the
+   original command/output/source custody and two actual Make executions with
+   one root PID and the unchanged initial argv.
+
+These deterministic checks cover a single root only; finite cohort, pattern
+materialization and the original full-budget qualification remain separate
+requirements rather than implied results of this option.
+
 From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
 namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 

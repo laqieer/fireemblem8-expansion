@@ -350,6 +350,12 @@ class Policy:
                 raise Violation("invalid readonly native read-trace authority")
         elif "VO_OBSERVE_READS" in config.get("environment", {}):
             raise Violation("unconfigured native read observation")
+        if "native_root_observation" in config and (
+            config["native_root_observation"] is not True
+            or not self.native_readonly or request is None or request["version"] not in {5, 6}
+        ):
+            raise Violation("invalid native root observation authority")
+        self.native_root = None
         if type(self.native_readonly) is not bool or (
             not self.native_readonly and "VO_OBSERVE_NATIVE_READONLY" in config.get("environment", {})
         ) or self.native_readonly and (
@@ -724,6 +730,35 @@ class Policy:
                 **({"admission": dict(state.native_admission)} if self.native_outputs is not None else {}),
             }
         state.native_inputs = None
+
+    def observe_native_root(self, pid):
+        if self.native_root is not None or pid != self.make_pid:
+            raise Violation("native root initial execution has a foreign or reused PID")
+        captures = []
+        for name in ("cmdline", "environ"):
+            with open(f"/proc/{pid}/{name}", "rb") as stream:
+                data = stream.read(min(self.config["file_limit"], SYSCALL_MEMORY_LIMIT) + 1)
+            self.charge_metadata(len(data))
+            if len(data) > min(self.config["file_limit"], SYSCALL_MEMORY_LIMIT):
+                raise Violation("native root input exceeds its existing byte bound")
+            captures.append(data)
+        argv, environment = read_epochs.native_root_inputs(*captures)
+        if argv != self.config["argv"] or environment != self.config["environment"]:
+            raise Violation("native root actual inputs differ from its initial request")
+        cwd = self.config.get("cwd", "/repo")
+        actual = os.stat(f"/proc/{pid}/cwd")
+        expected = os.stat(Path(self.config["root"]) / cwd.lstrip("/"))
+        self.charge_metadata(256)
+        if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+            raise Violation("native root actual CWD differs from its initial request")
+        read_epochs.native_execution_input(argv, cwd)
+        row = {
+            "version": 1, "pid": pid, "argv": argv, "cwd": cwd, "environment": environment,
+            "exit_stop": None, "wait": None,
+        }
+        self.reserve_trace_observation()
+        self.charge_metadata(len(encoded(row)))
+        self.native_root = row
 
     def native_tree_event(self, state, event):
         if self.read_trace is None or not self.read_trace.runtime:
@@ -3074,6 +3109,11 @@ def supervise(config, drop_privileges):
             vfork_waiters.pop(stopped, None)
             release_vfork(stopped)
             if stopped == pid:
+                if config.get("native_root_observation"):
+                    if policy.native_root is None or policy.native_root["pid"] != stopped:
+                        raise Violation("native root wait lacks its actual initial execution")
+                    policy.charge_metadata(8)
+                    policy.native_root["wait"] = status
                 main_status = code
             if unfulfilled:
                 raise Violation("parked or unfulfilled producer helper exited")
@@ -3102,6 +3142,11 @@ def supervise(config, drop_privileges):
                 if state.native_exit_status is not None:
                     raise Violation("native process reused its terminal kernel exit stop")
                 state.native_exit_status = outcome.value
+                if stopped == pid and config.get("native_root_observation"):
+                    if policy.native_root is None or policy.native_root["pid"] != stopped:
+                        raise Violation("native root terminal lacks its actual initial execution")
+                    policy.charge_metadata(8)
+                    policy.native_root["exit_stop"] = outcome.value
             policy.native_sigkill_exit(stopped, state, outcome.value)
             state.parked = False
             ptrace(7, stopped, 0, 0)
@@ -3170,6 +3215,8 @@ def supervise(config, drop_privileges):
                 policy.executed.append(state.exec_path)
                 state.exec_path = None
             if state.bootstrap:
+                if config.get("native_root_observation") and stopped == pid:
+                    policy.observe_native_root(stopped)
                 if config.get("repository_outputs") and stopped == pid:
                     with open(f"/proc/{stopped}/cmdline", "rb") as stream:
                         data = stream.read(65537)
@@ -3519,6 +3566,8 @@ def supervise(config, drop_privileges):
                 "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }
+            if config.get("native_root_observation"):
+                result["native_root"] = policy.native_root
             if finished_trace is not None:
                 result["read_trace"] = finished_trace
             if native_job_headers is not None:
