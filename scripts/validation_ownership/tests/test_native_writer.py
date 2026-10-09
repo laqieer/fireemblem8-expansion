@@ -3446,6 +3446,83 @@ guard.supervise=measured_supervise
         self.assert_clean(session)
 
 
+    def test_native_image_callback_retains_actual_parent_at_fork_and_rejects_changed_context(self):
+        from scripts.validation_ownership import read_epochs
+        nested = "exec /usr/bin/printf second"
+        recipe = "( /usr/bin/printf first & wait ); /bin/sh -c '" + nested + "' > result"
+        self.add("Makefile", "all: ; @" + recipe + "\n")
+        commands = {
+            ("/bin/sh", "-c", recipe): Command(("/bin/sh", "-c", recipe), outputs=("result",)),
+            ("/usr/bin/printf", "first"): Command(("/usr/bin/printf", "first")),
+            ("/bin/sh", "-c", nested): Command(("/bin/sh", "-c", nested), outputs=("result",)),
+            ("/usr/bin/printf", "second"): Command(("/usr/bin/printf", "second"), outputs=("result",)),
+        }
+        for mutation in (None, 0, 1, 2, "missing", "null", "zero", "boolean", "short", "foreign"):
+            session = self.session()
+            contexts = []
+            with self.subTest(mutation=mutation), session:
+                before = session._sandbox_run
+
+                def observe(*args, **kwargs):
+                    handler = kwargs["native_admission_handler"]
+
+                    def callback(path, inputs, context=None):
+                        if context is not None:
+                            contexts.append(json.loads(json.dumps(context)))
+                            if mutation is not None and context["fork_parent"] is not None:
+                                if type(mutation) is int:
+                                    context["fork_parent"][mutation] += 1
+                                elif mutation == "missing":
+                                    del context["fork_parent"]
+                                elif mutation == "null":
+                                    context["fork_parent"] = None
+                                elif mutation in {"zero", "boolean"}:
+                                    context["fork_parent"][0] = 0 if mutation == "zero" else True
+                                elif mutation == "short":
+                                    context["fork_parent"].pop()
+                                else:
+                                    context["fork_parent"] = "foreign"
+                        return handler(path, inputs, context)
+
+                    kwargs["native_admission_handler"] = callback
+                    return before(*args, **kwargs)
+
+                with patch.object(session, "_sandbox_run", observe):
+                    def execute():
+                        return session._native_make_writable(
+                            "all", outputs=("result",), commands=commands,
+                            native_executables=("/usr/bin/printf",),
+                            observe_reads=True, observe_runtime_completions=True,
+                        )
+                    if mutation is not None:
+                        with self.assertRaisesRegex(MakeProbeError, "issued operand admission"):
+                            execute()
+                        self.assertTrue(session.budget.failed)
+                    else:
+                        completed, _, observed, generated = execute()
+                        self.assertEqual((completed.stdout, completed.stderr), (b"first", b""))
+                        self.assertEqual([(row.path, row.data) for row in generated], [("result", b"second")])
+                        job, = observed["native_jobs"]
+                        tree = [
+                            row["event"] for row in observed["read_trace"]["machine"]["events"]
+                            if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                        ]
+                        references = read_epochs.native_fork_references(tree)
+                        executed, pre_exec_forks = set(), []
+                        for row in tree:
+                            if row["kind"] == "exec":
+                                executed.add(row["pid"])
+                            elif row["kind"] == "fork" and row["pid"] not in executed:
+                                pre_exec_forks.append(row)
+                        self.assertTrue(pre_exec_forks)
+                        self.assertTrue(any(reference is not None for reference in references.values()))
+                        self.assertTrue(any(context["fork_parent"] is None for context in contexts))
+                        self.assertEqual(len(contexts), sum(row["kind"] == "exec" for row in tree) - 1)
+                        for context in contexts:
+                            reference = references[(context["pid"], context["generation"])]
+                            self.assertEqual(context["fork_parent"], None if reference is None else list(reference))
+            self.assert_clean(session)
+
     def test_native_original_make_distinct_jobs_bind_their_actual_output_owners(self):
         from scripts.validation_ownership import read_epochs
         recipes = (

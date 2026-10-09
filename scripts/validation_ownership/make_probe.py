@@ -1621,10 +1621,19 @@ class ProbeSession:
                         for key in ("dispatch", "pid", "generation")
                     ):
                         raise MakeProbeError("native image request lacks its actual process generation")
-                    context = {key: request[key] for key in ("dispatch", "pid", "generation")}
+                    fork_parent = request.get("fork_parent")
+                    if fork_parent is not None and (
+                        not isinstance(fork_parent, list) or len(fork_parent) != 3
+                        or any(type(value) is not int or value < 1 for value in fork_parent)
+                    ):
+                        raise MakeProbeError("native image request has an invalid actual parent-at-fork")
+                    context = {
+                        **{key: request[key] for key in ("dispatch", "pid", "generation")},
+                        "fork_parent": fork_parent,
+                    }
                 if (
                     set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"} | (
-                        {"dispatch", "pid", "generation"} if image_request else set()
+                        {"dispatch", "pid", "generation", "fork_parent"} if image_request else set()
                     )
                     or request["kind"] not in {"native-request", "native-exec-request"}
                     or type(request["sequence"]) is not int or request["sequence"] != sequence + 1
@@ -1637,7 +1646,7 @@ class ProbeSession:
                     raise MakeProbeError("native Command admission requires canonical repository CWD")
                 settle(request["counters"])
                 sequence += 1
-                authorization = native_admission_handler(request["path"], inputs)
+                authorization = native_admission_handler(request["path"], inputs, context)
                 if native_output_paths:
                     if (
                         not isinstance(authorization, dict) or set(authorization) != {"owner", "closure", "outputs"} | (
@@ -1985,6 +1994,16 @@ class ProbeSession:
                         if runtime_completions:
                             from .read_epochs import native_execution_input, native_job_tree
                             inputs = native_execution_input(job["argv"], job["cwd"])
+                            fork_references = None
+                            if native_output_paths:
+                                native_job_tree(
+                                    job["tree"], job, None, config["native_executables"],
+                                    count_limit=config["observation_count"], writable=True,
+                                )
+                                from .read_epochs import native_fork_references
+                                fork_references = native_fork_references(
+                                    job["tree"], reserve=lambda size: self.budget.charge("control", size),
+                                )
                             if native_admission_handler is not None:
                                 request_id = job["admission"].get("sequence") if native_output_paths else job["sequence"]
                                 issued = native_authorizations.get(request_id)
@@ -2002,6 +2021,10 @@ class ProbeSession:
                                         expected_context = {
                                             "dispatch": job["sequence"], "pid": event["pid"],
                                             "generation": event["generation"],
+                                            "fork_parent": (
+                                                None if fork_references[(event["pid"], event["generation"])] is None
+                                                else list(fork_references[(event["pid"], event["generation"])])
+                                            ),
                                         }
                                         if issued != (
                                             event["path"], native_execution_input(event["argv"], event["cwd"]),
@@ -2032,11 +2055,14 @@ class ProbeSession:
                                     raise MakeProbeError("native job tree lacks its original Make parent")
                                 if parent is None:
                                     parent = next(iter(make_parents))
-                            native_job_tree(
-                                job["tree"], job, parent, config["native_executables"],
-                                count_limit=config["observation_count"],
-                                writable=bool(native_output_paths),
-                            )
+                            if native_output_paths:
+                                if parent is not None and job["tree"][0]["parent"] != parent:
+                                    raise MakeProbeError("native writable tree changed its actual Make parent")
+                            else:
+                                native_job_tree(
+                                    job["tree"], job, parent, config["native_executables"],
+                                    count_limit=config["observation_count"], writable=False,
+                                )
                             if observed["returncode"] == 0 and not compact_jobs:
                                 machine_tree = [
                                     row["event"] for row in observed["read_trace"]["machine"]["events"]
@@ -2896,7 +2922,7 @@ class ProbeSession:
             raise MakeProbeError("native writable Make requires original Command admission")
         frozen_snapshot, frozen_tree = self.snapshot, self.tree
 
-        def admit(path, inputs):
+        def admit(path, inputs, context=None):
             if self.snapshot is not frozen_snapshot or self.tree != frozen_tree:
                 raise MakeProbeError("native Command admission crossed its immutable view")
             try:

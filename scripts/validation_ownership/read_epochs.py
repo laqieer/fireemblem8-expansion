@@ -1838,6 +1838,27 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
     return result
 
 
+def native_fork_references(events, *, reserve=lambda size: None):
+    """Replay parent occurrences after the ordinary writable tree is validated."""
+    actors, pending, result = {}, {}, {}
+    reserve(sum(sys.getsizeof(value) for value in (actors, pending, result)))
+    for event in events:
+        pid, kind = event["pid"], event["kind"]
+        if kind == "fork":
+            pending[event["child"]] = actors.get(pid)
+            reserve(sys.getsizeof(pending))
+        elif kind == "exec":
+            reference = (pid, event["generation"], event["admission"]["sequence"])
+            index = (pid, event["generation"])
+            result[index] = pending.pop(pid, None)
+            actors[pid] = reference
+            reserve(sys.getsizeof(reference) + sys.getsizeof(index) + sys.getsizeof(actors) + sys.getsizeof(result))
+        elif kind == "exit":
+            actors.pop(pid, None)
+            pending.pop(pid, None)
+    return result
+
+
 def native_image_admission(admission, inputs, outputs, resources, *, resource_field):
     if __package__:
         from .native_resources import resource_plan

@@ -242,6 +242,7 @@ class Process:
     newborn_stop: bool = False
     native_dispatch: int | None = None
     native_parent: int | None = None
+    native_fork: tuple[int, int, int] | None = None
     native_execs: int = 0
     native_inputs: tuple[str, dict] | None = None
     native_admission: dict | None = None
@@ -710,12 +711,14 @@ class Policy:
                 row.update(inputs)
                 row["tree"] = []
             state.native_execs += 1
+            fork_parent, state.native_fork = state.native_fork, None
             state.native_inputs = None
             if self.native_outputs is not None:
                 if descendant:
                     state.native_admission = self.native_admit(state.exec_path, inputs, {
                         "dispatch": state.native_dispatch, "pid": pid,
                         "generation": state.native_execs,
+                        "fork_parent": None if fork_parent is None else list(fork_parent),
                     })
                     root_admission = row["admission"]
                     if (
@@ -3265,6 +3268,14 @@ def supervise(config, drop_privileges):
                 policy.total_processes += 1
             record = state.clone()
             record.native_parent = stopped
+            if (
+                state.role == "native" and policy.native_outputs is not None
+                and state.native_execs > 0 and state.native_admission is not None
+            ):
+                record.native_fork = (
+                    stopped, state.native_execs, state.native_admission["sequence"],
+                )
+                policy.charge_metadata(sys.getsizeof(record.native_fork))
             if not state.clone_shares_vm:
                 record.memory_group = child.value
             record.pidfd = newborn_stops.pop(child.value, -1)

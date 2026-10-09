@@ -3088,6 +3088,30 @@ dependency-lane enforcement does not grant native compiler execution authority
 or qualify the original cohort. Budgets, defaults and ROM/save behavior remain
 unchanged.
 
+The existing private native image rendezvous also carries `fork_parent`: the
+actual parent's PID, exec generation and admission sequence at kernel fork,
+or null if no admitted native parent occurrence exists. The host admission
+callback receives the actual context rather than losing it at dispatch.
+Consume this reference on the child's first successful exec; a subsequent
+same-PID exec cannot revive it. A child that forks before its own first exec
+has no admitted parent occurrence to delegate. Independently reconcile every
+reference against the complete returned ordinary writable tree before returning
+authority. This is private context transport, not a persistent schema change
+or permission to execute a compiler frontend.
+For the same case, run
+`NativeWriterTests.test_native_image_callback_retains_actual_parent_at_fork_and_rejects_changed_context`
+from `test_native_writer`. Start with its clean Make fixture, execute the actual
+subshell/background-child/wait and nested-shell exec sequence, and require the
+real stdout and generated result bytes. Observe a genuine pre-exec-parent fork,
+nonnull actual parent occurrences and null consumed references. Alter each
+PID/generation/admission member independently; also remove or null the reference
+and supply zero, boolean, truncated or foreign values. Every changed context
+must refuse and clean the owned session. The pre-change private rendezvous loses the
+callback context, so the supplied callback cannot perform any of these context
+checks; preserve its actual ten failing subcases as the regression control.
+Original compiler grants and complete
+native/public-archive qualification remain outstanding.
+
 This storage seam issues **no native execution, metadata, source or output
 authority**. The default native Make request still runs without compiler
 permissions. Native driver/frontend ancestry, compiler-specific source scope,
