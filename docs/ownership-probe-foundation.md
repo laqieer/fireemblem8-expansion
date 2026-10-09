@@ -2936,7 +2936,7 @@ output custody are its only dependencies.
 
 ### Sealed platform-runtime storage
 
-Native Make selects complete kernel-sealed FD bodies for non-core platform
+Native Make selects complete kernel-sealed FD bodies for all platform
 images through the existing runtime-input cache, rather than Python heap copies. Trusted
 pathname/alias admission remains unchanged. Capture streams the entire actual
 host image, binds its before/after descriptor and pathname identity, and applies
@@ -2954,9 +2954,14 @@ unchanged. The source/generated-file limit still applies to those files; it
 does not force a trusted platform image to fit in a generated-file-sized heap
 read. The direct byte-backed cold capture retains its existing 4 MiB file/
 8 MiB control rejection; sealed native capture additionally has actual
-whole-backing snapshot/aggregate and bounded-workspace rejection. A cached
-body retains its original storage representation and charges rather than
-being recaptured to bypass an exhausted quota. There is no new public feature
+whole-backing snapshot/aggregate and bounded-workspace rejection. Both input
+and ELF-closure caches bind the requested representation in either call order.
+Repeated same-mode calls reuse their original object. Alternate-mode capture
+independently spends the existing cumulative budget and must match the complete
+previous body and any Make-owned core library; it cannot bypass legacy file or
+control quotas. The default byte path retains core-body sharing. Failed or
+changed alternate captures retire newly owned FDs; normal view/shutdown cleanup
+retires both representations. There is no new public feature
 flag or runtime registry.
 
 Sealed descriptors belong to the existing native-input cache. Cold and warm

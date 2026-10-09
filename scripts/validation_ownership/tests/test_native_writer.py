@@ -4674,7 +4674,8 @@ guard.supervise=measured_supervise
             owners = []
             argv = ("/bin/sh", "-c", "v=host; printf '%s' \"$v\"")
             for suffix in (b"", b"distinct-captured-image", b""):
-                def image(path):
+                def image(path, *, sealed):
+                    self.assertTrue(sealed)
                     return tuple(
                         (name, data + suffix if name == "/usr/bin/sh" else data)
                         for name, data in captured(path)
@@ -4803,7 +4804,10 @@ guard.supervise=measured_supervise
                 def changed(rows):
                     return tuple((path, data + suffix if path == library else data) for path, data in rows)
                 session.make_runtime = changed(original_make)
-                with patch.object(session, "_captured_native_runtime", lambda path: changed(captured(path))):
+                def image(path, *, sealed):
+                    self.assertTrue(sealed)
+                    return changed(captured(path))
+                with patch.object(session, "_captured_native_runtime", image):
                     completed, _, observed = session._native_make_readonly(
                         "all", observe_reads=True, observe_runtime_completions=True,
                         commands={argv: Command(argv)},

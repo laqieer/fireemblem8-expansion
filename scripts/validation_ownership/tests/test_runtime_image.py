@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.runtime_image import (
     IMAGE_SEALS, RuntimeImage, close_images, image_digest, materialize_image,
@@ -121,9 +122,72 @@ class RuntimeImageSessionTests(unittest.TestCase):
             before = set(os.listdir("/proc/self/fd"))
             with self.assertRaises(MakeProbeError):
                 session._captured_native_runtime_input("/usr/bin/python3", sealed=True)
-            self.assertNotIn("/usr/bin/python3", session.native_runtime_inputs)
+            self.assertFalse(session.native_runtime_inputs)
             self.assertEqual(set(os.listdir("/proc/self/fd")), before)
         self.fixture.assert_clean(session)
+
+    def test_capture_mode_binds_both_input_and_closure_cache_call_orders(self):
+        for closure in (False, True):
+            for first in (False, True):
+                session = self.fixture.session()
+                images = []
+                with self.subTest(closure=closure, first=first), session:
+                    capture = (
+                        session._captured_native_runtime if closure
+                        else session._captured_native_runtime_input
+                    )
+                    captures = {}
+                    for sealed in (first, not first, first, not first):
+                        value = capture("/usr/bin/find", sealed=sealed)
+                        rows = value if closure else (("/usr/bin/find", value),)
+                        for path, body in rows:
+                            self.assertTrue(isinstance(body, RuntimeImage if sealed else bytes))
+                            if sealed:
+                                images.append(body)
+                        if sealed in captures:
+                            self.assertIs(value, captures[sealed])
+                        captures[sealed] = value
+                    ordinary = dict(captures[False]) if closure else {"/usr/bin/find": captures[False]}
+                    protected = dict(captures[True]) if closure else {"/usr/bin/find": captures[True]}
+                    self.assertEqual(set(ordinary), set(protected))
+                    for path in ordinary:
+                        self.assertEqual(image_digest(ordinary[path]), image_digest(protected[path]))
+                self.assertTrue(images)
+                self.assertTrue(all(image.descriptor == -1 for image in images))
+                self.fixture.assert_clean(session)
+
+    def test_sealed_warm_capture_does_not_bypass_legacy_file_quota(self):
+        session = self.fixture.session(file_bytes=4 * 1024 * 1024)
+        with session:
+            image = session._captured_native_runtime_input("/usr/bin/python3", sealed=True)
+            self.assertGreater(len(image), session.budget.limits.file_bytes)
+            with self.assertRaisesRegex(MakeProbeError, "file.*byte|file exceeds"):
+                session._captured_native_runtime_input("/usr/bin/python3")
+        self.assertEqual(image.descriptor, -1)
+        self.fixture.assert_clean(session)
+
+    def test_alternate_capture_refuses_changed_complete_body_and_retires_descriptors(self):
+        original_bytes = make_probe._trusted_runtime_bytes
+        original_path = make_probe._trusted_runtime_path
+        for first in (False, True):
+            session = self.fixture.session()
+            with self.subTest(first=first), session:
+                session._captured_native_runtime_input("/usr/bin/find", sealed=first)
+                descriptors = set(os.listdir("/proc/self/fd"))
+                if first:
+                    context = patch.object(
+                        make_probe, "_trusted_runtime_bytes",
+                        lambda path, budget: original_bytes("/usr/bin/printf", budget),
+                    )
+                else:
+                    context = patch.object(
+                        make_probe, "_trusted_runtime_path",
+                        lambda path: original_path("/usr/bin/printf"),
+                    )
+                with context, self.assertRaisesRegex(MakeProbeError, "earlier captured runtime"):
+                    session._captured_native_runtime_input("/usr/bin/find", sealed=not first)
+                self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+            self.fixture.assert_clean(session)
 
     def test_nested_view_shutdown_and_misnesting_close_actual_owned_descriptors(self):
         for shutdown in (True, False):

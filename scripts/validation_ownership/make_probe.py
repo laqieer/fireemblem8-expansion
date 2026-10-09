@@ -3124,39 +3124,57 @@ class ProbeSession:
         if self.base is None or self.snapshot is None:
             raise MakeProbeError("probe session is not active")
         self.budget.remaining()
-        if path not in self.native_runtime_inputs:
+        key = (path, True) if sealed else path
+        if sealed:
+            self.budget.charge("control", sys.getsizeof(key))
+        if key not in self.native_runtime_inputs:
             core = next((data for name, data in self.make_runtime if name == path), None)
-            data = core if core is not None else (
-                RuntimeImage(_trusted_runtime_path(path), self.budget) if sealed
-                else _trusted_runtime_bytes(path, self.budget)
+            data = (
+                RuntimeImage(_trusted_runtime_path(path), self.budget) if sealed else
+                core if core is not None else _trusted_runtime_bytes(path, self.budget)
             )
             try:
+                other_key = path if sealed else (path, True)
+                if not sealed:
+                    self.budget.charge("control", sys.getsizeof(other_key))
+                previous = self.native_runtime_inputs.get(other_key)
+                for previous in (previous, core if sealed else None):
+                    if previous is not None:
+                        self.budget.charge("total", sum(
+                            len(body) for body in (data, previous) if isinstance(body, bytes)
+                        ))
+                        if image_digest(data) != image_digest(previous):
+                            self.budget.reject("native runtime differs from earlier captured runtime")
                 self.budget.charge(
                     "cache", len(path.encode("utf-8")) + 16
                     + (sys.getsizeof(data) + sys.getsizeof(data.__dict__)
-                       if isinstance(data, RuntimeImage) else 0 if core is not None else len(data)),
+                       + sys.getsizeof(key) if sealed else 0 if core is not None else len(data)),
                 )
-                self.native_runtime_inputs[path] = data
+                self.native_runtime_inputs[key] = data
             except BaseException as error:
                 finish_cleanup(
                     [data.close] if isinstance(data, RuntimeImage) else [], primary=error,
                 )
                 raise
-        return self.native_runtime_inputs[path]
+        return self.native_runtime_inputs[key]
 
     def _captured_native_runtime(self, path, *, sealed=False):
         self.budget.remaining()
-        if path not in self.native_runtimes:
+        key = (path, True) if sealed else path
+        if sealed:
+            self.budget.charge("control", sys.getsizeof(key))
+        if key not in self.native_runtimes:
             captured = _executable_runtime(
                 path, self.budget,
                 read_runtime=lambda name: self._captured_native_runtime_input(name, sealed=sealed),
             )
             self.budget.charge(
                 "cache", len(path.encode("utf-8")) + 16
-                + sum(len(name.encode("utf-8")) + 16 for name, _ in captured),
+                + sum(len(name.encode("utf-8")) + 16 for name, _ in captured)
+                + (sys.getsizeof(key) if sealed else 0),
             )
-            self.native_runtimes[path] = captured
-        return self.native_runtimes[path]
+            self.native_runtimes[key] = captured
+        return self.native_runtimes[key]
 
     def _native_completion_selection(self, *, runtime=False):
         from . import read_epochs
