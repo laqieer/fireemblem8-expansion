@@ -39,9 +39,19 @@ class RuntimeImage:
         self._digest = ""
         self._identity = None
         budget.charge("control", sys.getsizeof(self) + sys.getsizeof(self.__dict__))
+        descriptor = -1
+        stream = None
+
+        def close_source():
+            if stream is not None:
+                stream.close()
+            elif descriptor >= 0:
+                os.close(descriptor)
+
         try:
             descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-            with os.fdopen(descriptor, "rb", buffering=0) as stream:
+            stream = os.fdopen(descriptor, "rb", buffering=0)
+            with stream:
                 before = os.fstat(stream.fileno())
                 if (
                     not stat.S_ISREG(before.st_mode) or before.st_size <= 0
@@ -85,7 +95,7 @@ class RuntimeImage:
                 budget.charge("control", sys.getsizeof(self._identity))
                 self.require_sealed()
         except BaseException as error:
-            finish_cleanup([self.close], primary=error)
+            finish_cleanup([close_source, self.close], primary=error)
             raise
 
     def _buffer(self):

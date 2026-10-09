@@ -501,6 +501,64 @@ class NativePatternTemplateTests(unittest.TestCase):
                     )
             self.assert_clean(session)
 
+    def test_pattern_completion_cwd_matches_entry_in_live_and_archive_consumers(self):
+        from scripts.validation_ownership.authority import encoded
+        self.add(
+            "Makefile",
+            "plain%.out: VALUE = recursive\nsimple%.out: VALUE := simple\n"
+            "all: plain-one.out simple-one.out\n"
+            "%.out: ; @v=done; printf '%s\\n' '$(VALUE)'\n",
+        )
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True, observe_patterns=True,
+            )
+            self.assertEqual((completed.returncode, completed.stdout, completed.stderr),
+                             (0, b"recursive\nsimple\n", b""))
+            trace = observed["read_trace"]
+            rows = [row for row in trace["events"] if row["kind"] == "pattern-completion"]
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                invalid = json.loads(json.dumps(trace))
+                result = next(
+                    event for event in invalid["events"]
+                    if event["kind"] == "pattern-completion" and event["pattern"] == row["pattern"]
+                )
+                result["cwd"] = "/different"
+                evidence = self.machine_row(invalid, "pattern-result", pattern=row["pattern"])
+                evidence["sha256"] = hashlib.sha256(encoded(result)).hexdigest()
+                with self.subTest(archive_pattern=row["pattern"]), self.assertRaisesRegex(
+                    read_epochs.ReadEpochError, "pattern completion",
+                ):
+                    read_epochs.validate_trace(
+                        invalid, invalid["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                    )
+        self.assert_clean(session)
+        for simple in (False, True):
+            body = (
+                "from pattern_templates import PatternMaterializations\n"
+                "before=PatternMaterializations.completion\n"
+                "def completion(self,r,state):\n"
+                " original=state.cwd\n"
+                " flags=self.trace.invocations[-1]['template']['definition']['flags']\n"
+                " if (((flags>>23)&7)==1)==" + repr(simple) + ":\n"
+                "  state.cwd='/different'\n"
+                " try:\n"
+                "  return before(self,r,state)\n"
+                " finally:\n"
+                "  state.cwd=original\n"
+                "PatternMaterializations.completion=completion\n"
+            )
+            session = self.session()
+            with self.subTest(live_simple=simple), session, self.native_supervisor(body):
+                with self.assertRaisesRegex(MakeProbeError, "pattern completion"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_patterns=True,
+                    )
+            self.assert_clean(session)
+
     def test_public_pattern_requested_version_and_captured_abi_are_fail_closed(self):
         from scripts.validation_ownership.budget import MakeProbeError
         self.add("Makefile", "simple%.out: VALUE := simple\nall: simple-one.out\nsimple-one.out: ; @:\n")

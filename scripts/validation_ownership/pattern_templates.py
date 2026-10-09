@@ -286,7 +286,8 @@ class PatternMaterializations(PatternTemplates):
             "return": trace.bias + self.abi["completion"], "number": number,
             "object": registers.r12, "file": registers.rbx, "frame": registers.rbp,
             "template": row, "defined": False, "returned": False,
-            "target": target, "set": trace.number(registers.rbx + self.abi["file_pattern_set_offset"]),
+            "target": target, "cwd": state.cwd,
+            "set": trace.number(registers.rbx + self.abi["file_pattern_set_offset"]),
         })
 
     def definition(self, registers):
@@ -368,6 +369,7 @@ class PatternMaterializations(PatternTemplates):
         if (
             variable[0] != definition["name"] or flags & 0x60000088 != definition["flags"] & 0x60000088
             or not isinstance(state.cwd, str) or not state.cwd.startswith("/")
+            or state.cwd != frame["cwd"]
         ):
             raise read_epochs.ReadEpochError("pattern completion lost its effective modifiers/name/CWD")
         event = trace.event(

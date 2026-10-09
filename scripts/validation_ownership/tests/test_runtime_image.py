@@ -18,6 +18,41 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 
 class RuntimeImageTests(unittest.TestCase):
+    def test_source_descriptor_closes_if_fdopen_handoff_fails(self):
+        for failure in (OSError(errno.EINTR, "interrupted fdopen"), KeyboardInterrupt(), SystemExit(7)):
+            budget = ProbeBudget()
+            before = set(os.listdir("/proc/self/fd"))
+            opened = []
+            original_open = os.open
+
+            def capture_open(*args, **kwargs):
+                descriptor = original_open(*args, **kwargs)
+                opened.append(descriptor)
+                return descriptor
+
+            try:
+                with self.subTest(failure=type(failure).__name__), patch(
+                    "scripts.validation_ownership.runtime_image.os.open", capture_open,
+                ), patch("scripts.validation_ownership.runtime_image.os.fdopen", side_effect=failure):
+                    with self.assertRaises(type(failure)) as raised:
+                        RuntimeImage(Path("/usr/bin/make").resolve(), budget)
+                    self.assertIs(raised.exception, failure)
+                    self.assertEqual(len(opened), 1)
+                    with self.assertRaises(OSError) as closed:
+                        os.fstat(opened[0])
+                    self.assertEqual(closed.exception.errno, errno.EBADF)
+                    self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+            finally:
+                for descriptor in opened:
+                    try:
+                        os.fstat(descriptor)
+                    except OSError as error:
+                        if error.errno != errno.EBADF:
+                            raise
+                    else:
+                        os.close(descriptor)
+                budget.close()
+
     def test_complete_body_and_materialization_use_actual_immutable_backing(self):
         for name in ("/usr/bin/python3", "/usr/bin/make"):
             with self.subTest(source=name):

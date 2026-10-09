@@ -2972,6 +2972,11 @@ and interruption close owned FDs through existing cleanup. The backing check
 binds device/inode/mode/owner/size and actual immutable seals; failed kernel
 truncate attempts can change timestamps without changing sealed content.
 Original host capture still requires complete timestamp/identity stability.
+Source-descriptor ownership is retained across the `os.open`/`fdopen` handoff.
+OSError, interrupt and SystemExit before the stream owns that descriptor must
+close the actual opened FD and preserve the original failure. Exercise the
+runtime-image handoff control with real GNU Make backing; compare actual
+descriptor state, not a printed cleanup label.
 
 Run the runtime-image module on both actual `/usr/bin/python3` and GNU Make
 inputs; no supported host's Python executable must exceed 4 MiB. Complete
@@ -3082,6 +3087,16 @@ to actual captured `OriginalSource` and source/eval occurrence; `patterns` retai
 non-simple definition/return sequences. `PatternLocation` remains distinct from
 ordinary `RuntimeLocation` and `ExpansionLocation`. Pattern observations are not
 ordinary authored assignments.
+
+For both simple and non-simple materializations, completion CWD must equal the
+original entry CWD. Run the live/archive CWD case in `test_pattern_templates`:
+ordinary positive output remains `recursive`/`simple`; changing only callback
+completion CWD must refuse before emitting the result. The live control restores
+observer state afterward and is not an actual OS `chdir` claim. Archive controls
+change completion CWD and refresh its machine payload digest together, so refusal
+proves the entry/completion semantic relation, not an unrelated digest mismatch.
+Pre-fix code accepts those live and archive mutations; no ABI or quota change is
+needed to restore this existing relation.
 
 Only the explicit pattern protocol uses a compact physical-source index. Native
 source and eval capture, runtime replay and its physical-source projection select

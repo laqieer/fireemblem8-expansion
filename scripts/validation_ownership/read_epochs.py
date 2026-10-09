@@ -3632,6 +3632,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                         or (materialized["return"] is not None) != (flavor != 1)
                         or variable[0] != definition["name"]
                         or variable[2] & 0x60000088 != definition["flags"] & 0x60000088
+                        or event["cwd"] != materialized["entry"]["cwd"]
                         or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
                         or any(0xD800 <= ord(char) <= 0xDFFF for char in event["cwd"])
                         or "\0" in event["cwd"] or len(event["cwd"].encode("utf-8")) > 4096
