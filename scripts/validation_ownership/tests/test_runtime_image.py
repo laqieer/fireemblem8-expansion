@@ -96,6 +96,57 @@ class RuntimeImageSessionTests(unittest.TestCase):
     def tearDown(self):
         self.fixture.tearDown()
 
+    def test_derived_compiler_closure_owns_complete_sealed_images_without_exec_authority(self):
+        session = self.fixture.session()
+        with session:
+            rows = session._sealed_dependency_runtime()
+            self.assertEqual(tuple(path for path, _ in rows), tuple(session.dependency_runtime["runtime_files"]))
+            self.assertTrue(set(session.dependency_compiler) <= dict(rows).keys())
+            for path, image in rows:
+                with self.subTest(path=path), Path(path).open("rb") as stream:
+                    self.assertEqual(image_digest(image), hashlib.file_digest(stream, "sha256").hexdigest())
+                    self.assertEqual(len(image), Path(path).stat().st_size)
+                    self.assertEqual(fcntl.fcntl(image.descriptor, fcntl.F_GET_SEALS), IMAGE_SEALS)
+            stored = session.budget.bytes["snapshot"]
+            repeated = session._sealed_dependency_runtime()
+            self.assertTrue(all(a is b for (_, a), (_, b) in zip(rows, repeated)))
+            self.assertEqual(session.budget.bytes["snapshot"], stored)
+            frontend = session.dependency_compiler[1]
+            if frontend.startswith("/usr/libexec/"):
+                with self.assertRaisesRegex(MakeProbeError, "outside the trusted system tool/library roots"):
+                    session._captured_native_runtime_input(frontend, sealed=True)
+            with self.assertRaisesRegex(MakeProbeError, "outside its issued runtime closure"):
+                session._captured_native_runtime_input("/usr/bin/make", sealed=True, dependency=True)
+            completed, _, _ = session._native_make_readonly("all")
+            self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"owned", b""))
+        self.assertTrue(all(image.descriptor == -1 for _, image in rows))
+        self.assertIsNone(session.dependency_compiler)
+        self.assertIsNone(session.dependency_runtime)
+        self.fixture.assert_clean(session)
+
+    def test_derived_compiler_capture_failure_closes_partial_owned_closure(self):
+        session = self.fixture.session()
+        images = []
+        with self.assertRaisesRegex(MakeProbeError, "read-only|regular|trusted"):
+            with session:
+                session._ensure_dependency_runtime()
+                capture = session._captured_native_runtime_input
+
+                def changed_input(path, **kwargs):
+                    if images:
+                        with patch.object(make_probe, "_trusted_runtime_path", return_value=self.fixture.root / "Makefile"):
+                            return capture(path, **kwargs)
+                    image = capture(path, **kwargs)
+                    images.append(image)
+                    return image
+
+                with patch.object(session, "_captured_native_runtime_input", changed_input):
+                    session._sealed_dependency_runtime()
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].descriptor, -1)
+        self.assertTrue(session.budget.failed)
+        self.fixture.assert_clean(session)
+
     def test_sealed_capture_has_one_owned_body_and_preserves_legacy_cold_capture(self):
         session = self.fixture.session()
         images = []

@@ -2358,15 +2358,7 @@ class ProbeSession:
             argv = list(command.argv)
             dependency = None
             if command.dependency_only:
-                if self.dependency_compiler is None:
-                    driver, programs = self._compiler_tools(False, ("cc1",))
-                    programs = tuple(sorted({str(_trusted_runtime_path(path, compiler=True)) for path in programs}))
-                    frontends = tuple(path for path in programs if path != driver)
-                    if len(frontends) != 1:
-                        raise MakeProbeError("dependency profile requires one resolved C frontend")
-                    self.dependency_compiler = driver, frontends[0]
-                    self.budget.charge("control", len(encoded(self.dependency_compiler)))
-                    self.dependency_runtime = self._dependency_runtime()
+                self._ensure_dependency_runtime()
                 argv[0] = self.dependency_compiler[0]
                 compiler = self.dependency_compiler
                 dependency = {
@@ -2456,6 +2448,35 @@ class ProbeSession:
             if not outputs:
                 self.cache.setdefault(key, []).append(result)
             return result
+
+    def _ensure_dependency_runtime(self):
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("dependency runtime requires an active probe session")
+        self.budget.remaining()
+        if self.dependency_compiler is None:
+            driver, programs = self._compiler_tools(False, ("cc1",))
+            programs = tuple(sorted({str(_trusted_runtime_path(path, compiler=True)) for path in programs}))
+            frontends = tuple(path for path in programs if path != driver)
+            if len(frontends) != 1:
+                raise MakeProbeError("dependency profile requires one resolved C frontend")
+            self.dependency_compiler = driver, frontends[0]
+            self.budget.charge("control", len(encoded(self.dependency_compiler)))
+            self.dependency_runtime = self._dependency_runtime()
+        if self.dependency_runtime is None:
+            raise MakeProbeError("dependency compiler has no complete issued runtime profile")
+
+    @terminal_failure
+    def _sealed_dependency_runtime(self):
+        """Capture the existing derived compiler closure, without execution authority."""
+        self._ensure_dependency_runtime()
+        rows = tuple(
+            (path, self._captured_native_runtime_input(path, sealed=True, dependency=True))
+            for path in self.dependency_runtime["runtime_files"]
+        )
+        self.budget.charge("control", sys.getsizeof(rows) + sum(sys.getsizeof(row) for row in rows))
+        for path in self.dependency_compiler:
+            self._validate_native(dict(rows)[path])
+        return rows
 
     def _dependency_runtime(self):
         interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])
@@ -3135,17 +3156,25 @@ class ProbeSession:
             mounts.append(self._mount(source, "/repo/" + name))
         return mounts
 
-    def _captured_native_runtime_input(self, path, *, sealed=False):
+    def _captured_native_runtime_input(self, path, *, sealed=False, dependency=False):
         if self.base is None or self.snapshot is None:
             raise MakeProbeError("probe session is not active")
         self.budget.remaining()
+        if type(dependency) is not bool or dependency and (
+            not sealed or self.dependency_runtime is None
+            or path not in self.dependency_runtime["runtime_files"]
+        ):
+            raise MakeProbeError("sealed dependency input is outside its issued runtime closure")
+        trusted_path = (
+            _trusted_runtime_path(path, compiler=True) if dependency else _trusted_runtime_path(path)
+        )
         key = (path, True) if sealed else path
         if sealed:
             self.budget.charge("control", sys.getsizeof(key))
         if key not in self.native_runtime_inputs:
             core = next((data for name, data in self.make_runtime if name == path), None)
             data = (
-                RuntimeImage(_trusted_runtime_path(path), self.budget) if sealed else
+                RuntimeImage(trusted_path, self.budget) if sealed else
                 core if core is not None else _trusted_runtime_bytes(path, self.budget)
             )
             try:

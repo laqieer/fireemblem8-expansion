@@ -2985,6 +2985,27 @@ The generated-file case independently rejects a real file one byte above its
 derived file limit while the complete platform backing remains owned. All
 production limits and capture semantics stay unchanged.
 
+The compiler storage member derives its driver/frontend/search/library closure
+through the existing dependency runtime discovery. Its complete trusted files
+can be captured in the same session-owned sealed-input cache with cumulative
+snapshot/control/cache charges and ordinary descriptor cleanup. Repeated
+capture reuses those exact bodies. Compiler-specific roots are checked against
+that issued closure before cache lookup; a warm compiler body must not make
+`/usr/libexec` a generic native-input root. A real untrusted replacement after
+the first captured member must refuse and retire the partial owned closure.
+Run `test_runtime_image` plus
+`test_dependency.DependencyTests.test_observed_worldmap_dependency_recipe_uses_real_repository_sources`
+for this member and existing dependency-route compatibility.
+
+This storage seam issues **no native execution, metadata, source or output
+authority**. The default native Make request still runs without compiler
+permissions. Native driver/frontend ancestry, compiler-specific source scope,
+inherited `.dep` writer custody and every wire/replay consumer remain
+unimplemented acceptance work. The selected design trusts the verified
+immutable driver's transformation under the existing dependency threat model;
+it does not add a GCC `-###` planning mode/parser or independently predict
+frontend arguments. Complete storage proof is not original cohort fitness.
+
 For the storage member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
 clean Linux x86-64 checkout and namespace prerequisites:
 
