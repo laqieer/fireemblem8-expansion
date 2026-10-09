@@ -2885,7 +2885,7 @@ class ProbeSession:
         metadata_directories = tuple(
             _native_metadata_directory(path, self.budget) for path in native_metadata_directories
         )
-        captured = self._captured_native_runtime("/usr/bin/sh")
+        captured = self._captured_native_runtime("/usr/bin/sh", sealed=True)
         native_runtime = tuple(
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
         )
@@ -2899,13 +2899,13 @@ class ProbeSession:
             ):
                 raise MakeProbeError("invalid native library resource declaration")
             library_identities.add(canonical)
-            binary = self._captured_native_runtime_input(path)
+            binary = self._captured_native_runtime_input(path, sealed=True)
             self._validate_native(binary)
             if path in runtime and runtime[path] != binary:
                 raise MakeProbeError("native library runtime conflicts with captured bytes")
             runtime[path] = binary
         for path in native_executables:
-            captured = self._captured_native_runtime(path)
+            captured = self._captured_native_runtime(path, sealed=True)
             if _make_interpreter(dict(captured)[path]) != interpreter:
                 raise MakeProbeError("native executable requires an unadmitted interpreter")
             for name, data in captured:
@@ -3120,18 +3120,21 @@ class ProbeSession:
             mounts.append(self._mount(source, "/repo/" + name))
         return mounts
 
-    def _captured_native_runtime_input(self, path):
+    def _captured_native_runtime_input(self, path, *, sealed=False):
         if self.base is None or self.snapshot is None:
             raise MakeProbeError("probe session is not active")
         self.budget.remaining()
         if path not in self.native_runtime_inputs:
             core = next((data for name, data in self.make_runtime if name == path), None)
-            data = core if core is not None else RuntimeImage(_trusted_runtime_path(path), self.budget)
+            data = core if core is not None else (
+                RuntimeImage(_trusted_runtime_path(path), self.budget) if sealed
+                else _trusted_runtime_bytes(path, self.budget)
+            )
             try:
                 self.budget.charge(
                     "cache", len(path.encode("utf-8")) + 16
                     + (sys.getsizeof(data) + sys.getsizeof(data.__dict__)
-                       if isinstance(data, RuntimeImage) else 0),
+                       if isinstance(data, RuntimeImage) else 0 if core is not None else len(data)),
                 )
                 self.native_runtime_inputs[path] = data
             except BaseException as error:
@@ -3141,11 +3144,12 @@ class ProbeSession:
                 raise
         return self.native_runtime_inputs[path]
 
-    def _captured_native_runtime(self, path):
+    def _captured_native_runtime(self, path, *, sealed=False):
         self.budget.remaining()
         if path not in self.native_runtimes:
             captured = _executable_runtime(
-                path, self.budget, read_runtime=self._captured_native_runtime_input,
+                path, self.budget,
+                read_runtime=lambda name: self._captured_native_runtime_input(name, sealed=sealed),
             )
             self.budget.charge(
                 "cache", len(path.encode("utf-8")) + 16

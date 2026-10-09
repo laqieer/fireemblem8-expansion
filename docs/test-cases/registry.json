@@ -2497,6 +2497,10 @@
       "limitations": "Original 2148-source initial-plus-eight production qualification and its consolidated runner remain incomplete. Current component automation and exploratory diagnostics, including the restored frozen2148 pool, are not substitutes. Mode0000 consumer test proves handled EACCES and validated lowlevel completion only; public exporter PermissionError remains explicit.",
       "automation": [
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_runtime_image -v",
+          "evidence": "scripts/validation_ownership/tests/test_runtime_image.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },

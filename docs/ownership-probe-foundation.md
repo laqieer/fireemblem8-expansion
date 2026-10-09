@@ -2936,8 +2936,8 @@ output custody are its only dependencies.
 
 ### Sealed platform-runtime storage
 
-The existing native runtime-input cache retains non-core platform images as
-complete kernel-sealed FD bodies, rather than Python heap copies. Trusted
+Native Make selects complete kernel-sealed FD bodies for non-core platform
+images through the existing runtime-input cache, rather than Python heap copies. Trusted
 pathname/alias admission remains unchanged. Capture streams the entire actual
 host image, binds its before/after descriptor and pathname identity, and applies
 `F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK` and `F_SEAL_SEAL`. ELF consumers
@@ -2952,10 +2952,12 @@ records spend control; cache metadata spends cache. No retained whole heap body
 is merely reassigned to a different category. All numeric limits remain
 unchanged. The source/generated-file limit still applies to those files; it
 does not force a trusted platform image to fit in a generated-file-sized heap
-read. Consequently the old cold Python image's 4 MiB file/8 MiB control rejection
-is intentionally replaced by actual whole-backing snapshot/aggregate and
-bounded-workspace rejection. Default byte-backed runtime APIs retain their
-existing read and quota behavior.
+read. The direct byte-backed cold capture retains its existing 4 MiB file/
+8 MiB control rejection; sealed native capture additionally has actual
+whole-backing snapshot/aggregate and bounded-workspace rejection. A cached
+body retains its original storage representation and charges rather than
+being recaptured to bypass an exhausted quota. There is no new public feature
+flag or runtime registry.
 
 Sealed descriptors belong to the existing native-input cache. Cold and warm
 closure lookup share that cache; nested views have their own existing cache,
@@ -2980,10 +2982,11 @@ clean Linux x86-64 checkout and namespace prerequisites:
 2. Run the foundation cases
    `test_native_shared_runtime_bodies_are_captured_and_retained_once`,
    `test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures`
-   and `test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup`.
-   Require one actual cold body capture, charged full physical storage with
-   bounded metadata cache, warm real native execution, lowered storage/work/cache
-   refusal, restored view ownership and actual FD retirement on both active
+   and `test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup`
+   as unchanged byte-capture compatibility controls. The new session cases in
+   `test_runtime_image` require one actual sealed cold body, charged full
+   physical storage with bounded metadata cache, warm real native execution,
+   lowered storage/work/cache refusal and actual FD retirement on both active
    shutdown and nesting-order failure.
 3. Run `scripts.validation_ownership.tests.test_native_make` as the unchanged
    direct byte-backed runtime compatibility control, plus the finite cohort's

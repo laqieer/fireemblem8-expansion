@@ -2286,30 +2286,22 @@ class FoundationTests(unittest.TestCase):
             core = dict(session.make_runtime)
             libc, = [name for name in core if name.endswith("/libc.so.6")]
             reads = Counter()
-            capture = make_probe.RuntimeImage.__init__
-            def counted(image, path, budget):
-                reads[str(path)] += 1
-                return capture(image, path, budget)
-            with patch.object(make_probe.RuntimeImage, "__init__", counted):
+            capture = make_probe._trusted_runtime_bytes
+            def counted(path, budget):
+                reads[path] += 1
+                return capture(path, budget)
+            with patch.object(make_probe, "_trusted_runtime_bytes", counted):
                 cache_before = session.budget.bytes.get("cache", 0)
-                snapshot_before = session.budget.bytes.get("snapshot", 0)
                 inputs_before = set(session.native_runtime_inputs)
                 python = session._captured_native_runtime("/usr/bin/python3")
                 retained = sum(
-                    len(name.encode("utf-8")) + 16
-                    + (0 if name in core else sys.getsizeof(data) + sys.getsizeof(data.__dict__))
+                    len(name.encode("utf-8")) + 16 + (0 if name in core else len(data))
                     for name, data in session.native_runtime_inputs.items() if name not in inputs_before
                 )
                 closure = len("/usr/bin/python3") + 16 + sum(
                     len(name.encode("utf-8")) + 16 for name, _ in python
                 )
-                self.assertGreaterEqual(session.budget.bytes["cache"] - cache_before, retained + closure)
-                self.assertLess(session.budget.bytes["cache"] - cache_before, retained + closure + 256)
-                self.assertEqual(
-                    session.budget.bytes["snapshot"] - snapshot_before,
-                    sum(len(data) for name, data in session.native_runtime_inputs.items()
-                        if name not in inputs_before and name not in core),
-                )
+                self.assertEqual(session.budget.bytes["cache"] - cache_before, retained + closure)
                 for _ in range(2):
                     completed, _, _ = session._native_make_readonly(
                         "all", native_executables=("/usr/bin/printf",), native_libraries=(libc,),
@@ -2319,7 +2311,7 @@ class FoundationTests(unittest.TestCase):
             for name, data in python:
                 if name in core:
                     self.assertIs(data, core[name])
-            self.assertEqual(reads[str(Path("/usr/bin/python3").resolve())], 1)
+            self.assertEqual(reads["/usr/bin/python3"], 1)
             self.assertFalse(session.budget.failed)
         self.assert_clean(session)
 
@@ -2330,18 +2322,12 @@ class FoundationTests(unittest.TestCase):
             inactive._captured_native_runtime_input("/usr/bin/python3")
         self.assertFalse(inactive.native_runtime_inputs)
         for limits in (
-            {"snapshot_bytes": 4 * 1024 * 1024},
-            {"total_bytes": 8 * 1024 * 1024},
+            {"file_bytes": 4 * 1024 * 1024},
             {"control_bytes": 8 * 1024 * 1024},
             {"cache_bytes": 64},
         ):
             session = self.session(**limits)
             with self.subTest(limits=limits), session:
-                if "control_bytes" in limits:
-                    session.budget.charge(
-                        "control", session.budget.limits.control_bytes
-                        - session.budget.bytes.get("control", 0) - 1024,
-                    )
                 with self.assertRaises(MakeProbeError):
                     session._captured_native_runtime_input("/usr/bin/python3")
                 self.assertNotIn("/usr/bin/python3", session.native_runtime_inputs)
@@ -2355,7 +2341,6 @@ class FoundationTests(unittest.TestCase):
         self.assert_clean(session)
 
     def test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup(self):
-        from scripts.validation_ownership.runtime_image import RuntimeImage
         self.add("Makefile", "all: ; @v=owned; printf '%s' \"$$v\"\n")
         for shutdown in (True, False):
             budget = ProbeBudget()
@@ -2372,12 +2357,6 @@ class FoundationTests(unittest.TestCase):
                 session._native_make_readonly("all")
                 maps.append((session.native_runtimes, session.native_runtime_inputs))
                 self.assertTrue(all(closures and bodies for closures, bodies in maps))
-                images = [
-                    image for _, bodies in maps for image in bodies.values()
-                    if isinstance(image, RuntimeImage)
-                ]
-                self.assertGreaterEqual(len(images), 3)
-                descriptors = [image.descriptor for image in images]
                 try:
                     if shutdown:
                         session.__exit__(None, None, None)
@@ -2387,10 +2366,6 @@ class FoundationTests(unittest.TestCase):
                     self.assertIs(session.loader, loader)
                     self.assertFalse(session._views)
                     self.assertTrue(all(not closures and not bodies for closures, bodies in maps))
-                    self.assertTrue(all(image.descriptor == -1 for image in images))
-                    for descriptor in descriptors:
-                        with self.assertRaises(OSError):
-                            os.fstat(descriptor)
                     self.assert_clean(session)
                 finally:
                     inner.__exit__(None, None, None)
