@@ -1602,7 +1602,8 @@ complete run/job snapshot and immediately returns `deferred` without changing
 metadata. A mutation-eligible default edit takes three complete exact-candidate
 run/job snapshots: initial, pre-intent, and post-intent immediately before
 PATCH. It returns `deferred` when a later snapshot differs from its predecessor
-or no longer proves the same successful full Build. If the pre-intent snapshot
+or no longer proves the same successful full Build or pre-full preparation
+inventory described below. If the pre-intent snapshot
 already requires deferral, the helper stops there without creating an intent
 or taking the third snapshot.
 Its structured guidance points to the canonical comment route:
@@ -1628,8 +1629,31 @@ Every job in that terminal snapshot must also be terminal; an inconsistent
 run-completed/job-active response cannot authorize the edit.
 Permission to edit does not authorize successful CI continuity: that failed
 full run remains ineligible even if a later metadata-only run is green.
-Default nonessential edits still require successful full evidence, and an
-essential edit still needs an exact full-run identity to bind.
+Ordinarily, default nonessential edits require successful full evidence and
+essential edits need an exact full-run identity. Before the first full Build,
+the same helper can prepare a correction when its complete, nonempty inventory
+contains at least one positively same-candidate, completed review-first
+preflight and every relevant run is a positively bound completed review-first
+or metadata-only run. Empty, unbound, unknown, active or full-run inventories
+cannot use this preparation route. This fixes [#283](https://github.com/laqieer/fireemblem8-expansion/issues/283)'s
+ordering deadlock without a direct metadata-edit bypass.
+
+Preparation preserves the existing append-only intent/confirmation pair,
+metadata-specific version and all three run/identity snapshots. Preserve both
+returned comment IDs. Its initial preparation inventory must remain unchanged
+at the later snapshots, including for essential corrections; a newly observed
+full or unproven run cannot switch preparation into the older essential-active
+full authorization path. That path remains available only when initially
+selected under its existing contract. An initially active review-first run is
+a blocker, never essential-full permission, even when its classifier binding
+already succeeded. Active full/unproven overrides retain their existing
+contract; preparation eligibility is computed once and must remain unchanged.
+The result explicitly leaves the exact-head full Build
+and confirmation-bound reconciliation required; it is not continuity or merge
+evidence. A matching authoritative pair may return a non-mutating preparation
+no-op with that same hold. Reconciliation still refuses without a successful
+full Build. No full dispatch, cancellation, new service or mutable ledger is
+introduced.
 
 Transaction-comment creation accepts HTTP 201 `Location` only when it names
 the same canonical API comment resource attested by the response body.
