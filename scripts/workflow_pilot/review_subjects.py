@@ -870,7 +870,7 @@ def _platform_owner(role):
         content = Path(path).read_bytes()
         source = ast.parse(content)
         symbols = symtable.symtable(content, path, "exec")
-        hooks = [symbols.lookup(name) for name in ("load_tests", "__getattr__")
+        hooks = [symbols.lookup(name) for name in ("load_tests", "__getattr__", "__dir__")
                  if name in symbols.get_identifiers()]
         review.require(
             not any(hook.is_assigned() or hook.is_imported() or hook.is_namespace()

@@ -179,7 +179,8 @@ Focused binding regression:
 
 The binding regression module is included by the existing registered review-family
 `test_*review*.py` discovery. Its parsed owner model rejects module-level `load_tests`
-and `__getattr__` bindings and wildcard imports instead of executing a custom suite hook.
+and module `__getattr__`/`__dir__` bindings and wildcard imports instead of executing
+custom selection or enumeration hooks.
 Imported review observations are archival only and cannot establish pre-review eligibility.
 It exercises the real staged route, all finite roles, coverage-only origins,
 owner omission, missing sibling/stale-tool refusal, malformed execution

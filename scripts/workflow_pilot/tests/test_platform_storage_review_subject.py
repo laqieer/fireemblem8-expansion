@@ -5,6 +5,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import shlex
+import types
 import unittest
 
 from scripts.workflow_pilot.tests.test_review_subjects import SubjectTestCase
@@ -185,7 +186,8 @@ class PlatformStorageSubjectTests(SubjectTestCase):
             "try:\n    pass\nexcept Exception as load_tests:\n    pass",
         )
         for binding in (*bindings, *(item.replace("load_tests", "__getattr__")
-                                     for item in bindings)):
+                                     for item in bindings),
+                        *(item.replace("load_tests", "__dir__") for item in bindings)):
             with self.subTest(binding=binding):
                 head = self.repo.commit({TESTS: source + "\n" + binding + "\n"})
                 members = tuple(item for item in self.tools.members(self.scope(head))
@@ -202,6 +204,23 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         members = tuple(item for item in self.tools.members(self.scope(head))
                         if item.family == "generated")
         self.assert_satisfied(self.run_members(members, head))
+
+    def test_actual_unittest_module_enumeration_and_attribute_hooks_change_selection(self):
+        module = types.ModuleType("owned_selection_fixture")
+        module.SelectedTests = type("SelectedTests", (unittest.TestCase,), {
+            "test_selected": lambda self: None,
+        })
+        loader = unittest.TestLoader()
+        self.assertEqual(loader.loadTestsFromModule(module).countTestCases(), 1)
+        module.__dir__ = lambda: []
+        self.assertEqual(loader.loadTestsFromModule(module).countTestCases(), 0)
+        del module.__dir__
+        module.__getattr__ = lambda name: (
+            (lambda loader, suite, pattern: unittest.TestSuite()) if name == "load_tests" else None
+        )
+        self.assertEqual(loader.loadTestsFromModule(module).countTestCases(), 0)
+        del module.__getattr__
+        self.assertEqual(loader.loadTestsFromModule(module).countTestCases(), 1)
 
     def test_changed_execution_import_and_identity_inventory_fail_closed(self):
         source = (self.repo.root / SOURCE).read_text()
