@@ -2568,7 +2568,8 @@ def _parse_job(
         run_updated_at=run_updated_at,
     )
     binding, base_ref = (_candidate_step_details(raw) if name in {
-        candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER} else (None, None))
+        candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER,
+        candidate_evidence.METADATA_CLASSIFIER} else (None, None))
     return JobState(
         job_id,
         run_id,
@@ -3169,6 +3170,19 @@ def _blocking_active_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
     )
 
 
+def _pre_full_preparation(runs: tuple[RunState, ...]) -> bool:
+    relevant = tuple(run for run in runs if run.binding != "explicit-other")
+    return bool(relevant) and any(run.mode == "review-first" for run in relevant) and all(
+        run.binding == "explicit-same"
+        and run.candidate_binding is not None
+        and run.candidate_base_ref is not None
+        and run.status == "completed"
+        and all(job.status == "completed" and job.conclusion is not None for job in run.jobs)
+        and run.mode in {"review-first", "metadata-only"}
+        for run in relevant
+    )
+
+
 def _edit_receipt(
     state: PullRequestState,
     runs: tuple[RunState, ...],
@@ -3554,7 +3568,7 @@ def edit_metadata(
                 pr_number=pr_number,
                 run_id=active_full[0].run_id,
             )
-        if latest_full is None:
+        if latest_full is None and not _pre_full_preparation(initial_runs):
             return Decision(
                 action="refused",
                 base_sha=base_sha,
@@ -3565,7 +3579,8 @@ def edit_metadata(
                 repository=repository,
                 pr_number=pr_number,
             )
-        require_full_success(latest_full)
+        if latest_full is not None:
+            require_full_success(latest_full)
     elif essential_reason is not None and not essential_reason.strip():
         raise MetadataEditError("--essential-reason must contain non-whitespace text")
     elif (
@@ -3574,11 +3589,12 @@ def edit_metadata(
     ):
         raise MetadataEditError("--essential-reason exceeds 4096 bytes")
     elif not initially_matches and not active_full:
-        if latest_full is None:
+        if latest_full is None and not _pre_full_preparation(initial_runs):
             raise MetadataEditError(
                 "essential edit has no exact-head full Build to reconcile"
             )
-        _require_essential_full_outcome(latest_full)
+        if latest_full is not None:
+            _require_essential_full_outcome(latest_full)
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
@@ -3632,20 +3648,22 @@ def edit_metadata(
                 pr_number=pr_number,
                 run_id=current_active_full[0].run_id,
             )
-        if current_latest_full is None:
+        if current_latest_full is None and not _pre_full_preparation(current_runs):
             raise MetadataEditError(
                 "exact full Build authority disappeared before mutation"
             )
-        require_full_success(current_latest_full)
+        if current_latest_full is not None:
+            require_full_success(current_latest_full)
     elif not initially_matches:
         active_full = current_active_full
         latest_full = current_latest_full
         if not active_full:
-            if latest_full is None:
+            if latest_full is None and not _pre_full_preparation(current_runs):
                 raise MetadataEditError(
                     "essential edit has no exact-head full Build to reconcile"
                 )
-            _require_essential_full_outcome(latest_full)
+            if latest_full is not None:
+                _require_essential_full_outcome(latest_full)
 
     current_version = fetch_metadata_version(client, current)
     intents, confirmations, aborts = _transaction_comments(client, current)
@@ -3778,6 +3796,21 @@ def edit_metadata(
             state=current,
             version=current_version,
         )
+        if _pre_full_preparation(current_runs):
+            return Decision(
+                action="no-op",
+                base_sha=base_sha,
+                guidance=_reconcile_guidance(current, latest_confirmation_comment.comment_id),
+                head_sha=head_sha,
+                mutated=False,
+                reason="pre-full metadata is prepared; full Build and reconciliation remain required",
+                repository=repository,
+                pr_number=pr_number,
+                intent_comment_id=latest_intent_comment.comment_id,
+                intent_comment_url=latest_intent_comment.html_url,
+                confirmation_comment_id=latest_confirmation_comment.comment_id,
+                confirmation_comment_url=latest_confirmation_comment.html_url,
+            )
         current_full, authorized = _current_full_authorization(current_runs)
         if not authorized:
             run_id = current_full.run_id
@@ -4035,6 +4068,11 @@ def edit_metadata(
         reason = (
             "essential metadata updated; reconcile its metadata-only run after "
             "the newest exact-head full Build succeeds"
+        )
+    elif latest_full is None:
+        reason = (
+            "pre-full metadata prepared; preserve this pair and reconcile only "
+            "after the exact-head full Build succeeds"
         )
     return Decision(
         action="updated" if patch_required else "recovered",
