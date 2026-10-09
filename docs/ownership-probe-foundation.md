@@ -2934,6 +2934,68 @@ Those accepted criteria remain open. There is no ROM/RAM/save/localization or
 modern/archival compiler impact; existing native runtime/root observation and
 output custody are its only dependencies.
 
+### Sealed platform-runtime storage
+
+The existing native runtime-input cache retains non-core platform images as
+complete kernel-sealed FD bodies, rather than Python heap copies. Trusted
+pathname/alias admission remains unchanged. Capture streams the entire actual
+host image, binds its before/after descriptor and pathname identity, and applies
+`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK` and `F_SEAL_SEAL`. ELF consumers
+read bounded header slices; runtime closure identity uses the complete captured
+body digest and actual sealed-object identity. Root materialization streams and
+verifies the entire body again. A stat-only token never substitutes for content
+capture or its backing lifetime.
+
+Every sealed body and every physical streamed root copy spends the unchanged
+snapshot/aggregate allowances. Bounded stream buffers, header slices and actual
+records spend control; cache metadata spends cache. No retained whole heap body
+is merely reassigned to a different category. All numeric limits remain
+unchanged. The source/generated-file limit still applies to those files; it
+does not force a trusted platform image to fit in a generated-file-sized heap
+read. Consequently the old cold Python image's 4 MiB file/8 MiB control rejection
+is intentionally replaced by actual whole-backing snapshot/aggregate and
+bounded-workspace rejection. Default byte-backed runtime APIs retain their
+existing read and quota behavior.
+
+Sealed descriptors belong to the existing native-input cache. Cold and warm
+closure lookup share that cache; nested views have their own existing cache,
+restore their parent's entries and retire only their owned descriptors.
+Normal view return, active shutdown, out-of-order view failure, capture errors
+and interruption close owned FDs through existing cleanup. The backing check
+binds device/inode/mode/owner/size and actual immutable seals; failed kernel
+truncate attempts can change timestamps without changing sealed content.
+Original host capture still requires complete timestamp/identity stability.
+
+For the storage member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
+clean Linux x86-64 checkout and namespace prerequisites:
+
+1. Run `python3 -m unittest
+   scripts.validation_ownership.tests.test_runtime_image`. Require full actual
+   Python-image equality and streamed-copy equality, actual kernel `EPERM` for
+   write/shrink/grow, and descriptor retirement. Lower snapshot, aggregate and
+   control limits; require refusal without leaked FDs or an uncharged copy.
+   Changed-source, failed-seal and interrupted-capture controls must retire
+   their partial backing. A generated file above its lowered file limit must
+   still refuse even when an immutable platform image is larger than that limit.
+2. Run the foundation cases
+   `test_native_shared_runtime_bodies_are_captured_and_retained_once`,
+   `test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures`
+   and `test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup`.
+   Require one actual cold body capture, charged full physical storage with
+   bounded metadata cache, warm real native execution, lowered storage/work/cache
+   refusal, restored view ownership and actual FD retirement on both active
+   shutdown and nesting-order failure.
+3. Run `scripts.validation_ownership.tests.test_native_make` as the unchanged
+   direct byte-backed runtime compatibility control, plus the finite cohort's
+   distinct-root, generated-version/internal-reexec and failure cases.
+
+This storage member does not qualify source-bound pattern materialization,
+original scanner/compiler execution, inherited `.dep` FDs, all 551 outputs,
+the original initial-plus-eight cohort or graph integration. There are no
+ROM/RAM/save/localization or modern/archival compiler changes. Its only
+dependencies are the existing trusted runtime closure, native-input cache,
+budget and session/view cleanup; no new service or registry is required.
+
 From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
 namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 

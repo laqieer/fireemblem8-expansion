@@ -39,6 +39,7 @@ from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
 )
+from .runtime_image import RuntimeImage, close_images, image_digest, materialize_image
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -891,7 +892,8 @@ class ProbeSession:
             root = self.base / f"view-{self.serial}"
             tree = root / "tree"
             with cleanup_scope([
-                cache.clear, mappings.clear, tools.clear, runtimes.clear, runtime_inputs.clear,
+                cache.clear, mappings.clear, tools.clear, runtimes.clear,
+                lambda: close_images(runtime_inputs),
                 lambda: _remove_owned_tree(root), restore,
             ]):
                 root.mkdir()
@@ -933,7 +935,7 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.native_runtimes.clear()
-            self.native_runtime_inputs.clear()
+            close_images(self.native_runtime_inputs)
             self.native_read_abis.clear()
             self.native_selection = None
             self.native_runtime_selection = None
@@ -959,7 +961,7 @@ class ProbeSession:
                 mappings.clear()
                 tools.clear()
                 runtimes.clear()
-                runtime_inputs.clear()
+                close_images(runtime_inputs)
             if self._views:
                 self.loader = self._views[0][0]
             self._views.clear()
@@ -1184,7 +1186,7 @@ class ProbeSession:
                     _mkdir_target(root, canonical, directory=alias == "/proc/self")
                 destination.symlink_to(target)
             for target, data in self.make_runtime:
-                _mkdir_target(root, target).write_bytes(data)
+                materialize_image(_mkdir_target(root, target), data)
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
@@ -1199,7 +1201,7 @@ class ProbeSession:
                     if dict(self.make_runtime).get(target) != data:
                         raise MakeProbeError("native shell runtime conflicts with captured Make runtime")
                 else:
-                    _mkdir_target(root, target).write_bytes(data)
+                    materialize_image(_mkdir_target(root, target), data)
                     destination.chmod(0o555)
             for item in self.runtime_inputs:
                 for parent, present in reversed(item.parents):
@@ -2932,7 +2934,7 @@ class ProbeSession:
                 for path, data in rows:
                     self.budget.remaining()
                     self.budget.charge("total", len(data))
-                    images.append((kind, path, hashlib.sha256(data).hexdigest()))
+                    images.append((kind, path, image_digest(data)))
             resources = []
             for item in self.runtime_inputs:
                 self.budget.remaining()
@@ -3124,11 +3126,19 @@ class ProbeSession:
         self.budget.remaining()
         if path not in self.native_runtime_inputs:
             core = next((data for name, data in self.make_runtime if name == path), None)
-            data = core if core is not None else _trusted_runtime_bytes(path, self.budget)
-            self.budget.charge(
-                "cache", len(path.encode("utf-8")) + 16 + (0 if core is not None else len(data)),
-            )
-            self.native_runtime_inputs[path] = data
+            data = core if core is not None else RuntimeImage(_trusted_runtime_path(path), self.budget)
+            try:
+                self.budget.charge(
+                    "cache", len(path.encode("utf-8")) + 16
+                    + (sys.getsizeof(data) + sys.getsizeof(data.__dict__)
+                       if isinstance(data, RuntimeImage) else 0),
+                )
+                self.native_runtime_inputs[path] = data
+            except BaseException as error:
+                finish_cleanup(
+                    [data.close] if isinstance(data, RuntimeImage) else [], primary=error,
+                )
+                raise
         return self.native_runtime_inputs[path]
 
     def _captured_native_runtime(self, path):
