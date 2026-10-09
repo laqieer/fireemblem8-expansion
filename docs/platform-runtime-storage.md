@@ -112,3 +112,70 @@ Default execution routes and modern debug/release/archival behavior are
 unchanged. ROM, RAM, save/migration, generated game data and localization
 impact: none. Rollback is an ordinary revert before dependent integration;
 required dependents must not merge before this API is delivered.
+
+## Finite review-subject binding
+
+The existing `review_subjects.BINDINGS` entry for
+`TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001/sealed-platform-storage` supplies
+15 obligations: all five wire roles, four lifecycle roles, two resource roles
+and four generated-owner roles. The accepted findings map individually to
+`owners:probe-inventory`, `validators:source-admission`,
+`stale-bindings:source-identity` and `enabled:bounded-slices`. The remaining
+roles cover complete capture/materialization, sealed replay, FD handoff,
+primary-error preservation, no budget reset, retirement, caller-owned byte
+compatibility, generated Make selection and its full-only workflow consumer.
+
+Select the reviewed binding at an explicit immutable tool revision using the
+existing `ReviewTools.members` and `ReviewTools.run_obligations` APIs. The
+existing `_stage` route materializes each origin/candidate from `GitTree` and
+runs the closed probes in its credential-free child. It does not import the
+candidate into the coordinator collector. Every obligation carries the shared
+execution closure and actual Git blob identities: provider, provider tests,
+budget/lifecycle/channel/authority imports and package roots, foundation Make
+file, native test inventory sources, owner tests, workflow and the existing
+finite workflow parser/condition functions. Other native suites are parsed as
+inventory inputs, not imported or executed by this binding. A changed import
+closure, identity field set or unrecognized mutation guard blocks; no arbitrary
+caller test, evaluator, service, budget or execution permission is introduced.
+
+Coverage findings are **not historical runtime defects**. For each admission,
+post-capture identity and oversized-workspace predicate, the worker first runs
+the actual source revision's complete provider suite unchanged. It then removes
+only that production predicate through its finite AST model and reruns that
+same original suite. The coverage contract requires 9, 16 and 3 independent
+input-assertion failures respectively, without errors, skips or expected
+failures. Admission observations cover nine early refusals; identity
+observations independently change all eight fields at both FD and path checks.
+The unchanged current suite additionally executes zero/N-1/N, negative,
+clamped, empty and step-one slices, scalar/step and N+1/full-body refusals,
+short reads, quotas, deadline and closed-body controls. A surviving mutation
+is reported as a **coverage gap**, explicitly retaining that the unmutated
+original suite passed. A failed baseline or unavailable execution never
+qualifies as a successful coverage observation.
+
+The initial missing owner inventory at
+`deb861f4acfd8f26e54501a0362a8a94d148727a` is reproduced by parsed Make
+selected-versus-expected module equality. This is a closed dedicated probe of
+the original inventory and real generated command, not a claim to have run
+the entire original workflow-test import closure. The coverage origin at
+`20ce99cc816b85647569f0a6ba4600326870ddc8` has eight original provider tests;
+actual original-suite runs survive all three semantic guard removals. The
+current twelve-test provider suite kills them with 9/16/3 input failures.
+Those results establish missing regression coverage, not incorrect old
+admission, identity or slice runtime behavior.
+
+Historical #275 operation controls remain separate: the session-only
+comparison adapts exact `3a32` materialization operations, `7c522` destination
+ownership and `c8d6117` constructor operations to the extracted provider,
+producing 22/12/3 expected failures without errors; the exact `deb861f4`
+owner tests produce one selected-versus-expected failure. These are explicit
+component adaptations, not full exact-origin-tree qualification. Neither
+these controls nor this binding complete the held #275/#270/#180/#186 work.
+Exact-head independent/remote review, security, complete candidate/master
+Builds and every existing completion gate remain unchanged.
+
+Focused binding regression:
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_platform_storage_subject -v`.
+It exercises the real staged route, all finite roles, coverage-only origins,
+owner omission, missing sibling/stale-tool refusal, malformed execution
+closure, runtime regression and unavailable original-suite execution.

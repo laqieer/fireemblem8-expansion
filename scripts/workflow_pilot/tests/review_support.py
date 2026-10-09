@@ -87,9 +87,21 @@ class Snapshot:
             "src/events_shoplist.c", "src/events_trapdata.c",
             "tools/gba-playtest/tests/c/expansion_aoe_driver.c",
             "tools/gba-playtest/tests/c/expansion_aoe_disabled_driver.c",
+            ".github/workflows/build.yml",
+            "tests/workflows/test_ownership_probe.py",
+            "tests/workflows/test_build_ci_topology.py",
+            "scripts/workflow_pilot/tests/test_adaptive_gate.py",
+            "scripts/validation_ownership/foundation.mk",
+            "scripts/validation_ownership/runtime_image.py",
+            "scripts/validation_ownership/__init__.py",
+            "scripts/validation_ownership/authority.py",
+            "scripts/validation_ownership/budget.py",
+            "scripts/validation_ownership/lifecycle.py",
+            "scripts/validation_ownership/producer_channel.py",
         }
         prefixes = ("include/", "src/data/", "src/events/", "assets/tmx/",
-                    "scripts/generated_data/", "reports/generated_data_")
+                    "scripts/generated_data/", "reports/generated_data_",
+                    "scripts/validation_ownership/tests/")
         for name in sorted(exact | {name for name in names if name.startswith(prefixes)}):
             source = ROOT / name
             if not source.is_file():

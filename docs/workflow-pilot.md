@@ -894,6 +894,14 @@ The shipped unrelated subject uses are:
   request code executed as a registered subject with finite lifecycle/wire
   controls. This explicit binding never redirects unrelated findings to
   workflow-governance code.
+- **`TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001 / sealed-platform-storage`:**
+  complete finite provider wire/lifecycle/resource and generated-owner roles,
+  through the same staged child route. Original-suite semantic guard removals
+  measure coverage gaps separately from old correct runtime behavior; parsed
+  Make selection checks the source owner inventory. See
+  [the provider binding](platform-runtime-storage.md#finite-review-subject-binding)
+  for the closed execution closure, individual finding mappings and historical
+  evidence distinctions. No native permission or final gate is added or relaxed.
 
 `affected-fixed` requires the same reviewed semantic probe to find a contract
 violation at the actual finding origin and to pass the candidate. Unaffected
