@@ -175,7 +175,12 @@ Exact-head independent/remote review, security, complete candidate/master
 Builds and every existing completion gate remain unchanged.
 
 Focused binding regression:
-`python3 -B -m unittest scripts.workflow_pilot.tests.test_platform_storage_subject -v`.
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_platform_storage_review_subject -v`.
+
+The binding regression module is included by the existing registered review-family
+`test_*review*.py` discovery. Its parsed owner model rejects module-level `load_tests`
+bindings and wildcard imports instead of executing a custom suite hook. Imported review
+observations remain bound to every original identity field, including reviewer role.
 It exercises the real staged route, all finite roles, coverage-only origins,
 owner omission, missing sibling/stale-tool refusal, malformed execution
 closure, runtime regression and unavailable original-suite execution.

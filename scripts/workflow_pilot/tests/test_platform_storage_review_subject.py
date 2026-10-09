@@ -1,7 +1,10 @@
-"""Finite provider binding: real staged API, source-suite and owner observations."""
+"""Finite provider review binding: staged API, source-suite and owner observations."""
 
 import ast
 from dataclasses import replace
+import json
+from pathlib import Path
+import shlex
 import unittest
 
 from scripts.workflow_pilot.tests.test_review_subjects import SubjectTestCase
@@ -24,6 +27,33 @@ NEW_COVERAGE = {
 class PlatformStorageSubjectTests(SubjectTestCase):
     def scope(self, head=None):
         return request(CASE, SUBJECT, self.repo.base, head or self.repo.base)
+
+    def test_registered_review_family_discovery_selects_complete_binding_suite(self):
+        root = Path(__file__).resolve().parents[3]
+        catalog = json.loads((root / "docs/test-cases/registry.json").read_text())
+        case = next(row for row in catalog["cases"]
+                    if row["id"] == "TC-WORKFLOW-REVIEW-FAMILY-001")
+        commands = [shlex.split(row["command"]) for row in case["automation"]]
+        discovery = next(argv for argv in commands
+                         if "discover" in argv and "-p" in argv and "-s" in argv
+                         and argv[argv.index("-s") + 1] == "scripts/workflow_pilot/tests")
+        loader = unittest.TestLoader()
+        suite = loader.discover(
+            str(root / discovery[discovery.index("-s") + 1]),
+            pattern=discovery[discovery.index("-p") + 1], top_level_dir=str(root),
+        )
+
+        def identifiers(items):
+            for item in items:
+                if isinstance(item, unittest.TestSuite):
+                    yield from identifiers(item)
+                else:
+                    yield item.id()
+
+        expected = set(identifiers(loader.loadTestsFromTestCase(type(self))))
+        self.assertFalse(loader.errors, loader.errors)
+        self.assertTrue(expected)
+        self.assertEqual(expected & set(identifiers(suite)), expected)
 
     def test_complete_finite_roles_and_shared_source_execution_closure(self):
         members = self.tools.members(self.scope())
@@ -131,6 +161,46 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                           if item.verdict == "contract-violation"},
                          {"owners:probe-inventory", "drift-checks:probe-inventory"})
         self.assert_satisfied(self.run_members(members, after))
+
+    def test_module_load_tests_bindings_and_wildcard_imports_refuse_finite_selection(self):
+        source = (self.repo.root / TESTS).read_text()
+        bindings = (
+            "load_tests = lambda loader, tests, pattern: tests",
+            "load_tests: object = lambda loader, tests, pattern: tests",
+            "load_tests: object",
+            "load_tests, unrelated = None, None",
+            "[load_tests] = [None]",
+            "load_tests += ()",
+            "(load_tests := None)",
+            "import unittest as load_tests",
+            "from unittest import TestSuite as load_tests",
+            "from unittest import load_tests",
+            "from unittest import *",
+            "def load_tests(loader, tests, pattern):\n    return tests",
+            "async def load_tests(loader, tests, pattern):\n    return tests",
+            "class load_tests:\n    pass",
+            "if False:\n    load_tests = None",
+            "for load_tests in ():\n    pass",
+            "with open('/never-opened') as load_tests:\n    pass",
+            "try:\n    pass\nexcept Exception as load_tests:\n    pass",
+        )
+        for binding in bindings:
+            with self.subTest(binding=binding):
+                head = self.repo.commit({TESTS: source + "\n" + binding + "\n"})
+                members = tuple(item for item in self.tools.members(self.scope(head))
+                                if item.family == "generated")
+                observed = next(item for item in self.run_members(members, head)
+                                if item.obligation.member == "owners:probe-inventory")
+                self.assertEqual(observed.verdict, "unavailable", observed.detail)
+                self.assertIn("custom selection needs a reviewed model", observed.detail)
+        harmless = (
+            "\ndef helper():\n    load_tests = None\n    return load_tests\n"
+            "\ndef read_hook():\n    return load_tests\n"
+        )
+        head = self.repo.commit({TESTS: source + harmless})
+        members = tuple(item for item in self.tools.members(self.scope(head))
+                        if item.family == "generated")
+        self.assert_satisfied(self.run_members(members, head))
 
     def test_changed_execution_import_and_identity_inventory_fail_closed(self):
         source = (self.repo.root / SOURCE).read_text()

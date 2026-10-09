@@ -962,8 +962,10 @@ class ReviewSession:
         if self.completed_observation is not None:
             observed = self.completed_observation
             terminal = (self.lease is None and observed.state == "completed"
-                        and (observed.task, observed.owner, observed.head, observed.scope)
-                        == (report.task, report.owner, report.head, report.subjects)
+                        and (observed.task, observed.owner, observed.role,
+                             observed.head, observed.scope)
+                        == (report.task, report.owner, report.role,
+                            report.head, report.subjects)
                         and (observed.started_at, observed.completed_at, observed.actions,
                              observed.runtime_files, observed.findings, observed.observed_paths,
                              observed.original_content)

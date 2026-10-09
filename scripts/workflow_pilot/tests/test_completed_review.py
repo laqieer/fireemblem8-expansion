@@ -134,6 +134,36 @@ class CompletedReviewTests(unittest.TestCase):
         session.completed_observation = replace(self.observation, owner="different-owner")
         self.assertFalse(session.original_review_context_ready())
 
+    def test_every_imported_observation_and_report_field_is_bound_after_validation(self):
+        changes = {
+            "task": "other-task", "owner": "other-reviewer", "role": "general-purpose",
+            "head": "b" * 40, "scope": frozenset({"other/subject"}), "state": "running",
+            "actions": frozenset({"read-candidate", "read-evidence", "emit-report"}),
+            "started_at": "2026-10-09T10:05:19.945Z",
+            "completed_at": "2026-10-09T10:08:00.932Z",
+            "observed_paths": ("other/source.py",), "findings": (),
+            "original_content": "Changed report content", "runtime_files": 1,
+        }
+        report_names = {"scope": "subjects", "runtime_files": "files"}
+        for name, value in changes.items():
+            with self.subTest(representation="observation", field=name):
+                session = self.session()
+                session.observe_completed(self.observation)
+                session.completed_observation = replace(self.observation, **{name: value})
+                self.assertFalse(session.original_review_context_ready())
+            if name != "state":
+                with self.subTest(representation="report", field=name):
+                    session = self.session()
+                    report = session.observe_completed(self.observation)
+                    session.report = replace(report, **{report_names.get(name, name): value})
+                    self.assertFalse(session.original_review_context_ready())
+        for name in ("completed", "read_only"):
+            with self.subTest(representation="report", field=name):
+                session = self.session()
+                report = session.observe_completed(self.observation)
+                session.report = replace(report, **{name: False})
+                self.assertFalse(session.original_review_context_ready())
+
     def test_fresh_before_first_remote_and_accepted_findings_remain_required(self):
         session = self.session()
         session.observe_completed(self.observation)

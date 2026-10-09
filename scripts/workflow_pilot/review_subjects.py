@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import symtable
 import sys
 import types
 import unittest
@@ -865,9 +866,18 @@ def _platform_owner(role):
         review.require(name.startswith("scripts.validation_ownership.tests.test_")
                        and all(part.isidentifier() for part in name.split(".")),
                        "unknown native test selector")
-        source = ast.parse(Path(name.replace(".", "/") + ".py").read_bytes())
-        review.require(not any(isinstance(node, ast.FunctionDef) and node.name == "load_tests"
-                               for node in source.body), "custom selection needs a reviewed model")
+        path = name.replace(".", "/") + ".py"
+        content = Path(path).read_bytes()
+        source = ast.parse(content)
+        symbols = symtable.symtable(content, path, "exec")
+        hook = symbols.lookup("load_tests") if "load_tests" in symbols.get_identifiers() else None
+        review.require(
+            (hook is None or not (hook.is_assigned() or hook.is_imported() or hook.is_namespace()))
+            and not any(isinstance(node, ast.ImportFrom)
+                        and any(alias.name == "*" for alias in node.names)
+                        for node in ast.walk(source)),
+            "custom selection needs a reviewed model",
+        )
         inventories[name] = tuple(
             name + "." + node.name + "." + method.name
             for node in source.body if isinstance(node, ast.ClassDef)
