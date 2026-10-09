@@ -3050,6 +3050,20 @@ non-simple definition/return sequences. `PatternLocation` remains distinct from
 ordinary `RuntimeLocation` and `ExpansionLocation`. Pattern observations are not
 ordinary authored assignments.
 
+Only the explicit pattern protocol uses a compact physical-source index. Native
+source and eval capture, runtime replay and its physical-source projection select
+the same existing index seam; legacy requests retain the eager index. The compact
+read-only mapping retains 32-bit physical line and byte offsets and computes the
+unchanged raw-statement digest on first lookup. It never collapses source versions
+or parser occurrences. UTF-8 validation, offset storage, memoized values and
+on-demand decode/hash work are charged cumulatively; lookup caching does not
+refund prior work. Run the compact-span cases over all 183 empty, LF, CRLF, UTF-8
+and continuation models, compare the complete mapping to `physical_statements`,
+and require exact-quota success, one-byte-short refusal, invalid-byte/count
+refusals and no repeat charge for an already retained result. For the 2,000-line
+fixture, construction charges must be less than half the eager representation;
+this finite threshold is not original-cohort resource qualification.
+
 The same module exercises parsed replay mutations of source/owner/template IDs,
 version disagreement, terminal counts, wrong flavor/input/effective modifiers,
 missing return, payloads and unissued traps. Actual stopped-process controls
@@ -3058,6 +3072,13 @@ register vectors; all must explicitly refuse and clean their owned process tree.
 Admission controls replace list/layout/caller ABI fields or mismatch requested
 versions and require refusal. An escaped-percent fixture must bind the second
 percent as its wildcard, not the literal first percent.
+Boolean aliases for new template owner occurrence IDs must refuse as malformed
+typed wire, not compare equal to integer IDs. The diagnostic case captures a real
+ordinary Make exit 2 and its recipe's `Error 7`, then supplies that failed result
+at the native result boundary for readonly/writable requests, with and without
+patterns. Require the requested mode, unchanged nonzero status and stderr, and
+cleanup; the pre-fix writable branch incorrectly reports `readonly`. This tests
+failure reporting, not a bypass of native command admission or job validation.
 
 Run the finite-root case with two different command-line profiles; require
 different real stdout, distinct cumulative template IDs/occurrences, machine 4

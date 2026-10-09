@@ -1,13 +1,18 @@
 """Actual-image mutation and finite occurrence/topology contracts."""
 
 from pathlib import Path
+import hashlib
 import json
 import struct
 import subprocess
+import sys
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from scripts.validation_ownership import read_epochs
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
+from scripts.validation_ownership.make_probe import Limits
 from scripts.validation_ownership.pattern_templates import PatternTemplates, pattern_abi
 from scripts.validation_ownership.tests import test_foundation as foundation
 
@@ -85,6 +90,73 @@ class MemoryTrace:
 
 
 class PatternTemplateTests(unittest.TestCase):
+    def test_compact_physical_spans_preserve_complete_mapping_and_exact_charges(self):
+        sources = [b"", b"\n", b"\r\n", b"x\r", b"x\r\n", b"x\n\n",
+                   "TEXT := caf\u00e9\r\n".encode()]
+        for terminator in (b"\n", b"\r\n"):
+            for count in range(1, 12):
+                for slashes in range(4):
+                    source = terminator.join([
+                        b"A := " + b"\\" * slashes, b" second", b"THIRD := value",
+                    ] * count)
+                    sources.extend((source, source + terminator))
+        for source in sources:
+            with self.subTest(source=source):
+                expected = {
+                    first: (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
+                    for logical, first, last, raw in read_epochs.physical_statements(source)
+                }
+                charges, checkpoints = [], []
+                observed = read_epochs._statement_index(
+                    source, compact=True, reserve=charges.append,
+                    checkpoint=lambda: checkpoints.append(None),
+                )
+                self.assertEqual(len(checkpoints), source.count(b"\n") + 1)
+                self.assertEqual(list(observed), list(expected))
+                self.assertEqual(dict(observed), expected)
+                complete = sum(charges)
+                self.assertEqual(list(observed.values()), list(expected.values()))
+                self.assertEqual(dict(observed.items()), expected)
+                self.assertIsNone(observed.get(99999))
+                self.assertIsNone(observed.get("not-a-line"))
+                self.assertEqual(sum(charges), complete)
+                with self.assertRaises(TypeError):
+                    observed[1] = observed[1]
+                for offset in (0, 1):
+                    reserve = lambda size: budget.charge("control", size)
+                    exact = complete + sys.getsizeof(reserve) - sys.getsizeof(charges.append)
+                    budget = ProbeBudget(Limits(control_bytes=exact - offset))
+                    if offset:
+                        with self.assertRaisesRegex(MakeProbeError, "control byte budget exhausted"):
+                            dict(read_epochs._statement_index(source, compact=True, reserve=reserve))
+                        self.assertTrue(budget.failed)
+                    else:
+                        self.assertEqual(
+                            dict(read_epochs._statement_index(source, compact=True, reserve=reserve)),
+                            expected,
+                        )
+                        self.assertEqual(budget.bytes["control"], exact)
+        source = b"TEXT := value\n" * 2000
+        eager, compact = [], []
+        read_epochs._statement_index(source, reserve=eager.append)
+        observed = read_epochs._statement_index(source, compact=True, reserve=compact.append)
+        self.assertLess(sum(compact), sum(eager) // 2)
+        before = sum(compact)
+        self.assertEqual(observed[1], read_epochs._statement_index(source)[1])
+        self.assertGreater(sum(compact), before)
+        before = sum(compact)
+        self.assertEqual(observed[1], observed[1])
+        self.assertEqual(sum(compact), before)
+
+    def test_compact_physical_spans_refuse_invalid_bytes_and_count_overflow(self):
+        for source, count_limit, error in (
+            (b"A := a\n", 1, read_epochs.ReadEpochError),
+            (b"A := \0", None, read_epochs.ReadEpochError),
+            (b"A := \xff", None, UnicodeDecodeError),
+        ):
+            with self.subTest(source=source), self.assertRaises(error):
+                read_epochs._statement_index(source, compact=True, count_limit=count_limit)
+
     def setUp(self):
         self.trace = MemoryTrace()
         self.templates = PatternTemplates(self.trace, {"head": 8, "object_bytes": 80})
@@ -215,6 +287,49 @@ class NativePatternTemplateTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_actual_failed_make_result_reports_requested_mode_for_old_and_pattern_requests(self):
+        self.add("Makefile", "all: ; @exit 7\n")
+        failed = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        self.assertEqual(failed.returncode, 2)
+        self.assertIn(b"Error 7", failed.stderr)
+        for patterns in (False, True):
+            for writable in (False, True):
+                with self.subTest(patterns=patterns, writable=writable):
+                    session = self.session()
+                    with session, patch.object(
+                        session, "_sandbox_run", return_value=(failed, {}),
+                    ):
+                        mode = "writable" if writable else "readonly"
+                        with self.assertRaises(MakeProbeError) as failure:
+                            session._native_make_run(
+                                "all", writable_outputs=("made",) if writable else (),
+                                commands={},
+                                observe_reads=True, observe_runtime_completions=True,
+                                observe_patterns=patterns,
+                            )
+                        self.assertEqual(
+                            str(failure.exception),
+                            f"{mode} native GNU Make failed: 2; {failed.stderr!r}",
+                        )
+                        if writable:
+                            dependency_error = (
+                                "invalid native read observation request or completion dependency"
+                                if patterns else
+                                "native Command admission requires complete runtime job inputs"
+                            )
+                            with self.assertRaisesRegex(
+                                MakeProbeError, "^" + dependency_error + "$",
+                            ):
+                                session._native_make_run(
+                                    "all", writable_outputs=("made",), commands={},
+                                    observe_reads=True, observe_runtime_completions=False,
+                                    observe_patterns=patterns,
+                                )
+                    self.assert_clean(session)
+
     def test_public_pattern_protocol_both_branches_nested_eval_include_and_typed_archive(self):
         self.add("Makefile", (
             "%.out: VALUE = recursive\n"
@@ -270,6 +385,8 @@ class NativePatternTemplateTests(unittest.TestCase):
                 ("pattern-counter", lambda value: value["events"][-1].update(patterns=17)),
                 ("return-counter", lambda value: value["events"][-1].update(pattern_returns=15)),
                 ("template-owner", lambda value: self.event_row(value, "pattern-template-completion").update(owner=["eval", 1])),
+                ("boolean-template-entry-owner", lambda value: self.event_row(value, "pattern-template-entry").update(owner=["source", True])),
+                ("boolean-template-completion-owner", lambda value: self.event_row(value, "pattern-template-completion").update(owner=["source", True])),
                 ("template-source", lambda value: self.event_row(value, "pattern-template-completion").update(source=2)),
                 ("incomplete-template", lambda value: self.event_row(value, "pattern-template-completion").update(kind="pattern-template-entry")),
                 ("template-id", lambda value: self.event_row(value, "pattern-template-entry").update(template=2)),

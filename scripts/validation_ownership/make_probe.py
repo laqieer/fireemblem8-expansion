@@ -2767,7 +2767,7 @@ class ProbeSession:
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
-            raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
+            raise MakeProbeError("native Make requires an unmapped immutable source session")
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
             or type(observe_runtime_completions) is not bool
@@ -2792,8 +2792,6 @@ class ProbeSession:
         )
         if writable_outputs and commands is None:
             raise MakeProbeError("native writable Make requires original Command admission")
-        if writable_outputs and not (observe_reads and observe_runtime_completions):
-            raise MakeProbeError("native writable Make requires its complete v6 source/job observations")
         frozen_snapshot, frozen_tree = self.snapshot, self.tree
 
         def admit(path, inputs):
@@ -2814,7 +2812,7 @@ class ProbeSession:
                     command.code, command.sources, command.directories, command.outputs,
                 ))
             ):
-                raise MakeProbeError("native readonly Command differs from actual argv or requests output authority")
+                raise MakeProbeError("native Command differs from actual argv or requests output authority")
             Command.__post_init__(command)
             outputs = self._output_paths(command.outputs)
             resources = resource_plan(command.native_resources)
@@ -3055,8 +3053,9 @@ class ProbeSession:
             )
             completed, observed = sandbox_result[:2]
             if completed.returncode:
+                execution_mode = "writable" if writable_outputs else "readonly"
                 raise MakeProbeError(
-                    f"readonly native GNU Make failed: {completed.returncode}; {completed.stderr!r}"
+                    f"{execution_mode} native GNU Make failed: {completed.returncode}; {completed.stderr!r}"
                 )
             if native_requests is not None:
                 captures = sandbox_result[2]
