@@ -2501,6 +2501,10 @@
           "evidence": "scripts/validation_ownership/tests/test_runtime_image.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_pattern_templates -v",
+          "evidence": "scripts/validation_ownership/tests/test_pattern_templates.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },

@@ -3004,6 +3004,41 @@ ROM/RAM/save/localization or modern/archival compiler changes. Its only
 dependencies are the existing trusted runtime closure, native-input cache,
 budget and session/view cleanup; no new service or registry is required.
 
+### Source-bound pattern component (integration incomplete)
+
+The internal `pattern_templates` component derives the actual GNU Make 4.3
+pattern list, field layout, selection site, both definition callers and shared
+post-modifier completion from the captured ELF. It does not select or issue a
+new public trace version. Runtime 5 and writable 6 remain unchanged and
+fail closed on the unsupported pattern-materialization wire. Full ABI admission,
+native trace scheduling, versioned runtime/machine replay, archive reconstruction
+and host/public consumers must land together before this component is enabled.
+
+From a clean Linux x86-64 checkout with the existing namespace launcher, run
+`python3 -m unittest scripts.validation_ownership.tests.test_pattern_templates -v`.
+The required native runner and existing indexed native case include this module.
+Its finite controls require complete length-sorted topology discovery even when
+new objects appear after retained ones; immutable complete fields are stored once
+but the selected live object is fully decoded again. A changed selected value,
+cyclic or disappearing object, changed ordering, missing source/owner and
+incomplete exec retirement must refuse. Reused addresses after retirement get
+new IDs without restarting accounting. No stat-only source identity or refund is
+admitted.
+
+The native component case runs ordinary and supervised Make with two included
+eval definitions plus a partially allocated enclosing pattern and nested eval.
+Require identical exit/stdout/stderr, four completed templates with four distinct
+source occurrences, the enclosing source owner retained across the nested eval,
+and complete owned cleanup. The test-only event collector does not issue native
+trace authority. This component proof is not public pattern replay, generated
+producer-version qualification, original scanner/compiler or inherited `.dep`
+execution, all 551 outputs, or the original initial-plus-eight cohort. Resource
+limits and every original acceptance and delivery hold remain unchanged.
+
+Dependencies are the existing captured ELF, native source/eval invocation stack,
+source snapshots and cumulative budget. There are no new services, registries,
+feature profiles, ROM/RAM/save/localization changes or archival compiler changes.
+
 From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
 namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
 
