@@ -168,11 +168,11 @@ class PatternTemplates:
             trace.policy.charge_metadata(sys.getsizeof(pointer) + 2 * sys.getsizeof((pointer,)))
             seen.add(pointer)
             retained = self.objects.get(pointer)
+            following, definition = self.decode(pointer)
             if retained is not None and retained["definition"] is not None:
-                following = trace.number(pointer)
-                definition = retained["definition"]
+                if definition != retained["definition"]:
+                    raise read_epochs.ReadEpochError("retained pattern changed its source-bound full fields")
             else:
-                following, definition = self.decode(pointer)
                 if retained is None:
                     owner = self.owner()
                     if owner is None:
@@ -202,6 +202,11 @@ class PatternTemplates:
         if set(self.objects) != seen:
             raise read_epochs.ReadEpochError("pattern list lost an occurrence-owned object")
         return ordered
+
+    def validate_retirement(self):
+        self.observe()
+        if any(row["definition"] is None for row in self.objects.values()):
+            raise read_epochs.ReadEpochError("Make retired an incomplete pattern template")
 
     def complete(self, owner, source):
         trace = self.trace
@@ -234,9 +239,6 @@ class PatternTemplates:
         row = self.objects.get(pointer)
         if row is None or row["definition"] is None:
             raise read_epochs.ReadEpochError("selected pattern has no completed actual parser owner")
-        _, actual = self.decode(pointer)
-        if actual != row["definition"]:
-            raise read_epochs.ReadEpochError("selected pattern changed its source-bound full fields")
         return row
 
 

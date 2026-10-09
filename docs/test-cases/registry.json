@@ -2535,6 +2535,10 @@
           "evidence": "scripts/validation_ownership/tests/test_pattern_templates.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_pattern_templates.PatternTemplateTests.test_retained_unselected_full_fields_and_pointed_bytes_are_revalidated scripts.validation_ownership.tests.test_pattern_templates.PatternTemplateTests.test_live_retirement_rejects_incomplete_and_retire_never_reads_dead_memory scripts.validation_ownership.tests.test_pattern_templates.NativePatternTemplateTests.test_actual_retained_pattern_reexec_and_exit_require_live_validation -v",
+          "evidence": "scripts/validation_ownership/tests/test_pattern_templates.py"
+        },
+        {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },

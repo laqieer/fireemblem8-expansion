@@ -2622,6 +2622,8 @@ class Policy:
                     self.make_restarts += 1
                     if self.make_restarts > 64:
                         raise Violation("Make restart exceeded the existing pass bound")
+                    if self.read_trace is not None:
+                        self.read_trace.prepare_pattern_retirement(pid, "exec")
                     role = "make"
                 elif self.native_readonly and path in self.native_executables and state.dispatch:
                     if state.dispatch[0] != path:
@@ -3248,6 +3250,11 @@ def supervise(config, drop_privileges):
             outcome = ctypes.c_ulong()
             policy.charge_metadata(ctypes.sizeof(outcome))
             ptrace(0x4201, stopped, 0, ctypes.byref(outcome))
+            if (
+                outcome.value == 0 and policy.read_trace is not None
+                and stopped == policy.read_trace.pid
+            ):
+                policy.read_trace.prepare_pattern_retirement(stopped, "exit")
             if policy.native_readonly and (state.role == "native" or stopped == pid):
                 if state.native_exit_status is not None:
                     raise Violation("native process reused its terminal kernel exit stop")

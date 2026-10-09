@@ -174,10 +174,56 @@ class PatternTemplateTests(unittest.TestCase):
         self.templates.complete(["source", 2], 2)
         self.assertEqual(self.templates.selected(256)["id"], first["id"] + 1)
         self.assertEqual(self.templates.objects[128]["owner"], ["source", 1])
-        self.assertNotIn((128, 80), trace.transferred)
+        self.assertIn((128, 80), trace.transferred)
         trace.put_number(128 + 40, trace.text("substituted"))
         with self.assertRaisesRegex(read_epochs.ReadEpochError, "full fields"):
             self.templates.selected(128)
+
+    def test_retained_unselected_full_fields_and_pointed_bytes_are_revalidated(self):
+        for field in ("target", "name", "value", "file", "line", "offset", "name_length", "flags", "value-bytes"):
+            for retirement in (False, True):
+                with self.subTest(field=field, retirement=retirement):
+                    self.setUp()
+                    trace = self.trace
+                    trace.template(128, "%.a")
+                    trace.put_number(8, 128)
+                    self.templates.complete(["source", 1], 1)
+                    if field == "target":
+                        target = trace.text("%.b")
+                        trace.put_number(136, target + 1)
+                        trace.put_number(144, target)
+                    elif field in {"name", "value", "file"}:
+                        trace.put_number(128 + {"name": 32, "value": 40, "file": 48}[field],
+                                         trace.text("other"))
+                    elif field in {"line", "offset"}:
+                        trace.put_number(128 + {"line": 56, "offset": 64}[field], 2)
+                    elif field == "name_length":
+                        struct.pack_into("<I", trace.memory_image, 200, 3)
+                    elif field == "flags":
+                        struct.pack_into("<I", trace.memory_image, 204, 3 << 23 | 2 << 26)
+                    else:
+                        value = int.from_bytes(trace.memory_image[168:176], "little")
+                        trace.memory_image[value] = ord("V")
+                    actual = self.templates.decode(128)[1]
+                    self.assertNotEqual(actual, self.templates.objects[128]["definition"])
+                    action = self.templates.validate_retirement if retirement else self.templates.observe
+                    with self.assertRaisesRegex(read_epochs.ReadEpochError, "full fields"):
+                        action()
+
+    def test_live_retirement_rejects_incomplete_and_retire_never_reads_dead_memory(self):
+        self.trace.template(128, "%.a", value=None)
+        self.trace.put_number(8, 128)
+        self.templates.observe()
+        with self.assertRaisesRegex(read_epochs.ReadEpochError, "incomplete"):
+            self.templates.validate_retirement()
+        self.trace.put_number(168, self.trace.text("complete"))
+        self.templates.complete(["source", 1], 1)
+        self.templates.validate_retirement()
+        charged = self.trace.charged
+        with patch.object(self.trace, "memory", side_effect=AssertionError("old image is unavailable")):
+            self.templates.retire()
+        self.assertEqual(self.trace.charged, charged)
+        self.assertFalse(self.templates.objects)
 
     def test_incomplete_enclosing_object_keeps_parent_occurrence_across_nested_eval(self):
         trace = self.trace
@@ -286,6 +332,69 @@ class NativePatternTemplateTests(unittest.TestCase):
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
+
+    def test_actual_retained_pattern_reexec_and_exit_require_live_validation(self):
+        recipe = "printf '%s\\n' 'VALUE := complete' > generated.mk"
+        final = "v=done; printf '%s' 'complete'"
+        self.add("Makefile", "old%.unused: HOLDER = retained\n-include generated.mk\n"
+                 "generated.mk: ; @" + recipe + "\n.PHONY: all\n"
+                 "all: ; @v=done; printf '%s' '$(VALUE)'\n")
+        ordinary = subprocess.run(["/usr/bin/make", "--no-print-directory", "all"],
+                                  cwd=self.root, capture_output=True, check=True)
+        expected = (self.root / "generated.mk").read_bytes()
+        (self.root / "generated.mk").unlink()
+        for omitted in (None, "exec", "exit", "value-pointer", "line", "value-bytes"):
+            with self.subTest(omitted=omitted):
+                session = self.session()
+                instrumentation = '''
+prepare_before=guard.NativeReadTrace.prepare_pattern_retirement
+def prepare(self,pid,boundary):
+ if boundary=="exit" and OMITTED in {"value-pointer","line","value-bytes"}:
+  pointer=next(iter(self.patterns.objects))
+  if OMITTED=="value-pointer":
+   value=self.memory(pointer+32,8)
+   self.policy.charge_metadata(8)
+   guard.replace_memory(pid,pointer+40,value)
+  elif OMITTED=="line":
+   self.policy.charge_metadata(8)
+   guard.replace_memory(pid,pointer+56,(2).to_bytes(8,"little"))
+  else:
+   value=int.from_bytes(self.memory(pointer+40,8),"little")
+   self.policy.charge_metadata(1)
+   guard.replace_memory(pid,value,b"R")
+ if boundary!=OMITTED:
+  return prepare_before(self,pid,boundary)
+guard.NativeReadTrace.prepare_pattern_retirement=prepare
+'''.replace("OMITTED", repr(omitted))
+                with session, self.native_supervisor(instrumentation):
+                    def execute():
+                        return session._native_make_writable(
+                            "all", outputs=("generated.mk",),
+                            commands={
+                                ("/bin/sh", "-c", recipe): Command(("/bin/sh", "-c", recipe),
+                                                                   outputs=("generated.mk",)),
+                                ("/bin/sh", "-c", final): Command(("/bin/sh", "-c", final)),
+                            },
+                            observe_reads=True, observe_runtime_completions=True,
+                            observe_patterns=True, observe_root=True,
+                        )
+                    if omitted is not None:
+                        error = ("lacks live pattern retirement validation" if omitted in {"exec", "exit"}
+                                 else "source-bound full fields")
+                        with self.assertRaisesRegex(MakeProbeError, error):
+                            execute()
+                        self.assertTrue(session.budget.failed)
+                    else:
+                        completed, _, observed, generated = execute()
+                        self.assertEqual((completed.returncode, completed.stdout, completed.stderr),
+                                         (ordinary.returncode, ordinary.stdout, ordinary.stderr))
+                        self.assertEqual([(item.path, item.data, item.mode) for item in generated],
+                                         [("generated.mk", expected, 0o644)])
+                        archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                        self.assertEqual(len(archive.passes), 2)
+                        self.assertEqual([row.definition.value for execution in archive.passes
+                                          for row in execution.pattern_templates], ["retained", "retained"])
+                self.assert_clean(session)
 
     def test_actual_writable_command_rejection_reports_mode_with_and_without_patterns(self):
         self.add("Makefile", "all: ; @exit 7\n")
@@ -460,7 +569,7 @@ class NativePatternTemplateTests(unittest.TestCase):
                 " trace.native.ptrace(5,trace.pid,pointer,actual^(1<<39))\n"
                 " return before(self,r,state)\n"
                 "PatternMaterializations.enter=enter\n",
-                "selected pattern changed its source-bound full fields",
+                "pattern changed its source-bound full fields",
             ),
             (
                 "callback",

@@ -60,6 +60,7 @@ class NativeReadTrace:
             if self.runtime else None
         )
         self.patterns = None
+        self.pattern_retirement = None
         if self.version in read_epochs.PATTERN_VERSIONS:
             if __package__:
                 from .pattern_templates import PatternMaterializations, pattern_abi
@@ -205,7 +206,33 @@ class NativeReadTrace:
         addresses = [self.debug(pid, index, 0) for index in range(4)]
         self.machine_event("clear", pid, registers=[*addresses, status, control])
 
+    def prepare_pattern_retirement(self, pid, boundary):
+        if self.patterns is None:
+            return
+        if pid != self.pid or self.bias is None or boundary not in {"exec", "exit"}:
+            raise read_epochs.ReadEpochError("pattern retirement lacks its live Make image/epoch")
+        self.patterns.validate_retirement()
+        witness = (pid, self.execs, boundary)
+        self.policy.charge_metadata(sys.getsizeof(witness))
+        self.pattern_retirement = witness
+
+    def retire_patterns(self, boundary):
+        if self.patterns is None:
+            return
+        if self.pattern_retirement != (self.pid, self.execs, boundary):
+            raise read_epochs.ReadEpochError("Make " + boundary + " lacks live pattern retirement validation")
+        self.patterns.retire()
+        self.pattern_retirement = None
+
     def actual_exec(self, pid, make, dispatch=None, inputs=None):
+        retired_root = bool(
+            self.root_boundaries and self.root_boundaries[-1]["last_exec"] == self.execs
+            and self.patterns is not None and not self.patterns.objects
+        )
+        if make and self.patterns is not None and self.execs and (
+            not retired_root and self.pattern_retirement != (pid, self.execs, "exec")
+        ):
+            raise read_epochs.ReadEpochError("Make exec lacks live pattern retirement validation")
         self.clear(pid)
         self.machine_event(
             "execute", pid, make=make, dispatch=dispatch,
@@ -218,6 +245,7 @@ class NativeReadTrace:
             return
         if self.patterns is not None:
             self.patterns.retire()
+            self.pattern_retirement = None
         if self.active or self.invocations or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None or self.execs != self.passes:
             raise read_epochs.ReadEpochError("Make exec crossed an incomplete original read pass")
         self.pid = pid
@@ -1062,7 +1090,7 @@ class NativeReadTrace:
             environment=self.config["environment"], returncode=0,
         )
         if self.patterns is not None:
-            self.patterns.retire()
+            self.retire_patterns("exit")
         previous = self.root_boundaries[-1] if self.root_boundaries else None
         row = {
             "ordinal": len(self.root_boundaries or ()) + 1,
@@ -1104,6 +1132,8 @@ class NativeReadTrace:
             or self.version in {2, *read_epochs.LOCATION_VERSIONS} and self.barriers != self.passes
         ):
             raise read_epochs.ReadEpochError("original read trace ended with incomplete native state")
+        if self.patterns is not None and self.root_boundaries is None:
+            self.retire_patterns("exit")
         self.event(
             "complete", execs=self.execs, passes=self.passes, visits=self.visits,
             **({"effects": self.effects, "evaluations": self.evaluations, "expansions": self.expansions} if self.runtime else {}),
