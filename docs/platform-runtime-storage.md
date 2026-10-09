@@ -148,6 +148,8 @@ their exact source bytes to `build/platform-inventory/<original-path>.source`,
 outside the importable module paths. The parsers consume those relocated bytes
 while observations retain the original Git paths and object bindings. This is
 physical staging separation, not a claim of hostile same-UID isolation.
+Only the explicit platform inventory sources move; a mixed-subject review
+retains other subjects' executable modules at their original import paths.
 A changed import
 closure, identity field set or unrecognized mutation guard blocks; no arbitrary
 caller test, evaluator, service, budget or execution permission is introduced.
@@ -173,10 +175,16 @@ selected-versus-expected module equality. This is a closed dedicated probe of
 the original inventory and real generated command, not a claim to have run
 the entire original workflow-test import closure. The coverage origin at
 `20ce99cc816b85647569f0a6ba4600326870ddc8` has eight original provider tests;
-actual original-suite runs survive all three semantic guard removals. The
+actual original-suite runs survive all three semantic guard removals.
+The regression's reconstructed coverage-gap fixture instead removes four
+coverage methods from the current thirteen-method class, leaving nine tests;
+it is not an exact historical Git-tree claim. The
 current thirteen-test provider suite kills them with 9/16/3 input failures.
 Those results establish missing regression coverage, not incorrect old
 admission, identity or slice runtime behavior.
+Every selected provider execution and unchanged baseline must complete without
+skips, expected failures or unexpected successes; unittest's success status or
+test count alone is insufficient.
 
 Historical #275 operation controls remain separate: the session-only
 comparison adapts exact `3a32` materialization operations, `7c522` destination

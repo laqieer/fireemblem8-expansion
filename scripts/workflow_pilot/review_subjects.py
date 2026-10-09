@@ -73,7 +73,12 @@ PLATFORM_DEPENDENCIES = (
 
 def platform_parse_only(paths):
     executed = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES}
-    return {path for path in paths if path.endswith(".py") and path not in executed}
+    inventories = {PLATFORM_OWNER, PLATFORM_TOPOLOGY, PLATFORM_CONDITIONS}
+    return {path for path in paths if path not in executed and (
+        path in inventories or (
+            path.startswith("scripts/validation_ownership/tests/") and path.endswith(".py")
+        )
+    )}
 
 
 def platform_inventory_path(path):
@@ -664,7 +669,11 @@ def _platform_suite(module, names=None):
     suite = (loader.loadTestsFromTestCase(module.PlatformImageTests) if names is None else
              unittest.TestSuite(module.PlatformImageTests(name) for name in names))
     review.require(not loader.errors and suite.countTestCases() > 0, "empty platform test selection")
-    return unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+    result = unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+    check(not result.skipped and not result.expectedFailures
+          and not result.unexpectedSuccesses,
+          "provider tests skipped or used expected-failure outcomes")
+    return result
 
 
 def _platform_tests(names):
@@ -687,9 +696,7 @@ def _platform_coverage(kind):
     exec(compile(parsed, PLATFORM_SOURCE + ":semantic-mutation", "exec"), mutant.__dict__)
     with patch.object(provider.RuntimeImage, method, getattr(mutant.RuntimeImage, method)):
         result = _platform_suite(module)
-    review.require(result.testsRun == baseline.testsRun and not result.errors
-                   and not result.skipped and not result.expectedFailures
-                   and not result.unexpectedSuccesses,
+    review.require(result.testsRun == baseline.testsRun and not result.errors,
                    "mutation execution incomplete or errored")
     expected = {"admission": 9, "identity": 16, "workspace": 3}[kind]
     check(len(result.failures) == expected,

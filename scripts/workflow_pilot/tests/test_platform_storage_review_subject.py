@@ -260,6 +260,50 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                 self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
                 self.assertIn("ModuleNotFoundError", observed.detail)
 
+    def test_mixed_generated_data_and_platform_subjects_keep_execution_inputs(self):
+        scope = self.scope()
+        scope["subjects"].append({
+            "case_id": "TC-CORE-004", "subject": "generated-eventlists",
+        })
+        members = self.tools.members(scope)
+        self.assertEqual({item.subject for item in members},
+                         {CASE + "/" + SUBJECT, "TC-CORE-004/generated-eventlists"})
+        self.assert_satisfied(self.run_members(members, self.repo.base))
+
+    def test_each_selected_provider_case_requires_actual_success(self):
+        source = (self.repo.root / TESTS).read_text()
+        selected = {
+            "capture": ("test_complete_body_and_materialization_use_actual_immutable_backing",
+                        "test_real_frontend_body_uses_snapshot_not_source_file_allowance"),
+            "materialize": ("test_failed_materialization_removes_owned_file_and_preserves_failure",
+                            "test_materialization_handles_actual_short_writes_and_failed_open"),
+            "entries": ("test_source_descriptor_closes_if_fdopen_handoff_fails",
+                        "test_complete_storage_and_work_quotas_fail_without_leaking_descriptors"),
+            "preservation": ("test_capture_preserves_primary_with_source_and_backing_close_failures",
+                             "test_materialization_preserves_primary_with_combined_cleanup_failures"),
+        }
+        for probe, names in selected.items():
+            for name in names:
+                for outcome in ("skip", "expectedFailure", "unexpectedSuccess"):
+                    with self.subTest(probe=probe, name=name, outcome=outcome):
+                        parsed = ast.parse(source)
+                        owner = next(node for node in parsed.body
+                                     if isinstance(node, ast.ClassDef) and node.name == "PlatformImageTests")
+                        case = next(node for node in owner.body
+                                    if isinstance(node, ast.FunctionDef) and node.name == name)
+                        decorator = ('unittest.skip("controlled missing behavior")'
+                                     if outcome == "skip" else "unittest.expectedFailure")
+                        case.decorator_list.append(ast.parse(decorator, mode="eval").body)
+                        if outcome == "expectedFailure":
+                            case.body = ast.parse('raise AssertionError("controlled failure")').body
+                        head = self.repo.commit({TESTS: ast.unparse(ast.fix_missing_locations(parsed))})
+                        complete = self.tools.members(self.scope(head))
+                        selected, = (item for item in complete if item.probe == "platform:" + probe)
+                        members = tuple(item for item in complete if item.family == selected.family)
+                        observed = next(item for item in self.run_members(members, head)
+                                        if item.obligation == selected)
+                        self.assertEqual(observed.verdict, "contract-violation", observed.detail)
+
     def test_changed_execution_import_and_identity_inventory_fail_closed(self):
         source = (self.repo.root / SOURCE).read_text()
         for changed in (
