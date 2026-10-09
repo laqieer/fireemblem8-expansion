@@ -1589,6 +1589,225 @@ def native_execution_input(argv, cwd):
     return {"argv": argv, "cwd": cwd}
 
 
+class OriginalCompilerProfile(NamedTuple):
+    identity: str
+    driver: str
+    frontend: str
+    files: tuple
+    directories: tuple
+    probes: tuple
+    interpreter: str
+    libc: str
+    environment: tuple
+
+
+class OriginalCompilerExecution(NamedTuple):
+    dispatch: int
+    pid: int
+    generation: int
+    admission: int
+    role: str
+    profile: OriginalCompilerProfile
+    driver: tuple | None
+    argv: tuple
+    cwd: str
+    sources: tuple
+    code: tuple
+    includes: tuple
+    outputs: tuple
+    resources: tuple
+
+
+def native_compiler_profile(value, *, count_limit, reserve=lambda size: None):
+    fields = {
+        "identity", "driver", "frontend", "files", "directories", "probes",
+        "interpreter", "libc", "environment",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ReadEpochError("compiler profile has an open or incomplete shape")
+    reserve(len(encoded(value)))
+
+    def path(name):
+        return (
+            isinstance(name, str) and name.startswith("/")
+            and posixpath.normpath(name) == name and not name.startswith("//")
+            and not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in name)
+            and len(name.encode("utf-8")) <= 4096
+        )
+
+    def ordered(rows):
+        return (
+            isinstance(rows, list) and len(rows) <= count_limit
+            and all(path(name) for name in rows) and rows == sorted(set(rows))
+        )
+
+    files = value["files"]
+    if (
+        not isinstance(files, list) or not 2 <= len(files) <= min(count_limit, 64)
+        or any(
+            not isinstance(row, list) or len(row) != 3 or not path(row[0])
+            or type(row[1]) is not int or not 0 < row[1] < 1 << 63
+            or not isinstance(row[2], str) or re.fullmatch("[0-9a-f]{64}", row[2]) is None
+            for row in files
+        )
+        or [row[0] for row in files] != sorted({row[0] for row in files})
+        or not ordered(value["directories"]) or not ordered(value["probes"])
+        or any(not path(value[key]) for key in ("driver", "frontend", "interpreter", "libc"))
+        or value["driver"] == value["frontend"]
+        or not {value[key] for key in ("driver", "frontend", "interpreter", "libc")}
+        <= {row[0] for row in files}
+    ):
+        raise ReadEpochError("compiler profile differs from its finite complete image/search closure")
+    environment = value["environment"]
+    if (
+        not isinstance(environment, dict) or len(environment) > count_limit
+        or any(
+            not isinstance(key, str) or re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", key) is None
+            or not isinstance(item, str) or "\0" in item
+            or any(0xD800 <= ord(char) <= 0xDFFF for char in item)
+            or len(item.encode("utf-8")) > 65536
+            for key, item in environment.items()
+        )
+        or not isinstance(value["identity"], str)
+        or value["identity"] != hashlib.sha256(encoded({
+            key: item for key, item in value.items() if key != "identity"
+        })).hexdigest()
+    ):
+        raise ReadEpochError("compiler profile lost its closed environment or issued identity")
+    result = OriginalCompilerProfile(
+        value["identity"], value["driver"], value["frontend"], tuple(tuple(row) for row in files),
+        tuple(value["directories"]), tuple(value["probes"]), value["interpreter"], value["libc"],
+        tuple(sorted(environment.items())),
+    )
+    reserve(sys.getsizeof(result) + sum(sys.getsizeof(row) for row in result if isinstance(row, tuple)))
+    reserve(sum(sys.getsizeof(row) for row in result.files) + sum(sys.getsizeof(row) for row in result.environment))
+    return result
+
+
+def native_compiler_lineage(events, job, profile, *, sources, count_limit, reserve=lambda size: None):
+    """Compiler semantics after the ordinary closed native job tree is validated."""
+    if not isinstance(profile, OriginalCompilerProfile):
+        raise ReadEpochError("compiler lineage requires a validated issued profile")
+    nodes, executions = {}, []
+    reserve(sys.getsizeof(nodes) + sys.getsizeof(executions))
+    root = job["pid"]
+    if not isinstance(events, list) or not events or len(events) > count_limit:
+        raise ReadEpochError("compiler lineage exceeds its finite native tree extent")
+    for event in events:
+        reserve(len(encoded(event)))
+        kind, pid = event["kind"], event["pid"]
+        if not nodes:
+            if kind != "exec" or pid != root:
+                raise ReadEpochError("compiler lineage lost its original native root")
+            nodes[pid] = {"parent": None, "generation": 0, "actor": None, "fork": None, "retired": False}
+            reserve(sys.getsizeof(nodes) + sys.getsizeof(nodes[pid]))
+        node = nodes.get(pid)
+        if node is None or node["retired"]:
+            raise ReadEpochError("compiler lineage refers to an unknown or retired process")
+        if kind == "fork":
+            child = event["child"]
+            if child in nodes:
+                raise ReadEpochError("compiler lineage reused an actual child")
+            nodes[child] = {
+                "parent": pid, "generation": 0, "actor": None,
+                "fork": node["actor"], "retired": False,
+            }
+            reserve(sys.getsizeof(nodes) + sys.getsizeof(nodes[child]))
+        elif kind == "exec":
+            inputs = native_execution_input(event["argv"], event["cwd"])
+            reserve(sys.getsizeof(inputs))
+            if event["generation"] != node["generation"] + 1:
+                raise ReadEpochError("compiler lineage changed its actual exec generation")
+            node["generation"] = event["generation"]
+            binding = event["admission"].get("compiler")
+            previous = node["actor"]
+            node["actor"] = None
+            if binding is None:
+                if event["path"] in {profile.driver, profile.frontend}:
+                    raise ReadEpochError("compiler image lacks its issued actor binding")
+                continue
+            if (
+                not isinstance(binding, dict)
+                or set(binding) != {"profile", "role", "driver", "sources", "code", "includes"}
+                or binding["profile"] != profile.identity or not isinstance(binding["role"], str)
+                or binding["role"] not in {"driver", "frontend"}
+                or inputs["cwd"] != "/repo"
+                or type(event["admission"]["sequence"]) is not int or event["admission"]["sequence"] < 1
+            ):
+                raise ReadEpochError("compiler actor has an open or foreign profile binding")
+            for key in ("sources", "code", "includes"):
+                rows = binding[key]
+                if (
+                    not isinstance(rows, list) or len(rows) > count_limit
+                    or any(not isinstance(name, str) for name in rows) or len(set(rows)) != len(rows)
+                ):
+                    raise ReadEpochError("compiler actor scope is not finite and unique")
+                for name in rows:
+                    if key == "includes" and name == ".":
+                        continue
+                    relative_path(name)
+                if key != "includes" and any(name not in sources for name in rows):
+                    raise ReadEpochError("compiler actor source scope escapes its immutable inventory")
+            reference = (pid, event["generation"], event["admission"]["sequence"])
+            if binding["role"] == "driver":
+                if event["path"] != profile.driver or binding["driver"] is not None:
+                    raise ReadEpochError("compiler driver differs from its issued image/operation")
+                if __package__:
+                    from .make_probe import ProbeSession
+                else:
+                    from make_probe import ProbeSession
+                includes = ProbeSession._dependency_arguments(
+                    inputs["argv"], binding["sources"], event["admission"]["outputs"],
+                    driver_spellings=("cc", "/usr/bin/cc", profile.driver),
+                )
+                if tuple(binding["includes"]) != includes:
+                    raise ReadEpochError("compiler driver include scope differs from its actual safe arguments")
+            else:
+                parent = nodes.get(node["parent"])
+                inherited = node["fork"]
+                if (
+                    event["path"] != profile.frontend or parent is None or parent["retired"]
+                    or inherited is None or inherited.role != "driver"
+                    or not isinstance(binding["driver"], list) or len(binding["driver"]) != 3
+                    or any(type(number) is not int or number < 1 for number in binding["driver"])
+                    or binding["driver"] != [inherited.pid, inherited.generation, inherited.admission]
+                    or parent["actor"] is not inherited or event["parent"] != inherited.pid
+                    or any(tuple(binding[key]) != getattr(inherited, key)
+                           for key in ("sources", "code", "includes"))
+                    or tuple(event["admission"]["outputs"]) != inherited.outputs
+                    or tuple(tuple(row) for row in event["admission"].get("resources", ())) != inherited.resources
+                    or previous is not None
+                ):
+                    raise ReadEpochError("compiler frontend lost its exact live driver-at-fork lineage/scope")
+            actor = OriginalCompilerExecution(
+                job["sequence"], pid, event["generation"], event["admission"]["sequence"],
+                binding["role"], profile,
+                None if binding["driver"] is None else tuple(binding["driver"]),
+                tuple(inputs["argv"]), inputs["cwd"], tuple(binding["sources"]),
+                tuple(binding["code"]), tuple(binding["includes"]), tuple(event["admission"]["outputs"]),
+                tuple(tuple(row) for row in event["admission"].get("resources", ())),
+            )
+            node["actor"] = actor
+            executions.append(actor)
+            reserve(sys.getsizeof(actor) + sys.getsizeof(executions))
+            reserve(sum(sys.getsizeof(value) for value in actor if isinstance(value, tuple)))
+        elif kind == "exit":
+            node["actor"] = None
+            node["retired"] = True
+    if any(not node["retired"] for node in nodes.values()):
+        raise ReadEpochError("compiler lineage omitted an actual terminal process")
+    if not executions:
+        raise ReadEpochError("compiler lineage omitted its issued actual driver/frontend")
+    drivers = {(row.pid, row.generation, row.admission) for row in executions if row.role == "driver"}
+    frontends = [row.driver for row in executions if row.role == "frontend"]
+    reserve(sys.getsizeof(drivers) + sys.getsizeof(frontends))
+    if len(frontends) != len(set(frontends)) or set(frontends) != drivers:
+        raise ReadEpochError("compiler lineage omitted or reused an issued driver/frontend operation")
+    result = tuple(executions)
+    reserve(sys.getsizeof(result))
+    return result
+
+
 def native_image_admission(admission, inputs, outputs, resources, *, resource_field):
     if __package__:
         from .native_resources import resource_plan

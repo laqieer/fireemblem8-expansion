@@ -3011,6 +3011,35 @@ immutable driver's transformation under the existing dependency threat model;
 it does not add a GCC `-###` planning mode/parser or independently predict
 frontend arguments. Complete storage proof is not original cohort fitness.
 
+The next compiler member is a finite **model**, not a published runtime
+protocol. `_native_compiler_profile` derives complete external image extents/
+digests and the existing search/probe/interpreter/libc closure in the same
+session. Its closed environment and profile identity produce typed
+`OriginalCompilerProfile` data. Profile validation checks shape and internal
+binding; only the session's issued captured profile can supply execution
+authority. Recomputing a caller's profile identity is not trusted capture.
+
+Run the issued-profile/driver-at-fork case in `test_runtime_image`. It checks
+real derived sealed-image digests, then a finite parsed shell/driver/frontend
+tree against the ordinary native tree validator and typed compiler lineage
+model. The actual driver operands reuse the existing safe dependency grammar,
+without manufacturing a frontend `Command` or rewriting argv. Frontend binding
+must reference the exact direct driver occurrence captured at fork; source,
+header, include, output and resource scopes cannot change. Ordinary exec, exit
+and omitted terminals cannot revive that authority. Every issued driver in the
+model needs one frontend; duplicate, missing, foreign, stale and boolean-aliased
+references refuse. Exact observed model charges and one-byte-short quota
+controls are local finite accounting evidence, not original cohort fitness.
+The existing native protocol rejects these new admission fields.
+
+No new runtime version is yet enabled, and the profile/model is not carried by
+the public typed archive. Actual stopped-process admission, compiler-specific
+source/runtime-purpose enforcement, output-authority publication and complete
+host/machine/archive replay propagation still require joint wiring before any
+native compiler execution can be qualified. Machine3/4 need no new event
+format; the selected future opt-in writable runtime will gate the nested
+admission semantics while defaults6/8 remain unchanged.
+
 For the storage member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
 clean Linux x86-64 checkout and namespace prerequisites:
 

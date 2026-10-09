@@ -2216,15 +2216,21 @@ class ProbeSession:
 
     @staticmethod
     def _dependency_options(command, sources, outputs):
+        if command.native_tool is not None:
+            raise MakeProbeError("dependency profile cannot use an issued native tool")
+        return ProbeSession._dependency_arguments(command.argv, sources, outputs)
+
+    @staticmethod
+    def _dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/cc",)):
         if (
-            command.argv[0] != "/usr/bin/cc" or command.native_tool is not None
+            not argv or argv[0] not in driver_spellings
             or len(outputs) != 1 or not outputs[0].endswith(".d")
         ):
             raise MakeProbeError("dependency profile requires host cc and one declared .d output")
         modes = set()
         includes = []
         translation_unit = target = None
-        arguments = iter(command.argv[1:])
+        arguments = iter(argv[1:])
         for argument in arguments:
             if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
                 if argument in modes:
@@ -2477,6 +2483,26 @@ class ProbeSession:
         for path in self.dependency_compiler:
             self._validate_native(dict(rows)[path])
         return rows
+
+    @terminal_failure
+    def _native_compiler_profile(self, environment):
+        from .read_epochs import native_compiler_profile
+        rows = self._sealed_dependency_runtime()
+        derived = self.dependency_runtime
+        value = {
+            "driver": self.dependency_compiler[0], "frontend": self.dependency_compiler[1],
+            "files": [[path, len(image), image_digest(image)] for path, image in rows],
+            "directories": derived["runtime_directories"], "probes": derived["runtime_stat_probes"],
+            "interpreter": derived["runtime_interpreter"], "libc": derived["runtime_libc"],
+            "environment": dict(environment),
+        }
+        self.budget.charge("cache", len(encoded(value)))
+        value["identity"] = hashlib.sha256(encoded(value)).hexdigest()
+        native_compiler_profile(
+            value, count_limit=self.budget.limits.entries,
+            reserve=lambda size: self.budget.charge("control", size),
+        )
+        return value
 
     def _dependency_runtime(self):
         interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])

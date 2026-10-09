@@ -3,13 +3,14 @@
 import errno
 import fcntl
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.validation_ownership import make_probe
+from scripts.validation_ownership import make_probe, read_epochs
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.runtime_image import (
     IMAGE_SEALS, RuntimeImage, close_images, image_digest, materialize_image,
@@ -180,6 +181,125 @@ class RuntimeImageSessionTests(unittest.TestCase):
         self.assertEqual(len(images), 1)
         self.assertEqual(images[0].descriptor, -1)
         self.assertTrue(session.budget.failed)
+        self.fixture.assert_clean(session)
+
+    def test_issued_compiler_profile_and_finite_driver_at_fork_lineage(self):
+        from scripts.validation_ownership.authority import ENVIRONMENT, encoded, native_command_owner
+        self.fixture.add("src/query.c", '#include "query.h"\n')
+        self.fixture.add("include/query.h", "#define VALUE 7\n")
+        session = self.fixture.session()
+        with session:
+            value = session._native_compiler_profile(ENVIRONMENT)
+            profile = read_epochs.native_compiler_profile(value, count_limit=32768)
+            self.assertEqual(profile.environment, tuple(sorted(ENVIRONMENT.items())))
+            images = dict(session._sealed_dependency_runtime())
+            self.assertEqual(
+                profile.files, tuple((path, len(image), image_digest(image)) for path, image in images.items()),
+            )
+            inputs = ["cc", "-E", "-MM", "-nostdinc", "-undef", "-MT", "query.o", "-Iinclude", "src/query.c"]
+            scope = {"profile": profile.identity, "sources": ["src/query.c"],
+                     "code": ["include/query.h"], "includes": ["include"]}
+
+            def admission(sequence, argv, compiler):
+                closure = hashlib.sha256(encoded([argv, compiler])).hexdigest()
+                return {"sequence": sequence, "closure": closure,
+                        "owner": native_command_owner(closure, [".dep/query.d"], ()),
+                        "input_sha256": hashlib.sha256(encoded({"argv": argv, "cwd": "/repo"})).hexdigest(),
+                        "outputs": [".dep/query.d"], "compiler": compiler}
+
+            def execution(pid, parent, generation, path, argv, binding, sequence):
+                return {"kind": "exec", "pid": pid, "parent": parent, "generation": generation,
+                        "path": path, "argv": argv, "cwd": "/repo",
+                        "admission": admission(sequence, argv, binding)}
+
+            events = [
+                execution(10, 1, 1, "/bin/sh", ["/bin/sh", "-c", "original recipe"], None, 1),
+                {"kind": "fork", "pid": 10, "child": 11}, {"kind": "start", "pid": 11},
+                execution(11, 10, 1, profile.driver, inputs, dict(scope, role="driver", driver=None), 2),
+                {"kind": "fork", "pid": 11, "child": 12}, {"kind": "start", "pid": 12},
+                execution(12, 11, 1, profile.frontend, [profile.frontend, "-E", "src/query.c"],
+                          dict(scope, role="frontend", driver=[11, 1, 2]), 3),
+                {"kind": "exit", "pid": 12, "status": 0}, {"kind": "exit", "pid": 11, "status": 0},
+                {"kind": "exit", "pid": 10, "status": 0},
+            ]
+            for sequence, event in enumerate(events, 1):
+                event["seq"] = sequence
+            job = {"pid": 10, "sequence": 1, "terminal_status": 0, "executable": "/bin/sh",
+                   "argv": events[0]["argv"], "cwd": "/repo"}
+            ordinary = json.loads(json.dumps(events))
+            for event in ordinary:
+                if event["kind"] == "exec":
+                    event["admission"].pop("compiler")
+            job["admission"] = ordinary[0]["admission"]
+            with self.assertRaisesRegex(MakeProbeError, "Command owner"):
+                read_epochs.native_job_tree(
+                    events, job, 1, ["/bin/sh", profile.driver, profile.frontend],
+                    count_limit=32768, writable=True,
+                )
+            read_epochs.native_job_tree(
+                ordinary, job, 1, ["/bin/sh", profile.driver, profile.frontend],
+                count_limit=32768, writable=True,
+            )
+            validate = lambda rows: read_epochs.native_compiler_lineage(
+                rows, job, profile, sources=session.snapshot.files, count_limit=32768,
+                reserve=lambda size: session.budget.charge("control", size),
+            )
+            actors = validate(events)
+            self.assertEqual([(actor.role, actor.pid, actor.driver) for actor in actors],
+                             [("driver", 11, None), ("frontend", 12, (11, 1, 2))])
+            charges = []
+            self.assertEqual(read_epochs.native_compiler_lineage(
+                events, job, profile, sources=session.snapshot.files, count_limit=len(events),
+                reserve=charges.append,
+            ), actors)
+            cost = sum(charges)
+            for limit in (cost, cost - 1):
+                budget = ProbeBudget(Limits(control_bytes=limit))
+                try:
+                    if limit == cost:
+                        self.assertEqual(read_epochs.native_compiler_lineage(
+                            events, job, profile, sources=session.snapshot.files, count_limit=len(events),
+                            reserve=lambda size: budget.charge("control", size),
+                        ), actors)
+                        self.assertEqual(budget.bytes["control"], cost)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "budget exhausted"):
+                            read_epochs.native_compiler_lineage(
+                                events, job, profile, sources=session.snapshot.files, count_limit=len(events),
+                                reserve=lambda size: budget.charge("control", size),
+                            )
+                        self.assertTrue(budget.failed)
+                finally:
+                    budget.close()
+            for name, mutate in (
+                ("driver-options", lambda rows: rows[3]["argv"].append("-fplugin=foreign")),
+                ("profile", lambda rows: rows[6]["admission"]["compiler"].update(profile="0" * 64)),
+                ("parent", lambda rows: rows[6].update(parent=10)),
+                ("generation", lambda rows: rows[6]["admission"]["compiler"].update(driver=[11, 2, 2])),
+                ("admission", lambda rows: rows[6]["admission"]["compiler"].update(driver=[11, 1, 1])),
+                ("boolean-reference", lambda rows: rows[6]["admission"]["compiler"].update(driver=[11, True, 2])),
+                ("scope", lambda rows: rows[6]["admission"]["compiler"]["code"].append("src/query.c")),
+                ("direct-frontend", lambda rows: rows[3].update(path=profile.frontend)),
+                ("unbound-frontend", lambda rows: rows[6]["admission"].update(compiler=None)),
+                ("missing-terminal", lambda rows: rows.pop()),
+                ("missing-frontend", lambda rows: rows[6].update(path="/bin/sh", admission=rows[0]["admission"])),
+                ("retired-driver", lambda rows: rows.insert(6, {"kind": "exit", "pid": 11, "status": 0})),
+                ("unrelated-driver-exec", lambda rows: rows.insert(
+                    6, execution(11, 10, 2, "/bin/sh", ["/bin/sh", "-c", ":"], None, 4),
+                )),
+            ):
+                changed = json.loads(json.dumps(events))
+                mutate(changed)
+                with self.subTest(lineage_mutation=name), self.assertRaises(MakeProbeError):
+                    validate(changed)
+            invalid = json.loads(json.dumps(value))
+            invalid["files"][0][2] = "0" * 64
+            with self.assertRaisesRegex(MakeProbeError, "issued identity"):
+                read_epochs.native_compiler_profile(invalid, count_limit=32768)
+            with self.assertRaisesRegex(MakeProbeError, "tree extent"):
+                read_epochs.native_compiler_lineage(
+                    events, job, profile, sources=session.snapshot.files, count_limit=len(events) - 1,
+                )
         self.fixture.assert_clean(session)
 
     def test_sealed_capture_has_one_owned_body_and_preserves_legacy_cold_capture(self):
