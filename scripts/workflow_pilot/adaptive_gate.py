@@ -928,6 +928,11 @@ def security_checks(client, pr):
         reporter.expect_int(row.get("id"), "security check ID", 1)
         require(row["id"] not in seen_ids, "duplicate security check")
         seen_ids.add(row["id"])
+        if identity[0] not in {item[0] for item in SECURITY_CHECKS}:
+            continue
+        require(identity in SECURITY_CHECKS, "security check has the wrong app identity")
+        require(identity not in seen_checks, "ambiguous exact security checks")
+        seen_checks.add(identity)
         for field in ("created_at", "started_at", "completed_at"):
             if row.get(field) is not None:
                 reporter.parse_time(row[field], "security " + field)
@@ -950,11 +955,6 @@ def security_checks(client, pr):
             require(reporter.parse_time(row["created_at"], "security creation") <=
                     reporter.parse_time(row["started_at"], "security start"),
                     "security start precedes creation")
-        if identity[0] not in {item[0] for item in SECURITY_CHECKS}:
-            continue
-        require(identity in SECURITY_CHECKS, "security check has the wrong app identity")
-        require(identity not in seen_checks, "ambiguous exact security checks")
-        seen_checks.add(identity)
         result.append(SecurityCheck(row["id"], *identity, pr.head_sha, status, conclusion,
                                     started, row.get("completed_at")))
     return tuple(sorted(result, key=lambda item: item.name))
