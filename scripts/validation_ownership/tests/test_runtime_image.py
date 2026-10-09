@@ -19,6 +19,50 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 
 class RuntimeImageTests(unittest.TestCase):
+    def test_compiler_environment_binds_closed_baseline_and_driver_transformations(self):
+        from scripts.validation_ownership.authority import ENVIRONMENT
+        baseline = dict(ENVIRONMENT)
+        driver = "/usr/bin/cc"
+        additions = {
+            "COLLECT_GCC": driver, "COLLECT_GCC_OPTIONS": "'-E' '-MM' '-MG'",
+            "OFFLOAD_TARGET_NAMES": "nvptx-none:amdgcn-amdhsa", "OFFLOAD_TARGET_DEFAULT": "1",
+        }
+        for frontend, actual in (
+            (False, baseline), (True, {**baseline, "COLLECT_GCC": driver}),
+            (True, {**baseline, **additions}),
+        ):
+            read_epochs.compiler_environment(actual, baseline, frontend=frontend, driver=driver)
+        controls = []
+        for name in baseline:
+            missing, changed = dict(baseline), dict(baseline)
+            del missing[name]
+            changed[name] += "changed"
+            controls.extend(((missing, baseline, False), (changed, baseline, False)))
+        for name in ("CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LD_PRELOAD", "LD_LIBRARY_PATH"):
+            controls.extend((
+                ({**baseline, name: "/repo/foreign"}, baseline, False),
+                ({**baseline, name: "/repo/foreign"}, {**baseline, name: "/repo/foreign"}, False),
+                ({**baseline, **additions, name: "/repo/foreign"}, baseline, True),
+            ))
+        for name in additions:
+            controls.extend((
+                ({**baseline, name: additions[name]}, baseline, False),
+                ({**baseline, **additions, name: ""}, baseline, True),
+                ({**baseline, **additions, name: None}, baseline, True),
+                ({**baseline, **additions, name: "\0"}, baseline, True),
+                ({**baseline, **additions, name: "\ud800"}, baseline, True),
+                ({**baseline, **additions, name: "x" * 65536}, baseline, True),
+            ))
+        controls.extend((
+            ({**baseline, **additions, "COLLECT_GCC": "/repo/cc"}, baseline, True),
+            (baseline, baseline, True), (baseline, baseline, "frontend"),
+            ({1: "bad"}, baseline, False), (baseline, None, False),
+        ))
+        for actual, expected, frontend in controls:
+            with self.subTest(actual=tuple(actual) if isinstance(actual, dict) else actual, frontend=frontend):
+                with self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.compiler_environment(actual, expected, frontend=frontend, driver=driver)
+
     def test_source_descriptor_closes_if_fdopen_handoff_fails(self):
         for failure in (OSError(errno.EINTR, "interrupted fdopen"), KeyboardInterrupt(), SystemExit(7)):
             budget = ProbeBudget()
@@ -446,7 +490,10 @@ class RuntimeImageSessionTests(unittest.TestCase):
         self.fixture.add("src/query.c", '#include "query.h"\n')
         self.fixture.add("include/query.h", "#define VALUE 7\n")
         self.fixture.add("include/foreign.h", "#define FOREIGN 9\n")
-        for case in ("positive", "separate-loader-copy", "missing-search-parents", "foreign-header"):
+        for case in (
+            "positive", "separate-loader-copy", "missing-search-parents",
+            "CPATH", "GCC_EXEC_PREFIX", "LD_PRELOAD", "foreign-header",
+        ):
             if case == "foreign-header":
                 self.fixture.add("include/query.h", '#include "foreign.h"\n')
             session = self.fixture.session()
@@ -471,7 +518,10 @@ class RuntimeImageSessionTests(unittest.TestCase):
                         root, mode="compile",
                         argv=[driver, "-E", "-MM", "-nostdinc", "-undef", "-MT",
                               "query.o", "-Iinclude", "src/query.c"],
-                        environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
+                        environment={
+                            **ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work",
+                            **({case: "/repo/foreign"} if case in {"CPATH", "GCC_EXEC_PREFIX", "LD_PRELOAD"} else {}),
+                        },
                         mounts=[
                             session._mount(session.tree, "/repo"),
                             session._mount(output, "/work", writable=True),
@@ -492,7 +542,7 @@ class RuntimeImageSessionTests(unittest.TestCase):
                     self.assertEqual(observed["consumed"], ["src/query.c"])
                     self.assertEqual(observed["code_consumed"], ["include/query.h"])
                 else:
-                    with self.assertRaisesRegex(MakeProbeError, "undeclared|unadmitted"):
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared|unadmitted|compiler environment"):
                         execute()
             self.fixture.assert_clean(session)
 

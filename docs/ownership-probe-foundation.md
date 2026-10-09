@@ -3067,6 +3067,27 @@ captured descriptors and temporary roots. This is an existing compile-policy,
 small-fixture result, **not native Make ancestry, inherited-FD, original
 initial-plus-eight or public-archive qualification**.
 
+The same compiler subcase checks the actual kernel exec-stop environment before
+the driver or frontend begins user code. The driver must have the closed issued
+baseline; the frontend retains every baseline value and may add only
+`COLLECT_GCC`, `COLLECT_GCC_OPTIONS`, `OFFLOAD_TARGET_NAMES` and
+`OFFLOAD_TARGET_DEFAULT`. Bind `COLLECT_GCC` to the actual driver argv spelling.
+These are the immutable trusted driver's transformations, not independent
+frontend planning or caller-supplied search authority. Account the bounded
+actual cmdline/environment capture through the existing control allowance.
+Run `RuntimeImageTests.test_compiler_environment_binds_closed_baseline_and_driver_transformations`
+and the real sealed-root compiler subcase. Changed or missing baseline values,
+foreign fields, malformed/oversized transformations and foreign driver spelling
+must refuse. With the fixture reset between sessions, explicitly inject
+`CPATH`, `GCC_EXEC_PREFIX` or `LD_PRELOAD` into the compiler input environment:
+each must refuse before compiler execution, preserving ordinary cleanup. The
+pre-change supervisor accepts the otherwise-valid `CPATH` input; retain that
+actual negative control instead of a source-text check. Native Make compiler
+environment/lineage/admission/archive integration remains absent: this
+dependency-lane enforcement does not grant native compiler execution authority
+or qualify the original cohort. Budgets, defaults and ROM/save behavior remain
+unchanged.
+
 This storage seam issues **no native execution, metadata, source or output
 authority**. The default native Make request still runs without compiler
 permissions. Native driver/frontend ancestry, compiler-specific source scope,

@@ -2064,6 +2064,31 @@ class Policy:
         self.verify_dependency_mapping_span(image, *mapping, ip, instruction)
         return True
 
+    def verify_dependency_environment(self, pid, image):
+        captures = []
+        self.charge_metadata(sys.getsizeof(captures))
+        for name in ("cmdline", "environ"):
+            with open(f"/proc/{pid}/{name}", "rb") as stream:
+                data = stream.read(65537)
+            self.charge_metadata(sys.getsizeof(data))
+            if len(data) > 65536:
+                raise Violation("dependency compiler actual environment exceeds its byte bound")
+            captures.append(data)
+        self.charge_metadata(sys.getsizeof(captures))
+        argv, environment = read_epochs.native_root_inputs(*captures)
+        self.charge_metadata(
+            sys.getsizeof(argv) + sys.getsizeof(environment)
+            + sum(sys.getsizeof(value) for value in argv)
+            + sum(sys.getsizeof(key) + sys.getsizeof(value) for key, value in environment.items())
+        )
+        executables = self.config["dependency"]["executables"]
+        if image not in executables:
+            raise Violation("dependency compiler environment lacks its issued image")
+        read_epochs.compiler_environment(
+            environment, self.config["environment"], frontend=image == executables[1],
+            driver=self.config["argv"][0],
+        )
+
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
         try:
@@ -3291,6 +3316,7 @@ def supervise(config, drop_privileges):
                 if state.exec_path is None:
                     raise Violation("dependency exec has no admitted image")
                 policy.verify_dependency_image(stopped, state.exec_path)
+                policy.verify_dependency_environment(stopped, state.exec_path)
                 state.dependency_image = state.exec_path
                 state.dependency_stop = None
                 policy.reserve_observation("accessed", "dependency-exec:" + str(len(policy.executed)) + state.exec_path)

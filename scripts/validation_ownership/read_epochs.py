@@ -1618,6 +1618,36 @@ class OriginalCompilerExecution(NamedTuple):
     resources: tuple
 
 
+def compiler_environment(environment, expected, *, frontend, driver):
+    """Validate the closed baseline and the immutable driver's finite additions."""
+    baseline = {
+        "HOME", "LANG", "LC_ALL", "PATH", "TZ", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
+        "GIT_NO_REPLACE_OBJECTS", "GIT_OPTIONAL_LOCKS", "PYTHONDONTWRITEBYTECODE",
+        "SOURCE_DATE_EPOCH", "TMPDIR", "PWD", "MAKELEVEL", "MAKEFLAGS", "MFLAGS",
+    }
+    additions = {"COLLECT_GCC", "COLLECT_GCC_OPTIONS", "OFFLOAD_TARGET_NAMES", "OFFLOAD_TARGET_DEFAULT"}
+    for values in (environment, expected):
+        if (
+            not isinstance(values, dict) or len(values) > len(baseline) + len(additions)
+            or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                or "\0" in value or any(0xD800 <= ord(char) <= 0xDFFF for char in value)
+                for key, value in values.items()
+            )
+            or sum(len(key.encode()) + len(value.encode()) + 2 for key, value in values.items()) > 65536
+        ):
+            raise ReadEpochError("compiler environment exceeds its closed actual input extent")
+    if (
+        type(frontend) is not bool or not isinstance(driver, str) or not driver
+        or not set(expected) <= baseline
+        or any(environment.get(key) != value for key, value in expected.items())
+        or not set(environment) - set(expected) <= (additions if frontend else set())
+        or frontend and environment.get("COLLECT_GCC") != driver
+        or any(not environment[key] for key in set(environment) - set(expected))
+    ):
+        raise ReadEpochError("compiler environment differs from its issued baseline/driver transformation")
+
+
 def native_compiler_profile(value, *, count_limit, reserve=lambda size: None):
     fields = {
         "identity", "driver", "frontend", "files", "directories", "probes",
