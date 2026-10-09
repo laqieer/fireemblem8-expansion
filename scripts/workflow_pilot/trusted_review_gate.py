@@ -502,9 +502,9 @@ class ReviewTools:
                       "round state has not consumed actual triage")
         fact_origins = {fact.id: fact.head for fact in facts}
         if session.report is not None:
-            fact_origins["local:" + str(session.report.task)] = session.report.head
+            fact_origins["local:" + str(session.lease.task)] = session.lease.head
             self.tree(request["candidate_sha"]).git(
-                "merge-base", "--is-ancestor", session.report.head, request["candidate_sha"])
+                "merge-base", "--is-ancestor", session.lease.head, request["candidate_sha"])
         for finding in session.accepted.values():
             model.require(fact_origins.get(finding.review_id) == finding.origin,
                           "finding origin is not an actual review/task observation")

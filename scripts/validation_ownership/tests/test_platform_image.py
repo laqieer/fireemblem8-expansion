@@ -21,6 +21,76 @@ from scripts.validation_ownership.runtime_image import (
 
 
 class PlatformImageTests(unittest.TestCase):
+    def test_capture_rejects_invalid_read_and_backing_write_progress_and_closes_fds(self):
+        source = Path("/usr/bin/make").resolve()
+        original_write, original_memfd, original_fdopen = os.write, os.memfd_create, os.fdopen
+        for phase in ("read", "write"):
+            for invalid in (None, True, 0, -1, "foreign", "oversized"):
+                with self.subTest(phase=phase, invalid=invalid):
+                    budget = ProbeBudget()
+                    descriptors = []
+                    write_calls = []
+
+                    def memfd(*args):
+                        descriptor = original_memfd(*args)
+                        descriptors.append(descriptor)
+                        return descriptor
+
+                    class Reader:
+                        def __init__(self, descriptor, *args, **kwargs):
+                            self.stream = original_fdopen(descriptor, *args, **kwargs)
+                            descriptors.append(descriptor)
+
+                        def fileno(self):
+                            return self.stream.fileno()
+
+                        def close(self):
+                            self.stream.close()
+
+                        def readinto(self, data):
+                            if phase == "read":
+                                return len(data) + 1 if invalid == "oversized" else invalid
+                            return self.stream.readinto(data)
+
+                    def write(descriptor, data):
+                        write_calls.append((descriptor, len(data)))
+                        if phase == "write":
+                            return len(data) + 1 if invalid == "oversized" else invalid
+                        return original_write(descriptor, data)
+
+                    try:
+                        with patch("scripts.validation_ownership.runtime_image.os.memfd_create", memfd), \
+                             patch("scripts.validation_ownership.runtime_image.os.fdopen", Reader), \
+                             patch("scripts.validation_ownership.runtime_image.os.write", write):
+                            with self.assertRaises(MakeProbeError):
+                                RuntimeImage(source, budget)
+                        self.assertEqual(len(descriptors), 2)
+                        self.assertEqual(len(write_calls), 0 if phase == "read" else 1)
+                        for descriptor in descriptors:
+                            with self.assertRaises(OSError):
+                                os.fstat(descriptor)
+                    finally:
+                        budget.close()
+        budget = ProbeBudget()
+        calls = 0
+
+        def short_write(descriptor, data):
+            nonlocal calls
+            calls += 1
+            return original_write(descriptor, data[:17])
+
+        try:
+            with patch("scripts.validation_ownership.runtime_image.os.write", short_write):
+                image = RuntimeImage(source, budget)
+            try:
+                self.assertGreater(calls, 1)
+                self.assertEqual(image_digest(image), hashlib.sha256(source.read_bytes()).hexdigest())
+                self.assertEqual(os.fstat(image.descriptor).st_size, len(image))
+            finally:
+                image.close()
+        finally:
+            budget.close()
+
     def assert_source_observation_refused(self, phase, field, value):
         budget = ProbeBudget()
         descriptors = []

@@ -900,8 +900,16 @@ def _platform_owner(role):
     elif role == "outputs":
         check(provider_module in selected, "generated Make output omits provider")
         module = importlib.import_module(provider_module)
-        suite = unittest.TestLoader().loadTestsFromTestCase(module.PlatformImageTests)
-        check(sorted(item.id() for item in suite) == sorted(inventories[provider_module]),
+        suite = unittest.TestLoader().loadTestsFromModule(module)
+
+        def identifiers(items):
+            for item in items:
+                if isinstance(item, unittest.TestSuite):
+                    yield from identifiers(item)
+                else:
+                    yield item.id()
+
+        check(sorted(identifiers(suite)) == sorted(inventories[provider_module]),
               "actual provider selection differs from parsed generated inventory")
     elif role == "consumers":
         parsers = _platform_parsers()

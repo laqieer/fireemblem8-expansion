@@ -85,7 +85,7 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         } for item in observations))
         for item in observations:
             if item.obligation.probe in {"platform:admission", "platform:identity", "platform:workspace"}:
-                self.assertIn("12-case suite passed", item.detail)
+                self.assertIn("13-case suite passed", item.detail)
                 self.assertIn("coverage observation", item.detail)
 
     def coverage_origin(self):
@@ -117,7 +117,7 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         for item in prior:
             if item.obligation.member in reported:
                 self.assertIn("coverage gap, not an old runtime violation", item.detail)
-                self.assertIn("original 8-case suite has 0/", item.detail)
+                self.assertIn("original 9-case suite has 0/", item.detail)
                 self.assertIn("original unmutated suite passed", item.detail)
         session = self.model.ReviewSession(
             "coordinator", "implementer", frozenset({CASE + "/" + SUBJECT}), after,
@@ -221,6 +221,23 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         self.assertEqual(loader.loadTestsFromModule(module).countTestCases(), 0)
         del module.__getattr__
         self.assertEqual(loader.loadTestsFromModule(module).countTestCases(), 1)
+
+    def test_actual_provider_selection_rejects_dynamically_introduced_hooks(self):
+        source = (self.repo.root / TESTS).read_text()
+        for mutation in (
+            'globals()["load_tests"] = lambda loader, suite, pattern: unittest.TestSuite()',
+            'exec("load_tests = lambda loader, suite, pattern: unittest.TestSuite()")',
+            'setattr(sys.modules[__name__], "load_tests", lambda loader, suite, pattern: unittest.TestSuite())',
+            'globals()["__dir__"] = lambda: []',
+        ):
+            with self.subTest(mutation=mutation):
+                head = self.repo.commit({TESTS: source + "\n" + mutation + "\n"})
+                members = tuple(item for item in self.tools.members(self.scope(head))
+                                if item.family == "generated")
+                observed = next(item for item in self.run_members(members, head)
+                                if item.obligation.member == "outputs:probe-inventory")
+                self.assertEqual(observed.verdict, "contract-violation", observed.detail)
+                self.assertIn("actual provider selection differs", observed.detail)
 
     def test_changed_execution_import_and_identity_inventory_fail_closed(self):
         source = (self.repo.root / SOURCE).read_text()

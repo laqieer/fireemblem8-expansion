@@ -98,7 +98,7 @@ class RuntimeImage:
                     budget.remaining()
                     budget.charge("control", 128)
                     count = stream.readinto(work[:min(len(work), self.size - offset)])
-                    if count is None or count <= 0:
+                    if type(count) is not int or not 0 < count <= min(len(work), self.size - offset):
                         raise MakeProbeError("platform runtime image ended during complete capture")
                     part = work[:count]
                     digest.update(part)
@@ -106,7 +106,7 @@ class RuntimeImage:
                     while written < count:
                         budget.remaining()
                         amount = os.write(self.descriptor, part[written:])
-                        if amount <= 0:
+                        if type(amount) is not int or not 0 < amount <= count - written:
                             raise MakeProbeError("platform runtime backing write did not progress")
                         written += amount
                     offset += count

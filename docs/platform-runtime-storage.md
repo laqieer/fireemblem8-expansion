@@ -181,7 +181,8 @@ The binding regression module is included by the existing registered review-fami
 `test_*review*.py` discovery. Its parsed owner model rejects module-level `load_tests`
 and module `__getattr__`/`__dir__` bindings and wildcard imports instead of executing
 custom selection or enumeration hooks.
-Imported review observations are archival only and cannot establish pre-review eligibility.
+Actual module selection is compared with the parsed provider inventory, including
+hooks introduced dynamically through the module namespace.
 It exercises the real staged route, all finite roles, coverage-only origins,
 owner omission, missing sibling/stale-tool refusal, malformed execution
 closure, runtime regression and unavailable original-suite execution.
@@ -190,10 +191,8 @@ For the provider's original directly launched CLI review, retain native task
 `call_fyfIDetIpYPYd3XEg7d6KtNs`, reviewer
 `c7bfd6a2-7afc-44f0-8f4c-0be5f54d4eba`, observed original head
 `ba125e3d90279c21eaaa9e81554b4821d0045dc5` and original report/findings.
-The trusted coordinator's
-[completed-review observation import](workflow-pilot.md#sibling-family-review-convergence)
-can consume the native start/completion chronology and nine observed candidate
-paths without inventing historical `begin`/`finish` lease fields. Total runtime
+Native start/completion chronology and nine observed candidate paths remain
+session evidence, not reconstructed historical `begin`/`finish` lease fields. Total runtime
 file count remains unknown; the original broader advertised tool set is not
 relabeled as an enforced read-only allowlist. The byte-budget finding is
 retained and explicitly rejected against the frozen caller-owned bytes
