@@ -5,17 +5,195 @@ import fcntl
 import hashlib
 import os
 from pathlib import Path
+import stat
 import subprocess
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
-from scripts.validation_ownership.runtime_image import IMAGE_SEALS, RuntimeImage, close_images, image_digest, materialize_image
+from scripts.validation_ownership.runtime_image import (
+    BLOCK_BYTES, IMAGE_SEALS, RuntimeImage, close_images, image_digest, materialize_image,
+)
 
 
 class PlatformImageTests(unittest.TestCase):
+    def assert_source_observation_refused(self, phase, field, value):
+        budget = ProbeBudget()
+        descriptors = []
+        source_descriptor = None
+        source_observations = 0
+        original_open, original_memfd = os.open, os.memfd_create
+        original_stat, original_lstat = os.fstat, Path.lstat
+        source = Path("/usr/bin/make").resolve()
+        fields = (
+            "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size",
+            "st_mtime_ns", "st_ctime_ns",
+        )
+
+        def changed(info):
+            values = {name: getattr(info, name) for name in fields}
+            values[field] = value(info)
+            return SimpleNamespace(**values)
+
+        def open_source(*args, **kwargs):
+            nonlocal source_descriptor
+            source_descriptor = original_open(*args, **kwargs)
+            descriptors.append(source_descriptor)
+            return source_descriptor
+
+        def backing(*args, **kwargs):
+            descriptor = original_memfd(*args, **kwargs)
+            descriptors.append(descriptor)
+            return descriptor
+
+        def fstat(descriptor):
+            nonlocal source_observations
+            info = original_stat(descriptor)
+            if descriptor == source_descriptor:
+                source_observations += 1
+                if phase == "admission" or phase == "descriptor" and source_observations > 1:
+                    return changed(info)
+            return info
+
+        def lstat(path, *args, **kwargs):
+            info = original_lstat(path, *args, **kwargs)
+            return changed(info) if phase == "path" and path == source else info
+
+        try:
+            with patch("scripts.validation_ownership.runtime_image.os.open", open_source), patch(
+                "scripts.validation_ownership.runtime_image.os.memfd_create", backing,
+            ), patch(
+                "scripts.validation_ownership.runtime_image.os.fstat", fstat,
+            ), patch.object(Path, "lstat", lstat):
+                with self.assertRaisesRegex(
+                    MakeProbeError,
+                    "untrusted backing" if phase == "admission" else "changed during complete capture",
+                ):
+                    RuntimeImage(source, budget)
+            self.assertEqual(len(descriptors), 1 if phase == "admission" else 2)
+            for descriptor in descriptors:
+                with self.assertRaises(OSError) as closed:
+                    original_stat(descriptor)
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+        finally:
+            for descriptor in descriptors:
+                try:
+                    original_stat(descriptor)
+                except OSError as error:
+                    if error.errno != errno.EBADF:
+                        raise
+                else:
+                    os.close(descriptor)
+            budget.close()
+
+    def test_source_admission_rejects_each_untrusted_observation_before_backing(self):
+        for field, value in (
+            ("st_mode", lambda info: stat.S_IFIFO | 0o444),
+            ("st_size", lambda info: 0),
+            ("st_size", lambda info: -1),
+            ("st_uid", lambda info: 1),
+            ("st_mode", lambda info: info.st_mode | stat.S_IWGRP),
+            ("st_mode", lambda info: info.st_mode | stat.S_IWOTH),
+            ("st_mode", lambda info: info.st_mode | stat.S_ISUID),
+            ("st_mode", lambda info: info.st_mode | stat.S_ISGID),
+            ("st_mode", lambda info: info.st_mode | stat.S_ISVTX),
+        ):
+            with self.subTest(field=field, value=value):
+                self.assert_source_observation_refused("admission", field, value)
+
+    def test_capture_rejects_each_changed_descriptor_and_path_identity(self):
+        for phase in ("descriptor", "path"):
+            for field in (
+                "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size",
+                "st_mtime_ns", "st_ctime_ns",
+            ):
+                with self.subTest(phase=phase, field=field):
+                    self.assert_source_observation_refused(
+                        phase, field, lambda info: getattr(info, field) + 1,
+                    )
+
+    def test_slices_enforce_actual_workspace_and_key_boundaries(self):
+        budget = ProbeBudget()
+        source = Path("/usr/bin/make").resolve()
+        expected = source.read_bytes()
+        self.assertGreater(len(expected), BLOCK_BYTES)
+        image = RuntimeImage(source, budget)
+        original_read = os.pread
+        try:
+            for key in (
+                slice(0, 0), slice(0, BLOCK_BYTES - 1), slice(0, BLOCK_BYTES),
+                slice(-BLOCK_BYTES, None), slice(len(expected), len(expected) + 1),
+                slice(17, 81, 1), slice(81, 17), slice(-10, -2),
+            ):
+                with self.subTest(key=key), patch(
+                    "scripts.validation_ownership.runtime_image.os.pread", wraps=original_read,
+                ) as read:
+                    self.assertEqual(image[key], expected[key])
+                    self.assertEqual(read.call_count, 1)
+                    self.assertLessEqual(read.call_args.args[1], BLOCK_BYTES)
+            for key in (0, False, None, "body", slice(0, 17, 0), slice(0, 17, 2), slice(17, 0, -1)):
+                with self.subTest(key=key), patch(
+                    "scripts.validation_ownership.runtime_image.os.pread", wraps=original_read,
+                ) as read:
+                    with self.assertRaisesRegex(MakeProbeError, "bounded ELF slice"):
+                        image[key]
+                    read.assert_not_called()
+            for key in (slice(0, BLOCK_BYTES + 1), slice(None, None), slice(-BLOCK_BYTES - 1, None)):
+                with self.subTest(key=key), patch(
+                    "scripts.validation_ownership.runtime_image.os.pread", wraps=original_read,
+                ) as read:
+                    with self.assertRaisesRegex(MakeProbeError, "workspace bound"):
+                        image[key]
+                    read.assert_not_called()
+            for size in (1, BLOCK_BYTES):
+                with self.subTest(short_read=size), patch(
+                    "scripts.validation_ownership.runtime_image.os.pread",
+                    side_effect=lambda descriptor, amount, offset: original_read(
+                        descriptor, amount - 1, offset,
+                    ),
+                ):
+                    with self.assertRaisesRegex(MakeProbeError, "slice ended unexpectedly"):
+                        image[:size]
+            image.close()
+            with self.assertRaisesRegex(MakeProbeError, "owned complete sealed body"):
+                image[:1]
+        finally:
+            image.close()
+            budget.close()
+
+    def test_slice_quota_and_deadline_refuse_before_reading_owned_body(self):
+        for fault in ("control", "deadline"):
+            budget = ProbeBudget()
+            image = RuntimeImage(Path("/usr/bin/make").resolve(), budget)
+            descriptor = image.descriptor
+            try:
+                if fault == "control":
+                    budget.limits = Limits(
+                        control_bytes=budget.bytes["control"] + 128 + sys.getsizeof(b"") + 64 - 1,
+                    )
+                else:
+                    budget.started = 0
+                with self.subTest(fault=fault), patch(
+                    "scripts.validation_ownership.runtime_image.os.pread", wraps=os.pread,
+                ) as read:
+                    with self.assertRaisesRegex(
+                        MakeProbeError,
+                        "control byte budget exhausted" if fault == "control" else "deadline/budget exhausted",
+                    ):
+                        image[:64]
+                    read.assert_not_called()
+                    self.assertTrue(budget.failed)
+            finally:
+                image.close()
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(descriptor)
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+                budget.close()
+
     def test_capture_preserves_primary_with_source_and_backing_close_failures(self):
         for fault in ("read", "backing-write", "deadline", "source-close"):
             budget = ProbeBudget()

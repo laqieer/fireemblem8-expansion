@@ -84,6 +84,19 @@ Start from a clean source checkout; no ROM or game save is required.
    identity and both cleanup diagnostics, and verify both real descriptors
    are closed. After otherwise successful capture, a source-close failure
    itself is primary and still retires the backing descriptor.
+7. Supply controlled source-stat observations around the actual GNU Make
+   source descriptor: each nonregular, empty/negative-size, non-root-owned,
+   group/other-writable and special-mode predicate must refuse before backing
+   allocation. Independently change every identity field at descriptor and
+   pathname post-capture observations; each must refuse and retire both real
+   descriptors. These are controlled observation inputs, not claimed physical
+   mutations of trusted host files.
+8. Compare actual slices at zero, workspace-minus-one, exact workspace,
+   negative/tail/clamped/empty and explicit-step-one boundaries. Unsupported
+   scalar/step keys and workspace-plus-one/full-body slices must refuse before
+   reading. Short underlying reads must refuse incomplete results. Derived
+   control exhaustion and elapsed-deadline inputs must refuse before reads
+   and retain owned-body cleanup. Closed backing must also refuse.
 
 All assertions are deterministic host automation. Each case owns and cleans
 its temporary paths and descriptors; reset between cases through the test's
