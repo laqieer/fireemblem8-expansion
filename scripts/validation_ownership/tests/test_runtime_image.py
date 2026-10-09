@@ -183,6 +183,91 @@ class RuntimeImageSessionTests(unittest.TestCase):
         self.assertTrue(session.budget.failed)
         self.fixture.assert_clean(session)
 
+    def test_sealed_compiler_root_preserves_issued_file_alias_identity(self):
+        session = self.fixture.session()
+        with session:
+            root = session._sealed_dependency_root("compiler-alias-layout")
+            rows = session._sealed_dependency_runtime()
+            for path, image in rows:
+                canonical = make_probe._trusted_runtime_path(path, compiler=True)
+                source = root / str(canonical).lstrip("/")
+                destination = root / path.lstrip("/")
+                with self.subTest(path=path), destination.open("rb") as stream:
+                    self.assertTrue(destination.samefile(source))
+                    self.assertEqual(hashlib.file_digest(stream, "sha256").hexdigest(), image_digest(image))
+                    self.assertEqual(destination.stat().st_size, len(image))
+            interpreter = session.dependency_runtime["runtime_interpreter"]
+            alias = "/lib64/ld-linux-x86-64.so.2"
+            old = session._new_root("independent-body-layout", make=True, native_runtime=rows)
+            self.assertFalse((old / alias.lstrip("/")).samefile(old / interpreter.lstrip("/")))
+            driver, frontend = session.dependency_compiler
+            for name, aliases in (
+                ("different-body", ((driver, frontend),)),
+                ("missing-target", ((alias, "/usr/lib/foreign-runtime.so"),)),
+                ("escaping", ((alias, "/usr/../etc/foreign-runtime"),)),
+                ("duplicate", ((alias, interpreter), (alias, interpreter))),
+                ("cycle", ((alias, interpreter), (interpreter, alias))),
+            ):
+                with self.subTest(alias_mutation=name), self.assertRaises(MakeProbeError):
+                    session._new_root(name, make=True, native_runtime=rows, native_aliases=aliases)
+                self.assertFalse((session.base / name).exists())
+        self.fixture.assert_clean(session)
+
+    def test_actual_sealed_root_compiler_retains_closed_runtime_and_header_scope(self):
+        from scripts.validation_ownership.authority import ENVIRONMENT
+        self.fixture.add("src/query.c", '#include "query.h"\n')
+        self.fixture.add("include/query.h", "#define VALUE 7\n")
+        self.fixture.add("include/foreign.h", "#define FOREIGN 9\n")
+        for case in ("positive", "separate-loader-copy", "missing-search-parents", "foreign-header"):
+            if case == "foreign-header":
+                self.fixture.add("include/query.h", '#include "foreign.h"\n')
+            session = self.fixture.session()
+            with self.subTest(case=case), session:
+                rows = session._sealed_dependency_runtime()
+                root = (
+                    session._new_root("compiler-root", make=True, native_runtime=rows)
+                    if case == "separate-loader-copy" else session._sealed_dependency_root("compiler-root")
+                )
+                output = session.base / "compiler-output"
+                output.mkdir()
+                driver, frontend = session.dependency_compiler
+                profile = {
+                    **session.dependency_runtime, "executables": [driver, frontend],
+                    "include_dirs": ["/repo/include"],
+                }
+                if case == "missing-search-parents":
+                    profile["runtime_directories"] = []
+
+                def execute():
+                    return session._sandbox_run(
+                        root, mode="compile",
+                        argv=[driver, "-E", "-MM", "-nostdinc", "-undef", "-MT",
+                              "query.o", "-Iinclude", "src/query.c"],
+                        environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
+                        mounts=[
+                            session._mount(session.tree, "/repo"),
+                            session._mount(output, "/work", writable=True),
+                            session._mount(Path("/dev/null"), "/dev/null", writable=True),
+                        ],
+                        code=("include/query.h",), sources=("src/query.c",),
+                        directories=("src", "include"), executables=(driver, frontend),
+                        dependency=profile,
+                    )
+
+                if case == "positive":
+                    completed, observed = execute()
+                    self.assertEqual(
+                        (completed.returncode, completed.stdout, completed.stderr),
+                        (0, b"query.o: src/query.c include/query.h\n", b""),
+                    )
+                    self.assertEqual(tuple(observed["executed"]), (driver, frontend))
+                    self.assertEqual(observed["consumed"], ["src/query.c"])
+                    self.assertEqual(observed["code_consumed"], ["include/query.h"])
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared|unadmitted"):
+                        execute()
+            self.fixture.assert_clean(session)
+
     def test_issued_compiler_profile_and_finite_driver_at_fork_lineage(self):
         from scripts.validation_ownership.authority import ENVIRONMENT, encoded, native_command_owner
         self.fixture.add("src/query.c", '#include "query.h"\n')

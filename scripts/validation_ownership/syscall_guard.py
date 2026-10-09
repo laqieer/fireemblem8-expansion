@@ -434,7 +434,10 @@ class Policy:
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
         self.runtime_directories = set()
-        for name in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
+        for name in (
+            self.runtime_closure | self.executable | {"/lib/vo-observer.so"}
+            | (set(dependency["runtime_directories"]) if dependency else set())
+        ):
             parent = posixpath.dirname(name)
             while parent:
                 self.runtime_directories.add(parent)

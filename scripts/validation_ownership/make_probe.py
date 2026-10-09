@@ -1161,7 +1161,33 @@ class ProbeSession:
         finally:
             os.close(directory)
 
-    def _new_root(self, name, *, make=False, native_runtime=()):
+    def _new_root(self, name, *, make=False, native_runtime=(), native_aliases=()):
+        if native_aliases:
+            if not make or not native_runtime or len(native_aliases) > self.budget.limits.entries:
+                raise MakeProbeError("native runtime aliases require their bounded captured Make root")
+            self.budget.charge("control", len(encoded(native_aliases)))
+            bodies = dict(self.make_runtime)
+            for path, body in native_runtime:
+                if path in bodies and bodies[path] != body:
+                    raise MakeProbeError("native runtime alias overlaps a different captured body")
+                bodies[path] = body
+            aliases = dict(native_aliases)
+            self.budget.charge("control", sys.getsizeof(bodies) + sys.getsizeof(aliases))
+            if len(aliases) != len(native_aliases):
+                raise MakeProbeError("native runtime aliases contain duplicate destinations")
+            for alias, target in native_aliases:
+                if (
+                    not all(isinstance(path, str) and path.startswith("/")
+                            and os.path.normpath(path) == path for path in (alias, target))
+                    or alias == target or target in aliases
+                    or alias not in bodies or target not in bodies
+                    or bodies[alias] != bodies[target]
+                ):
+                    raise MakeProbeError("native runtime alias lacks its exact captured file target")
+                relative_path(alias[1:])
+                relative_path(target[1:])
+        else:
+            aliases = {}
         root = self.base / name
         root.mkdir()
         for directory in ("repo", "usr", "work", "dev", "control", "lib", "lib64", "bin"):
@@ -1186,6 +1212,8 @@ class ProbeSession:
                     _mkdir_target(root, canonical, directory=alias == "/proc/self")
                 destination.symlink_to(target)
             for target, data in self.make_runtime:
+                if target in aliases:
+                    continue
                 materialize_image(_mkdir_target(root, target), data)
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
@@ -1196,6 +1224,8 @@ class ProbeSession:
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
             for target, data in native_runtime:
+                if target in aliases:
+                    continue
                 destination = root / target.lstrip("/")
                 if destination.exists():
                     if dict(self.make_runtime).get(target) != data:
@@ -1203,6 +1233,16 @@ class ProbeSession:
                 else:
                     materialize_image(_mkdir_target(root, target), data)
                     destination.chmod(0o555)
+            for alias, target in native_aliases:
+                source = root / target.lstrip("/")
+                destination = _mkdir_target(root, str(Path(alias).parent), directory=True) / Path(alias).name
+                if destination.exists():
+                    if not destination.samefile(source):
+                        raise MakeProbeError(
+                            f"native runtime alias {alias} overlaps a different materialized target {target}"
+                        )
+                else:
+                    os.link(source, destination)
             for item in self.runtime_inputs:
                 for parent, present in reversed(item.parents):
                     if present and parent != "/":
@@ -2503,6 +2543,21 @@ class ProbeSession:
             reserve=lambda size: self.budget.charge("control", size),
         )
         return value
+
+    @terminal_failure
+    def _sealed_dependency_root(self, name):
+        rows = self._sealed_dependency_runtime()
+        aliases = tuple(
+            (path, str(_trusted_runtime_path(path, compiler=True)))
+            for path, _ in rows
+            if path != str(_trusted_runtime_path(path, compiler=True))
+        )
+        self.budget.charge(
+            "control", sys.getsizeof(aliases) + sum(
+                sys.getsizeof(row) + sum(sys.getsizeof(path) for path in row) for row in aliases
+            ),
+        )
+        return self._new_root(name, make=True, native_runtime=rows, native_aliases=aliases)
 
     def _dependency_runtime(self):
         interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])

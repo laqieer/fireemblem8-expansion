@@ -3002,6 +3002,36 @@ Run `test_runtime_image` plus
 `test_dependency.DependencyTests.test_observed_worldmap_dependency_recipe_uses_real_repository_sources`
 for this member and existing dependency-route compatibility.
 
+The private compiler root must also preserve the issued files' alias identity.
+Copying the interpreter alias and canonical pathname into different files can
+preserve every byte but break the existing syscall-origin predicate. Derive
+aliases only from the issued, trusted compiler closure; require both names to
+have the same captured body and a non-chained, declared canonical target.
+Materialize that target once and hard-link its aliases. Already-coincident paths
+through the existing root directory aliases require no additional link. Reject
+duplicate destinations, cycles, escapes, missing targets and different bodies
+before root creation. Default roots without this explicit alias input retain
+their existing behavior.
+
+For **TC-WORKFLOW-NATIVE-MAKE-001**'s compiler-materialization subcase, start
+with the runtime-image fixture's clean source/header tree and actual host GCC.
+Run `RuntimeImageSessionTests.test_sealed_compiler_root_preserves_issued_file_alias_identity`
+and `test_actual_sealed_root_compiler_retains_closed_runtime_and_header_scope`
+in `test_runtime_image`. Compare actual materialized device/inode identity,
+complete digests and extents for every issued alias. Run the real driver and
+frontend in the captured root without host `/usr` or library mounts; require
+the exact dependency stdout and actual source/header consumption. The old
+separate-copy root must still fail loader provenance. Removing issued search
+directories must refuse the actual compiler's search-parent metadata, and a
+present but undeclared header must refuse rather than acquire read authority.
+Existing dependency metadata derives finite ancestors from its already-issued
+search directories as well as captured files, including libexec-style frontend
+installations. This grants no prefix read or directory enumeration and retains
+the verified driver/origin predicate for absent probes. Cleanup retires the
+captured descriptors and temporary roots. This is an existing compile-policy,
+small-fixture result, **not native Make ancestry, inherited-FD, original
+initial-plus-eight or public-archive qualification**.
+
 This storage seam issues **no native execution, metadata, source or output
 authority**. The default native Make request still runs without compiler
 permissions. Native driver/frontend ancestry, compiler-specific source scope,
