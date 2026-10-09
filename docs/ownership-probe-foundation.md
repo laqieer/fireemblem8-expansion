@@ -3079,6 +3079,12 @@ at the native result boundary for readonly/writable requests, with and without
 patterns. Require the requested mode, unchanged nonzero status and stderr, and
 cleanup; the pre-fix writable branch incorrectly reports `readonly`. This tests
 failure reporting, not a bypass of native command admission or job validation.
+The actual writable Command rejection case separately supplies a non-Command
+and substituted argv under both protocol selections. Require the writable
+diagnostic, explicit failed budget and cleanup. The existing readonly admission
+family must retain its readonly diagnostic and all source/output/operand
+refusals; a neutral-label amendment that changed that established diagnostic
+was corrected without changing its admission predicate.
 
 Run the finite-root case with two different command-line profiles; require
 different real stdout, distinct cumulative template IDs/occurrences, machine 4

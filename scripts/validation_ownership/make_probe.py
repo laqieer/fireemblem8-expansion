@@ -2812,7 +2812,10 @@ class ProbeSession:
                     command.code, command.sources, command.directories, command.outputs,
                 ))
             ):
-                raise MakeProbeError("native Command differs from actual argv or requests output authority")
+                execution_mode = "writable" if writable_outputs else "readonly"
+                raise MakeProbeError(
+                    f"native {execution_mode} Command differs from actual argv or requests output authority"
+                )
             Command.__post_init__(command)
             outputs = self._output_paths(command.outputs)
             resources = resource_plan(command.native_resources)

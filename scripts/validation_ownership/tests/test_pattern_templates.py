@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from scripts.validation_ownership import read_epochs
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
-from scripts.validation_ownership.make_probe import Limits
+from scripts.validation_ownership.make_probe import Command, Limits
 from scripts.validation_ownership.pattern_templates import PatternTemplates, pattern_abi
 from scripts.validation_ownership.tests import test_foundation as foundation
 
@@ -286,6 +286,24 @@ class NativePatternTemplateTests(unittest.TestCase):
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
+
+    def test_actual_writable_command_rejection_reports_mode_with_and_without_patterns(self):
+        self.add("Makefile", "all: ; @exit 7\n")
+        argv = ("/bin/sh", "-c", "exit 7")
+        for patterns in (False, True):
+            for command in (False, Command(("/bin/sh", "-c", "exit 0"))):
+                session = self.session()
+                with self.subTest(patterns=patterns, command=command), session:
+                    with self.assertRaisesRegex(
+                        MakeProbeError, "native writable Command differs from actual argv or requests output authority",
+                    ):
+                        session._native_make_writable(
+                            "all", outputs=("made",), commands={argv: command},
+                            observe_reads=True, observe_runtime_completions=True,
+                            observe_patterns=patterns,
+                        )
+                    self.assertTrue(session.budget.failed)
+                self.assert_clean(session)
 
     def test_actual_failed_make_result_reports_requested_mode_for_old_and_pattern_requests(self):
         self.add("Makefile", "all: ; @exit 7\n")
