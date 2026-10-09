@@ -522,11 +522,13 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/252",
         "https://github.com/laqieer/fireemblem8-expansion/issues/256",
         "https://github.com/laqieer/fireemblem8-expansion/issues/258",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/260"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/260",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/279"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
+        "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
@@ -773,6 +775,34 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
+      "title": "Preserve complete sealed platform bodies and owned materialization",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/279"
+      ],
+      "document": "docs/platform-runtime-storage.md",
+      "anchor": "tc-ownership-sealed-platform-storage-001",
+      "profiles": [
+        "Linux host source tooling, Python3, GNU Make, host GCC and memfd/seal support"
+      ],
+      "purpose": "Provide complete immutable external platform body storage with bounded streaming, unchanged cumulative budgets and explicit owned-file failure cleanup.",
+      "prerequisites": "Clean source checkout, actual trusted GNU Make/Python/GCC files and /proc; no ROM, save, native execution grant, source ledger or new dependency.",
+      "actions": "Run the focused provider module. Compare full real GNU Make/Python/frontend bodies, digests and kernel seals; materialize exact bytes; derive source-file and snapshot quota boundaries from actual frontend extent. Exercise capture/fdopen ownership, closed/corrupted backing, interruption, short/invalid writes, failed open/replacement, pre-open quota and combined close/unlink errors.",
+      "expected_result": "Complete bodies remain immutable, streamed output is exact and snapshot/aggregate/control/output allowances remain authoritative. Successful short writes finish. Pre-open refusal preserves an existing file; post-open failure removes the owned destination or explicitly reports denied removal and its actual prefix. Secondary cleanup never replaces the primary operation failure; owned FDs close.",
+      "negative_control": "Historical exact pre-fix materialization and teardown operations frozen under275 retain incomplete files or replace primary errors. Real seal mutation and insufficient snapshot allowances refuse. This is component behavior evidence, not original native qualification.",
+      "interactions": "Depends on merged274 ProbeBudget/lifecycle. Consumers275/270/180/186 retain all path/purpose/cache/session/native/root/compiler/generated-source/archive and original end-to-end contracts. No independent profile conflicts or permission service.",
+      "save_compatibility": "Host-only API; no ROM/RAM, save/migration, locale, generated game data, modern debug/release or archival execution change.",
+      "cleanup": "Each test owns its temporary paths and real descriptors and cleans them through existing lifecycle semantics, including interruption and explicit secondary cleanup diagnostics.",
+      "limitations": "Linux memfd/seal support required. Replacement is not atomic old-content preservation; storage does not authenticate callers or isolate hostile same-UID processes. Native compiler and originalinitial-plus-eight/all551/public graph qualification remain outside279. No manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.validation_ownership.tests.test_platform_image -v",
+          "evidence": "scripts/validation_ownership/tests/test_platform_image.py"
+        }
+      ]
+    },
     {
       "id": "TC-CJK-INVENTORY-ORDER-001",
       "title": "Deterministic CJK consumer inventory",
