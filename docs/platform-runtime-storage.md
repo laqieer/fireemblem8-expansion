@@ -160,7 +160,7 @@ the original inventory and real generated command, not a claim to have run
 the entire original workflow-test import closure. The coverage origin at
 `20ce99cc816b85647569f0a6ba4600326870ddc8` has eight original provider tests;
 actual original-suite runs survive all three semantic guard removals. The
-current twelve-test provider suite kills them with 9/16/3 input failures.
+current thirteen-test provider suite kills them with 9/16/3 input failures.
 Those results establish missing regression coverage, not incorrect old
 admission, identity or slice runtime behavior.
 
