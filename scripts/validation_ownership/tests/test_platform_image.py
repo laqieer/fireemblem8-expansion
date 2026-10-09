@@ -139,7 +139,7 @@ class PlatformImageTests(unittest.TestCase):
                 with self.subTest(key=key), patch(
                     "scripts.validation_ownership.runtime_image.os.pread", wraps=original_read,
                 ) as read:
-                    with self.assertRaisesRegex(MakeProbeError, "bounded ELF slice"):
+                    with self.assertRaisesRegex(MakeProbeError, "bounded .* slice"):
                         image[key]
                     read.assert_not_called()
             for key in (slice(0, BLOCK_BYTES + 1), slice(None, None), slice(-BLOCK_BYTES - 1, None)):

@@ -146,15 +146,15 @@ class RuntimeImage:
     def __getitem__(self, key):
         self.require_sealed()
         if not isinstance(key, slice) or key.step not in (None, 1):
-            raise MakeProbeError("platform runtime requires a bounded ELF slice")
+            raise MakeProbeError("platform runtime requires a bounded image slice")
         first, last, _ = key.indices(self.size)
         size = max(0, last - first)
         if size > BLOCK_BYTES:
-            raise MakeProbeError("platform runtime ELF slice exceeds its workspace bound")
+            raise MakeProbeError("platform runtime image slice exceeds its workspace bound")
         self.budget.charge("control", size + sys.getsizeof(b""))
         result = os.pread(self.descriptor, size, first)
         if len(result) != size:
-            raise MakeProbeError("platform runtime ELF slice ended unexpectedly")
+            raise MakeProbeError("platform runtime image slice ended unexpectedly")
         return result
 
     def digest(self):
