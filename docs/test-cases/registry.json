@@ -546,6 +546,7 @@
         "TC-WORKFLOW-REVIEW-FAMILY-001",
         "TC-WORKFLOW-REVIEW-PATHS-001",
         "TC-WORKFLOW-REVIEW-FIRST-001",
+        "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
@@ -2471,6 +2472,30 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
+      "title": "Ignore unrelated check lifecycle",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/281"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-security-check-isolation-001-ignore-unrelated-check-lifecycle",
+      "profiles": ["Linux host Python source checkout"],
+      "purpose": "Keep unrelated Build lifecycle outside required exact security evidence while preserving all named-check validation.",
+      "prerequisites": "Existing host-test dependencies; no ROM, save, credentials or live mutation.",
+      "actions": "Run focused SecurityTests. Compare required named results with and without unrelated reversed skipped-job and malformed lifecycle records, then corrupt required check lifecycle, identity and response envelope.",
+      "expected_result": "Unrelated lifecycle leaves named results identical and cannot supply missing security checks; every invalid required check or envelope explicitly refuses.",
+      "negative_control": "Exact pre-fix collector refuses reversed unrelated skipped-job chronology before selecting security names.",
+      "interactions": "Existing exact-head security and counted GitHub response collector; dependent #279/#280; no conflicts.",
+      "save_compatibility": "No ROM/RAM/save, generated game data, locale, profile/default or archival change.",
+      "cleanup": "In-memory fixtures only; no filesystem reset needed.",
+      "limitations": "Parser fixtures do not represent successful candidate or master Build evidence and do not normalize live timestamps.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
         }
       ]
     },
