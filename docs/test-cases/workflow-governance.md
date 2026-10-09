@@ -2965,7 +2965,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 ### Actions
 
 1. Run
-   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_review_first_pre_full_metadata_preparation_preserves_transaction_and_final_hold scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_pre_full_preparation_requires_complete_positive_candidate_run_inventory -v`.
+   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests -v`.
+   This directly owning class covers every preparation selector listed in the
+   catalog and the unchanged transaction, recovery and full-authority controls.
    Start with a complete positively bound review-first preflight and no full
    Build. Correct the body through the existing helper, with and without an
    essential reason. Require exactly one metadata PATCH and the existing
