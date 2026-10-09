@@ -2962,7 +2962,7 @@ context objects in the existing cumulative control budget; no allowance is
 raised or refunded.
 
 Exercise the **TC-WORKFLOW-NATIVE-MAKE-001** materialization-failure subcase
-with `RuntimeImageTests.test_failed_materialization_removes_owned_file_and_preserves_failure`
+with `PlatformImageTests.test_failed_materialization_removes_owned_file_and_preserves_failure`
 and `test_materialization_handles_actual_short_writes_and_failed_open`.
 Start with actual GNU Make backing and a fresh temporary destination. Inject
 first/late reads, writes, close, deadline expiry after a real
@@ -2973,13 +2973,23 @@ original exceptions for both applicable providers. Use
 to combine operation/interruption, close and unlink failures on an opened
 replacement; require the original operation exception, all cleanup diagnostics
 and actual FD closure. There is no additional stream-entry hook: open already
-returns the owned file, and explicit closing captures the operation exception
+acquires the owned descriptor before stream wrapping, and explicit closing captures the operation exception
 before teardown. Then require complete
 actual bytes after a short write and preservation of an existing destination
 when open or pre-open storage quota fails. The quota control captures real
 backing to fill a limit derived from its observed extent. The deadline control
 lowers only its isolated test budget;
 it does not qualify or alter the original cohort's deadline.
+
+The complete generic provider contract, its tests and procedure live in
+[platform-runtime-storage.md](platform-runtime-storage.md) (#279 / #280).
+The native writer integration (#275 / #276) genuinely depends on that API and
+adopts it through a normal parent merge, not a copied provider or competing
+test owner. `test_platform_image` exercises generic capture/materialization;
+`test_runtime_image` retains compiler profile, sealed-root, cache and nested
+session consumer checks. Both are selected once by the existing full native
+test target; lightweight mode selects neither. Parent and child delivery
+remain separate, and the child cannot merge before the storage parent.
 
 Every sealed body and every physical streamed root copy spends the unchanged
 snapshot/aggregate allowances. Bounded stream buffers, header slices and actual

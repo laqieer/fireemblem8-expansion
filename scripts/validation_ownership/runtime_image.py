@@ -11,7 +11,7 @@ import stat
 import sys
 
 from .budget import MakeProbeError, ProbeBudget
-from .lifecycle import finish_cleanup
+from .lifecycle import cleanup_scope, finish_cleanup
 
 
 BLOCK_BYTES = 65536
@@ -20,7 +20,12 @@ IMAGE_SEALS = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcn
 
 @contextmanager
 def _materialization_stream(destination):
-    stream = destination.open("wb", buffering=0)
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o666)
+    try:
+        stream = os.fdopen(descriptor, "wb", buffering=0)
+    except BaseException as error:
+        finish_cleanup([lambda: os.close(descriptor), destination.unlink], primary=error)
+        raise
     try:
         yield stream
     except BaseException as error:
@@ -39,7 +44,7 @@ def _write_complete(stream, part, budget=None):
         if budget is not None:
             budget.remaining()
         amount = stream.write(part[written:])
-        if amount is None or amount <= 0 or amount > len(part) - written:
+        if type(amount) is not int or not 0 < amount <= len(part) - written:
             raise MakeProbeError("platform runtime materialization did not progress")
         written += amount
     return written
@@ -79,7 +84,7 @@ class RuntimeImage:
         try:
             descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
             stream = os.fdopen(descriptor, "rb", buffering=0)
-            with stream:
+            with cleanup_scope([close_source]):
                 before = os.fstat(stream.fileno())
                 if (
                     not stat.S_ISREG(before.st_mode) or before.st_size <= 0
@@ -98,7 +103,7 @@ class RuntimeImage:
                     budget.remaining()
                     budget.charge("control", 128)
                     count = stream.readinto(work[:min(len(work), self.size - offset)])
-                    if count is None or count <= 0:
+                    if type(count) is not int or not 0 < count <= min(len(work), self.size - offset):
                         raise MakeProbeError("platform runtime image ended during complete capture")
                     part = work[:count]
                     digest.update(part)
@@ -106,7 +111,7 @@ class RuntimeImage:
                     while written < count:
                         budget.remaining()
                         amount = os.write(self.descriptor, part[written:])
-                        if amount <= 0:
+                        if type(amount) is not int or not 0 < amount <= count - written:
                             raise MakeProbeError("platform runtime backing write did not progress")
                         written += amount
                     offset += count
@@ -146,15 +151,15 @@ class RuntimeImage:
     def __getitem__(self, key):
         self.require_sealed()
         if not isinstance(key, slice) or key.step not in (None, 1):
-            raise MakeProbeError("platform runtime requires a bounded ELF slice")
+            raise MakeProbeError("platform runtime requires a bounded image slice")
         first, last, _ = key.indices(self.size)
         size = max(0, last - first)
         if size > BLOCK_BYTES:
-            raise MakeProbeError("platform runtime ELF slice exceeds its workspace bound")
+            raise MakeProbeError("platform runtime image slice exceeds its workspace bound")
         self.budget.charge("control", size + sys.getsizeof(b""))
         result = os.pread(self.descriptor, size, first)
         if len(result) != size:
-            raise MakeProbeError("platform runtime ELF slice ended unexpectedly")
+            raise MakeProbeError("platform runtime image slice ended unexpectedly")
         return result
 
     def digest(self):
