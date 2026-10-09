@@ -184,7 +184,8 @@ class PlatformStorageSubjectTests(SubjectTestCase):
             "with open('/never-opened') as load_tests:\n    pass",
             "try:\n    pass\nexcept Exception as load_tests:\n    pass",
         )
-        for binding in bindings:
+        for binding in (*bindings, *(item.replace("load_tests", "__getattr__")
+                                     for item in bindings)):
             with self.subTest(binding=binding):
                 head = self.repo.commit({TESTS: source + "\n" + binding + "\n"})
                 members = tuple(item for item in self.tools.members(self.scope(head))

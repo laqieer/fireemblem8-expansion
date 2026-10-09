@@ -870,9 +870,11 @@ def _platform_owner(role):
         content = Path(path).read_bytes()
         source = ast.parse(content)
         symbols = symtable.symtable(content, path, "exec")
-        hook = symbols.lookup("load_tests") if "load_tests" in symbols.get_identifiers() else None
+        hooks = [symbols.lookup(name) for name in ("load_tests", "__getattr__")
+                 if name in symbols.get_identifiers()]
         review.require(
-            (hook is None or not (hook.is_assigned() or hook.is_imported() or hook.is_namespace()))
+            not any(hook.is_assigned() or hook.is_imported() or hook.is_namespace()
+                    for hook in hooks)
             and not any(isinstance(node, ast.ImportFrom)
                         and any(alias.name == "*" for alias in node.names)
                         for node in ast.walk(source)),

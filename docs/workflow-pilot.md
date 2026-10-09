@@ -621,25 +621,26 @@ ownership index records the original head/scope and terminal release. Original
 findings require complete `triage_local` decisions, including reasons for
 rejection; accepting a finding still requires the same source-bound finite
 family evidence. `advance` changes only the current head, not the original
-report. `original_review_context_ready` joins either this terminal observation
-or the existing completed live lease to the same ownership/report predicates;
-assessment still requires completion strictly before the first remote review.
+report. Imported context is archival only: `report.read_only` is false and
+`original_review_context_ready` always refuses it. Neither observed read-only
+actions nor a known file count proves dispatch-enforced read-only tools.
+Only the existing completed live lease can establish the required original
+review context; assessment still requires completion strictly before the first remote review.
 It does not assert immutable dirty-worktree contents or current-head clean
 review from historical content reads. If exact `CandidateReader` coverage is
 required separately, this import cannot supply it.
 
 Only trusted coordinator code may normalize these native observations; no
 candidate JSON, `passed`, asserted permissions or report-prose action flags
-are accepted. The internal admitted report's `read_only` describes observed
-allowed actions, not proof of a retrospective enforced tool allowlist or
+are accepted. The imported report never asserts an enforced tool allowlist or
 hostile-process isolation. An original CLI task advertising broader tools
 must retain that limitation in its evidence. Native completion provenance and
 complete action/path/finding triage remain the coordinator's responsibility.
-This is the smallest adaptation for directly launched historical CLI reviews:
+This is an audit adaptation for directly launched historical CLI reviews:
 the future live `begin`/`finish` route is unchanged, with no new runtime,
 service, gate, permission or authentication system.
 Focused pure and scheduling regression:
-`python3 -B -m unittest scripts.workflow_pilot.tests.test_completed_review scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_completed_native_import_joins_original_context_without_a_historical_lease -v`.
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_completed_review scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_completed_native_import_is_archival_without_a_historical_lease -v`.
 This extends `TC-WORKFLOW-REVIEW-FAMILY-001`; default/target profiles, ROM/RAM,
 save and generated-game-data behavior are unchanged. All independent, security,
 source-family and complete candidate/master Build/completion gates remain.

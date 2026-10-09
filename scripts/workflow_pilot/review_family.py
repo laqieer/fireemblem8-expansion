@@ -943,7 +943,7 @@ class ReviewSession:
         unique([finding.id for finding in observation.findings], "original findings")
         report = _ReviewReport(
             observation.task, observation.owner, observation.role, observation.head,
-            observation.scope, True, True, observation.actions, observation.runtime_files,
+            observation.scope, True, False, observation.actions, observation.runtime_files,
             observation.findings, observation.started_at, observation.completed_at,
             observed_paths=observation.observed_paths,
             original_content=observation.original_content,
@@ -960,23 +960,11 @@ class ReviewSession:
         if report is None:
             return False
         if self.completed_observation is not None:
-            observed = self.completed_observation
-            terminal = (self.lease is None and observed.state == "completed"
-                        and (observed.task, observed.owner, observed.role,
-                             observed.head, observed.scope)
-                        == (report.task, report.owner, report.role,
-                            report.head, report.subjects)
-                        and (observed.started_at, observed.completed_at, observed.actions,
-                             observed.runtime_files, observed.findings, observed.observed_paths,
-                             observed.original_content)
-                        == (report.started_at, report.completed_at, report.actions,
-                            report.files, report.findings, report.observed_paths,
-                            report.original_content))
-        else:
-            lease = self.lease
-            terminal = (lease is not None and lease.finished and lease.outcome == "completed"
-                        and (lease.task, lease.owner, lease.head)
-                        == (report.task, report.owner, report.head))
+            return False
+        lease = self.lease
+        terminal = (lease is not None and lease.finished and lease.outcome == "completed"
+                    and (lease.task, lease.owner, lease.head)
+                    == (report.task, report.owner, report.head))
         ownership = self.owners.records.get(id(self)) if self.owners is not None else None
         return bool(terminal and report.completed and report.read_only
                     and report.role == "code-review" and report.subjects == self.scope

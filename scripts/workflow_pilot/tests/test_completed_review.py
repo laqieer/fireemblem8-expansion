@@ -42,7 +42,8 @@ class CompletedReviewTests(unittest.TestCase):
         self.assertEqual(report.original_content, self.observation.original_content)
         self.assertEqual(report.findings, (self.finding,))
         self.assertFalse(session.owners.records[id(session)][3])
-        self.assertTrue(session.original_review_context_ready())
+        self.assertFalse(report.read_only)
+        self.assertFalse(session.original_review_context_ready())
         with self.assertRaisesRegex(ValueError, "complete triage"):
             session.review_state((), (), pre_review_required=True)
         session.triage_local(
@@ -50,8 +51,10 @@ class CompletedReviewTests(unittest.TestCase):
         )
         session.advance("b" * 40)
         self.assertEqual((session.head, session.report.head), ("b" * 40, self.head))
-        self.assertTrue(session.original_review_context_ready())
-        self.assertEqual(session.review_state((), (), pre_review_required=True), (True, False))
+        self.assertFalse(session.original_review_context_ready())
+        with self.assertRaisesRegex(ValueError, "actual independent"):
+            session.review_state((), (), pre_review_required=True)
+        self.assertEqual(session.review_state((), (), pre_review_required=False), (True, False))
         self.assertEqual(session.local_triage[self.finding.id][0], False)
         self.assertEqual(session.accepted, {})
         with self.assertRaises(ValueError):
@@ -134,45 +137,29 @@ class CompletedReviewTests(unittest.TestCase):
         session.completed_observation = replace(self.observation, owner="different-owner")
         self.assertFalse(session.original_review_context_ready())
 
-    def test_every_imported_observation_and_report_field_is_bound_after_validation(self):
-        changes = {
-            "task": "other-task", "owner": "other-reviewer", "role": "general-purpose",
-            "head": "b" * 40, "scope": frozenset({"other/subject"}), "state": "running",
-            "actions": frozenset({"read-candidate", "read-evidence", "emit-report"}),
-            "started_at": "2026-10-09T10:05:19.945Z",
-            "completed_at": "2026-10-09T10:08:00.932Z",
-            "observed_paths": ("other/source.py",), "findings": (),
-            "original_content": "Changed report content", "runtime_files": 1,
-        }
-        report_names = {"scope": "subjects", "runtime_files": "files"}
-        for name, value in changes.items():
-            with self.subTest(representation="observation", field=name):
+    def test_archival_import_never_admits_even_known_counts_or_asserted_read_only(self):
+        for count in (None, 1, model.MAX_REVIEW_FILES):
+            with self.subTest(runtime_files=count):
                 session = self.session()
-                session.observe_completed(self.observation)
-                session.completed_observation = replace(self.observation, **{name: value})
+                report = session.observe_completed(replace(
+                    self.observation, runtime_files=count,
+                ))
+                self.assertFalse(report.read_only)
+                session.report = replace(report, read_only=True)
                 self.assertFalse(session.original_review_context_ready())
-            if name != "state":
-                with self.subTest(representation="report", field=name):
-                    session = self.session()
-                    report = session.observe_completed(self.observation)
-                    session.report = replace(report, **{report_names.get(name, name): value})
-                    self.assertFalse(session.original_review_context_ready())
-        for name in ("completed", "read_only"):
-            with self.subTest(representation="report", field=name):
-                session = self.session()
-                report = session.observe_completed(self.observation)
-                session.report = replace(report, **{name: False})
-                self.assertFalse(session.original_review_context_ready())
+                session.triage_local(self.finding.id, accepted=False, reason="Actual triage")
+                with self.assertRaisesRegex(ValueError, "actual independent"):
+                    session.review_state((), (), pre_review_required=True)
 
     def test_fresh_before_first_remote_and_accepted_findings_remain_required(self):
         session = self.session()
         session.observe_completed(self.observation)
         session.triage_local(self.finding.id, accepted=True, reason="Mapped for actual family evidence")
         self.assertEqual(session.accepted, {self.finding.id: self.finding})
-        for submitted, valid in (
-            ("2026-10-09T10:07:59.931Z", False),
-            ("2026-10-09T10:07:59.932Z", False),
-            ("2026-10-09T10:07:59.933Z", True),
+        for submitted in (
+            "2026-10-09T10:07:59.931Z",
+            "2026-10-09T10:07:59.932Z",
+            "2026-10-09T10:07:59.933Z",
         ):
             with self.subTest(submitted=submitted):
                 observed = self.session()
@@ -183,12 +170,10 @@ class CompletedReviewTests(unittest.TestCase):
                 )
                 triage = model.Triage(fact, "clean")
                 observed.triage(triage)
-                if valid:
-                    self.assertEqual(observed.review_state(
-                        (fact,), (triage,), pre_review_required=True), (True, True))
-                else:
-                    with self.assertRaisesRegex(ValueError, "precede"):
-                        observed.review_state((fact,), (triage,), pre_review_required=True)
+                with self.assertRaisesRegex(ValueError, "actual independent"):
+                    observed.review_state((fact,), (triage,), pre_review_required=True)
+                self.assertEqual(observed.review_state(
+                    (fact,), (triage,), pre_review_required=False), (True, True))
 
 
 if __name__ == "__main__":

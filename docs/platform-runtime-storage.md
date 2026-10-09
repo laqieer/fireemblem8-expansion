@@ -179,8 +179,8 @@ Focused binding regression:
 
 The binding regression module is included by the existing registered review-family
 `test_*review*.py` discovery. Its parsed owner model rejects module-level `load_tests`
-bindings and wildcard imports instead of executing a custom suite hook. Imported review
-observations remain bound to every original identity field, including reviewer role.
+and `__getattr__` bindings and wildcard imports instead of executing a custom suite hook.
+Imported review observations are archival only and cannot establish pre-review eligibility.
 It exercises the real staged route, all finite roles, coverage-only origins,
 owner omission, missing sibling/stale-tool refusal, malformed execution
 closure, runtime regression and unavailable original-suite execution.
@@ -198,3 +198,5 @@ relabeled as an enforced read-only allowlist. The byte-budget finding is
 retained and explicitly rejected against the frozen caller-owned bytes
 contract, not erased or converted into a clean original report. Later scoped
 reviews, accepted remote findings and exact current-head gates remain separate.
+These historical observations do not establish the mandatory independent-review
+admission facts; retain that precise hold rather than reconstructing a lease.

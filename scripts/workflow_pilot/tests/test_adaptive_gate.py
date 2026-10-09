@@ -514,7 +514,7 @@ class GateTests(unittest.TestCase):
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
 
-    def test_completed_native_import_joins_original_context_without_a_historical_lease(self):
+    def test_completed_native_import_is_archival_without_a_historical_lease(self):
         session = review.ReviewSession(
             "coordinator", "implementer", self.scope, self.fixture.parent,
             identity=(self.pr.repository, self.pr.number, self.fixture.parent),
@@ -531,7 +531,9 @@ class GateTests(unittest.TestCase):
         self.assertIsNone(session.report.files)
         self.assertEqual(session.report.head, self.fixture.parent)
         observed = self.assess(session=session, triage=tuple(session.rounds.events))
-        self.assertTrue(observed["dispatchable"], observed)
+        self.assertFalse(session.report.read_only)
+        self.assertFalse(observed["dispatchable"], observed)
+        self.assertIn("unbound-original-review-context", observed["missing"])
         self.assertFalse(observed["merge_eligible"])
         session.completed_observation = replace(observation, head=self.pr.head_sha)
         observed = self.assess(session=session, triage=tuple(session.rounds.events))
