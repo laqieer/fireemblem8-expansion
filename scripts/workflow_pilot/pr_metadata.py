@@ -3183,6 +3183,11 @@ def _pre_full_preparation(runs: tuple[RunState, ...]) -> bool:
     )
 
 
+def _essential_active_full(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
+    return tuple(run for run in _blocking_active_runs(runs)
+                 if run.mode != "active-review-first")
+
+
 def _edit_receipt(
     state: PullRequestState,
     runs: tuple[RunState, ...],
@@ -3552,6 +3557,7 @@ def edit_metadata(
     initial_runs = list_candidate_runs(client, initial)
     active_full = _blocking_active_runs(initial_runs)
     latest_full = _latest_full(initial_runs)
+    preparation = _pre_full_preparation(initial_runs)
     if not initially_matches and essential_reason is None:
         if active_full:
             return Decision(
@@ -3568,7 +3574,7 @@ def edit_metadata(
                 pr_number=pr_number,
                 run_id=active_full[0].run_id,
             )
-        if latest_full is None and not _pre_full_preparation(initial_runs):
+        if latest_full is None and not preparation:
             return Decision(
                 action="refused",
                 base_sha=base_sha,
@@ -3588,8 +3594,8 @@ def edit_metadata(
         and len(essential_reason.encode("utf-8")) > MAX_REASON_BYTES
     ):
         raise MetadataEditError("--essential-reason exceeds 4096 bytes")
-    elif not initially_matches and not active_full:
-        if latest_full is None and not _pre_full_preparation(initial_runs):
+    elif not initially_matches and not _essential_active_full(initial_runs):
+        if latest_full is None and not preparation:
             raise MetadataEditError(
                 "essential edit has no exact-head full Build to reconcile"
             )
@@ -3616,9 +3622,7 @@ def edit_metadata(
     current_runs = list_candidate_runs(client, current)
     current_active_full = _blocking_active_runs(current_runs)
     current_latest_full = _latest_full(current_runs)
-    if _pre_full_preparation(initial_runs) and (
-        current_runs != initial_runs or not _pre_full_preparation(current_runs)
-    ):
+    if preparation and current_runs != initial_runs:
         return Decision(
             action="deferred",
             base_sha=base_sha,
@@ -3662,7 +3666,7 @@ def edit_metadata(
                 pr_number=pr_number,
                 run_id=current_active_full[0].run_id,
             )
-        if current_latest_full is None and not _pre_full_preparation(current_runs):
+        if current_latest_full is None and not preparation:
             raise MetadataEditError(
                 "exact full Build authority disappeared before mutation"
             )
@@ -3671,8 +3675,8 @@ def edit_metadata(
     elif not initially_matches:
         active_full = current_active_full
         latest_full = current_latest_full
-        if not active_full:
-            if latest_full is None and not _pre_full_preparation(current_runs):
+        if not _essential_active_full(current_runs):
+            if latest_full is None and not preparation:
                 raise MetadataEditError(
                     "essential edit has no exact-head full Build to reconcile"
                 )
@@ -3810,7 +3814,7 @@ def edit_metadata(
             state=current,
             version=current_version,
         )
-        if _pre_full_preparation(current_runs):
+        if preparation:
             return Decision(
                 action="no-op",
                 base_sha=base_sha,

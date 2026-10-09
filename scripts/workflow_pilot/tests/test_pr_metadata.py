@@ -2479,6 +2479,41 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertFalse(any(method != "GET" and endpoint != "graphql"
                              for method, endpoint, _ in client.calls))
 
+    def test_initially_active_review_first_never_grants_essential_full_permission(self):
+        for marker in (False, True):
+            for active_job in (None, "build", "host-tests", "summary"):
+                for reason in (None, "Correct parent before full Build"):
+                    with self.subTest(marker=marker, active_job=active_job, reason=reason):
+                        running = _review_first_run()
+                        running[0].update(status="in_progress", conclusion=None)
+                        if not marker:
+                            next(job for job in running[1]
+                                 if job["name"] == "review-first-classifier")["steps"] = []
+                        if active_job is not None:
+                            job = next(job for job in running[1] if job["name"] == active_job)
+                            job.update(_job(active_job, job_id=job["id"], run_id=101,
+                                            status="in_progress", conclusion=None))
+                        client = ScriptedClient()
+                        _add_pr_states(client, _pr(), _pr())
+                        _add_snapshot(client, [running], copies=2)
+                        _add_edit_transaction(client, [running], body="Correct parent")
+                        client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                                   _pr(body="Correct parent", updated_at="2026-09-04T00:00:05Z"))
+                        arguments = dict(repository=REPOSITORY, pr_number=PR_NUMBER,
+                                         head_sha=HEAD, base_sha=BASE, title=None,
+                                         body="Correct parent", essential_reason=reason)
+                        if reason is not None:
+                            with self.assertRaisesRegex(pr_metadata.MetadataEditError, "no exact-head full Build"):
+                                unexpected = pr_metadata.edit_metadata(client, **arguments)
+                                self.assertEqual(unexpected.action, "updated")
+                                self.assertTrue(unexpected.mutated)
+                                self.assertEqual(sum(method == "PATCH" for method, _, _ in client.calls), 1)
+                        else:
+                            decision = pr_metadata.edit_metadata(client, **arguments)
+                            self.assertEqual(decision.action, "deferred")
+                            self.assertFalse(decision.mutated)
+                        self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+
     def test_pre_full_preparation_rejects_active_jobs_at_every_snapshot(self):
         self._assert_preparation_active_job_races(None)
 

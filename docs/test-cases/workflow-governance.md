@@ -2988,6 +2988,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    completed full run or an unbound metadata run at the second snapshot of an
    initially authorized essential preparation. Require deferral without any
    write: a changed inventory cannot silently switch authorization modes.
+   Start with an actually running preflight, with and without a successful
+   candidate marker and active build/host/summary jobs or terminal child jobs.
+   Both default and essential edits must stop without any write; a workflow's
+   active status cannot be used as essential-full permission. Retain the
+   separate initially active-full/unproven path's existing positive controls.
    Existing active-run, version/identity drift, transaction/abort/recovery
    controls and final candidate/master gates remain required.
 
