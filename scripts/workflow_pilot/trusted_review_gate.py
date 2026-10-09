@@ -411,6 +411,11 @@ class ReviewTools:
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
         self.tool_tree.materialize(root, tool_paths)
         (root / "build").mkdir(exist_ok=True)
+        if any(probe.startswith(("platform:", "platform-owner:")) for probe in probes):
+            for path in sorted(self.subjects.platform_parse_only(paths)):
+                destination = root / self.subjects.platform_inventory_path(path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                (root / path).rename(destination)
         if any(probe.startswith(("lifecycle:", "wire:")) for probe in probes):
             (root / "build/review-subject.py").write_bytes(tree.read(self.subjects.REVIEW_SOURCE))
 

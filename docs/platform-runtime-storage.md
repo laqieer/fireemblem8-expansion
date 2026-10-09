@@ -23,6 +23,10 @@ backing, digest and seal checks govern reads and materialization.
 `len(image)`, bounded byte slices and `image_digest(image)` expose the complete
 captured body. `materialize_image(destination, image)` streams it through
 bounded workspace; the same helper supports an existing byte body.
+Destination ownership begins at descriptor acquisition, before stream wrapping.
+A refused open leaves existing contents untouched; wrapping and later failures
+close the acquired descriptor and remove the owned destination, preserving the
+primary exception and explicit diagnostics if cleanup itself fails.
 That compatibility byte-body route does not own a `ProbeBudget`: its caller
 remains responsible for the byte body's storage, destination and deadline
 accounting. It is not a substitute for budget-owning `RuntimeImage` capture.
@@ -77,6 +81,10 @@ Start from a clean source checkout; no ROM or game save is required.
    operation-plus-close/unlink errors and close failure after otherwise
    successful output. Compare original exception identity, all cleanup
    diagnostics, actual destination contents/state and real FD closure.
+   Inject destination stream-wrapping failure after successful descriptor
+   acquisition for both sealed and byte bodies, including interruption and
+   denied unlink; require closed FDs and removal or explicit retained-state
+   diagnostics.
    If removal itself is denied, require the explicitly reported remaining
    prefix rather than a success-shaped fallback.
 6. Combine actual constructor read, backing-write and deadline failures with
@@ -134,7 +142,13 @@ execution closure and actual Git blob identities: provider, provider tests,
 budget/lifecycle/channel/authority imports and package roots, foundation Make
 file, native test inventory sources, owner tests, workflow and the existing
 finite workflow parser/condition functions. Other native suites are parsed as
-inventory inputs, not imported or executed by this binding. A changed import
+inventory inputs, not imported or executed by this binding. Dynamic import
+attempts cannot reach them through ordinary Python module lookup: staging moves
+their exact source bytes to `build/platform-inventory/<original-path>.source`,
+outside the importable module paths. The parsers consume those relocated bytes
+while observations retain the original Git paths and object bindings. This is
+physical staging separation, not a claim of hostile same-UID isolation.
+A changed import
 closure, identity field set or unrecognized mutation guard blocks; no arbitrary
 caller test, evaluator, service, budget or execution permission is introduced.
 

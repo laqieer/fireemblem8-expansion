@@ -71,6 +71,15 @@ PLATFORM_DEPENDENCIES = (
 )
 
 
+def platform_parse_only(paths):
+    executed = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES}
+    return {path for path in paths if path.endswith(".py") and path not in executed}
+
+
+def platform_inventory_path(path):
+    return Path("build/platform-inventory") / (path + ".source")
+
+
 def platform_inputs(tree):
     """Execution imports are closed; other native suites are parsed, never imported."""
     inputs = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES,
@@ -734,24 +743,26 @@ def _platform(probe):
                 cache = {"bytes": body}
                 close_images(cache)
                 check(cache == {}, "compatibility cache cleanup failed")
-                original_open = Path.open
-                for amount in (0, None, -1, len(body) + 1):
-                    stream = original_open(target, "wb", buffering=0)
-                    writer = types.SimpleNamespace(
-                        write=lambda data, amount=amount: amount, close=stream.close,
-                    )
-                    try:
-                        with patch.object(Path, "open", return_value=writer):
-                            try:
-                                materialize_image(target, body)
-                            except MakeProbeError:
-                                pass
-                            else:
-                                check(False, "compatibility invalid progress succeeded")
-                        check(not target.exists() and stream.closed,
-                              "compatibility failure retained owned file/descriptor")
-                    finally:
-                        stream.close()
+                original_open = os.fdopen
+                for amount in (0, None, -1, len(body) + 1, True, object()):
+                    streams = []
+
+                    def wrap(descriptor, *args, **kwargs):
+                        stream = original_open(descriptor, *args, **kwargs)
+                        streams.append(stream)
+                        return types.SimpleNamespace(
+                            write=lambda data, amount=amount: amount, close=stream.close,
+                        )
+
+                    with patch("scripts.validation_ownership.runtime_image.os.fdopen", wrap):
+                        try:
+                            materialize_image(target, body)
+                        except MakeProbeError:
+                            pass
+                        else:
+                            check(False, "compatibility invalid progress succeeded")
+                    check(not target.exists() and len(streams) == 1 and streams[0].closed,
+                          "compatibility failure retained owned file/descriptor")
             else:
                 image = RuntimeImage(Path("/usr/bin/make").resolve(), budget)
                 if probe == "sealed":
@@ -823,13 +834,13 @@ def _platform_parsers():
     """Execute only the existing finite parser functions, not their suite imports."""
     names = {"_job_blocks", "_direct_job_if", "_run_block_commands",
              "_step_blocks", "_direct_step_mapping_fields"}
-    parsed = ast.parse(Path(PLATFORM_TOPOLOGY).read_bytes())
+    parsed = ast.parse(platform_inventory_path(PLATFORM_TOPOLOGY).read_bytes())
     functions = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
                  and node.name in names]
     review.require({node.name for node in functions} == names, "missing owner parsers")
     namespace = {"re": re, "ast": ast}
     exec(compile(ast.Module(body=functions, type_ignores=[]), PLATFORM_TOPOLOGY, "exec"), namespace)
-    parsed = ast.parse(Path(PLATFORM_CONDITIONS).read_bytes())
+    parsed = ast.parse(platform_inventory_path(PLATFORM_CONDITIONS).read_bytes())
     predicates = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
                   and node.name == "workflow_condition"]
     classes = [node for node in parsed.body if isinstance(node, ast.ClassDef)
@@ -845,7 +856,7 @@ def _platform_parsers():
 
 @probe_result("parsed")
 def _platform_owner(role):
-    parsed = ast.parse(Path(PLATFORM_OWNER).read_bytes())
+    parsed = ast.parse(platform_inventory_path(PLATFORM_OWNER).read_bytes())
     declarations = [node for node in parsed.body if isinstance(node, ast.Assign)
                     and any(isinstance(target, ast.Name) and target.id == "PROBE_TEST_MODULES"
                             for target in node.targets)]
@@ -867,7 +878,7 @@ def _platform_owner(role):
                        and all(part.isidentifier() for part in name.split(".")),
                        "unknown native test selector")
         path = name.replace(".", "/") + ".py"
-        content = Path(path).read_bytes()
+        content = (Path(path) if path == PLATFORM_TEST else platform_inventory_path(path)).read_bytes()
         source = ast.parse(content)
         symbols = symtable.symtable(content, path, "exec")
         hooks = [symbols.lookup(name) for name in ("load_tests", "__getattr__", "__dir__")

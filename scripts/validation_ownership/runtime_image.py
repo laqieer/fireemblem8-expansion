@@ -20,7 +20,12 @@ IMAGE_SEALS = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcn
 
 @contextmanager
 def _materialization_stream(destination):
-    stream = destination.open("wb", buffering=0)
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o666)
+    try:
+        stream = os.fdopen(descriptor, "wb", buffering=0)
+    except BaseException as error:
+        finish_cleanup([lambda: os.close(descriptor), destination.unlink], primary=error)
+        raise
     try:
         yield stream
     except BaseException as error:

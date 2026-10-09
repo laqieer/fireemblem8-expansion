@@ -239,6 +239,27 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                 self.assertEqual(observed.verdict, "contract-violation", observed.detail)
                 self.assertIn("actual provider selection differs", observed.detail)
 
+    def test_parse_only_inventory_cannot_be_imported_by_executed_provider(self):
+        source = (self.repo.root / SOURCE).read_text()
+        inventory_path = "scripts/validation_ownership/tests/test_native_make.py"
+        inventory = 'raise RuntimeError("parse-only inventory executed")\n' + (
+            self.repo.root / inventory_path).read_text()
+        for mutation in (
+            '__import__("scripts.validation_ownership.tests.test_native_make")',
+            'import importlib\nimportlib.import_module("scripts.validation_ownership.tests.test_native_make")',
+            'exec(\'__import__("scripts.validation_ownership.tests.test_native_make")\')',
+        ):
+            with self.subTest(mutation=mutation):
+                head = self.repo.commit({
+                    SOURCE: source + "\n" + mutation + "\n", inventory_path: inventory,
+                })
+                members = tuple(item for item in self.tools.members(self.scope(head))
+                                if item.family == "generated")
+                observed = next(item for item in self.run_members(members, head)
+                                if item.obligation.member == "outputs:probe-inventory")
+                self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
+                self.assertIn("ModuleNotFoundError", observed.detail)
+
     def test_changed_execution_import_and_identity_inventory_fail_closed(self):
         source = (self.repo.root / SOURCE).read_text()
         for changed in (

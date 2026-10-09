@@ -501,7 +501,7 @@ class PlatformImageTests(unittest.TestCase):
                 budget = ProbeBudget()
                 image = RuntimeImage(path, budget) if sealed else path.read_bytes()
                 opened = []
-                original_open, original_read = Path.open, os.preadv
+                original_open, original_read = os.fdopen, os.preadv
                 failure = (
                     KeyboardInterrupt() if fault == "interrupt" else
                     SystemExit(7) if fault == "system-exit" else OSError(errno.EIO, "materialization I/O")
@@ -569,14 +569,13 @@ class PlatformImageTests(unittest.TestCase):
                     with self.subTest(sealed=sealed, fault=fault), tempfile.TemporaryDirectory() as directory:
                         target = Path(directory) / "runtime"
 
-                        def open_target(destination, *args, **kwargs):
-                            stream = original_open(destination, *args, **kwargs)
-                            return Writer(stream) if destination == target else stream
+                        def open_target(descriptor, *args, **kwargs):
+                            return Writer(original_open(descriptor, *args, **kwargs))
 
                         expected = type(failure) if fault in {
                             "late-read", "write", "interrupt", "system-exit", "close",
                         } else MakeProbeError
-                        with patch.object(Path, "open", open_target), patch(
+                        with patch("scripts.validation_ownership.runtime_image.os.fdopen", open_target), patch(
                             "scripts.validation_ownership.runtime_image.os.preadv", read,
                         ), self.assertRaises(expected) as raised:
                             materialize_image(target, image)
@@ -597,7 +596,7 @@ class PlatformImageTests(unittest.TestCase):
         for sealed in (True, False):
             budget = ProbeBudget()
             image = RuntimeImage(path, budget) if sealed else expected
-            original_open = Path.open
+            original_open = os.fdopen
             calls = 0
 
             class Writer:
@@ -622,15 +621,14 @@ class PlatformImageTests(unittest.TestCase):
                 with self.subTest(sealed=sealed), tempfile.TemporaryDirectory() as directory:
                     target = Path(directory) / "runtime"
 
-                    def open_target(destination, *args, **kwargs):
-                        stream = original_open(destination, *args, **kwargs)
-                        return Writer(stream) if destination == target else stream
+                    def open_target(descriptor, *args, **kwargs):
+                        return Writer(original_open(descriptor, *args, **kwargs))
 
-                    with patch.object(Path, "open", open_target):
+                    with patch("scripts.validation_ownership.runtime_image.os.fdopen", open_target):
                         self.assertEqual(materialize_image(target, image), len(expected))
                     self.assertEqual(target.read_bytes(), expected)
                     failure = PermissionError(errno.EACCES, "cannot open materialization destination")
-                    with patch.object(Path, "open", side_effect=failure), self.assertRaises(PermissionError) as raised:
+                    with patch("scripts.validation_ownership.runtime_image.os.open", side_effect=failure), self.assertRaises(PermissionError) as raised:
                         materialize_image(target, image)
                     self.assertIs(raised.exception, failure)
                     self.assertEqual(target.read_bytes(), expected)
@@ -644,6 +642,37 @@ class PlatformImageTests(unittest.TestCase):
                         finally:
                             limited.close()
                             quota.close()
+                    for primary in (OSError(errno.EIO, "destination wrapping failed"),
+                                    KeyboardInterrupt(), SystemExit(7)):
+                        for unlink_fault in (False, True):
+                            descriptors = []
+                            target.write_bytes(b"owned old destination")
+                            original_unlink = Path.unlink
+                            unlink_error = PermissionError(errno.EACCES, "destination unlink denied")
+
+                            def failed_wrap(descriptor, *args, **kwargs):
+                                descriptors.append(descriptor)
+                                raise primary
+
+                            def unlink(destination, *args, **kwargs):
+                                if destination == target and unlink_fault:
+                                    raise unlink_error
+                                return original_unlink(destination, *args, **kwargs)
+
+                            with self.subTest(sealed=sealed, wrapping=type(primary).__name__,
+                                              unlink_fault=unlink_fault), patch(
+                                "scripts.validation_ownership.runtime_image.os.fdopen", failed_wrap,
+                            ), patch.object(Path, "unlink", unlink), self.assertRaises(BaseException) as raised:
+                                materialize_image(target, image)
+                            self.assertIs(raised.exception, primary)
+                            self.assertEqual(target.exists(), unlink_fault)
+                            if unlink_fault:
+                                self.assertEqual(target.read_bytes(), b"")
+                                self.assertTrue(any(str(unlink_error) in item
+                                                    for item in primary.cleanup_errors))
+                            self.assertEqual(len(descriptors), 1)
+                            with self.assertRaises(OSError):
+                                os.fstat(descriptors[0])
             finally:
                 if sealed:
                     image.close()
@@ -656,7 +685,7 @@ class PlatformImageTests(unittest.TestCase):
                 for primary in (OSError(errno.EIO, "write failed"), KeyboardInterrupt(), SystemExit(7)):
                     budget = ProbeBudget()
                     image = RuntimeImage(path, budget) if sealed else expected
-                    original_open, original_unlink = Path.open, Path.unlink
+                    original_open, original_unlink = os.fdopen, Path.unlink
                     close_error = OSError(errno.ENOSPC, "close failed")
                     unlink_error = PermissionError(errno.EACCES, "unlink denied")
                     opened = []
@@ -687,16 +716,15 @@ class PlatformImageTests(unittest.TestCase):
                             target = Path(directory) / "runtime"
                             target.write_bytes(b"previous owned replacement")
 
-                            def open_target(destination, *args, **kwargs):
-                                stream = original_open(destination, *args, **kwargs)
-                                return Writer(stream) if destination == target else stream
+                            def open_target(descriptor, *args, **kwargs):
+                                return Writer(original_open(descriptor, *args, **kwargs))
 
                             def unlink_target(destination, *args, **kwargs):
                                 if destination == target and unlink_fault:
                                     raise unlink_error
                                 return original_unlink(destination, *args, **kwargs)
 
-                            with patch.object(Path, "open", open_target), patch.object(
+                            with patch("scripts.validation_ownership.runtime_image.os.fdopen", open_target), patch.object(
                                 Path, "unlink", unlink_target,
                             ), self.assertRaises(BaseException) as raised:
                                 materialize_image(target, image)
