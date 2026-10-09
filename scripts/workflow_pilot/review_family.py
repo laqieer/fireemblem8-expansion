@@ -640,13 +640,33 @@ class _ReviewReport:
     completed: bool
     read_only: bool
     actions: frozenset[str]
-    files: int
+    files: int | None
     findings: tuple[Finding, ...]
     started_at: str
     completed_at: str
     candidate_root: str | None = None
     candidate_base: str | None = None
     candidate_reads: tuple[CandidateReadSummary, ...] = ()
+    observed_paths: tuple[str, ...] = ()
+    original_content: str | None = None
+
+
+@dataclass(frozen=True)
+class CompletedReviewObservation:
+    """Coordinator-normalized native CLI facts, never a candidate pass record."""
+    task: str
+    owner: str
+    role: str
+    head: str
+    scope: frozenset[str]
+    state: str
+    actions: frozenset[str]
+    started_at: str
+    completed_at: str
+    observed_paths: tuple[str, ...]
+    findings: tuple[Finding, ...]
+    original_content: str
+    runtime_files: int | None = None
 
 
 @dataclass
@@ -795,6 +815,7 @@ class ReviewSession:
         require(set(self.readers) <= READ_ACTIONS, "unapproved reviewer tool binding")
         self.lease = None
         self.report = None
+        self.completed_observation = None
         self.local_findings: dict[str, Finding] = {}
         self.local_triage: dict[str, tuple[bool, str]] = {}
         self.rounds = RoundState()
@@ -831,7 +852,8 @@ class ReviewSession:
         return reader, preview, describe, binding
 
     def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES):
-        require(self.lease is None, "duplicate or overlapping reviewer ownership")
+        require(self.lease is None and self.completed_observation is None,
+                "duplicate or overlapping reviewer ownership")
         require(isinstance(owner, str) and bool(owner.strip())
                 and owner not in {self.coordinator, self.implementer},
                 "reviewer ownership overlaps")
@@ -866,6 +888,100 @@ class ReviewSession:
         self.lease = ReviewLease(task, owner, self.head, self.scope,
                                  started, started + duration, max_files)
         return task
+
+    def observe_completed(self, observation: CompletedReviewObservation) -> _ReviewReport:
+        """Import terminal native observations without reconstructing a live lease."""
+        require(type(observation) is CompletedReviewObservation,
+                "typed coordinator completed-review observation required")
+        require(self.lease is None and self.report is None and self.completed_observation is None,
+                "duplicate or overlapping reviewer ownership")
+        require(self.owners is not None and self.identity is not None,
+                "coordinator review ownership index and frozen PR identity required")
+        require(isinstance(observation.task, str) and bool(observation.task.strip())
+                and isinstance(observation.owner, str) and bool(observation.owner.strip())
+                and observation.owner not in {self.coordinator, self.implementer},
+                "reviewer ownership overlaps or task identity is missing")
+        require(observation.role == "code-review" and observation.head == self.head,
+                "wrong or stale completed review head/role")
+        sha(observation.head)
+        require(isinstance(observation.scope, frozenset) and observation.scope == self.scope,
+                "wrong completed review scope")
+        require(observation.state == "completed", "native review task is not terminal completed")
+        require(isinstance(observation.actions, frozenset)
+                and all(isinstance(action, str) and action in READ_ACTIONS
+                        for action in observation.actions)
+                and {"read-candidate", "emit-report"} <= observation.actions,
+                "completed review has prohibited or missing observed actions")
+        started, completed = timestamp(observation.started_at), timestamp(observation.completed_at)
+        require(0 <= (completed - started).total_seconds() <= MAX_REVIEW_SECONDS,
+                "completed review chronology/duration is invalid")
+        require(isinstance(observation.observed_paths, tuple)
+                and 0 < len(observation.observed_paths) <= MAX_REVIEW_FILES,
+                "unknown or excessive observed candidate read paths")
+        for path in observation.observed_paths:
+            repo_path(path, "observed candidate read path")
+        unique(observation.observed_paths, "observed candidate read paths")
+        require(observation.runtime_files is None or (
+            type(observation.runtime_files) is int
+            and len(observation.observed_paths) <= observation.runtime_files <= MAX_REVIEW_FILES),
+            "completed review runtime file count is invalid")
+        require(isinstance(observation.original_content, str)
+                and bool(observation.original_content.strip()),
+                "original native report content is missing")
+        require(isinstance(observation.findings, tuple)
+                and len(observation.findings) <= MAX_FINDINGS, "invalid original findings")
+        for finding in observation.findings:
+            require(isinstance(finding, Finding)
+                    and all(isinstance(value, str) and bool(value.strip()) for value in (
+                        finding.id, finding.subject, finding.family, finding.member,
+                        finding.origin, finding.source_path, finding.review_id))
+                    and finding.subject in self.scope and finding.family in FAMILIES
+                    and finding.origin == observation.head
+                    and finding.review_id == "local:" + observation.task
+                    and finding.source_path in observation.observed_paths,
+                    "original finding has wrong task/head/scope or unobserved source")
+        unique([finding.id for finding in observation.findings], "original findings")
+        report = _ReviewReport(
+            observation.task, observation.owner, observation.role, observation.head,
+            observation.scope, True, True, observation.actions, observation.runtime_files,
+            observation.findings, observation.started_at, observation.completed_at,
+            observed_paths=observation.observed_paths,
+            original_content=observation.original_content,
+        )
+        self.owners.reserve(self)
+        self.owners.finish(self)
+        self.completed_observation = observation
+        self.report = report
+        self.local_findings = {finding.id: finding for finding in report.findings}
+        return report
+
+    def original_review_context_ready(self):
+        report = self.report
+        if report is None:
+            return False
+        if self.completed_observation is not None:
+            observed = self.completed_observation
+            terminal = (self.lease is None and observed.state == "completed"
+                        and (observed.task, observed.owner, observed.head, observed.scope)
+                        == (report.task, report.owner, report.head, report.subjects)
+                        and (observed.started_at, observed.completed_at, observed.actions,
+                             observed.runtime_files, observed.findings, observed.observed_paths,
+                             observed.original_content)
+                        == (report.started_at, report.completed_at, report.actions,
+                            report.files, report.findings, report.observed_paths,
+                            report.original_content))
+        else:
+            lease = self.lease
+            terminal = (lease is not None and lease.finished and lease.outcome == "completed"
+                        and (lease.task, lease.owner, lease.head)
+                        == (report.task, report.owner, report.head))
+        ownership = self.owners.records.get(id(self)) if self.owners is not None else None
+        return bool(terminal and report.completed and report.read_only
+                    and report.role == "code-review" and report.subjects == self.scope
+                    and report.owner not in {self.coordinator, self.implementer}
+                    and ownership is not None and not ownership[3]
+                    and (ownership[0], ownership[1], ownership[2])
+                    == (self.identity, report.head, report.subjects))
 
     def read_action(self, action: str, *args, **kwargs):
         require(isinstance(action, str) and action in READ_ACTIONS, "reviewer action is prohibited")
@@ -1054,8 +1170,7 @@ class ReviewSession:
         for item in triage:
             item.validate()
         if pre_review_required:
-            require(self.report is not None and self.lease.finished
-                    and self.lease.outcome == "completed",
+            require(self.original_review_context_ready(),
                     "actual independent task observation required")
             require(self.owners is not None, "coordinator review ownership index required")
             if facts:

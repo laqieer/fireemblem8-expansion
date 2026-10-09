@@ -179,3 +179,17 @@ Focused binding regression:
 It exercises the real staged route, all finite roles, coverage-only origins,
 owner omission, missing sibling/stale-tool refusal, malformed execution
 closure, runtime regression and unavailable original-suite execution.
+
+For the provider's original directly launched CLI review, retain native task
+`call_fyfIDetIpYPYd3XEg7d6KtNs`, reviewer
+`c7bfd6a2-7afc-44f0-8f4c-0be5f54d4eba`, observed original head
+`ba125e3d90279c21eaaa9e81554b4821d0045dc5` and original report/findings.
+The trusted coordinator's
+[completed-review observation import](workflow-pilot.md#sibling-family-review-convergence)
+can consume the native start/completion chronology and nine observed candidate
+paths without inventing historical `begin`/`finish` lease fields. Total runtime
+file count remains unknown; the original broader advertised tool set is not
+relabeled as an enforced read-only allowlist. The byte-budget finding is
+retained and explicitly rejected against the frozen caller-owned bytes
+contract, not erased or converted into a clean original report. Later scoped
+reviews, accepted remote findings and exact current-head gates remain separate.

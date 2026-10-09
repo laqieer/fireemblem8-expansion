@@ -597,6 +597,53 @@ evidence and cannot satisfy independent pre-review admission. Completion
 releases the existing index for a fresh session; no polling loop, new task
 backend or cleanup service is added.
 
+For an already completed real CLI review launched outside `begin`, the trusted
+coordinator can instead call
+`session.observe_completed(CompletedReviewObservation(...))`. This is a
+terminal observation import, not a replayed launch or reconstructed lease.
+Supply native task/owner/`code-review` role, the original observed Git head,
+accepted scope, terminal `completed` state, actual observed read/report actions,
+native start/completion UTC timestamps, unique canonical candidate paths read,
+the complete normalized original findings and original report content.
+The operation rejects overlapping ownership, a coordinator/implementer as
+reviewer, wrong head/scope/role, prohibited or missing actions, unknown read
+paths, missing/backward chronology and actual elapsed time above the existing
+3,600-second limit. At most 200 observed candidate paths are admitted.
+If the total runtime file count is available, retain and validate it against
+the same limit; otherwise `runtime_files=None` and `report.files=None` remain
+explicitly unknown. The measured unique candidate-path count is not relabeled
+as total runtime reads. A genuinely unknown path inventory or completion
+observation blocks import; helper/tool transport success is not native task
+completion.
+
+No monotonic clock is read and `session.lease` stays `None`. The existing
+ownership index records the original head/scope and terminal release. Original
+findings require complete `triage_local` decisions, including reasons for
+rejection; accepting a finding still requires the same source-bound finite
+family evidence. `advance` changes only the current head, not the original
+report. `original_review_context_ready` joins either this terminal observation
+or the existing completed live lease to the same ownership/report predicates;
+assessment still requires completion strictly before the first remote review.
+It does not assert immutable dirty-worktree contents or current-head clean
+review from historical content reads. If exact `CandidateReader` coverage is
+required separately, this import cannot supply it.
+
+Only trusted coordinator code may normalize these native observations; no
+candidate JSON, `passed`, asserted permissions or report-prose action flags
+are accepted. The internal admitted report's `read_only` describes observed
+allowed actions, not proof of a retrospective enforced tool allowlist or
+hostile-process isolation. An original CLI task advertising broader tools
+must retain that limitation in its evidence. Native completion provenance and
+complete action/path/finding triage remain the coordinator's responsibility.
+This is the smallest adaptation for directly launched historical CLI reviews:
+the future live `begin`/`finish` route is unchanged, with no new runtime,
+service, gate, permission or authentication system.
+Focused pure and scheduling regression:
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_completed_review scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_completed_native_import_joins_original_context_without_a_historical_lease -v`.
+This extends `TC-WORKFLOW-REVIEW-FAMILY-001`; default/target profiles, ROM/RAM,
+save and generated-game-data behavior are unchanged. All independent, security,
+source-family and complete candidate/master Build/completion gates remain.
+
 The coordinator and reviewed validator/test tools are trusted. Candidate
 requests are data and cannot choose Python programs, imports, commands,
 expected members, pass records or trusted-status flags. Test children receive

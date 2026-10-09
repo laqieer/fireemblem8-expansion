@@ -514,6 +514,30 @@ class GateTests(unittest.TestCase):
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
 
+    def test_completed_native_import_joins_original_context_without_a_historical_lease(self):
+        session = review.ReviewSession(
+            "coordinator", "implementer", self.scope, self.fixture.parent,
+            identity=(self.pr.repository, self.pr.number, self.fixture.parent),
+            owners=review.ReviewOwnership())
+        observation = review.CompletedReviewObservation(
+            "actual-completed-task", "independent-reviewer", "code-review",
+            self.fixture.parent, self.scope, "completed",
+            frozenset({"read-candidate", "emit-report"}), at_offset(-100), at_offset(-90),
+            ("scripts/workflow_pilot/review_family.py",), (), "Original native report content")
+        session.observe_completed(observation)
+        session.advance(self.pr.head_sha)
+        session.triage(review.Triage(self.fact, "clean"))
+        self.assertIsNone(session.lease)
+        self.assertIsNone(session.report.files)
+        self.assertEqual(session.report.head, self.fixture.parent)
+        observed = self.assess(session=session, triage=tuple(session.rounds.events))
+        self.assertTrue(observed["dispatchable"], observed)
+        self.assertFalse(observed["merge_eligible"])
+        session.completed_observation = replace(observation, head=self.pr.head_sha)
+        observed = self.assess(session=session, triage=tuple(session.rounds.events))
+        self.assertFalse(observed["dispatchable"])
+        self.assertIn("unbound-original-review-context", observed["missing"])
+
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
         self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {
