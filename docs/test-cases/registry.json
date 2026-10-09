@@ -3938,8 +3938,12 @@
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
         {
-          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeReadonlyVariableTests.test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_python_site_resource_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_default_python_declared_site_startup -v",
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeReadonlyVariableTests.test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only -v",
           "evidence": "scripts/validation_ownership/tests/test_native_writer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_python_site_resource_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_readonly_default_python_declared_site_startup -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },
