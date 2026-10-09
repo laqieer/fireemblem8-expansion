@@ -795,7 +795,7 @@
       "interactions": "Depends on merged274 ProbeBudget/lifecycle. Consumers275/270/180/186 retain all path/purpose/cache/session/native/root/compiler/generated-source/archive and original end-to-end contracts. No independent profile conflicts or permission service.",
       "save_compatibility": "Host-only API; no ROM/RAM, save/migration, locale, generated game data, modern debug/release or archival execution change.",
       "cleanup": "Each test owns its temporary paths and real descriptors and cleans them through existing lifecycle semantics, including interruption and explicit secondary cleanup diagnostics.",
-      "limitations": "Linux memfd/seal support required. Replacement is not atomic old-content preservation; storage does not authenticate callers or isolate hostile same-UID processes. Native compiler and originalinitial-plus-eight/all551/public graph qualification remain outside279. No manual-only criterion.",
+      "limitations": "Linux memfd/seal support required. Replacement is not atomic old-content preservation; storage does not authenticate callers or isolate hostile same-UID processes. Native compiler and original initial-plus-eight/all551/public graph qualification remain outside #279. No manual-only criterion.",
       "automation": [
         {
           "command": "python3 -B -m unittest scripts.validation_ownership.tests.test_platform_image -v",

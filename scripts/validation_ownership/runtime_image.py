@@ -39,7 +39,7 @@ def _write_complete(stream, part, budget=None):
         if budget is not None:
             budget.remaining()
         amount = stream.write(part[written:])
-        if amount is None or amount <= 0 or amount > len(part) - written:
+        if type(amount) is not int or not 0 < amount <= len(part) - written:
             raise MakeProbeError("platform runtime materialization did not progress")
         written += amount
     return written

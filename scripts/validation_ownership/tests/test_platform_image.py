@@ -491,9 +491,11 @@ class PlatformImageTests(unittest.TestCase):
         for sealed, faults in (
             (True, ("first-read", "late-read", "write", "interrupt", "system-exit",
                     "deadline", "backing", "digest", "close",
-                    "zero-write", "none-write", "oversized-write", "negative-write")),
+                    "zero-write", "none-write", "oversized-write", "negative-write",
+                    "boolean-write", "foreign-write")),
             (False, ("write", "interrupt", "system-exit", "close",
-                     "zero-write", "none-write", "oversized-write", "negative-write")),
+                     "zero-write", "none-write", "oversized-write", "negative-write",
+                     "boolean-write", "foreign-write")),
         ):
             for fault in faults:
                 budget = ProbeBudget()
@@ -532,6 +534,10 @@ class PlatformImageTests(unittest.TestCase):
                             return 0
                         if fault == "none-write":
                             return None
+                        if fault == "boolean-write":
+                            return True
+                        if fault == "foreign-write":
+                            return "foreign"
                         if fault == "oversized-write":
                             return len(data) + 1
                         if fault == "negative-write":
