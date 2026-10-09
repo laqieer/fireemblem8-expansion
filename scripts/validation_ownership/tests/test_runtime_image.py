@@ -239,6 +239,11 @@ class RuntimeImageSessionTests(unittest.TestCase):
                         "outputs": [".dep/query.d"], "compiler": compiler}
 
             def execution(pid, parent, generation, path, argv, binding, sequence):
+                if binding is not None:
+                    binding = dict(binding, environment={
+                        **ENVIRONMENT,
+                        **({"COLLECT_GCC": profile.driver} if binding["role"] == "frontend" else {}),
+                    })
                 return {"kind": "exec", "pid": pid, "parent": parent, "generation": generation,
                         "path": path, "argv": argv, "cwd": "/repo",
                         "admission": admission(sequence, argv, binding)}
@@ -278,6 +283,37 @@ class RuntimeImageSessionTests(unittest.TestCase):
             actors = validate(events)
             self.assertEqual([(actor.role, actor.pid, actor.driver) for actor in actors],
                              [("driver", 11, None), ("frontend", 12, (11, 1, 2))])
+            self.assertEqual(actors[0].environment, profile.environment)
+            self.assertEqual(dict(actors[1].environment)["COLLECT_GCC"], profile.driver)
+            for index in (3, 6):
+                baseline = events[index]["admission"]["compiler"]["environment"]
+                mutations = (
+                    None, [], {**baseline, "CPATH": "/repo/foreign"},
+                    {**baseline, "HOME": "/repo"}, {**baseline, "LANG": None},
+                    {**baseline, "LANG": "x" * 65536},
+                    {name: item for name, item in baseline.items() if name != "HOME"},
+                    {**baseline, "COLLECT_GCC": "/repo/cc"},
+                )
+                for actual in mutations:
+                    changed = json.loads(json.dumps(events))
+                    changed[index]["admission"]["compiler"]["environment"] = actual
+                    with self.subTest(actor=index, environment=actual), self.assertRaises(MakeProbeError):
+                        validate(changed)
+                changed = json.loads(json.dumps(events))
+                del changed[index]["admission"]["compiler"]["environment"]
+                with self.assertRaisesRegex(MakeProbeError, "open or foreign"):
+                    validate(changed)
+            for actual in (
+                {**ENVIRONMENT, "CPATH": "/repo/foreign"},
+                {**ENVIRONMENT, "COLLECT_GCC": profile.driver},
+            ):
+                invalid = json.loads(json.dumps(value))
+                invalid["environment"] = actual
+                invalid["identity"] = hashlib.sha256(encoded({
+                    key: item for key, item in invalid.items() if key != "identity"
+                })).hexdigest()
+                with self.subTest(profile_environment=actual), self.assertRaises(MakeProbeError):
+                    read_epochs.native_compiler_profile(invalid, count_limit=32768)
             redirected = json.loads(json.dumps(events))
             redirected.insert(6, execution(
                 12, 11, 1, "/bin/sh", ["/bin/sh", "-c", ":"], None, 3,

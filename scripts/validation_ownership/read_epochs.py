@@ -1616,6 +1616,7 @@ class OriginalCompilerExecution(NamedTuple):
     includes: tuple
     outputs: tuple
     resources: tuple
+    environment: tuple
 
 
 def compiler_environment(environment, expected, *, frontend, driver):
@@ -1704,6 +1705,7 @@ def native_compiler_profile(value, *, count_limit, reserve=lambda size: None):
         })).hexdigest()
     ):
         raise ReadEpochError("compiler profile lost its closed environment or issued identity")
+    compiler_environment(environment, environment, frontend=False, driver=value["driver"])
     result = OriginalCompilerProfile(
         value["identity"], value["driver"], value["frontend"], tuple(tuple(row) for row in files),
         tuple(value["directories"]), tuple(value["probes"]), value["interpreter"], value["libc"],
@@ -1759,13 +1761,19 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
                 continue
             if (
                 not isinstance(binding, dict)
-                or set(binding) != {"profile", "role", "driver", "sources", "code", "includes"}
+                or set(binding) != {"profile", "role", "driver", "sources", "code", "includes", "environment"}
                 or binding["profile"] != profile.identity or not isinstance(binding["role"], str)
                 or binding["role"] not in {"driver", "frontend"}
                 or inputs["cwd"] != "/repo"
                 or type(event["admission"]["sequence"]) is not int or event["admission"]["sequence"] < 1
             ):
                 raise ReadEpochError("compiler actor has an open or foreign profile binding")
+            compiler_environment(
+                binding["environment"], dict(profile.environment),
+                frontend=binding["role"] == "frontend", driver=profile.driver,
+            )
+            environment = tuple(sorted(binding["environment"].items()))
+            reserve(sys.getsizeof(environment) + sum(sys.getsizeof(row) for row in environment))
             for key in ("sources", "code", "includes"):
                 rows = binding[key]
                 if (
@@ -1816,6 +1824,7 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
                 tuple(inputs["argv"]), inputs["cwd"], tuple(binding["sources"]),
                 tuple(binding["code"]), tuple(binding["includes"]), tuple(event["admission"]["outputs"]),
                 tuple(tuple(row) for row in event["admission"].get("resources", ())),
+                environment,
             )
             node["actor"] = actor
             executions.append(actor)

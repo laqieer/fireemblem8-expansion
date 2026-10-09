@@ -3138,6 +3138,15 @@ session. Its closed environment and profile identity produce typed
 `OriginalCompilerProfile` data. Profile validation checks shape and internal
 binding; only the session's issued captured profile can supply execution
 authority. Recomputing a caller's profile identity is not trusted capture.
+Profile admission also reuses the closed driver-environment validator:
+recomputing an identity cannot admit compiler search overrides or frontend
+additions into the issued baseline. Each finite compiler actor carries its
+actual captured environment. Replay checks every baseline value and permits
+only the existing finite frontend additions with the exact issued
+`COLLECT_GCC`; the typed execution retains that environment. Missing,
+foreign-key, altered, untyped or oversized environments refuse. This finite
+model refinement does not manufacture exec-stop observations or publish a
+native runtime version.
 
 Run the issued-profile/driver-at-fork case in `test_runtime_image`. It checks
 real derived sealed-image digests, then a finite parsed shell/driver/frontend
