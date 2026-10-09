@@ -2949,7 +2949,8 @@ capture or its backing lifetime.
 Both sealed and byte-backed materialization own the destination after its
 writable open succeeds. Read, write, deadline, backing, digest, close and
 interruption failures close that stream and remove the owned destination,
-preserving the original exception and reporting any cleanup failure through
+preserving the original exception even when close and unlink also fail, and
+reporting any cleanup failure through
 the existing cleanup mechanism. Pre-open quota or open failures do not remove
 a pre-existing file. An opened replacement is not a transaction preserving its
 old contents, and intermediate writes are not atomically hidden; private roots
@@ -2964,12 +2965,20 @@ Exercise the **TC-WORKFLOW-NATIVE-MAKE-001** materialization-failure subcase
 with `RuntimeImageTests.test_failed_materialization_removes_owned_file_and_preserves_failure`
 and `test_materialization_handles_actual_short_writes_and_failed_open`.
 Start with actual GNU Make backing and a fresh temporary destination. Inject
-first/late reads, writes, stream entry/close, deadline expiry after a real
+first/late reads, writes, close, deadline expiry after a real
 write, closed backing, corrupted streamed buffers, no/invalid progress and
 interrupt/SystemExit faults. Compare actual file absence, closed OS FDs and
-original exceptions for both applicable providers. Then require complete
+original exceptions for both applicable providers. Use
+`test_materialization_preserves_primary_with_combined_cleanup_failures`
+to combine operation/interruption, close and unlink failures on an opened
+replacement; require the original operation exception, all cleanup diagnostics
+and actual FD closure. There is no additional stream-entry hook: open already
+returns the owned file, and explicit closing captures the operation exception
+before teardown. Then require complete
 actual bytes after a short write and preservation of an existing destination
-when open fails. The deadline control lowers only its isolated test budget;
+when open or pre-open storage quota fails. The quota control captures real
+backing to fill a limit derived from its observed extent. The deadline control
+lowers only its isolated test budget;
 it does not qualify or alter the original cohort's deadline.
 
 Every sealed body and every physical streamed root copy spends the unchanged

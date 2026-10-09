@@ -22,8 +22,12 @@ IMAGE_SEALS = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcn
 def _materialization_stream(destination):
     stream = destination.open("wb", buffering=0)
     try:
-        with stream:
-            yield stream
+        yield stream
+    except BaseException as error:
+        finish_cleanup([stream.close, destination.unlink], primary=error)
+        raise
+    try:
+        stream.close()
     except BaseException as error:
         finish_cleanup([stream.close, destination.unlink], primary=error)
         raise

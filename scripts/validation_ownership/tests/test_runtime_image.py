@@ -126,10 +126,10 @@ class RuntimeImageTests(unittest.TestCase):
         path = Path("/usr/bin/make").resolve()
         for sealed, faults in (
             (True, ("first-read", "late-read", "write", "interrupt", "system-exit",
-                    "deadline", "backing", "digest", "enter", "close",
-                    "zero-write", "none-write", "oversized-write")),
-            (False, ("write", "interrupt", "system-exit", "enter", "close",
-                     "zero-write", "none-write", "oversized-write")),
+                    "deadline", "backing", "digest", "close",
+                    "zero-write", "none-write", "oversized-write", "negative-write")),
+            (False, ("write", "interrupt", "system-exit", "close",
+                     "zero-write", "none-write", "oversized-write", "negative-write")),
         ):
             for fault in faults:
                 budget = ProbeBudget()
@@ -149,8 +149,6 @@ class RuntimeImageTests(unittest.TestCase):
                         opened.append(stream.fileno())
 
                     def __enter__(self):
-                        if fault == "enter":
-                            raise failure
                         return self
 
                     def __exit__(self, *args):
@@ -161,6 +159,8 @@ class RuntimeImageTests(unittest.TestCase):
 
                     def close(self):
                         self.stream.close()
+                        if fault == "close":
+                            raise failure
 
                     def write(self, data):
                         nonlocal written
@@ -170,6 +170,8 @@ class RuntimeImageTests(unittest.TestCase):
                             return None
                         if fault == "oversized-write":
                             return len(data) + 1
+                        if fault == "negative-write":
+                            return -1
                         if fault in {"write", "interrupt", "system-exit"}:
                             self.stream.write(data[:17])
                             raise failure
@@ -202,7 +204,7 @@ class RuntimeImageTests(unittest.TestCase):
                             return Writer(stream) if destination == target else stream
 
                         expected = type(failure) if fault in {
-                            "late-read", "write", "interrupt", "system-exit", "enter", "close",
+                            "late-read", "write", "interrupt", "system-exit", "close",
                         } else MakeProbeError
                         with patch.object(Path, "open", open_target), patch(
                             "scripts.validation_ownership.runtime_image.os.preadv", read,
@@ -263,10 +265,90 @@ class RuntimeImageTests(unittest.TestCase):
                         materialize_image(target, image)
                     self.assertIs(raised.exception, failure)
                     self.assertEqual(target.read_bytes(), expected)
+                    if sealed:
+                        quota = ProbeBudget(Limits(snapshot_bytes=len(expected)))
+                        limited = RuntimeImage(path, quota)
+                        try:
+                            with self.assertRaises(MakeProbeError):
+                                materialize_image(target, limited)
+                            self.assertEqual(target.read_bytes(), expected)
+                        finally:
+                            limited.close()
+                            quota.close()
             finally:
                 if sealed:
                     image.close()
                 budget.close()
+
+    def test_materialization_preserves_primary_with_combined_cleanup_failures(self):
+        path = Path("/usr/bin/make").resolve()
+        expected = path.read_bytes()
+        for sealed in (True, False):
+            for close_fault, unlink_fault in ((True, False), (False, True), (True, True)):
+                for primary in (OSError(errno.EIO, "write failed"), KeyboardInterrupt(), SystemExit(7)):
+                    budget = ProbeBudget()
+                    image = RuntimeImage(path, budget) if sealed else expected
+                    original_open, original_unlink = Path.open, Path.unlink
+                    close_error = OSError(errno.ENOSPC, "close failed")
+                    unlink_error = PermissionError(errno.EACCES, "unlink denied")
+                    opened = []
+
+                    class Writer:
+                        def __init__(self, stream):
+                            self.stream = stream
+                            opened.append(stream.fileno())
+
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *args):
+                            self.close()
+
+                        def close(self):
+                            self.stream.close()
+                            if close_fault:
+                                raise close_error
+
+                        def write(self, data):
+                            self.stream.write(data[:17])
+                            raise primary
+
+                    try:
+                        with self.subTest(sealed=sealed, close=close_fault, unlink=unlink_fault,
+                                          primary=type(primary).__name__), tempfile.TemporaryDirectory() as directory:
+                            target = Path(directory) / "runtime"
+                            target.write_bytes(b"previous owned replacement")
+
+                            def open_target(destination, *args, **kwargs):
+                                stream = original_open(destination, *args, **kwargs)
+                                return Writer(stream) if destination == target else stream
+
+                            def unlink_target(destination, *args, **kwargs):
+                                if destination == target and unlink_fault:
+                                    raise unlink_error
+                                return original_unlink(destination, *args, **kwargs)
+
+                            with patch.object(Path, "open", open_target), patch.object(
+                                Path, "unlink", unlink_target,
+                            ), self.assertRaises(BaseException) as raised:
+                                materialize_image(target, image)
+                            self.assertIs(raised.exception, primary)
+                            self.assertEqual(target.exists(), unlink_fault)
+                            if unlink_fault:
+                                self.assertEqual(target.read_bytes(), expected[:17])
+                            errors = getattr(primary, "cleanup_errors", ())
+                            self.assertEqual(len(errors), int(close_fault) + int(unlink_fault))
+                            for error in (close_error if close_fault else None,
+                                          unlink_error if unlink_fault else None):
+                                if error is not None:
+                                    self.assertTrue(any(str(error) in message for message in errors))
+                            with self.assertRaises(OSError) as closed:
+                                os.fstat(opened[0])
+                            self.assertEqual(closed.exception.errno, errno.EBADF)
+                    finally:
+                        if sealed:
+                            image.close()
+                        budget.close()
 
 
 class RuntimeImageSessionTests(unittest.TestCase):
