@@ -2952,8 +2952,8 @@ records spend control; cache metadata spends cache. No retained whole heap body
 is merely reassigned to a different category. All numeric limits remain
 unchanged. The source/generated-file limit still applies to those files; it
 does not force a trusted platform image to fit in a generated-file-sized heap
-read. The direct byte-backed cold capture retains its existing 4 MiB file/
-8 MiB control rejection; sealed native capture additionally has actual
+read. The direct byte-backed cold capture retains its configured file/control
+quotas; sealed native capture additionally has actual
 whole-backing snapshot/aggregate and bounded-workspace rejection. Both input
 and ELF-closure caches bind the requested representation in either call order.
 Repeated same-mode calls reuse their original object. Alternate-mode capture
@@ -2972,6 +2972,18 @@ and interruption close owned FDs through existing cleanup. The backing check
 binds device/inode/mode/owner/size and actual immutable seals; failed kernel
 truncate attempts can change timestamps without changing sealed content.
 Original host capture still requires complete timestamp/identity stability.
+
+Run the runtime-image module on both actual `/usr/bin/python3` and GNU Make
+inputs; no supported host's Python executable must exceed 4 MiB. Complete
+body/digest, immutable seals, materialized bytes and cumulative storage checks
+apply to both. File-quota negatives derive a bound below the actual input size.
+The warm-cache test isolates an immutable lower-quota cold provider from the
+unrelated Make/libc session-bootstrap files, and requires that provider's real
+file rejection rather than a cached sealed-body substitution. This is
+provider/cache-isolation evidence, not the original one-budget cohort.
+The generated-file case independently rejects a real file one byte above its
+derived file limit while the complete platform backing remains owned. All
+production limits and capture semantics stay unchanged.
 
 For the storage member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
 clean Linux x86-64 checkout and namespace prerequisites:

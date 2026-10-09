@@ -19,13 +19,16 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 class RuntimeImageTests(unittest.TestCase):
     def test_complete_body_and_materialization_use_actual_immutable_backing(self):
-        path = Path("/usr/bin/python3").resolve()
+        for name in ("/usr/bin/python3", "/usr/bin/make"):
+            with self.subTest(source=name):
+                self.assert_complete_body(Path(name).resolve())
+
+    def assert_complete_body(self, path):
         budget = ProbeBudget()
         image = RuntimeImage(path, budget)
         descriptor = image.descriptor
         try:
             expected = path.read_bytes()
-            self.assertGreater(len(expected), 4 * 1024 * 1024)
             self.assertEqual(len(image), len(expected))
             self.assertEqual(image[:64], expected[:64])
             self.assertEqual(image_digest(image), hashlib.sha256(expected).hexdigest())
@@ -157,14 +160,33 @@ class RuntimeImageSessionTests(unittest.TestCase):
                 self.fixture.assert_clean(session)
 
     def test_sealed_warm_capture_does_not_bypass_legacy_file_quota(self):
-        session = self.fixture.session(file_bytes=4 * 1024 * 1024)
-        with session:
-            image = session._captured_native_runtime_input("/usr/bin/python3", sealed=True)
-            self.assertGreater(len(image), session.budget.limits.file_bytes)
-            with self.assertRaisesRegex(MakeProbeError, "file.*byte|file exceeds"):
-                session._captured_native_runtime_input("/usr/bin/python3")
-        self.assertEqual(image.descriptor, -1)
-        self.fixture.assert_clean(session)
+        original_path = make_probe._trusted_runtime_path
+        for name in ("/usr/bin/python3", "/usr/bin/make"):
+            source = Path(name).resolve()
+            session = self.fixture.session()
+            with self.subTest(source=name), session, patch.object(
+                make_probe, "_trusted_runtime_path",
+                lambda path, **kwargs: source if path == "/usr/bin/python3"
+                else original_path(path, **kwargs),
+            ):
+                image = session._captured_native_runtime_input("/usr/bin/python3", sealed=True)
+                limit = min(len(image) - 1, session.budget.limits.file_bytes)
+                # The cold provider's quota must not constrain unrelated session-bootstrap files.
+                cold_budget = ProbeBudget(Limits(file_bytes=limit))
+                try:
+                    def cold_source(path, budget):
+                        self.assertIs(budget, session.budget)
+                        return cold_budget.read_bytes(make_probe._trusted_runtime_path(path), "control")
+
+                    with patch.object(make_probe, "_trusted_runtime_bytes", cold_source):
+                        with self.assertRaisesRegex(MakeProbeError, "file.*byte|file exceeds"):
+                            session._captured_native_runtime_input("/usr/bin/python3")
+                    self.assertTrue(cold_budget.failed)
+                    self.assertEqual(cold_budget.bytes.get("control", 0), 0)
+                finally:
+                    cold_budget.close()
+            self.assertEqual(image.descriptor, -1)
+            self.fixture.assert_clean(session)
 
     def test_alternate_capture_refuses_changed_complete_body_and_retires_descriptors(self):
         original_bytes = make_probe._trusted_runtime_bytes
@@ -261,8 +283,13 @@ class RuntimeImageSessionTests(unittest.TestCase):
                 budget.close()
 
     def test_generated_file_limit_remains_independent_and_bounded(self):
-        budget = ProbeBudget(Limits(file_bytes=4 * 1024 * 1024))
-        image = RuntimeImage(Path("/usr/bin/python3").resolve(), budget)
+        for name in ("/usr/bin/python3", "/usr/bin/make"):
+            with self.subTest(source=name):
+                self.assert_generated_file_limit(Path(name).resolve())
+
+    def assert_generated_file_limit(self, path):
+        budget = ProbeBudget(Limits(file_bytes=min(path.stat().st_size - 1, Limits().file_bytes)))
+        image = RuntimeImage(path, budget)
         try:
             self.assertGreater(len(image), budget.limits.file_bytes)
             with tempfile.TemporaryDirectory() as directory:
