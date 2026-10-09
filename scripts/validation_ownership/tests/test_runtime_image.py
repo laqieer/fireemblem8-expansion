@@ -122,6 +122,152 @@ class RuntimeImageTests(unittest.TestCase):
             image.close()
             budget.close()
 
+    def test_failed_materialization_removes_owned_file_and_preserves_failure(self):
+        path = Path("/usr/bin/make").resolve()
+        for sealed, faults in (
+            (True, ("first-read", "late-read", "write", "interrupt", "system-exit",
+                    "deadline", "backing", "digest", "enter", "close",
+                    "zero-write", "none-write", "oversized-write")),
+            (False, ("write", "interrupt", "system-exit", "enter", "close",
+                     "zero-write", "none-write", "oversized-write")),
+        ):
+            for fault in faults:
+                budget = ProbeBudget()
+                image = RuntimeImage(path, budget) if sealed else path.read_bytes()
+                opened = []
+                original_open, original_read = Path.open, os.preadv
+                failure = (
+                    KeyboardInterrupt() if fault == "interrupt" else
+                    SystemExit(7) if fault == "system-exit" else OSError(errno.EIO, "materialization I/O")
+                )
+                read_calls = 0
+                written = 0
+
+                class Writer:
+                    def __init__(self, stream):
+                        self.stream = stream
+                        opened.append(stream.fileno())
+
+                    def __enter__(self):
+                        if fault == "enter":
+                            raise failure
+                        return self
+
+                    def __exit__(self, *args):
+                        result = self.stream.__exit__(*args)
+                        if fault == "close":
+                            raise failure
+                        return result
+
+                    def close(self):
+                        self.stream.close()
+
+                    def write(self, data):
+                        nonlocal written
+                        if fault == "zero-write":
+                            return 0
+                        if fault == "none-write":
+                            return None
+                        if fault == "oversized-write":
+                            return len(data) + 1
+                        if fault in {"write", "interrupt", "system-exit"}:
+                            self.stream.write(data[:17])
+                            raise failure
+                        count = self.stream.write(data)
+                        written += count
+                        if fault == "deadline":
+                            budget.started = 0
+                        if fault == "backing" and written == len(image):
+                            image.close()
+                        return count
+
+                def read(descriptor, buffers, offset):
+                    nonlocal read_calls
+                    read_calls += 1
+                    if fault == "first-read":
+                        return 0
+                    if fault == "late-read" and read_calls > 1:
+                        raise failure
+                    count = original_read(descriptor, buffers, offset)
+                    if fault == "digest" and count:
+                        buffers[0][0] ^= 1
+                    return count
+
+                try:
+                    with self.subTest(sealed=sealed, fault=fault), tempfile.TemporaryDirectory() as directory:
+                        target = Path(directory) / "runtime"
+
+                        def open_target(destination, *args, **kwargs):
+                            stream = original_open(destination, *args, **kwargs)
+                            return Writer(stream) if destination == target else stream
+
+                        expected = type(failure) if fault in {
+                            "late-read", "write", "interrupt", "system-exit", "enter", "close",
+                        } else MakeProbeError
+                        with patch.object(Path, "open", open_target), patch(
+                            "scripts.validation_ownership.runtime_image.os.preadv", read,
+                        ), self.assertRaises(expected) as raised:
+                            materialize_image(target, image)
+                        if expected is type(failure):
+                            self.assertIs(raised.exception, failure)
+                        self.assertFalse(target.exists())
+                        self.assertEqual(len(opened), 1)
+                        with self.assertRaises(OSError) as closed:
+                            os.fstat(opened[0])
+                        self.assertEqual(closed.exception.errno, errno.EBADF)
+                finally:
+                    if sealed:
+                        image.close()
+                    budget.close()
+
+    def test_materialization_handles_actual_short_writes_and_failed_open(self):
+        path = Path("/usr/bin/make").resolve()
+        expected = path.read_bytes()
+        for sealed in (True, False):
+            budget = ProbeBudget()
+            image = RuntimeImage(path, budget) if sealed else expected
+            original_open = Path.open
+            calls = 0
+
+            class Writer:
+                def __init__(self, stream):
+                    self.stream = stream
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return self.stream.__exit__(*args)
+
+                def close(self):
+                    self.stream.close()
+
+                def write(self, data):
+                    nonlocal calls
+                    calls += 1
+                    return self.stream.write(data[:1] if calls == 1 else data)
+
+            try:
+                with self.subTest(sealed=sealed), tempfile.TemporaryDirectory() as directory:
+                    target = Path(directory) / "runtime"
+
+                    def open_target(destination, *args, **kwargs):
+                        stream = original_open(destination, *args, **kwargs)
+                        return Writer(stream) if destination == target else stream
+
+                    with patch.object(Path, "open", open_target):
+                        self.assertEqual(materialize_image(target, image), len(expected))
+                    self.assertEqual(target.read_bytes(), expected)
+                    failure = PermissionError(errno.EACCES, "cannot open materialization destination")
+                    with patch.object(Path, "open", side_effect=failure), self.assertRaises(PermissionError) as raised:
+                        materialize_image(target, image)
+                    self.assertIs(raised.exception, failure)
+                    self.assertEqual(target.read_bytes(), expected)
+            finally:
+                if sealed:
+                    image.close()
+                budget.close()
+
 
 class RuntimeImageSessionTests(unittest.TestCase):
     def setUp(self):

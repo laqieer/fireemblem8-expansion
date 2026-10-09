@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import os
@@ -15,6 +16,29 @@ from .lifecycle import finish_cleanup
 
 BLOCK_BYTES = 65536
 IMAGE_SEALS = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+
+
+@contextmanager
+def _materialization_stream(destination):
+    stream = destination.open("wb", buffering=0)
+    try:
+        with stream:
+            yield stream
+    except BaseException as error:
+        finish_cleanup([stream.close, destination.unlink], primary=error)
+        raise
+
+
+def _write_complete(stream, part, budget=None):
+    written = 0
+    while written < len(part):
+        if budget is not None:
+            budget.remaining()
+        amount = stream.write(part[written:])
+        if amount is None or amount <= 0 or amount > len(part) - written:
+            raise MakeProbeError("platform runtime materialization did not progress")
+        written += amount
+    return written
 
 
 def _identity(info):
@@ -138,7 +162,11 @@ class RuntimeImage:
         self.budget.charge("snapshot", self.size)
         work = self._buffer()
         digest = hashlib.sha256()
-        with destination.open("wb", buffering=0) as stream:
+        owner = _materialization_stream(destination)
+        self.budget.charge(
+            "control", sys.getsizeof(owner) + sys.getsizeof(owner.__dict__) + sys.getsizeof(owner.gen),
+        )
+        with owner as stream:
             offset = 0
             while offset < self.size:
                 self.budget.remaining()
@@ -150,17 +178,11 @@ class RuntimeImage:
                     raise MakeProbeError("platform runtime ended during materialization")
                 part = work[:count]
                 digest.update(part)
-                written = 0
-                while written < count:
-                    self.budget.remaining()
-                    amount = stream.write(part[written:])
-                    if amount is None or amount <= 0:
-                        raise MakeProbeError("platform runtime materialization did not progress")
-                    written += amount
+                _write_complete(stream, part, self.budget)
                 offset += count
-        self.require_sealed()
-        if digest.hexdigest() != self._digest:
-            raise MakeProbeError("platform runtime materialization differs from its complete captured body")
+            self.require_sealed()
+            if digest.hexdigest() != self._digest:
+                raise MakeProbeError("platform runtime materialization differs from its complete captured body")
         return self.size
 
     def __eq__(self, other):
@@ -184,7 +206,8 @@ def image_digest(body: bytes | RuntimeImage):
 def materialize_image(destination: Path, body: bytes | RuntimeImage):
     if isinstance(body, RuntimeImage):
         return body.materialize(destination)
-    return destination.write_bytes(body)
+    with _materialization_stream(destination) as stream:
+        return _write_complete(stream, memoryview(body))
 
 
 def close_images(images):

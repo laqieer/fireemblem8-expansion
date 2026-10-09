@@ -2946,6 +2946,32 @@ body digest and actual sealed-object identity. Root materialization streams and
 verifies the entire body again. A stat-only token never substitutes for content
 capture or its backing lifetime.
 
+Both sealed and byte-backed materialization own the destination after its
+writable open succeeds. Read, write, deadline, backing, digest, close and
+interruption failures close that stream and remove the owned destination,
+preserving the original exception and reporting any cleanup failure through
+the existing cleanup mechanism. Pre-open quota or open failures do not remove
+a pre-existing file. An opened replacement is not a transaction preserving its
+old contents, and intermediate writes are not atomically hidden; private roots
+are not executed until materialization succeeds. No temporary publication
+service is required. Both providers finish actual short writes and reject
+missing, zero or out-of-range progress. Seal/digest validation stays inside the
+owned cleanup boundary. Sealed materialization accounts for its actual stream
+context objects in the existing cumulative control budget; no allowance is
+raised or refunded.
+
+Exercise the **TC-WORKFLOW-NATIVE-MAKE-001** materialization-failure subcase
+with `RuntimeImageTests.test_failed_materialization_removes_owned_file_and_preserves_failure`
+and `test_materialization_handles_actual_short_writes_and_failed_open`.
+Start with actual GNU Make backing and a fresh temporary destination. Inject
+first/late reads, writes, stream entry/close, deadline expiry after a real
+write, closed backing, corrupted streamed buffers, no/invalid progress and
+interrupt/SystemExit faults. Compare actual file absence, closed OS FDs and
+original exceptions for both applicable providers. Then require complete
+actual bytes after a short write and preservation of an existing destination
+when open fails. The deadline control lowers only its isolated test budget;
+it does not qualify or alter the original cohort's deadline.
+
 Every sealed body and every physical streamed root copy spends the unchanged
 snapshot/aggregate allowances. Bounded stream buffers, header slices and actual
 records spend control; cache metadata spends cache. No retained whole heap body
