@@ -3026,8 +3026,14 @@ model. The actual driver operands reuse the existing safe dependency grammar,
 without manufacturing a frontend `Command` or rewriting argv. Frontend binding
 must reference the exact direct driver occurrence captured at fork; source,
 header, include, output and resource scopes cannot change. Ordinary exec, exit
-and omitted terminals cannot revive that authority. Every issued driver in the
-model needs one frontend; duplicate, missing, foreign, stale and boolean-aliased
+and omitted terminals cannot revive that authority. Each freshly forked child
+receives eligibility from its actual driver for its first successful
+exec only; an ordinary child exec followed by a frontend exec cannot recover
+the consumed reference. The child-side negative first validates that changed
+tree with the ordinary tree validator, then requires compiler-lineage refusal.
+The parent-side unrelated exec and terminal controls remain separate.
+Every issued driver in the model needs one frontend; duplicate, missing,
+foreign, stale and boolean-aliased
 references refuse. Exact observed model charges and one-byte-short quota
 controls are local finite accounting evidence, not original cohort fitness.
 The existing native protocol rejects these new admission fields.

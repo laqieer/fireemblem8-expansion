@@ -1721,6 +1721,7 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
             node["generation"] = event["generation"]
             binding = event["admission"].get("compiler")
             previous = node["actor"]
+            inherited, node["fork"] = node["fork"], None
             node["actor"] = None
             if binding is None:
                 if event["path"] in {profile.driver, profile.frontend}:
@@ -1764,7 +1765,6 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
                     raise ReadEpochError("compiler driver include scope differs from its actual safe arguments")
             else:
                 parent = nodes.get(node["parent"])
-                inherited = node["fork"]
                 if (
                     event["path"] != profile.frontend or parent is None or parent["retired"]
                     or inherited is None or inherited.role != "driver"

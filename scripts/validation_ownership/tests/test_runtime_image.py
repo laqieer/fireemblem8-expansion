@@ -247,6 +247,24 @@ class RuntimeImageSessionTests(unittest.TestCase):
             actors = validate(events)
             self.assertEqual([(actor.role, actor.pid, actor.driver) for actor in actors],
                              [("driver", 11, None), ("frontend", 12, (11, 1, 2))])
+            redirected = json.loads(json.dumps(events))
+            redirected.insert(6, execution(
+                12, 11, 1, "/bin/sh", ["/bin/sh", "-c", ":"], None, 3,
+            ))
+            redirected[7]["generation"] = 2
+            redirected[7]["admission"]["sequence"] = 4
+            for sequence, event in enumerate(redirected, 1):
+                event["seq"] = sequence
+            ordinary_redirected = json.loads(json.dumps(redirected))
+            for event in ordinary_redirected:
+                if event["kind"] == "exec":
+                    event["admission"].pop("compiler")
+            read_epochs.native_job_tree(
+                ordinary_redirected, job, 1, ["/bin/sh", profile.driver, profile.frontend],
+                count_limit=32768, writable=True,
+            )
+            with self.assertRaisesRegex(MakeProbeError, "driver-at-fork"):
+                validate(redirected)
             charges = []
             self.assertEqual(read_epochs.native_compiler_lineage(
                 events, job, profile, sources=session.snapshot.files, count_limit=len(events),
