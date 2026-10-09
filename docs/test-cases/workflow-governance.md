@@ -2982,6 +2982,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    active inside a completed preflight at each of the three snapshots: no
    metadata PATCH occurs, and the post-intent race retains the existing
    append-only abort rather than hiding actual comment mutation.
+   Repeat the live-job races with an essential reason. Introduce an active or
+   completed full run or an unbound metadata run at the second snapshot of an
+   initially authorized essential preparation. Require deferral without any
+   write: a changed inventory cannot silently switch authorization modes.
    Existing active-run, version/identity drift, transaction/abort/recovery
    controls and final candidate/master gates remain required.
 

@@ -1640,7 +1640,11 @@ ordering deadlock without a direct metadata-edit bypass.
 
 Preparation preserves the existing append-only intent/confirmation pair,
 metadata-specific version and all three run/identity snapshots. Preserve both
-returned comment IDs. The result explicitly leaves the exact-head full Build
+returned comment IDs. Its initial preparation inventory must remain unchanged
+at the later snapshots, including for essential corrections; a newly observed
+full or unproven run cannot switch preparation into the older essential-active
+full authorization path. That path remains available only when initially
+selected under its existing contract. The result explicitly leaves the exact-head full Build
 and confirmation-bound reconciliation required; it is not continuity or merge
 evidence. A matching authoritative pair may return a non-mutating preparation
 no-op with that same hold. Reconciliation still refuses without a successful

@@ -2436,6 +2436,26 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.run_id, 202)
         self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
 
+    def test_essential_pre_full_preparation_cannot_switch_to_refreshed_full_authority(self):
+        for mode, active in (("full", True), ("full", False), ("metadata-only", False)):
+            with self.subTest(mode=mode, active=active):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [_review_first_run()])
+                refreshed = [_run(202, 11, mode=mode, active=active), _review_first_run()]
+                _add_snapshot(client, refreshed)
+                _add_edit_transaction(client, refreshed, body="Correct parent")
+                client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                           _pr(body="Correct parent", updated_at="2026-09-04T00:00:05Z"))
+                decision = pr_metadata.edit_metadata(
+                    client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                    head_sha=HEAD, base_sha=BASE, title=None, body="Correct parent",
+                    essential_reason="Correct actual parent before full Build",
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertFalse(decision.mutated)
+                self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+
     def test_pre_full_prepared_pair_no_op_retains_full_reconciliation_hold(self):
         receipt = _receipt()
         confirmation = _confirmation(receipt)
@@ -2460,6 +2480,12 @@ class PullRequestMetadataTests(unittest.TestCase):
                              for method, endpoint, _ in client.calls))
 
     def test_pre_full_preparation_rejects_active_jobs_at_every_snapshot(self):
+        self._assert_preparation_active_job_races(None)
+
+    def test_essential_pre_full_preparation_rejects_active_jobs_at_every_snapshot(self):
+        self._assert_preparation_active_job_races("Correct parent before full Build")
+
+    def _assert_preparation_active_job_races(self, reason):
         for snapshot in range(3):
             for name in ("build", "host-tests", "summary"):
                 with self.subTest(snapshot=snapshot, job=name):
@@ -2479,11 +2505,15 @@ class PullRequestMetadataTests(unittest.TestCase):
                             return _comment(403, body["body"], created_at="2026-09-04T00:00:04Z",
                                             updated_at="2026-09-04T00:00:04Z")
                         client.routes[("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))][1] = abort_response
-                    decision = pr_metadata.edit_metadata(
-                        client, repository=REPOSITORY, pr_number=PR_NUMBER,
-                        head_sha=HEAD, base_sha=BASE, title=None, body="Correct parent",
-                        essential_reason=None,
-                    )
+                    arguments = dict(repository=REPOSITORY, pr_number=PR_NUMBER,
+                                     head_sha=HEAD, base_sha=BASE, title=None,
+                                     body="Correct parent", essential_reason=reason)
+                    if snapshot == 0 and reason is not None:
+                        with self.assertRaisesRegex(pr_metadata.MetadataEditError, "no exact-head full Build"):
+                            pr_metadata.edit_metadata(client, **arguments)
+                        self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+                        continue
+                    decision = pr_metadata.edit_metadata(client, **arguments)
                     self.assertIn(decision.action, {"refused", "deferred"})
                     self.assertEqual(decision.mutated, snapshot == 2)
                     if snapshot == 2:

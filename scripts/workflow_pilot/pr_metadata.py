@@ -3616,6 +3616,20 @@ def edit_metadata(
     current_runs = list_candidate_runs(client, current)
     current_active_full = _blocking_active_runs(current_runs)
     current_latest_full = _latest_full(current_runs)
+    if _pre_full_preparation(initial_runs) and (
+        current_runs != initial_runs or not _pre_full_preparation(current_runs)
+    ):
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=_comment_guidance(current),
+            head_sha=head_sha,
+            mutated=False,
+            reason="pre-full preparation inventory changed before mutation",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=current_active_full[0].run_id if current_active_full else None,
+        )
     if not initially_matches and essential_reason is None:
         if current_runs != initial_runs:
             return Decision(
