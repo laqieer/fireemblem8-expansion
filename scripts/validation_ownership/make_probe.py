@@ -1235,12 +1235,16 @@ class ProbeSession:
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
         native_executables=(), native_runtime_directories=(), native_metadata_directories=(),
-        runtime_completions=False, observe_root=False,
+        runtime_completions=False, observe_patterns=False, observe_root=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None, native_admission_handler=None,
         native_output_paths=(), native_resources=(), native_requests=None,
     ):
         self.budget.remaining()
+        if type(observe_patterns) is not bool or observe_patterns and not (
+            mode == "make" and native_runtime and read_abi is not None and runtime_completions
+        ):
+            raise MakeProbeError("pattern observation requires native runtime completion")
         if type(observe_root) is not bool or observe_root and not (
             mode == "make" and native_runtime and read_abi is not None and runtime_completions
         ):
@@ -1432,15 +1436,22 @@ class ProbeSession:
             if observe_root:
                 config["native_root_observation"] = True
         if read_abi is not None:
-            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION
+            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION, PATTERN_RUNTIME_VERSION, PATTERN_WRITABLE_VERSION, WRITABLE_VERSIONS
             if not native_runtime:
                 raise MakeProbeError("source read observation requires original readonly native execution")
             config["read_epochs"] = {
-                "version": WRITABLE_VERSION if native_output_paths else RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
+                "version": (
+                    PATTERN_WRITABLE_VERSION if native_output_paths else PATTERN_RUNTIME_VERSION
+                ) if observe_patterns else WRITABLE_VERSION if native_output_paths else RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
                 "scope": self.base.name + "/" + root.name, "abi": read_abi,
             }
             if read_selection is not None:
                 config["read_epochs"]["selection"] = read_selection
+            if observe_patterns:
+                from .pattern_templates import pattern_abi
+                from .read_epochs import Elf
+                config["read_epochs"]["patterns"] = pattern_abi(Elf(dict(self.make_runtime)["/usr/bin/make"]))
+                self.budget.charge("control", len(encoded(config["read_epochs"]["patterns"])))
         elif read_selection is not None:
             raise MakeProbeError("completion observation requires its original read ABI")
         if dependency is not None:
@@ -1853,7 +1864,7 @@ class ProbeSession:
                         or read_selection is not None and event["kind"] == "source-open"
                         and event["result"] >= 0 and event["custody"] != {"kind": "snapshot"}
                         and not (
-                            request["version"] == WRITABLE_VERSION
+                            request["version"] in WRITABLE_VERSIONS
                             and event["custody"]["kind"] == "native-output"
                         )
                     ):
@@ -1961,7 +1972,7 @@ class ProbeSession:
                             parent = None
                             if observed["returncode"] == 0:
                                 machine = observed["read_trace"]["machine"]
-                                if machine["version"] == 2:
+                                if machine["version"] in {2, 4}:
                                     from .read_epochs import native_root_owner
                                     actual_executions = [
                                         row for row in machine["events"]
@@ -2750,7 +2761,7 @@ class ProbeSession:
     def _native_make_run(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
-        native_libraries=(), observe_runtime_completions=False,
+        native_libraries=(), observe_runtime_completions=False, observe_patterns=False,
         original_tool=False, native_metadata_directories=(),
         commands=None, writable_outputs=(), native_resources=(), observe_root=False, finite_requests=None,
     ):
@@ -2760,6 +2771,7 @@ class ProbeSession:
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
             or type(observe_runtime_completions) is not bool
+            or type(observe_patterns) is not bool or observe_patterns and not observe_runtime_completions
             or type(observe_root) is not bool or observe_root and not observe_runtime_completions
             or type(original_tool) is not bool or original_tool and native_tool is None
             or (observe_completions or observe_runtime_completions) and not observe_reads
@@ -3025,6 +3037,7 @@ class ProbeSession:
                 native_runtime_directories=runtime_directories,
                 native_metadata_directories=metadata_directories,
                 runtime_completions=observe_runtime_completions,
+                observe_patterns=observe_patterns,
                 observe_root=observe_root,
                 original_tool=native_tool if original_tool else None,
                 native_admission_handler=admit if commands is not None else None,

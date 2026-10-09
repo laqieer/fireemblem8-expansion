@@ -40,7 +40,7 @@ class NativeReadTrace:
         self.native = sys.modules[type(policy).__module__]
         self.scope = config["scope"]
         self.version = config["version"]
-        self.runtime = self.version in {read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}
+        self.runtime = self.version in read_epochs.RUNTIME_VERSIONS
         self.pending_barrier = None
         self.barriers = 0
         path = Path(self.config["root"]) / "usr/bin/make"
@@ -59,6 +59,16 @@ class NativeReadTrace:
             read_epochs.runtime_expansion_abi(read_epochs.Elf(self.image))
             if self.runtime else None
         )
+        self.patterns = None
+        if self.version in read_epochs.PATTERN_VERSIONS:
+            if __package__:
+                from .pattern_templates import PatternMaterializations, pattern_abi
+            else:
+                from pattern_templates import PatternMaterializations, pattern_abi
+            derived = pattern_abi(read_epochs.Elf(self.image))
+            if config["patterns"] != derived:
+                raise read_epochs.ReadEpochError("pattern ABI differs from its captured image")
+            self.patterns = PatternMaterializations(self, derived)
         self.selection = ()
         self.selection_names = frozenset()
         self.selection_inventory = MappingProxyType({})
@@ -79,7 +89,7 @@ class NativeReadTrace:
                 self.policy.charge_metadata(sys.getsizeof({None: None}) + sys.getsizeof(key))
                 index[key] = row
             self.selection_index = MappingProxyType(index)
-        elif self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
+        elif self.version in read_epochs.MACHINE_VERSIONS:
             if self.abi["version"] != 2:
                 raise read_epochs.ReadEpochError("completion trace lacks its machine-derived completion ABI")
             read_epochs.validate_completion_selection(
@@ -108,7 +118,7 @@ class NativeReadTrace:
         self.pass_frame = None
         self.goals = {}
         self.io = None
-        self.machine = [] if self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION} else None
+        self.machine = [] if self.version in read_epochs.MACHINE_VERSIONS else None
         self.invocations = []
         self.effects = self.evaluations = 0
         self.expansions = 0
@@ -202,10 +212,12 @@ class NativeReadTrace:
             **({"input_sha256": None if make else hashlib.sha256(encoded(inputs)).hexdigest()}
                if self.runtime else {}),
             **({"admission_owner": None if make else self.policy.native_jobs[dispatch]["admission"]["owner"]}
-               if self.version == read_epochs.WRITABLE_VERSION else {}),
+               if self.version in read_epochs.WRITABLE_VERSIONS else {}),
         )
         if not make:
             return
+        if self.patterns is not None:
+            self.patterns.retire()
         if self.active or self.invocations or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None or self.execs != self.passes:
             raise read_epochs.ReadEpochError("Make exec crossed an incomplete original read pass")
         self.pid = pid
@@ -249,17 +261,19 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("Make read trace has an unsupported ELF load origin")
         self.bias = bases[0] - load[0]
         spans = [self.abi[name] for name in ("read_all", "source")]
-        if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
+        if self.version in read_epochs.LOCATION_VERSIONS:
             spans += [self.abi["completion"]["evaluator"], *self.abi["completion"]["relied_code"]]
             if self.runtime:
                 spans += [self.abi["completion"]["runtime"]["definition"]]
                 spans += [self.expansion_abi[key] for key in ("function", "recipe", "secondary", "snap")]
+                if self.patterns is not None:
+                    spans += [self.patterns.abi[key] for key in ("initializer", "creator")]
         for start, end in spans:
             if not any(left <= self.bias + start < self.bias + end <= right for left, right in code):
                 raise read_epochs.ReadEpochError("read trace site is not readonly executable Make code")
             if self.memory(self.bias + start, end - start) != image.bytes(start, end - start, executable=True):
                 raise read_epochs.ReadEpochError("read trace instruction image differs from captured Make")
-        if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
+        if self.version in read_epochs.LOCATION_VERSIONS:
             start, end = self.abi["completion"]["flavor_table"]
             if (
                 not any(left <= self.bias + start < self.bias + end <= right for left, right in readonly)
@@ -291,6 +305,9 @@ class NativeReadTrace:
             slots[3] = self.bias + runtime["definition"][0]
             purposes[2] = "eval-entry"
             purposes[3] = "effect-entry"
+            if self.patterns is not None:
+                slots[1] = self.bias + self.patterns.abi["selection"]
+                purposes[1] = "pattern-selection"
         elif self.active:
             slots[2] = self.active[-1]["return"]
             purposes[2] = "source-return"
@@ -356,7 +373,13 @@ class NativeReadTrace:
         )
         if self.runtime and not self.invocations and purpose in {"eval-entry", "effect-entry"}:
             raise read_epochs.ReadEpochError("runtime post-read effect/eval is not qualified")
-        if purpose == "pass-entry":
+        if purpose == "pattern-selection" and self.patterns is not None:
+            self.patterns.enter(registers, state)
+        elif purpose == "pattern-completion" and self.patterns is not None:
+            self.patterns.completion(registers, state)
+        elif purpose == "pattern-definition-return" and self.patterns is not None:
+            self.patterns.definition_return(registers)
+        elif purpose == "pass-entry":
             if self.pass_frame is not None or self.active or self.passes + 1 != self.execs:
                 raise read_epochs.ReadEpochError("repeated original read entry in one exec")
             self.pass_frame = self.caller(registers, registers.rip)
@@ -371,12 +394,14 @@ class NativeReadTrace:
                 count_limit=self.config["observation_count"], string=self.string,
             )
             entry = self.event("pass-entry", **self.context(), inputs=inputs)
-            if self.version in {2, 3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
+            if self.version in {2, *read_epochs.LOCATION_VERSIONS}:
                 self.pending_barrier = {
                     "barrier": self.barriers + 1, "exec": self.execs, "pass": self.passes,
                     "trace_seq": entry["seq"], "input_sha256": source_phases.digest(inputs),
                 }
         elif purpose == "source-entry":
+            if self.patterns is not None:
+                self.patterns.observe()
             if (
                 self.pass_frame is None and not self.invocations
                 or self.io is not None or self.pending_barrier is not None
@@ -390,7 +415,7 @@ class NativeReadTrace:
             self.visits += 1
             parent = self.active[-1]["visit"] if self.active else None
             location = None
-            if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION} and (
+            if self.version in read_epochs.LOCATION_VERSIONS and (
                 self.active or self.runtime and self.pass_frame is None
             ):
                 if frame["return"] != self.bias + self.abi["completion"]["include_return"]:
@@ -403,7 +428,7 @@ class NativeReadTrace:
             frame.update({"visit": self.visits, "name": name, "flags": flags, "source": None, "pin": None, "closed": False})
             self.event(
                 "source-entry", **self.context(), visit=self.visits, parent=parent, name=name, flags=flags,
-                **({"location": location} if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION} else {}),
+                **({"location": location} if self.version in read_epochs.LOCATION_VERSIONS else {}),
             )
             self.active.append(frame)
             if self.runtime:
@@ -613,6 +638,8 @@ class NativeReadTrace:
         raise read_epochs.ReadEpochError("runtime invocation lacks its actual evaluator ancestor")
 
     def runtime_effect_entry(self, registers):
+        if self.patterns is not None and self.patterns.definition(registers):
+            return
         abi = self.abi["completion"]
         runtime = abi["runtime"]
         frame = self.caller(registers, registers.rip)
@@ -697,6 +724,8 @@ class NativeReadTrace:
         self.invocations.pop()
 
     def runtime_eval_entry(self, registers):
+        if self.patterns is not None:
+            self.patterns.observe()
         if not self.invocations:
             raise read_epochs.ReadEpochError("runtime eval has no original invocation")
         frame = self.caller(registers, registers.rip)
@@ -704,7 +733,7 @@ class NativeReadTrace:
             location = self.runtime_location(self.runtime_evaluator(registers.rbp))
         else:
             root = self.invocations[0]
-            if root["kind"] != "expansion":
+            if root["kind"] not in ({"expansion", "pattern"} if self.patterns is not None else {"expansion"}):
                 raise read_epochs.ReadEpochError("runtime eval lacks an original reader/expansion root")
             pointer = registers.rbp
             for _ in range(512):
@@ -718,7 +747,7 @@ class NativeReadTrace:
                 pointer = following
             else:
                 raise read_epochs.ReadEpochError("runtime eval expansion ancestry exceeds its bound")
-            location = {"expansion": root["number"]}
+            location = {root["kind"]: root["number"]}
         text = self.string(registers.rdi, self.config["file_limit"] + 1)
         if text is None:
             raise read_epochs.ReadEpochError("runtime eval has no bounded pristine buffer")
@@ -754,6 +783,8 @@ class NativeReadTrace:
         frame = self.invocations[-1]
         if frame["kind"] != "eval" or registers.rsp != frame["stack"] + 8:
             raise read_epochs.ReadEpochError("runtime eval returned across an active occurrence")
+        if self.patterns is not None:
+            self.patterns.complete(["eval", frame["number"]], frame["source"])
         self.event("eval-exit", **self.context(), evaluation=frame["number"], source=frame["source"])
         self.invocations.pop()
 
@@ -819,7 +850,7 @@ class NativeReadTrace:
         if phase == 0:
             if self.io is not None or descriptor != -1 or error:
                 raise read_epochs.ReadEpochError("overlapping or malformed source stream entry")
-            if source and self.version == read_epochs.WRITABLE_VERSION:
+            if source and self.version in read_epochs.WRITABLE_VERSIONS:
                 current = self.active[-1]
                 observer = self.policy.native_outputs
                 path = self.policy.resolve(name if name.startswith("/") else state.cwd + "/" + name)
@@ -902,7 +933,7 @@ class NativeReadTrace:
                     self.policy.charge_metadata(len(encoded(row)))
                     self.sources.append(row)
                     self.pool[key] = snapshot
-                if self.version in {3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION} and snapshot not in self.statement_indexes:
+                if self.version in read_epochs.LOCATION_VERSIONS and snapshot not in self.statement_indexes:
                     self.policy.charge_metadata(len(data))
                     self.statement_indexes[snapshot] = read_epochs._statement_index(
                         bytes(data), checkpoint=self.deadline,
@@ -911,7 +942,7 @@ class NativeReadTrace:
                 relative = path.removeprefix("/repo/")
                 custody = None
                 selection_index = None
-                if self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
+                if self.version in read_epochs.MACHINE_VERSIONS:
                     if not relative or relative.startswith("/") or ".." in relative.split("/") or "\\" in relative:
                         raise read_epochs.ReadEpochError("opened source has no exact repository-relative path")
                     content_digest = hashlib.sha256(data).hexdigest()
@@ -921,7 +952,7 @@ class NativeReadTrace:
                         and entry["sha256"] == content_digest
                     ):
                         custody = {"kind": "snapshot"}
-                    elif self.version == read_epochs.WRITABLE_VERSION and current.get("generated") is not None:
+                    elif self.version in read_epochs.WRITABLE_VERSIONS and current.get("generated") is not None:
                         lease = current["generated"]
                         if (
                             identity != lease.identity or bytes(data) != lease.data
@@ -956,7 +987,7 @@ class NativeReadTrace:
             "source-open", **self.context(), visit=visit, name=name, mode=mode, result=result,
             source=snapshot, identity=None if identity is None else list(identity),
             **({"path": current.get("relative"), "custody": current.get("custody")}
-               if source and self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION} else {}),
+               if source and self.version in read_epochs.MACHINE_VERSIONS else {}),
         )
 
     def fd_closed(self, pid, descriptor):
@@ -969,6 +1000,8 @@ class NativeReadTrace:
         if not self.active or self.io is not None:
             raise read_epochs.ReadEpochError("source return has no matching native entry")
         current = self.active[-1]
+        if self.patterns is not None:
+            self.patterns.complete(["source", current["visit"]], current["source"])
         if registers.rsp != current["stack"] + 8:
             raise read_epochs.ReadEpochError("source return has a forged or changed stack")
         pointer = registers.rax
@@ -1026,6 +1059,8 @@ class NativeReadTrace:
             policy.native_root, argv=self.config["argv"], cwd=self.config.get("cwd", "/repo"),
             environment=self.config["environment"], returncode=0,
         )
+        if self.patterns is not None:
+            self.patterns.retire()
         previous = self.root_boundaries[-1] if self.root_boundaries else None
         row = {
             "ordinal": len(self.root_boundaries or ()) + 1,
@@ -1064,24 +1099,26 @@ class NativeReadTrace:
             self.active or self.pass_frame is not None or self.io is not None or self.pending_barrier is not None
             or self.invocations
             or not self.passes or self.passes != self.execs
-            or self.version in {2, 3, read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION} and self.barriers != self.passes
+            or self.version in {2, *read_epochs.LOCATION_VERSIONS} and self.barriers != self.passes
         ):
             raise read_epochs.ReadEpochError("original read trace ended with incomplete native state")
         self.event(
             "complete", execs=self.execs, passes=self.passes, visits=self.visits,
             **({"effects": self.effects, "evaluations": self.evaluations, "expansions": self.expansions} if self.runtime else {}),
+            **({"templates": self.patterns.serial, "patterns": self.patterns.materializations,
+                "pattern_returns": self.patterns.returns} if self.patterns is not None else {}),
         )
         result = {"version": self.version, "scope": self.scope, "events": self.events, "sources": self.sources, "complete": True}
         if self.version == 3:
             result["selection"] = [list(row) for row in self.selection]
-        elif self.version in {read_epochs.COMPLETION_VERSION, read_epochs.RUNTIME_VERSION, read_epochs.WRITABLE_VERSION}:
+        elif self.version in read_epochs.MACHINE_VERSIONS:
             result["selection"] = self.selection
             result["machine"] = {
-                "version": 2 if self.root_boundaries else 1,
+                "version": (4 if self.root_boundaries else 3) if self.patterns is not None else (2 if self.root_boundaries else 1),
                 "events": self.machine, "closed": True,
                 **({"roots": self.root_boundaries} if self.root_boundaries else {}),
             }
-        if self.version == read_epochs.WRITABLE_VERSION:
+        if self.version in read_epochs.WRITABLE_VERSIONS:
             result["output_authority"] = {
                 "paths": self.config["native_output_paths"],
                 **({"resources": self.config["native_resources"]} if self.config.get("native_resources") else {}),

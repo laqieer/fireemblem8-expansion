@@ -277,7 +277,7 @@ class Policy:
         self.native_admit = None
         if type(self.native_admission) is not bool or self.native_admission and (
             not self.native_readonly or not config.get("producer_endpoint")
-            or config.get("read_epochs", {}).get("version") not in {5, 6}
+            or config.get("read_epochs", {}).get("version") not in read_epochs.RUNTIME_VERSIONS
         ):
             raise Violation("native Command admission lacks its existing channel/runtime authority")
         native_shell = config.get("native_shell", "/bin/sh")
@@ -333,12 +333,12 @@ class Policy:
             if (
                 not self.native_readonly or not isinstance(request, dict)
                 or set(request) != {"version", "scope", "abi"} | (
-                    {"selection"} if request.get("version") in {4, 5, 6} else set()
-                )
-                or type(request["version"]) is not int or request["version"] not in {1, 4, 5, 6}
+                    {"selection"} if request.get("version") in read_epochs.MACHINE_VERSIONS else set()
+                ) | ({"patterns"} if request.get("version") in read_epochs.PATTERN_VERSIONS else set())
+                or type(request["version"]) is not int or request["version"] not in {1, *read_epochs.MACHINE_VERSIONS}
                 or not isinstance(request["abi"], dict)
-                or request["abi"].get("version") != (2 if request["version"] in {4, 5, 6} else 1)
-                or request["version"] in {4, 5, 6} and (
+                or request["abi"].get("version") != (2 if request["version"] in read_epochs.MACHINE_VERSIONS else 1)
+                or request["version"] in read_epochs.MACHINE_VERSIONS and (
                     not isinstance(request["selection"], dict)
                     or not isinstance(request["selection"].get("inventory"), list)
                     or any(not isinstance(row, dict) or row.get("kind") != "snapshot"
@@ -346,14 +346,14 @@ class Policy:
                 )
                 or not isinstance(request["scope"], str) or not request["scope"]
                 or config.get("environment", {}).get("VO_OBSERVE_READS") != "1"
-                or (request["version"] == 6) != bool(config.get("native_output_paths"))
+                or (request["version"] in read_epochs.WRITABLE_VERSIONS) != bool(config.get("native_output_paths"))
             ):
                 raise Violation("invalid readonly native read-trace authority")
         elif "VO_OBSERVE_READS" in config.get("environment", {}):
             raise Violation("unconfigured native read observation")
         if "native_root_observation" in config and (
             config["native_root_observation"] is not True
-            or not self.native_readonly or request is None or request["version"] not in {5, 6}
+            or not self.native_readonly or request is None or request["version"] not in read_epochs.RUNTIME_VERSIONS
         ):
             raise Violation("invalid native root observation authority")
         self.native_root = None
@@ -538,10 +538,10 @@ class Policy:
         mounts = self.config.get("mounts", ())
         repository = [row for row in mounts if row["target"] == "/repo"]
         composite = self.config.get("readonly_source_composite", False)
-        writable = trace.version == read_epochs.WRITABLE_VERSION
+        writable = trace.version in read_epochs.WRITABLE_VERSIONS
         source_mounts = [row for row in mounts if row["target"].startswith("/repo/")]
         if (
-            not self.native_readonly or trace.version not in {4, 5, 6} or pid != self.make_pid or pid != trace.pid
+            not self.native_readonly or trace.version not in read_epochs.MACHINE_VERSIONS or pid != self.make_pid or pid != trace.pid
             or self.processes.get(pid) is not state or state.role != "make"
             or not state.observer_ready or not state.parked or state.pidfd < 0
             or len(repository) != 1 or repository[0]["writable"] is not writable
@@ -1043,7 +1043,7 @@ class Policy:
             )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
-        if self.read_trace is not None and self.read_trace.version in {4, 5, 6}:
+        if self.read_trace is not None and self.read_trace.version in read_epochs.MACHINE_VERSIONS:
             self.read_trace.machine_event(
                 "native-policy", pid, dispatch=row["sequence"], child=row["pid"],
                 context=dict(row["context"]), ignored=row["ignored"], status=status,
@@ -3700,7 +3700,7 @@ def supervise(config, drop_privileges):
             if error is None and main_status == 0 and policy.read_trace is not None:
                 try:
                     trace = policy.read_trace.finish()
-                    if trace["version"] == read_epochs.WRITABLE_VERSION:
+                    if trace["version"] in read_epochs.WRITABLE_VERSIONS:
                         headers = [
                             {key: value for key, value in row.items() if key != "tree"}
                             for row in policy.native_jobs.values()

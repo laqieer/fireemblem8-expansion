@@ -147,7 +147,7 @@ class PatternTemplates:
         ):
             raise read_epochs.ReadEpochError("pattern template has a substituted actual suffix")
         definition = {
-            "pattern": pattern, "length": length,
+            "pattern": pattern, "length": length, "percent": suffix_offset - 1,
             "name": trace.string(name, 129) if name else None,
             "value": trace.string(value, trace.config["file_limit"] + 1) if value else None,
             "file": trace.string(file, 4097) if file else None,
@@ -182,6 +182,11 @@ class PatternTemplates:
                         "pattern-template-entry", **trace.context(),
                         template=self.serial, owner=owner,
                     )
+                    if trace.version in read_epochs.PATTERN_VERSIONS:
+                        trace.machine_event(
+                            "pattern-template-input", trace.pid, template=self.serial,
+                            sha256=hashlib.sha256(encoded(entry)).hexdigest(),
+                        )
                     retained = {
                         "id": self.serial, "owner": owner,
                         "entry": entry["seq"], "definition": None,
@@ -213,10 +218,15 @@ class PatternTemplates:
                 or (definition["flags"] >> 26) & 7 > 6
             ):
                 raise read_epochs.ReadEpochError("completed pattern lacks source-bound actual fields")
-            trace.event(
+            event = trace.event(
                 "pattern-template-completion", **trace.context(),
                 template=row["id"], owner=owner, source=source, definition=definition,
             )
+            if trace.version in read_epochs.PATTERN_VERSIONS:
+                trace.machine_event(
+                    "pattern-template-result", trace.pid, template=row["id"],
+                    sha256=hashlib.sha256(encoded(event)).hexdigest(),
+                )
             row["definition"] = definition
 
     def selected(self, pointer):
@@ -253,8 +263,14 @@ class PatternMaterializations(PatternTemplates):
             raise read_epochs.ReadEpochError("live pattern code differs from the captured image")
         row = self.selected(registers.r12)
         target = trace.string(trace.number(registers.rbx), 4097)
+        definition = row["definition"]
+        pattern = definition["pattern"].encode("utf-8")
+        target_bytes = target.encode("utf-8") if target is not None else b""
+        percent = definition["percent"]
         if (
             not target or not trace.number(registers.rbx + self.abi["file_pattern_set_offset"])
+            or len(target_bytes) < len(pattern) - 1
+            or not target_bytes.startswith(pattern[:percent]) or not target_bytes.endswith(pattern[percent + 1:])
             or not isinstance(state.cwd, str) or not state.cwd.startswith("/")
         ):
             raise read_epochs.ReadEpochError("pattern selection lost its actual target/set/CWD")
@@ -270,6 +286,7 @@ class PatternMaterializations(PatternTemplates):
             "return": trace.bias + self.abi["completion"], "number": number,
             "object": registers.r12, "file": registers.rbx, "frame": registers.rbp,
             "template": row, "defined": False, "returned": False,
+            "target": target, "set": trace.number(registers.rbx + self.abi["file_pattern_set_offset"]),
         })
 
     def definition(self, registers):
@@ -334,6 +351,8 @@ class PatternMaterializations(PatternTemplates):
             frame["kind"] != "pattern"
             or (registers.r12, registers.rbx, registers.rbp) != (frame["object"], frame["file"], frame["frame"])
             or not registers.rdx or trace.active or trace.io
+            or trace.string(trace.number(frame["file"]), 4097) != frame["target"]
+            or trace.number(frame["file"] + self.abi["file_pattern_set_offset"]) != frame["set"]
         ):
             raise read_epochs.ReadEpochError("pattern completion substituted its actual object/target/frame")
         row = self.selected(frame["object"])

@@ -34,6 +34,14 @@ MAX_INSTRUCTIONS = 4096
 COMPLETION_VERSION = 4
 RUNTIME_VERSION = 5
 WRITABLE_VERSION = 6
+PATTERN_RUNTIME_VERSION = 7
+PATTERN_WRITABLE_VERSION = 8
+PATTERN_VERSIONS = frozenset({PATTERN_RUNTIME_VERSION, PATTERN_WRITABLE_VERSION})
+RUNTIME_VERSIONS = frozenset({RUNTIME_VERSION, WRITABLE_VERSION, *PATTERN_VERSIONS})
+WRITABLE_VERSIONS = frozenset({WRITABLE_VERSION, PATTERN_WRITABLE_VERSION})
+MACHINE_VERSIONS = frozenset({COMPLETION_VERSION, *RUNTIME_VERSIONS})
+LOCATION_VERSIONS = frozenset({3, *MACHINE_VERSIONS})
+FINITE_MACHINE_VERSIONS = frozenset({2, 4})
 
 
 class ReadEpochError(MakeProbeError):
@@ -770,6 +778,8 @@ class OriginalPass(NamedTuple):
     effects: tuple = ()
     evaluations: tuple = ()
     expansions: tuple = ()
+    pattern_templates: tuple = ()
+    patterns: tuple = ()
 
 
 class OriginalArchive(NamedTuple):
@@ -802,6 +812,44 @@ class RuntimeLocation(NamedTuple):
 
 class ExpansionLocation(NamedTuple):
     expansion: int
+
+
+class PatternLocation(NamedTuple):
+    pattern: int
+
+
+class PatternDefinition(NamedTuple):
+    pattern: str
+    length: int
+    percent: int
+    name: str
+    value: str
+    file: str
+    line: int
+    offset: int
+    flags: int
+    name_length: int
+
+
+class OriginalPatternTemplate(NamedTuple):
+    number: int
+    entry_seq: int
+    completion_seq: int
+    owner: tuple[str, int]
+    source: OriginalSource
+    definition: PatternDefinition
+
+
+class OriginalPattern(NamedTuple):
+    number: int
+    entry_seq: int
+    completion_seq: int
+    template: OriginalPatternTemplate
+    target: str
+    cwd: str
+    variable: OriginalVariable
+    definition_seq: int | None
+    return_seq: int | None
 
 
 class OriginalExpansion(NamedTuple):
@@ -837,7 +885,7 @@ class OriginalEvaluation(NamedTuple):
     entry_seq: int
     exit_seq: int
     parent: tuple[str, int]
-    location: RuntimeLocation | ExpansionLocation
+    location: RuntimeLocation | ExpansionLocation | PatternLocation
     source: OriginalSource
 
 
@@ -846,6 +894,8 @@ def runtime_location_value(value):
         return None
     if set(value) == {"expansion"}:
         return ExpansionLocation(value["expansion"])
+    if set(value) == {"pattern"}:
+        return PatternLocation(value["pattern"])
     return RuntimeLocation(
         value["visit"], value["source"], value["evaluation"], tuple(value["span"]),
         None if value["offsets"] is None else tuple(value["offsets"]),
@@ -1255,6 +1305,7 @@ def reconstruct_archive(trace, *, budget):
         for row in trace["sources"]
     }
     executions, visits, effects, evaluations, expansions = {}, {}, {}, {}, {}
+    templates, patterns = {}, {}
     for event in trace["events"]:
         budget.remaining()
         kind = event["kind"]
@@ -1262,6 +1313,7 @@ def reconstruct_archive(trace, *, budget):
             executions[event["exec"]] = {
                 "visits": [], "other": [], "image": None, "completions": [],
                 "effects": [], "evaluations": [], "expansions": [],
+                "pattern_templates": [], "patterns": [],
             }
         elif kind == "pass-entry":
             executions[event["exec"]]["entry"] = event
@@ -1316,6 +1368,30 @@ def reconstruct_archive(trace, *, budget):
                 event["expansion"], entry["seq"], event["seq"], entry["family"],
                 entry["target"], entry["text"], entry["cwd"],
             ))
+        elif kind == "pattern-template-entry":
+            templates[event["template"]] = {"entry": event}
+        elif kind == "pattern-template-completion":
+            retained = templates[event["template"]]
+            entry = retained["entry"]
+            retained["value"] = OriginalPatternTemplate(
+                event["template"], entry["seq"], event["seq"], tuple(event["owner"]),
+                sources[event["source"]], PatternDefinition(**event["definition"]),
+            )
+            executions[event["exec"]]["pattern_templates"].append(retained["value"])
+        elif kind == "pattern-entry":
+            patterns[event["pattern"]] = {"entry": event, "definition": None, "return": None}
+        elif kind == "pattern-definition":
+            patterns[event["pattern"]]["definition"] = event["seq"]
+        elif kind == "pattern-definition-return":
+            patterns[event["pattern"]]["return"] = event["seq"]
+        elif kind == "pattern-completion":
+            retained = patterns[event["pattern"]]
+            entry = retained["entry"]
+            executions[event["exec"]]["patterns"].append(OriginalPattern(
+                event["pattern"], entry["seq"], event["seq"], templates[entry["template"]]["value"],
+                entry["target"], event["cwd"], OriginalVariable(*event["variable"]),
+                retained["definition"], retained["return"],
+            ))
         elif kind == "other-open":
             executions[event["exec"]]["other"].append(OriginalOtherOpen(
                 event["seq"], event["pass"], event["visit"], event["name"], event["mode"], event["result"],
@@ -1334,7 +1410,7 @@ def reconstruct_archive(trace, *, budget):
                 number, started["parent"], started["name"], started["flags"], ended["flags"],
                 started["seq"], ended["seq"], ended["resolved"], ended["error"],
                 None if ended["source"] is None else sources[ended["source"]], tuple(visit["opens"]),
-                runtime_location_value(started.get("location")) if trace["version"] in {RUNTIME_VERSION, WRITABLE_VERSION}
+                runtime_location_value(started.get("location")) if trace["version"] in RUNTIME_VERSIONS
                 else None if started.get("location") is None else tuple(started["location"]),
             ))
         passes.append(OriginalPass(
@@ -1346,12 +1422,13 @@ def reconstruct_archive(trace, *, budget):
             tuple(sorted(value["effects"], key=lambda effect: effect.number)),
             tuple(sorted(value["evaluations"], key=lambda evaluation: evaluation.number)),
             tuple(value["expansions"]),
+            tuple(value["pattern_templates"]), tuple(value["patterns"]),
         ))
     return OriginalArchive(
         trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
-        tuple(trace["selection"]["names"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION}
+        tuple(trace["selection"]["names"]) if trace["version"] in MACHINE_VERSIONS
         else tuple(tuple(row) for row in trace.get("selection", ())),
-        tuple(trace["selection"]["inventory"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION} else (),
+        tuple(trace["selection"]["inventory"]) if trace["version"] in MACHINE_VERSIONS else (),
     )
 
 
@@ -1508,7 +1585,7 @@ def validate_native_root(value, *, argv, cwd, environment, returncode, machine=N
         row["pid"] for row in machine["events"] if row["kind"] == "execute" and row["make"]
     } != {value["pid"]}:
         raise ReadEpochError("native root report differs from its actual machine Make PID")
-    if machine is not None and machine["version"] == 2 and (
+    if machine is not None and machine["version"] in FINITE_MACHINE_VERSIONS and (
         len(machine["roots"]) != 1 or machine["roots"][0]["initial"] != value
     ):
         raise ReadEpochError("native root report differs from its actual machine root inputs")
@@ -1550,7 +1627,7 @@ def native_request_plan(value, *, count_limit, file_limit):
 def validate_native_results(value, plan, trace, *, count_limit, file_limit, output_limit, reserve):
     roots = trace["machine"].get("roots")
     if (
-        trace["machine"]["version"] != 2 or not isinstance(value, list)
+        trace["machine"]["version"] not in FINITE_MACHINE_VERSIONS or not isinstance(value, list)
         or len(value) != len(plan) or len(value) > count_limit
         or not isinstance(roots, list) or len(roots) != len(plan)
     ):
@@ -1782,8 +1859,8 @@ def native_job_context(value):
 def _machine_events(value, *, count_limit):
     if (
         not isinstance(value, dict)
-        or type(value.get("version")) is not int or value["version"] not in {1, 2}
-        or set(value) != {"version", "events", "closed"} | ({"roots"} if value["version"] == 2 else set())
+        or type(value.get("version")) is not int or value["version"] not in {1, 2, 3, 4}
+        or set(value) != {"version", "events", "closed"} | ({"roots"} if value["version"] in FINITE_MACHINE_VERSIONS else set())
         or value["closed"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
     ):
@@ -1793,7 +1870,7 @@ def _machine_events(value, *, count_limit):
 def native_machine_roots(value, trace, *, count_limit, reserve):
     roots = value["roots"]
     if (
-        trace["version"] not in {RUNTIME_VERSION, WRITABLE_VERSION}
+        trace["version"] not in RUNTIME_VERSIONS
         or not isinstance(roots, list) or not 1 <= len(roots) <= count_limit
     ):
         raise ReadEpochError("finite native machine lacks its complete root extent")
@@ -1858,7 +1935,10 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
     _machine_events(value, count_limit=count_limit)
     roots = native_machine_roots(
         value, trace, count_limit=count_limit, reserve=reserve,
-    ) if value["version"] == 2 else None
+    ) if value["version"] in FINITE_MACHINE_VERSIONS else None
+    patterns = trace["version"] in PATTERN_VERSIONS
+    if (value["version"] in {3, 4}) != patterns:
+        raise ReadEpochError("native machine version differs from the issued pattern protocol")
     def make_owner(execution):
         if roots is None:
             return make_pid
@@ -1872,7 +1952,7 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
         "native-policy": {"dispatch", "child", "context", "ignored", "status"},
     }
     purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
-    runtime = trace["version"] in {RUNTIME_VERSION, WRITABLE_VERSION}
+    runtime = trace["version"] in RUNTIME_VERSIONS
     if runtime:
         fields["execute"] |= {"input_sha256"}
         purposes |= {"effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return", "expansion-entry", "expansion-return"}
@@ -1882,13 +1962,26 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
             "expansion-input": {"expansion", "sha256"},
             "native-tree": {"dispatch", "event", "sha256"},
         })
-    if trace["version"] == WRITABLE_VERSION:
+    if trace["version"] in WRITABLE_VERSIONS:
         fields["execute"].add("admission_owner")
         fields["native-output"] = {"dispatch", "event", "sha256"}
         fields["generated-source-entry"] = {
             "visit", "owner", "serial", "revision", "path", "identity", "sha256",
         }
     runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer", "expansion-input")}
+    pattern_bindings = {
+        "pattern-template-input": ("template", "pattern-template-entry"),
+        "pattern-template-result": ("template", "pattern-template-completion"),
+        "pattern-input": ("pattern", "pattern-entry"),
+        "pattern-definition-input": ("pattern", "pattern-definition"),
+        "pattern-definition-result": ("pattern", "pattern-definition-return"),
+        "pattern-result": ("pattern", "pattern-completion"),
+    } if patterns else {}
+    for kind, (key, _) in pattern_bindings.items():
+        fields[kind] = {key, "sha256"}
+        runtime_bindings[kind] = set()
+    if patterns:
+        purposes |= {"pattern-selection", "pattern-completion", "pattern-definition-return"}
     postread_guards = set()
     armed, retired = {}, set()
     previous = 0
@@ -1974,20 +2067,24 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                         and issued.get(1, [None, None])[1] == "source-entry"
                     ) and not (
                         len(issued) == 4
-                        and context is not None and context["kind"] in {"pass-exit", "expansion-exit"}
+                        and context is not None and context["kind"] in (
+                            {"pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"pass-exit", "expansion-exit"}
+                        )
                         and issued.get(0, [None, None])[1] == "expansion-entry"
-                        and issued.get(1, [None, None])[1] == "source-entry"
+                        and issued.get(1, [None, None])[1] == ("pattern-selection" if patterns else "source-entry")
                         and issued.get(2, [None, None])[1] == "eval-entry"
                         and issued.get(3, [None, None])[1] == "effect-entry"
                     ) and not (
                         len(issued) == 4
-                        and context is not None and context["kind"] not in {"exec", "pass-exit", "expansion-exit"}
+                        and context is not None and context["kind"] not in (
+                            {"exec", "pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"exec", "pass-exit", "expansion-exit"}
+                        )
                         and issued.get(0, [None, None])[1] == "source-entry"
                         and issued.get(1, [None, None])[1] == "eval-entry"
                         and issued.get(2, [None, None])[1] == "effect-entry"
                         and issued.get(3, [None, None])[1] in {
                             "pass-return", "source-return", "eval-return", "effect-return", "effect-completion", "expansion-return",
-                        }
+                        } | ({"pattern-completion", "pattern-definition-return"} if patterns else set())
                     )
                 )
                 or registers[:4] != [issued.get(index, [0])[0] for index in range(4)]
@@ -1996,7 +2093,9 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 raise ReadEpochError("native readback differs from its issued slots/control")
             if make_pid is not None and pid != make_pid:
                 raise ReadEpochError("native arm belongs to a foreign Make child")
-            if runtime and context is not None and context["kind"] in {"pass-exit", "expansion-exit"}:
+            if runtime and context is not None and context["kind"] in (
+                {"pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"pass-exit", "expansion-exit"}
+            ):
                 if previous in postread_guards:
                     raise ReadEpochError("runtime post-read guard is repeated")
                 postread_guards.add(previous)
@@ -2029,7 +2128,7 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                         or re.fullmatch("[0-9a-f]{64}", row["input_sha256"]) is None
                     )
                 )
-                or trace["version"] == WRITABLE_VERSION and (
+                or trace["version"] in WRITABLE_VERSIONS and (
                     row["make"] and row["admission_owner"] is not None
                     or not row["make"] and (
                         not isinstance(row["admission_owner"], str)
@@ -2124,7 +2223,7 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 ):
                     raise ReadEpochError("native close_range lost its complete inherited lock bindings")
                 range_closure = (dispatch, pid, event["result"], list(expected_bindings))
-            if trace["version"] == WRITABLE_VERSION and event.get("kind") == "exit":
+            if trace["version"] in WRITABLE_VERSIONS and event.get("kind") == "exit":
                 del native_owners[pid]
                 native_cleared.discard(pid)
             native_trees[dispatch].append(event)
@@ -2215,11 +2314,11 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 ):
                     raise ReadEpochError("native exec output closure lacks its successful actual image generation")
         elif kind in runtime_bindings:
-            event_kind = {
+            event_kind = pattern_bindings[kind][1] if kind in pattern_bindings else {
                 "effect-input": "effect-entry", "effect-result": "effect-completion",
                 "eval-buffer": "eval-entry", "expansion-input": "expansion-entry",
             }[kind]
-            key = "evaluation" if kind == "eval-buffer" else "expansion" if kind == "expansion-input" else "effect"
+            key = pattern_bindings[kind][0] if kind in pattern_bindings else "evaluation" if kind == "eval-buffer" else "expansion" if kind == "expansion-input" else "effect"
             if (
                 context is None or context["kind"] != event_kind or pid != make_pid
                 or type(row[key]) is not int or row[key] <= 0
@@ -2244,7 +2343,7 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 raise ReadEpochError("generated source pin lacks its actual Make entry")
         else:
             failed_generated = (
-                trace["version"] == WRITABLE_VERSION and context is not None
+                trace["version"] in WRITABLE_VERSIONS and context is not None
                 and context["kind"] == "source-exit" and context["error"] > 0
                 and context["source"] is None and row["source"] is None
             )
@@ -2263,7 +2362,7 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 and event["source"] == row["source"]
             ]
             generated = (
-                trace["version"] == WRITABLE_VERSION and len(opens) == 1
+                trace["version"] in WRITABLE_VERSIONS and len(opens) == 1
                 and isinstance(opens[0]["custody"], dict)
                 and opens[0]["custody"]["kind"] == "native-output"
             )
@@ -2287,13 +2386,13 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
         event["visit"] for event in trace["events"]
         if event["kind"] == "source-exit" and event["source"] is not None
     }
-    if trace["version"] == WRITABLE_VERSION:
+    if trace["version"] in WRITABLE_VERSIONS:
         expected.update(
             event["visit"] for event in trace["events"]
             if event["kind"] == "source-open" and event["result"] < 0
             and isinstance(event["custody"], dict) and event["custody"].get("kind") == "native-output"
         )
-    if trace["version"] == WRITABLE_VERSION and {
+    if trace["version"] in WRITABLE_VERSIONS and {
         row["seq"] for row in value["events"] if row["kind"] == "generated-source-entry"
     } != {
         event["custody"]["entry"] for event in trace["events"]
@@ -2313,12 +2412,27 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
             "eval-exit": "eval-return",
             "expansion-entry": "expansion-entry", "expansion-exit": "expansion-return",
         })
+    if patterns:
+        trap_kinds.update({
+            "pattern-entry": "pattern-selection",
+            "pattern-definition": "effect-entry",
+            "pattern-definition-return": "pattern-definition-return",
+            "pattern-completion": "pattern-completion",
+        })
     immediate_effects = {
         event["effect"] for event in trace["events"]
         if event["kind"] == "effect-entry" and event["caller"] == "reader"
     } if runtime else set()
+    def trap_predecessor(event):
+        previous = event["seq"] - 1
+        if patterns:
+            while previous and trace["events"][previous - 1]["kind"] in {
+                "pattern-template-entry", "pattern-template-completion",
+            }:
+                previous -= 1
+        return previous
     required = {
-        (event["seq"] - 1, trap_kinds[event["kind"]])
+        (trap_predecessor(event), trap_kinds[event["kind"]])
         for event in trace["events"] if event["kind"] in trap_kinds
         and not (runtime and event["kind"] == "effect-completion" and event["effect"] in immediate_effects)
     }
@@ -2347,11 +2461,13 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
             ("effect-result", "effect", "effect-completion"),
             ("eval-buffer", "evaluation", "eval-entry"),
             ("expansion-input", "expansion", "expansion-entry"),
-        )
+        ) + tuple((kind, key, event_kind) for kind, (key, event_kind) in pattern_bindings.items())
     ):
         raise ReadEpochError("runtime machine observations omit effect/eval payload bindings")
     if runtime and postread_guards != {
-        event["seq"] for event in trace["events"] if event["kind"] in {"pass-exit", "expansion-exit"}
+        event["seq"] for event in trace["events"] if event["kind"] in (
+            {"pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"pass-exit", "expansion-exit"}
+        )
     }:
         raise ReadEpochError("runtime machine observations omit the actual post-read guard")
     if runtime:
@@ -2368,10 +2484,10 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 events, {
                     "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
                     "executable": first["path"], "terminal_status": last["status"],
-                    **({"admission": first.get("admission")} if trace["version"] == WRITABLE_VERSION else {}),
+                    **({"admission": first.get("admission")} if trace["version"] in WRITABLE_VERSIONS else {}),
                 }, make_owner(native_roots[dispatch]["exec"]), {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
                 count_limit=count_limit,
-                writable=trace["version"] == WRITABLE_VERSION,
+                writable=trace["version"] in WRITABLE_VERSIONS,
             )
     return value
 
@@ -2386,16 +2502,18 @@ def _read_event_keys(version):
         "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
         "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
     }
-    if version in {3, COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION}:
+    if version in LOCATION_VERSIONS:
         keys["source-entry"] |= {"location"}
     if version in {3, COMPLETION_VERSION}:
         keys["assignment-completion"] = {
             "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
         }
-    if version in {COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION}:
+    if version in MACHINE_VERSIONS:
         keys["source-open"] |= {"path", "custody"}
-    if version in {RUNTIME_VERSION, WRITABLE_VERSION}:
+    if version in RUNTIME_VERSIONS:
         keys["complete"] |= {"effects", "evaluations", "expansions"}
+    if version in PATTERN_VERSIONS:
+        keys["complete"] |= {"templates", "patterns", "pattern_returns"}
     return keys
 
 
@@ -3175,7 +3293,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
 def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
     if (
         set(value) != {"version", "scope", "events", "sources", "complete", "selection", "machine"} | (
-            {"output_authority"} if value["version"] == WRITABLE_VERSION else set()
+            {"output_authority"} if value["version"] in WRITABLE_VERSIONS else set()
         )
         or value["scope"] != scope or value["complete"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
@@ -3210,6 +3328,8 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         snapshots[row["id"]] = (row, data)
 
     stack, opens, opened_paths, evaluations, effects, expansions = [], {}, {}, {}, {}, {}
+    templates, patterns = {}, {}
+    pattern_protocol = value["version"] in PATTERN_VERSIONS
     source_kinds, basic = {}, []
     common = {"seq", "kind", "exec", "pass"}
     fields = {
@@ -3221,9 +3341,25 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         "expansion-entry": {"expansion", "family", "target", "text", "cwd"},
         "expansion-exit": {"expansion"},
     }
-    basic_fields = _read_event_keys(RUNTIME_VERSION)
+    if pattern_protocol:
+        fields.update({
+            "pattern-template-entry": {"template", "owner"},
+            "pattern-template-completion": {"template", "owner", "source", "definition"},
+            "pattern-entry": {"pattern", "template", "target", "cwd"},
+            "pattern-definition": {"pattern", "name", "value", "flavor", "origin"},
+            "pattern-definition-return": {"pattern", "variable"},
+            "pattern-completion": {"pattern", "cwd", "variable"},
+        })
+    basic_fields = _read_event_keys(value["version"])
 
     def location(row):
+        if pattern_protocol and isinstance(row, dict) and set(row) == {"pattern"}:
+            if (
+                type(row["pattern"]) is not int or not stack or stack[0] != ("pattern", row["pattern"])
+                or any(frame[0] in {"source", "eval"} for frame in stack)
+            ):
+                raise ReadEpochError("runtime eval borrowed a foreign pattern root")
+            return
         if isinstance(row, dict) and set(row) == {"expansion"}:
             if (
                 type(row["expansion"]) is not int
@@ -3243,7 +3379,9 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         sources = [frame for frame in stack if frame[0] == "source"]
         if (
             sources and sources[-1][1] != row["visit"]
-            or not sources and (row["visit"] is not None or not stack or stack[0][0] != "expansion")
+            or not sources and (row["visit"] is not None or not stack or stack[0][0] not in (
+                {"expansion", "pattern"} if pattern_protocol else {"expansion"}
+            ))
         ):
             raise ReadEpochError("runtime location belongs to another active reader")
         data = snapshots[row["source"]][1]
@@ -3279,10 +3417,126 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             if (
                 set(event) != common | fields[kind]
                 or any(type(event[key]) is not int for key in ("exec", "pass"))
-                or context != (event["exec"], event["pass"]) or not stack and kind != "expansion-entry"
+                or context != (event["exec"], event["pass"]) or not stack and kind not in {"expansion-entry", "pattern-entry"}
             ):
                 raise ReadEpochError("runtime event has a foreign pass or wire shape")
-            if kind == "expansion-entry":
+            if kind.startswith("pattern-template-"):
+                number = event["template"]
+                parsers = [frame for frame in stack if frame[0] in {"source", "eval"}]
+                if (
+                    type(number) is not int or not parsers or event["owner"] != list(parsers[-1])
+                ):
+                    raise ReadEpochError("pattern template borrowed a foreign parser occurrence")
+                if kind == "pattern-template-entry":
+                    if number != len(templates) + 1:
+                        raise ReadEpochError("pattern template reused an issued ID")
+                    templates[number] = {"entry": event, "completion": None}
+                else:
+                    retained = templates.get(number)
+                    owner = tuple(event["owner"])
+                    source = opens.get(owner[1]) if owner[0] == "source" else evaluations[owner[1]]["source"]
+                    definition = event["definition"]
+                    if (
+                        retained is None or retained["completion"] is not None
+                        or retained["entry"]["owner"] != event["owner"]
+                        or retained["entry"]["exec"] != event["exec"]
+                        or type(event["source"]) is not int or event["source"] != source
+                        or source not in snapshots
+                        or not isinstance(definition, dict) or set(definition) != set(PatternDefinition._fields)
+                    ):
+                        raise ReadEpochError("pattern completion substituted source/version/owner fields")
+                    for key, maximum in (("pattern", 4096), ("name", 128), ("value", file_limit), ("file", 4096)):
+                        text = definition[key]
+                        if (
+                            not isinstance(text, str) or "\0" in text
+                            or any(0xD800 <= ord(char) <= 0xDFFF for char in text)
+                            or len(text.encode("utf-8")) > maximum
+                            or key != "value" and not text
+                        ):
+                            raise ReadEpochError("pattern template has unbounded completed fields")
+                    if (
+                        any(type(definition[key]) is not int for key in ("length", "percent", "line", "offset", "flags", "name_length"))
+                        or definition["length"] != len(definition["pattern"].encode("utf-8"))
+                        or "%" not in definition["pattern"] or definition["line"] < 1 or definition["offset"] < 0
+                        or not 0 <= definition["percent"] < definition["length"]
+                        or definition["pattern"].encode("utf-8")[definition["percent"]:definition["percent"] + 1] != b"%"
+                        or definition["name_length"] != len(definition["name"].encode("utf-8"))
+                        or not 0 <= definition["flags"] < 1 << 31
+                        or not 1 <= (definition["flags"] >> 23) & 7 <= 6
+                        or (definition["flags"] >> 26) & 7 > 6
+                    ):
+                        raise ReadEpochError("pattern template has invalid captured layout values")
+                    retained["completion"] = event
+            elif kind == "pattern-entry":
+                number, template = event["pattern"], event["template"]
+                retained = templates.get(template) if type(template) is int else None
+                if (
+                    stack or type(number) is not int or number != len(patterns) + 1
+                    or retained is None or retained["completion"] is None
+                    or retained["completion"]["exec"] != event["exec"]
+                    or not isinstance(event["target"], str) or not event["target"]
+                    or any(0xD800 <= ord(char) <= 0xDFFF for char in event["target"])
+                    or "\0" in event["target"] or len(event["target"].encode("utf-8")) > 4096
+                    or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
+                    or any(0xD800 <= ord(char) <= 0xDFFF for char in event["cwd"])
+                    or "\0" in event["cwd"] or len(event["cwd"].encode("utf-8")) > 4096
+                ):
+                    raise ReadEpochError("pattern materialization lacks a completed current-exec template/target")
+                definition = retained["completion"]["definition"]
+                pattern, target = definition["pattern"].encode("utf-8"), event["target"].encode("utf-8")
+                percent = definition["percent"]
+                if (
+                    len(target) < len(pattern) - 1 or not target.startswith(pattern[:percent])
+                    or not target.endswith(pattern[percent + 1:])
+                ):
+                    raise ReadEpochError("pattern materialization target differs from its actual stem selection")
+                patterns[number] = {"entry": event, "definition": None, "return": None, "completion": None}
+                stack.append(("pattern", number))
+                basic.append({"seq": len(basic) + 1, "kind": "pattern-entry", "exec": event["exec"], "pass": event["pass"], "pattern": number})
+            elif kind in {"pattern-definition", "pattern-definition-return", "pattern-completion"}:
+                number = event["pattern"]
+                expected = "pattern-effect" if kind == "pattern-definition-return" else "pattern"
+                if type(number) is not int or not stack or stack[-1] != (expected, number) or number not in patterns:
+                    raise ReadEpochError("pattern effect retired across an active occurrence")
+                materialized = patterns[number]
+                definition = templates[materialized["entry"]["template"]]["completion"]["definition"]
+                flavor, origin = (definition["flags"] >> 23) & 7, (definition["flags"] >> 26) & 7
+                if kind == "pattern-definition":
+                    if (
+                        flavor == 1 or materialized["definition"] is not None
+                        or (event["name"], event["value"], event["flavor"], event["origin"])
+                        != (definition["name"], definition["value"], flavor, origin)
+                        or type(event["flavor"]) is not int or type(event["origin"]) is not int
+                    ):
+                        raise ReadEpochError("pattern definition substituted its captured inputs/flavor")
+                    materialized["definition"] = event
+                    stack.append(("pattern-effect", number))
+                elif kind == "pattern-definition-return":
+                    variable = variable_row(event["variable"])
+                    if (
+                        materialized["definition"] is None or materialized["return"] is not None
+                        or flavor == 1 or variable[0] != definition["name"]
+                    ):
+                        raise ReadEpochError("pattern definition return lost its effective binding")
+                    materialized["return"] = event
+                    stack.pop()
+                else:
+                    variable = variable_row(event["variable"])
+                    if (
+                        materialized["completion"] is not None
+                        or (materialized["definition"] is not None) != (flavor != 1)
+                        or (materialized["return"] is not None) != (flavor != 1)
+                        or variable[0] != definition["name"]
+                        or variable[2] & 0x60000088 != definition["flags"] & 0x60000088
+                        or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
+                        or any(0xD800 <= ord(char) <= 0xDFFF for char in event["cwd"])
+                        or "\0" in event["cwd"] or len(event["cwd"].encode("utf-8")) > 4096
+                    ):
+                        raise ReadEpochError("pattern completion lost its branch/return/effective modifiers")
+                    materialized["completion"] = event
+                    stack.pop()
+                    basic.append({"seq": len(basic) + 1, "kind": "pattern-exit", "exec": event["exec"], "pass": event["pass"], "pattern": number})
+            elif kind == "expansion-entry":
                 number = event["expansion"]
                 if (
                     stack or type(number) is not int or number != len(expansions) + 1
@@ -3379,6 +3633,11 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                 number = event["evaluation"]
                 if type(number) is not int or stack[-1] != ("eval", number) or evaluations[number]["source"] != event["source"]:
                     raise ReadEpochError("runtime eval retired across an active occurrence")
+                if any(
+                    row["entry"]["owner"] == ["eval", number] and row["completion"] is None
+                    for row in templates.values()
+                ):
+                    raise ReadEpochError("runtime eval retired an incomplete pattern template")
                 stack.pop()
             continue
         if (
@@ -3398,7 +3657,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             stack.append(("pass", event["pass"]))
         elif kind == "source-entry":
             parent_location = row.pop("location", None)
-            if any(frame[0] in {"source", "expansion"} for frame in stack):
+            if any(frame[0] in {"source", "expansion", "pattern"} for frame in stack):
                 location(parent_location)
             elif parent_location is not None:
                 raise ReadEpochError("runtime root reader borrowed an include location")
@@ -3419,7 +3678,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                     if entry is None or entry["mode"] != captured["mode"] or entry["size"] != captured["bytes"] or entry["sha256"] != captured["sha256"]:
                         raise ReadEpochError("runtime file differs from frozen immutable inventory")
                 elif (
-                    value["version"] == WRITABLE_VERSION and isinstance(custody, dict)
+                    value["version"] in WRITABLE_VERSIONS and isinstance(custody, dict)
                     and set(custody) == {"kind", "entry"} and custody["kind"] == "native-output"
                     and type(custody["entry"]) is int
                     and 1 <= custody["entry"] <= len(value["machine"]["events"])
@@ -3448,7 +3707,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                 source_kinds[source] = "file"
             elif path is not None or custody is not None:
                 if (
-                    value["version"] != WRITABLE_VERSION or event["source"] is not None
+                    value["version"] not in WRITABLE_VERSIONS or event["source"] is not None
                     or event["identity"] is not None or not isinstance(path, str)
                     or not isinstance(custody, dict) or set(custody) != {"kind", "entry"}
                     or custody["kind"] != "native-output" or type(custody["entry"]) is not int
@@ -3468,6 +3727,11 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             expected = ("source", event["visit"]) if kind == "source-exit" else ("pass", event["pass"])
             if not stack or stack[-1] != expected:
                 raise ReadEpochError("runtime reader/pass retired across an active invocation")
+            if any(
+                row["entry"]["owner"] == list(expected) and row["completion"] is None
+                for row in templates.values()
+            ):
+                raise ReadEpochError("runtime reader retired an incomplete pattern template")
             if kind == "source-exit" and event["source"] is not None and (
                 not isinstance(event["resolved"], str)
                 or _resolved_source_path(event["resolved"]) != "/repo/" + opened_paths[event["visit"]]
@@ -3486,6 +3750,16 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             row.pop("effects")
             row.pop("evaluations")
             row.pop("expansions")
+            if pattern_protocol:
+                if (
+                    any(type(event.get(key)) is not int for key in ("templates", "patterns", "pattern_returns"))
+                    or event["templates"] != len(templates) or event["patterns"] != len(patterns)
+                    or event["pattern_returns"] != sum(item["return"] is not None for item in patterns.values())
+                    or any(item["completion"] is None for item in (*templates.values(), *patterns.values()))
+                ):
+                    raise ReadEpochError("runtime terminal counters omit actual pattern occurrences")
+                for key in ("templates", "patterns", "pattern_returns"):
+                    row.pop(key)
         row["seq"] = len(basic) + 1
         basic.append(row)
     if set(source_kinds) != set(snapshots):
@@ -3503,17 +3777,18 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
     _validate_captured_read_events(
         {"version": 2, "scope": scope, "events": basic, "sources": list(basic_sources.values()), "complete": True},
         basic_sources, basic_data,
-        scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve, expansion_projection=True,
+        scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve,
+        expansion_projection=True, pattern_projection=pattern_protocol,
     )
     reserve(len(encoded(value["machine"])))
     validate_machine_observations(value["machine"], value, count_limit=count_limit, reserve=reserve)
-    if value["version"] == WRITABLE_VERSION:
+    if value["version"] in WRITABLE_VERSIONS:
         validate_native_output_authority(value, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return value
 
 
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
-    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] in {RUNTIME_VERSION, WRITABLE_VERSION}:
+    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] in RUNTIME_VERSIONS:
         return validate_runtime_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return _validate_read_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
 
@@ -3558,7 +3833,7 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
 
 def _validate_captured_read_events(
     value, sources, source_data, scope, *, count_limit, file_limit, reserve,
-    expansion_projection=False,
+    expansion_projection=False, pattern_projection=False,
 ):
     """Validate lifetimes using bytes already checked by the enclosing trace decoder."""
     source_indexes = {}
@@ -3603,6 +3878,11 @@ def _validate_captured_read_events(
             "expansion-entry": {"exec", "pass", "expansion"},
             "expansion-exit": {"exec", "pass", "expansion"},
         })
+    if pattern_projection:
+        keys.update({
+            "pattern-entry": {"exec", "pass", "pattern"},
+            "pattern-exit": {"exec", "pass", "pattern"},
+        })
     for sequence, event in enumerate(value["events"], 1):
         if (
             terminal or not isinstance(event, dict) or not isinstance(event.get("kind"), str)
@@ -3637,15 +3917,16 @@ def _validate_captured_read_events(
             continue
         if type(event["exec"]) is not int or event["exec"] != execs or type(event["pass"]) is not int:
             raise ReadEpochError("original read event has a foreign exec/pass")
-        if kind in {"expansion-entry", "expansion-exit"}:
-            if in_pass or active or not passes or event["pass"] != passes or type(event["expansion"]) is not int or event["expansion"] < 1:
+        if kind in {"expansion-entry", "expansion-exit", "pattern-entry", "pattern-exit"}:
+            key = "pattern" if kind.startswith("pattern-") else "expansion"
+            if in_pass or active or not passes or event["pass"] != passes or type(event[key]) is not int or event[key] < 1:
                 raise ReadEpochError("postread source interval crossed its original pass")
-            if kind == "expansion-entry":
+            if kind.endswith("-entry"):
                 if expansion is not None:
                     raise ReadEpochError("postread source intervals overlap")
-                expansion = event["expansion"]
+                expansion = (key, event[key])
             else:
-                if expansion != event["expansion"]:
+                if expansion != (key, event[key]):
                     raise ReadEpochError("postread source interval has a foreign return")
                 expansion = None
             continue

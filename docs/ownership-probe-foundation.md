@@ -3004,36 +3004,71 @@ ROM/RAM/save/localization or modern/archival compiler changes. Its only
 dependencies are the existing trusted runtime closure, native-input cache,
 budget and session/view cleanup; no new service or registry is required.
 
-### Source-bound pattern component (integration incomplete)
+### Source-bound pattern observation (original qualification incomplete)
 
 The internal `pattern_templates` component derives the actual GNU Make 4.3
 pattern list, field layout, selection site, both definition callers and shared
-post-modifier completion from the captured ELF. It does not select or issue a
-new public trace version. Runtime 5 and writable 6 remain unchanged and
-fail closed on the unsupported pattern-materialization wire. Full ABI admission,
-native trace scheduling, versioned runtime/machine replay, archive reconstruction
-and host/public consumers must land together before this component is enabled.
+post-modifier completion from the captured ELF. Select `observe_patterns=True`
+on the existing native readonly, writable or finite-cohort request, with
+read and runtime completion observation enabled. This explicitly issues runtime
+7 or writable 8 and adds a captured-image `patterns` ABI to the existing request.
+Machine 3 is the single-root form; machine 4 carries finite roots. Legacy runtime
+5/writable 6 and machine 1/2 remain the defaults and reject the new semantic
+shapes rather than silently accepting them. No additional feature service or
+authority registry is introduced.
 
 From a clean Linux x86-64 checkout with the existing namespace launcher, run
 `python3 -m unittest scripts.validation_ownership.tests.test_pattern_templates -v`.
 The required native runner and existing indexed native case include this module.
 Its finite controls require complete length-sorted topology discovery even when
 new objects appear after retained ones; immutable complete fields are stored once
-but the selected live object is fully decoded again. A changed selected value,
+but the selected live object is fully decoded again. The actual suffix-pointer
+offset selects the wildcard, including an escaped literal percent before it;
+selection validates the live target's stem and completion retains its actual
+file/pattern-set binding. A changed selected value,
 cyclic or disappearing object, changed ordering, missing source/owner and
 incomplete exec retirement must refuse. Reused addresses after retirement get
 new IDs without restarting accounting. No stat-only source identity or refund is
-admitted.
+admitted. Every actual memory transfer, semantic event, machine payload and
+hardware observation remains charged to the existing cumulative limits. The
+final four-slot plan is selected before one programming/readback sequence;
+there is no transient extra arm or quota/count reset.
 
 The native component case runs ordinary and supervised Make with two included
 eval definitions plus a partially allocated enclosing pattern and nested eval.
 Require identical exit/stdout/stderr, four completed templates with four distinct
 source occurrences, the enclosing source owner retained across the nested eval,
-and complete owned cleanup. The test-only event collector does not issue native
-trace authority. This component proof is not public pattern replay, generated
-producer-version qualification, original scanner/compiler or inherited `.dep`
-execution, all 551 outputs, or the original initial-plus-eight cohort. Resource
-limits and every original acceptance and delivery hold remain unchanged.
+and complete owned cleanup. The test-only collector in that component case does
+not issue native trace authority. The public nine-target case separately requires
+18 materializations, 16 non-simple definition returns and two simple completions,
+all five admitted flavors, private/export/override, nested eval/include, identical
+ordinary exit/stdout/stderr, runtime/machine replay and typed archive reconstruction.
+`OriginalPass.pattern_templates` retains `OriginalPatternTemplate` records joined
+to actual captured `OriginalSource` and source/eval occurrence; `patterns` retains
+`OriginalPattern` results with actual target, effective variable and optional
+non-simple definition/return sequences. `PatternLocation` remains distinct from
+ordinary `RuntimeLocation` and `ExpansionLocation`. Pattern observations are not
+ordinary authored assignments.
+
+The same module exercises parsed replay mutations of source/owner/template IDs,
+version disagreement, terminal counts, wrong flavor/input/effective modifiers,
+missing return, payloads and unissued traps. Actual stopped-process controls
+change the live template through kernel ptrace and corrupt callback/restored
+register vectors; all must explicitly refuse and clean their owned process tree.
+Admission controls replace list/layout/caller ABI fields or mismatch requested
+versions and require refusal. An escaped-percent fixture must bind the second
+percent as its wildcard, not the literal first percent.
+
+Run the finite-root case with two different command-line profiles; require
+different real stdout, distinct cumulative template IDs/occurrences, machine 4
+root boundaries and rejection of cross-root template borrowing. The generated
+source case builds its native writer, includes two same-floc generated versions,
+and separately exercises missing-include Make reexec. Require exact generated
+bytes/mode, distinct captured content and producer leases, post-reexec address
+retirement, real materialization, writable 8/machine 3 replay and owned cleanup.
+These finite fixtures do not qualify the original scanner/compiler or inherited
+`.dep` execution, all 551 outputs, or the original initial-plus-eight cohort.
+Resource limits and every original acceptance and delivery hold remain unchanged.
 
 Dependencies are the existing captured ELF, native source/eval invocation stack,
 source snapshots and cumulative budget. There are no new services, registries,
