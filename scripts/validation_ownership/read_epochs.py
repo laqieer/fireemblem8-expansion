@@ -2007,6 +2007,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"] or base64.b64encode(data).decode() != row["data"]:
             raise ReadEpochError("runtime source differs from captured pristine bytes")
         snapshots[row["id"]] = (row, data)
+        indexes[row["id"]] = _statement_index(data, count_limit=count_limit, reserve=reserve, compact=True)
 
     stack, opens, opened_paths, evaluations, effects, expansions = [], {}, {}, {}, {}, {}
     source_kinds, basic = {}, []

@@ -1949,6 +1949,31 @@ class FoundationTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
             index[1]
 
+    def test_runtime_archive_unreferenced_sources_reject_invalid_bytes(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "all: ; @v=owned; printf '%s' \"$${v}\"\n")
+        self.add("unused.mk", "# unused source\n")
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            original = observed["read_trace"]
+            for data in (b"# bad\0source\n", b"# bad\xffsource\n"):
+                changed = json.loads(json.dumps(original))
+                changed["sources"].append({
+                    "id": len(changed["sources"]) + 1, "mode": 0o644, "bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "data": base64.b64encode(data).decode(),
+                })
+                with self.subTest(data=data), self.assertRaises((read_epochs.ReadEpochError, UnicodeDecodeError)):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+        self.assert_clean(session)
+
     def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
         import tracemalloc
         from scripts.validation_ownership import make_lexical, read_epochs
