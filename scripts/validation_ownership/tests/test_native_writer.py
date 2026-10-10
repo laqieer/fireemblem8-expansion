@@ -610,6 +610,115 @@ class NativeWriterTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_native_compiler_cohort_binds_each_original_profile_to_its_actual_root(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("src/query.c", '#include "query.h"\nint value = VALUE;\n')
+        self.add("include/query.h", "#define VALUE 7\n")
+        setup = self.session()
+        with setup:
+            setup._sealed_dependency_runtime()
+            driver, frontend = setup.dependency_compiler
+        self.assert_clean(setup)
+        output = "query-$(FE8_ITEM_ID_CAP).d"
+        outputs = ("query-0xCD.d", "query-0xCE.d")
+        resources = ()
+        recipe = (driver +
+                  " -E -MM -MG -nostdinc -undef -MT query.o -Iinclude src/query.c > " + output)
+        self.add("Makefile", ".PHONY: all\nall:\n\t@" + recipe +
+                 "\n\t@v=owned; printf '%s' '$(FE8_ITEM_ID_CAP)'\n")
+        class Commands:
+            selected = outputs[0]
+            def __getitem__(owner, argv):
+                if argv[0] == "/bin/sh" and argv[1] == "-c" and argv[2] in {
+                    recipe.replace("$(FE8_ITEM_ID_CAP)", cap) for cap in ("0xCD", "0xCE")
+                }:
+                    owner.selected = argv[2].rsplit(" > ", 1)[1]
+                    return Command(argv, outputs=(owner.selected,), native_resources=resources)
+                if argv[0] in {driver, frontend}:
+                    return Command(argv, sources=("src/query.c",), code=("include/query.h",),
+                                   directories=("src", "include"), outputs=(owner.selected,),
+                                   native_resources=resources)
+                if argv in {( "/bin/sh", "-c", "v=owned; printf '%s' '" + cap + "'")
+                            for cap in ("0xCD", "0xCE")}:
+                    return Command(argv)
+                raise KeyError(argv)
+        session = self.session(runtime_files=(
+            "/proc/filesystems", "/proc/mounts", "/etc/selinux/config",
+        ))
+        with session:
+            session._sealed_dependency_runtime()
+            deadline, limits = session.budget.deadline, session.budget.limits
+            results, observed = session._native_make_cohort(tuple(
+                ("all", "Makefile", (
+                    ("command-line", "PYTHON", "python3"),
+                    ("command-line", "FE8_ITEM_ID_CAP", cap),
+                    ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", str(index)),
+                    ("command-line", "MODERN_BUILD_ROOT", "build/original-" + cap),
+                    ("command-line", "ASSET_MANIFEST", "assets/manifest.json" if not index
+                     else "assets/manifests/custom-spell-reference.json"),
+                ))
+                for index, cap in enumerate(("0xCD", "0xCE"))
+            ), variables=("FE8_ITEM_ID_CAP",), commands=Commands(),
+                writable_outputs=outputs, native_resources=resources,
+                native_executables=(driver, frontend))
+            self.assertEqual([result.stdout for result, _, _ in results], [b"0xCD", b"0xCE"])
+            self.assertEqual([semantics["domains"]["FE8_ITEM_ID_CAP"]["value"]
+                              for _, semantics, _ in results], ["0xCD", "0xCE"])
+            self.assertEqual([[(file.path, file.data) for file in files] for _, _, files in results],
+                             [[(outputs[0], b"query.o: src/query.c include/query.h\n")],
+                              [(name, b"query.o: src/query.c include/query.h\n") for name in outputs]])
+            archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+            self.assertEqual([dict(actor.environment)["FE8_ITEM_ID_CAP"]
+                              for actor in archive.compiler_executions],
+                             ["0xCD", "0xCD", "0xCE", "0xCE"])
+            roots = observed["read_trace"]["machine"]["roots"]
+            self.assertEqual(len(roots), 2)
+            self.assertNotEqual(roots[0]["initial"]["pid"], roots[1]["initial"]["pid"])
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertIs(session.budget.limits, limits)
+            trace = observed["read_trace"]
+            for field in ("FE8_ITEM_ID_CAP", "MAKEFLAGS", "MAKEOVERRIDES"):
+                changed = json.loads(json.dumps(trace))
+                row = next(row for row in changed["machine"]["events"]
+                           if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"
+                           and row["event"]["path"] == frontend and row["exec"] >= roots[1]["first_exec"])
+                row["event"]["admission"]["compiler"]["environment"][field] = "foreign"
+                row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                with self.subTest(replay=field), self.assertRaises(MakeProbeError):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+        self.assert_clean(session)
+        from scripts.validation_ownership.producer_channel import ProducerChannel
+        for defect in ("missing-final-output", "foreign-root"):
+            session = self.session()
+            received = ProducerChannel.receive
+            mutated = []
+            def receive(channel):
+                data = received(channel)
+                if data is None or defect != "foreign-root":
+                    return data
+                value = json.loads(data)
+                if value.get("root") == 2 and not mutated:
+                    value["root"] = 1
+                    mutated.append(True)
+                    return encoded(value)
+                return data
+            with self.subTest(actual=defect), session, patch.object(ProducerChannel, "receive", receive):
+                session._sealed_dependency_runtime()
+                with self.assertRaisesRegex(MakeProbeError, "retained output|root|environment|admission"):
+                    session._native_make_cohort(tuple(
+                        ("all", "Makefile", (("command-line", "FE8_ITEM_ID_CAP", cap),))
+                        for cap in ("0xCD", "0xCE")
+                    ), variables=("FE8_ITEM_ID_CAP",), commands=Commands(),
+                        writable_outputs=outputs + (("missing.d",) if defect == "missing-final-output" else ()),
+                        native_executables=(driver, frontend))
+                self.assertTrue(session.budget.failed)
+                self.assertEqual(bool(mutated), defect == "foreign-root")
+            self.assert_clean(session)
+
     def test_native_finite_cohort_captures_distinct_actual_roots_and_inputs(self):
         self.add("Makefile", (
             ".PHONY: first second\n"
@@ -636,6 +745,76 @@ class NativeWriterTests(unittest.TestCase):
             self.assertEqual([row["initial"]["wait"] for row in roots], [0, 0])
             self.assertEqual(roots[0]["last"] + 1, roots[1]["first"])
             self.assertEqual([generated for _, _, generated in results], [(), ()])
+        self.assert_clean(session)
+
+    def test_native_root_boundary_replay_requires_admitted_outputs_and_no_temporary(self):
+        from scripts.validation_ownership import read_epochs
+        recipes = {
+            "first": "printf one > scratch.tmp; rm -f scratch.tmp; printf one > first.out",
+            "second": "printf two > second.out",
+        }
+        self.add("Makefile", ".PHONY: first second\n" + "".join(
+            target + ":\n\t@" + recipe + "\n" for target, recipe in recipes.items()
+        ))
+        resources = (("temporary", "scratch.tmp"),)
+        commands = {
+            ("/bin/sh", "-c", recipe): Command(
+                ("/bin/sh", "-c", recipe), outputs=(target + ".out",), native_resources=resources,
+            ) for target, recipe in recipes.items()
+        }
+        commands[("rm", "-f", "scratch.tmp")] = Command(
+            ("rm", "-f", "scratch.tmp"), native_resources=resources,
+        )
+        session = self.session()
+        with session:
+            results, observed = session._native_make_cohort((
+                ("first", "Makefile", ()), ("second", "Makefile", ()),
+            ), commands=commands, native_executables=("/usr/bin/rm",),
+                writable_outputs=("first.out", "second.out"), native_resources=resources)
+            self.assertEqual([[(item.path, item.data) for item in files] for _, _, files in results],
+                             [[("first.out", b"one")], [("first.out", b"one"), ("second.out", b"two")]])
+            trace = observed["read_trace"]
+            for defect in ("admitted-later", "retired-later"):
+                changed = json.loads(json.dumps(trace))
+                machine = changed["machine"]
+                if defect == "admitted-later":
+                    admission = changed["output_authority"]["jobs"][0]["admission"]
+                    admission["outputs"].append("second.out")
+                    admission["owner"] = native_command_owner(
+                        admission["closure"], admission["outputs"], admission.get("resources", ()),
+                    )
+                    for row in machine["events"]:
+                        if row["kind"] == "native-tree" and row["dispatch"] == 1 and row["event"]["kind"] == "exec":
+                            if row["event"]["pid"] == changed["output_authority"]["jobs"][0]["pid"]:
+                                row["event"]["admission"] = json.loads(json.dumps(admission))
+                        elif row["kind"] == "execute" and not row["make"] and row["dispatch"] == 1:
+                            row["admission_owner"] = admission["owner"]
+                else:
+                    retirement = next(row for row in machine["events"]
+                                      if row["kind"] == "native-output" and row["event"]["kind"] == "output-retire")
+                    machine["events"].remove(retirement)
+                    execution = next(row for row in machine["events"]
+                                     if row["kind"] == "native-tree" and row["dispatch"] == 2
+                                     and row["event"]["kind"] == "exec")
+                    retirement.update({key: execution[key] for key in ("pid", "exec", "pass", "trace_seq", "dispatch")})
+                    retirement["event"].update(pid=execution["pid"], operation_owner=2)
+                    machine["events"].insert(machine["events"].index(execution) + 1, retirement)
+                    machine["roots"][0]["last"] -= 1
+                    machine["roots"][1]["first"] -= 1
+                output_sequence = 0
+                for number, row in enumerate(machine["events"], 1):
+                    row["seq"] = number
+                    if row["kind"] == "native-output":
+                        output_sequence += 1
+                        row["event"]["sequence"] = output_sequence
+                    if row["kind"] in {"native-output", "native-tree"}:
+                        row["sha256"] = hashlib.sha256(encoded(row["event"])).hexdigest()
+                with self.subTest(replay=defect), self.assertRaisesRegex(MakeProbeError, "finite native root"):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
         self.assert_clean(session)
 
     def test_native_finite_cohort_keeps_generated_versions_and_internal_reexec(self):

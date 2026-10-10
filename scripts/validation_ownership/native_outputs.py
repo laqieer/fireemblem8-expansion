@@ -168,7 +168,7 @@ class NativeOutputObserver:
             if publication_identity(actual) != item.identity:
                 raise NativeOutputError("native exec retained a different output descriptor object")
 
-    def finish(self):
+    def finish(self, *, required_outputs=None):
         self.custody.finish()
         if self.policy.mode == "make":
             if __package__:
@@ -176,7 +176,7 @@ class NativeOutputObserver:
             else:
                 from native_resources import validate_terminal_resources
             validate_terminal_resources(
-                self.policy.config["native_output_paths"],
+                self.policy.config["native_output_paths"] if required_outputs is None else required_outputs,
                 self.policy.config.get("native_resources", ()), self.custody.objects,
             )
 
