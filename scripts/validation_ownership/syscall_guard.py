@@ -1091,6 +1091,12 @@ class Policy:
                 compiler_profile=self.native_compiler,
                 compiler_sources=tuple(row["path"] for row in self.read_trace.selection["inventory"]),
                 reserve=self.charge_metadata,
+                expected_environment=(
+                    read_epochs.compiler_make_environment({
+                        name: value for name, value in self.config["environment"].items()
+                        if name != "LD_PRELOAD" and not name.startswith("VO_")
+                    }, self.config["argv"]) if self.native_compiler is not None else None
+                ),
             )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
@@ -2135,7 +2141,10 @@ class Policy:
         if image not in executables:
             raise Violation("dependency compiler environment lacks its issued image")
         read_epochs.compiler_environment(
-            environment, dict(native_compiler.environment) if native_compiler is not None else self.config["environment"],
+            environment, read_epochs.compiler_make_environment({
+                name: value for name, value in self.config["environment"].items()
+                if name != "LD_PRELOAD" and not name.startswith("VO_")
+            }, self.config["argv"]) if native_compiler is not None else self.config["environment"],
             frontend=image == executables[1],
             driver=native_compiler.driver if native_compiler is not None else self.config["argv"][0],
         )
@@ -3065,6 +3074,7 @@ def supervise(config, drop_privileges):
             "scope": config["producer_scope"],
             "sequence": sequence, "path": path, **inputs, "counters": policy.counters(),
             **({} if context is None else context),
+            **({"root": request_index + 1} if policy.native_compiler is not None and finite_plan is not None else {}),
         }
         raw = channel.exchange(
             encoded(request), watch=(processes[policy.make_pid].pidfd,),

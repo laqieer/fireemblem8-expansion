@@ -2866,6 +2866,26 @@ Use the existing `commands`, `writable_outputs`, `native_resources` and sealed
 tool options for writable original jobs. No new command resolver or authority
 registry is added.
 
+The original Makefile has non-simple pattern-specific variables. Its complete
+cohort must select the shipped `observe_patterns=True` protocol; the old
+runtime-completion protocol alone does not qualify their post-read
+materialization. Do not bypass its explicit refusal or infer full pattern
+custody from a small query that does not materialize such a variable.
+
+For this part of `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`NativeWriterTests.test_native_finite_pattern_roots_remake_generated_reads_and_retire_templates`
+with the existing unittest runner. From a clean fixture, select two different
+`PROFILE` CLI values; each root remakes and reads its own generated include.
+Require `first:pattern` and `second:pattern`, empty stderr, cumulative generated
+bytes, two actual roots spanning four read passes, and typed pattern templates
+and generated-source visits in each root. The first root must not demand the
+second root's future output. Repeat the isolated negative control with pattern
+observation disabled: non-simple materialization must refuse with
+`runtime post-read effect/eval is not qualified`, a failed budget and complete
+owned cleanup. The positive root sequence retains one unchanged budget and
+deadline. This component does not replace the original initial-plus-eight
+resource and byte/mode qualification.
+
 The method returns `(results, observed)`. Each ordered result is
 `(CompletedProcess, semantics, generated_files)`: exact original argv and
 authentic per-root stdout/stderr, the existing parsed observation domains and
@@ -3258,6 +3278,28 @@ Compiler profiles derive command-line exports, MAKEFLAGS and MAKEOVERRIDES
 from the issued original Make argv. The original cap/custom/root/manifest
 tuple is supported without accepting a caller-chosen compiler-search baseline.
 Unknown loader/search overrides and nonrepresentable inheritance still refuse.
+For finite native cohorts, the existing private admission request additionally
+binds the actual root ordinal. Compiler environments derive from that root's
+issued Make argv and environment, not the first query's profile. The host
+reconciles the ordinal against the actual machine root/exec ranges; independent
+replay and typed archives use the same complete root history. Sealed compiler
+images, driver-at-fork identity and per-image operands remain unchanged.
+
+An intermediate finite root must settle every output admitted to an actual
+job so far, retire all descriptors/readers/writers, and leave no temporary
+objects. It need not produce outputs declared only for a future root.
+Final cohort validation still requires the complete global retained-output plan.
+Independent replay applies the same cumulative admitted-output and closed
+temporary/descriptor predicates at every actual root boundary, before a
+later root can complete or clean up an earlier incomplete history.
+The component case
+`NativeWriterTests.test_native_compiler_cohort_binds_each_original_profile_to_its_actual_root`
+in `test_native_writer` executes two real GCC/cc1 cap profiles under one unchanged
+budget/deadline. Require actual stdout, cumulative output bytes/modes, distinct
+root PIDs and typed compiler environments for each profile. Changed replay
+environments, a foreign private root ordinal and an omitted final output must
+reject with complete cleanup. This belongs to TC-WORKFLOW-NATIVE-MAKE-001;
+it does not qualify the complete original 2,148-source initial-plus-eight family.
 `reconstruct_archive` retains the validated profile and typed compiler executions,
 including actual environments and driver-at-fork references, in the existing
 archive. It derives them from the same closed machine/job stream; no second

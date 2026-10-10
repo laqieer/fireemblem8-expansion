@@ -1543,6 +1543,7 @@ class ProbeSession:
         sequence = 0
         completion = None
         native_authorizations = {}
+        root_context = native_compiler is not None and finite_plan is not None
         channel = None
         channel_directory = self.base / f"producer-{self.serial}"
         if producer_handler is not None or native_admission_handler is not None:
@@ -1659,10 +1660,16 @@ class ProbeSession:
                         native_compiler["driver"], native_compiler["frontend"],
                     }:
                         context["environment"] = request.get("environment")
+                if root_context:
+                    root = request.get("root")
+                    if type(root) is not int or not 1 <= root <= len(finite_plan):
+                        raise MakeProbeError("native compiler request lacks its issued root occurrence")
+                    context = dict(context or {}, root=root)
                 if (
                     set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"} | (
                         {"dispatch", "pid", "generation", "fork_parent"} if image_request else set()
                     ) | ({"environment"} if context is not None and "environment" in context else set())
+                    | ({"root"} if root_context else set())
                     or request["kind"] not in {"native-request", "native-exec-request"}
                     or type(request["sequence"]) is not int or request["sequence"] != sequence + 1
                     or request["path"] not in config["native_executables"]
@@ -1925,7 +1932,7 @@ class ProbeSession:
                     returncode=observed["returncode"],
                 )
             if read_abi is not None and observed["returncode"] == 0:
-                from .read_epochs import validate_trace
+                from .read_epochs import validate_trace, native_compiler_root_environment
                 trace, request = observed["read_trace"], config["read_epochs"]
                 if (
                     not isinstance(trace, dict) or trace.get("version") != request["version"]
@@ -2051,6 +2058,13 @@ class ProbeSession:
                                     compiler_profile=profile if native_compiler is not None else None,
                                     compiler_sources=self.snapshot.files,
                                     reserve=lambda size: self.budget.charge("control", size),
+                                    expected_environment=(
+                                        native_compiler_root_environment(
+                                            trace, job["sequence"], profile,
+                                            reserve=lambda size: self.budget.charge("control", size),
+                                        )
+                                        if native_compiler is not None else None
+                                    ),
                                 )
                                 from .read_epochs import native_fork_references
                                 fork_references = native_fork_references(
@@ -2059,9 +2073,12 @@ class ProbeSession:
                             if native_admission_handler is not None:
                                 request_id = job["admission"].get("sequence") if native_output_paths else job["sequence"]
                                 issued = native_authorizations.get(request_id)
+                                from .read_epochs import native_job_root
+                                root = native_job_root(trace, job["sequence"]) if root_context else None
+                                expected_root_context = {"root": root["ordinal"]} if root is not None else None
                                 if (
                                     issued is None or issued[:3] != (job["executable"], inputs, job["admission"])
-                                    or native_output_paths and issued[3] is not None
+                                    or native_output_paths and issued[3] != expected_root_context
                                 ):
                                     raise MakeProbeError("native job differs from its issued Command admission")
                                 if native_output_paths:
@@ -2080,6 +2097,8 @@ class ProbeSession:
                                         }
                                         if "compiler" in image:
                                             expected_context["environment"] = image["compiler"]["environment"]
+                                        if root is not None:
+                                            expected_context["root"] = root["ordinal"]
                                         if issued != (
                                             event["path"], native_execution_input(event["argv"], event["cwd"]),
                                             image, expected_context,
@@ -2991,6 +3010,14 @@ class ProbeSession:
                     raise MakeProbeError("native Command tool differs from the active issued runtime")
                 self._sealed_native_tool_bytes(command.native_tool)
             self.budget.remaining()
+            expected_environment = compiler_profile["environment"] if compiler_profile is not None else None
+            if compiler_profile is not None and context is not None and "root" in context:
+                request = native_requests[context["root"] - 1]
+                expected_environment = compiler_make_environment({
+                    name: value for name, value in request["environment"].items()
+                    if name != "LD_PRELOAD" and not name.startswith("VO_")
+                }, request["argv"])
+                self.budget.charge("control", len(encoded(expected_environment)))
             tool_identity = None
             if native_tool is not None:
                 tool_identity = (
@@ -2999,6 +3026,7 @@ class ProbeSession:
             payload = encoded([
                 self.snapshot.digest, path, runtime_identity, tool_identity,
                 inputs, command.code, sources, directories,
+                *([expected_environment] if expected_environment is not None else []),
             ])
             self.budget.charge("cache", len(payload))
             closure = hashlib.sha256(payload).hexdigest()
@@ -3009,18 +3037,18 @@ class ProbeSession:
             if compiler_profile is not None and path in self.dependency_compiler:
                 role = "driver" if path == compiler_profile["driver"] else "frontend"
                 actual_environment = (
-                    compiler_profile["environment"] if context is None else context.get("environment")
+                    expected_environment if context is None or "environment" not in context else context["environment"]
                 )
                 from .read_epochs import compiler_environment
                 compiler_environment(
-                    actual_environment, compiler_profile["environment"],
+                    actual_environment, expected_environment,
                     frontend=role == "frontend", driver=compiler_profile["driver"],
                 )
                 includes = self._dependency_arguments(
                     inputs["argv"], sources, outputs,
                     driver_spellings=("cc", "/usr/bin/cc", compiler_profile["driver"]),
                 ) if role == "driver" else ()
-                if role == "frontend" and context is None:
+                if role == "frontend" and (context is None or context.get("fork_parent") is None):
                     raise MakeProbeError("native frontend cannot be an original Make root dispatch")
                 compiler = {
                     "profile": compiler_profile["identity"], "role": role,

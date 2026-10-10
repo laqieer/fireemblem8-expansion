@@ -1084,7 +1084,11 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("finite native root ended with incomplete actual state")
         policy.finish_native_jobs()
         if policy.native_outputs is not None:
-            policy.native_outputs.finish()
+            required_outputs = set()
+            for job in policy.native_jobs.values():
+                required_outputs.update(job["admission"]["outputs"])
+            policy.charge_metadata(sys.getsizeof(required_outputs))
+            policy.native_outputs.finish(required_outputs=required_outputs)
         read_epochs.validate_native_root(
             policy.native_root, argv=self.config["argv"], cwd=self.config.get("cwd", "/repo"),
             environment=self.config["environment"], returncode=0,

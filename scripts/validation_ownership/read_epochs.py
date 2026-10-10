@@ -1668,6 +1668,9 @@ def reconstruct_archive(trace, *, budget):
                 compiler_executions.extend(native_compiler_lineage(
                     tree, job, compiler_profile, sources=inventory,
                     count_limit=budget.limits.observation_count, reserve=reserve,
+                    expected_environment=native_compiler_root_environment(
+                        trace, job["sequence"], compiler_profile, reserve=reserve,
+                    ),
                 ))
                 reserve(sys.getsizeof(compiler_executions))
         reserve(sys.getsizeof(tuple(compiler_executions)))
@@ -1947,7 +1950,43 @@ def native_compiler_profile(value, *, count_limit, reserve=lambda size: None):
     return result
 
 
-def native_compiler_lineage(events, job, profile, *, sources, count_limit, reserve=lambda size: None):
+def native_job_root(trace, dispatch):
+    roots = trace["machine"].get("roots")
+    if roots is None:
+        return None
+    execution = next((row["exec"] for row in trace["machine"]["events"]
+                      if row["kind"] == "native-tree" and row["dispatch"] == dispatch
+                      and row["event"]["kind"] == "exec"), None)
+    selected = None
+    for root in roots:
+        if execution is not None and root["first_exec"] <= execution <= root["last_exec"]:
+            if selected is not None:
+                raise ReadEpochError("native compiler job borrowed overlapping roots")
+            selected = root
+    if selected is None:
+        raise ReadEpochError("native compiler job lacks one actual root occurrence")
+    return selected
+
+
+def native_compiler_root_environment(trace, dispatch, profile, *, reserve=lambda size: None):
+    root = native_job_root(trace, dispatch)
+    if root is None:
+        values = dict(profile.environment)
+        reserve(sys.getsizeof(values))
+        return values
+    initial = root["initial"]
+    inputs = {
+        name: value for name, value in initial["environment"].items()
+        if name != "LD_PRELOAD" and not name.startswith("VO_")
+    }
+    reserve(sys.getsizeof(inputs))
+    values = compiler_make_environment(inputs, initial["argv"])
+    reserve(sys.getsizeof(values) + len(encoded(values)))
+    return values
+
+
+def native_compiler_lineage(events, job, profile, *, sources, count_limit, reserve=lambda size: None,
+                            expected_environment=None):
     """Compiler semantics after the ordinary closed native job tree is validated."""
     if not isinstance(profile, OriginalCompilerProfile):
         raise ReadEpochError("compiler lineage requires a validated issued profile")
@@ -2000,7 +2039,7 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
             ):
                 raise ReadEpochError("compiler actor has an open or foreign profile binding")
             compiler_environment(
-                binding["environment"], dict(profile.environment),
+                binding["environment"], dict(profile.environment) if expected_environment is None else expected_environment,
                 frontend=binding["role"] == "frontend", driver=profile.driver,
             )
             environment = tuple(sorted(binding["environment"].items()))
@@ -2095,7 +2134,8 @@ def native_fork_references(events, *, reserve=lambda size: None):
     return result
 
 
-def native_image_admission(admission, inputs, outputs, resources, *, resource_field, compiler_profile=None):
+def native_image_admission(admission, inputs, outputs, resources, *, resource_field, compiler_profile=None,
+                           expected_environment=None):
     if __package__:
         from .native_resources import resource_plan
     else:
@@ -2134,7 +2174,7 @@ def native_image_admission(admission, inputs, outputs, resources, *, resource_fi
         ):
             raise ReadEpochError("native compiler admission lacks its issued profile")
         compiler_environment(
-            binding["environment"], dict(compiler_profile.environment),
+            binding["environment"], dict(compiler_profile.environment) if expected_environment is None else expected_environment,
             frontend=binding["role"] == "frontend", driver=compiler_profile.driver,
         )
 
@@ -2352,7 +2392,8 @@ def validate_native_results(value, plan, trace, *, count_limit, file_limit, outp
 
 
 def native_job_tree(events, job, parent, executables, *, count_limit, writable=False,
-                    compiler_profile=None, compiler_sources=(), reserve=lambda size: None):
+                    compiler_profile=None, compiler_sources=(), reserve=lambda size: None,
+                    expected_environment=None):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")
     nodes, signals = {}, []
@@ -2431,6 +2472,7 @@ def native_job_tree(events, job, parent, executables, *, count_limit, writable=F
                     event["admission"], inputs, root_admission["outputs"],
                     root_admission.get("resources", ()), resource_field="resources" in root_admission,
                     compiler_profile=compiler_profile,
+                    expected_environment=expected_environment,
                 )
                 if number == 1 and event["admission"] != root_admission:
                     raise ReadEpochError("native root image changed its original Command owner")
@@ -2467,6 +2509,7 @@ def native_job_tree(events, job, parent, executables, *, count_limit, writable=F
         native_compiler_lineage(
             events, job, compiler_profile, sources=compiler_sources, count_limit=count_limit,
             reserve=reserve,
+            expected_environment=expected_environment,
         )
     return nodes
 
@@ -3127,6 +3170,13 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 ),
                 compiler_sources=tuple(row["path"] for row in trace["selection"]["inventory"]),
                 reserve=reserve,
+                expected_environment=(
+                    native_compiler_root_environment(
+                        trace, dispatch, native_compiler_profile(
+                            trace["output_authority"]["compiler"], count_limit=count_limit, reserve=reserve,
+                        ), reserve=reserve,
+                    ) if "compiler" in trace.get("output_authority", {}) else None
+                ),
             )
     return value
 
@@ -3245,9 +3295,15 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         job = dict(record, tree=tree)
         reserve(sys.getsizeof(job))
         admission = job["admission"]
+        expected_environment = (
+            native_compiler_root_environment(trace, number, compiler_profile, reserve=reserve)
+            if compiler_profile is not None else None
+        )
+        reserve(0 if expected_environment is None else len(encoded(expected_environment)))
         native_image_admission(
             admission, None, authority["paths"], resources, resource_field=bool(resources),
             compiler_profile=compiler_profile,
+            expected_environment=expected_environment,
         )
         for index, event in enumerate(job["tree"]):
             if not isinstance(event, dict) or not isinstance(event.get("kind"), str):
@@ -3260,6 +3316,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                     admission["outputs"], admission.get("resources", ()),
                     resource_field="resources" in admission,
                     compiler_profile=compiler_profile,
+                    expected_environment=expected_environment,
                 )
                 if index == 0 and event["admission"] != admission:
                     raise ReadEpochError("native root image changed its original Command owner")
@@ -3355,11 +3412,36 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                                    "readonly": readonly}
     number = 0
     issued_serial = 0
+    root_ends = {root["last"] for root in trace["machine"].get("roots", ())}
+    admitted_outputs = set()
+    reserve(sys.getsizeof(root_ends) + sys.getsizeof(admitted_outputs))
+    previous_machine = 0
+    def finish_root_boundary():
+        if (
+            bindings or readers or writes or parent_returns or released_locks
+            or any(lock_modes.values()) or any(not item["settled"] for item in objects.values())
+        ):
+            raise ReadEpochError("finite native root ended with incomplete output custody")
+        try:
+            validate_terminal_resources(
+                admitted_outputs, resources,
+                (item["path"] for item in objects.values() if item["path"] is not None),
+            )
+        except MakeProbeError as error:
+            raise ReadEpochError("finite native root: " + str(error)) from error
     for observation in machine:
+        if previous_machine in root_ends:
+            finish_root_boundary()
+        previous_machine = observation["seq"]
         if observation["kind"] == "native-tree":
             event = observation["event"]
             if event["kind"] == "exec":
                 process_plans[event["pid"]] = event["admission"]
+                if event["pid"] == jobs[observation["dispatch"]]["pid"]:
+                    before = sys.getsizeof(admitted_outputs)
+                    admitted_outputs.update(event["admission"]["outputs"])
+                    if sys.getsizeof(admitted_outputs) > before:
+                        reserve(sys.getsizeof(admitted_outputs))
             elif event["kind"] == "fork":
                 process_plans[event["child"]] = {}
             elif event["kind"] == "exit":
@@ -3926,6 +4008,8 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                 del bindings[(row["pid"], row["fd"])]
                 if not any(value[1] == description for value in bindings.values()):
                     lock_modes.pop(description, None)
+    if previous_machine in root_ends:
+        finish_root_boundary()
     if bindings or readers or writes or parent_returns or released_locks or any(lock_modes.values()) or any(not item["settled"] for item in objects.values()):
         raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
     try:
