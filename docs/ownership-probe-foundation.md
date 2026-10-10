@@ -42,6 +42,34 @@ actual source/job/version outcome.
 From a clean supported Linux x86-64 checkout with GNU Make 4.3, the existing
 GCC/C++ host tools and namespace/ptrace launcher:
 
+The independently complete [#287 compact statement mapping](https://github.com/laqieer/fireemblem8-expansion/issues/287)
+uses the existing `_statement_index(..., compact=True)` seam. It preserves
+all physical/logical spans and their existing statement digests while lazily
+materializing touched values. Native runtime source and eval readers use it;
+the eager default and non-runtime consumers remain unchanged. This changes
+storage, not source admission, wire formats, validation selection or authority.
+Counts, UTF-8/NUL guards, checkpoints, cumulative allocation and one-byte-short
+quota refusals remain mandatory; a warm lookup never refunds a charge.
+
+For this component, first run
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_compact_statement_mapping_preserves_full_spans_and_memoized_charges -v`.
+Require exact equivalence with the original mapping for empty/final-line,
+CRLF/LF, continuation and UTF-8 inputs, cached lookups without new charges,
+and visible invalid-byte/count/quota failures. Then run
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_runtime_compact_spans_preserve_source_and_reduce_sparse_cost scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_runtime_nested_eval_include_and_effect_lifetimes -v`.
+Require actual native stdout, pristine file/eval bytes, typed archive and
+complete owned-resource cleanup. The sparse fixture compares actual native
+observation cost against the original eager-index control; it is not a
+universal cost guarantee. Fully touched sources can incur additional
+lazy-decoding charges.
+
+This provider depends only on delivered #274 and has no gameplay/profile
+conflicts, ROM/RAM/save/locale/generated-data or archival-game effect. It does
+not require the open writable producer, compiler or pattern extensions.
+The full #270/#275/#180 initial-plus-eight workload, resource fitness and
+delivery gates remain separate; compact mapping or a readonly success is not
+that qualification. Tests reset only their own fixtures and sessions.
+
 1. Run
    `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_immutable_foundation_original_tool_source_jobs_and_budget`.
    The case compiles `tools/scanner/reader.c` through the original sealed

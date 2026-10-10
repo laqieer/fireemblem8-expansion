@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import base64
 import errno
+from array import array
 from collections import Counter
+from collections.abc import Mapping
 import hashlib
 import os
 import posixpath
@@ -1060,7 +1062,114 @@ def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=No
     raise ReadEpochError("completion physical line count differs from original source bytes")
 
 
-def _statement_index(data, *, checkpoint=lambda: None, count_limit=None, reserve=lambda size: None):
+class _CompactStatementIndex(Mapping):
+    __slots__ = ("_data", "_spans", "_count", "_reserve", "_values", "_failed")
+
+    def __init__(self, data, *, checkpoint, count_limit, reserve):
+        if not isinstance(data, bytes) or b"\0" in data:
+            raise ReadEpochError("completion source has unsupported bytes")
+        validated = data.decode("utf-8", "strict")
+        reserve(sys.getsizeof(validated))
+        del validated
+        physical_count = data.count(b"\n") + 1
+        if count_limit is not None and physical_count > count_limit:
+            raise ReadEpochError("completion physical source scan exceeds observation bound")
+        self._data, self._reserve, self._count = data, reserve, 0
+        self._failed = False
+        self._values = {}
+        reserve(sys.getsizeof(self._values))
+        seed = array("I", [0])
+        if seed.itemsize != 4 or len(data) >= 1 << 32:
+            raise ReadEpochError("physical source offsets lack bounded 32-bit storage")
+        reserve(sys.getsizeof(seed))
+        self._spans = seed * (physical_count * 4)
+        reserve(sys.getsizeof(self._spans) + sys.getsizeof(self))
+        cursor = begin = 0
+        first = 1
+        for line in range(1, physical_count + 1):
+            checkpoint()
+            end = data.find(b"\n", cursor)
+            has_lf = end >= 0
+            if not has_lf:
+                end = len(data)
+            physical_end = end - 1 if has_lf and end > cursor and data[end - 1] == 13 else end
+            slash = physical_end
+            while slash > cursor and data[slash - 1] == 92:
+                slash -= 1
+            cursor = end + 1 if has_lf else end
+            if has_lf and (physical_end - slash) % 2:
+                continue
+            base = self._count * 4
+            self._spans[base] = first
+            self._spans[base + 1] = line
+            self._spans[base + 2] = begin
+            self._spans[base + 3] = end
+            self._count += 1
+            first, begin = line + 1, cursor
+
+    def __len__(self):
+        return self._count
+
+    def __iter__(self):
+        for number in range(self._count):
+            yield self._spans[number * 4]
+
+    def __getitem__(self, key):
+        if self._failed:
+            raise ReadEpochError("compact statement memoization was not admitted")
+        if key in self._values:
+            return self._values[key]
+        candidate = hash(key)
+        lower, upper = 0, self._count
+        while lower < upper:
+            middle = (lower + upper) // 2
+            if self._spans[middle * 4] < candidate:
+                lower = middle + 1
+            else:
+                upper = middle
+        if lower == self._count or not self._spans[lower * 4] == key:
+            raise KeyError(key)
+        base = lower * 4
+        first, last, begin, end = (self._spans[base + offset] for offset in range(4))
+        chunk = self._data[begin:end]
+        decoded = chunk.decode("utf-8", "strict")
+        parts = decoded.split("\n")
+        self._reserve(
+            sys.getsizeof(chunk) + sys.getsizeof(decoded) + sys.getsizeof(parts)
+            + sum(sys.getsizeof(part) for part in parts),
+        )
+        for number, part in enumerate(parts):
+            if (number < len(parts) - 1 or end < len(self._data)) and part.endswith("\r"):
+                parts[number] = part[:-1]
+                self._reserve(sys.getsizeof(parts[number]))
+        raw = "\n".join(parts)
+        encoded_raw = raw.encode()
+        self._reserve(sys.getsizeof(raw) + sys.getsizeof(encoded_raw))
+        value = (lower + 1, first, last, hashlib.sha256(encoded_raw).hexdigest())
+        self._reserve(
+            sys.getsizeof(begin) + sys.getsizeof(end) + sys.getsizeof(value)
+            + sum(sys.getsizeof(item) for item in value),
+        )
+        table_before = sys.getsizeof(self._values)
+        self._values[first] = value
+        table_after = sys.getsizeof(self._values)
+        if table_after > table_before:
+            try:
+                self._reserve(table_after)
+            except BaseException:
+                del self._values[first]
+                self._failed = True
+                raise
+        return value
+
+
+def _statement_index(
+    data, *, checkpoint=lambda: None, count_limit=None, reserve=lambda size: None, compact=False,
+):
+    if compact:
+        return _CompactStatementIndex(
+            data, checkpoint=checkpoint, count_limit=count_limit, reserve=reserve,
+        )
     rows = {}
     reserve(sys.getsizeof(rows))
     for logical, first, last, raw in physical_statements(
