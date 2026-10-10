@@ -873,6 +873,8 @@ def platform_owner_recipe(source):
             previous = lines.pop()
             review.require(previous.startswith("\t") and not previous.endswith("\\\\"),
                            "owner continuation requires one literal recipe escape")
+            review.require("'" not in previous and '"' not in previous,
+                           "quoted owner continuation requires a reviewed model")
             lines.append(previous[:-1] + line.removeprefix("\t"))
         else:
             lines.append(line)
