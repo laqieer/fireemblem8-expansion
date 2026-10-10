@@ -719,6 +719,72 @@ class NativeWriterTests(unittest.TestCase):
                 self.assertEqual(bool(mutated), defect == "foreign-root")
             self.assert_clean(session)
 
+    def test_native_finite_pattern_roots_remake_generated_reads_and_retire_templates(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "-include $(PROFILE).mk\n"
+            "%.mk: HELPER = pattern\n"
+            "$(PROFILE).mk: ; @printf '%s\\n' 'RESULT := $(HELPER)' > $(PROFILE).mk\n"
+            ".PHONY: all\nall: ; @v=owned; printf '%s' '$(PROFILE):$(RESULT)'\n"
+        ))
+        outputs = ("first.mk", "second.mk")
+        commands = {}
+        for profile in ("first", "second"):
+            recipe = "printf '%s\\n' 'RESULT := pattern' > " + profile + ".mk"
+            argv = ("/bin/sh", "-c", recipe)
+            commands[argv] = Command(argv, outputs=(profile + ".mk",))
+            argv = ("/bin/sh", "-c", "v=owned; printf '%s' '" + profile + ":pattern'")
+            commands[argv] = Command(argv)
+        requests = tuple(
+            ("all", "Makefile", (("command-line", "PROFILE", profile),))
+            for profile in ("first", "second")
+        )
+        for patterns in (False, True):
+            session = self.session()
+            with self.subTest(patterns=patterns), session:
+                if not patterns:
+                    with self.assertRaisesRegex(
+                        MakeProbeError, "runtime post-read effect/eval is not qualified",
+                    ):
+                        session._native_make_cohort(
+                            requests, variables=("RESULT",), writable_outputs=outputs,
+                            commands=commands, observe_patterns=False,
+                        )
+                    self.assertTrue(session.budget.failed)
+                else:
+                    deadline, limits = session.budget.deadline, session.budget.limits
+                    results, observed = session._native_make_cohort(
+                        requests, variables=("RESULT",), writable_outputs=outputs,
+                        commands=commands, observe_patterns=True,
+                    )
+                    self.assertEqual([row[0].stdout for row in results],
+                                     [b"first:pattern", b"second:pattern"])
+                    self.assertEqual([row[0].stderr for row in results], [b"", b""])
+                    self.assertEqual(
+                        [[(file.path, file.data) for file in row[2]] for row in results],
+                        [[(outputs[0], b"RESULT := pattern\n")],
+                         [(name, b"RESULT := pattern\n") for name in outputs]],
+                    )
+                    trace = observed["read_trace"]
+                    archive = read_epochs.reconstruct_archive(trace, budget=session.budget)
+                    roots = trace["machine"]["roots"]
+                    self.assertEqual(len(roots), 2)
+                    self.assertEqual(len(archive.passes), 4)
+                    for root in roots:
+                        parts = archive.passes[root["first_exec"] - 1:root["last_exec"]]
+                        self.assertEqual(len(parts), 2)
+                        self.assertTrue(all(part.pattern_templates for part in parts))
+                        self.assertTrue(any(part.patterns for part in parts))
+                        visits = [visit for part in parts for visit in part.visits
+                                  if visit.source is not None and visit.name in outputs]
+                        self.assertTrue(visits)
+                        self.assertTrue(all(visit.source.data == b"RESULT := pattern\n"
+                                            for visit in visits))
+                    self.assertEqual(session.budget.deadline, deadline)
+                    self.assertIs(session.budget.limits, limits)
+                    self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
     def test_native_finite_cohort_captures_distinct_actual_roots_and_inputs(self):
         self.add("Makefile", (
             ".PHONY: first second\n"

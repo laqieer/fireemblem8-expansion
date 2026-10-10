@@ -2843,6 +2843,26 @@ Use the existing `commands`, `writable_outputs`, `native_resources` and sealed
 tool options for writable original jobs. No new command resolver or authority
 registry is added.
 
+The original Makefile has non-simple pattern-specific variables. Its complete
+cohort must select the shipped `observe_patterns=True` protocol; the old
+runtime-completion protocol alone does not qualify their post-read
+materialization. Do not bypass its explicit refusal or infer full pattern
+custody from a small query that does not materialize such a variable.
+
+For this part of `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`NativeWriterTests.test_native_finite_pattern_roots_remake_generated_reads_and_retire_templates`
+with the existing unittest runner. From a clean fixture, select two different
+`PROFILE` CLI values; each root remakes and reads its own generated include.
+Require `first:pattern` and `second:pattern`, empty stderr, cumulative generated
+bytes, two actual roots spanning four read passes, and typed pattern templates
+and generated-source visits in each root. The first root must not demand the
+second root's future output. Repeat the isolated negative control with pattern
+observation disabled: non-simple materialization must refuse with
+`runtime post-read effect/eval is not qualified`, a failed budget and complete
+owned cleanup. The positive root sequence retains one unchanged budget and
+deadline. This component does not replace the original initial-plus-eight
+resource and byte/mode qualification.
+
 The method returns `(results, observed)`. Each ordered result is
 `(CompletedProcess, semantics, generated_files)`: exact original argv and
 authentic per-root stdout/stderr, the existing parsed observation domains and
