@@ -188,6 +188,9 @@ Run `test_candidate_parser_cannot_restore_disabled_consumer_or_execute_defaults`
 with the finite review-subject tests: both candidate parser sources attempt to
 restore a disabled workflow at definition time and through forged parse results.
 Require an explicit consumer violation, not a satisfied observation.
+Restore each old parser lookup independently in an owned source-bound tool
+fixture. Each vulnerable lookup must falsely satisfy that same disabled
+consumer, so neither parser regression can pass through an unrelated mismatch.
 Only the explicit platform inventory sources move; a mixed-subject review
 retains other subjects' executable modules at their original import paths.
 A changed import
