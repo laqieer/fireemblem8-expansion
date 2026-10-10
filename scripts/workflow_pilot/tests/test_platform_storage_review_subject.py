@@ -339,6 +339,39 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                                    if item.obligation.member == reported)
                 self.assertEqual(observation.verdict, "contract-violation", observation.detail)
 
+    def test_candidate_parser_cannot_restore_disabled_consumer_or_execute_defaults(self):
+        topology = self.tools.subjects.PLATFORM_TOPOLOGY
+        conditions = self.tools.subjects.PLATFORM_CONDITIONS
+        workflow = self.tools.subjects.PLATFORM_WORKFLOW
+        original = (self.repo.root / workflow).read_text()
+        command = "      run: make -f " + self.tools.subjects.PLATFORM_MAKE + " ownership-probe-test"
+        disabled = original.replace(command, "      if: false\n" + command)
+        self.assertNotEqual(original, disabled)
+        for parser, name in ((topology, "_job_blocks"), (conditions, "workflow_condition")):
+            parsed = ast.parse((self.repo.root / parser).read_bytes())
+            function = next(node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                            and node.name == name)
+            if parser == topology:
+                function.body.insert(0, ast.Assign(
+                    targets=[ast.Name(id=function.args.args[0].arg, ctx=ast.Store())],
+                    value=ast.Constant(original),
+                ))
+            else:
+                function.body = ast.parse("return True").body
+            function.args.defaults.append(ast.parse(
+                "__import__('pathlib').Path('.github/workflows/build.yml').write_text(" +
+                repr(original) + ")", mode="eval",
+            ).body)
+            function.args.args.append(ast.arg(arg="candidate_default"))
+            head = self.repo.commit({
+                workflow: disabled, parser: ast.unparse(ast.fix_missing_locations(parsed)),
+            })
+            members = tuple(item for item in self.tools.members(self.scope(head))
+                            if item.family == "generated")
+            observed = next(item for item in self.run_members(members, head)
+                            if item.obligation.member == "consumers:probe-inventory")
+            self.assertEqual(observed.verdict, "contract-violation", observed.detail)
+
     def test_runtime_regression_and_unexecutable_suite_cannot_pass_coverage(self):
         source = (self.repo.root / SOURCE).read_text()
         broken = source.replace("before.st_uid != 0", "before.st_uid != before.st_uid")

@@ -84,6 +84,9 @@ def platform_parse_only(paths):
 def platform_inventory_path(path):
     return Path("build/platform-inventory") / (path + ".source")
 
+def platform_parser_path(path):
+    return Path("build/platform-trusted-parsers") / (path + ".source")
+
 
 def platform_inputs(tree):
     """Execution imports are closed; other native suites are parsed, never imported."""
@@ -841,13 +844,13 @@ def _platform_parsers():
     """Execute only the existing finite parser functions, not their suite imports."""
     names = {"_job_blocks", "_direct_job_if", "_run_block_commands",
              "_step_blocks", "_direct_step_mapping_fields"}
-    parsed = ast.parse(platform_inventory_path(PLATFORM_TOPOLOGY).read_bytes())
+    parsed = ast.parse(platform_parser_path(PLATFORM_TOPOLOGY).read_bytes())
     functions = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
                  and node.name in names]
     review.require({node.name for node in functions} == names, "missing owner parsers")
     namespace = {"re": re, "ast": ast}
     exec(compile(ast.Module(body=functions, type_ignores=[]), PLATFORM_TOPOLOGY, "exec"), namespace)
-    parsed = ast.parse(platform_inventory_path(PLATFORM_CONDITIONS).read_bytes())
+    parsed = ast.parse(platform_parser_path(PLATFORM_CONDITIONS).read_bytes())
     predicates = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
                   and node.name == "workflow_condition"]
     classes = [node for node in parsed.body if isinstance(node, ast.ClassDef)
