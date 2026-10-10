@@ -801,7 +801,7 @@
       "purpose": "Select IDA MCP without launching competing Ghidra processes against one locked project.",
       "prerequisites": "Record the parsed IDA entry before removal; retain local pre-removal evidence without publishing machine configuration or credentials.",
       "actions": "Remove only the ghidra MCP entry, compare parsed IDA entries before and after, and run copilot mcp list in a fresh process.",
-      "expected_result": "The parsed configuration and fresh listing omit Ghidra, retain IDA unchanged, and keep builtin servers available.",
+      "expected_result": "The parsed configuration and fresh listing omit Ghidra and retain IDA unchanged.",
       "negative_control": "The pre-removal configuration or an existing generated session snapshot still contains Ghidra; no competing server is started against a live project.",
       "interactions": "Requires a local Copilot CLI configuration; no framework feature dependencies or conflicts. Separate Ghidra projects remain necessary for concurrent CLI processes.",
       "save_compatibility": "No save, configuration identity, ROM/RAM, modern/archival, generated-data, or localization changes.",

@@ -2609,7 +2609,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
     def test_mcp_removal_compares_ida_structurally(self):
         registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text())
         case = next(case for case in registry["cases"] if case["id"] == "TC-TOOLS-MCP-001")
-        command = shlex.split(case["automation"][1]["command"])[:-2]
+        commands = [
+            shlex.split(entry["command"]) for entry in case["automation"]
+            if shlex.split(entry["command"])[-2:] == ["BEFORE_JSON", "AFTER_JSON"]
+        ]
+        self.assertEqual(len(commands), 1)
+        command = commands[0][:-2]
         ida = {"command": "idalib-mcp", "args": ["--stdio"], "env": {"IDADIR": "/ida"}}
         before = {"mcpServers": {"ida": ida, "ghidra": {"command": "pyghidra-mcp"}}}
         reordered = {"env": ida["env"], "args": ida["args"], "command": ida["command"]}
