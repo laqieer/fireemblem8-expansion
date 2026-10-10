@@ -412,6 +412,10 @@ class ReviewTools:
         self.tool_tree.materialize(root, tool_paths)
         (root / "build").mkdir(exist_ok=True)
         if any(probe.startswith(("platform:", "platform-owner:")) for probe in probes):
+            for path in (self.subjects.PLATFORM_TOPOLOGY, self.subjects.PLATFORM_CONDITIONS):
+                destination = root / self.subjects.platform_parser_path(path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(self.tool_tree.read(path))
             for path in sorted(self.subjects.platform_parse_only(paths)):
                 destination = root / self.subjects.platform_inventory_path(path)
                 destination.parent.mkdir(parents=True, exist_ok=True)

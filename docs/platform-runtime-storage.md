@@ -179,6 +179,15 @@ their exact source bytes to `build/platform-inventory/<original-path>.source`,
 outside the importable module paths. The parsers consume those relocated bytes
 while observations retain the original Git paths and object bindings. This is
 physical staging separation, not a claim of hostile same-UID isolation.
+Executable workflow parser and condition functions come only from the selected
+trusted tool revision, staged separately under `build/platform-trusted-parsers`.
+Candidate parser bodies, defaults and decorators remain inventory data; they
+cannot execute or substitute a forged workflow-consumer result. The actual
+candidate workflow still supplies every full/disabled owner input.
+Run `test_candidate_parser_cannot_restore_disabled_consumer_or_execute_defaults`
+with the finite review-subject tests: both candidate parser sources attempt to
+restore a disabled workflow at definition time and through forged parse results.
+Require an explicit consumer violation, not a satisfied observation.
 Only the explicit platform inventory sources move; a mixed-subject review
 retains other subjects' executable modules at their original import paths.
 A changed import
