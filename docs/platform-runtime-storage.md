@@ -235,6 +235,11 @@ and actual workflow-owner checks consume that parsed argv independently.
 refusal for a forged `$(info ...)` argv with an empty target and for file/shell
 expansion effects. A syntax-preserving literal recipe remains accepted, and
 the parser never launches a process.
+Recipe continuation removes the escaped newline and one continuation-line
+recipe-prefix tab; it never inserts a word separator. The ordinary GNU Make
+control for `python3\\` followed directly by `-m` attempts `python3-m`, and the
+owner model must reject that same command. Whitespace-separated continuation
+stays supported; unmodeled non-recipe or multiple-escape continuation refuses.
 Every selected provider execution and unchanged baseline must complete without
 skips, expected failures or unexpected successes; unittest's success status or
 test count alone is insufficient.
