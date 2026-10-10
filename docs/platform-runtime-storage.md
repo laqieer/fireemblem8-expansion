@@ -138,6 +138,13 @@ All assertions map to
 also selected by the existing `ownership-probe-test` owner. No subjective manual
 judgment is required.
 
+The finite review-subject test
+`test_provider_deadline_controls_expire_on_fresh_monotonic_epoch` runs the
+capture, materialization and slice controls with a 60-second monotonic epoch.
+Their deliberately expired start derives from each actual issued budget,
+not an assumed machine uptime. Require the same refusal, primary-error
+identity and real descriptor/file cleanup on freshly booted CI runners.
+
 ### Cleanup and limitations
 
 Each case owns and cleans its temporary paths and descriptors; reset between
