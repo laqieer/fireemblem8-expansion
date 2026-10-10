@@ -3215,6 +3215,10 @@ Standalone replay validates the same closed profile and complete lineage.
 The host additionally compares it with session-issued sealed images and request
 inputs; recomputing a profile identity is not an alternate runtime grant.
 Default non-compiler v6/v8 traces keep their existing schemas.
+Compiler profiles derive command-line exports, MAKEFLAGS and MAKEOVERRIDES
+from the issued original Make argv. The original cap/custom/root/manifest
+tuple is supported without accepting a caller-chosen compiler-search baseline.
+Unknown loader/search overrides and nonrepresentable inheritance still refuse.
 `reconstruct_archive` retains the validated profile and typed compiler executions,
 including actual environments and driver-at-fork references, in the existing
 archive. It derives them from the same closed machine/job stream; no second

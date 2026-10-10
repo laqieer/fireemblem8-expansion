@@ -1316,11 +1316,11 @@ class ProbeSession:
                 profile.driver, profile.frontend,
             } <= set(native_executables):
                 raise MakeProbeError("native compiler requires its complete writable Command runtime")
-            expected_profile = self._native_compiler_profile({
+            from .read_epochs import compiler_make_environment
+            expected_profile = self._native_compiler_profile(compiler_make_environment({
                 **{name: value for name, value in environment.items()
                    if name != "LD_PRELOAD" and not name.startswith("VO_")},
-                "PWD": "/repo", "MAKELEVEL": "1", "MAKEFLAGS": "", "MFLAGS": "",
-            })
+            }, argv))
             if native_compiler != expected_profile:
                 raise MakeProbeError("native compiler profile differs from its session-issued runtime/request")
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -2931,11 +2931,11 @@ class ProbeSession:
         if self.dependency_compiler is not None and set(self.dependency_compiler) & set(native_executables):
             if not set(self.dependency_compiler) <= set(native_executables):
                 raise MakeProbeError("native compiler declaration omits its issued driver or frontend")
-            compiler_profile = self._native_compiler_profile({
+            from .read_epochs import compiler_make_environment
+            compiler_profile = self._native_compiler_profile(compiler_make_environment({
                 **ENVIRONMENT,
                 **{name: value for origin, name, value in assignments if origin == "environment"},
-                "PWD": "/repo", "MAKELEVEL": "1", "MAKEFLAGS": "", "MFLAGS": "",
-            })
+            }, ["/usr/bin/make", "-f", makefile, *cli, target]))
             compiler_aliases = tuple(
                 (path, str(_trusted_runtime_path(path, compiler=True)))
                 for path in self.dependency_runtime["runtime_files"]

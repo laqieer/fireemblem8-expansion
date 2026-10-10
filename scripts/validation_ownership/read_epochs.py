@@ -1805,13 +1805,49 @@ def dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/
     return tuple(dict.fromkeys(includes))
 
 
+def compiler_make_environment(environment, argv):
+    """Derive GNU Make's finite command-line inheritance from the issued argv."""
+    assignments = []
+    for argument in argv[1:]:
+        if "=" not in argument:
+            continue
+        name, value = argument.split("=", 1)
+        if (
+            re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) is None
+            or name.startswith(("LD_", "VO_", "GIT_"))
+            or name in {"PATH", "MAKEFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "MFLAGS", "GNUMAKEFLAGS",
+                        "CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH"}
+            or any(character.isspace() or character in "\\#$" for character in argument)
+        ):
+            raise ReadEpochError("compiler Make profile has unsupported command-line inheritance")
+        assignments.append((name, value))
+    result = dict(environment, PWD="/repo", MAKELEVEL="1", MAKEFLAGS="", MFLAGS="")
+    if assignments:
+        result.update(assignments)
+        result["MAKEFLAGS"] = " -- " + " ".join(name + "=" + value for name, value in reversed(assignments))
+        result["MAKEOVERRIDES"] = "${-*-command-variables-*-}"
+    return result
+
+
 def compiler_environment(environment, expected, *, frontend, driver):
     """Validate the closed baseline and the immutable driver's finite additions."""
     baseline = {
         "HOME", "LANG", "LC_ALL", "PATH", "TZ", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
         "GIT_NO_REPLACE_OBJECTS", "GIT_OPTIONAL_LOCKS", "PYTHONDONTWRITEBYTECODE",
-        "SOURCE_DATE_EPOCH", "TMPDIR", "PWD", "MAKELEVEL", "MAKEFLAGS", "MFLAGS",
+        "SOURCE_DATE_EPOCH", "TMPDIR", "PWD", "MAKELEVEL", "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
     }
+    flags = expected.get("MAKEFLAGS", "") if isinstance(expected, dict) else ""
+    if isinstance(flags, str) and flags.startswith(" -- "):
+        for assignment in flags[4:].split(" "):
+            name, separator, value = assignment.partition("=")
+            if (
+                not separator or re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) is None
+                or name.startswith(("LD_", "VO_", "GIT_"))
+                or name in {"PATH", "CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH"}
+                or expected.get(name) != value or expected.get("MAKEOVERRIDES") != "${-*-command-variables-*-}"
+            ):
+                raise ReadEpochError("compiler Make profile differs from its issued inheritance")
+            baseline.add(name)
     additions = {"COLLECT_GCC", "COLLECT_GCC_OPTIONS", "OFFLOAD_TARGET_NAMES", "OFFLOAD_TARGET_DEFAULT"}
     for values in (environment, expected):
         if (

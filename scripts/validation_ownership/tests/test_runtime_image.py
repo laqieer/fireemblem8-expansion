@@ -20,6 +20,27 @@ from scripts.validation_ownership.tests import test_foundation as foundation
 
 
 class RuntimeImageTests(unittest.TestCase):
+    def test_compiler_make_profile_binds_original_cli_and_rejects_search_overrides(self):
+        from scripts.validation_ownership.authority import ENVIRONMENT
+        argv = ["/usr/bin/make", "-f", "Makefile", "FE8_ITEM_ID_CAP=0xCD", "ASSET_MANIFEST=assets/manifest.json", "all"]
+        expected = read_epochs.compiler_make_environment(ENVIRONMENT, argv)
+        self.assertEqual(expected["MAKEFLAGS"], " -- ASSET_MANIFEST=assets/manifest.json FE8_ITEM_ID_CAP=0xCD")
+        self.assertEqual(expected["FE8_ITEM_ID_CAP"], "0xCD")
+        read_epochs.compiler_environment(expected, expected, frontend=False, driver="/usr/bin/cc")
+        for name in ("CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH", "LD_PRELOAD"):
+            with self.subTest(name=name), self.assertRaises(MakeProbeError):
+                values = read_epochs.compiler_make_environment(ENVIRONMENT, ["/usr/bin/make", name + "=/etc", "all"])
+                read_epochs.compiler_environment(values, values, frontend=False, driver="/usr/bin/cc")
+            forged = dict(expected, **{name: "/repo/foreign"})
+            forged["MAKEFLAGS"] = " -- " + name + "=/repo/foreign " + expected["MAKEFLAGS"][4:]
+            with self.subTest(forged=name), self.assertRaises(MakeProbeError):
+                read_epochs.compiler_environment(forged, forged, frontend=False, driver="/usr/bin/cc")
+        for field in ("MAKEFLAGS", "MAKEOVERRIDES", "FE8_ITEM_ID_CAP"):
+            changed = dict(expected)
+            changed[field] += "foreign"
+            with self.subTest(field=field), self.assertRaises(MakeProbeError):
+                read_epochs.compiler_environment(changed, expected, frontend=False, driver="/usr/bin/cc")
+
     def test_compiler_environment_binds_closed_baseline_and_driver_transformations(self):
         from scripts.validation_ownership.authority import ENVIRONMENT
         baseline = dict(ENVIRONMENT)
@@ -118,6 +139,11 @@ class RuntimeImageSessionTests(unittest.TestCase):
             session._sealed_dependency_runtime()
             completed, _, observed, generated = session._native_make_writable(
                 "all", outputs=(output,), commands=Commands(), native_resources=resources,
+                assignments=(("command-line", "PYTHON", "python3"),
+                             ("command-line", "FE8_ITEM_ID_CAP", ""),
+                             ("command-line", "EXPANSION_CUSTOM_SPELL_EFFECTS", "0"),
+                             ("command-line", "MODERN_BUILD_ROOT", "build/expansion-modern"),
+                             ("command-line", "ASSET_MANIFEST", "assets/manifest.json")),
                 native_executables=(driver, frontend, "/usr/bin/mkdir"),
                 native_metadata_directories=("/sys/fs/selinux", "/selinux"),
                 observe_reads=True, observe_runtime_completions=True,
