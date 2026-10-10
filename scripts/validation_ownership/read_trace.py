@@ -792,7 +792,7 @@ class NativeReadTrace:
         self.statement_indexes[number] = read_epochs._statement_index(
             data, checkpoint=self.deadline, count_limit=self.config["observation_count"],
             reserve=self.policy.charge_metadata,
-            compact=self.patterns is not None,
+            compact=self.runtime,
         )
         self.evaluations += 1
         self.event(
@@ -967,7 +967,7 @@ class NativeReadTrace:
                     self.statement_indexes[snapshot] = read_epochs._statement_index(
                         bytes(data), checkpoint=self.deadline,
                         count_limit=self.config["observation_count"], reserve=self.policy.charge_metadata,
-                        compact=self.patterns is not None,
+                        compact=self.runtime,
                     )
                 relative = path.removeprefix("/repo/")
                 custody = None

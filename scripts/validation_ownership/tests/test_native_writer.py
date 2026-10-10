@@ -26,6 +26,34 @@ class NativeReadonlyVariableTests(unittest.TestCase):
     session = foundation.FoundationTests.session
     assert_clean = foundation.FoundationTests.assert_clean
 
+    def test_native_runtime_compact_spans_preserve_source_and_reduce_real_observation_cost(self):
+        self.add("Makefile", "".join(f"unused_{index}: ; @true\n" for index in range(600)) +
+                 "SELECTED := value\nall: ; @v=owned; printf '%s' '$(SELECTED)'\n")
+        costs = []
+        for eager in (False, True):
+            body = (
+                "before=guard.read_epochs._statement_index\n"
+                "def eager(data,**kwargs):\n"
+                " kwargs['compact']=False\n"
+                " return before(data,**kwargs)\n"
+                "guard.read_epochs._statement_index=eager\n"
+            ) if eager else ""
+            session = self.session()
+            with session, foundation.FoundationTests.native_supervisor(self, body):
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("SELECTED",), observe_reads=True,
+                    observe_runtime_completions=True,
+                )
+                self.assertEqual((completed.stdout, completed.stderr), (b"value", b""))
+                self.assertEqual(semantics["domains"]["SELECTED"]["value"], "value")
+                from scripts.validation_ownership import read_epochs
+                archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                self.assertEqual(archive.passes[0].visits[0].source.data, session.snapshot.files["Makefile"])
+                self.assertFalse(archive.passes[0].patterns)
+                costs.append(observed["observation_bytes"])
+            self.assert_clean(session)
+        self.assertLess(costs[0] + (self.root / "Makefile").stat().st_size, costs[1])
+
     def test_statement_index_charges_actual_growth_without_per_row_tables(self):
         from scripts.validation_ownership import read_epochs
         source = b"FIRST := one\\\n two\n" + b"".join(

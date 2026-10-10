@@ -3181,6 +3181,16 @@ mutation and real live-retirement controls remain mandatory; the focused
 `test_retained_decode_reads_every_field_without_reallocating_definition` additionally
 compares the exact native read sequence and measured allocation difference.
 This component cost reduction is not original eight-query resource fitness.
+All native runtime traces now use that existing compact statement mapping,
+not only traces with pattern observation. Reader and eval buffers preserve
+the same complete physical/logical spans and lazily materialize touched
+statement hashes with their existing charges. The native runtime cost case
+compares actual no-pattern Make/source/archive outcomes against the original
+eager-index control and requires lower measured observation allocation.
+This removes eager unused rows; it does not omit any source or observation.
+It is not a universal cost reduction: workloads touching every statement can
+pay additional lazy-decoding charges. Original complete-family fitness must be
+measured under the unchanged budget, not inferred from the sparse fixture.
 Pattern coordinates additionally bind the exact owning reader or source-backed
 eval occurrence and its pristine target-assignment statement. Simple effective
 bindings preserve the template's raw value and file/line/offset, not only name
