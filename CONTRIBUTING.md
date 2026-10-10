@@ -74,8 +74,21 @@ prove that the watcher error is fixed.
 
 **TC-TOOLS-MCP-001** ([#285](https://github.com/laqieer/fireemblem8-expansion/issues/285)):
 from a local configuration containing IDA and the shared-project Ghidra server,
-record the parsed IDA entry, remove only `ghidra`, and parse the configuration
-again. The expected result is no `ghidra` entry and an identical IDA entry.
+retain a private pre-removal snapshot, remove only `ghidra`, and compare the
+parsed configurations. The expected result is no `ghidra` entry and an
+identical IDA entry. For the default user configuration:
+
+```bash
+before=$(mktemp)
+cp "$HOME/.copilot/mcp-config.json" "$before"
+copilot mcp remove ghidra
+python3 -c 'import json, sys; before, after = [json.load(open(path))["mcpServers"] for path in sys.argv[1:]]; assert "ghidra" in before; assert "ghidra" not in after; assert before["ida"] == after["ida"]' "$before" "$HOME/.copilot/mcp-config.json"
+rm "$before"
+```
+
+Keep snapshots private: they may contain credentials, must never be committed
+or published, and should be removed after the comparison. JSON key ordering
+does not affect this check; a changed or missing IDA entry fails it.
 Run `copilot mcp list` in a fresh process and confirm IDA remains configured
 while Ghidra does not. Restart existing sessions that use configuration
 snapshots. The pre-removal configuration is the negative control; do not

@@ -813,8 +813,12 @@
           "evidence": "CONTRIBUTING.md"
         },
         {
-          "command": "python3 -c 'import json, pathlib; c = json.loads((pathlib.Path.home() / \".copilot/mcp-config.json\").read_text()); assert \"ghidra\" not in c[\"mcpServers\"]; assert \"ida\" in c[\"mcpServers\"]'",
+          "command": "python3 -c 'import json, sys; before, after = [json.load(open(path))[\"mcpServers\"] for path in sys.argv[1:]]; assert \"ghidra\" in before; assert \"ghidra\" not in after; assert before[\"ida\"] == after[\"ida\"]' BEFORE_JSON AFTER_JSON",
           "evidence": "CONTRIBUTING.md"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_mcp_removal_compares_ida_structurally -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },

@@ -5,6 +5,7 @@ import os
 import posixpath
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -2604,6 +2605,34 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertIn("bug fixes", metadata["description"])
         self.assertIn("merge", metadata["description"])
         self.assertIn("validate", metadata["description"])
+
+    def test_mcp_removal_compares_ida_structurally(self):
+        registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text())
+        case = next(case for case in registry["cases"] if case["id"] == "TC-TOOLS-MCP-001")
+        command = shlex.split(case["automation"][1]["command"])[:-2]
+        ida = {"command": "idalib-mcp", "args": ["--stdio"], "env": {"IDADIR": "/ida"}}
+        before = {"mcpServers": {"ida": ida, "ghidra": {"command": "pyghidra-mcp"}}}
+        reordered = {"env": ida["env"], "args": ida["args"], "command": ida["command"]}
+        inputs = (
+            ("unchanged", {"ida": reordered}, True),
+            ("changed", {"ida": {**ida, "env": {"IDADIR": "/other"}}}, False),
+            ("missing", {}, False),
+            ("retained-ghidra", before["mcpServers"], False),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            before_path = Path(directory) / "before.json"
+            after_path = Path(directory) / "after.json"
+            before_path.write_text(json.dumps(before))
+            for name, servers, expected in inputs:
+                with self.subTest(name=name):
+                    after_path.write_text(json.dumps({"mcpServers": servers}))
+                    result = subprocess.run(
+                        [*command, str(before_path), str(after_path)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, expected, result.stderr)
 
     def test_workflow_contract_is_present(self):
         _, text = read_skill()
