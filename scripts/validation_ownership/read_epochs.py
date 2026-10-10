@@ -1805,6 +1805,24 @@ def dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/
     return tuple(dict.fromkeys(includes))
 
 
+COMPILER_BASELINE_NAMES = frozenset({
+    "HOME", "LANG", "LC_ALL", "PATH", "TZ", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
+    "GIT_NO_REPLACE_OBJECTS", "GIT_OPTIONAL_LOCKS", "PYTHONDONTWRITEBYTECODE",
+    "SOURCE_DATE_EPOCH", "TMPDIR", "PWD", "MAKELEVEL", "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
+})
+
+
+def compiler_profile_name(name):
+    return (
+        re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) is not None
+        and name not in COMPILER_BASELINE_NAMES
+        and not name.startswith(("LD_", "VO_", "GIT_", "GCC_", "COLLECT_", "OFFLOAD_"))
+        and name not in {"GNUMAKEFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH",
+                         "OBJC_INCLUDE_PATH", "COMPILER_PATH", "LIBRARY_PATH",
+                         "DEPENDENCIES_OUTPUT", "SUNPRO_DEPENDENCIES"}
+    )
+
+
 def compiler_make_environment(environment, argv):
     """Derive GNU Make's finite command-line inheritance from the issued argv."""
     assignments = []
@@ -1813,10 +1831,7 @@ def compiler_make_environment(environment, argv):
             continue
         name, value = argument.split("=", 1)
         if (
-            re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) is None
-            or name.startswith(("LD_", "VO_", "GIT_"))
-            or name in {"PATH", "MAKEFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "MFLAGS", "GNUMAKEFLAGS",
-                        "CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH"}
+            not compiler_profile_name(name)
             or any(character.isspace() or character in "\\#$" for character in argument)
         ):
             raise ReadEpochError("compiler Make profile has unsupported command-line inheritance")
@@ -1831,19 +1846,13 @@ def compiler_make_environment(environment, argv):
 
 def compiler_environment(environment, expected, *, frontend, driver):
     """Validate the closed baseline and the immutable driver's finite additions."""
-    baseline = {
-        "HOME", "LANG", "LC_ALL", "PATH", "TZ", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
-        "GIT_NO_REPLACE_OBJECTS", "GIT_OPTIONAL_LOCKS", "PYTHONDONTWRITEBYTECODE",
-        "SOURCE_DATE_EPOCH", "TMPDIR", "PWD", "MAKELEVEL", "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
-    }
+    baseline = set(COMPILER_BASELINE_NAMES)
     flags = expected.get("MAKEFLAGS", "") if isinstance(expected, dict) else ""
     if isinstance(flags, str) and flags.startswith(" -- "):
         for assignment in flags[4:].split(" "):
             name, separator, value = assignment.partition("=")
             if (
-                not separator or re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) is None
-                or name.startswith(("LD_", "VO_", "GIT_"))
-                or name in {"PATH", "CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH"}
+                not separator or not compiler_profile_name(name)
                 or expected.get(name) != value or expected.get("MAKEOVERRIDES") != "${-*-command-variables-*-}"
             ):
                 raise ReadEpochError("compiler Make profile differs from its issued inheritance")

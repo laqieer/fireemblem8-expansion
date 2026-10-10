@@ -27,7 +27,10 @@ class RuntimeImageTests(unittest.TestCase):
         self.assertEqual(expected["MAKEFLAGS"], " -- ASSET_MANIFEST=assets/manifest.json FE8_ITEM_ID_CAP=0xCD")
         self.assertEqual(expected["FE8_ITEM_ID_CAP"], "0xCD")
         read_epochs.compiler_environment(expected, expected, frontend=False, driver="/usr/bin/cc")
-        for name in ("CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH", "LD_PRELOAD"):
+        for name in ("CPATH", "C_INCLUDE_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "LIBRARY_PATH",
+                     "LD_PRELOAD", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH", "GCC_COMPARE_DEBUG",
+                     "COLLECT_GCC", "COLLECT_GCC_OPTIONS", "OFFLOAD_TARGET_NAMES",
+                     "DEPENDENCIES_OUTPUT", "SUNPRO_DEPENDENCIES", *read_epochs.COMPILER_BASELINE_NAMES):
             with self.subTest(name=name), self.assertRaises(MakeProbeError):
                 values = read_epochs.compiler_make_environment(ENVIRONMENT, ["/usr/bin/make", name + "=/etc", "all"])
                 read_epochs.compiler_environment(values, values, frontend=False, driver="/usr/bin/cc")
