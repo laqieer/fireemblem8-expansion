@@ -863,6 +863,39 @@ def _platform_parsers():
                  PLATFORM_CONDITIONS, "exec"), namespace)
     return types.SimpleNamespace(**namespace)
 
+def platform_owner_recipe(source):
+    targets = {"ownership-probe-check", "ownership-probe-test"}
+    recipes, phony, current = {}, None, None
+    for line in source.replace("\\\n", " ").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        review.require("$" not in line, "owner Make expansion requires a reviewed model")
+        if line.startswith("\t"):
+            review.require(current is not None and current not in recipes,
+                           "owner recipe is missing, duplicated or multiline")
+            words = shlex.split(line.strip())
+            review.require(words and not any(char in line for char in ";|&<>`"),
+                           "owner recipe is not a literal command")
+            recipes[current] = words
+        elif line.startswith(".PHONY:"):
+            review.require(phony is None, "duplicate owner PHONY declaration")
+            phony = line.removeprefix(".PHONY:").split()
+            review.require(len(phony) == len(targets) and set(phony) == targets,
+                           "owner PHONY target set changed")
+            current = None
+        else:
+            match = re.fullmatch(r"(ownership-probe-check|ownership-probe-test)\s*:\s*", line)
+            review.require(match is not None and match[1] not in recipes,
+                           "owner Make requires literal standalone targets")
+            review.require(current is None or current in recipes, "owner target lacks a recipe")
+            current = match[1]
+    review.require(phony is not None and set(recipes) == targets,
+                   "owner Make target or recipe is incomplete")
+    review.require(recipes["ownership-probe-check"] == [
+        "/usr/bin/python3", "-I", "-S", "-B", "scripts/validation_ownership/isolated_launcher.py",
+    ], "owner check recipe changed")
+    return recipes["ownership-probe-test"]
+
 
 @probe_result("parsed")
 def _platform_owner(role):
@@ -874,9 +907,7 @@ def _platform_owner(role):
     expected = ast.literal_eval(declarations[0].value)
     review.require(isinstance(expected, tuple) and all(isinstance(name, str) for name in expected),
                    "nonfinite owner inventory")
-    argv = shlex.split(command(
-        ["/usr/bin/make", "-f", PLATFORM_MAKE, "ownership-probe-test", "--dry-run"],
-    ).decode())
+    argv = platform_owner_recipe(Path(PLATFORM_MAKE).read_text())
     check(argv[:3] == ["python3", "-m", "unittest"] and argv[-1:] == ["-v"],
           "generated Make test command changed")
     selected = argv[3:-1]

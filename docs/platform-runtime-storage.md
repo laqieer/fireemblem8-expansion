@@ -225,6 +225,16 @@ it is not an exact historical Git-tree claim. The
 current thirteen-test provider suite kills them with 9/16/3 input failures.
 Those results establish missing regression coverage, not incorrect old
 admission, identity or slice runtime behavior.
+Owner recipe checks do not run GNU Make, including `--dry-run`: Make expansion
+can execute or forge its output even without running a recipe. The reviewed
+finite model accepts the existing literal PHONY/two-target recipe layout,
+comments, blank lines and continuations; includes, expansions, assignments,
+extra commands and missing/duplicate targets refuse. Typed module inventory
+and actual workflow-owner checks consume that parsed argv independently.
+`test_make_owner_expansion_cannot_forge_recipe_or_mutate_inventory` requires
+refusal for a forged `$(info ...)` argv with an empty target and for file/shell
+expansion effects. A syntax-preserving literal recipe remains accepted, and
+the parser never launches a process.
 Every selected provider execution and unchanged baseline must complete without
 skips, expected failures or unexpected successes; unittest's success status or
 test count alone is insufficient.
