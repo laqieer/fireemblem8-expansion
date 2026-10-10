@@ -3104,6 +3104,9 @@ The foundation runtime-conflict controls inject changed bytes from a bounded
 slice of the actual sealed image, not byte concatenation on `RuntimeImage`.
 Require the original shell/executable conflict refusal and owned cleanup;
 an adapter `TypeError` is not rejection evidence.
+Cache/view controls use exact `(path, True)` sealed-lane keys and retain
+no-second-host-capture, view restoration and failed-capture cleanup checks.
+The undeclared Python parent directory must remain denied at its actual read.
 
 The same compiler subcase checks the actual kernel exec-stop environment before
 the driver or frontend begins user code. The driver must have the closed issued
