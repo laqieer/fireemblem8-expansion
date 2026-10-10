@@ -10,6 +10,7 @@ import types
 import unittest
 from unittest.mock import patch
 
+from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
 from scripts.workflow_pilot.tests.test_review_subjects import SubjectTestCase
 from scripts.workflow_pilot.tests.review_support import request
 
@@ -356,8 +357,6 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                     targets=[ast.Name(id=function.args.args[0].arg, ctx=ast.Store())],
                     value=ast.Constant(original),
                 ))
-            else:
-                function.body = ast.parse("return True").body
             function.args.defaults.append(ast.parse(
                 "__import__('pathlib').Path('.github/workflows/build.yml').write_text(" +
                 repr(original) + ")", mode="eval",
@@ -371,6 +370,21 @@ class PlatformStorageSubjectTests(SubjectTestCase):
             observed = next(item for item in self.run_members(members, head)
                             if item.obligation.member == "consumers:probe-inventory")
             self.assertEqual(observed.verdict, "contract-violation", observed.detail)
+            tool_source = "scripts/workflow_pilot/review_subjects.py"
+            source = (self.repo.root / tool_source).read_text()
+            selected = ("PLATFORM_TOPOLOGY" if parser == topology else "PLATFORM_CONDITIONS")
+            vulnerable = source.replace(
+                "platform_parser_path(" + selected + ")",
+                "platform_inventory_path(" + selected + ")",
+            )
+            self.assertNotEqual(source, vulnerable)
+            tool_revision = self.repo.commit({tool_source: vulnerable})
+            controls = ReviewTools(GitTree(self.repo.root, tool_revision), self.repo.root)
+            control_members = tuple(item for item in controls.members(self.scope(head))
+                                    if item.family == "generated")
+            control = next(item for item in controls.run_obligations(control_members, head)
+                           if item.obligation.member == "consumers:probe-inventory")
+            self.assertEqual(control.verdict, "satisfied", control.detail)
 
     def test_runtime_regression_and_unexecutable_suite_cannot_pass_coverage(self):
         source = (self.repo.root / SOURCE).read_text()
