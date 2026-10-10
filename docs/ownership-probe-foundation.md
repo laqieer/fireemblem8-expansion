@@ -3181,6 +3181,17 @@ mutation and real live-retirement controls remain mandatory; the focused
 `test_retained_decode_reads_every_field_without_reallocating_definition` additionally
 compares the exact native read sequence and measured allocation difference.
 This component cost reduction is not original eight-query resource fitness.
+Pattern coordinates additionally bind the exact owning reader or source-backed
+eval occurrence and its pristine target-assignment statement. Simple effective
+bindings preserve the template's raw value and file/line/offset, not only name
+and modifiers. Live callbacks and independent replay share these checks.
+The public pattern case refreshes payload checksums after changing all seven
+coordinate/value/source fields and still requires rejection. The nested-eval
+case uses the shipped wire rather than a test-only template collector, covers
+multiline buffers with their actual shared outer floc, and rejects foreign eval
+coordinates. Actual ptrace mutations of template and simple-variable fields
+must likewise fail with complete cleanup. These regressions belong to
+TC-WORKFLOW-NATIVE-MAKE-001; all original profile/resource/final gates remain.
 
 The writable trace's optional `output_authority.compiler` carries the complete
 issued profile; it does not add a machine event, command registry or feature

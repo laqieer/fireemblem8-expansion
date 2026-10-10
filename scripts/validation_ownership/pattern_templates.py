@@ -5,6 +5,7 @@ from __future__ import annotations
 import struct
 import sys
 import hashlib
+import base64
 
 if __package__:
     from .authority import encoded
@@ -230,6 +231,13 @@ class PatternTemplates:
                 or (definition["flags"] >> 26) & 7 > 6
             ):
                 raise read_epochs.ReadEpochError("completed pattern lacks source-bound actual fields")
+            if trace.version in read_epochs.PATTERN_VERSIONS:
+                data = base64.b64decode(trace.sources[source - 1]["data"], validate=True)
+                trace.policy.charge_metadata(len(data))
+                read_epochs.pattern_source_coordinates(
+                    definition, owner, source, trace.events, data, checkpoint=trace.deadline,
+                    reserve=trace.policy.charge_metadata,
+                )
             event = trace.event(
                 "pattern-template-completion", **trace.context(),
                 template=row["id"], owner=owner, source=source, definition=definition,
@@ -374,6 +382,7 @@ class PatternMaterializations(PatternTemplates):
         ):
             raise read_epochs.ReadEpochError("pattern completion omitted its actual flavor branch/return")
         variable = read_epochs.original_variable(trace.memory, registers.rdx, trace.string)
+        read_epochs.simple_pattern_binding(definition, variable)
         flags = int.from_bytes(trace.memory(registers.rdx + 44, 4), "little")
         if (
             variable[0] != definition["name"] or flags & 0x60000088 != definition["flags"] & 0x60000088

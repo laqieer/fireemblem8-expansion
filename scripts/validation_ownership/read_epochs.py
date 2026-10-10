@@ -1263,6 +1263,125 @@ def original_variable(memory, pointer, string):
     return list(variable_row([name, value, flags, string(filename, 4096), line, offset]))
 
 
+def pattern_source_coordinates(definition, owner, source, events, data, *, checkpoint=lambda: None,
+                               reserve=lambda size: None, event_limit=None):
+    """Bind coordinates to the actual reader or evaluated-buffer occurrence."""
+    sources, evaluations, opened = {}, {}, {}
+    reserve(sys.getsizeof(sources) + sys.getsizeof(evaluations) + sys.getsizeof(opened))
+    for index, row in enumerate(events):
+        if event_limit is not None and index >= event_limit:
+            break
+        checkpoint()
+        if row["kind"] == "source-entry":
+            table, key, item = sources, row["visit"], row
+        elif row["kind"] == "eval-entry":
+            table, key, item = evaluations, row["evaluation"], row
+        elif row["kind"] == "source-open":
+            table, key, item = opened, row["visit"], row["source"]
+        else:
+            continue
+        size = sys.getsizeof(table)
+        table[key] = item
+        if sys.getsizeof(table) > size:
+            reserve(sys.getsizeof(table))
+    kind, number = owner
+    if kind == "source":
+        if opened.get(number) != source:
+            raise ReadEpochError("pattern declaration borrowed another original source")
+        expected_file = sources[number]["name"]
+        expected_line = definition["line"]
+    else:
+        occurrence = evaluations[number]
+        location = occurrence["location"]
+        visited = set()
+        reserve(sys.getsizeof(visited))
+        while isinstance(location, dict) and location.get("evaluation") is not None:
+            checkpoint()
+            parent = location["evaluation"]
+            if parent in visited or parent not in evaluations:
+                raise ReadEpochError("pattern declaration has cyclic or foreign eval ancestry")
+            visited.add(parent)
+            reserve(sys.getsizeof(visited))
+            location = evaluations[parent]["location"]
+        if not isinstance(location, dict) or location.get("visit") not in sources:
+            raise ReadEpochError("pattern declaration lacks its source-backed eval location")
+        expected_file = sources[location["visit"]]["name"]
+        expected_line = location["span"][1]
+    if (
+        definition["file"] != expected_file or definition["line"] != expected_line
+        or definition["offset"] != 0
+    ):
+        raise ReadEpochError("pattern declaration coordinates differ from its owning source occurrence")
+    begin = cursor = 0
+    first = line = 1
+    while cursor <= len(data):
+        checkpoint()
+        end = data.find(b"\n", cursor)
+        has_lf = end >= 0
+        if not has_lf:
+            end = len(data)
+        physical_end = end - 1 if has_lf and end > cursor and data[end - 1] == 13 else end
+        slash = physical_end
+        while slash > cursor and data[slash - 1] == 92:
+            slash -= 1
+        cursor = end + 1
+        if has_lf and (physical_end - slash) % 2:
+            line += 1
+            continue
+        start = first
+        first, line = line + 1, line + 1
+        span_begin = begin
+        begin = cursor
+        if kind == "source" and start != definition["line"]:
+            continue
+        chunk = data[span_begin:end]
+        decoded = chunk.decode("utf-8", "strict")
+        reserve(sys.getsizeof(chunk) + sys.getsizeof(decoded))
+        normalized = decoded.replace("\r\n", "\n")
+        if normalized is not decoded:
+            reserve(sys.getsizeof(normalized))
+        raw = normalized.removesuffix("\r")
+        if raw is not normalized:
+            reserve(sys.getsizeof(raw))
+        statement = make_lexical._collapse_make_continuations(raw)
+        reserve(sys.getsizeof(statement))
+        statement = make_lexical.strip_comment(statement, checkpoint=checkpoint, charge=reserve)
+        reserve(sys.getsizeof(statement))
+        boundary, colon = make_lexical._statement_boundary(statement, checkpoint=checkpoint, charge=reserve)
+        if boundary != "rule":
+            continue
+        target, assignment = statement[:colon], statement[colon + 1:]
+        reserve(sys.getsizeof(target) + sys.getsizeof(assignment))
+        boundary, operator = make_lexical._statement_boundary(assignment, checkpoint=checkpoint, charge=reserve)
+        if boundary != "assignment":
+            continue
+        name = re.sub(r"^\s*(?:(?:export|private|override)\s+)*", "", assignment[:operator]).strip()
+        reserve(sys.getsizeof(name))
+        if "$" not in name and name != definition["name"]:
+            continue
+        targets = target.replace("\\%", "%").split()
+        reserve(sys.getsizeof(targets) + sum(sys.getsizeof(item) for item in targets))
+        if "$" not in target and definition["pattern"] not in targets:
+            continue
+        value = re.sub(r"^(?:::=|::=|:=|\?=|\+=|!=|=)[ \t]*", "", assignment[operator:])
+        reserve(sys.getsizeof(value))
+        if not assignment[operator:].startswith("!=") and (
+                (definition["flags"] >> 23) & 7 != 1 or "$" not in value
+        ) and definition["value"] != value:
+            continue
+        return
+    raise ReadEpochError("pattern declaration lacks its pristine source statement")
+
+
+def simple_pattern_binding(definition, variable):
+    if (definition["flags"] >> 23) & 7 == 1 and (
+        variable[1] != definition["value"] or tuple(variable[3:]) != (
+            definition["file"], definition["line"], definition["offset"],
+        )
+    ):
+        raise ReadEpochError("simple pattern lost its effective value/source fields")
+
+
 def validate_completion_sites(selection, *, count_limit, file_limit):
     if not isinstance(selection, list) or len(selection) > count_limit:
         raise ReadEpochError("completion selection exceeds its finite source bound")
@@ -3950,6 +4069,10 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                         or (definition["flags"] >> 26) & 7 > 6
                     ):
                         raise ReadEpochError("pattern template has invalid captured layout values")
+                    pattern_source_coordinates(
+                        definition, owner, source, value["events"],
+                        snapshots[source][1], reserve=reserve, event_limit=sequence,
+                    )
                     retained["completion"] = event
             elif kind == "pattern-entry":
                 number, template = event["pattern"], event["template"]
@@ -3997,6 +4120,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                     stack.append(("pattern-effect", number))
                 elif kind == "pattern-definition-return":
                     variable = variable_row(event["variable"])
+                    simple_pattern_binding(definition, variable)
                     if (
                         materialized["definition"] is None or materialized["return"] is not None
                         or flavor == 1 or variable[0] != definition["name"]
@@ -4006,6 +4130,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                     stack.pop()
                 else:
                     variable = variable_row(event["variable"])
+                    simple_pattern_binding(definition, variable)
                     if (
                         materialized["completion"] is not None
                         or (materialized["definition"] is not None) != (flavor != 1)

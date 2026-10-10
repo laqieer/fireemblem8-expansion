@@ -236,6 +236,38 @@ class PatternTemplateTests(unittest.TestCase):
         with patch.object(trace, "memory", side_effect=AssertionError("retired memory unavailable")):
             self.templates.retire()
 
+    def test_coordinate_statement_scan_is_bounded_to_consumed_bytes_and_charged(self):
+        definition = {"file": "Makefile", "line": 1, "offset": 0, "pattern": "%.out",
+                      "name": "VALUE", "flags": 1 << 23, "value": "value"}
+        events = [{"kind": "source-entry", "visit": 1, "name": "Makefile"},
+                  {"kind": "source-open", "visit": 1, "source": 1}]
+        first = b"%.out: VALUE := value\n"
+        charges = []
+        for data in (first, first + b"x" * 65536):
+            observed = []
+            read_epochs.pattern_source_coordinates(
+                definition, ("source", 1), 1, events + [None], data,
+                reserve=observed.append, event_limit=2,
+            )
+            charges.append(sum(observed))
+        self.assertEqual(charges[0], charges[1])
+        for limit in (charges[0], charges[0] - 1):
+            budget = ProbeBudget(Limits(control_bytes=limit))
+            try:
+                if limit == charges[0]:
+                    read_epochs.pattern_source_coordinates(
+                        definition, ("source", 1), 1, events, first,
+                        reserve=lambda size: budget.charge("control", size),
+                    )
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "budget exhausted"):
+                        read_epochs.pattern_source_coordinates(
+                            definition, ("source", 1), 1, events, first,
+                            reserve=lambda size: budget.charge("control", size),
+                        )
+            finally:
+                budget.close()
+
     def test_live_retirement_rejects_incomplete_and_retire_never_reads_dead_memory(self):
         self.trace.template(128, "%.a", value=None)
         self.trace.put_number(8, 128)
@@ -571,6 +603,32 @@ guard.NativeReadTrace.prepare_pattern_retirement=prepare
                             invalid, invalid["scope"], count_limit=session.budget.limits.observation_count,
                             file_limit=session.budget.limits.file_bytes,
                         )
+            simple = next(row for row in trace["events"] if row["kind"] == "pattern-completion"
+                          and any(template.number == next(
+                              item["template"] for item in trace["events"]
+                              if item["kind"] == "pattern-entry" and item["pattern"] == row["pattern"]
+                          ) and (template.definition.flags >> 23) & 7 == 1 for template in templates))
+            for field in ("file", "line", "offset", "value", "variable-file", "variable-line", "variable-offset", "future-null"):
+                invalid = json.loads(json.dumps(trace))
+                if field == "future-null":
+                    invalid["events"][-1] = None
+                elif field in {"file", "line", "offset"}:
+                    event = self.event_row(invalid, "pattern-template-completion")
+                    event["definition"][field] = "foreign.mk" if field == "file" else 9999
+                    payload = self.machine_row(invalid, "pattern-template-result", template=event["template"])
+                else:
+                    event = next(row for row in invalid["events"] if row["seq"] == simple["seq"])
+                    index = {"value": 1, "variable-file": 3, "variable-line": 4, "variable-offset": 5}[field]
+                    event["variable"][index] = "foreign" if index in {1, 3} else 9999
+                    payload = self.machine_row(invalid, "pattern-result", pattern=event["pattern"])
+                if field != "future-null":
+                    payload["sha256"] = hashlib.sha256(read_epochs.encoded(event)).hexdigest()
+                with self.subTest(coherent_pattern_binding=field), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        invalid, invalid["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
         self.assert_clean(session)
 
     @staticmethod
@@ -870,7 +928,8 @@ guard.NativeReadTrace.prepare_pattern_retirement=prepare
             self.assert_clean(session)
 
     def test_actual_partial_outer_nested_eval_and_repeated_floc_keep_occurrence_owners(self):
-        self.add("first.mk", "$(eval %.out: VALUE = first)\n")
+        self.add("first.mk", "define DECLARATIONS\n%.out: VALUE = first\nextra%.out: VALUE = extra\n"
+                 "endef\n$(eval $(DECLARATIONS))\n")
         self.add("second.mk", "$(eval %.out: VALUE = second)\n")
         self.add("Makefile", (
             "include first.mk second.mk\n"
@@ -881,88 +940,102 @@ guard.NativeReadTrace.prepare_pattern_retirement=prepare
             ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
             cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
         )
-        report = self.root.parent / (self.root.name + "-pattern-template-proof.json")
-        instrumentation = r'''
-from pattern_templates import PatternTemplates,pattern_abi
-template_rows=[]
-class TraceView:
- def __init__(self,trace):
-  self.trace=trace
- def __getattr__(self,name):
-  return getattr(self.trace,name)
- def event(self,kind,**fields):
-  row={"seq":len(template_rows)+1,"kind":kind,**fields}
-  self.trace.policy.charge_metadata(len(guard.encoded(row)))
-  template_rows.append(row)
-  return row
-init_before=guard.NativeReadTrace.__init__
-def init(self,*args,**kwargs):
- init_before(self,*args,**kwargs)
- self.test_templates=PatternTemplates(TraceView(self),pattern_abi(guard.read_epochs.Elf(self.image)))
-guard.NativeReadTrace.__init__=init
-event_before=guard.NativeReadTrace.event
-def event(self,kind,**fields):
- if kind in {"source-entry","eval-entry"}:
-  self.test_templates.observe()
- return event_before(self,kind,**fields)
-guard.NativeReadTrace.event=event
-source_before=guard.NativeReadTrace.source_return
-def source_return(self,registers):
- current=self.active[-1]
- self.test_templates.complete(["source",current["visit"]],current["source"])
- source_before(self,registers)
-guard.NativeReadTrace.source_return=source_return
-eval_before=guard.NativeReadTrace.runtime_eval_return
-def eval_return(self,registers):
- current=self.invocations[-1]
- self.test_templates.complete(["eval",current["number"]],current["source"])
- eval_before(self,registers)
-guard.NativeReadTrace.runtime_eval_return=eval_return
-execute_before=guard.NativeReadTrace.actual_exec
-def execute(self,pid,make,dispatch=None,inputs=None):
- if make:
-  self.test_templates.retire()
- execute_before(self,pid,make,dispatch,inputs)
-guard.NativeReadTrace.actual_exec=execute
-supervise_before=guard.supervise
-def supervise(config,*args,**kwargs):
- try:
-  return supervise_before(config,*args,**kwargs)
- finally:
-  Path(REPORT).write_text(json.dumps(template_rows))
-guard.supervise=supervise
-'''.replace("REPORT", repr(str(report)))
         session = self.session()
-        try:
-            with session, self.native_supervisor(instrumentation):
-                completed, _, observed = session._native_make_readonly(
-                    "all", observe_reads=True, observe_runtime_completions=True,
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True, observe_patterns=True,
+            )
+            self.assertEqual(
+                (completed.returncode, completed.stdout, completed.stderr),
+                (ordinary.returncode, ordinary.stdout, ordinary.stderr),
+            )
+            rows = observed["read_trace"]["events"]
+            entries = [row for row in rows if row["kind"] == "pattern-template-entry"]
+            endings = [row for row in rows if row["kind"] == "pattern-template-completion"]
+            self.assertEqual(len(entries), 5)
+            self.assertEqual(len(endings), 5)
+            definitions = {row["definition"]["value"]: row for row in endings}
+            self.assertEqual(set(definitions), {"first", "extra", "second", "nested", "outer"})
+            self.assertEqual(definitions["first"]["owner"], definitions["extra"]["owner"])
+            self.assertEqual(
+                [(definitions[value]["definition"]["line"], definitions[value]["definition"]["offset"])
+                 for value in ("first", "extra")], [(5, 0), (5, 0)],
+            )
+            self.assertEqual(definitions["outer"]["owner"][0], "source")
+            self.assertEqual(definitions["nested"]["owner"][0], "eval")
+            self.assertEqual(len({tuple(row["owner"]) for row in endings}), 4)
+            self.assertEqual(len({row["source"] for row in endings}), 4)
+            self.assertEqual({row["template"]: row["owner"] for row in entries},
+                             {row["template"]: row["owner"] for row in endings})
+            for field in ("file", "line", "offset"):
+                changed = json.loads(json.dumps(observed["read_trace"]))
+                ending = next(row for row in changed["events"] if row["seq"] == definitions["nested"]["seq"])
+                ending["definition"][field] = "first.mk" if field == "file" else 9999
+                self.machine_row(changed, "pattern-template-result", template=ending["template"])["sha256"] = (
+                    hashlib.sha256(read_epochs.encoded(ending)).hexdigest()
                 )
-                self.assertEqual(
-                    (completed.returncode, completed.stdout, completed.stderr),
-                    (ordinary.returncode, ordinary.stdout, ordinary.stderr),
-                )
-                self.assertEqual(observed["read_trace"]["version"], read_epochs.RUNTIME_VERSION)
-                rows = json.loads(report.read_bytes())
-                entries = [row for row in rows if row["kind"] == "pattern-template-entry"]
-                endings = [row for row in rows if row["kind"] == "pattern-template-completion"]
-                self.assertEqual(len(entries), 4)
-                self.assertEqual(len(endings), 4)
-                definitions = {row["definition"]["value"]: row for row in endings}
-                self.assertEqual(set(definitions), {"first", "second", "nested", "outer"})
-                self.assertEqual(definitions["outer"]["owner"][0], "source")
-                self.assertEqual(definitions["nested"]["owner"][0], "eval")
-                self.assertEqual(len({tuple(row["owner"]) for row in endings}), 4)
-                self.assertEqual(len({row["source"] for row in endings}), 4)
-                self.assertEqual(
-                    {row["template"]: row["owner"] for row in entries},
-                    {row["template"]: row["owner"] for row in endings},
-                )
-                captured = {row["id"]: row for row in observed["read_trace"]["sources"]}
-                self.assertTrue(all(row["source"] in captured for row in endings))
+                with self.subTest(eval_coordinate=field), self.assertRaises(read_epochs.ReadEpochError):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+        self.assert_clean(session)
+
+    def test_actual_simple_effective_fields_and_template_coordinates_refuse_mutation(self):
+        self.add("Makefile", "%.out: VALUE := value\nall: one.out\none.out: ; @:\n")
+        for template, field in ((True, "file"), (True, "line"), (True, "offset"),
+                                (False, "value"), (False, "file"), (False, "line"), (False, "offset")):
+            method = "complete" if template else "completion"
+            offset = {"file": 48, "line": 56, "offset": 64}[field] if template else {
+                "value": 8, "file": 16, "line": 24, "offset": 32,
+            }[field]
+            body = (
+                "from pattern_templates import PatternTemplates,PatternMaterializations\n"
+                f"owner=PatternTemplates if {template!r} else PatternMaterializations\n"
+                f"before=owner.{method}\n"
+                "def changed(self,*args):\n"
+                " trace=self.trace\n"
+                f" if {template!r}: self.observe()\n"
+                f" if {template!r} and not self.objects: return before(self,*args)\n"
+                f" pointer=next(iter(self.objects)) if {template!r} else args[0].rdx\n"
+                f" pointer+={offset}\n"
+                f" if {field == 'value'!r}: pointer=trace.number(pointer)\n"
+                " actual=trace.number(pointer)\n"
+                f" value=trace.number(next(iter(self.objects))+32 if {template!r} else args[0].rdx) if {field == 'file'!r} else actual^1 if {field == 'value'!r} else actual+1\n"
+                " trace.native.ptrace(5,trace.pid,pointer,value)\n"
+                " return before(self,*args)\n"
+                f"owner.{method}=changed\n"
+            )
+            session = self.session()
+            with self.subTest(template=template, field=field), session, self.native_supervisor(body):
+                with self.assertRaisesRegex(MakeProbeError, "coordinates|pristine source|simple pattern"):
+                    session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True, observe_patterns=True,
+                    )
             self.assert_clean(session)
-        finally:
-            report.unlink(missing_ok=True)
+
+    def test_constructed_pattern_target_and_name_keep_original_coordinate_binding(self):
+        self.add("Makefile", (
+            "PATTERN := %.out\n$(PATTERN): VALUE ::= value\n"
+            "all: one.out\none.out: ; @v=owned; printf '%s' '$(VALUE)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", "all"], cwd=self.root,
+            capture_output=True, check=True,
+        )
+        session = self.session()
+        with session:
+            completed, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True, observe_patterns=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (ordinary.stdout, ordinary.stderr))
+            archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+            definition, = archive.passes[0].pattern_templates
+            self.assertEqual((definition.definition.pattern, definition.definition.name,
+                              definition.definition.file, definition.definition.line),
+                             ("%.out", "VALUE", "Makefile", 2))
+        self.assert_clean(session)
 
 
 if __name__ == "__main__":
