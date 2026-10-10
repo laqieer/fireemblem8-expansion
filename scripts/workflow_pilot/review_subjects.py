@@ -866,7 +866,17 @@ def _platform_parsers():
 def platform_owner_recipe(source):
     targets = {"ownership-probe-check", "ownership-probe-test"}
     recipes, phony, current = {}, None, None
-    for line in source.replace("\\\n", " ").splitlines():
+    lines = []
+    for line in source.split("\n"):
+        line = line.removesuffix("\r")
+        if lines and lines[-1].endswith("\\"):
+            previous = lines.pop()
+            review.require(previous.startswith("\t") and not previous.endswith("\\\\"),
+                           "owner continuation requires one literal recipe escape")
+            lines.append(previous[:-1] + line.removeprefix("\t"))
+        else:
+            lines.append(line)
+    for line in lines:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         review.require("$" not in line, "owner Make expansion requires a reviewed model")
