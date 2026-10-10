@@ -547,10 +547,12 @@ def _native_metadata_directory(path, budget):
             not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
             or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
-            raise MakeProbeError(
+            message = (
                 f"native metadata directory has mutable/untrusted backing: {entry} "
-                f"uid={info.st_uid} mode={oct(info.st_mode)}",
+                f"uid={info.st_uid} mode={oct(info.st_mode)}"
             )
+            print(message, file=sys.stderr)
+            raise MakeProbeError(message)
     try:
         info = source.lstat()
     except FileNotFoundError:

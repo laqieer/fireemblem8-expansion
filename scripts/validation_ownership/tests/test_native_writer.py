@@ -2,6 +2,7 @@
 
 import errno
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -435,10 +436,13 @@ class NativeRuntimeMetadataTests(unittest.TestCase):
                     fields = fixture.copy()
                     fields[field] = value
                     return os.stat_result(fields)
-                with self.subTest(path=name, field=field), patch.object(Path, "lstat", changed):
+                with self.subTest(path=name, field=field), patch.object(Path, "lstat", changed), patch(
+                    "sys.stderr", new_callable=io.StringIO,
+                ) as diagnostic:
                     with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted") as rejected:
                         capture(name, ProbeBudget())
                     self.assertIn(name + " uid=", str(rejected.exception))
+                    self.assertEqual(diagnostic.getvalue(), str(rejected.exception) + "\n")
             def redirected(source, *args, **kwargs):
                 return path.parent if source == path else original_resolve(source, *args, **kwargs)
             with self.subTest(path=name, alias=True), patch.object(Path, "resolve", redirected):
