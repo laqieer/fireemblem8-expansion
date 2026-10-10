@@ -41,6 +41,70 @@ or approval.
    `./configure --help` for persistent, validated feature/profile choices;
    direct `make VAR=value` overrides remain available for one-off builds.
 
+### Local analysis tools and MCP troubleshooting
+
+Prefer IDA Pro/IDALib CLI or IDA MCP for disassembly and decompilation.
+Ghidra/PyGhidra CLI remains available for cross-checks, fallback, and batch
+analysis; use a separate project for each concurrent process. The local
+shared-project Ghidra stdio MCP setup is retired: starting a server per Copilot
+session against the same project contends for Ghidra's project lock. Routing
+Claude and Copilot to different projects does not isolate multiple Copilot
+sessions. This is a limitation of that setup, not a claim that Ghidra MCP's
+HTTP transport cannot serve multiple clients. No tool uninstall or new shared
+HTTP service is required.
+
+Manage local servers through `copilot mcp list` and
+`copilot mcp remove ghidra`, or `/mcp` in an interactive session. Keep the IDA
+entry unchanged. User MCP configuration is machine-local, not a repository
+artifact. Existing sessions may retain generated configuration snapshots;
+restart those sessions to pick up the removal.
+
+`Failed to register MCP configuration watches: Too many open files (os error
+24)` occurs while registering configuration watchers, before it establishes
+anything about server concurrency. On Linux, check both the failing process's
+open-file limit (`/proc/<pid>/limits`) and descriptors (`/proc/<pid>/fd`), and
+the per-user inotify-instance limit
+(`/proc/sys/fs/inotify/max_user_instances`). Inotify descriptors appear as
+`anon_inode:inotify`; do not require brackets when counting them. Counts are
+point-in-time observations and may omit inaccessible processes or include
+duplicated descriptors. A high open-file limit does not rule out inotify
+exhaustion. Do not terminate unrelated sessions or change system limits
+without identifying the exhausted resource; removing a server alone does not
+prove that the watcher error is fixed.
+
+**TC-TOOLS-MCP-001** ([#285](https://github.com/laqieer/fireemblem8-expansion/issues/285)):
+from a local configuration containing IDA and the shared-project Ghidra server,
+retain a private pre-removal snapshot, remove only `ghidra`, and compare the
+parsed configurations. The expected result is no `ghidra` entry and an
+identical IDA entry. For the default user configuration:
+
+```bash
+(
+set -eu
+before=$(mktemp)
+trap 'rm -f -- "$before"' EXIT
+trap 'exit 1' HUP INT TERM
+cp "$HOME/.copilot/mcp-config.json" "$before"
+copilot mcp remove ghidra
+python3 -c 'import json, sys; before, after = [json.load(open(path))["mcpServers"] for path in sys.argv[1:]]; assert "ghidra" in before; assert "ghidra" not in after; assert before["ida"] == after["ida"]' "$before" "$HOME/.copilot/mcp-config.json"
+)
+```
+
+Keep snapshots private: they may contain credentials, must never be committed
+or published. The subshell stops if snapshot creation/copy or removal fails,
+and cleans up on exit or catchable interrupts; SIGKILL or power loss cannot
+run cleanup traps. Remove a leftover private snapshot after such an interruption.
+JSON key ordering
+does not affect this check; a changed or missing IDA entry fails it.
+Run `copilot mcp list` in a fresh process and confirm IDA remains configured
+while Ghidra does not. Restart existing sessions that use configuration
+snapshots. The pre-removal configuration is the negative control; do not
+launch a competing server against a live project just to reproduce locking.
+This checks configuration selection, not IDA runtime connectivity or recovery
+from watcher exhaustion. Ghidra installation and projects remain untouched.
+There are no framework feature dependencies, conflicts, save-compatibility,
+ROM/RAM, generated-data, or localization changes.
+
 ## 2. Choose your change type
 
 | Change type | Where | Primary commands |
