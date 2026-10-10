@@ -3133,6 +3133,8 @@ controls remain mandatory.
 Explicit source-return fixtures initialize the inactive pattern lane. The
 host-decision mutation removes both current dependency predicate inputs only
 within the injected check, restoring configuration and typed image afterwards.
+Metadata trust refusal identifies the offending directory, owner and mode;
+it does not admit mutable backing or conceal earlier validation failures.
 
 The same compiler subcase checks the actual kernel exec-stop environment before
 the driver or frontend begins user code. The driver must have the closed issued
