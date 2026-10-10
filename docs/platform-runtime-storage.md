@@ -240,6 +240,8 @@ recipe-prefix tab; it never inserts a word separator. The ordinary GNU Make
 control for `python3\\` followed directly by `-m` attempts `python3-m`, and the
 owner model must reject that same command. Whitespace-separated continuation
 stays supported; unmodeled non-recipe or multiple-escape continuation refuses.
+Quoted recipe continuations are outside this literal model and refuse:
+single quotes preserve the escaped newline as part of the shell word.
 Every selected provider execution and unchanged baseline must complete without
 skips, expected failures or unexpected successes; unittest's success status or
 test count alone is insufficient.
