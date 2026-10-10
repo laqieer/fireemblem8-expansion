@@ -439,6 +439,26 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         observed = next(item for item in self.run_members(members, head)
                         if item.obligation.member == "owners:probe-inventory")
         self.assertEqual(observed.verdict, "contract-violation", observed.detail)
+        quoted = source.replace("\tpython3 -m unittest ", "\t'python3\\\n\t' -m unittest ")
+        self.assertNotEqual(source, quoted)
+        temporary.write_text(quoted)
+        try:
+            result = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-f", str(temporary),
+                 "ownership-probe-test"],
+                cwd=self.repo.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(b"python3", result.stderr)
+        finally:
+            temporary.unlink()
+        head = self.repo.commit({makefile: quoted})
+        members = tuple(item for item in self.tools.members(self.scope(head))
+                        if item.family == "generated")
+        observed = next(item for item in self.run_members(members, head)
+                        if item.obligation.member == "owners:probe-inventory")
+        self.assertEqual(observed.verdict, "unavailable", observed.detail)
 
     def test_runtime_regression_and_unexecutable_suite_cannot_pass_coverage(self):
         source = (self.repo.root / SOURCE).read_text()
