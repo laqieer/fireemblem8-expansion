@@ -2437,7 +2437,7 @@ class FoundationTests(unittest.TestCase):
             captured = original(path, budget, **kwargs)
             if path == "/usr/bin/printf":
                 return tuple(
-                    (name, data + b"changed" if "libc.so" in name else data)
+                    (name, data[:8] + b"changed" if "libc.so" in name else data)
                     for name, data in captured
                 )
             return captured
@@ -2856,7 +2856,7 @@ class FoundationTests(unittest.TestCase):
             result = original(path, budget, **kwargs)
             if path == "/usr/bin/sh":
                 return tuple(
-                    (name, data + b"changed" if name != path else data) for name, data in result
+                    (name, data[:8] + b"changed" if name != path else data) for name, data in result
                 )
             return result
         session = self.session()

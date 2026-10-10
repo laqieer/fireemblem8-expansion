@@ -3100,6 +3100,11 @@ captured descriptors and temporary roots. This is an existing compile-policy,
 small-fixture result, **not native Make ancestry, inherited-FD, original
 initial-plus-eight or public-archive qualification**.
 
+The foundation runtime-conflict controls inject changed bytes from a bounded
+slice of the actual sealed image, not byte concatenation on `RuntimeImage`.
+Require the original shell/executable conflict refusal and owned cleanup;
+an adapter `TypeError` is not rejection evidence.
+
 The same compiler subcase checks the actual kernel exec-stop environment before
 the driver or frontend begins user code. The driver must have the closed issued
 baseline; the frontend retains every baseline value and may add only
