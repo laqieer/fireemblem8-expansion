@@ -7645,7 +7645,8 @@ class NativeOutputCustodyTests(unittest.TestCase):
                     self.assertIs(outputs.objects[failure], item)
                     owned = item.descriptor
                     self.assertEqual(os.pread(owned, len(data), 0), data)
-                    self.assertNotIn("output-open", events)
+                    self.assertEqual(events, ["output-open"])
+                    self.assertIsNone(item.sha256)
                     self.assertFalse(outputs.pins)
                     with self.assertRaisesRegex(NativeOutputError, "active"):
                         outputs.finish()

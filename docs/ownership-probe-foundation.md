@@ -3107,6 +3107,9 @@ an adapter `TypeError` is not rejection evidence.
 Cache/view controls use exact `(path, True)` sealed-lane keys and retain
 no-second-host-capture, view restoration and failed-capture cleanup checks.
 The undeclared Python parent directory must remain denied at its actual read.
+Readonly settlement failure retains the preceding successful kernel-open
+binding, but no settled digest; terminal completion and owned-FD cleanup
+controls remain mandatory.
 
 The same compiler subcase checks the actual kernel exec-stop environment before
 the driver or frontend begins user code. The driver must have the closed issued
