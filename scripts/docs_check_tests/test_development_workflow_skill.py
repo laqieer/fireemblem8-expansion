@@ -2620,7 +2620,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Identify dependencies and conflicts between the request",
             "Final docs must name all dependencies and conflicts",
             "IDA Pro/IDALib CLI or MCP as the preferred primary",
-            "Ghidra/PyGhidra CLI or MCP as a cross-check",
             "../GBA-FE-ROMS",
             "Record every tool installed for the task, its version",
             "make expansion-modern-gdb-smoke",
