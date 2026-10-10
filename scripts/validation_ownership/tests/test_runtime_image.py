@@ -145,6 +145,12 @@ class RuntimeImageSessionTests(unittest.TestCase):
                              [1, 2])
             self.assertEqual(observed["consumed"], ["src/query.c"])
             self.assertEqual(observed["code_consumed"], ["include/query.h"])
+            archive = read_epochs.reconstruct_archive(
+                json.loads(json.dumps(trace)), budget=session.budget,
+            )
+            self.assertEqual(archive.compiler_profile, profile)
+            self.assertEqual(archive.compiler_executions, actors)
+            self.assertEqual([part.exec for part in archive.passes], [1, 2])
             for defect in ("profile", "driver", "source", "environment", "missing-profile"):
                 changed = json.loads(json.dumps(trace))
                 if defect == "missing-profile":

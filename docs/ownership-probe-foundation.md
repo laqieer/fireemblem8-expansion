@@ -3194,6 +3194,11 @@ Standalone replay validates the same closed profile and complete lineage.
 The host additionally compares it with session-issued sealed images and request
 inputs; recomputing a profile identity is not an alternate runtime grant.
 Default non-compiler v6/v8 traces keep their existing schemas.
+`reconstruct_archive` retains the validated profile and typed compiler executions,
+including actual environments and driver-at-fork references, in the existing
+archive. It derives them from the same closed machine/job stream; no second
+raw trace or authored execution ledger is created. Non-compiler archives retain
+null profile and empty executions. This is archive data, not live authority.
 
 For this component of **TC-WORKFLOW-NATIVE-MAKE-001**, start from a clean Linux
 checkout with the existing namespace/ptrace launcher and host GCC:

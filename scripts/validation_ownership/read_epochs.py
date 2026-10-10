@@ -791,6 +791,8 @@ class OriginalArchive(NamedTuple):
     version: int = 1
     selection: tuple = ()
     selection_inventory: tuple = ()
+    compiler_profile: OriginalCompilerProfile | None = None
+    compiler_executions: tuple[OriginalCompilerExecution, ...] = ()
 
 
 class OriginalCompletion(NamedTuple):
@@ -1526,11 +1528,36 @@ def reconstruct_archive(trace, *, budget):
             tuple(value["expansions"]),
             tuple(value["pattern_templates"]), tuple(value["patterns"]),
         ))
+    compiler_profile = None
+    compiler_executions = []
+    if "compiler" in trace.get("output_authority", {}):
+        reserve = lambda size: budget.charge("cache", size)
+        compiler_profile = native_compiler_profile(
+            trace["output_authority"]["compiler"],
+            count_limit=budget.limits.observation_count, reserve=reserve,
+        )
+        inventory = tuple(row["path"] for row in trace["selection"]["inventory"])
+        reserve(sys.getsizeof(inventory) + sys.getsizeof(compiler_executions))
+        for job in trace["output_authority"]["jobs"]:
+            tree = [row["event"] for row in trace["machine"]["events"]
+                    if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]]
+            reserve(sys.getsizeof(tree))
+            if any(row["kind"] == "exec" and (
+                row["path"] in {compiler_profile.driver, compiler_profile.frontend}
+                or "compiler" in row["admission"]
+            ) for row in tree):
+                compiler_executions.extend(native_compiler_lineage(
+                    tree, job, compiler_profile, sources=inventory,
+                    count_limit=budget.limits.observation_count, reserve=reserve,
+                ))
+                reserve(sys.getsizeof(compiler_executions))
+        reserve(sys.getsizeof(tuple(compiler_executions)))
     return OriginalArchive(
         trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
         tuple(trace["selection"]["names"]) if trace["version"] in MACHINE_VERSIONS
         else tuple(tuple(row) for row in trace.get("selection", ())),
         tuple(trace["selection"]["inventory"]) if trace["version"] in MACHINE_VERSIONS else (),
+        compiler_profile, tuple(compiler_executions),
     )
 
 

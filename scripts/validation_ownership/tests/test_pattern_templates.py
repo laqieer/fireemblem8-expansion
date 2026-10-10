@@ -417,6 +417,8 @@ guard.NativeReadTrace.prepare_pattern_retirement=prepare
                         self.assertEqual([(item.path, item.data, item.mode) for item in generated],
                                          [("generated.mk", expected, 0o644)])
                         archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                        self.assertIsNone(archive.compiler_profile)
+                        self.assertEqual(archive.compiler_executions, ())
                         self.assertEqual(len(archive.passes), 2)
                         self.assertEqual([row.definition.value for execution in archive.passes
                                           for row in execution.pattern_templates], ["retained", "retained"])
