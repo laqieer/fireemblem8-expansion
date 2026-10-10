@@ -386,6 +386,34 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                            if item.obligation.member == "consumers:probe-inventory")
             self.assertEqual(control.verdict, "satisfied", control.detail)
 
+    def test_make_owner_expansion_cannot_forge_recipe_or_mutate_inventory(self):
+        makefile = self.tools.subjects.PLATFORM_MAKE
+        source = (self.repo.root / makefile).read_text()
+        recipe = next(line.strip() for line in source.splitlines()
+                      if line.startswith("\tpython3 -m unittest "))
+        for injected in (
+            "$(info " + recipe + ")\nownership-probe-test: ;\n",
+            "$(file >build/parse-side-effect,forged)\n" + source,
+            "$(shell touch build/parse-side-effect)\n" + source,
+        ):
+            with patch("subprocess.Popen", side_effect=AssertionError("owner parsing executed a child")):
+                with self.assertRaises(ValueError):
+                    self.tools.subjects.platform_owner_recipe(injected)
+            head = self.repo.commit({makefile: injected})
+            members = tuple(item for item in self.tools.members(self.scope(head))
+                            if item.family == "generated")
+            observed = next(item for item in self.run_members(members, head)
+                            if item.obligation.member == "owners:probe-inventory")
+            self.assertEqual(observed.verdict, "unavailable", observed.detail)
+        reformatted = "# literal owner\n\n" + source.replace(" unittest ", " unittest \\\n\t ")
+        with patch("subprocess.Popen", side_effect=AssertionError("owner parsing executed a child")):
+            self.assertEqual(self.tools.subjects.platform_owner_recipe(reformatted),
+                             shlex.split(recipe))
+        head = self.repo.commit({makefile: reformatted})
+        members = tuple(item for item in self.tools.members(self.scope(head))
+                        if item.family == "generated")
+        self.assert_satisfied(self.run_members(members, head))
+
     def test_runtime_regression_and_unexecutable_suite_cannot_pass_coverage(self):
         source = (self.repo.root / SOURCE).read_text()
         broken = source.replace("before.st_uid != 0", "before.st_uid != before.st_uid")
