@@ -1087,6 +1087,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-NATIVE-MAKE-001": {
+                        "document": "docs/ownership-probe-foundation.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_runtime_image -v",
+                        },
+                    },
                     "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001": {
                         "document": "docs/platform-runtime-storage.md",
                         "commands": {
@@ -1447,9 +1454,10 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         os.path.join(REAL_REPO_ROOT, case["document"])
                     )
                     case_heading = next(
-                        line[3:]
+                        parsed[1]
                         for line in procedure.splitlines()
-                        if line == "## " + case_id or line.startswith("## " + case_id + ":")
+                        if (parsed := check_docs.parse_atx_heading(line)) is not None
+                        and (parsed[1] == case_id or parsed[1].startswith(case_id + ":"))
                     )
                     case_section = markdown_section(
                         procedure,
@@ -1463,7 +1471,12 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "### Automation",
                         "### Cleanup and limitations",
                     ):
-                        self.assertIn(heading, case_section)
+                        title = heading.removeprefix("### ")
+                        self.assertTrue(any(
+                            parsed[1] == title or parsed[1].startswith(title + " ")
+                            for line in case_section.splitlines()
+                            if (parsed := check_docs.parse_atx_heading(line)) is not None
+                        ), (case_id, title))
 
                     if case_id == "TC-WORKFLOW-MANUAL-HANDOFF-001":
                         leaked_section = case_section.replace(

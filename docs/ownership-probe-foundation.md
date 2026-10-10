@@ -1224,6 +1224,8 @@ credentials is needed. The immutable original fixture has 2,148 source files,
 the original four Make inputs and the issued original scanner. A smaller
 exploratory pool is not this fixture.
 
+#### Actions
+
 1. Run the immutable positive and its documented adversarial procedure in
    `TC-WORKFLOW-NATIVE-READONLY-001` below. Require actual original scanner
    execution, source/job/machine agreement and aggregate-budget rejection.
@@ -1286,6 +1288,25 @@ exploratory pool is not this fixture.
    rather than treating the step 2 command or a renderer fixture as its result.
    The original #180 profile fixture is retained design/regression evidence,
    not a native qualification command in this component checkout.
+
+#### Expected result
+
+Every original root agrees with the ordinary source oracle, and actual
+source/version/job/descriptor evidence agrees across live, host and archive
+consumers. Registration and component passes do not establish that outcome.
+
+#### Negative control
+
+Pre-fix reference and generated-consumer refusals remain regression controls.
+Malformed, foreign, stale or incomplete custody and exhausted resources must
+refuse explicitly; a successful prefix cannot stand in for all eight queries.
+
+#### Interactions and save compatibility
+
+This host-only layer depends on #274 and #279 and supplies #270/#180/#186.
+No gameplay profile, save, ROM/RAM, locale or archival behavior changes.
+
+#### Automation
 
 The original dependency CLI has a source-planning component,
 `python_commands.native_generated_dependency_command(session, argv)`. It
@@ -1361,6 +1382,8 @@ copy remains charged. The byte views eliminate only full-buffer comparison
 allocations, not register fields or readback. The pre-fix finite case captures
 68 distinct siginfo objects instead of one. This is a component allocation
 repair, not finite-request wire support or original all-eight qualification.
+
+#### Cleanup and limitations
 
 The catalog automation maps the currently executable components only.
 The full runner must be wired here before case acceptance. No subjective

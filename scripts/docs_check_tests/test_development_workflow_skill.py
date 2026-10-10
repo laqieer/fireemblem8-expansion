@@ -4572,6 +4572,7 @@ printf '%s\t%s\t%s\n' "$result" \
             if item["id"] == "workflow-governance"
         )
         expected_cases = [
+            "TC-WORKFLOW-NATIVE-MAKE-001",
             "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
             "TC-WORKFLOW-AGENT-HANDOFF-001",
             "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
