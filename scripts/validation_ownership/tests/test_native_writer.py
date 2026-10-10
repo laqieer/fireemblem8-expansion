@@ -436,8 +436,9 @@ class NativeRuntimeMetadataTests(unittest.TestCase):
                     fields[field] = value
                     return os.stat_result(fields)
                 with self.subTest(path=name, field=field), patch.object(Path, "lstat", changed):
-                    with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                    with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted") as rejected:
                         capture(name, ProbeBudget())
+                    self.assertIn(name + " uid=", str(rejected.exception))
             def redirected(source, *args, **kwargs):
                 return path.parent if source == path else original_resolve(source, *args, **kwargs)
             with self.subTest(path=name, alias=True), patch.object(Path, "resolve", redirected):
@@ -2101,7 +2102,7 @@ guard.supervise=measured_supervise
                     with self.subTest(operation=failure["event"]["operation"]):
                         with self.assertRaisesRegex(
                             read_epochs.ReadEpochError,
-                            "actual pathname dispatch" if directory else "actual job binding",
+                            "actual pathname dispatch",
                         ):
                             read_epochs.validate_trace(
                                 invalid, invalid["scope"], count_limit=100000, file_limit=10000000,
