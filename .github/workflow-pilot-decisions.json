@@ -2,6 +2,32 @@
   "schema_version": 1,
   "pull_requests": [
     {
+      "pull_request": 276,
+      "risk_boundaries": [
+        "lifecycle",
+        "protocol",
+        "runtime"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "major-boundaries",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "review-first",
+      "stack": {
+        "depth": 1,
+        "parent_pr": 280,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
       "pull_request": 280,
       "risk_boundaries": [
         "lifecycle",

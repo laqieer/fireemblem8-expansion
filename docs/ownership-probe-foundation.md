@@ -37,6 +37,1364 @@ The dependent extension must preserve original commands, inputs, all four
 profiles times both Make primaries, one unchanged budget/deadline and every
 actual source/job/version outcome.
 
+The dependent #275 branch's internal `NativeOutputs` object model keeps
+successful output-descriptor operations and generated source-read pins in
+one lifetime. Its focused kernel controls exercise actual file writes,
+fork-inherited descriptors, paired write entry/return, actual `dup2` no-op
+and replacement, failed writes/renames, atomic replacement with
+an old source pin, foreign owners, in-place mutation refusal and pin cleanup:
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.NativeOutputCustodyTests`.
+Settled versions retain generated-content digests through owned object pins;
+rename/unlink verify both moved and retired bytes. Plain write returns cannot
+absorb mode/link changes. Cleanup closes owned object/source pins, never the
+borrowed tracee descriptor integers.
+Zero-byte write returns preserve the complete entry identity and cannot absorb
+an unrelated intervening content write.
+The redesign's internal entry/return surface owns one pending operation per
+process. It retains entry object pins and open flags before actual creation or
+truncation, refuses destructive opens before an active source pin is changed,
+and records paired failed opens, renames and removals without invented objects
+for absent operands. Write entry retains the actual payload, offset and bounded
+preimage; return compares the exact resulting bytes, including unchanged
+regions and sparse gaps, rather than attributing every content change to a
+nonzero return. Failed duplication creates no negative descriptor binding.
+Duplication entry retains the actual `dup`, `dup2`, `dup3`, `F_DUPFD` or
+`F_DUPFD_CLOEXEC` kind, requested target/minimum and exact source/target object
+pins. A successful return must identify the actual source object and requested
+target or minimum; allocating duplication cannot overwrite an existing binding.
+`dup2` same-FD success and `dup3` same-FD failure remain distinct. Retired but
+still-readable objects can be duplicated without inventing a live pathname.
+Copied, stale and overlapping operation tokens refuse; terminal cleanup closes
+pending owned pins as well as the shared object/source pins.
+Owned teardown is terminal, not a resumable cancellation. It preserves any
+unfinished borrowed descriptor/writer as failed diagnostic state and explicitly
+refuses subsequent transitions; inventory completion cannot turn that state
+into successful observation. On the supported Linux host, late `close` errors
+`EINTR`, `EIO`, `ENOSPC` and `EDQUOT` retire the valid borrowed descriptor while
+retaining the failure event; `EBADF` contradicts a live owned binding.
+The late-error controls use actual descriptor close/release with a modeled
+error return. They do not claim a real filesystem-induced I/O error.
+Final-writer descriptor retirement does not itself complete content settlement.
+A content-budget/stat/read or settlement-event failure leaves the object
+unsettled even though the actual descriptor has been released. Final inventory
+completion rejects that state before and after owned teardown. Digest admission
+occurs only after the settlement event succeeds; a previously settled digest
+cannot authorize a failed later settlement.
+The existing model keeps one sticky incomplete-lifecycle state, not a second
+receipt or output registry. Every event-publication exception propagates and
+prevents later completion, including after successful settlement, final close
+or physical source-pin release. Cleanup of an unreturned operation or unreleased
+source still closes its owned resources but retains incomplete lifecycle; it
+cannot manufacture a successful source return or operation outcome.
+Fork observations preflight the entire tracked descriptor set, including later
+collisions and repeated inputs, and fund all copies before installing any child
+binding. A validation or charge failure emits no inherited prefix and changes
+neither parent's nor child's writer/binding set. A later event failure remains
+sticky-incomplete rather than pretending the actual kernel fork rolled back.
+Pure-status `close`, rename and unlink returns require integer zero for success
+or a bounded negative kernel error: positive, Boolean, float and null evidence
+cannot retire a descriptor or transfer a version.
+Open descriptor/status and write byte-count/status returns likewise validate
+exact integer type and kernel bounds before comparison or mutation. Malformed
+decoded values raise the custody-layer error and retain the pending entry or
+writer; they cannot escape as a Python type error or clear incomplete evidence.
+Pre-syscall write-entry preparation failures clear their provisional writer
+and operation token and close only new owned operand pins. Actual borrowed
+output descriptors, settled identity/digest and version remain unchanged.
+This rollback applies before the kernel write, not to an actual failed write
+return or incomplete post-write settlement.
+The fixed-offset model does not admit append writes. Paired open entry rejects
+`O_APPEND`; write entry also checks the actual pinned open-file-description
+flags before marking a writer, covering post-open `F_SETFL` and duplicate FDs.
+Linux `pwrite` on an append description ignores the supplied offset; it cannot
+be qualified by this fixed-offset postimage model. Original finite domains
+do not require append redirection. This limitation does not grant production
+output authority or generated-source admission.
+
+The existing native production observer now captures original `posix_spawn`
+argv and canonical `/repo` CWD before spawning. Its private `VO_JOB_INPUTS`
+notification is authenticated at the existing observer instruction/role
+boundary, carried through the actual `Process` clone, and compared with the
+root exec syscall inputs before execution. Runtime v5 also compares the
+exec-stop command line against that pre-spawn value. Each argv pointer and
+string read is charged to the original shared observation budget. Root
+dispatch completion and successful root exec retire the pending value;
+descendant execs retain the existing actual-tree validation.
+
+This is an original-input binding seam, not writable-output permission,
+Command-plan admission, nested-Make support, or generated-source v6 evidence.
+The v5 machine/host/archive input schema remains unchanged. To reproduce the
+deterministic seam controls from a clean source tree, run
+`python3 -m unittest scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_original_prespawn_inputs_bind_entry_and_exec_stop`.
+The original recipe must print `original`; omitted, repeated, foreign-sender,
+wrong-size, changed-argv/CWD and changed exec-stop bindings must refuse and
+clean the owned process tree. Existing original expansion, direct-executable
+and descendant pipeline cases are the positive compatibility controls.
+
+The readonly production lane can now bind original job inputs to the existing
+typed `Command` schema by passing `commands` to `_native_make_readonly`.
+Its existing mapping is indexed by the **actual argv tuple**, not reconstructed
+shell text. Each lookup must return a `Command` whose argv is exactly that
+tuple. The host resolves the binding through the existing `ProducerChannel`
+before the original spawn, without executing the command itself. The same
+monotonic dispatch is bound to the actual clone, exec entry, runtime v5
+exec-stop inputs and complete returned job. Repeated equal argv means repeated
+real jobs, not deduplicated/replayed results. The final channel report must
+cover every issued authorization and completed actual job.
+The owner payload binds one frozen identity of the complete captured runtime:
+Make, shell, descendant executables, interpreters/shared libraries, optional
+captured resources and their alias/absence/mode declarations, plus the admitted
+executable set. It also binds the active native tool's digest, source inputs
+and original placement, including when that tool is used by a descendant.
+Hashing and the complete encoded payload use the existing shared budget.
+Different sealed tools or captured code images cannot alias merely because
+the root argv and executable agree; repeating the same closure retains a
+stable owner. Managed Python runtime directory roots are named trusted readonly
+mounts, not sealed byte captures; this binding does not claim otherwise.
+Directory declarations use the existing `_directories` authority, including
+the repository root `"."`, and their normalized set participates in the owner.
+The selected executable digest follows the same captured stock `/bin` alias
+used by the actual supervisor; canonical `/usr/bin/sh` jobs retain their
+original argv rather than being rewritten.
+
+This intermediate path requires runtime v5, canonical `/repo`, immutable
+source/code/directory declarations, the active issued native tool if one is
+named, and no outputs or dependency-only execution. It grants neither a
+writable mount nor generated-source acceptance. Existing source selection,
+machine/archive format, shared counters/deadline and normal mapped producer
+behavior are unchanged. Full #275 integration still requires original finite
+output/effect plans, actual writers/read pins, generated wire crosschecks,
+nested Make and the unchanged eight-query qualification.
+
+Run the `NativeWriterTests.test_native_command_admission_*` cases in
+`scripts.validation_ownership.tests.test_native_writer`. The positive case must
+return the two actual expansion-root PIDs from the original Make variables
+and direct recipe stdout, exactly three actual jobs and three authorizations.
+Missing/substituted/writable Commands, changed views, expired deadline,
+exhausted cache, cancellation, changed live/returned bindings, stale replies
+and incomplete terminal counts must refuse and fully clean owned processes.
+These controls are deterministic host evidence, not original-eight proof.
+The output-object component distinguishes the acting producer of a readonly
+open or atomic replacement from the producer of a retained prior version.
+Reading or retiring that prior object does not relabel its owner; replacement
+keeps the new temporary's producer and retains the prior source pin's original
+owner/content. This is observation, not cross-producer output authorization:
+the production supervisor must still admit the exact destination effect from
+its issued Command before allowing any kernel mutation.
+`NativeOutputCustodyTests.test_distinct_producers_read_and_replace_prior_versions_without_relabeling_sources`
+uses actual readonly opens, `renameat2(RENAME_NOREPLACE)` failure and atomic
+replacement to verify both versions, distinct acting/version owners and old
+pin retirement. Producer/process labels are component inputs, not independently
+observed native jobs. Foreign temporary owners and writable reopenings refuse;
+unsupported rename flags and a success return contradicting NOREPLACE with an
+existing destination refuse. The pre-fix component cannot read or retire a
+prior producer's version. Actual supervised multi-job/source/wire qualification
+remains required before #275 acceptance.
+`test_native_command_admission_preserves_root_directories_and_stock_shell_alias`
+must execute the original job with and without the captured `/bin` alias,
+preserve its argv/stdout and complete one actual authorization, and bind equal
+normalized directory sets identically. Absent, file-valued and escaping
+directory declarations must refuse. The pre-fix controls reject valid root
+directories and fail aliased shell admission with a missing executable digest.
+`test_native_command_owner_binds_descendant_tools_and_shared_library_closure`
+must execute differing real shell-launched tools with distinct owners and keep
+owners distinct when a captured non-root shared-library image changes without
+changing stdout. Repeating the original closure must restore its original
+owner. The root-only pre-fix binding aliases both controls.
+
+The existing session-issued native-tool `Command` capsule now connects its
+regular-file effects to the live syscall supervisor's output-object model.
+Open, write/writev/pwrite, duplicate, close, actual fork inheritance, process
+exit, atomic replacement and unlink use stopped kernel operands and paired
+return observations. Owned `/proc/PID/fd` duplicates pin the actual objects;
+tracee descriptor numbers are never closed by the supervisor. Successful
+returns settle content and versions; failures preserve preimages. Counters,
+pin/content reads, event storage and the deadline use the existing shared
+budget. No second runner or output ownership registry is introduced.
+
+The same model now observes capsule `mkdir`/`mkdirat` and
+`rmdir`/`unlinkat(AT_REMOVEDIR)` entry/return pairs. Successful creation pins
+the actual empty, owner-traversable directory and its inode/mode; removal
+requires that previously observed owner and records the same inode with zero
+links after the kernel return. A missing removal may fail without inventing
+a directory, and an existing foreign directory cannot be adopted for deletion.
+Creating or removing children and regular-file replacement update an owned
+parent only after verifying the exact namespace entry change and stable
+parent inode/mode. Validate every affected parent before publishing any
+directory/file ownership change or parent update, including both sides of a
+cross-parent replacement. Entry-time identity/entry checks reject unobserved parent
+changes. Failed operations retain the parent preimage. Directory pin reads,
+entry inventories and events use the existing shared observation budget.
+Terminal cleanup closes pending pins without publishing an unobserved return.
+The existing pending-operation map also excludes overlapping namespace
+operands, directory ancestors and owned-parent entry inventories across PIDs
+before a second kernel operation. This prevents two admitted absent,
+nonexclusive creating opens from publishing the wrong producer's inode.
+Do not change the original syscall flags to force exclusive creation.
+Independent names without a shared owned-parent inventory remain concurrent;
+readonly opens may concurrently share a settled version without claiming
+namespace mutation. Conflicting namespace operations may proceed after the
+first actual return.
+This is admitted tracee-operation custody, not hostile same-UID host isolation.
+
+Run `NativeOutputCustodyTests.test_pending_namespace_excludes_raced_creation_and_all_conflicting_action_siblings`
+and `NativeOutputCustodyTests.test_pending_owned_parent_inventory_excludes_sibling_namespace_mutations`.
+For all five namespace actions, source/destination variants, ancestor and
+same-owner/different-owner modeled bindings, require refusal before mutation
+with no new pins, pending records, object ownership or events. Preserve the
+first pending operation; independently create a different name, then complete
+the first actual nonexclusive kernel open and permit sequential continuation.
+Require exact owned-parent entries after sequential child creation.
+The pre-fix model admits both absent entries and can attribute the actual
+second creator's inode to the first producer processed at return. These are
+actual filesystem/component controls with modeled producer/PID labels, not
+qualification of distinct native Make jobs.
+
+From a clean fixture run
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_observes_directory_syscall_and_failed_return_family scripts.validation_ownership.tests.test_producer.NativeOutputCustodyTests`.
+The actual C program must exercise both ordinary and dirfd-relative syscall
+families, each producing exactly `result` bytes `final`, mode `0600`, and
+stdout `once`. Require paired creation/removal identities and actual
+`EEXIST`, `ENOTEMPTY` and `ENOENT` failure results without invented versions.
+Creating a directory over an admitted regular file must reach actual `EEXIST`;
+removing that regular file as a directory must reach `ENOTDIR`. Preserve its
+typed file preimage without adopting it as a directory or refusing before
+those harmless failed kernel operations.
+Component controls additionally exercise nested directory/file creation,
+cross-parent replacement, child retirement, foreign-owner/foreign-existing
+directory rejection, unobserved parent changes and extra children introduced
+between entry and return. A refused mkdir must publish no new directory
+ownership; a cross-parent replacement with a bad second parent must publish
+neither the first-parent update nor file transfer. Terminal cleanup after
+either refusal must not publish a successful return or refresh retained
+parent identities.
+The pre-extension model did not observe directory syscall lifecycles and
+has no paired directory API. These controls do not establish original native
+Make admission, directory plans or generated-source v6 qualification.
+
+Close returns use one supervisor path to retire output custody, source-read
+bindings and generic descriptor authority together. Linux releases a tracked
+descriptor on `EINTR`, `EIO`, `ENOSPC` and `EDQUOT`; these accepted late errors
+must not leave a pathname authorization or be retried. `EBADF` contradicts
+a live output binding and unsupported errors still refuse. Normalize the
+close operand and `unlinkat` flags to the kernel's signed 32-bit argument
+before selecting custody. Only normalized `0` and `AT_REMOVEDIR` unlink
+operations are admitted; unsupported flags refuse before kernel mutation.
+
+Run the two `ProducerTests` methods
+`test_native_capsule_injected_late_close_retires_both_fd_maps_for_actual_binding_family`
+and `test_native_capsule_unlinkat_normalizes_kernel_flags_and_refuses_unknown_operations`
+from a clean fixture with `python3 -m unittest`. The close control executes
+real successful kernel closes, verifies absence of each tracee `/proc/PID/fd`
+entry, then injects each of the four late error returns at the stopped syscall
+return. It is injected-return integration evidence, not a claim that the
+filesystem naturally produced those errors. Exercise original, duplicate and
+actual fork-inherited bindings with ordinary and upper-bit descriptor operands;
+require both descriptor maps retired, exact final bytes/mode/stdout, four
+distinct injected outcomes, and successful uninjected parent/original closes.
+The pre-fix supervisor retains generic descriptor authority after the injected
+error. Exercise both unlink forms with ordinary, bit-32 and bit-63 flags;
+require actual zero-link retirement identities for the file and directory.
+Unknown low flags must refuse, including when upper bits are present.
+The pre-fix full-register comparison skips custody for the upper-bit operands.
+Require complete session cleanup after every positive and refused invocation.
+These capsule controls do not qualify original native Make or generated v6.
+
+Regular output descriptor bindings retain actual observed open-file-description
+lineage: each successful open is distinct, whereas duplication and actual
+fork inheritance share a description. A separate readonly consumer can acquire
+an already-settled retained object without an output/write plan. Actual machine
+dispatch always identifies the actor, including resource-free jobs; object
+owner continues to identify its creator. Replay requires the known exact
+path/version/identity and excludes active or pending writers. A paired parent
+return may omit the reader's directory role only when the already-issued
+directory identity, preimage and entries are completely unchanged. A failed
+readonly acquisition preserves its actual flags, actor, negative return and
+resource-backed operand preimages; write/create/truncate/append/tmpfile flags
+do not gain this exception.
+
+Run the two `NativeWriterTests` methods
+`test_native_readonly_consumer_opens_settled_foreign_output_without_write_plan`
+and `test_native_resource_free_readonly_consumer_binds_actual_actor_and_creator`
+from `scripts.validation_ownership.tests.test_native_writer` with
+`python3 -m unittest`. A real C creator writes/closes `produced`; a separate
+output-free consumer reads it and returns those exact bytes. Inspect generated
+bytes/mode, creator-versus-actor, distinct descriptions, seven open-record
+mutations and six unchanged-parent mutations. Run the two
+`test_native_foreign_consumer_write_flags_still_refuse_without_output_plan`
+and `test_native_resource_free_foreign_consumer_write_flags_still_refuse`
+controls: actual write/read-write/truncate/create attempts must refuse before
+kernel mutation in both configurations. The pre-extension valid readonly
+archive refuses the consumer's missing write plan.
+
+Run `test_native_foreign_readonly_consumer_handles_actual_eacces_with_and_without_resources`:
+a real mode-0000 produced file causes actual consumer `EACCES`, which it handles
+successfully. Require Make/supervisor completion, validated trace, unchanged
+terminal digest/mode and eight failed-record mutations rejected in both
+configurations. This proves low-level replay, not successful public output
+copy: the host exporter cannot read mode 0000 and the fixture explicitly
+preserves that `PermissionError`. No errno/permission injection is used.
+Every session must clean up. These component cases do not qualify the
+original production resolver, initial-all-plus-eight or architecture hold.
+
+Paired `flock` observes its exact
+descriptor, operation, file identity/content and kernel `/proc/PID/fdinfo`
+lock mode. Shared/exclusive acquisition, nonblocking contention and explicit
+unlock are supported. A failed Linux shared-to-exclusive conversion releases
+the prior shared lock; report the observed unlocked mode rather than inventing
+unchanged lock ownership. Closing one alias does not release its description's
+lock; last close, dup2 replacement and process exit retire the appropriate
+binding. Unsupported flags, unobserved mode/content changes and overlapping
+description operations refuse. Terminal cleanup releases model state and
+owned pins without closing borrowed tracee descriptor numbers.
+
+Run `ProducerTests.test_native_capsule_flock_tracks_distinct_opens_duplicates_and_actual_fork_descriptions`
+and `NativeOutputCustodyTests` from a clean fixture with `python3 -m unittest`.
+The actual C invocation must acquire shared locks through two independent
+opens of one inode, fail a nonblocking conversion with real `EWOULDBLOCK`,
+release the shared lock as Linux does, and acquire exclusive after explicit
+unlock. A real fork child must unlock the inherited description, permitting
+the parent's independent open to acquire it. One alias close must retain the
+lock; dup2 replacement of the last alias and final close release the two
+distinct description locks. Require eleven parsed paired lock returns,
+distinct description identities for separate opens, shared identity through
+dup/fork, two actual contention failures, final bytes `final`, mode `0600`,
+stdout `once`, and complete descendant/session cleanup.
+Repeat with bit-32 and bit-63 additions to the actual syscall descriptor and
+flag operands; kernel-width normalization must preserve all eleven mode/
+flag/result observations and exact generated output.
+Component controls
+reject invalid flags, copied returns, overlapping aliases, false mode reports,
+content/mode mutation and unobserved terminal lifecycles; an injected late
+close after an actual kernel close retires the last locked description.
+The pre-extension capsule executes flock but emits no paired lock evidence.
+This intermediate capsule lineage does not yet authorize a shared lock across
+distinct native Make owners or reconcile a successful post-bootstrap exec.
+Those production resource roles and generated-source wire contracts remain
+required before #275 acceptance.
+
+Tracked output `fcntl(F_SETLK/F_SETLKW)` refuses before kernel mutation:
+POSIX record locks have different process/close semantics and are outside the
+original manifest's flock contract. Run
+`ProducerTests.test_native_capsule_posix_lock_mutations_refuse_original_duplicate_and_inherited_bindings`
+for both commands through original, duplicated and actual inherited FDs.
+The old capsule silently allowed all six mutations without lock custody.
+`F_GETLK` remains a query, not a granted mutation.
+
+Paired descriptor `fchmod` requires an owned writable binding, no pinned
+source readers and no unfinished mode/write/lock/object operation. Verify
+unchanged inode, complete bytes, size, mtime and link count before updating
+only the mode/ctime identity; preserve the same content revision/expected
+writer image. Failed returns preserve the complete preimage. Other mode
+and standalone truncate syscalls remain explicitly unsupported.
+Close checks exclusion at the actual syscall entry, not just after the kernel
+has released the descriptor. Its paired token remains pending until the
+existing shared close-return handler validates and retires it; a pending close
+also excludes mode entry on another alias of the same object.
+Run `ProducerTests.test_native_capsule_pending_mode_refuses_actual_alias_close_before_kernel_release`
+to park actual child mode and parent alias-close syscall entries with a
+test-only supervisor. The rejected close must leave the actual `/proc` FD
+inode and both descriptor maps live. This controlled interleaving is not a
+claim about natural scheduler timing.
+`NativeOutputCustodyTests.test_paired_close_excludes_mode_entry_until_the_actual_kernel_return`
+checks the reciprocal pending-close exclusion, copied-token refusal and mode
+continuation after an actual successful kernel close. The late-close family
+still uses the same return handler, including actual kernel release followed
+by injected Linux late errors.
+Close and flock exclude each other at entry on the same open-file description,
+including inherited aliases. A pending close retains that description in its
+existing operation token; independent opens of the same inode remain distinct
+and may acquire their own compatible locks.
+Run `ProducerTests.test_native_capsule_pending_close_refuses_actual_inherited_flock_before_mutation`
+to park actual parent close and inherited-child flock entries. On refusal,
+both real `/proc` aliases and both descriptor maps must remain live, and
+bounded kernel fdinfo must still show no lock. The reciprocal and independent
+open controls are in
+`NativeOutputCustodyTests.test_paired_close_excludes_shared_description_lock_but_not_independent_opens`.
+Run `ProducerTests.test_native_capsule_descriptor_mode_tracks_actual_alias_fork_and_kernel_width_operands`
+and `NativeOutputCustodyTests`: actual dup/fork aliases change one inode
+through mode0644 to0755, preserving bytes `final`, stdout `once`, content
+revision and cleanup. Repeat with upper descriptor/flag bits and kernel
+16-bit mode truncation. Component mode failure is injected `EPERM` with an
+unchanged inode, not a naturally induced filesystem failure. Copied returns,
+unrelated bytes/mtime/link changes, wrong mode and all pending-object sibling
+operations refuse without publishing identity or events. Existing readonly
+renamed/replaced/unlinked original/dup/fork mode attempts remain forbidden.
+The old actual capsule rejects fchmod entirely; these controls do not prove
+original native Make's produced-executable admission or generated v6.
+
+Paired writes retain one charged expected byte image for each writer lifetime,
+initialized from its actual pinned object. Each return checks exact size,
+identity/mode and the requested range, including unwritten suffixes after
+partial returns. Failed and zero-byte writes retain their preimages; sparse
+growth contributes zero-filled holes. At last-writer retirement, verify the
+complete actual content against the expected image before settlement makes
+that version eligible for immutable source capture or publication. Corruption
+outside a successful write's requested range can be detected at this settlement
+boundary rather than at each write return. The model never adopts those
+unobserved bytes as expected content. Settlement or terminal cleanup releases
+the retained image. This avoids whole-file observation at every incremental
+write without adding block hashes, shadow files or larger budgets.
+
+Run
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_incremental_writes_keep_linear_shared_observation_cost`.
+Require one actual C invocation writing 256 consecutive 4 KiB blocks, exact
+1 MiB output of `X` bytes, mode `0600`, no new command-cache entry and complete
+process/resource cleanup. Measure the existing shared control-byte counter
+around native execution, without resetting it or increasing limits; require
+less than sixteen times the generated byte count plus 1 MiB fixed overhead.
+The previous whole-preimage/postimage implementation exhausts the unchanged
+shared metadata budget before completing this invocation.
+Component controls require touched corruption and false partial-return counts
+to refuse immediately, and untouched corruption to refuse at settlement before
+source capture. These remain host custody controls, not original-eight proof.
+The payload-less `before_write`/`written` component facade cannot resume after
+a paired write has initialized the expected image in the same writer lifetime.
+Refuse that interface transition before kernel mutation; never clear the image
+and adopt current bytes to make the transition appear valid. Pure facade
+writes and facade-to-paired transitions remain available. The supervisor uses
+paired writes exclusively, so this is not a restriction on capsule syscalls.
+`NativeOutputCustodyTests.test_writer_interface_transitions_preserve_expected_image_and_refuse_before_mutation`
+covers original, duplicated and modeled-inherited bindings: attempted facade
+mutation must refuse with bytes, image, identity and events unchanged, followed
+by successful paired continuation and exact settled source capture. Repeated
+facade writes before paired entry remain a positive compatibility control.
+The inherited component labels do not establish actual child-job authority.
+
+The `/native/tool` command capsule adapter retains final exact output capture
+and reports charged, sequenced output events through the existing supervisor
+observation transport; those events are not yet generated-source machine/
+host/archive qualification. Existing `Policy.check` capsule authority remains
+the permission boundary for intermediate files; `Command.outputs` names final
+publications, not temporary effects. Observe actual scratch-file creation,
+unlink and regular-file replacement without adding another temporary allowlist.
+Final capture still requires every declared output to exist and rejects
+undeclared leftovers. Original native Make still needs its source-derived
+finite effect domains; the capsule's existing authority is not such a domain.
+Append, anonymous `O_TMPFILE` opens (including the work root and nested
+directories), standalone truncation, other mode/ownership changes, hardlinks, and
+replacement of a tracked output FD by an untracked FD refuse rather than
+inventing an observed transition.
+These limitations still need reconciliation with the original producer effect
+plans before #275 acceptance; they do not establish a new supported restriction
+on the original Make backend.
+
+The first original native Make writer now uses the same admission channel and
+object model through `_native_make_writable(..., outputs=..., commands=...)`.
+This is an incomplete internal integration seam, not #275 qualification.
+Each resolver returns the actual argv's `Command` with exact output paths;
+the complete sealed code/input/runtime closure and output list bind the owner.
+The actual pre-spawn dispatch carries that closed output list, and fork
+descendants retain the actual dispatch, not its pathname permissions.
+Each later successful image exec stops before the new image runs and resolves
+its actual argv/CWD through the same sealed `Command` admission channel.
+Its output/resource operands must be a subset of the original job's plan.
+A fork without exec receives no automatic pathname plan. A union of declared paths selects
+private writable ancestors with existing maximal immutable source islands;
+it does not grant every job the union. File opens/writes require the job's
+exact output; this first wire family does not yet admit directory or other
+namespace/mode mutations without a separate closed resource-role request,
+even under a writable ancestor.
+Tracked source collisions and another job's output refuse before mutation.
+
+This lane uses explicit wire version 6. Immutable version 5 still rejects
+output authority and retains its original closed schema/read-only backing.
+Version 6 records closed output plans, original job/input/PID/tree bindings
+and paired output effects in the existing machine observations. A single
+machine stream supplies both saved replay and final settlement; there is no
+second `output_authority.effects` payload or collector buffer. Standalone
+validation checks machine/job/effect agreement, descriptor description
+lifetimes, content revisions and terminal retirement/settlement. Exec closure
+also binds the already observed successful job image generation. Host artifact
+capture additionally agrees with the actual settled inode and content digest;
+it is not an intermediate generated-source observation.
+The initial format only admits the implemented regular-file open/write/
+duplicate/replacement/close/exec-closure/settlement family and the first
+settled generated include reader. An optional internal `native_resources`
+plan adds the finite resource family described below. Persistent native
+versions, produced executable admission and the original all-plus-eight case
+remain incomplete.
+No renderer request/publication event or v1 source-effects journal is fabricated.
+
+`Command.native_resources` and `_native_make_writable(native_resources=...)`
+carry the same closed `(role, relative_path)` pairs. `Command.outputs` remains
+the retained regular-file contract. A job receives only its own subset, bound
+to its sealed actual argv/CWD/input/runtime closure; the global union selects
+private writable ancestors, not per-job permission. Empty resource plans preserve
+the regular-file effect schema. Source collisions, including names matching
+temporary templates, and ambiguous retained/resource roles refuse.
+Writable v6 admission stores the existing sealed command-closure digest
+(immutable view, path, complete runtime/tool identity, actual argv/CWD and
+code/source/directory inputs). Its owner hashes that digest with the exact
+output and resource lists. The actual root machine `execute` record carries
+`admission_owner`; Make's own execute uses null. Archive replay recomputes the
+owner and compares it to that actual dispatch binding, so even an unused
+globally valid permission cannot be added to a job. The host also compares the
+returned global plan, complete job admissions and execute owners to its existing
+configuration and independently retained issued authorizations. Coherently
+changing archive plans and their hashes cannot replace that independent binding.
+This uses the existing
+admission channel and machine stream, not a second command registry.
+The first directory or regular-file issuance also binds its creator to the
+actual machine dispatch. Later authorized jobs may reopen the same object,
+but their actor dispatch never replaces its original creator. Coherent
+whole-object creator changes reject for directories, shared locks, atomic
+temporaries subsequently retained, and PID temporaries.
+Readonly v5 owner construction and closed wire are unchanged. Earlier unmerged
+v6 checkpoint archives without this binding remain evidence for their exact
+checkpoint, not accepted current-format archives. Hash commitments do not
+authenticate wholesale replacement of every external observation.
+Writable v6 admissions additionally carry the existing channel request
+`sequence`, distinct from Make's job dispatch sequence. Each actual `native-tree`
+exec records its issued image admission. Root reexecs, child and grandchild
+images receive distinct requests; an output-free later Make job does not reuse
+a child's request identity. Machine/tree replay requires complete unique issued
+sequences, actual image inputs, exact root admission and finite descendant
+subsets. The host binds each image to its independently retained issued path,
+argv/CWD, plan and dispatch/PID/generation context. Coherently changing both
+returned job and machine copies cannot replace those issued authorizations.
+
+Tracked writable descriptions survive actual fork/duplicate and non-CLOEXEC
+exec independently of pathname permissions. Inherited writes and exclusive
+writable-description `fchmod` use the existing descriptor/object predicates;
+readonly descriptors do not acquire mode authority. Shared-lock operations,
+close/failure, duplicate and final settlement retain their existing description
+lifecycles. Failed exec does not install another image plan. Parent-directory
+entry reconciliation binds the successful child's exact namespace operation;
+it does not require unrelated permission to create or remove that parent.
+Failed pathname operations also require the actor's current image operands,
+including resource-free failed opens and failed directory operations. A kernel
+error does not restore the root job's pathname plan. Failed descriptor
+operations instead retain their actual live-description bindings.
+The resource-free Make v6 writer wire does not support mode or lock
+transitions. Its `fchmod` attempts refuse at syscall admission rather than
+after an actual mode change. Every Make `flock` requires the issued
+`shared-lock` role, including when the global resource plan is empty.
+Ordinary resource-free writes remain supported. Native command capsules keep
+their separate existing mode and lock contract; resource-enabled Make
+inherited descriptions keep their existing authority across image changes.
+
+A new shared-lock description, including an `O_RDONLY` open, requires the
+current image's exact `shared-lock` resource before the open reaches the kernel.
+The root job's resource union does not grant that role to descendants. `flock`
+requires an admitted or genuinely inherited tracked description; an otherwise
+readable immutable source is not a lock operand. This leaves existing inherited
+fork/exec/duplicate aliases usable without granting new pathname authority.
+For `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_shared_lock_new_readonly_description_requires_current_image_role`:
+an explicitly admitted readonly lock must complete with actual kernel result 0;
+an undeclared fresh readonly description and an untracked source description
+must reject before a lock return, with owned cleanup. The pre-fix control
+acquires the undeclared lock and refuses only during archive validation;
+the untracked source lock was accepted. Retain the inherited-description and
+close-range cases as positive controls across fork, exec and aliases.
+
+Native Make helpers may attempt the exact optional `/proc/self/maps` read or
+metadata probe only while that leaf is genuinely omitted from the immutable
+prepared guest. The candidate chroot has no proc mount; this is a guest
+omission, not a claim that host maps is absent. The supervisor checks the
+resolved leaf without following a final symlink and leaves the actual kernel
+to return `ENOENT`. A present file, directory or symlink rejects before
+contents. Imported `/proc/mounts` aliases do not grant another PID's maps,
+parent/neighbor/child/dotdot spellings, writes or directory enumeration.
+No collector maps, fake map bytes, injected returns or live proc service are
+introduced. Observation uses the unchanged aggregate budget.
+
+Start with the clean captured C/Make fixture in
+`test_native_optional_maps_probe_observes_actual_guest_omission`, both without
+runtime mounts input and with only the optional `/proc/mounts` input.
+Its structured output must report actual `lstat` and `open` returns -1 with
+`ENOENT`, and no successful maps consumption. Runtime metadata projections
+do not necessarily contain this omitted probe; the fixture asserts the real
+function results rather than inventing such records.
+`test_native_optional_maps_probe_refuses_writes_and_other_spellings` is the
+negative control: native attempts must reject, not merely receive ENOENT.
+`test_native_optional_maps_omission_requires_absent_prepared_leaf_and_native_role`
+checks actual prepared leaf types, payload-read exclusion and role boundaries.
+The pre-fix positive case rejects both guest views. Ordinary GNU cmp startup
+uses this optional VMA probe; permitting its genuine no-proc fallback does
+not by itself complete original source/profile acceptance.
+
+An admitted native image may use flags-zero `close_range` on inherited
+`shared-lock` descriptions only while another process retains each description.
+The supervisor reserves the complete affected descriptor set before kernel
+entry, verifies successful disappearance (or failed-return preservation), and
+binds ordered `output-range-close` retirements to the actual `close-range`
+machine/tree return. These are not synthetic `close(2)` or exec observations.
+Ordinary generated writers, independent or last lock descriptions, mixed
+supported/unsupported intervals, resource-free generated descriptions, and
+nonzero flags still reject before kernel entry. Pending writes, modes, locks,
+duplicates and closures exclude overlapping description transitions.
+
+To reproduce this scoped regression, start with the clean captured C/Make
+fixture in `test_native_close_range_retires_only_inherited_lock_aliases` and
+run its `ok` input. The child first receives `EINVAL` for a reversed interval,
+with both bindings intact; then closes inherited descriptors 80 and 82 across
+a hole while descriptor 84 survives. Its parent must retain all bindings and
+the exclusive lock: an independently opened description still receives
+`EWOULDBLOCK`. Final cleanup produces exactly `ok` in `result`, mode 0644.
+Run `test_native_close_range_refuses_noninherited_and_mixed_output_ranges`
+with `last`, `independent`, `writer`, `mixed`, `2`, `4`, and `8` as negative
+controls. The custody test
+`test_inherited_lock_range_reserves_both_entry_orders_and_preserves_failed_bindings`
+injects failed return and overlapping transitions; it is state-model evidence,
+not an observed kernel failure. The modeled mixed-creator failure case
+`test_inherited_lock_range_failure_binds_first_object_across_creators_and_outside_lock`
+requires the first affected descriptor's creator/path pair, never another live
+lock outside the interval. Archive mutations must reject changed ranges,
+flags, status, descriptor identities, omitted siblings and unbound retirements.
+These cases cover the lock/subprocess compatibility seam only. They do not
+complete the original source/profile acceptance or the native workflow case.
+
+For this negative control, start a clean captured Makefile with only `result`
+as its admitted output and no resources. Invoke the actual native C fixture
+in `test_native_original_make_empty_resources_refuse_mode_and_lock_before_kernel`
+with `mode` and `lock`, each on original, duplicate, fork-inherited and
+exec-inherited descriptors. Require admission failure before its post-operation
+mode/lock observations can print, and complete probe cleanup. The pre-fix
+control changes the actual mode to 0644 or obtains the actual lock before a
+later wire rejection; locking a second open description observes EAGAIN.
+Repeat the resource-role positive/negative fixtures and command-capsule
+descriptor-mode/flock cases for real bytes, modes and lock contention.
+This scoped regression belongs to `TC-WORKFLOW-NATIVE-MAKE-001` and does not
+complete its original all-plus-eight production qualification.
+
+Failed pathname records name their actual dispatch, not another valid job or
+the object's earlier creator. This does not transfer directory/file ownership
+or impose actor ownership on failed inherited-descriptor operations.
+Failed generated-source opens validate the referenced machine entry before
+using its visit, path or trace sequence. Malformed entry objects, missing
+fields and noninteger sequences reject with `ReadEpochError`, as successful
+generated-source opens do. To exercise the negative control, preserve the
+actual optional-source EACCES trace and replace only its custody-selected
+entry with those malformed values; the original failed open and pin retirement
+remain the positive control in
+`test_native_generated_optional_source_failed_open_retires_its_actual_entry_pin`.
+
+Original native subprocesses may use flags-zero `close_range` when its
+unsigned-int descriptor interval contains no tracked generated-output
+description. A successful kernel return retires known descriptors in that
+inclusive interval through the existing process/read-stream close bookkeeping;
+a failed return preserves them. Generated descriptions, CLOEXEC/UNSHARE or
+unknown flags, and nonnative callers still refuse before the syscall. This
+does not emit synthetic generated-close events or grant a batch output-close
+protocol. Original command argv and subprocess execution stay unchanged.
+
+For the scoped compatibility control, open one immutable input at descriptors
+80, 81 and 82. First request the reversed interval 82 to 80 and observe EINVAL
+plus a successful input read; then close 80 to 81 and observe both POLLNVAL
+results while descriptor 82 still reads the input. Finally produce `ok` at
+mode 0644 through the normal finite output plan. Independently put a generated
+description in the interval, or request flags 2, 4 or 8, and require explicit
+pre-kernel refusal with complete probe cleanup. These steps map to the three
+`test_native_close_range_*` cases in `test_native_writer`; paired process-state
+checks also require only successful returns to retire the corresponding
+read-stream bindings and apply the kernel's unsigned-int argument widths.
+This scoped case is not the unfinished original all-plus-eight qualification.
+
+Run `NativeWriterTests.test_native_image_operands_preserve_inherited_descriptions_without_parent_path_authority`
+for actual root reexec, child/grandchild and fork-only inherited writer/lock
+positives, explicitly admitted retained/temporary operands, an output-free
+later job, and refused unissued open/truncate, mkdir/rmdir, remove/replace,
+readonly-FD mode, shared-lock open and all three temporary roles.
+Run `NativeWriterTests.test_native_returned_image_plan_is_bound_to_independent_issued_authorization`
+for after-execution coherent output/resource broadening of both returned job
+and machine records against the retained host authorizations, plus reused
+request refusal. These are scoped backend controls, not the missing original
+compiler/scanner/helper resolver or original all-plus-eight qualification.
+Run `NativeWriterTests.test_native_failed_path_operations_use_current_image_and_fork_only_plans`
+for actual admitted failed open/mkdir/rmdir observations and controlled archive
+replay that moves those observations to a fork-only or operand-free exec actor.
+The archive mutations retain the original dispatch, preimages and admissions;
+they are not additional child kernel observations.
+Run `NativeWriterTests.test_native_failed_path_operation_owners_bind_actual_dispatch_without_reassigning_creators`
+for actual failed open/mkdir/rmdir/remove/replace and a second admitted job
+sharing the same finite plan. Reassigning only a failed record's owner to that
+other job must reject while preserving the actual actor, dispatch and preimages.
+Run `NativeWriterTests.test_native_later_job_mkdir_preserves_earlier_directory_creator`
+for a later admitted job's actual `mkdir`/`EEXIST` against an earlier creator's
+directory, followed by its own child directory creation. The earlier creator
+and exact preimage remain unchanged; missing directory operands still refuse.
+This preserves original repeated `mkdir -p` ancestors without transferring
+ownership or widening remove/write authority.
+Concrete template-generated file ancestors also conflict with directory, file
+or nested-template resources in either declaration order, and with immutable
+sources or retained outputs. Declared directory/child relationships remain
+valid; a PID-temporary base may equal its retained output base.
+
+The finite roles are `directory`, `temporary`, `shared-lock`, `pid-temporary`
+and `atomic-temporary`. Exact roles name one path. A PID temporary appends
+`.<actual dispatched root PID>.tmp` to its base. An atomic temporary names the
+source-defined `.asset-manifest-write-` prefix in one exact parent and accepts
+exactly eight `[a-z0-9_]` characters. No candidate regex or general writable
+directory-prefix authority is accepted. Temporary files and shared locks are
+not returned as retained generated files and cannot become generated sources.
+At successful invocation completion, every declared retained file must exist in
+the current custody map, and every temporary object must have been retired.
+Declared directories and shared locks may remain; unused optional resources need
+not be created. Live completion and archive replay check the same current-object
+set before query-private cleanup, without a filesystem scan or another retirement
+ledger. Resources below a retained regular-file ancestor are invalid.
+Both live source entry and archive replay restrict generated sources to exact
+retained paths, including failed generated fopen entries.
+Shared lock RDWR opens do not acquire content write/truncate/mode/removal
+authority. Separate opens have separate descriptions; dup/fork share one.
+Flock success, nonblocking failure, explicit unlock and last-close release
+bind those actual descriptions.
+Only directory roles admit mkdir/rmdir; only shared-lock roles admit flock.
+Shared locks cannot be removed or replaced even when an operation fails.
+Last-close lock release precedes its matching close, exec closure, duplicate
+target retirement or supported close-error record. Replay rejects an omitted
+release or a return borrowed from another PID/FD/open description.
+
+The existing machine dispatch and event PID identify the live operation actor;
+the output object's owner remains its originating producer. No duplicate actor
+ledger exists. Directory creation/removal and failed namespace operations retain
+their exact object/parent preimages. Parent returns are paired with the observed
+operation and contain the resulting entry set. Descriptor mode changes preserve
+content/version. Replacement transfers the settled source object and digest,
+retires the old inode without changing its bytes/mode/revision, and reports its
+new current path to final capture. Original Make evaluator, effect and source
+return all compare the independent stream pin to the same observed lease
+identity. Snapshot streams still require their full original identity.
+Failed descriptor operations bind their live PID to the current dispatch, not
+the original producer's exited process tree; operand objects still retain their
+original producer ownership.
+Archive authority covers every observed non-Make execute dispatch, including
+output-free jobs. Machine replay carries stopped/started state in its existing
+native-owner map: root successful exec and child start enable ordinary output
+effects; exit retires that actor. FD inheritance is separately bound to the
+current actual fork and its live parent, before the child begins running.
+Settlement with a remaining writable binding is valid only immediately before
+the matching final close, exec closure, duplicate-target retirement or supported
+close-error return. Earlier duplicated-writer or readonly closes cannot
+authenticate settlement. A transferred settled object with no writer retains
+its existing replacement settlement.
+
+A failed generated fopen keeps its actual entry pin but creates no parsed-source
+snapshot. Its failed `source-open` binds the existing generated-entry custody;
+the matching actual source return emits `pin-retired` with a null parsed-source
+ID and the entry identity. This null-ID form is restricted to failed generated
+lifetimes. Snapshot failures cannot borrow it, and successful stream identity
+checks are unchanged.
+
+Run these source-built `NativeWriterTests` members from a clean temporary
+fixture; their setup compiles the original C recipe as a sealed fixture tool:
+`test_native_original_make_directory_roles_preserve_actual_namespace_lifecycle`
+creates a directory, observes actual EEXIST, creates/removes a child, writes
+the final file, then creates/removes another child and returns only that file.
+Rehashed directory actor/preimage/entry-set mutants must refuse. For the
+custody-identity part of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), additionally
+replace the complete file/directory lifecycle's custody ID with a prior
+active directory, retired directory or file ID. All six direction/lifetime
+mutants must refuse; the pre-fix validator accepts file IDs reused from active
+and retired directories and a later directory reusing a retired directory ID.
+The actual observer issues directory and first-adopted file IDs from one
+increasing counter. Archive replay uses one high-water scalar to preserve
+that existing issuance contract even after directory removal, without a
+second object registry. Reopening an already issued file retains its ID;
+the resource-version case below is the positive control.
+Initial directory and file issuance must start at revision zero; only the
+actual observed successful content/mode operation advances the lineage.
+Consistently offset every revision of the fresh retained file, atomic
+temporary, PID temporary and shared-lock lifecycle and refresh record checksums:
+all must reject even when later version transitions remain self-consistent.
+The pre-fix file consumer accepts those shifted lineages; directory refusal
+and genuine second-job lock reopening remain unchanged controls.
+Wire formats,
+production operations, budgets and legacy/default behavior are unchanged.
+These fixtures remove all owned state and have no additional dependencies
+or conflicts beyond the native resource lane.
+`test_native_original_make_resource_roles_separate_temporary_lock_and_final_versions`
+creates an atomic temporary, writes/chmods/closes/replaces it, then reopens the
+same lock from a distinct second job and removes its actual root-PID temporary.
+Independent nonblocking lock contention fails with EAGAIN; explicit unlock and
+last close release the respective descriptions. Failed replacement/removal
+observe ENOENT and populated rmdir observes ENOTEMPTY. The final artifact is
+exactly `VALUE := native\n`, mode 0644, with empty stdout/stderr. Temporary and
+lock resources must not appear in the returned artifact list.
+Removing a PID temporary's retirement and its matching directory removal from
+the rehashed archive must refuse at terminal custody.
+`test_native_terminal_roles_refuse_live_temporary_objects` runs actual exact,
+root-PID and atomic temporary leftovers and requires refusal before cleanup.
+Its eager optional-include variants use each actual temporary as valid Make
+source bytes and require source-role refusal instead of parsing those bytes.
+The original writer case rejects an archive that declares an absent retained
+file. The scope case also exercises retained-only and retained-plus-lock terminal
+sets, every temporary role and every resource-as-source role.
+`test_native_original_make_resource_roles_refuse_unissued_and_shared_content_effects`
+denies foreign PID/incorrect atomic names and shared-lock write/mode/truncate
+before the kernel operation.
+
+`test_native_shared_lock_release_binds_close_exec_duplicate_fork_and_death`
+checks explicit unlock, last duplicated close, forked nonlast/last close,
+foreign-source duplicate target replacement, successful CLOEXEC exec and process
+death. Rehashed missing-release controls must reject the corresponding lifetime.
+Controlled close-error replay is not evidence of an actual kernel EIO.
+`test_native_shared_lock_failed_descriptors_bind_later_actor_and_descendant`
+creates a lock in job 1 and reopens it in job 2. The later root and a real fork
+child each observe actual dup EMFILE, dup2 EBADF, dup3 EINVAL, both fcntl
+duplication EINVAL returns, foreign-source duplicate-target EINVAL and exec
+EFAULT. All fourteen failures retain producer 1 and dispatch 2; FD_CLOEXEC and
+the final `final` bytes/mode 0644 remain unchanged. Rehashed foreign-producer
+controls reject rather than borrowing the current actor's ownership.
+`test_native_resource_scope_refuses_pattern_source_collisions_and_ambiguous_roles`
+checks the complete operation matrix and both-order exact/template intersections,
+including concrete file ancestors; valid directory/child and PID retained-base
+plans remain accepted.
+`test_native_generated_optional_source_failed_open_retires_its_actual_entry_pin`
+uses an actual eager GNU shell job to create/mode-change the generated include.
+Its optional fopen returns EACCES; the actual return releases the old entry pin
+without inventing parsed bytes. A later recipe performs a real atomic replacement
+with `VALUE := final\n`, mode 0644. Missing/borrowed retirement and custody controls
+must refuse. An unreadable final artifact is not used as a capture fallback.
+An authority-only archive mutation classifying the actual generated entry as
+temporary must refuse at the generated-source boundary; this is a parsed
+contract control, not a newly executed kernel observation.
+`test_native_writer_settlement_binds_last_close_exec_duplicate_fork_and_death`
+checks ordinary close, dup, real fork, foreign-source duplicate target retirement,
+successful CLOEXEC exec and process death. Moving settlement before an earlier
+readonly close rejects in every mode. All four supported close-error records
+have controlled replay coverage, not claimed native errno generation.
+The fork/dup case also rejects settlement moved before a nonlast writer close.
+Its rehashed actor controls reject operations before fork, after fork but before
+child start, and after exit, while actual pre-start kernel FD inheritance remains
+valid. `test_native_output_authority_covers_actual_output_free_jobs` executes an
+original shell writer followed by an actual output-free printf job. It requires
+both issued job records and rejects removal of the trailing job despite complete
+remaining file effects and valid terminal retained bytes.
+The distinct-job case rejects unused output broadening, removal, borrowed
+owner/closure and a recomputed owner without matching actual machine binding.
+The resource case additionally declares an unused optional global temporary,
+then rejects granting it to a job, dropping an unused PID role, changing the
+exact ordered resource list or recommitting a changed plan against the old
+machine owner. The failed-source parser control recomputes its controlled plan
+and machine binding to reach the source-role predicate; it still does not claim
+a new kernel observation. The readonly job case verifies the unchanged v5
+admission and execute field sets.
+`test_native_returned_archive_owner_is_bound_to_issued_command` alters the
+successful returned report after actual execution, preserving its separate
+`native-job:` observations. It coherently broadens an unused output or resource
+and recommits the archive owner/execute binding, or adds an unissued global
+resource. All three must refuse against retained coordinator authority.
+
+`test_native_original_make_replaces_pinned_generated_source_with_actual_recipe`
+starts with a missing generated include. Original Make invokes its creator
+once, then parses the generated old source, whose original shell expansion
+invokes the actual replacement recipe while that old source is pinned.
+The expected semantic result/stdout is `old|old`; the current retained file is
+`VALUE := new\nAFTER := new\n`, mode 0644. The original and replacement serials
+differ, creator/retirement actor are jobs 1/2, old nlink changes 1 to 0 without
+changing retained bytes, and actual source return retires the old reader.
+These are production cells, not the earlier controlled return component.
+They do not qualify persisted queries, produced tools or the full indexed
+TC-WORKFLOW-NATIVE-MAKE-001 procedure. All existing global delivery holds remain.
+
+Every observed native write emits `output-write-entry` in that same machine
+stream before the kernel proceeds. It binds a chronological request ID to the
+actual writable PID/FD/open-description, object/version, preimage identity,
+offset and requested byte count. Successful, zero-byte and failed returns
+consume that exact request once. Replay checks the requested count rather than
+using file extent as a substitute, and checks the resulting extent against
+the old extent and actual returned range. Missing, stale, reused or unfinished
+requests refuse. These are structural observations, not signed archive data.
+
+Run `NativeWriterTests.test_native_original_make_overwrite_return_is_bound_to_its_stopped_request`
+from a clean fixture. Its original recipe creates 100 zero characters, then
+overwrites only five bytes at offset zero without truncation. The two observed
+requests and returns are 100 and 5, and the final regular file is `final`
+followed by 95 zero characters, mode 0644, with empty stdout/stderr. The
+pre-fix negative control changes only the second saved return to 6 and
+recomputes the machine payload hash: extent-only replay accepts it, but paired
+request replay must refuse. The same test exercises rehashed malformed counts,
+borrowed request IDs, changed descriptor/preimage bindings and missing
+entry/return records. Existing failed, zero-byte, partial and positional write
+controls remain required; this does not qualify namespace or original-eight
+production.
+
+The original Make consumer pins a current settled output at its actual source
+`fopen` entry through the existing `NativeOutputs` source lease. It does not
+borrow the producer's expired PID or turn Make into a writer. A v6
+`generated-source-entry` machine record binds the actual source visit to the
+observed owner, object serial, revision, path, inode and settled digest. The
+successful `source-open` references that machine record and compares the actual
+returned FD's captured bytes and identity against the entry lease. Actual
+source return releases the lease; the existing machine `pin-retired` event
+closes replay's reader lifetime. Replay processes these records in the same
+machine stream as producer effects and rejects writes/truncation while a
+reader is live. Immutable v5 still admits only snapshot custody.
+
+Run `NativeWriterTests.test_native_original_make_remakes_and_reads_generated_include_once`.
+From a clean source fixture, original `-include generated.mk` first misses;
+the original literal recipe creates `VALUE := produced\n`, Make naturally
+restarts and reads it, and original `all` prints `once`. Require one generator
+invocation, `VALUE=produced`, exact generated bytes/mode `0644`, empty stderr,
+one successful generated-source visit and its actual pin retirement.
+Typed producer/version/path/identity/digest/occurrence and custody-reference
+mutants refuse in standalone validation. The old first-writer implementation
+refuses the initial missing generated include with an unissued producer error.
+`NativeWriterTests.test_native_original_make_generated_reader_refuses_writes_before_mutation`
+requires a real `$(shell)` attempting to overwrite its currently parsed
+generated source to refuse at writer entry, and a root Make `$(file ...)`
+write to refuse without any native job. Neither output plans nor this reader
+seam authorize root writes. These cases do not qualify failed generated
+fopen after a pinned entry, old-version replacement, persisted generated
+sources across queries or the complete original graph.
+`NativeWriterTests.test_generated_source_return_keeps_observed_retirement_and_rejects_unobserved_change`
+is a component return-bridge regression, not an original Make invocation.
+Controlled GNU return registers/memory invoke the real return function over
+actual file descriptors and an observed `os.replace`. Generated return compares
+its stream pin against the lease object's observed current identity, then uses
+the existing release checks for retained data/mode/revision. Original snapshot
+identity changes, unobserved retained-inode writes and substitution of the
+new-version stream pin refuse. The old generated pin must close and leave no
+reader lease after successful return. Actual GNU namespace/old-version
+production qualification remains held separately.
+Truncation through a supported `O_TRUNC` open carries the same inode/mode/link
+count, zero size and next revision into its paired writable open. This does not
+admit standalone truncation. Failed-close replay accepts only the live model's
+released-FD `EINTR`, `EIO`, `ENOSPC` and `EDQUOT` outcomes, retiring each binding.
+
+Run `NativeWriterTests.test_native_original_make_job_writes_only_its_admitted_output_once`,
+`NativeWriterTests.test_native_original_make_distinct_jobs_bind_their_actual_output_owners`
+and `NativeWriterTests.test_native_original_make_output_plan_refuses_other_jobs_and_source_collisions`
+in `scripts/validation_ownership/tests/test_native_writer.py`.
+Actual original shell recipes must run once, produce exact stdout/stderr,
+output bytes/mode and distinct real job PID/owner bindings, and clean the
+private filesystem. The standalone controls change descriptor, revision and
+path while preserving the machine record's hash; each still refuses.
+Successful write results must be exact integers bounded by both the existing
+per-file limit and the resulting regular-file extent. The actual five-byte
+output replays at limit five and refuses limit four; rehashed result six and
+above-limit result mutations also refuse.
+Immutable v5 rejects the v6 authority payload. Negative actual invocations
+exercise readonly admission, another job's output, undeclared paths and tracked
+source collision. Shell redirection restoration pairs an actual foreign
+descriptor's duplication onto a tracked output, retires only the old binding,
+and preserves the restored stdout. The capsule still refuses that operation.
+`NativeWriterTests.test_native_original_make_first_wire_refuses_unimplemented_namespace_mutations`
+runs a sealed C recipe that directly calls `mkdir` and `symlink` on the issued
+path. Both refuse before mutation without an external utility's additional
+runtime probes; the symlink reaches the existing symlink prohibition.
+`NativeWriterTests.test_native_original_make_truncating_reopen_and_close_errno_wire_match_live_model`
+runs `printf first > result; printf final > result; printf once` as one original
+recipe. Final bytes must be `final`, mode `0644`, stdout `once`, and stderr empty.
+Hash-preserving mutations of truncation revision, FD and size refuse.
+An inserted writable alias spanning the truncating open also refuses; the
+actual double-redirection control closes its first writable aliases first.
+Inserted `EBADF`/`EINVAL` close-failure events refuse; transformations to the
+four accepted released-FD outcomes pass replay. These archive transformations
+are not evidence of naturally occurring kernel close errors.
+`NativeOutputCustodyTests.test_foreign_duplicate_release_preserves_failed_target_and_retires_actual_replacement`
+uses actual `dup2`, stale/copied-token refusal, an explicitly injected failed
+return with unchanged target, and component inherited-description exclusion.
+`NativeWriterTests.test_native_original_make_separate_open_lineage_and_successful_exec_reconcile_cloexec`
+uses a sealed C fixture as the original Make recipe, not a newly produced tool.
+Separate opens of one inode issue distinct descriptions; dup shares one.
+Actual `execve` with an invalid environment address returns `EFAULT` and
+preserves all output FDs. The following successful reexec closes
+`O_CLOEXEC`/`F_SETFD(FD_CLOEXEC)` bindings before the new image reuses FD3 for
+`/dev/null`. An unflagged alias survives reexec and retires at actual exit.
+Archive controls change the actual closure generation to a prior or future
+image or a boolean while preserving the machine hash; each refuses.
+`NativeOutputCustodyTests.test_exec_closure_and_target_duplicates_refuse_both_entry_orders_before_replacement`
+checks `dup2`/`dup3` target replacement versus exec in both entry orders, with
+unchanged actual target identity and descriptor maps on refusal, failed-return
+continuation and actual `dup2` replacement after release. Inherited PID labels
+in this component control are not actual child-process admission evidence.
+`NativeWriterTests.test_native_original_make_failed_open_and_duplicate_preserve_actual_output`
+runs a sealed original C recipe with real `O_EXCL`/`EEXIST`, self-target
+`dup3`/`EINVAL`, negative `F_DUPFD`/`EINVAL` and negative-target `dup2`/`EBADF`
+returns. The existing output remains exactly `final`/`0644`, stdout is `once`
+and stderr is empty. Failed-open flags and failed-duplicate source/kind/
+target/minimum/flags are bound to their admitted operation without a replay
+state change; mutated operand records with recomputed hashes refuse.
+Failed exec and foreign-replacement records require a live producer binding;
+moving failed exec before output creation with renumbered records/hashes
+refuses rather than inventing a preimage.
+`NativeWriterTests.test_native_writable_make_admission_failure_exhausts_whole_session`
+requires an invalid writable admission to fail and close the entire existing
+budget; a subsequent budget operation must refuse. The writable wrapper uses
+the same terminal-failure guard as the readonly wrapper.
+`NativeWriterTests.test_native_original_make_actual_forked_output_alias_and_parent_wire`
+runs a sealed original recipe whose real child inherits the output, duplicates
+it to FD7 and writes through the shared offset. The actual parent waits and
+closes its alias. Bytes must be `firstfinal`/`0644`, stdout `once`, and stderr
+empty; the saved parent/child IDs must match the real job tree. List, boolean
+and foreign parent-ID mutations with recomputed machine hashes refuse.
+Machine replay uses the existing live ownership map, not the completed tree's
+future PID set. The observed fork precedes inherited FD effects; exit expires
+the actor after its descriptor retirement. Moving child inheritance before
+fork or child close records after exit with renumbered records/hashes refuses.
+No output effect may borrow a dead/unborn actor or follow terminal job policy.
+This is actual fork/alias support, not a parked concurrent exec/replacement
+race control.
+Exec entry reserves the closing descriptions in the existing operation map,
+excluding conflicting lock/mode/alias-close operations before kernel mutation;
+successful exec verifies actual missing/surviving FDs and preserves one object
+model. Mirror/hash-preserving zero-byte-write and same-inode/different-object
+description-alias mutants must refuse in standalone v6 validation.
+
+Run
+`python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_observes_actual_fork_dup_writes_and_atomic_retirement scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_capsule_preserves_output_refusals`.
+From a clean host fixture the actual C writer must run once, print `once`,
+fork and duplicate its real output descriptor, write vectors followed by a
+fixed-offset parent write, atomically replace the output and retire a separate
+temporary version. Require `result` bytes `AxyD` and `result.tmp` bytes `final`,
+both mode `0600`, distinct actual parent/child PIDs and matching sequenced
+object lifecycles. Each undeclared output, append-description change,
+standalone truncate, untracked FD replacement, hardlink and root/nested
+anonymous-temporary control must refuse and clean the owned process tree.
+Undeclared leftovers still refuse at exact final capture; unsupported operations
+refuse before their kernel mutation. The existing generated-include/native-tool
+publication test remains a compatibility control. These are deterministic
+host cases for the existing native-custody contract, not original-eight proof,
+and do not change ROM/RAM, save, locale, modern or archival build profiles.
+
+The independent amendment controls
+`test_native_capsule_keeps_retired_intermediates_separate_from_final_outputs`,
+`test_native_capsule_large_and_zero_byte_write_family_matches_kernel_bytes` and
+`test_native_capsule_negative_duplicate_operands_preserve_kernel_errors_and_fd`
+in the same class require disappearing scratch/rename operands with only the
+final `result` declared, 70,000-byte write/pwrite/vector elements within the
+unchanged file budget, unused null zero-byte buffers, and all four duplicate
+negative-operand error paths. Large entry buffers are read in bounded chunks;
+zero-length operands read no pointer bytes. Duplicate targets/minimums use the
+kernel's signed 32-bit conversion before model/binding validation. Require
+140,000 bytes (`A` then `C`, 70,000 each), or `kept` after actual
+`EBADF`/`EINVAL` returns, with complete process/object cleanup. The earlier
+adapter instead refused legitimate scratch paths, large/zero memory operands,
+and negative descriptor operands before the kernel could return normally.
+
+`test_native_capsule_renamed_readonly_fd_keeps_unsupported_mode_changes_guarded`
+covers renamed, replaced and unlinked regular objects through original,
+duplicated and inherited readonly FDs. Unsupported FD mutations select the
+actual `(pid, signed32_fd)` object binding, never the descriptor's stale recorded
+pathname. Each actual `fchmod` attempt must refuse before changing mode;
+the earlier adapter admitted all nine object/binding combinations.
+`test_native_capsule_readonly_fds_do_not_pin_live_writer_content` covers original,
+duplicated and inherited writers plus an `O_PATH` reader. Ordinary readonly
+tracee FDs can observe later writes; they are not immutable captured
+`SourcePin`s. Opening them does not force settlement while a writer remains
+live. Require original `first` bytes and later `firstnext` bytes (or size nine
+through `O_PATH`) using actual pipe synchronization and final mode `0600`.
+Settle at actual last-writer retirement; immutable captured-source exclusions
+remain unchanged. The earlier adapter refused all four live-writer cases.
+
+The current capsule admits only its initial native-tool exec, with exactly
+standard FDs. Existing policy rejects post-bootstrap root and descendant
+execs; cloning does not restore bootstrap authority.
+`test_native_capsule_cloexec_fds_do_not_enable_root_or_descendant_reexec`
+opens an actual `O_CLOEXEC` output, sets `FD_CLOEXEC` and attempts both reexec
+paths. Require refusal before kernel exec and complete process cleanup.
+This does not qualify the unfinished multi-exec native-Make lane, whose actual
+successful exec/descriptor reconciliation remains required.
+
+For the held component regression family, run the class command above from
+a clean child checkout. Require actual `dup`/`dup2`/`dup3` and both `F_DUPFD`
+variants to preserve exact source bytes, inherited writer membership and final
+settlement, with `dup2`/`dup3` rebinding preserving the old target's settled
+bytes. Wrong targets, returned-object pins, minimums and copied/stale return
+tokens must refuse without rebinding another tracked descriptor. Inject an
+event callback failure into each transition: after physical final close or
+source release and after owned teardown, completion must still refuse.
+Teardown of absent-open/rename/unlink operations without their returns must
+also refuse despite an otherwise empty inventory. Pre-fix controls admit a
+different returned object, lose final event evidence or treat source/operation
+cancellation as complete. Error-injection and modeled-child-inheritance
+controls test the component observation contract, not actual native supervisor
+authority; modeled late I/O errors do not prove filesystem-induced errors.
+Also require malformed fork-set and aggregate-budget controls to leave the
+complete binding/writer map and event count unchanged, alongside the actual
+successful fork/child-retirement control. Malformed status returns must leave
+bindings, versions, content and events unchanged; only the real subsequent
+zero-return close/rename/unlink control may advance them.
+
+These adapters are internal observations, not output-plan authorization.
+The supervisor must derive their operands from the existing sealed Command,
+actual job and finite output plan and supply actual stopped syscall inputs.
+Full production integration and unchanged original eight-query budget fitness
+remain required; the architecture hold is not cleared by these component cases.
+Settlement or event-budget failure propagates without a successful admission.
+Because the kernel open has already succeeded, its borrowed binding remains
+diagnostic state until actual retirement; cleanup closes its owned duplicate
+but does not invent a kernel rollback or make an active lifecycle complete.
+These model controls remain component evidence only. The current internal
+`_native_make_writable` lane also wires this same model through
+`NativeOutputObserver` into actual owned jobs, syscall entry/return, finite
+output/resource mounts, generated-source pins and machine/host/archive
+validation, as exercised by the native writer procedures above. That live
+integration does not make these model controls end-to-end evidence.
+Persistent native versions, produced executable admission and the original
+initial-plus-eight production runner remain incomplete; no component or
+exploratory original query qualifies `TC-WORKFLOW-NATIVE-MAKE-001`.
+
+Runtime trace validation decodes and checks each captured source once, then
+passes those same checked bytes to its internal read-lifetime projection.
+Standalone read traces still validate their own source envelopes, encoding,
+size and digest before the same lifetime validator runs. Statement indexes
+and completion facts use the checked bytes, not a second decoded copy.
+All event, custody, machine and issued-output checks remain mandatory; this
+internal allocation reuse changes neither the wire format nor any budget cap.
+
+An already issued original native tool may execute at its original repository
+path in the same writable v6 Make invocation as a finite producer. The existing
+source-island scaffold excludes both the exact sealed tool leaf and the declared
+output/resource leaves; the tool is mounted readonly and executable while every
+captured source remains readonly. Output or resource declarations overlapping
+the tool refuse before dispatch. The original scaninc case compiles its actual
+sources, flags and CWD through `compile_native_command`, observes one original
+scanner exec in Make's shell expansion, then verifies the same Make query's
+finite output bytes and mode. This does not qualify in-Make tool compilation,
+persistent generated versions or the original eight-query runner.
+
+The session retains the decoded native Make read ABI as charged serialized
+bytes keyed by the captured executable digest and completion mode. Repeated
+queries validate a fresh decoded value against that exact image instead of
+rerunning objdump. The cache contains no source-view or invocation facts and
+therefore survives source-view selection, but is cleared at session teardown.
+Caller mutation cannot alter the retained value; malformed retained values
+still refuse. This eliminates repeated disassembly output, not accounting for
+actual observations, and does not qualify the original eight-query family.
+
+Writable v6 generated-source pin retirement records the object's current
+observed identity, including the changed ctime and zero link count after an
+atomic replacement while its reader remains open. Replay binds that identity
+to the same generated serial's version at retirement, not its earlier entry
+identity or the replacement file. Immutable snapshot pins still require their
+original open identity. The physical descriptor and original-Make replacement
+controls below retain the old reader's bytes and reject stale, foreign or
+malformed retirement identities.
+
+The unmerged writable v6 output-authority job record contains only `sequence`,
+`pid` and `admission`. Its existing sequence selects the canonical `native-tree`
+machine events for that dispatch; no second serialized tree is admitted.
+Complete writable reports also omit the duplicated JSON-in-JSON
+`native-output:` packets from `accessed`: the checked canonical machine events
+retain every output operation and settlement. Mixed complete reports containing
+those packets are refused. Failed invocations retain their diagnostic packets,
+and standalone compiler capsules retain their existing report format. The
+supervisor still stores and charges the original observations; only the
+redundant successful transport copy is removed.
+The validator charges its temporary reference lists and checks all actual image
+admissions, actors, generated-source custody and output settlements against
+those events. Machine lifecycle validation and the host's independently issued
+Command/operand checks remain separate. This revises the unfinished v6 schema,
+not the delivered immutable foundation formats; stale duplicated-tree records
+fail closed rather than being accepted as a second authority.
+
+Complete successful writable v6 supervisor reports also use structured
+`native_jobs` headers instead of JSON-in-JSON `native-job:` packets with
+another tree copy. The host's independently issued configuration selects
+this format, and each sequence borrows the canonical machine events for its
+existing lifecycle, image and Command checks. New header and reference
+allocations are charged; already observed full packets remain charged, with
+no refund. Failed Make runs have no finished machine archive and retain full
+packets, as do delivered readonly formats. Run the canonical-job-report
+controls below: the actual successful writer returns `final` once with mode
+0644 and no duplicate packet/tree; the failed writer and successful readonly
+reader retain their full packets. Missing, malformed, duplicate, stale
+sequence and mixed legacy headers must refuse, while issued root/image
+admission mutations still reach their independent host checks.
+
+Native resource scope includes opaque immutable source roots as well as
+regular snapshot files. Gitlink paths remain protected even when absent or
+present as uninitialized empty directories; directory, concrete-file and
+PID/atomic-temporary declarations cannot equal, contain or enter them.
+Writable v6 archives carry nonempty `source_roots` derived from the active
+snapshot and Git entries (paths only, not duplicated pins). Replay applies
+the same scope predicate, and the host compares the returned roots with its
+issued scope, refusing omission, removal or addition. Disjoint outputs remain
+supported. This extends the existing immutable-source boundary rather than
+introducing another service or prerequisite.
+
+### TC-WORKFLOW-NATIVE-MAKE-001: preserve original native Make production and generated-source custody
+
+This is the indexed complete acceptance case for #270 and its coupled #275
+extension. **Registration is not qualification.** The original initial-family
+plus eight-query runner and production integration are still incomplete.
+The component commands below run from this source checkout; their success
+cannot clear that hold.
+
+Use Linux x86-64, GNU Make 4.3, trusted host GCC/C++, Git, CPython and the
+existing namespace/ptrace launcher. Start from a clean checkout and ordinary
+owned test scratch. Do not delete or overwrite another owner's scratch or the
+preserved interrupted #180 worktree. No ROM, emulator, save reset or GitHub
+credentials is needed. The immutable original fixture has 2,148 source files,
+the original four Make inputs and the issued original scanner. A smaller
+exploratory pool is not this fixture.
+
+#### Actions
+
+1. Run the immutable positive and its documented adversarial procedure in
+   `TC-WORKFLOW-NATIVE-READONLY-001` below. Require actual original scanner
+   execution, source/job/machine agreement and aggregate-budget rejection.
+   This delivered foundation is a prerequisite, not writable qualification.
+2. Exercise the recursive-reference and readonly produced-consumer members:
+
+   ```bash
+   python3 -m unittest \
+     scripts.validation_ownership.tests.test_native_writer.NativeReadonlyVariableTests \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_readonly_consumer_opens_settled_foreign_output_without_write_plan \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_resource_free_readonly_consumer_binds_actual_actor_and_creator \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_foreign_consumer_write_flags_still_refuse_without_output_plan \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_resource_free_foreign_consumer_write_flags_still_refuse \
+     scripts.validation_ownership.tests.test_native_writer.NativeWriterTests.test_native_foreign_readonly_consumer_handles_actual_eacces_with_and_without_resources -v
+   ```
+
+   GNU global/target values must agree with ordinary Make. Literal references
+   are observed without an extra effect; hidden effects and cycles refuse.
+   Consumers receive no write plan, read the settled creator's real bytes and
+   bind their own actor in both resource configurations. Write/create/truncate
+   flags and forged object/actor/parent records refuse. The actual mode0000
+   fixture handles EACCES and completes the validated lowlevel trace; its
+   public host exporter raises PermissionError. Do not call that public success.
+   Pre-fix references refuse observation, and valid readonly produced opens
+   refuse archive replay; those retained regressions are the negative controls.
+3. Require the complete original production family in one session, one
+   `ProbeBudget` and one original monotonic deadline. The initial semantic
+   family includes immediate/deferred/skipped/conditional/continued/recursive
+   assignments, repeated/nested includes and original remake/reexec. Then run
+   both `assets.mk` and `Makefile` for each tuple below, retaining original
+   commands and a canonical `/repo` CWD:
+
+   | Item-cap input | Resolved cap | Custom spells | Modern root | Manifest |
+   |---|---|---|---|---|
+   | empty | 0xCD | 0 | build/expansion-modern | assets/manifest.json |
+   | 0xCE | 0xCE | 0 | build/native-completion-alt | assets/manifest.json |
+   | empty | 0xCD | 1 | build/native-completion-custom | assets/manifests/custom-spell-reference.json |
+   | 0xCE | 0xCE | 1 | build/native-completion-alt-custom | assets/manifests/custom-spell-reference.json |
+
+   Observe `GENERATED_DATA_ITEM_CAP`, `ASSET_RESOLVED_ITEM_ID_CAP`,
+   `ASSET_MANIFEST_KEY`, `ASSET_PROFILE_KEY`, `ASSET_PROFILE_ROOT`,
+   `ASSET_OUTPUT_DIR` and `ASSET_DISCOVERY_MK`. Compare all applicable values,
+   stdout/stderr and every generated output's bytes/mode with the ordinary
+   original `/repo` reference, including manifests and selection stamps.
+   Require actual compiler/scanner execution, inherited `.dep` redirection,
+   temporary/lock/retirement families and every generated include version at
+   its successful source open. Bind actual argv/CWD, creator/actor/job/PID,
+   descriptor lifetime, source pin and kernel outcome across supervisor,
+   host and archive; final files alone are insufficient.
+4. Repeat the documented native writer/source/parent/descriptor negative
+   families: actual success/failure, foreign/stale/copied/replayed evidence,
+   active readers/writers, source mutation, cancellation, deadline and quota
+   exhaustion. Every rejection stays explicit and cleans owned resources
+   without inventing a successful kernel return or complete lifecycle.
+   All eight positive queries and their required controls remain mandatory.
+5. Record actual elapsed time, category byte use, process/teardown evidence
+   and total delivery cost. Require unchanged limits, no budget reset/refund,
+   no omitted accounting and no successful-prefix relabeling. At present
+   step 3 has no complete qualifying source runner; report **incomplete**
+   rather than treating the step 2 command or a renderer fixture as its result.
+   The original #180 profile fixture is retained design/regression evidence,
+   not a native qualification command in this component checkout.
+
+#### Expected result
+
+Every original root agrees with the ordinary source oracle, and actual
+source/version/job/descriptor evidence agrees across live, host and archive
+consumers. Registration and component passes do not establish that outcome.
+
+#### Negative control
+
+Pre-fix reference and generated-consumer refusals remain regression controls.
+Malformed, foreign, stale or incomplete custody and exhausted resources must
+refuse explicitly; a successful prefix cannot stand in for all eight queries.
+
+#### Interactions and save compatibility
+
+This host-only layer depends on #274 and #279 and supplies #270/#180/#186.
+No gameplay profile, save, ROM/RAM, locale or archival behavior changes.
+
+#### Automation
+
+The original dependency CLI has a source-planning component,
+`python_commands.native_generated_dependency_command(session, argv)`. It
+preserves the passed `python3 -m` argv and option order for the existing three
+dependency modules, declares the actual depfile, its fixed `.tmp` and writable
+ancestors, and reuses the mapped adapter's input/code/directory planning. That
+planning uses existing bounded readonly selector/support probes, not a pure
+parser; their execution, metadata and captures spend the normal budget.
+It does not run a replacement producer or render a dependency file.
+
+Run these five `ProducerTests` selectors in
+`scripts.validation_ownership.tests.test_producer`:
+`test_native_generated_dependency_plan_preserves_all_original_argv_and_input_families`,
+`test_native_generated_dependency_plan_rejects_foreign_duplicate_missing_and_escaping_operands`,
+`test_native_generated_dependency_plan_keeps_nonselected_sources_ungranted`,
+`test_native_generated_dependency_plan_rejects_option_operands_before_probes`,
+and `test_native_generated_dependency_plan_preserves_argparse_literal_operands`.
+The compact finite fixture checks each complete module contract independently:
+exact argv and source/code/directory plans, output/temporary/ancestor roles,
+malformed or foreign options and exclusion of nonselected inputs. Preserve the
+original argparse operand boundary for every selector, target and depfile:
+option-like operands such as `--foreign`, `-x` and `--` must refuse before any
+readonly probe; literal `-` and negative-number operands remain accepted.
+The pre-fix planner accepted `--make-target --foreign`, whereas the original
+module exits 2 with a missing-argument diagnostic before producing output.
+Preserve the
+existing mapped all-three actual-output/remake and option/selector regressions
+as compatibility controls. These planner cases do not establish actual native
+module production or the required one-budget initial-plus-eight cohort.
+
+Run `ProducerTests.test_native_original_dependency_modules_produce_actual_depfiles_once`
+for actual production of the three unchanged original modules with finite
+file selectors, matching the original Make operand form. Each module uses a
+separate unchanged session budget: compare complete depfile bytes/mode and
+stdout/stderr/status to the ordinary source CLI, retain the original quoted
+Make shell and module argv, require one actual kernel module exec and waited
+native job, and check complete session teardown. This does not qualify the
+2148-source cohort or native directory-selector resource fitness. The retained
+chapterobjectives directory-selector diagnostic exhausts the control budget;
+do not relabel the file-selector result as that directory scenario.
+
+Run `NativeReadonlyVariableTests.test_statement_index_charges_actual_growth_without_per_row_tables`
+in `scripts.validation_ownership.tests.test_native_writer` for immutable
+statement-index allocation accounting. Require unchanged parsed spans/digests
+and immutable mapping, complete conservative row charges, actual table
+allocation at initialization and every capacity growth, and the final proxy.
+Whole new capacities remain charged without refunds; do not manufacture a
+one-entry measurement dictionary per statement. The exact measured reduced
+control limit must succeed, while one byte less, malformed bytes and an
+exhausted physical-line bound must explicitly refuse. The pre-fix index charges
+514090 rather than 363778 bytes on this finite source. This allocation repair
+does not itself qualify the original top-level query or initial-plus-eight.
+
+Tracked output `fchmod` uses the existing single descriptor-bound mode route.
+The duplicate fallback was unreachable and is removed; other observed
+standalone metadata/truncate operations still explicitly refuse. Preserve
+`NativeWriterTests.test_native_original_make_resource_roles_separate_temporary_lock_and_final_versions`
+and `NativeWriterTests.test_native_original_make_empty_resources_refuse_mode_and_lock_before_kernel`
+in the same module: actual generated bytes/modes and kernel mode evidence,
+plus pre-kernel mode/lock refusals without resource authority. These are
+compatibility controls, not a runtime failure reproduction for dead code.
+
+Run `NativeWriterTests.test_native_register_workspace_reuses_storage_and_preserves_kernel_guards`
+for the finite callback workspace. Require actual repeated hardware traps to
+reuse two kernel register-capture objects and one siginfo object; tester
+instrumentation retains the actual objects to prevent allocator address reuse
+from masquerading as storage reuse. Compare full generated bytes/modes/stdio
+and parsed machine/capture counts. Actual callback register corruption and
+restored GETREGS corruption must retain their original explicit integrity
+errors and complete teardown. Three scratch register buffers, siginfo and
+full-byte views are charged once; every kernel capture and expected-register
+copy remains charged. The byte views eliminate only full-buffer comparison
+allocations, not register fields or readback. The pre-fix finite case captures
+68 distinct siginfo objects instead of one. This is a component allocation
+repair, not finite-request wire support or original all-eight qualification.
+
+#### Cleanup and limitations
+
+The catalog automation maps the currently executable components only.
+The full runner must be wired here before case acceptance. No subjective
+manual judgment is required. #274 is the delivered prerequisite; #270 and
+#180/#186 are dependent integration/delivery work. Shared Command,
+machine/archive and resource boundaries remain enforced. No gameplay,
+save/config, localization, ROM/RAM, modern debug/release or archival behavior
+changes. Fixture teardown owns its capsules and pins; failed evidence and
+interrupted worktrees remain until normal exact-master completion permits
+the existing conservative worktree cleanup.
+
 ### TC-WORKFLOW-NATIVE-READONLY-001: observe immutable native Make and original tools
 
 From a clean supported Linux x86-64 checkout with GNU Make 4.3, the existing
@@ -69,7 +1427,20 @@ GCC/C++ host tools and namespace/ptrace launcher:
    `test_native_target_payload_boundaries`. Exact admitted UTF-8 byte payloads
    survive both consumer families; oversized payloads refuse. Filesystem path
    bounds stay unchanged. Preserve the original maximum-byte failure evidence.
-4. The existing `ownership-probe-test` CI owner runs the complete native suite
+4. Run
+   `NativeReadonlyVariableTests.test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only`
+   in `scripts.validation_ownership.tests.test_native_writer`. Declare the
+   existing readonly `/usr/lib/python3/dist-packages` managed directory and
+   require actual successful directory metadata for its exact
+   `/usr/lib/python3` ancestor. The existing `runtime_parents` mechanism carries
+   only exact declared ancestors, not neighbor or subtree authority.
+   Canonical parent reads, enumeration, writes, undeclared sibling metadata
+   and parent-spelled operands must refuse and clean owned state. Retain
+   `FoundationTests.test_native_readonly_python_site_resource_boundaries` and
+   `test_native_readonly_default_python_declared_site_startup` as compatibility
+   controls. The pre-fix original autoplaystrategies CLI refuses this parent
+   metadata. These parent declarations grant no content, execution or mount.
+5. The existing `ownership-probe-test` CI owner runs the complete native suite
    and exact selected-case inventory. No single positive, runtime capture or
    whole-suite label substitutes for the separate native source/job/budget/
    failure criteria. Tests create and retire only their own disposable inputs.
@@ -686,10 +2057,16 @@ the same target/global scope, then flavor/raw-value metadata, before expansion.
 An effective deferred append binding explicitly refuses: its nearest raw value
 can hide an inherited parent's expression. The original variable-set pointer
 is restored after lookup; no append expression is interpreted or replayed.
-Simple and undefined bindings and literal recursive bindings remain supported.
-A recursive raw value containing `$` explicitly refuses before its contents
-are executed. This includes otherwise pure references and escaped dollar
-expressions: general recursive-expression observation remains unsupported.
+Simple and undefined bindings remain supported. Recursive bindings can contain
+literal `$(NAME)`/`${NAME}` and short `$_`/`$A` references from the shared
+`make_lexical` name grammar, plus escaped `$$`. An iterative walk screens the
+complete effective reference closure in the same global/target context before
+the original GNU expansion. Every reached binding receives the deferred-append
+check; simple values are never rescanned. Active-path cycles, functions,
+computed names, substitutions and malformed references refuse. Traversal uses
+the existing observation capacity and node bound, not an independent evaluator
+or a larger query budget. General recursive-expression observation remains
+unsupported.
 There is no builtin blacklist or alternative expression interpreter, and
 ordinary mapped observation retains its existing behavior.
 
@@ -714,6 +2091,21 @@ after entering an inherited body. Run
 target simple dollar-bearing and literal recursive bindings and undefined
 values must remain correct, global bindings must retain their original scope,
 and ordinary mapped append must still return `parent tail`.
+
+Run `NativeReadonlyVariableTests` in
+`scripts.validation_ownership.tests.test_native_writer` with `python3 -m unittest`
+from a clean host checkout. Compare the successful real recipe output with
+ordinary GNU Make and inspect the parsed global and target domains: chained
+brace/parenthesis references, repeated shared nodes, short references, undefined
+dotted/hyphenated names and escaped dollars must preserve exact values and
+flavors, including the target override. The pre-extension observer returns 125
+after the legitimate recipe, rejecting these pure recursive values.
+Unused hidden info/shell effects after a safe branch, computed/substitution
+expressions, direct/indirect cycles and a referenced inherited deferred append
+must refuse before observation adds an effect. Each refused session must clean
+up completely. These component cases restore literal-reference observation;
+they do not qualify the original production resolver or initial-all-plus-eight
+contract and do not release its architecture hold.
 Retain the existing native shell-spawn refusal and original input/job/source/
 count controls. The mapped inode-identity control also retains its existing
 `readonly executable image` diagnostic and still rejects a zero inode.
@@ -1334,6 +2726,722 @@ sequences/PIDs must be unique and complete. Executable/PID records must match
 actual execution observations. Completion requests additionally require the
 existing complete machine section and exact child dispatch/PID agreement with
 these jobs. General trace consumers retain optional machine archives.
+
+The original native Make root, including a failed Make invocation, also captures
+exactly one kernel ptrace exit-stop status and compares that typed raw status
+with its actual terminal wait. This reuses the process-owned terminal field;
+it does not add a wire format or permit multiple roots in the existing protocol.
+For the terminal-lifecycle part of `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`test_native_make_root_kernel_terminal_matches_actual_wait`: successful Make
+must bind raw stop/wait 0, while a recipe exiting 3 must bind Make stop/wait 512
+and retain the failed invocation. Run
+`test_native_make_root_missing_changed_and_reused_terminal_refuse`: missing,
+non-integer, prematurely reused, and changed raw status with the same decoded
+exit code must refuse and release owned state. A detached descendant remains
+subject to the existing complete job-tree requirement; these checks do not
+turn incomplete descendant retirement into success.
+
+The internal native runtime-completion invocation additionally accepts the
+strict boolean `observe_root=False`. Selecting `True` adds one closed version-1
+`native_root` supervisor record with exactly `version`, `pid`, `argv`, `cwd`,
+`environment`, `exit_stop`, and `wait`. The supervisor captures the actual
+initial stopped root's complete NUL-delimited argv and environment through
+`/proc`, verifies strict UTF-8 and unique nonempty environment keys, and compares
+every value with the immutable request. It binds the actual CWD's device/inode
+to the requested sandbox directory before GNU Make executes. The final raw
+exit-stop and wait must agree; a successful completion archive also binds the
+record's PID to its actual machine Make executions. Incomplete observations
+remain unknown and cannot become successful root records.
+
+This option requires the existing native runtime-completion lane; it does not
+change the legacy machine or trace schemas, default report fields, gameplay,
+save compatibility, ROM/RAM, generated data, or localization. Captured bytes,
+CWD observation, reserved record, encoded report and terminal values consume
+the existing cumulative allowances without resets or refunds. Internal GNU
+Make re-execution retains the initial record and the same root PID; this is
+not a multi-root cohort format. Dependencies are the admitted native Make,
+runtime observer and namespace launcher; conflicts are non-native or
+non-runtime-completion invocations. There are no additional project features
+or services.
+
+For the root-input part of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), start from a
+clean Linux x86-64 checkout with those dependencies and run the following
+`NativeWriterTests` through the existing unittest runner. Each fixture removes
+its owned sandbox state:
+
+1. `test_native_root_observation_binds_actual_initial_inputs_and_terminal`:
+   select root observation for successful and failed original Make invocations;
+   require exact inputs and raw terminal 0 or 512. Disable it as the legacy
+   negative control and require the unchanged report field set.
+2. `test_native_root_initial_actual_input_changes_refuse` and
+   `test_native_root_returned_shape_and_bindings_refuse`: change actual initial
+   argv, environment or CWD, then independently alter returned schema, inputs,
+   PID or terminals. Every mismatch must refuse and clean up owned state.
+3. `test_native_root_input_decoder_and_option_refuse_incomplete_contracts`:
+   incomplete NUL extents, malformed UTF-8, duplicate/invalid environment keys
+   and unsupported or non-boolean observation selections must reject.
+4. `test_native_root_capture_keeps_exact_existing_metadata_budget`: permit
+   exactly the actual capture/record cost, then reduce that remaining allowance
+   by one byte. The former passes; the latter fails the existing metadata
+   boundary and retains a failed budget.
+5. `test_native_original_make_remakes_and_reads_generated_include_once`:
+   generate and read `generated.mk` with root observation enabled. Require the
+   original command/output/source custody and two actual Make executions with
+   one root PID and the unchanged initial argv.
+
+These deterministic checks cover a single root only; finite cohort, pattern
+materialization and the original full-budget qualification remain separate
+requirements rather than implied results of this option.
+
+The finite redesign's internal machine consumer has an explicit version-2
+form, separate from the unchanged version-1 single-root schema. Its exact
+fields are `version`, `events`, `closed`, and `roots`. Each root record has
+exactly `ordinal`, `initial`, `first`, `last`, `first_exec`, and `last_exec`.
+`initial` is the actual version-1 root input/terminal record described above.
+`first`/`last` are inclusive cumulative machine sequence numbers, while
+`first_exec`/`last_exec` cover cumulative original Make execution ordinals.
+Root ranges are sequential, complete and nonoverlapping; root PIDs are unique.
+Internal re-execution retains one root PID and can span multiple exec ordinals.
+All original machine and semantic rows retain their fields, ordering and
+cumulative values; no synthetic legacy archive or PID alias is introduced.
+
+`NativeReadTrace.retire_root()` records a range only after the actual successful
+root's terminal binding, original jobs, source frames, barriers and full output
+custody are quiescent. It rejects reused ranges and incomplete state. Capture,
+encoded record, owned input copies and boundary-table initialization/capacity
+growth spend the existing byte/count allowance. Default collection does not
+allocate the table and still finishes as machine version 1. Replay associates
+each register/read/job-policy row and complete native job tree with its range's
+actual Make owner. A binary search over the same range table resolves cumulative
+exec ownership without another copied per-exec or per-job owner registry.
+
+The single-request invocation still binds one immutable request and rejects an
+unsolicited multi-root report. The explicitly selected finite invocation below
+uses version 2. Pattern materialization, unchanged-budget original eight-query
+qualification and graph integration remain required; the finite wire does not
+release those holds. Dependencies are the
+existing runtime-completion/root observation lane; non-runtime traces cannot
+use it. No gameplay/profile, ROM/RAM/save, generated-data or localization
+behavior changes.
+
+For the machine-range part of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
+clean Linux x86-64 source fixture and native launcher:
+
+1. Run `test_native_finite_machine_root_keeps_actual_reexec_and_rejects_range_mutations`.
+   Its collector retires one actual Make root after generated-include reexec;
+   require original stdout, generated bytes/mode and domain, one root spanning
+   two actual execs, and exact root inputs. Omitted/duplicated/reordered ranges,
+   foreign PID, altered terminal, malformed input and extra fields must reject.
+2. Run `test_native_finite_machine_root_refuses_reused_or_incomplete_retirement`.
+   Attempt retirement twice without a new root, and independently retain a
+   tester-marked unretired invocation. Both must refuse and clean owned state.
+3. Run `test_native_finite_machine_root_charges_exact_retained_boundary`.
+   Permit exactly the observed record/input/table allocation cost, then one
+   byte less. Require success versus the existing explicit metadata-budget
+   refusal; the failed budget and cleanup remain observable.
+4. Run the existing root observation and returned-binding cases with the
+   default collector as the unchanged machine-version-1 compatibility control.
+5. Run `test_native_finite_machine_root_host_binds_actual_initial_inputs`.
+   Independently change the returned machine table's initial argv, environment
+   or CWD while leaving the actual supervisor root record unchanged. The
+   single-request host must reject each self-consistent archive input change,
+   retain the failed budget and clean owned state.
+
+Actual two-root archive evidence remains separate: a complete original row
+stream must pass version-2 range/job/source/output consumers, while the same
+foreign second root in version 1 must still reject. A small sealed atomic
+fixture is not evidence for the original scanner/compiler or all eight queries.
+
+#### Explicit finite native invocation and authentic result envelope
+
+`ProbeSession._native_make_cohort(requests, variables=(), **native_options)`
+extends the same native execution seam, not a session daemon. `requests` is a
+nonempty immutable tuple of `(target, makefile, assignments)` tuples; each
+assignment is the existing `(origin, name, value)` string tuple. All requests
+are planned and validated before the capsule launches. Normal target/Makefile/
+assignment admission still applies; reserved execution-authority variables
+cannot be overridden. The snapshot, source backing, captured runtime, ABI,
+selection, observation variables and declared output/resource union are shared.
+Use the existing `commands`, `writable_outputs`, `native_resources` and sealed
+tool options for writable original jobs. No new command resolver or authority
+registry is added.
+
+The method returns `(results, observed)`. Each ordered result is
+`(CompletedProcess, semantics, generated_files)`: exact original argv and
+authentic per-root stdout/stderr, the existing parsed observation domains and
+that boundary's current generated bytes/modes. Successful roots have distinct
+actual PIDs. An internal Make reexec stays in its original request. Existing
+single-request methods retain their return shapes and default machine version 1.
+
+The launch adds a closed `native_requests` list of `argv`, `cwd`, `environment`
+records and `native_output_limit`, no open-ended request channel. The supervisor
+freezes the complete plan before forking. It retires every actual process,
+pending channel operation, native job, source/read context and output writer
+before starting a successor. Counters, allocation allowances, process/output
+limits and deadline remain cumulative; none are reset between roots.
+
+The returned `native_results` list has exactly one successful row per request.
+Each row has `ordinal`, `initial`, `stdout`, `stderr`, `observation`, `outputs`.
+`initial` must equal the corresponding machine-v2 root's actual input/terminal
+record and the original frozen request. Captured byte fields use canonical
+base64. Stdout/stderr come from the real root's descriptors and share one
+process-output allowance across the complete list; a caller-supplied digest
+does not authenticate them. Observer bytes are read at that root's quiescence,
+before another request can overwrite the result leaf, and parsed against that
+request's target and observation variables.
+
+Stdout/stderr remain ordinary pipes, including their inherited/duplicate FD,
+`fstat`, seek and positional-I/O behavior. The supervisor drains them
+nonblocking, reading at most the remaining cumulative allowance plus one
+detection byte and rejecting an over-limit chunk before retaining it. Chunk
+storage, joining and encoding spend the existing allocation allowance. Actual
+EOF from both retired writer trees is required before a successful boundary.
+There is no temporary stdio spool or lower generated-file size ceiling.
+
+Every output row has `path`, `owner`, `serial`, `revision`, `identity`, `data`.
+It is captured through the existing custody FD and checked against the exact
+settled archive state at that root's machine boundary, including successful
+replacement and retirement. Omitted/extra outputs, stale bytes or lineage,
+malformed identities and namespace escapes reject. Old generated source pins
+and their bytes remain in the existing source/custody archive; the envelope is
+not a second source-version registry or a final-tree substitute.
+
+A failed request stops before any successor and preserves its actual stderr
+and Make exit. A violation retains the original error and only known root
+records; a partial list is not a complete finite result. Owned descriptors and
+backing use existing cleanup. The native archive's complete machine/job/source/
+output validators and the host's issued command crosschecks remain mandatory.
+
+For the finite-envelope member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), from
+the same clean Linux x86-64 checkout and native launcher:
+
+1. Run `test_native_finite_cohort_captures_distinct_actual_roots_and_inputs`.
+   Require separate first/second stdout/stderr, command-line versus environment
+   domains, distinct actual roots and complete contiguous ranges.
+2. Run `test_native_finite_cohort_keeps_generated_versions_and_internal_reexec`.
+   Require first/second atomic generated bytes/modes and source snapshots,
+   reject the complete malformed/stale/omitted/reordered envelope family,
+   and separately require one request spanning genuine generated-include reexec.
+3. Run `test_native_finite_cohort_failed_first_stops_before_successor` and
+   `test_native_finite_cohort_pending_source_and_deadline_block_successor`.
+   Require authentic failure stderr/exit, no successor after failure or an
+   unretired source context, and no new root after the shared deadline expires.
+   Run `test_native_finite_cohort_failed_later_preserves_prefix_without_successor`;
+   require the real first root's captured result, the second root's failure
+   stderr/exit and no third root. The prefix is not a complete cohort.
+4. Run `test_native_finite_cohort_enforces_one_cumulative_stdio_bound`.
+   Produce exactly 1 MiB across two real roots, then lower that same allowance
+   by one byte. Require complete authentic results versus explicit refusal.
+   Run `test_native_finite_cohort_large_write_bounds_actual_pipe_retention`:
+   independently request a single 2 MiB stdout or stderr write; require refusal
+   after at most 1 MiB plus the detection byte is read, no retained over-limit
+   result and no successor. Run
+   `test_native_finite_cohort_preserves_pipe_syscalls_and_inherited_dup_writes`:
+   require genuine pipe mode and ordinary `ESPIPE`/`EBADF`, followed by exact
+   ordered child/parent output through a duplicated inherited FD from each
+   root. Run
+   `test_native_finite_cohort_stdio_cap_does_not_lower_generated_file_allowance`:
+   require an actual settled 1 MiB-plus-one-byte file, empty stdout/stderr and
+   unchanged output bytes/mode/identity within the independent file allowance.
+5. Run `test_native_finite_cohort_refuses_malformed_plans_before_launch` and
+   `test_native_finite_cohort_host_rejects_returned_root_and_observation_changes`.
+   Invalid plans cannot launch; changed returned roots or target observations
+   must fail the budget and clean all owned state.
+6. Run the existing single-root report and machine-range cases as the
+   unchanged/default negative control.
+
+These sealed fixtures qualify this envelope only, not original scanner/tool
+production, `cc`/`cc1` inherited `.dep` redirection, all 551 original outputs,
+the original 2,148-source initial-plus-eight cohort or public graph integration.
+Those accepted criteria remain open. There is no ROM/RAM/save/localization or
+modern/archival compiler impact; existing native runtime/root observation and
+output custody are its only dependencies.
+
+### Sealed platform-runtime storage
+
+Native Make selects complete kernel-sealed FD bodies for all platform
+images through the existing runtime-input cache, rather than Python heap copies. Trusted
+pathname/alias admission remains unchanged. Capture streams the entire actual
+host image, binds its before/after descriptor and pathname identity, and applies
+`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK` and `F_SEAL_SEAL`. ELF consumers
+read bounded header slices; runtime closure identity uses the complete captured
+body digest and actual sealed-object identity. Root materialization streams and
+verifies the entire body again. A stat-only token never substitutes for content
+capture or its backing lifetime.
+
+Both sealed and byte-backed materialization own the destination after its
+writable open succeeds. Read, write, deadline, backing, digest, close and
+interruption failures close that stream and remove the owned destination,
+preserving the original exception even when close and unlink also fail, and
+reporting any cleanup failure through
+the existing cleanup mechanism. Pre-open quota or open failures do not remove
+a pre-existing file. An opened replacement is not a transaction preserving its
+old contents, and intermediate writes are not atomically hidden; private roots
+are not executed until materialization succeeds. No temporary publication
+service is required. Both providers finish actual short writes and reject
+missing, zero or out-of-range progress. Seal/digest validation stays inside the
+owned cleanup boundary. Sealed materialization accounts for its actual stream
+context objects in the existing cumulative control budget; no allowance is
+raised or refunded.
+
+Exercise the **TC-WORKFLOW-NATIVE-MAKE-001** materialization-failure subcase
+with `PlatformImageTests.test_failed_materialization_removes_owned_file_and_preserves_failure`
+and `test_materialization_handles_actual_short_writes_and_failed_open`.
+Start with actual GNU Make backing and a fresh temporary destination. Inject
+first/late reads, writes, close, deadline expiry after a real
+write, closed backing, corrupted streamed buffers, no/invalid progress and
+interrupt/SystemExit faults. Compare actual file absence, closed OS FDs and
+original exceptions for both applicable providers. Use
+`test_materialization_preserves_primary_with_combined_cleanup_failures`
+to combine operation/interruption, close and unlink failures on an opened
+replacement; require the original operation exception, all cleanup diagnostics
+and actual FD closure. There is no additional stream-entry hook: open already
+acquires the owned descriptor before stream wrapping, and explicit closing captures the operation exception
+before teardown. Then require complete
+actual bytes after a short write and preservation of an existing destination
+when open or pre-open storage quota fails. The quota control captures real
+backing to fill a limit derived from its observed extent. The deadline control
+lowers only its isolated test budget;
+it does not qualify or alter the original cohort's deadline.
+
+The complete generic provider contract, its tests and procedure live in
+[platform-runtime-storage.md](platform-runtime-storage.md) (#279 / #280).
+The native writer integration (#275 / #276) genuinely depends on that API and
+adopts it through a normal parent merge, not a copied provider or competing
+test owner. `test_platform_image` exercises generic capture/materialization;
+`test_runtime_image` retains compiler profile, sealed-root, cache and nested
+session consumer checks. Both are selected once by the existing full native
+test target; lightweight mode selects neither. Parent and child delivery
+remain separate, and the child cannot merge before the storage parent.
+
+Every sealed body and every physical streamed root copy spends the unchanged
+snapshot/aggregate allowances. Bounded stream buffers, header slices and actual
+records spend control; cache metadata spends cache. No retained whole heap body
+is merely reassigned to a different category. All numeric limits remain
+unchanged. The source/generated-file limit still applies to those files; it
+does not force a trusted platform image to fit in a generated-file-sized heap
+read. The direct byte-backed cold capture retains its configured file/control
+quotas; sealed native capture additionally has actual
+whole-backing snapshot/aggregate and bounded-workspace rejection. Both input
+and ELF-closure caches bind the requested representation in either call order.
+Repeated same-mode calls reuse their original object. Alternate-mode capture
+independently spends the existing cumulative budget and must match the complete
+previous body and any Make-owned core library; it cannot bypass legacy file or
+control quotas. The default byte path retains core-body sharing. Failed or
+changed alternate captures retire newly owned FDs; normal view/shutdown cleanup
+retires both representations. There is no new public feature
+flag or runtime registry.
+
+Sealed descriptors belong to the existing native-input cache. Cold and warm
+closure lookup share that cache; nested views have their own existing cache,
+restore their parent's entries and retire only their owned descriptors.
+Normal view return, active shutdown, out-of-order view failure, capture errors
+and interruption close owned FDs through existing cleanup. The backing check
+binds device/inode/mode/owner/size and actual immutable seals; failed kernel
+truncate attempts can change timestamps without changing sealed content.
+Original host capture still requires complete timestamp/identity stability.
+Source-descriptor ownership is retained across the `os.open`/`fdopen` handoff.
+OSError, interrupt and SystemExit before the stream owns that descriptor must
+close the actual opened FD and preserve the original failure. Exercise the
+runtime-image handoff control with real GNU Make backing; compare actual
+descriptor state, not a printed cleanup label.
+
+Run the runtime-image module on both actual `/usr/bin/python3` and GNU Make
+inputs; no supported host's Python executable must exceed 4 MiB. Complete
+body/digest, immutable seals, materialized bytes and cumulative storage checks
+apply to both. File-quota negatives derive a bound below the actual input size.
+The warm-cache test isolates an immutable lower-quota cold provider from the
+unrelated Make/libc session-bootstrap files, and requires that provider's real
+file rejection rather than a cached sealed-body substitution. This is
+provider/cache-isolation evidence, not the original one-budget cohort.
+The generated-file case independently rejects a real file one byte above its
+derived file limit while the complete platform backing remains owned. All
+production limits and capture semantics stay unchanged.
+
+The compiler storage member derives its driver/frontend/search/library closure
+through the existing dependency runtime discovery. Its complete trusted files
+can be captured in the same session-owned sealed-input cache with cumulative
+snapshot/control/cache charges and ordinary descriptor cleanup. Repeated
+capture reuses those exact bodies. Compiler-specific roots are checked against
+that issued closure before cache lookup; a warm compiler body must not make
+`/usr/libexec` a generic native-input root. A real untrusted replacement after
+the first captured member must refuse and retire the partial owned closure.
+Run `test_runtime_image` plus
+`test_dependency.DependencyTests.test_observed_worldmap_dependency_recipe_uses_real_repository_sources`
+for this member and existing dependency-route compatibility.
+
+The private compiler root must also preserve the issued files' alias identity.
+Copying the interpreter alias and canonical pathname into different files can
+preserve every byte but break the existing syscall-origin predicate. Derive
+aliases only from the issued, trusted compiler closure; require both names to
+have the same captured body and a non-chained, declared canonical target.
+Materialize that target once and hard-link its aliases. Already-coincident paths
+through the existing root directory aliases require no additional link. Reject
+duplicate destinations, cycles, escapes, missing targets and different bodies
+before root creation. Default roots without this explicit alias input retain
+their existing behavior.
+
+For **TC-WORKFLOW-NATIVE-MAKE-001**'s compiler-materialization subcase, start
+with the runtime-image fixture's clean source/header tree and actual host GCC.
+Run `RuntimeImageSessionTests.test_sealed_compiler_root_preserves_issued_file_alias_identity`
+and `test_actual_sealed_root_compiler_retains_closed_runtime_and_header_scope`
+in `test_runtime_image`. Compare actual materialized device/inode identity,
+complete digests and extents for every issued alias. Run the real driver and
+frontend in the captured root without host `/usr` or library mounts; require
+the exact dependency stdout and actual source/header consumption. The old
+separate-copy root must still fail loader provenance. Removing issued search
+directories must refuse the actual compiler's search-parent metadata, and a
+present but undeclared header must refuse rather than acquire read authority.
+Existing dependency metadata derives finite ancestors from its already-issued
+search directories as well as captured files, including libexec-style frontend
+installations. This grants no prefix read or directory enumeration and retains
+the verified driver/origin predicate for absent probes. Cleanup retires the
+captured descriptors and temporary roots. This is an existing compile-policy,
+small-fixture result, **not native Make ancestry, inherited-FD, original
+initial-plus-eight or public-archive qualification**.
+
+The foundation runtime-conflict controls inject changed bytes from a bounded
+slice of the actual sealed image, not byte concatenation on `RuntimeImage`.
+Require the original shell/executable conflict refusal and owned cleanup;
+an adapter `TypeError` is not rejection evidence.
+Cache/view controls use exact `(path, True)` sealed-lane keys and retain
+no-second-host-capture, view restoration and failed-capture cleanup checks.
+The undeclared Python parent directory must remain denied at its actual read.
+Readonly settlement failure retains the preceding successful kernel-open
+binding, but no settled digest; terminal completion and owned-FD cleanup
+controls remain mandatory.
+Explicit source-return fixtures initialize the inactive pattern lane. The
+host-decision mutation removes both current dependency predicate inputs only
+within the injected check, restoring configuration and typed image afterwards.
+Metadata trust refusal identifies the offending directory, owner and mode;
+it does not admit mutable backing or conceal earlier validation failures.
+
+The same compiler subcase checks the actual kernel exec-stop environment before
+the driver or frontend begins user code. The driver must have the closed issued
+baseline; the frontend retains every baseline value and may add only
+`COLLECT_GCC`, `COLLECT_GCC_OPTIONS`, `OFFLOAD_TARGET_NAMES` and
+`OFFLOAD_TARGET_DEFAULT`. Bind `COLLECT_GCC` to the actual driver argv spelling.
+These are the immutable trusted driver's transformations, not independent
+frontend planning or caller-supplied search authority. Account the bounded
+actual cmdline/environment capture through the existing control allowance.
+Run `RuntimeImageTests.test_compiler_environment_binds_closed_baseline_and_driver_transformations`
+and the real sealed-root compiler subcase. Changed or missing baseline values,
+foreign fields, malformed/oversized transformations and foreign driver spelling
+must refuse. With the fixture reset between sessions, explicitly inject
+`CPATH`, `GCC_EXEC_PREFIX` or `LD_PRELOAD` into the compiler input environment:
+each must refuse before compiler execution, preserving ordinary cleanup. The
+pre-change supervisor accepts the otherwise-valid `CPATH` input; retain that
+actual negative control instead of a source-text check. Native Make compiler
+environment/lineage/admission/archive integration remains absent: this
+dependency-lane enforcement does not grant native compiler execution authority
+or qualify the original cohort. Budgets, defaults and ROM/save behavior remain
+unchanged.
+
+The existing private native image rendezvous also carries `fork_parent`: the
+actual parent's PID, exec generation and admission sequence at kernel fork,
+or null if no admitted native parent occurrence exists. The host admission
+callback receives the actual context rather than losing it at dispatch.
+Consume this reference on the child's first successful exec; a subsequent
+same-PID exec cannot revive it. A child that forks before its own first exec
+has no admitted parent occurrence to delegate. Independently reconcile every
+reference against the complete returned ordinary writable tree before returning
+authority. This is private context transport, not a persistent schema change
+or permission to execute a compiler frontend.
+For the same case, run
+`NativeWriterTests.test_native_image_callback_retains_actual_parent_at_fork_and_rejects_changed_context`
+from `test_native_writer`. Start with its clean Make fixture, execute the actual
+subshell/background-child/wait and nested-shell exec sequence, and require the
+real stdout and generated result bytes. Observe a genuine pre-exec-parent fork,
+nonnull actual parent occurrences and null consumed references. Alter each
+PID/generation/admission member independently; also remove or null the reference
+and supply zero, boolean, truncated or foreign values. Every changed context
+must refuse and clean the owned session. The pre-change private rendezvous loses the
+callback context, so the supplied callback cannot perform any of these context
+checks; preserve its actual ten failing subcases as the regression control.
+Original compiler grants and complete
+native/public-archive qualification remain outstanding.
+
+This storage seam issues **no native execution, metadata, source or output
+authority**. The default native Make request still runs without compiler
+permissions. Explicitly declaring both session-resolved compiler images in
+`native_executables` now selects their issued profile for writable native
+Make; partial declarations refuse. That integration binds driver/frontend
+ancestry, source scope and inherited `.dep` descriptors, but complete original
+production qualification remains outstanding. The selected design trusts the verified
+immutable driver's transformation under the existing dependency threat model;
+it does not add a GCC `-###` planning mode/parser or independently predict
+frontend arguments. Complete storage proof is not original cohort fitness.
+
+The next compiler member is a finite **model**, not a published runtime
+protocol. `_native_compiler_profile` derives complete external image extents/
+digests and the existing search/probe/interpreter/libc closure in the same
+session. Its closed environment and profile identity produce typed
+`OriginalCompilerProfile` data. Profile validation checks shape and internal
+binding; only the session's issued captured profile can supply execution
+authority. Recomputing a caller's profile identity is not trusted capture.
+Profile admission also reuses the closed driver-environment validator:
+recomputing an identity cannot admit compiler search overrides or frontend
+additions into the issued baseline. Each finite compiler actor carries its
+actual captured environment. Replay checks every baseline value and permits
+only the existing finite frontend additions with the exact issued
+`COLLECT_GCC`; the typed execution retains that environment. Missing,
+foreign-key, altered, untyped or oversized environments refuse. This finite
+model refinement does not manufacture exec-stop observations or publish a
+native runtime version.
+
+Run the issued-profile/driver-at-fork case in `test_runtime_image`. It checks
+real derived sealed-image digests, then a finite parsed shell/driver/frontend
+tree against the ordinary native tree validator and typed compiler lineage
+model. The actual driver operands reuse the existing safe dependency grammar,
+without manufacturing a frontend `Command` or rewriting argv. Frontend binding
+must reference the exact direct driver occurrence captured at fork; source,
+header, include, output and resource scopes cannot change. Ordinary exec, exit
+and omitted terminals cannot revive that authority. Each freshly forked child
+receives eligibility from its actual driver for its first successful
+exec only; an ordinary child exec followed by a frontend exec cannot recover
+the consumed reference. The child-side negative first validates that changed
+tree with the ordinary tree validator, then requires compiler-lineage refusal.
+The parent-side unrelated exec and terminal controls remain separate.
+Every issued driver in the model needs one frontend; duplicate, missing,
+foreign, stale and boolean-aliased
+references refuse. Exact observed model charges and one-byte-short quota
+controls are local finite accounting evidence, not original cohort fitness.
+The ordinary native protocol still rejects compiler admission fields without
+the complete issued profile.
+
+Retained pattern validation still rereads all80object bytes and every pointed
+string at the existing source/eval/reuse and live retirement boundaries.
+For a completed definition it compares those fields directly with the retained
+mapping rather than constructing and serializing another identical mapping.
+The bounded comparison tuple and every native read remain charged. New definitions
+retain the original serialized-field charge. This removes redundant allocation,
+not validation, and does not raise or refund any quota. The existing full-field
+mutation and real live-retirement controls remain mandatory; the focused
+`test_retained_decode_reads_every_field_without_reallocating_definition` additionally
+compares the exact native read sequence and measured allocation difference.
+This component cost reduction is not original eight-query resource fitness.
+All native runtime traces now use that existing compact statement mapping,
+not only traces with pattern observation. Reader and eval buffers preserve
+the same complete physical/logical spans and lazily materialize touched
+statement hashes with their existing charges. The native runtime cost case
+compares actual no-pattern Make/source/archive outcomes against the original
+eager-index control and requires lower measured observation allocation.
+This removes eager unused rows; it does not omit any source or observation.
+It is not a universal cost reduction: workloads touching every statement can
+pay additional lazy-decoding charges. Original complete-family fitness must be
+measured under the unchanged budget, not inferred from the sparse fixture.
+Pattern coordinates additionally bind the exact owning reader or source-backed
+eval occurrence and its pristine target-assignment statement. Simple effective
+bindings preserve the template's raw value and file/line/offset, not only name
+and modifiers. Live callbacks and independent replay share these checks.
+The public pattern case refreshes payload checksums after changing all seven
+coordinate/value/source fields and still requires rejection. The nested-eval
+case uses the shipped wire rather than a test-only template collector, covers
+multiline buffers with their actual shared outer floc, and rejects foreign eval
+coordinates. Actual ptrace mutations of template and simple-variable fields
+must likewise fail with complete cleanup. These regressions belong to
+TC-WORKFLOW-NATIVE-MAKE-001; all original profile/resource/final gates remain.
+
+The writable trace's optional `output_authority.compiler` carries the complete
+issued profile; it does not add a machine event, command registry or feature
+flag. The existing private admission channel carries the actual exec-stop
+environment. Frontend authority requires the exact still-live driver occurrence
+at fork, with identical source/header/include/output/resource scope. Actual reads
+are restricted to declared sources and headers; existing negative-source
+observations distinguish absent search candidates from undeclared existing files.
+Output metadata does not turn an output into a readable compiler source.
+Standalone replay validates the same closed profile and complete lineage.
+The host additionally compares it with session-issued sealed images and request
+inputs; recomputing a profile identity is not an alternate runtime grant.
+Default non-compiler v6/v8 traces keep their existing schemas.
+Compiler profiles derive command-line exports, MAKEFLAGS and MAKEOVERRIDES
+from the issued original Make argv. The original cap/custom/root/manifest
+tuple is supported without accepting a caller-chosen compiler-search baseline.
+Unknown loader/search overrides and nonrepresentable inheritance still refuse.
+`reconstruct_archive` retains the validated profile and typed compiler executions,
+including actual environments and driver-at-fork references, in the existing
+archive. It derives them from the same closed machine/job stream; no second
+raw trace or authored execution ledger is created. Non-compiler archives retain
+null profile and empty executions. This is archive data, not live authority.
+
+For this component of **TC-WORKFLOW-NATIVE-MAKE-001**, start from a clean Linux
+checkout with the existing namespace/ptrace launcher and host GCC:
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_runtime_image.RuntimeImageSessionTests.test_actual_native_dependency_compiler_binds_source_environment_and_output_custody -v`.
+   The clean fixture first runs ordinary Make, then native Make. Require identical
+   `.dep/query.d` bytes and mode0644, actual source/header consumption, driver and
+   frontend admissions, the frontend's inherited FD1 write, two Make passes,
+   and complete owned-resource cleanup.
+2. The same case exports hostile `CPATH` and removes the required header grant
+   in separate clean native sessions. Both must refuse without leaked children,
+   descriptors or outputs. Its saved-trace controls remove the profile/environment
+   or alter profile, driver-at-fork and source bindings; each must reject even
+   after updating the enclosing tree-event checksum.
+3. Retain ordinary readonly admission and finite-model controls. The pre-fix
+   actual case refuses the resolved cc1 image before compiler production.
+   This small native dependency case is not the original 2,148-source initial
+   semantic family or eight-query qualification; those remain separate required
+   criteria under one unchanged budget/deadline. No ROM/RAM/save/locale or
+   gameplay-profile change is introduced.
+
+For the storage member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
+clean Linux x86-64 checkout and namespace prerequisites:
+
+1. Run `python3 -m unittest
+   scripts.validation_ownership.tests.test_runtime_image`. Require full actual
+   Python-image equality and streamed-copy equality, actual kernel `EPERM` for
+   write/shrink/grow, and descriptor retirement. Lower snapshot, aggregate and
+   control limits; require refusal without leaked FDs or an uncharged copy.
+   Changed-source, failed-seal and interrupted-capture controls must retire
+   their partial backing. A generated file above its lowered file limit must
+   still refuse even when an immutable platform image is larger than that limit.
+2. Run the foundation cases
+   `test_native_shared_runtime_bodies_are_captured_and_retained_once`,
+   `test_native_shared_runtime_cold_capture_preserves_original_quota_and_trust_failures`
+   and `test_native_shared_runtime_active_view_shutdown_and_misnesting_cleanup`
+   as unchanged byte-capture compatibility controls. The new session cases in
+   `test_runtime_image` require one actual sealed cold body, charged full
+   physical storage with bounded metadata cache, warm real native execution,
+   lowered storage/work/cache refusal and actual FD retirement on both active
+   shutdown and nesting-order failure.
+3. Run `scripts.validation_ownership.tests.test_native_make` as the unchanged
+   direct byte-backed runtime compatibility control, plus the finite cohort's
+   distinct-root, generated-version/internal-reexec and failure cases.
+
+This storage member does not qualify source-bound pattern materialization,
+original scanner/compiler execution, inherited `.dep` FDs, all 551 outputs,
+the original initial-plus-eight cohort or graph integration. There are no
+ROM/RAM/save/localization or modern/archival compiler changes. Its only
+dependencies are the existing trusted runtime closure, native-input cache,
+budget and session/view cleanup; no new service or registry is required.
+
+### Source-bound pattern observation (original qualification incomplete)
+
+The internal `pattern_templates` component derives the actual GNU Make 4.3
+pattern list, field layout, selection site, both definition callers and shared
+post-modifier completion from the captured ELF. Select `observe_patterns=True`
+on the existing native readonly, writable or finite-cohort request, with
+read and runtime completion observation enabled. This explicitly issues runtime
+7 or writable 8 and adds a captured-image `patterns` ABI to the existing request.
+Machine 3 is the single-root form; machine 4 carries finite roots. Legacy runtime
+5/writable 6 and machine 1/2 remain the defaults and reject the new semantic
+shapes rather than silently accepting them. No additional feature service or
+authority registry is introduced.
+
+From a clean Linux x86-64 checkout with the existing namespace launcher, run
+`python3 -m unittest scripts.validation_ownership.tests.test_pattern_templates -v`.
+The required native runner and existing indexed native case include this module.
+Its finite controls require complete length-sorted topology discovery even when
+new objects appear after retained ones; immutable complete fields are stored once
+and every retained live object, including unselected ones, is fully decoded
+and compared before reuse. Selection uses that complete observation rather
+than duplicating the read. The actual suffix-pointer
+offset selects the wildcard, including an escaped literal percent before it;
+selection validates the live target's stem and completion retains its actual
+file/pattern-set binding. A changed retained field or pointed string,
+cyclic or disappearing object, changed ordering, missing source/owner and
+incomplete exec retirement must refuse. Reused addresses after retirement get
+new IDs without restarting accounting. No stat-only source identity or refund is
+admitted. Every actual memory transfer, semantic event, machine payload and
+hardware observation remains charged to the existing cumulative limits. The
+final four-slot plan is selected before one programming/readback sequence;
+there is no transient extra arm or quota/count reset.
+
+Live retirement validation happens at the admitted Make reexec entry and
+successful kernel exit stop, before the old image disappears. Its charged
+process/exec/boundary witness is consumed after successful exec, finite-root
+retirement or ordinary single-root completion. Failed exec does not clear
+objects; every later attempt revalidates. Dead-process retirement only clears
+already-validated bindings and never reads old memory. Nonzero/signal exits
+retain their existing failure path rather than masking the primary failure.
+No new runtime/archive shape, permission or accounting reset is introduced.
+
+Run the focused retained-field and retirement controls with
+`python3 -m unittest scripts.validation_ownership.tests.test_pattern_templates.PatternTemplateTests.test_retained_unselected_full_fields_and_pointed_bytes_are_revalidated scripts.validation_ownership.tests.test_pattern_templates.PatternTemplateTests.test_live_retirement_rejects_incomplete_and_retire_never_reads_dead_memory scripts.validation_ownership.tests.test_pattern_templates.NativePatternTemplateTests.test_actual_retained_pattern_reexec_and_exit_require_live_validation -v`.
+Change target/suffix, name, value, file, line, offset, name length, flags or
+pointed value bytes without selecting the object: observation and live
+retirement must refuse. The actual unselected-pattern/generated-file/reexec
+case preserves ordinary stdout/stderr/exit and generated bytes/mode; omitted
+exec/exit witnesses or late actual value-pointer, line or pointed-byte mutations
+refuse with failed-budget state and complete owned cleanup. These are scoped
+controls, not the still-missing original initial-plus-eight qualification.
+
+The native component case runs ordinary and supervised Make with two included
+eval definitions plus a partially allocated enclosing pattern and nested eval.
+Require identical exit/stdout/stderr, four completed templates with four distinct
+source occurrences, the enclosing source owner retained across the nested eval,
+and complete owned cleanup. The test-only collector in that component case does
+not issue native trace authority. The public nine-target case separately requires
+18 materializations, 16 non-simple definition returns and two simple completions,
+all five admitted flavors, private/export/override, nested eval/include, identical
+ordinary exit/stdout/stderr, runtime/machine replay and typed archive reconstruction.
+`OriginalPass.pattern_templates` retains `OriginalPatternTemplate` records joined
+to actual captured `OriginalSource` and source/eval occurrence; `patterns` retains
+`OriginalPattern` results with actual target, effective variable and optional
+non-simple definition/return sequences. `PatternLocation` remains distinct from
+ordinary `RuntimeLocation` and `ExpansionLocation`. Pattern observations are not
+ordinary authored assignments.
+
+For both simple and non-simple materializations, completion CWD must equal the
+original entry CWD. Run the live/archive CWD case in `test_pattern_templates`:
+ordinary positive output remains `recursive`/`simple`; changing only callback
+completion CWD must refuse before emitting the result. The live control restores
+observer state afterward and is not an actual OS `chdir` claim. Archive controls
+change completion CWD and refresh its machine payload digest together, so refusal
+proves the entry/completion semantic relation, not an unrelated digest mismatch.
+Pre-fix code accepts those live and archive mutations; no ABI or quota change is
+needed to restore this existing relation.
+
+Only the explicit pattern protocol uses a compact physical-source index. Native
+source and eval capture, runtime replay and its physical-source projection select
+the same existing index seam; legacy requests retain the eager index. The compact
+read-only mapping retains 32-bit physical line and byte offsets and computes the
+unchanged raw-statement digest on first lookup. It never collapses source versions
+or parser occurrences. UTF-8 validation, offset storage, memoized values and
+on-demand decode/hash work are charged cumulatively; lookup caching does not
+refund prior work. Run the compact-span cases over all 183 empty, LF, CRLF, UTF-8
+and continuation models, compare the complete mapping to `physical_statements`,
+and require exact-quota success, one-byte-short refusal, invalid-byte/count
+refusals and no repeat charge for an already retained result. For the 2,000-line
+fixture, construction charges must be less than half the eager representation;
+this finite threshold is not original-cohort resource qualification.
+
+The same module exercises parsed replay mutations of source/owner/template IDs,
+version disagreement, terminal counts, wrong flavor/input/effective modifiers,
+missing return, payloads and unissued traps. Actual stopped-process controls
+change the live template through kernel ptrace and corrupt callback/restored
+register vectors; all must explicitly refuse and clean their owned process tree.
+Admission controls replace list/layout/caller ABI fields or mismatch requested
+versions and require refusal. An escaped-percent fixture must bind the second
+percent as its wildcard, not the literal first percent.
+Boolean aliases for new template owner occurrence IDs must refuse as malformed
+typed wire, not compare equal to integer IDs. The diagnostic case captures a real
+ordinary Make exit 2 and its recipe's `Error 7`, then supplies that failed result
+at the native result boundary for readonly/writable requests, with and without
+patterns. Require the requested mode, unchanged nonzero status and stderr, and
+cleanup; the pre-fix writable branch incorrectly reports `readonly`. This tests
+failure reporting, not a bypass of native command admission or job validation.
+The actual writable Command rejection case separately supplies a non-Command
+and substituted argv under both protocol selections. Require the writable
+diagnostic, explicit failed budget and cleanup. The existing readonly admission
+family must retain its readonly diagnostic and all source/output/operand
+refusals; a neutral-label amendment that changed that established diagnostic
+was corrected without changing its admission predicate.
+
+Run the finite-root case with two different command-line profiles; require
+different real stdout, distinct cumulative template IDs/occurrences, machine 4
+root boundaries and rejection of cross-root template borrowing. The generated
+source case builds its native writer, includes two same-floc generated versions,
+and separately exercises missing-include Make reexec. Require exact generated
+bytes/mode, distinct captured content and producer leases, post-reexec address
+retirement, real materialization, writable 8/machine 3 replay and owned cleanup.
+These finite fixtures do not qualify the original scanner/compiler or inherited
+`.dep` execution, all 551 outputs, or the original initial-plus-eight cohort.
+Resource limits and every original acceptance and delivery hold remain unchanged.
+
+Dependencies are the existing captured ELF, native source/eval invocation stack,
+source snapshots and cumulative budget. There are no new services, registries,
+feature profiles, ROM/RAM/save/localization changes or archival compiler changes.
 
 From the clean Linux x86-64 checkout with admitted GNU Make 4.3 and the existing
 namespace launcher, extend `TC-OWNERSHIP-NATIVE-COMPLETION-001` (#270):
@@ -2043,6 +4151,26 @@ default-empty `ProbeSession(..., runtime_files=(... ,))` argument for Make's
 existing runtime discovery. It supports optional toolchain/header detection
 and metadata-only stock-tool recipe observation without host-directory grants:
 
+Original source-archive Git discovery may declare the exact root absences
+`runtime_files=("/.git", "/HEAD")`. Both names must be canonical and actually
+absent; present files, directories or aliases refuse without reading their
+content. Existing capture identity and aggregate budget/deadline checks apply.
+This preserves real Git execution and the application's existing handling of
+its nonrepository result, without importing host repository metadata.
+As with other immutable absent parents, metadata and reads beneath a missing
+name return actual ENOENT, not successful consumption. Neighbors, writes and
+directory enumeration receive no authority.
+
+For the scoped control, start with both names absent and compare actual native
+`lstat`/`open` results with the ordinary executable, including failed child
+probes. Require recorded metadata return ENOENT and no successful consumption.
+Try neighboring metadata and writes separately; both refuse. Isolated capture
+fixtures cover actual regular/directory/symlink types and absent-to-present
+identity changes, without writing either host root name.
+These controls are the three `test_native_git_root_*` methods in
+`test_native_writer.NativeRuntimeMetadataTests`; they are not the unfinished
+original initial-all-plus-eight qualification.
+
 ```python
 include_names = ("build-" + fixture.name, ".dep-" + fixture.name)
 with ProbeSession(
@@ -2476,8 +4604,11 @@ locale/profile or archival impact.
 The original-find reproduction first progressed from syscall 137 to undeclared
 `/sys/fs/selinux`. On the measured host this is a present sysfs directory, not
 an absence. The optional `native_metadata_directories` tuple now admits only
-the exact standard `/sys/fs/selinux` and `/selinux` mount probes, with a maximum
-of two distinct names. Present probes retain actual root-owned, nonmutable,
+the exact standard `/sys/fs/selinux` and `/selinux` mount probes and Git's
+gettext startup metadata path `/usr/share/locale`. The host and supervisor
+share that finite three-path set; declaration cardinality follows the set,
+while every aggregate probe quota and deadline remains unchanged.
+Present probes retain actual root-owned, nonmutable,
 canonical directory backing through exact readonly/nosuid/nodev/noexec bind
 mounts; absent probes remain absent. Content, enumeration, descendants, writes
 and execution are not granted. Declaration and pre-invocation capture check
@@ -2496,22 +4627,25 @@ existing runtime input seam, not a broad `/etc/selinux` grant. No input is
 added to native defaults; nonstandard discovered mount paths still refuse.
 
 For #270 `TC-WORKFLOW-NATIVE-MAKE-001`, run
-`test_native_selinux_mount_metadata_preserves_actual_type_and_absence`:
-an issued C tool in original Make observes the real present mount type/block
+`NativeRuntimeMetadataTests` in
+`scripts/validation_ownership/tests/test_native_writer.py`.
+The unchanged two-path foundation cases remain compatibility controls.
+Run `test_native_runtime_metadata_preserves_actual_type_and_absence`:
+an issued C tool in original Make observes each supported path's real present mount type/block
 size, actual readonly guest flag, and `ENOENT` for the absent standard probe;
 the returned 137 frame has its real status and 120-byte ABI. The pre-fix
 request has no metadata-directory API and the preserved original-find
 preimages refuse syscall 137 and then the unadmitted present mount. Run
-`test_native_selinux_metadata_mount_has_no_content_or_descendant_authority`
-for actual read/list/write/child/neighbor refusal on both standard probes.
-Run `test_native_selinux_metadata_declarations_keep_exact_trust_and_identity`
+`test_native_runtime_metadata_has_no_content_or_descendant_authority`
+for actual read/list/write/child/neighbor refusal on all three exact paths.
+Run `test_native_runtime_metadata_declarations_keep_exact_trust_and_identity`
 for malformed/duplicate/nonstandard declarations, actual trust/type/alias
-guards and changed backing before invocation. Run
-`test_native_selinux_metadata_supervisor_rejects_malformed_authority` for the
+guards and changed backing before invocation for each supported path. Run
+`test_native_runtime_metadata_supervisor_rejects_malformed_authority` for the
 actual typed supervisor parser, including unhashable paths, wrong shapes,
 duplicate/count limits, boolean/negative/overflow identities, file/writable
-backing and foreign ownership. Run
-`test_native_selinux_metadata_absence_rejects_actual_replaced_backing` against
+backing and foreign ownership across the complete supported path set. Run
+`test_native_runtime_metadata_absence_rejects_actual_replaced_backing` against
 the supervisor's admission routine: real host and guest dangling symlinks,
 files, directories and unexpected mounts cannot replace captured absence.
 Only an actual `lstat` `ENOENT` is absence; a symlink-following existence

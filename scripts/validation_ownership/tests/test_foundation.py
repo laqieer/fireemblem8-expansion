@@ -779,7 +779,7 @@ class FoundationTests(unittest.TestCase):
         self.add("Makefile", "VALUE := $(wildcard /usr/lib/*.py)\n.PHONY: all\nall: ; @:\n")
         session = self.session()
         with session:
-            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: metadata /usr/lib"):
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: read /usr/lib"):
                 session._native_make_readonly("all", native_runtime_directories=(runtime,))
         self.assert_clean(session)
 
@@ -1969,7 +1969,7 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(first[1], second[1])
             self.assertEqual(second[1]["domains"]["VALUE"]["value"], "original")
             self.assertEqual(set(images), {"/usr/bin/sh", "/usr/bin/printf"})
-            self.assertEqual(session.native_runtimes, images)
+            self.assertEqual(session.native_runtimes, {(path, True): rows for path, rows in images.items()})
             runtime_bytes = sum(len(data) for rows in images.values() for _, data in rows)
             self.assertLess(session.budget.bytes["control"] - control, runtime_bytes)
             self.assertGreater(session.observations_used, observations)
@@ -2385,7 +2385,7 @@ class FoundationTests(unittest.TestCase):
             session._native_make_readonly("all")
             outer = session.native_runtimes
             outer_inputs = session.native_runtime_inputs
-            image = outer["/usr/bin/sh"]
+            image = outer[("/usr/bin/sh", True)]
             with session.select_view(base):
                 self.assertFalse(session.native_runtimes)
                 self.assertFalse(session.native_runtime_inputs)
@@ -2405,13 +2405,13 @@ class FoundationTests(unittest.TestCase):
             self.assertFalse(selected_inputs)
             self.assertIs(session.native_runtimes, outer)
             self.assertIs(session.native_runtime_inputs, outer_inputs)
-            self.assertIs(session.native_runtimes["/usr/bin/sh"], image)
+            self.assertIs(session.native_runtimes[("/usr/bin/sh", True)], image)
             with patch.object(
                 make_probe, "_executable_runtime", side_effect=MakeProbeError("actual capture refusal"),
             ):
                 with self.assertRaisesRegex(MakeProbeError, "actual capture refusal"):
                     session._native_make_readonly("all", native_executables=("/usr/bin/printf",))
-            self.assertNotIn("/usr/bin/printf", session.native_runtimes)
+            self.assertNotIn(("/usr/bin/printf", True), session.native_runtimes)
             self.assertTrue(budget.failed)
         self.assertFalse(outer)
         self.assertFalse(outer_inputs)
@@ -2437,7 +2437,7 @@ class FoundationTests(unittest.TestCase):
             captured = original(path, budget, **kwargs)
             if path == "/usr/bin/printf":
                 return tuple(
-                    (name, data + b"changed" if "libc.so" in name else data)
+                    (name, data[:8] + b"changed" if "libc.so" in name else data)
                     for name, data in captured
                 )
             return captured
@@ -2856,7 +2856,7 @@ class FoundationTests(unittest.TestCase):
             result = original(path, budget, **kwargs)
             if path == "/usr/bin/sh":
                 return tuple(
-                    (name, data + b"changed" if name != path else data) for name, data in result
+                    (name, data[:8] + b"changed" if name != path else data) for name, data in result
                 )
             return result
         session = self.session()

@@ -30,6 +30,10 @@ ENVIRONMENT = {
     "PYTHONDONTWRITEBYTECODE": "1",
 }
 
+NATIVE_METADATA_DIRECTORY_PATHS = frozenset((
+    "/sys/fs/selinux", "/selinux", "/usr/share/locale",
+))
+
 PYTHON_RUNTIME_DIRECTORY = re.compile(
     r"(?:/usr/lib/python[0-9]+\.[0-9]+(?:/dist-packages)?"
     r"|/usr/local/lib/python[0-9]+\.[0-9]+/dist-packages"
@@ -75,6 +79,10 @@ def parse_json(data: bytes, boundary: str):
 
 def encoded(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+
+
+def native_command_owner(closure, outputs, resources=()):
+    return hashlib.sha256(encoded([closure, outputs, resources])).hexdigest()
 
 
 class Frames:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 if __package__:
     from .authority import encoded
@@ -318,6 +319,10 @@ def strip_comment(line, *, recipe_context=False, **limits):
     syntax = iter(_statement_syntax(line, **limits))
     position = next(syntax, None)
     result, index, backslashes = [], 0, 0
+    charge = limits.get("charge", lambda size: None)
+    budget = limits.get("budget")
+    storage = sys.getsizeof(result)
+    _reserve(storage, budget, charge)
     while index < len(line):
         if index % 4096 == 0:
             limits.get("checkpoint", lambda: None)()
@@ -338,6 +343,10 @@ def strip_comment(line, *, recipe_context=False, **limits):
                 if character == ";":
                     return "".join(result) + line[index:]
         result.append(character)
+        current_storage = sys.getsizeof(result)
+        if current_storage > storage:
+            _reserve(current_storage, budget, charge)
+            storage = current_storage
         backslashes = backslashes + 1 if character == "\\" else 0
         index += 1
     return "".join(result)

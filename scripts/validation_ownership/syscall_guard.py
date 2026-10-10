@@ -9,6 +9,7 @@ this Python process. Mutable shared memory and namespace aliases reject.
 from __future__ import annotations
 
 import ctypes
+import base64
 import errno
 import hashlib
 import json
@@ -28,7 +29,7 @@ from pathlib import Path
 if __package__:
     from . import read_epochs
     from .read_trace import NativeReadTrace
-    from .authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
+    from .authority import NATIVE_METADATA_DIRECTORY_PATHS, PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
     from .lifecycle import finish_cleanup
     from .metadata_transport import encode_metadata_transport
     from .producer_channel import (
@@ -38,7 +39,7 @@ if __package__:
 else:
     import read_epochs
     from read_trace import NativeReadTrace
-    from authority import PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, parse_json
+    from authority import NATIVE_METADATA_DIRECTORY_PATHS, PYTHON_RUNTIME_DIRECTORY, _event_command, _read_events, encoded, native_command_owner, parse_json
     from lifecycle import finish_cleanup
     from metadata_transport import encode_metadata_transport
     from producer_channel import (
@@ -49,6 +50,7 @@ else:
 
 LIBC = ctypes.CDLL(None, use_errno=True)
 VO_SOURCE_IO = 0x564F4D4B00000008
+VO_JOB_INPUTS = 0x564F4D4B00000009
 VO_JOB_CONTEXT = 0x564F4D4B00000006
 VO_JOB_POLICY = 0x564F4D4B00000007
 LIBC.ptrace.restype = ctypes.c_long
@@ -121,13 +123,15 @@ def replace_memory(pid, address, data):
         offset += amount
 
 
-def cstring(pid, address, *, limit=4096):
+def cstring(pid, address, *, limit=4096, charge=None):
     if not address:
         raise Violation("null pathname")
     result = bytearray()
     while len(result) < limit:
         cursor = address + len(result)
         count = min(8 - (cursor & 7), limit - len(result))
+        if charge is not None:
+            charge(count)
         word = memory(pid, cursor, count)
         if b"\0" in word:
             result.extend(word.split(b"\0", 1)[0])
@@ -238,8 +242,14 @@ class Process:
     newborn_stop: bool = False
     native_dispatch: int | None = None
     native_parent: int | None = None
+    native_fork: tuple[int, int, int] | None = None
     native_execs: int = 0
+    native_inputs: tuple[str, dict] | None = None
+    native_admission: dict | None = None
     path_context: tuple[str, int, str | None] | None = None
+    native_output_operation: object | None = None
+    native_output_close: int | None = None
+    native_unlink_flags: int | None = None
 
     def clone(self):
         return Process(
@@ -249,6 +259,8 @@ class Process:
             memory_group=self.memory_group, memory_limit=self.memory_limit,
             dependency_image=self.dependency_image,
             native_dispatch=self.native_dispatch,
+            native_inputs=self.native_inputs,
+            native_admission=self.native_admission if self.role == "make" else None,
         )
 
     def close(self):
@@ -262,6 +274,13 @@ class Policy:
         self.config = config
         self.mode = config["mode"]
         self.native_readonly = config.get("native_readonly", False)
+        self.native_admission = config.get("native_admission", False)
+        self.native_admit = None
+        if type(self.native_admission) is not bool or self.native_admission and (
+            not self.native_readonly or not config.get("producer_endpoint")
+            or config.get("read_epochs", {}).get("version") not in read_epochs.RUNTIME_VERSIONS
+        ):
+            raise Violation("native Command admission lacks its existing channel/runtime authority")
         native_shell = config.get("native_shell", "/bin/sh")
         native_executables = config.get("native_executables", ["/bin/sh"])
         if (
@@ -275,11 +294,12 @@ class Policy:
         self.native_executables = set(native_executables)
         metadata_directories = config.get("native_metadata_directories", [])
         if (
-            not isinstance(metadata_directories, list) or len(metadata_directories) > 2
+            not isinstance(metadata_directories, list)
+            or len(metadata_directories) > len(NATIVE_METADATA_DIRECTORY_PATHS)
             or any(
                 not isinstance(item, dict) or set(item) != {"path", "identity"}
                 or not isinstance(item["path"], str)
-                or item["path"] not in {"/sys/fs/selinux", "/selinux"}
+                or item["path"] not in NATIVE_METADATA_DIRECTORY_PATHS
                 or item["identity"] is not None and (
                     not isinstance(item["identity"], list) or len(item["identity"]) != 5
                     or any(type(value) is not int or value < 0 for value in item["identity"])
@@ -314,12 +334,12 @@ class Policy:
             if (
                 not self.native_readonly or not isinstance(request, dict)
                 or set(request) != {"version", "scope", "abi"} | (
-                    {"selection"} if request.get("version") in {4, 5} else set()
-                )
-                or type(request["version"]) is not int or request["version"] not in {1, 4, 5}
+                    {"selection"} if request.get("version") in read_epochs.MACHINE_VERSIONS else set()
+                ) | ({"patterns"} if request.get("version") in read_epochs.PATTERN_VERSIONS else set())
+                or type(request["version"]) is not int or request["version"] not in {1, *read_epochs.MACHINE_VERSIONS}
                 or not isinstance(request["abi"], dict)
-                or request["abi"].get("version") != (2 if request["version"] in {4, 5} else 1)
-                or request["version"] in {4, 5} and (
+                or request["abi"].get("version") != (2 if request["version"] in read_epochs.MACHINE_VERSIONS else 1)
+                or request["version"] in read_epochs.MACHINE_VERSIONS and (
                     not isinstance(request["selection"], dict)
                     or not isinstance(request["selection"].get("inventory"), list)
                     or any(not isinstance(row, dict) or row.get("kind") != "snapshot"
@@ -327,16 +347,23 @@ class Policy:
                 )
                 or not isinstance(request["scope"], str) or not request["scope"]
                 or config.get("environment", {}).get("VO_OBSERVE_READS") != "1"
+                or (request["version"] in read_epochs.WRITABLE_VERSIONS) != bool(config.get("native_output_paths"))
             ):
                 raise Violation("invalid readonly native read-trace authority")
         elif "VO_OBSERVE_READS" in config.get("environment", {}):
             raise Violation("unconfigured native read observation")
+        if "native_root_observation" in config and (
+            config["native_root_observation"] is not True
+            or not self.native_readonly or request is None or request["version"] not in read_epochs.RUNTIME_VERSIONS
+        ):
+            raise Violation("invalid native root observation authority")
+        self.native_root = None
         if type(self.native_readonly) is not bool or (
             not self.native_readonly and "VO_OBSERVE_NATIVE_READONLY" in config.get("environment", {})
         ) or self.native_readonly and (
             self.mode != "make"
             or config["executables"] != ["/usr/bin/make", *native_executables]
-            or config.get("producer_endpoint") or config.get("published")
+            or config.get("producer_endpoint") and not self.native_admission or config.get("published")
             or config.get("mapping_entries") or config.get("metadata_validation")
             or config.get("dependency")
             or config.get("environment", {}).get("VO_OBSERVE_NATIVE_READONLY") != "1"
@@ -405,10 +432,29 @@ class Policy:
         if self.native_readonly and not self.native_executables <= self.runtime_closure:
             raise Violation("native executable is outside captured runtime closure")
         dependency = config.get("dependency")
+        self.native_compiler = None
+        if config.get("native_compiler") is not None:
+            self.native_compiler = read_epochs.native_compiler_profile(
+                config["native_compiler"], count_limit=config["observation_count"],
+                reserve=self.charge_metadata,
+            )
+            profile = self.native_compiler
+            dependency = {
+                "executables": [profile.driver, profile.frontend],
+                "runtime_files": [row[0] for row in profile.files],
+                "runtime_directories": list(profile.directories), "runtime_stat_probes": list(profile.probes),
+                "runtime_interpreter": profile.interpreter, "runtime_libc": profile.libc,
+            }
+            if not self.native_readonly or not {profile.driver, profile.frontend} <= self.native_executables:
+                raise Violation("native compiler lost its issued runtime admission")
+        self.dependency_profile = dependency
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
         self.runtime_directories = set()
-        for name in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
+        for name in (
+            self.runtime_closure | self.executable | {"/lib/vo-observer.so"}
+            | (set(dependency["runtime_directories"]) if dependency else set())
+        ):
             parent = posixpath.dirname(name)
             while parent:
                 self.runtime_directories.add(parent)
@@ -437,6 +483,7 @@ class Policy:
             }
             self.dependency_stat_probes = {
                 self.resolve(path) for path in dependency["runtime_stat_probes"]
+                if self.native_compiler is None or not path.startswith("/proc/")
             }
             self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
             self.dependency_interpreter = self.resolve(dependency["runtime_interpreter"])
@@ -483,6 +530,24 @@ class Policy:
                     parent = posixpath.dirname(parent)
         if request is not None:
             self.read_trace = NativeReadTrace(self, request)
+        self.native_outputs = None
+        paths = config.get("native_output_paths")
+        if paths is not None:
+            if (
+                not (
+                    self.mode == "command" and config["argv"][0] == "/native/tool"
+                    or self.mode == "make" and self.native_admission
+                )
+                or not isinstance(paths, list) or not paths
+                or any(not isinstance(path, str) for path in paths) or len(set(paths)) != len(paths)
+                or len(paths) > config["creation_limit"]
+            ):
+                raise Violation("native output observer lacks its exact issued tool outputs")
+            if __package__:
+                from .native_outputs import NativeOutputObserver
+            else:
+                from native_outputs import NativeOutputObserver
+            self.native_outputs = NativeOutputObserver(self, paths)
 
     def observation_count(self):
         return sum(map(len, self.observation_attempts.values())) + self.trace_observations
@@ -494,23 +559,24 @@ class Policy:
         mounts = self.config.get("mounts", ())
         repository = [row for row in mounts if row["target"] == "/repo"]
         composite = self.config.get("readonly_source_composite", False)
+        writable = trace.version in read_epochs.WRITABLE_VERSIONS
         source_mounts = [row for row in mounts if row["target"].startswith("/repo/")]
         if (
-            not self.native_readonly or trace.version not in {4, 5} or pid != self.make_pid or pid != trace.pid
+            not self.native_readonly or trace.version not in read_epochs.MACHINE_VERSIONS or pid != self.make_pid or pid != trace.pid
             or self.processes.get(pid) is not state or state.role != "make"
             or not state.observer_ready or not state.parked or state.pidfd < 0
-            or len(repository) != 1 or repository[0]["writable"] is not False
+            or len(repository) != 1 or repository[0]["writable"] is not writable
             or type(composite) is not bool
             or any(row["target"] == "/" for row in mounts)
-            or source_mounts and not composite
-            or composite and any(row["writable"] is not False for row in source_mounts)
+            or source_mounts and not (composite or writable)
+            or (composite or writable) and any(row["writable"] is not False for row in source_mounts)
         ):
             raise Violation("readonly source entry lacks its actual stopped immutable backing")
         backing = os.statvfs(f"/proc/{pid}/root/repo")
         self.charge_metadata(sys.getsizeof(backing))
-        if not backing.f_flag & os.ST_RDONLY:
+        if bool(backing.f_flag & os.ST_RDONLY) == writable:
             raise Violation("actual native source mount is not readonly")
-        if composite:
+        if composite or writable:
             for row in (*repository, *source_mounts):
                 source = os.stat(row["source"])
                 guest_path = f"/proc/{pid}/root" + row["target"]
@@ -520,9 +586,17 @@ class Policy:
                 if (
                     (source.st_dev, source.st_ino) != (guest.st_dev, guest.st_ino)
                     or flags.f_flag & (os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV)
-                    != os.ST_RDONLY | os.ST_NOSUID | os.ST_NODEV
+                    != (0 if row["writable"] else os.ST_RDONLY) | os.ST_NOSUID | os.ST_NODEV
                 ):
                     raise Violation("actual readonly composite source backing differs")
+        if writable:
+            for entry in trace.selection["inventory"]:
+                path = "/repo/" + entry["path"]
+                if not any(
+                    path == row["target"] or path.startswith(row["target"] + "/")
+                    for row in source_mounts
+                ):
+                    raise Violation("writable native source lacks its immutable source island")
         trace.confirm_barrier(dict(trace.pending_barrier), trace.selection["snapshot_sha256"])
 
     def reserve_trace_observation(self):
@@ -550,10 +624,55 @@ class Policy:
         self.reserve_trace_observation()
         self.charge_metadata(len(encoded(row)))
 
+    def native_argv(self, pid, pointer):
+        if not pointer:
+            raise Violation("native dispatch has no original argv vector")
+        argv, size = [], 0
+        for index in range(1025):
+            if time.monotonic() >= self.config["deadline"]:
+                raise Violation("native input capture exhausted its original deadline")
+            self.charge_metadata(8)
+            address = int.from_bytes(memory(pid, pointer + 8 * index, 8), "little")
+            if not address:
+                inputs = read_epochs.native_execution_input(argv, "/repo")
+                self.charge_metadata(len(encoded(inputs)))
+                return inputs["argv"]
+            argument = cstring(pid, address, limit=65537 - size, charge=self.charge_metadata)
+            size += len(argument.encode("utf-8")) + 1
+            if size > 65536:
+                raise Violation("native dispatch argv exceeds its original byte bound")
+            argv.append(argument)
+        raise Violation("native dispatch argv exceeds its original word bound")
+
+    def observe_native_inputs(self, pid, state, pointer, size):
+        if (
+            not self.native_readonly or pid != self.make_pid or state.role != "make"
+            or not state.observer_ready or state.dispatch is not None
+            or state.native_dispatch is not None or state.native_inputs is not None or size != 16
+            or state.cwd != "/repo"
+        ):
+            raise Violation("native dispatch inputs lack their original pre-spawn owner")
+        self.charge_metadata(size)
+        frame = memory(pid, pointer, size)
+        path_pointer, argv_pointer = (
+            int.from_bytes(frame[offset:offset + 8], "little") for offset in (0, 8)
+        )
+        path = self.path(pid, state, path_pointer)
+        if path not in self.native_executables:
+            raise Violation(f"untrusted executable dispatch: {path} (original pre-spawn inputs)")
+        inputs = read_epochs.native_execution_input(self.native_argv(pid, argv_pointer), state.cwd)
+        if self.native_admission:
+            if self.native_admit is None:
+                raise Violation("native Command admission has no active supervisor rendezvous")
+            state.native_admission = self.native_admit(path, inputs)
+        state.native_inputs = path, inputs
+
     def begin_native_job(self, pid, state, path):
         if (
             pid != self.make_pid or state.role != "make" or not state.observer_ready
             or state.native_dispatch is not None or path not in self.native_executables
+            or state.native_inputs is None or state.native_inputs[0] != path
+            or self.native_admission and state.native_admission is None
         ):
             raise Violation("native job lacks its actual original Make dispatch")
         sequence = len(self.native_jobs) + 1
@@ -564,13 +683,15 @@ class Policy:
             "context": None, "returncode": None, "terminal_status": None,
             "waited": False, "ignored": None,
         }
+        if self.native_admission:
+            row["admission"] = dict(state.native_admission)
         self.native_job_event(row)
         self.native_jobs[sequence] = row
         state.native_dispatch = sequence
 
     def bind_native_job(self, pid, state):
         row = self.native_jobs.get(state.native_dispatch)
-        tree = self.read_trace is not None and self.read_trace.version == 5
+        tree = self.read_trace is not None and self.read_trace.runtime
         descendant = tree and row is not None and row["pid"] is not None
         if (
             row is None or not descendant and (
@@ -598,18 +719,98 @@ class Policy:
             except UnicodeDecodeError as error:
                 raise Violation("native job command line is not strict UTF-8") from error
             inputs = read_epochs.native_execution_input(argv, state.cwd)
+            if not descendant and (
+                state.native_inputs is None or state.native_inputs != (state.exec_path, inputs)
+            ):
+                raise Violation("native exec-stop inputs differ from original pre-spawn dispatch")
             self.native_job_event({"sequence": state.native_dispatch, **inputs})
             if not descendant:
                 row.update(inputs)
                 row["tree"] = []
             state.native_execs += 1
+            fork_parent, state.native_fork = state.native_fork, None
+            state.native_inputs = None
+            if self.native_outputs is not None:
+                if descendant:
+                    context = {
+                        "dispatch": state.native_dispatch, "pid": pid,
+                        "generation": state.native_execs,
+                        "fork_parent": None if fork_parent is None else list(fork_parent),
+                    }
+                    if self.native_compiler is not None and state.exec_path in {
+                        self.native_compiler.driver, self.native_compiler.frontend,
+                    }:
+                        _, context["environment"] = self.verify_dependency_environment(pid, state.exec_path)
+                    state.native_admission = self.native_admit(state.exec_path, inputs, context)
+                    root_admission = row["admission"]
+                    if (
+                        any(path not in root_admission["outputs"] for path in state.native_admission["outputs"])
+                        or any(resource not in root_admission.get("resources", [])
+                               for resource in state.native_admission.get("resources", []))
+                    ):
+                        raise Violation("native image operands escape its original job authority")
+                else:
+                    state.native_admission = dict(row["admission"])
+            else:
+                state.native_admission = None
+            state.dependency_image = None
+            if self.native_compiler is not None and state.exec_path in {
+                self.native_compiler.driver, self.native_compiler.frontend,
+            }:
+                self.verify_dependency_image(pid, state.exec_path)
+                _, environment = self.verify_dependency_environment(pid, state.exec_path)
+                binding = state.native_admission.get("compiler")
+                if binding is None or binding["environment"] != environment:
+                    raise Violation("native compiler actual environment differs from its issued actor")
+                if binding["role"] == "frontend":
+                    parent = self.processes.get(state.native_parent)
+                    parent_binding = parent.native_admission.get("compiler") if parent and parent.native_admission else None
+                    if (
+                        fork_parent is None or binding["driver"] != list(fork_parent)
+                        or parent_binding is None or parent_binding["role"] != "driver"
+                        or parent.native_execs != fork_parent[1] or parent.native_admission["sequence"] != fork_parent[2]
+                    ):
+                        raise Violation("native frontend lost its exact live driver-at-fork")
+                state.dependency_image = state.exec_path
+                state.dependency_stop = None
             return {
                 "kind": "exec", "pid": pid, "parent": state.native_parent,
                 "generation": state.native_execs, "path": state.exec_path, **inputs,
+                **({"admission": dict(state.native_admission)} if self.native_outputs is not None else {}),
             }
+        state.native_inputs = None
+
+    def observe_native_root(self, pid):
+        if self.native_root is not None or pid != self.make_pid:
+            raise Violation("native root initial execution has a foreign or reused PID")
+        captures = []
+        for name in ("cmdline", "environ"):
+            with open(f"/proc/{pid}/{name}", "rb") as stream:
+                data = stream.read(min(self.config["file_limit"], SYSCALL_MEMORY_LIMIT) + 1)
+            self.charge_metadata(len(data))
+            if len(data) > min(self.config["file_limit"], SYSCALL_MEMORY_LIMIT):
+                raise Violation("native root input exceeds its existing byte bound")
+            captures.append(data)
+        argv, environment = read_epochs.native_root_inputs(*captures)
+        if argv != self.config["argv"] or environment != self.config["environment"]:
+            raise Violation("native root actual inputs differ from its initial request")
+        cwd = self.config.get("cwd", "/repo")
+        actual = os.stat(f"/proc/{pid}/cwd")
+        expected = os.stat(Path(self.config["root"]) / cwd.lstrip("/"))
+        self.charge_metadata(256)
+        if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+            raise Violation("native root actual CWD differs from its initial request")
+        read_epochs.native_execution_input(argv, cwd)
+        row = {
+            "version": 1, "pid": pid, "argv": argv, "cwd": cwd, "environment": environment,
+            "exit_stop": None, "wait": None,
+        }
+        self.reserve_trace_observation()
+        self.charge_metadata(len(encoded(row)))
+        self.native_root = row
 
     def native_tree_event(self, state, event):
-        if self.read_trace is None or self.read_trace.version != 5:
+        if self.read_trace is None or not self.read_trace.runtime:
             return
         row = self.native_jobs.get(state.native_dispatch)
         if row is None or row["pid"] is None or row["terminal_status"] is not None:
@@ -653,7 +854,7 @@ class Policy:
         return retained
 
     def native_exec_signals(self, pid, state):
-        if self.read_trace is None or self.read_trace.version != 5 or not state.native_signals:
+        if self.read_trace is None or not self.read_trace.runtime or not state.native_signals:
             state.native_signals.clear()
             state.native_signal_origins.clear()
             return
@@ -813,7 +1014,7 @@ class Policy:
         state.native_sigkill_outcome = True
 
     def native_child_signal(self, pid, state):
-        if self.read_trace is None or self.read_trace.version != 5:
+        if self.read_trace is None or not self.read_trace.runtime:
             return False
         information = (ctypes.c_ubyte * 128)()
         self.charge_metadata(ctypes.sizeof(information))
@@ -882,14 +1083,18 @@ class Policy:
             or status != row["terminal_status"] or os.waitstatus_to_exitcode(status) != row["returncode"]
         ):
             raise Violation("native job wait result differs from its actual terminal lifecycle")
-        if self.read_trace is not None and self.read_trace.version == 5:
+        if self.read_trace is not None and self.read_trace.runtime:
             read_epochs.native_job_tree(
                 row["tree"], row, self.make_pid, self.native_executables,
                 count_limit=self.config["observation_count"],
+                writable=self.native_outputs is not None,
+                compiler_profile=self.native_compiler,
+                compiler_sources=tuple(row["path"] for row in self.read_trace.selection["inventory"]),
+                reserve=self.charge_metadata,
             )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
-        if self.read_trace is not None and self.read_trace.version in {4, 5}:
+        if self.read_trace is not None and self.read_trace.version in read_epochs.MACHINE_VERSIONS:
             self.read_trace.machine_event(
                 "native-policy", pid, dispatch=row["sequence"], child=row["pid"],
                 context=dict(row["context"]), ignored=row["ignored"], status=status,
@@ -898,7 +1103,7 @@ class Policy:
 
     def retire_native_job(self, pid, state, status):
         row = self.native_jobs.get(state.native_dispatch)
-        if self.read_trace is not None and self.read_trace.version == 5:
+        if self.read_trace is not None and self.read_trace.runtime:
             self.native_tree_event(state, {"kind": "exit", "pid": pid, "status": status})
             if row is not None and pid != row["pid"]:
                 return
@@ -1375,10 +1580,12 @@ class Policy:
             start <= registers.rip < end for start, end in state.observer_ranges
         )
 
-    def resolve(self, name, *, follow_final=True):
+    def resolve(self, name, *, follow_final=True, native_maps_omission=False):
         # Only trusted, immutable symlinks remain: candidate symlinks and
         # ancestor relocation are forbidden. Resolve in the guest root, not
         # through the supervisor's host-root interpretation of absolute links.
+        if native_maps_omission and name != "/proc/self/maps":
+            raise Violation("native maps omission requires its exact optional spelling")
         pending = deque(name.split("/"))
         resolved = []
         links = 0
@@ -1390,13 +1597,14 @@ class Policy:
                 if resolved:
                     resolved.pop()
                 continue
-            if follow_final or pending:
+            if pending or follow_final and not native_maps_omission:
                 alias = "/" + "/".join((*resolved, part))
                 if (self.mode == "make" or self.config.get("metadata_validation")) and alias in self.config.get("runtime_aliases", ()):
                     spelling = posixpath.normpath(name)
                     if ".." in name.split("/") or (
                         spelling not in self.config["executables"] and not self.runtime_metadata(spelling)
                         and not (self.native_readonly and spelling == "/bin/sh")
+                        and not (native_maps_omission and alias == "/proc/self")
                     ):
                         raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
@@ -1417,7 +1625,21 @@ class Policy:
                     pending.extendleft(reversed(target.split("/")))
                     continue
             resolved.append(part)
-        return "/" + "/".join(resolved)
+        result = "/" + "/".join(resolved)
+        if native_maps_omission:
+            self.charge_metadata(128)
+            if (
+                re.fullmatch(r"/proc/(?:self|[1-9][0-9]*)/maps", result) is None
+                or self.source_mode(result) is not None
+            ):
+                raise Violation("native optional maps probe requires its genuinely omitted guest leaf")
+        return result
+
+    def native_maps_omission(self, state):
+        return (
+            self.mode == "make" and self.native_readonly and state.role == "native"
+            and state.path_context is not None and state.path_context[0] == "/proc/self/maps"
+        )
 
     def path(self, pid, state, address, dirfd=-100, *, follow_final=True):
         dirfd = ctypes.c_int(dirfd).value
@@ -1435,7 +1657,9 @@ class Policy:
                 raise Violation("relative path through a non-directory descriptor")
             name = base.rstrip("/") + "/" + name
         state.path_context = (spelling, dirfd, base)
-        return self.resolve(name, follow_final=follow_final)
+        return self.resolve(
+            name, follow_final=follow_final, native_maps_omission=self.native_maps_omission(state),
+        )
 
     def fd(self, state, fd):
         if fd not in state.fds:
@@ -1707,6 +1931,11 @@ class Policy:
         )
 
     def make_runtime_access(self, state, path, operation):
+        if (
+            self.native_maps_omission(state) and operation in {"read", "metadata"}
+            and path == self.resolve("/proc/self/maps", native_maps_omission=True)
+        ):
+            return
         if path in self.native_metadata_directories:
             if operation != "metadata":
                 raise Violation(f"metadata-only runtime operation denied: {operation} {path}")
@@ -1717,7 +1946,10 @@ class Policy:
             self.check_optional_make_spelling(state, path, operation)
             self.defer_observation(state, "accessed", path)
             return
-        if self.native_readonly and operation in {"read", "metadata"} and self.runtime_metadata(path):
+        if (
+            self.native_readonly and operation in {"read", "metadata"}
+            and self.runtime_metadata(path, parents=operation == "metadata")
+        ):
             self.check_optional_make_spelling(state, path, operation)
             self.defer_observation(state, "accessed", path)
             return
@@ -1847,7 +2079,8 @@ class Policy:
         return True
 
     def dependency_negative_purpose(self, state, path, operation):
-        if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
+        dependency = getattr(self, "dependency_profile", self.config.get("dependency"))
+        if state.dependency_stop is None or state.dependency_image not in dependency["executables"]:
             raise Violation("dependency negative probe has no verified syscall context")
         pid, number, ip = state.dependency_stop
         self.reserve_observation("accessed", f"dependency-purpose:{pid}:{number}:{ip}:{operation}:{path}")
@@ -1865,7 +2098,7 @@ class Policy:
         driver = (
             operation == "metadata"
             and path in self.dependency_stat_probes | self.dependency_directories
-            and state.dependency_image == self.config["dependency"]["executables"][0]
+            and state.dependency_image == dependency["executables"][0]
             and origin in {
                 self.dependency_image_ids[state.dependency_image],
                 self.dependency_image_ids[self.dependency_libc],
@@ -1879,6 +2112,34 @@ class Policy:
             return False
         self.verify_dependency_mapping_span(image, *mapping, ip, instruction)
         return True
+
+    def verify_dependency_environment(self, pid, image):
+        captures = []
+        self.charge_metadata(sys.getsizeof(captures))
+        for name in ("cmdline", "environ"):
+            with open(f"/proc/{pid}/{name}", "rb") as stream:
+                data = stream.read(65537)
+            self.charge_metadata(sys.getsizeof(data))
+            if len(data) > 65536:
+                raise Violation("dependency compiler actual environment exceeds its byte bound")
+            captures.append(data)
+        self.charge_metadata(sys.getsizeof(captures))
+        argv, environment = read_epochs.native_root_inputs(*captures)
+        self.charge_metadata(
+            sys.getsizeof(argv) + sys.getsizeof(environment)
+            + sum(sys.getsizeof(value) for value in argv)
+            + sum(sys.getsizeof(key) + sys.getsizeof(value) for key, value in environment.items())
+        )
+        native_compiler = getattr(self, "native_compiler", None)
+        executables = getattr(self, "dependency_profile", self.config.get("dependency"))["executables"]
+        if image not in executables:
+            raise Violation("dependency compiler environment lacks its issued image")
+        read_epochs.compiler_environment(
+            environment, dict(native_compiler.environment) if native_compiler is not None else self.config["environment"],
+            frontend=image == executables[1],
+            driver=native_compiler.driver if native_compiler is not None else self.config["argv"][0],
+        )
+        return argv, environment
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
@@ -1924,15 +2185,60 @@ class Policy:
             if observer and path == "/control/result" and operation == "write":
                 return
             raise Violation(f"supervisor channel denied: {operation} {path}")
-        if self.config.get("dependency") and not (
+        if (self.config.get("dependency") or state.dependency_image is not None) and not (
             path in {"/repo", "/work"} or path.startswith(("/repo/", "/work/"))
         ):
             # No generic runtime prefix may authorize a dependency source.
             self.dependency_runtime_access(state, path, operation)
             return
+        if self.config.get("native_compiler") and state.dependency_image is not None and path.startswith("/repo/") and operation != "write":
+            binding = state.native_admission["compiler"]
+            relative = path.removeprefix("/repo/")
+            files = set(binding["sources"]) | set(binding["code"])
+            directories = {parent.as_posix() for name in files for parent in Path(name).parents}
+            directories.update(binding["includes"])
+            outputs = set(state.native_admission["outputs"])
+            directories.update(parent.as_posix() for name in outputs for parent in Path(name).parents)
+            if operation in {"read", "metadata"} and relative not in files and self.source_mode(path) is None:
+                self.absent_source(state, path, operation)
+                return
+            if (
+                operation == "read" and relative not in files
+                or operation == "metadata" and relative not in files | directories | outputs
+                or operation == "directory"
+            ):
+                raise Violation(f"native compiler access escapes its issued source scope: {operation} {path}")
+            self.defer_observation(
+                state, "consumed" if operation == "read" and relative in binding["sources"]
+                else "code_consumed" if operation == "read" else "accessed",
+                relative if operation == "read" else path,
+            )
+            return
         if path == "/dev/null":
             return
         if self.native_readonly and operation == "write":
+            if self.native_outputs is not None:
+                job = self.native_jobs.get(state.native_dispatch)
+                admission = state.native_admission or {}
+                outputs = admission.get("outputs", [])
+                if job is not None and state.role == "native" and self.config.get("native_resources"):
+                    if __package__:
+                        from .native_resources import resource_operation
+                    else:
+                        from native_resources import resource_operation
+                    selected = {
+                        1: "write", 18: "write", 20: "write", 2: "open", 85: "open", 257: "open",
+                        82: "replace", 264: "replace", 316: "replace", 87: "remove", 91: "mode",
+                        83: "mkdir", 258: "mkdir", 84: "rmdir",
+                        263: "rmdir" if state.native_unlink_flags == 0x200 else "remove",
+                    }.get(state.kernel_call)
+                    if resource_operation(
+                        admission.get("resources", ()), path, job["pid"], outputs, selected,
+                    ):
+                        return
+                elif state.role == "native" and state.kernel_call in {1, 18, 20, 2, 85, 257} and path in {"/repo/" + output for output in outputs}:
+                    return
+                raise Violation(f"native job write lacks its issued output authority: {path}")
             raise Violation(f"readonly native Make filesystem write denied: {path}")
         if state.role == "helper":
             if operation == "metadata" and path in {"/", "/bin", "/usr", "/usr/bin", "/proc/self/exe"}:
@@ -2098,6 +2404,16 @@ class Policy:
 
     def check_fd(self, state, descriptor, operation, registers):
         path = self.fd(state, descriptor)
+        if (
+            operation == "write" and self.native_outputs is not None
+            and state.role == "native" and state.native_stop is not None
+            and state.kernel_call in {1, 18, 20, 91}
+            and (state.kernel_call != 91 or self.config.get("native_resources"))
+        ):
+            binding = (state.native_stop[0], descriptor)
+            item = self.native_outputs.custody.descriptors.get(binding)
+            if item is not None and binding in item.writers and item.path == path:
+                return path
         self.check(state, path, operation, observer=self.observer(state, registers))
         return path
 
@@ -2123,11 +2439,12 @@ class Policy:
             raise Violation("aggregate syscall budget exhausted")
         n = r.orig_rax
         a, b, c, d, e = r.rdi, r.rsi, r.rdx, r.r10, r.r8
+        state.native_unlink_flags = ctypes.c_int(c).value if n == 263 else None
         state.pending = None
         state.kernel_io = None
         state.metadata_pending = None
         state.path_context = None
-        state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") else None
+        state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") or state.dependency_image is not None else None
         state.native_stop = (pid, r.orig_rax, r.rip) if self.native_readonly and state.role == "native" else None
         state.observations.clear()
         state.observation_needs_bytes = False
@@ -2135,6 +2452,7 @@ class Policy:
         if n == 39 and a in {
             VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE,
             VO_SOURCE_IO, VO_JOB_CONTEXT, VO_JOB_POLICY,
+            VO_JOB_INPUTS,
         }:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
@@ -2186,6 +2504,8 @@ class Policy:
                     self.observe_native_job_context(pid, state, b, c)
                 elif a == VO_JOB_POLICY:
                     self.observe_native_job_policy(pid, state, b, c)
+                elif a == VO_JOB_INPUTS:
+                    self.observe_native_inputs(pid, state, b, c)
                 elif b:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
@@ -2200,6 +2520,7 @@ class Policy:
                         raise Violation("invalid Make dispatch completion")
                     state.dispatch = None
                     state.native_dispatch = None
+                    state.native_inputs = None
         elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
@@ -2271,9 +2592,37 @@ class Policy:
                         raise Violation("live producer event differs from its request")
                 state.pending = ("event", frame)
         elif n == 3:
-            state.pending = ("close", a)
+            state.pending = ("close", ctypes.c_int(a).value)
+        elif n == 436:
+            first, last, flags = (value & 0xFFFFFFFF for value in (a, b, c))
+            if not self.native_readonly or state.role != "native":
+                raise Violation("close_range requires an admitted native image")
+            if flags:
+                raise Violation("native close_range flags are not admitted")
+            if self.native_outputs is not None:
+                custody = self.native_outputs.custody
+                selected = [
+                    (descriptor, item)
+                    for (owner, descriptor), item in custody.descriptors.items()
+                    if owner == pid and first <= descriptor <= last
+                ]
+                if selected and (
+                    not self.config.get("native_resources")
+                    or any(
+                        item.path not in custody.shared_paths
+                        or not any(
+                            process != pid
+                            for process, _ in item.descriptions[(pid, descriptor)].bindings
+                        )
+                        for descriptor, item in selected
+                    )
+                ):
+                    raise Violation("native close_range intersects a generated output descriptor")
+            state.pending = ("close-range", tuple(
+                descriptor for descriptor in sorted(state.fds) if first <= descriptor <= last
+            ))
         elif n in {8, 74, 75, 73}:
-            self.check_fd(state, a, "read", r)
+            self.check_fd(state, ctypes.c_int(a).value if n == 73 else a, "read", r)
         elif n in {78, 217}:
             path = self.check_fd(state, a, "directory", r)
             if c > SYSCALL_MEMORY_LIMIT:
@@ -2345,16 +2694,28 @@ class Policy:
                     self.make_restarts += 1
                     if self.make_restarts > 64:
                         raise Violation("Make restart exceeded the existing pass bound")
+                    if self.read_trace is not None:
+                        self.read_trace.prepare_pattern_retirement(pid, "exec")
                     role = "make"
                 elif self.native_readonly and path in self.native_executables and state.dispatch:
                     if state.dispatch[0] != path:
                         raise Violation("native shell differs from authenticated Make dispatch")
+                    inputs = read_epochs.native_execution_input(self.native_argv(pid, b), state.cwd)
+                    if state.native_inputs is None or state.native_inputs != (path, inputs):
+                        raise Violation("native exec entry differs from original pre-spawn dispatch inputs")
+                    if self.native_admission and (
+                        state.native_admission is None
+                        or state.native_admission != self.native_jobs[state.native_dispatch]["admission"]
+                        or state.native_admission["input_sha256"]
+                        != hashlib.sha256(encoded(inputs)).hexdigest()
+                    ):
+                        raise Violation("native exec entry differs from its issued Command admission")
                     role = "native"
                     state.exec_path = path
                     self.reserve_observation("accessed", "native-shell:" + str(pid) + ":" + path)
                     state.dispatch = None
                 elif (
-                    self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
+                    self.native_readonly and self.read_trace is not None and self.read_trace.runtime
                     and state.role == "native" and state.native_dispatch in self.native_jobs
                     and path in self.native_executables
                 ):
@@ -2433,8 +2794,9 @@ class Policy:
             if mode & 0o700 != 0o700:
                 raise Violation("candidate pathname permission loss is forbidden")
         elif n == 91:
-            self.check_fd(state, a, "write", r)
-            if not stat.S_ISREG(os.stat(f"/proc/{pid}/fd/{a}").st_mode):
+            descriptor = ctypes.c_int(a).value
+            self.check_fd(state, descriptor, "write", r)
+            if not stat.S_ISREG(os.stat(f"/proc/{pid}/fd/{descriptor}").st_mode):
                 raise Violation("candidate directory permission changes are forbidden")
         elif n == 95:
             if a & 0o700:
@@ -2457,7 +2819,8 @@ class Policy:
         elif n in {82, 264, 316}:
             # Moving a cwd/dirfd ancestor changes the kernel's '..' meaning
             # without changing its recorded path. No supported tool needs it.
-            raise Violation("candidate directory-entry relocation is forbidden")
+            if self.native_outputs is None:
+                raise Violation("candidate directory-entry relocation is forbidden")
         elif n == 86:
             for pointer in (a, b):
                 self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
@@ -2519,10 +2882,28 @@ class Policy:
             raise Violation(f"unadmitted syscall {n}")
         if self.written > self.config["write_limit"]:
             raise Violation("aggregate capsule storage budget exhausted")
+        if self.native_outputs is not None:
+            self.native_outputs.entry(pid, state, r)
+
+    def close_return(self, pid, state, descriptor, result):
+        selected, state.native_output_close = state.native_output_close, None
+        if selected is not None:
+            if self.native_outputs is None or selected != descriptor:
+                raise Violation("native close return differs from its shared descriptor binding")
+            operation, state.native_output_operation = state.native_output_operation, None
+            if operation is None or operation.kind != "close" or operation.descriptor != descriptor:
+                raise Violation("native close return lost its paired entry custody")
+            self.native_outputs.actor, self.native_outputs.dispatch = pid, state.native_dispatch
+            self.native_outputs.custody.leave_close(operation, result=result)
+        if self.read_trace is not None:
+            self.read_trace.fd_closed(pid, descriptor)
+        state.fds.pop(descriptor, None)
 
     def leave(self, pid, state, r):
         state.dependency_stop = None
         result = signed(r.rax)
+        if self.native_outputs is not None:
+            self.native_outputs.leave(pid, state, result)
         self.finish_metadata(pid, state, result)
         state.memory_reservation = 0
         state.process_reservation = False
@@ -2536,6 +2917,8 @@ class Policy:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
+            if operation == "close" and state.native_output_close is not None:
+                self.close_return(pid, state, value, result)
             if operation == "native-signal-wait" and result == -errno.EFAULT:
                 queued_origins = {
                     origin for origins in state.native_signal_origins.values()
@@ -2556,7 +2939,7 @@ class Policy:
                     else:
                         raise Violation("unsupported partially accessible siginfo output")
             if (
-                self.native_readonly and self.read_trace is not None and self.read_trace.version == 5
+                self.native_readonly and self.read_trace is not None and self.read_trace.runtime
                 and state.role == "native" and result == -errno.EPIPE
                 and r.orig_rax in {1, 18, 20} and state.kernel_io == "<pipe>"
             ):
@@ -2582,9 +2965,12 @@ class Policy:
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
-            if self.read_trace is not None:
-                self.read_trace.fd_closed(pid, value)
-            state.fds.pop(value, None)
+            self.close_return(pid, state, value, result)
+        elif operation == "close-range":
+            if result != 0:
+                raise Violation("native close_range returned an invalid successful result")
+            for descriptor in value:
+                self.close_return(pid, state, descriptor, result)
         elif operation == "pipe":
             data = memory(pid, value, 8)
             for offset in (0, 4):
@@ -2668,43 +3054,184 @@ def supervise(config, drop_privileges):
     error = None
     primary = None
     result = None
+    def admit_native(path, inputs, context=None):
+        if channel is None or not policy.native_admission:
+            raise Violation("native admission lost its existing private channel")
+        sequence = policy.producer_issued + 1
+        policy.producer_issued = sequence
+        policy.producer_pending_peak = max(policy.producer_pending_peak, 1)
+        request = {
+            "kind": "native-request" if context is None else "native-exec-request",
+            "scope": config["producer_scope"],
+            "sequence": sequence, "path": path, **inputs, "counters": policy.counters(),
+            **({} if context is None else context),
+        }
+        raw = channel.exchange(
+            encoded(request), watch=(processes[policy.make_pid].pidfd,),
+        )
+        reply = parse_json(raw, "native Command admission reply")
+        if (
+            not isinstance(reply, dict)
+            or set(reply) != {"kind", "scope", "sequence", "owner", "input_sha256", "limits"} | (
+                {"closure", "outputs"} if policy.native_outputs is not None else set()
+            ) | (
+                {"resources"} if config.get("native_resources") else set()
+            ) | ({"compiler"} if policy.native_compiler is not None and "compiler" in reply else set())
+            or reply["kind"] != "native-authorized" or reply["scope"] != config["producer_scope"]
+            or type(reply["sequence"]) is not int or reply["sequence"] != sequence
+            or not isinstance(reply["owner"], str) or re.fullmatch("[0-9a-f]{64}", reply["owner"]) is None
+            or reply["input_sha256"] != hashlib.sha256(encoded(inputs)).hexdigest()
+        ):
+            raise Violation("native Command reply is foreign, stale or changes actual inputs")
+        if policy.native_outputs is not None and (
+            not isinstance(reply["outputs"], list)
+            or any(path not in config["native_output_paths"] for path in reply["outputs"])
+            or len(set(reply["outputs"])) != len(reply["outputs"])
+            or not isinstance(reply["closure"], str)
+            or re.fullmatch("[0-9a-f]{64}", reply["closure"]) is None
+            or reply["owner"] != native_command_owner(
+                reply["closure"], reply["outputs"], reply.get("resources", ()),
+            )
+        ):
+            raise Violation("native Command reply escapes its issued output namespace")
+        if config.get("native_resources"):
+            if __package__:
+                from .native_resources import resource_plan
+            else:
+                from native_resources import resource_plan
+            issued = resource_plan(config["native_resources"])
+            if any(row not in issued for row in resource_plan(reply["resources"])):
+                raise Violation("native Command reply escapes its issued resource roles")
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        channel.ensure_idle()
+        policy.producer_completed = sequence
+        return {
+            "owner": reply["owner"], "input_sha256": reply["input_sha256"],
+            **({"sequence": sequence} if policy.native_outputs is not None else {}),
+            **({"closure": reply["closure"]} if policy.native_outputs is not None else {}),
+            **({"outputs": reply["outputs"]} if policy.native_outputs is not None else {}),
+            **({"resources": reply["resources"]} if config.get("native_resources") else {}),
+            **({"compiler": reply["compiler"]} if policy.native_compiler is not None and "compiler" in reply else {}),
+        }
+
+    if policy.native_admission:
+        policy.native_admit = admit_native
     main_status = None
     finished_trace = None
+    native_job_headers, native_job_accessed = None, None
+    finite_plan = None
+    finite_results = []
+    finite_streams = []
+    finite_output_bytes = 0
+    request_index = 0
+    def drain_native_stdio():
+        nonlocal finite_output_bytes
+        for stream in finite_streams:
+            while not stream[3]:
+                remaining = config["native_output_limit"] - finite_output_bytes
+                try:
+                    chunk = os.read(stream[0], min(65536, remaining + 1))
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    stream[3] = True
+                    break
+                if len(chunk) > remaining:
+                    raise Violation("finite native roots exceed their cumulative process output bound")
+                policy.charge_metadata(len(chunk) + sys.getsizeof(chunk))
+                finite_output_bytes += len(chunk)
+                previous_size = sys.getsizeof(stream[2])
+                stream[2].append(chunk)
+                if sys.getsizeof(stream[2]) > previous_size:
+                    policy.charge_metadata(sys.getsizeof(stream[2]))
+
+    def captured_stdio(stream):
+        size = sum(map(len, stream[2]))
+        policy.charge_metadata(size)
+        return b"".join(stream[2])
+
+    if "native_requests" in config:
+        if not config.get("native_root_observation"):
+            raise Violation("finite native requests require actual root observation")
+        finite_plan = read_epochs.native_request_plan(
+            config["native_requests"], count_limit=config["observation_count"],
+            file_limit=config["file_limit"],
+        )
+        if (
+            finite_plan[0] != (
+                tuple(config["argv"]), config.get("cwd", "/repo"),
+                tuple(sorted(config["environment"].items())),
+            )
+            or type(config.get("native_output_limit")) is not int
+            or not 0 < config["native_output_limit"] <= 1024 * 1024
+        ):
+            raise Violation("finite native plan differs from its original launch or output bound")
+        policy.charge_metadata(
+            len(encoded(config["native_requests"])) + sys.getsizeof(finite_plan)
+            + sum(sys.getsizeof(row) + sys.getsizeof(row[0]) + sys.getsizeof(row[2]) for row in finite_plan)
+            + sys.getsizeof(finite_results) + sys.getsizeof(finite_streams)
+        )
+        for _ in finite_plan:
+            policy.reserve_trace_observation()
     if config["process_limit"] < 1 or config["descendant_limit"] < 1:
         raise Violation("no remaining guest-process capacity")
-    pid = os.fork()
-    if pid == 0:
-        try:
-            os.chroot(config["root"])
-            os.chdir(config.get("cwd", "/repo"))
-            os.umask(0o022)
-            os.closerange(3, 65536)
-            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
-            resource.setrlimit(resource.RLIMIT_AS, (config["memory_limit"], config["memory_limit"]))
-            resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
-            cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
-            if policy.native_readonly:
-                for name in ("SIGPIPE", "SIGXFZ", "SIGXFSZ"):
-                    if hasattr(signal, name):
-                        signal.signal(getattr(signal, name), signal.SIG_DFL)
-            trace_me(drop_privileges)
-            os.execve(config.get("initial_executable", config["argv"][0]),
-                      config["argv"], config["environment"])
-        except BaseException as failure:
-            os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
-            os._exit(125)
-    processes[pid] = Process(
-        "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
-        memory_group=pid, pidfd=os.pidfd_open(pid), cwd=config.get("cwd", "/repo"),
-    )
-    if config.get("metadata_validation"):
-        processes[pid].helper_kind = VO_VALIDATE
-        processes[pid].metadata_index = 0
-    policy.total_processes = 1
-    policy.account_processes()
+    def spawn_root():
+        if finite_plan is not None:
+            if time.monotonic() >= config["deadline"]:
+                raise Violation("aggregate probe deadline exhausted before finite native root")
+            if policy.native_root is not None:
+                raise Violation("finite native root reused an unretired input record")
+            argv, cwd, environment = finite_plan[request_index]
+            config.update(argv=list(argv), cwd=cwd, environment=dict(environment))
+            policy.charge_metadata(sys.getsizeof(config["argv"]) + sys.getsizeof(config["environment"]))
+            for _ in range(2):
+                reader, writer = os.pipe2(os.O_CLOEXEC)
+                finite_streams.append([reader, writer, [], False])
+                os.set_blocking(reader, False)
+                policy.charge_metadata(sys.getsizeof(finite_streams) + sys.getsizeof(finite_streams[-1]))
+        child = os.fork()
+        if child == 0:
+            try:
+                if finite_plan is not None:
+                    os.dup2(finite_streams[0][1], 1)
+                    os.dup2(finite_streams[1][1], 2)
+                os.chroot(config["root"])
+                os.chdir(config.get("cwd", "/repo"))
+                os.umask(0o022)
+                os.closerange(3, 65536)
+                resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
+                resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
+                resource.setrlimit(resource.RLIMIT_AS, (config["memory_limit"], config["memory_limit"]))
+                resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
+                cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
+                resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+                if policy.native_readonly:
+                    for name in ("SIGPIPE", "SIGXFZ", "SIGXFSZ"):
+                        if hasattr(signal, name):
+                            signal.signal(getattr(signal, name), signal.SIG_DFL)
+                trace_me(drop_privileges)
+                os.execve(config.get("initial_executable", config["argv"][0]),
+                          config["argv"], config["environment"])
+            except BaseException as failure:
+                os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
+                os._exit(125)
+        if finite_plan is not None:
+            for stream in finite_streams:
+                os.close(stream[1])
+                stream[1] = None
+        processes[child] = Process(
+            "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
+            memory_group=child, pidfd=os.pidfd_open(child), cwd=config.get("cwd", "/repo"),
+        )
+        if config.get("metadata_validation"):
+            processes[child].helper_kind = VO_VALIDATE
+            processes[child].metadata_index = 0
+        policy.total_processes += 1
+        policy.account_processes()
+        return child
+
+    pid = None
     parking = False
 
     def resume(child):
@@ -2744,7 +3271,12 @@ def supervise(config, drop_privileges):
             raise Violation("unrecorded sandbox descendant")
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             code = os.waitstatus_to_exitcode(status)
-            if policy.native_readonly and state.role == "native" and state.native_exit_status != status:
+            if policy.native_outputs is not None:
+                policy.native_outputs.actor, policy.native_outputs.dispatch = stopped, state.native_dispatch
+                policy.native_outputs.custody.retire_process(stopped)
+            if policy.native_readonly and (state.role == "native" or stopped == pid) and (
+                type(state.native_exit_status) is not int or state.native_exit_status != status
+            ):
                 raise Violation("native terminal status differs from its actual kernel exit stop")
             if policy.native_readonly and state.role == "native" and os.WIFSIGNALED(status):
                 terminated = os.WTERMSIG(status)
@@ -2762,6 +3294,11 @@ def supervise(config, drop_privileges):
             vfork_waiters.pop(stopped, None)
             release_vfork(stopped)
             if stopped == pid:
+                if config.get("native_root_observation"):
+                    if policy.native_root is None or policy.native_root["pid"] != stopped:
+                        raise Violation("native root wait lacks its actual initial execution")
+                    policy.charge_metadata(8)
+                    policy.native_root["wait"] = status
                 main_status = code
             if unfulfilled:
                 raise Violation("parked or unfulfilled producer helper exited")
@@ -2780,16 +3317,26 @@ def supervise(config, drop_privileges):
             state.newborn_stop = False
             if policy.read_trace is not None and stopped != policy.read_trace.pid:
                 policy.read_trace.clear(stopped)
-                if state.role == "native" and policy.read_trace.version == 5:
+                if state.role == "native" and policy.read_trace.runtime:
                     policy.native_tree_event(state, {"kind": "start", "pid": stopped})
         if sig == signal.SIGTRAP and event == 6:
             outcome = ctypes.c_ulong()
             policy.charge_metadata(ctypes.sizeof(outcome))
             ptrace(0x4201, stopped, 0, ctypes.byref(outcome))
-            if policy.native_readonly and state.role == "native":
+            if (
+                outcome.value == 0 and policy.read_trace is not None
+                and stopped == policy.read_trace.pid
+            ):
+                policy.read_trace.prepare_pattern_retirement(stopped, "exit")
+            if policy.native_readonly and (state.role == "native" or stopped == pid):
                 if state.native_exit_status is not None:
                     raise Violation("native process reused its terminal kernel exit stop")
                 state.native_exit_status = outcome.value
+                if stopped == pid and config.get("native_root_observation"):
+                    if policy.native_root is None or policy.native_root["pid"] != stopped:
+                        raise Violation("native root terminal lacks its actual initial execution")
+                    policy.charge_metadata(8)
+                    policy.native_root["exit_stop"] = outcome.value
             policy.native_sigkill_exit(stopped, state, outcome.value)
             state.parked = False
             ptrace(7, stopped, 0, 0)
@@ -2801,6 +3348,14 @@ def supervise(config, drop_privileges):
                 policy.total_processes += 1
             record = state.clone()
             record.native_parent = stopped
+            if (
+                state.role == "native" and policy.native_outputs is not None
+                and state.native_execs > 0 and state.native_admission is not None
+            ):
+                record.native_fork = (
+                    stopped, state.native_execs, state.native_admission["sequence"],
+                )
+                policy.charge_metadata(sys.getsizeof(record.native_fork))
             if not state.clone_shares_vm:
                 record.memory_group = child.value
             record.pidfd = newborn_stops.pop(child.value, -1)
@@ -2809,10 +3364,17 @@ def supervise(config, drop_privileges):
             if not already_stopped:
                 record.pidfd = os.pidfd_open(child.value)
             processes[child.value] = record
-            if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5:
+            if state.role == "native" and policy.read_trace is not None and policy.read_trace.runtime:
                 policy.native_tree_event(
                     state, {"kind": "fork", "pid": stopped, "child": child.value},
                 )
+            if policy.native_outputs is not None:
+                descriptors = tuple(
+                    descriptor for owner_pid, descriptor in policy.native_outputs.custody.descriptors
+                    if owner_pid == stopped
+                )
+                policy.native_outputs.actor, policy.native_outputs.dispatch = stopped, state.native_dispatch
+                policy.native_outputs.custody.inherited(stopped, child.value, descriptors)
             if not state.process_reservation:
                 raise Violation("unreserved process creation")
             state.process_reservation = False
@@ -2823,7 +3385,7 @@ def supervise(config, drop_privileges):
             if already_stopped:
                 if policy.read_trace is not None:
                     policy.read_trace.clear(child.value)
-                    if record.role == "native" and policy.read_trace.version == 5:
+                    if record.role == "native" and policy.read_trace.runtime:
                         policy.native_tree_event(record, {"kind": "start", "pid": child.value})
                 resume(child.value)
         elif sig == signal.SIGTRAP and event == 4:
@@ -2845,12 +3407,15 @@ def supervise(config, drop_privileges):
                 if state.exec_path is None:
                     raise Violation("dependency exec has no admitted image")
                 policy.verify_dependency_image(stopped, state.exec_path)
+                policy.verify_dependency_environment(stopped, state.exec_path)
                 state.dependency_image = state.exec_path
                 state.dependency_stop = None
                 policy.reserve_observation("accessed", "dependency-exec:" + str(len(policy.executed)) + state.exec_path)
                 policy.executed.append(state.exec_path)
                 state.exec_path = None
             if state.bootstrap:
+                if config.get("native_root_observation") and stopped == pid:
+                    policy.observe_native_root(stopped)
                 if config.get("repository_outputs") and stopped == pid:
                     with open(f"/proc/{stopped}/cmdline", "rb") as stream:
                         data = stream.read(65537)
@@ -2876,7 +3441,7 @@ def supervise(config, drop_privileges):
             state.bootstrap = False
             state.fds = (
                 policy.native_exec_descriptors(stopped, state)
-                if state.role == "native" and policy.read_trace is not None and policy.read_trace.version == 5
+                if state.role == "native" and policy.read_trace is not None and policy.read_trace.runtime
                 else {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
             )
             state.observer_ranges = ()
@@ -2900,10 +3465,12 @@ def supervise(config, drop_privileges):
                         None if state.role == "make" else state.native_dispatch,
                         **({"inputs": None if state.role == "make" else {
                             key: policy.native_jobs[state.native_dispatch][key] for key in ("argv", "cwd")
-                        }} if policy.read_trace.version == 5 else {}),
+                        }} if policy.read_trace.runtime else {}),
                     )
                 if tree_exec is not None:
                     policy.native_tree_event(state, tree_exec)
+            if policy.native_outputs is not None and state.role == "native":
+                policy.native_outputs.successful_exec(stopped, state)
             release_vfork(stopped)
         elif sig == signal.SIGTRAP and event == 5:
             child = ctypes.c_ulong()
@@ -3092,6 +3659,7 @@ def supervise(config, drop_privileges):
                 resume(child)
 
     try:
+        pid = spawn_root()
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
             raise Violation("sandbox child did not enter traced confinement")
@@ -3103,21 +3671,114 @@ def supervise(config, drop_privileges):
         if "published" in config:
             policy.adopt_published(config["published"])
         ptrace(SYSCALL, pid)
-        while processes:
-            if time.monotonic() >= config["deadline"]:
-                raise Violation("aggregate probe deadline exhausted in syscall supervisor")
+        while True:
+            while processes:
+                if time.monotonic() >= config["deadline"]:
+                    raise Violation("aggregate probe deadline exhausted in syscall supervisor")
+                if finite_plan is not None:
+                    drain_native_stdio()
+                if channel is not None:
+                    channel.ensure_idle()
+                if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
+                    fulfill_producer()
+                    continue
+                stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
+                if stopped == 0:
+                    time.sleep(0.0001)
+                    continue
+                handle_stop(stopped, status)
+            if newborn_stops:
+                raise Violation("unresolved descendant at completion")
+            if finite_plan is not None:
+                drain_native_stdio()
+                if not all(stream[3] for stream in finite_streams):
+                    raise Violation("finite native root omitted its actual stdio writer EOF")
+            if finite_plan is not None and main_status != 0:
+                for stream, destination in zip(finite_streams, (sys.stdout.buffer, sys.stderr.buffer)):
+                    destination.write(captured_stdio(stream))
+                    destination.flush()
+                break
+            if finite_plan is None:
+                break
+            if (
+                vfork_waiters or policy.producer_requests
+                or policy.producer_issued != policy.producer_completed
+            ):
+                raise Violation("finite native root has pending descendant or channel state")
             if channel is not None:
                 channel.ensure_idle()
-            if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
-                fulfill_producer()
-                continue
-            stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
-            if stopped == 0:
-                time.sleep(0.0001)
-                continue
-            handle_stop(stopped, status)
-        if newborn_stops:
-            raise Violation("unresolved descendant at completion")
+            policy.read_trace.retire_root()
+
+            def capture(stream):
+                before = os.fstat(stream.fileno())
+                if before.st_size > config["file_limit"]:
+                    raise Violation("finite native capture exceeds its existing file bound")
+                policy.charge_metadata(before.st_size)
+                stream.seek(0)
+                data = stream.read(config["file_limit"] + 1)
+                if (
+                    len(data) != before.st_size
+                    or publication_identity(os.fstat(stream.fileno())) != publication_identity(before)
+                ):
+                    raise Violation("finite native capture changed after actual root retirement")
+                policy.charge_metadata(4 * ((len(data) + 2) // 3) + sys.getsizeof(""))
+                return base64.b64encode(data).decode("ascii")
+
+            stdio = []
+            for stream in finite_streams:
+                data = captured_stdio(stream)
+                policy.charge_metadata(4 * ((len(data) + 2) // 3) + sys.getsizeof(""))
+                stdio.append(base64.b64encode(data).decode("ascii"))
+            stdout, stderr = stdio
+            controls = [row for row in config["mounts"] if row["target"] == "/control"]
+            if len(controls) != 1:
+                raise Violation("finite native root lacks its original observation backing")
+            with (Path(controls[0]["source"]) / "result").open("rb") as stream:
+                observation = capture(stream)
+            outputs = []
+            if policy.native_outputs is not None:
+                for path in config["native_output_paths"]:
+                    item = policy.native_outputs.custody.objects.get("/repo/" + path)
+                    if item is None:
+                        continue
+                    with os.fdopen(os.dup(item.descriptor), "rb") as stream:
+                        data = capture(stream)
+                        if publication_identity(os.fstat(stream.fileno())) != item.identity:
+                            raise Violation("finite native output changed its settled FD identity")
+                    outputs.append({
+                        "path": item.path, "owner": item.owner, "serial": item.serial,
+                        "revision": item.revision, "identity": list(item.identity), "data": data,
+                    })
+            row = {
+                "ordinal": request_index + 1,
+                "initial": policy.read_trace.root_boundaries[-1]["initial"],
+                "stdout": stdout, "stderr": stderr, "observation": observation, "outputs": outputs,
+            }
+            policy.reserve_trace_observation()
+            policy.charge_metadata(len(encoded(row)) + sys.getsizeof(row) + sys.getsizeof(outputs))
+            finite_results.append(row)
+            policy.charge_metadata(sys.getsizeof(finite_results))
+            for stream in finite_streams:
+                os.close(stream[0])
+                stream[0] = None
+            finite_streams.clear()
+            if request_index + 1 == len(finite_plan):
+                break
+            if policy.total_processes >= config["descendant_limit"]:
+                raise Violation("finite native root exhausted its original process authority")
+            request_index += 1
+            main_status = None
+            policy.native_root = None
+            pid = spawn_root()
+            waited, status = os.waitpid(pid, 0)
+            if waited != pid or not os.WIFSTOPPED(status):
+                raise Violation("finite native root did not enter traced confinement")
+            for mapping in Path(f"/proc/{pid}/maps").read_text().splitlines():
+                if mapping.endswith("[heap]"):
+                    processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
+            ptrace(SETOPTIONS, pid, 0, OPTIONS)
+            policy.reserve_memory(pid, processes[pid], 0)
+            ptrace(SYSCALL, pid)
     except BaseException as failure:
         primary = failure
         error = str(failure)
@@ -3143,7 +3804,13 @@ def supervise(config, drop_privileges):
                         record.close()
                     processes.clear()
         def finish_trace():
-            nonlocal error, finished_trace
+            nonlocal error, finished_trace, native_job_headers, native_job_accessed
+            if error is None and policy.native_outputs is not None:
+                try:
+                    policy.native_outputs.finish()
+                except BaseException as failure:
+                    error = str(failure)
+                    raise
             if error is None:
                 try:
                     policy.finish_native_jobs()
@@ -3152,7 +3819,22 @@ def supervise(config, drop_privileges):
                     raise
             if error is None and main_status == 0 and policy.read_trace is not None:
                 try:
-                    finished_trace = policy.read_trace.finish()
+                    trace = policy.read_trace.finish()
+                    if trace["version"] in read_epochs.WRITABLE_VERSIONS:
+                        headers = [
+                            {key: value for key, value in row.items() if key != "tree"}
+                            for row in policy.native_jobs.values()
+                        ]
+                        policy.charge_metadata(
+                            sys.getsizeof(headers) + sum(sys.getsizeof(row) for row in headers)
+                        )
+                        accessed = sorted(
+                            value for value in policy.accessed
+                            if not value.startswith(("native-job:", "native-output:"))
+                        )
+                        policy.charge_metadata(sys.getsizeof(accessed))
+                        native_job_headers, native_job_accessed = headers, accessed
+                    finished_trace = trace
                 except BaseException as failure:
                     error = str(failure)
                     raise
@@ -3165,7 +3847,7 @@ def supervise(config, drop_privileges):
                 "error": error,
                 "consumed": sorted(policy.consumed),
                 "code_consumed": sorted(policy.code_consumed),
-                "accessed": sorted(policy.accessed),
+                "accessed": sorted(policy.accessed) if native_job_accessed is None else native_job_accessed,
                 "processes": policy.total_processes,
                 "live_process_peak": policy.live_process_peak,
                 "syscalls": policy.calls,
@@ -3177,8 +3859,14 @@ def supervise(config, drop_privileges):
                 "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }
+            if config.get("native_root_observation"):
+                result["native_root"] = policy.native_root
+            if finite_plan is not None:
+                result["native_results"] = finite_results
             if finished_trace is not None:
                 result["read_trace"] = finished_trace
+            if native_job_headers is not None:
+                result["native_jobs"] = native_job_headers
             if config.get("dependency"):
                 result["executed"] = policy.executed
             if channel is not None:
@@ -3205,6 +3893,9 @@ def supervise(config, drop_privileges):
                     raise
         finish_cleanup([
             reap_owned, finish_channel, finish_trace, write_report,
+            *(lambda descriptor=descriptor: os.close(descriptor)
+              for stream in finite_streams for descriptor in stream[:2] if descriptor is not None),
+            *([] if policy.native_outputs is None else [policy.native_outputs.custody.close]),
             *([] if policy.read_trace is None else [policy.read_trace.close]),
             *([] if channel is None else [channel.close]),
         ], primary=primary)

@@ -22,20 +22,24 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from functools import wraps
+from itertools import chain
 from pathlib import Path, PurePosixPath
+from subprocess import CompletedProcess
 from threading import get_ident, main_thread
 
 from .authority import (
-    AuthorityLoader, ENVIRONMENT, Frames, PYTHON_RUNTIME_DIRECTORY, Snapshot, _command_hash, _event_command,
-    _read_event_frames, _read_events, encoded, parse_json, relative_path,
+    AuthorityLoader, ENVIRONMENT, Frames, NATIVE_METADATA_DIRECTORY_PATHS, PYTHON_RUNTIME_DIRECTORY, Snapshot, _command_hash, _event_command,
+    _read_event_frames, _read_events, encoded, native_command_owner, parse_json, relative_path,
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
 from . import metadata_transport
+from .make_lexical import LITERAL_NAME_CHARACTERS, SHORT_REFERENCE_CHARACTERS
 from .producer_channel import (
     ChannelError, ProducerChannel, PUBLICATION_MAGIC, PUBLICATION_POLICIES,
     publication_identity, validate_publication_confirmation,
 )
+from .runtime_image import RuntimeImage, close_images, image_digest, materialize_image
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -84,6 +88,7 @@ class Command:
     outputs: tuple[str, ...] = ()
     dependency_only: bool = False
     publication_policy: str = "replace"
+    native_resources: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         if type(self.publication_policy) is not str or self.publication_policy not in PUBLICATION_POLICIES:
@@ -288,6 +293,9 @@ def _remove_owned_tree(path):
     finish_cleanup([remove])
 
 
+_GIT_ROOT_DISCOVERY_ABSENCES = frozenset({"/.git", "/HEAD"})
+
+
 def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
@@ -297,6 +305,7 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     kernel_filesystems = optional and path == "/proc/filesystems"
     task_mounts = optional and path == "/proc/mounts"
     selinux_config = optional and path == "/etc/selinux/config"
+    root_git = optional and path in _GIT_ROOT_DISCOVERY_ABSENCES
     task_directory = Path(f"/proc/{os.getpid()}")
     task_mount_file = task_directory / "mounts"
     openssl_config = optional and path in {"/usr/lib/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"}
@@ -304,13 +313,15 @@ def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
         *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/", "/bin/", ENVIRONMENT["HOME"] + "/") if optional else ()),
-        *((path,) if sitecustomize or kernel_fips or kernel_filesystems or selinux_config else ()),
+        *((path,) if sitecustomize or kernel_fips or kernel_filesystems or selinux_config or root_git else ()),
         *((path, str(task_mount_file)) if task_mounts else ()),
         *(("/etc/ssl/openssl.cnf",) if openssl_config else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     resolved = Path(path).resolve(strict=not optional)
+    if root_git and resolved.as_posix() != path:
+        raise MakeProbeError("Git discovery runtime probe must name its exact canonical absence")
     if sitecustomize and resolved.as_posix() != path:
         raise MakeProbeError("sitecustomize runtime input must be canonical")
     if kernel_fips and resolved.as_posix() != path:
@@ -456,6 +467,8 @@ def _capture_runtime_input(path, budget):
         before = None
         resource_before = None
     else:
+        if path in _GIT_ROOT_DISCOVERY_ABSENCES:
+            raise MakeProbeError("Git discovery runtime probe is not an actual absence")
         if path.startswith(ENVIRONMENT["HOME"] + "/"):
             raise MakeProbeError("default HOME runtime probe is not an actual absence")
         resource_before = before
@@ -516,8 +529,8 @@ def _capture_runtime_input(path, budget):
 
 
 def _native_metadata_directory(path, budget):
-    if path not in {"/sys/fs/selinux", "/selinux"}:
-        raise MakeProbeError("native metadata directory must name an exact standard SELinux mount")
+    if path not in NATIVE_METADATA_DIRECTORY_PATHS:
+        raise MakeProbeError("native metadata directory must name an exact supported runtime directory")
     budget.remaining()
     source = Path(path)
     if source.resolve(strict=False) != source:
@@ -534,7 +547,12 @@ def _native_metadata_directory(path, budget):
             not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
             or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
-            raise MakeProbeError("native metadata directory has mutable/untrusted backing")
+            message = (
+                f"native metadata directory has mutable/untrusted backing: {entry} "
+                f"uid={info.st_uid} mode={oct(info.st_mode)}"
+            )
+            print(message, file=sys.stderr)
+            raise MakeProbeError(message)
     try:
         info = source.lstat()
     except FileNotFoundError:
@@ -754,6 +772,7 @@ class ProbeSession:
         self.native_tools = {}
         self.native_runtimes = {}
         self.native_runtime_inputs = {}
+        self.native_read_abis = {}
         self.native_selection = None
         self.native_runtime_selection = None
         self.published_sources = {}
@@ -878,7 +897,8 @@ class ProbeSession:
             root = self.base / f"view-{self.serial}"
             tree = root / "tree"
             with cleanup_scope([
-                cache.clear, mappings.clear, tools.clear, runtimes.clear, runtime_inputs.clear,
+                cache.clear, mappings.clear, tools.clear, runtimes.clear,
+                lambda: close_images(runtime_inputs),
                 lambda: _remove_owned_tree(root), restore,
             ]):
                 root.mkdir()
@@ -920,7 +940,8 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.native_runtimes.clear()
-            self.native_runtime_inputs.clear()
+            close_images(self.native_runtime_inputs)
+            self.native_read_abis.clear()
             self.native_selection = None
             self.native_runtime_selection = None
             self.published_sources.clear()
@@ -945,7 +966,7 @@ class ProbeSession:
                 mappings.clear()
                 tools.clear()
                 runtimes.clear()
-                runtime_inputs.clear()
+                close_images(runtime_inputs)
             if self._views:
                 self.loader = self._views[0][0]
             self._views.clear()
@@ -1046,7 +1067,11 @@ class ProbeSession:
     def _compile_interceptor(self):
         for source, flags, output in (
             ("shell_interceptor.c", ["-static"], "interceptor"),
-            ("make_observer.c", ["-shared", "-fPIC", "-fno-omit-frame-pointer"], "observer.so"),
+            ("make_observer.c", [
+                "-shared", "-fPIC", "-fno-omit-frame-pointer",
+                '-DVO_LITERAL_NAME_CHARACTERS="' + LITERAL_NAME_CHARACTERS + '"',
+                '-DVO_SHORT_REFERENCE_CHARACTERS="' + SHORT_REFERENCE_CHARACTERS + '"',
+            ], "observer.so"),
         ):
             destination = self.base / output
             command = [
@@ -1141,7 +1166,33 @@ class ProbeSession:
         finally:
             os.close(directory)
 
-    def _new_root(self, name, *, make=False, native_runtime=()):
+    def _new_root(self, name, *, make=False, native_runtime=(), native_aliases=()):
+        if native_aliases:
+            if not make or not native_runtime or len(native_aliases) > self.budget.limits.entries:
+                raise MakeProbeError("native runtime aliases require their bounded captured Make root")
+            self.budget.charge("control", len(encoded(native_aliases)))
+            bodies = dict(self.make_runtime)
+            for path, body in native_runtime:
+                if path in bodies and bodies[path] != body:
+                    raise MakeProbeError("native runtime alias overlaps a different captured body")
+                bodies[path] = body
+            aliases = dict(native_aliases)
+            self.budget.charge("control", sys.getsizeof(bodies) + sys.getsizeof(aliases))
+            if len(aliases) != len(native_aliases):
+                raise MakeProbeError("native runtime aliases contain duplicate destinations")
+            for alias, target in native_aliases:
+                if (
+                    not all(isinstance(path, str) and path.startswith("/")
+                            and os.path.normpath(path) == path for path in (alias, target))
+                    or alias == target or target in aliases
+                    or alias not in bodies or target not in bodies
+                    or bodies[alias] != bodies[target]
+                ):
+                    raise MakeProbeError("native runtime alias lacks its exact captured file target")
+                relative_path(alias[1:])
+                relative_path(target[1:])
+        else:
+            aliases = {}
         root = self.base / name
         root.mkdir()
         for directory in ("repo", "usr", "work", "dev", "control", "lib", "lib64", "bin"):
@@ -1166,7 +1217,9 @@ class ProbeSession:
                     _mkdir_target(root, canonical, directory=alias == "/proc/self")
                 destination.symlink_to(target)
             for target, data in self.make_runtime:
-                _mkdir_target(root, target).write_bytes(data)
+                if target in aliases:
+                    continue
+                materialize_image(_mkdir_target(root, target), data)
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
@@ -1176,13 +1229,25 @@ class ProbeSession:
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
             for target, data in native_runtime:
+                if target in aliases:
+                    continue
                 destination = root / target.lstrip("/")
                 if destination.exists():
                     if dict(self.make_runtime).get(target) != data:
                         raise MakeProbeError("native shell runtime conflicts with captured Make runtime")
                 else:
-                    _mkdir_target(root, target).write_bytes(data)
+                    materialize_image(_mkdir_target(root, target), data)
                     destination.chmod(0o555)
+            for alias, target in native_aliases:
+                source = root / target.lstrip("/")
+                destination = _mkdir_target(root, str(Path(alias).parent), directory=True) / Path(alias).name
+                if destination.exists():
+                    if not destination.samefile(source):
+                        raise MakeProbeError(
+                            f"native runtime alias {alias} overlaps a different materialized target {target}"
+                        )
+                else:
+                    os.link(source, destination)
             for item in self.runtime_inputs:
                 for parent, present in reversed(item.parents):
                     if present and parent != "/":
@@ -1204,17 +1269,65 @@ class ProbeSession:
                 (root / directory).symlink_to(target)
         return root
 
+    def _native_shell_path(self):
+        return "/usr/bin/sh" if any(
+            alias == "/bin" for item in self.runtime_inputs for alias, _ in item.aliases
+        ) else "/bin/sh"
+
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
         dependency=None, native_runtime=(), read_abi=None, read_selection=None,
         native_executables=(), native_runtime_directories=(), native_metadata_directories=(),
-        runtime_completions=False,
+        runtime_completions=False, observe_patterns=False, observe_root=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
-        original_tool=None,
+        original_tool=None, native_admission_handler=None,
+        native_output_paths=(), native_resources=(), native_requests=None, native_compiler=None,
     ):
         self.budget.remaining()
+        if type(observe_patterns) is not bool or observe_patterns and not (
+            mode == "make" and native_runtime and read_abi is not None and runtime_completions
+        ):
+            raise MakeProbeError("pattern observation requires native runtime completion")
+        if type(observe_root) is not bool or observe_root and not (
+            mode == "make" and native_runtime and read_abi is not None and runtime_completions
+        ):
+            raise MakeProbeError("native root observation requires native runtime completion")
+        finite_plan = None
+        if native_requests is not None:
+            if not observe_root:
+                raise MakeProbeError("finite native invocation requires actual root observation")
+            from .read_epochs import native_request_plan
+            finite_plan = native_request_plan(
+                native_requests, count_limit=self.budget.limits.entries,
+                file_limit=self.budget.limits.file_bytes,
+            )
+            if finite_plan[0] != (tuple(argv), cwd, tuple(sorted(environment.items()))):
+                raise MakeProbeError("finite native plan differs from its original first request")
+        if native_admission_handler is not None and (
+            mode != "make" or not native_runtime or not runtime_completions
+            or producer_handler is not None or publication_observer is not None
+            or repository_outputs and not native_output_paths or not callable(native_admission_handler)
+        ):
+            raise MakeProbeError("native Command admission requires unmapped runtime observation")
+        if native_compiler is not None:
+            from .read_epochs import native_compiler_profile
+            profile = native_compiler_profile(
+                native_compiler, count_limit=self.budget.limits.entries,
+                reserve=lambda size: self.budget.charge("control", size),
+            )
+            if not native_output_paths or native_admission_handler is None or not {
+                profile.driver, profile.frontend,
+            } <= set(native_executables):
+                raise MakeProbeError("native compiler requires its complete writable Command runtime")
+            from .read_epochs import compiler_make_environment
+            expected_profile = self._native_compiler_profile(compiler_make_environment({
+                **{name: value for name, value in environment.items()
+                   if name != "LD_PRELOAD" and not name.startswith("VO_")},
+            }, argv))
+            if native_compiler != expected_profile:
+                raise MakeProbeError("native compiler profile differs from its session-issued runtime/request")
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
         if repository_outputs:
@@ -1242,25 +1355,38 @@ class ProbeSession:
             ] + self._compiler_source_mounts(root, repository_outputs)
         elif cwd != "/repo" or initial_executable is not None:
             raise MakeProbeError("original compiler execution options require declared repository output")
+        tool_path = None
         if original_tool is not None:
             binary = self._sealed_native_tool_bytes(original_tool)
             if (
                 mode != "make" or not native_runtime or repository_outputs
                 or original_tool.original_output is None
                 or dict(native_runtime).get("/repo/" + original_tool.original_output) != binary
-                or any(
-                    item["target"] == "/" or item["target"].startswith("/repo/")
-                    for item in mounts
-                )
+                or any(item["target"] == "/" or item["target"].startswith("/repo/") for item in mounts)
             ):
                 raise MakeProbeError("original tool placement requires its exact readonly native runtime")
             tool_path = self._output_paths((original_tool.original_output,))[0]
+            if any(
+                name == tool_path or name.startswith(tool_path + "/") or tool_path.startswith(name + "/")
+                for name in native_output_paths
+            ):
+                raise MakeProbeError("native output conflicts with its issued readonly tool")
+            from .native_resources import validate_resource_scope
+            validate_resource_scope(native_resources, native_output_paths, (tool_path,))
+        if native_output_paths and mode == "make":
             mounts = [item for item in mounts if item["target"] != "/repo"]
-            source_mounts = self._compiler_source_mounts(root, (tool_path,))
-            source_mounts[0] = self._mount(
-                root.parent / (root.name + "-sources"), "/repo",
-            )
-            mounts.extend(source_mounts)
+            mounts.extend(self._compiler_source_mounts(
+                root, self._output_paths(native_output_paths) + tuple(path for _, path in native_resources)
+                + (() if tool_path is None else (tool_path,)),
+            ))
+        if tool_path is not None:
+            if not native_output_paths:
+                mounts = [item for item in mounts if item["target"] != "/repo"]
+                source_mounts = self._compiler_source_mounts(root, (tool_path,))
+                source_mounts[0] = self._mount(
+                    root.parent / (root.name + "-sources"), "/repo",
+                )
+                mounts.extend(source_mounts)
             backing = root.parent / (root.name + "-sources")
             destination = backing / tool_path
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1282,9 +1408,7 @@ class ProbeSession:
         executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
-        native_shell = "/usr/bin/sh" if any(
-            alias == "/bin" for item in self.runtime_inputs for alias, _ in item.aliases
-        ) else "/bin/sh"
+        native_shell = self._native_shell_path()
         if native_runtime:
             if (
                 mode != "make"
@@ -1293,6 +1417,7 @@ class ProbeSession:
                 or any(
                     item["target"] == "/" or (
                         item["target"].startswith("/repo/") and original_tool is None
+                        and not native_output_paths
                     ) for item in mounts
                 )
             ):
@@ -1337,6 +1462,8 @@ class ProbeSession:
                 parent for item in self.runtime_inputs for parent in (
                     *(name for name, _ in item.parents), *(str(name) for name in Path(item.canonical).parents),
                 )
+            } | {
+                str(parent) for root in native_runtime_directories for parent in Path(root).parents
             }),
             "mapping_entries": mapping_entries,
             "metadata_validation": metadata_validation,
@@ -1368,22 +1495,46 @@ class ProbeSession:
                 {"path": path, "identity": None if identity is None else list(identity)}
                 for path, identity in native_metadata_directories
             ]
+            if observe_root:
+                config["native_root_observation"] = True
         if read_abi is not None:
-            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION
+            from .read_epochs import COMPLETION_VERSION, RUNTIME_VERSION, WRITABLE_VERSION, PATTERN_RUNTIME_VERSION, PATTERN_WRITABLE_VERSION, WRITABLE_VERSIONS
             if not native_runtime:
                 raise MakeProbeError("source read observation requires original readonly native execution")
             config["read_epochs"] = {
-                "version": RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
+                "version": (
+                    PATTERN_WRITABLE_VERSION if native_output_paths else PATTERN_RUNTIME_VERSION
+                ) if observe_patterns else WRITABLE_VERSION if native_output_paths else RUNTIME_VERSION if runtime_completions else COMPLETION_VERSION if read_selection is not None else 1,
                 "scope": self.base.name + "/" + root.name, "abi": read_abi,
             }
             if read_selection is not None:
                 config["read_epochs"]["selection"] = read_selection
+            if observe_patterns:
+                from .pattern_templates import pattern_abi
+                from .read_epochs import Elf
+                config["read_epochs"]["patterns"] = pattern_abi(Elf(dict(self.make_runtime)["/usr/bin/make"]))
+                self.budget.charge("control", len(encoded(config["read_epochs"]["patterns"])))
         elif read_selection is not None:
             raise MakeProbeError("completion observation requires its original read ABI")
         if dependency is not None:
             if mode != "compile":
                 raise MakeProbeError("dependency profile requires compiler confinement")
             config["dependency"] = dependency
+        if finite_plan is not None:
+            config["native_requests"] = native_requests
+            config["native_output_limit"] = self.budget.limits.process_output_bytes
+        if native_output_paths:
+            if not (
+                mode == "command" and argv[0] == "/native/tool" and not native_runtime
+                or mode == "make" and native_runtime and native_admission_handler is not None
+            ):
+                raise MakeProbeError("native output observation requires the issued native-tool capsule")
+            config["native_output_paths"] = list(self._output_paths(native_output_paths))
+            config["native_source_roots"] = list(self._native_source_roots())
+            if native_resources:
+                config["native_resources"] = [list(row) for row in native_resources]
+        if native_compiler is not None:
+            config["native_compiler"] = native_compiler
         counter_names = {
             "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
             "observations", "live_process_peak", "memory_peak",
@@ -1391,16 +1542,20 @@ class ProbeSession:
         settled = dict.fromkeys(counter_names, 0)
         sequence = 0
         completion = None
+        native_authorizations = {}
         channel = None
         channel_directory = self.base / f"producer-{self.serial}"
-        if producer_handler is not None:
+        if producer_handler is not None or native_admission_handler is not None:
             if mode != "make":
                 raise MakeProbeError("live producer requests require native Make")
             config["producer_scope"] = self.base.name + "/" + root.name
-            config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
-            config["publication_limit"] = self.budget.limits.created_files
-            if self.published_sources:
-                config["published"] = self._publication_records()
+            if native_admission_handler is not None:
+                config["native_admission"] = True
+            else:
+                config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
+                config["publication_limit"] = self.budget.limits.created_files
+                if self.published_sources:
+                    config["published"] = self._publication_records()
             config["pending_limit"] = self.budget.limits.pending - sum(
                 item["pending"] for item in self.parked_capsules
             )
@@ -1471,6 +1626,126 @@ class ProbeSession:
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
+            if native_admission_handler is not None:
+                if request.get("kind") == "finished":
+                    if (
+                        set(request) != {"kind", "scope", "issued", "completed", "publication"}
+                        or type(request["issued"]) is not int or request["issued"] != sequence
+                        or type(request["completed"]) is not int or not 0 <= request["completed"] <= sequence
+                        or request["publication"] is not None
+                    ):
+                        raise MakeProbeError("incomplete native Command admission handshake")
+                    completion = sequence, request["completed"], None
+                    return None
+                image_request = request.get("kind") == "native-exec-request"
+                context = None
+                if image_request:
+                    if not native_output_paths or any(
+                        type(request.get(key)) is not int or request[key] < 1
+                        for key in ("dispatch", "pid", "generation")
+                    ):
+                        raise MakeProbeError("native image request lacks its actual process generation")
+                    fork_parent = request.get("fork_parent")
+                    if fork_parent is not None and (
+                        not isinstance(fork_parent, list) or len(fork_parent) != 3
+                        or any(type(value) is not int or value < 1 for value in fork_parent)
+                    ):
+                        raise MakeProbeError("native image request has an invalid actual parent-at-fork")
+                    context = {
+                        **{key: request[key] for key in ("dispatch", "pid", "generation")},
+                        "fork_parent": fork_parent,
+                    }
+                    if native_compiler is not None and request.get("path") in {
+                        native_compiler["driver"], native_compiler["frontend"],
+                    }:
+                        context["environment"] = request.get("environment")
+                if (
+                    set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"} | (
+                        {"dispatch", "pid", "generation", "fork_parent"} if image_request else set()
+                    ) | ({"environment"} if context is not None and "environment" in context else set())
+                    or request["kind"] not in {"native-request", "native-exec-request"}
+                    or type(request["sequence"]) is not int or request["sequence"] != sequence + 1
+                    or request["path"] not in config["native_executables"]
+                ):
+                    raise MakeProbeError("foreign or stale native Command admission request")
+                from .read_epochs import native_execution_input
+                inputs = native_execution_input(request["argv"], request["cwd"])
+                if inputs["cwd"] != "/repo":
+                    raise MakeProbeError("native Command admission requires canonical repository CWD")
+                settle(request["counters"])
+                sequence += 1
+                authorization = native_admission_handler(request["path"], inputs, context)
+                compiler_binding = authorization.get("compiler") if isinstance(authorization, dict) else None
+                if compiler_binding is not None and compiler_binding["role"] == "frontend":
+                    reference = compiler_binding["driver"]
+                    if (
+                        context is None or not isinstance(reference, list) or len(reference) != 3
+                        or any(type(number) is not int or number < 1 for number in reference)
+                    ):
+                        raise MakeProbeError("native frontend lacks its actual issued driver-at-fork")
+                    driver = native_authorizations.get(reference[2])
+                    parent_binding = driver[2].get("compiler") if driver is not None else None
+                    if (
+                        parent_binding is None or parent_binding["role"] != "driver"
+                        or driver[0] != native_compiler["driver"]
+                        or any(compiler_binding[key] != parent_binding[key] for key in ("profile", "sources", "code"))
+                        or authorization["outputs"] != driver[2]["outputs"]
+                        or authorization.get("resources", []) != driver[2].get("resources", [])
+                    ):
+                        raise MakeProbeError("native frontend changed its issued driver source/output scope")
+                    compiler_binding["includes"] = parent_binding["includes"]
+                    self.budget.charge("control", len(encoded(compiler_binding)))
+                if native_output_paths:
+                    if (
+                        not isinstance(authorization, dict) or set(authorization) != {"owner", "closure", "outputs"} | (
+                            {"resources"} if native_resources else set()
+                        ) | ({"compiler"} if native_compiler is not None and "compiler" in authorization else set())
+                        or not isinstance(authorization["outputs"], list)
+                        or any(path not in native_output_paths for path in authorization["outputs"])
+                        or len(set(authorization["outputs"])) != len(authorization["outputs"])
+                    ):
+                        raise MakeProbeError("native Command admission lacks its exact output plan")
+                    owner = authorization["owner"]
+                    if native_resources:
+                        from .native_resources import resource_plan, validate_resource_scope
+                        resources = resource_plan(authorization["resources"])
+                        if any(row not in native_resources for row in resources):
+                            raise MakeProbeError("native Command resources escape their issued plan")
+                else:
+                    owner = authorization
+                if not isinstance(owner, str) or re.fullmatch("[0-9a-f]{64}", owner) is None:
+                    raise MakeProbeError("native Command admission lacks its exact issued binding")
+                if native_output_paths and (
+                    not isinstance(authorization["closure"], str)
+                    or re.fullmatch("[0-9a-f]{64}", authorization["closure"]) is None
+                    or owner != native_command_owner(
+                        authorization["closure"], authorization["outputs"], authorization.get("resources", ()),
+                    )
+                ):
+                    raise MakeProbeError("native output plan differs from its issued Command owner")
+                admission = {
+                    "owner": owner, "input_sha256": hashlib.sha256(encoded(inputs)).hexdigest(),
+                    **({"sequence": sequence} if native_output_paths else {}),
+                    **({"closure": authorization["closure"]} if native_output_paths else {}),
+                    **({"outputs": authorization["outputs"]} if native_output_paths else {}),
+                    **({"resources": authorization["resources"]} if native_resources else {}),
+                    **({"compiler": authorization["compiler"]} if native_compiler is not None and "compiler" in authorization else {}),
+                }
+                native_authorizations[sequence] = (request["path"], inputs, admission) + (
+                    (context,) if native_output_paths else ()
+                )
+                self.budget.charge("cache", len(encoded(native_authorizations[sequence])))
+                self.pending_commands_peak = max(self.pending_commands_peak, 1)
+                reply = {
+                    "kind": "native-authorized", "scope": config["producer_scope"],
+                    "sequence": sequence, **admission, "limits": grants(),
+                }
+                bound = len(encoded(reply)) + 4
+                reply["limits"] = grants(bound)
+                data = encoded(reply)
+                if len(data) + 4 > bound:
+                    raise MakeProbeError("native Command grant exceeds its charged reply reservation")
+                return data
             if request.get("kind") == "finished":
                 if (
                     set(request) != {"kind", "scope", "issued", "completed", "publication"}
@@ -1563,7 +1838,7 @@ class ProbeSession:
             lambda: report.unlink(missing_ok=True), lambda: config_path.unlink(missing_ok=True),
             close_channel, lambda: _remove_owned_tree(channel_directory),
         ]):
-            if producer_handler is not None:
+            if producer_handler is not None or native_admission_handler is not None:
                 mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
                 try:
                     channel_directory.mkdir(mode=0o700)
@@ -1589,6 +1864,10 @@ class ProbeSession:
             if not report.is_file():
                 raise MakeProbeError(f"sandbox supervisor produced no result: {result.stderr!r}")
             observed = parse_json(self.budget.read_bytes(report, "control"), "supervisor JSON")
+            compact_jobs = (
+                read_abi is not None and bool(native_output_paths) and isinstance(observed, dict)
+                and observed.get("ok") is True and observed.get("returncode") == 0
+            )
             if not isinstance(observed, dict) or set(observed) != {
                 "ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                 "processes", "syscalls", "written_bytes", "created_files",
@@ -1599,6 +1878,8 @@ class ProbeSession:
             ) | (
                 {"read_trace"} if read_abi is not None and observed.get("ok") is True
                 and observed.get("returncode") == 0 else set()
+            ) | ({"native_jobs"} if compact_jobs else set()) | ({"native_root"} if observe_root else set()) | (
+                {"native_results"} if finite_plan is not None else set()
             ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -1637,6 +1918,12 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
+            if observe_root and finite_plan is None:
+                from .read_epochs import validate_native_root
+                validate_native_root(
+                    observed["native_root"], argv=argv, cwd=cwd, environment=environment,
+                    returncode=observed["returncode"],
+                )
             if read_abi is not None and observed["returncode"] == 0:
                 from .read_epochs import validate_trace
                 trace, request = observed["read_trace"], config["read_epochs"]
@@ -1652,6 +1939,21 @@ class ProbeSession:
                     count_limit=config["observation_count"], file_limit=config["file_limit"],
                     reserve=lambda size: self.budget.charge("control", size),
                 )
+                if observe_root and finite_plan is None:
+                    validate_native_root(
+                        observed["native_root"], argv=argv, cwd=cwd, environment=environment,
+                        returncode=observed["returncode"], machine=trace["machine"],
+                    )
+                if finite_plan is not None:
+                    from .read_epochs import validate_native_results
+                    finite_captures = validate_native_results(
+                        observed["native_results"], finite_plan, trace,
+                        count_limit=config["observation_count"], file_limit=config["file_limit"],
+                        output_limit=config["native_output_limit"],
+                        reserve=lambda size: self.budget.charge("control", size),
+                    )
+                    if observed["native_root"] != trace["machine"]["roots"][-1]["initial"]:
+                        raise MakeProbeError("finite native result changed its final actual root")
                 for event in trace["events"]:
                     self.budget.remaining()
                     if (
@@ -1659,6 +1961,10 @@ class ProbeSession:
                         and event["image_sha256"] != self.snapshot.digest
                         or read_selection is not None and event["kind"] == "source-open"
                         and event["result"] >= 0 and event["custody"] != {"kind": "snapshot"}
+                        and not (
+                            request["version"] in WRITABLE_VERSIONS
+                            and event["custody"]["kind"] == "native-output"
+                        )
                     ):
                         raise MakeProbeError("native readonly trace differs from its snapshot")
             if dependency is not None and observed["executed"] != dependency["executables"]:
@@ -1671,17 +1977,38 @@ class ProbeSession:
                     ):
                         raise MakeProbeError("native optional absence differs from its kernel metadata")
                 jobs, executions, dispatches, job_inputs, job_policies = {}, {}, [], {}, {}
-                for value in observed["accessed"]:
-                    if value.startswith("native-job:"):
-                        raw = value.removeprefix("native-job:").encode("utf-8")
-                        self.budget.charge("control", len(raw))
-                        job = parse_json(raw, "native job result")
+                trace = observed.get("read_trace")
+                if compact_jobs:
+                    structured_jobs = observed.get("native_jobs")
+                    if (
+                        not isinstance(structured_jobs, list)
+                        or len(structured_jobs) > config["observation_count"]
+                        or any(not isinstance(row, dict) for row in structured_jobs)
+                        or any(value.startswith("native-output:") for value in observed["accessed"])
+                    ):
+                        raise MakeProbeError("writable native report lacks its canonical job headers")
+                elif "native_jobs" in observed:
+                    raise MakeProbeError("native job headers require a complete writable machine trace")
+                else:
+                    structured_jobs = ()
+                for value in chain(structured_jobs, observed["accessed"]):
+                    if isinstance(value, dict) or value.startswith("native-job:"):
+                        if compact_jobs:
+                            if not isinstance(value, dict):
+                                raise MakeProbeError("writable native report duplicates its canonical job headers")
+                            job = value
+                        else:
+                            raw = value.removeprefix("native-job:").encode("utf-8")
+                            self.budget.charge("control", len(raw))
+                            job = parse_json(raw, "native job result")
                         if (
                             not isinstance(job, dict) or type(job.get("pid")) is not int
                             or set(job) != {
                                 "sequence", "executable", "pid", "context", "returncode",
                                 "terminal_status", "waited", "ignored",
-                            } | ({"argv", "cwd", "tree"} if runtime_completions else set())
+                            } | ({"argv", "cwd"} if runtime_completions else set())
+                            | ({"tree"} if runtime_completions and not compact_jobs else set())
+                            | ({"admission"} if native_admission_handler is not None else set())
                             or not 0 < job["pid"] < 1 << 31
                             or type(job["sequence"]) is not int or job["sequence"] <= 0
                             or type(job["returncode"]) is not int
@@ -1690,6 +2017,13 @@ class ProbeSession:
                             or job["waited"] is not True or type(job["ignored"]) is not bool
                         ):
                             raise MakeProbeError("native job has incomplete or invalid lifecycle evidence")
+                        if compact_jobs:
+                            job = dict(job)
+                            job["tree"] = [
+                                row["event"] for row in trace["machine"]["events"]
+                                if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                            ]
+                            self.budget.charge("control", sys.getsizeof(job) + sys.getsizeof(job["tree"]))
                         context = job["context"]
                         from .read_epochs import ReadEpochError, native_job_context
                         try:
@@ -1709,21 +2043,81 @@ class ProbeSession:
                         if runtime_completions:
                             from .read_epochs import native_execution_input, native_job_tree
                             inputs = native_execution_input(job["argv"], job["cwd"])
+                            fork_references = None
+                            if native_output_paths:
+                                native_job_tree(
+                                    job["tree"], job, None, config["native_executables"],
+                                    count_limit=config["observation_count"], writable=True,
+                                    compiler_profile=profile if native_compiler is not None else None,
+                                    compiler_sources=self.snapshot.files,
+                                    reserve=lambda size: self.budget.charge("control", size),
+                                )
+                                from .read_epochs import native_fork_references
+                                fork_references = native_fork_references(
+                                    job["tree"], reserve=lambda size: self.budget.charge("control", size),
+                                )
+                            if native_admission_handler is not None:
+                                request_id = job["admission"].get("sequence") if native_output_paths else job["sequence"]
+                                issued = native_authorizations.get(request_id)
+                                if (
+                                    issued is None or issued[:3] != (job["executable"], inputs, job["admission"])
+                                    or native_output_paths and issued[3] is not None
+                                ):
+                                    raise MakeProbeError("native job differs from its issued Command admission")
+                                if native_output_paths:
+                                    for event in job["tree"][1:]:
+                                        if event.get("kind") != "exec":
+                                            continue
+                                        image = event.get("admission", {})
+                                        issued = native_authorizations.get(image.get("sequence"))
+                                        expected_context = {
+                                            "dispatch": job["sequence"], "pid": event["pid"],
+                                            "generation": event["generation"],
+                                            "fork_parent": (
+                                                None if fork_references[(event["pid"], event["generation"])] is None
+                                                else list(fork_references[(event["pid"], event["generation"])])
+                                            ),
+                                        }
+                                        if "compiler" in image:
+                                            expected_context["environment"] = image["compiler"]["environment"]
+                                        if issued != (
+                                            event["path"], native_execution_input(event["argv"], event["cwd"]),
+                                            image, expected_context,
+                                        ):
+                                            raise MakeProbeError("native image differs from its issued operand admission")
                             job_inputs[(job["sequence"], job["pid"])] = hashlib.sha256(encoded(inputs)).hexdigest()
                             parent = None
                             if observed["returncode"] == 0:
+                                machine = observed["read_trace"]["machine"]
+                                if machine["version"] in {2, 4}:
+                                    from .read_epochs import native_root_owner
+                                    actual_executions = [
+                                        row for row in machine["events"]
+                                        if row["kind"] == "execute" and not row["make"]
+                                        and row["dispatch"] == job["sequence"]
+                                    ]
+                                    if len(actual_executions) != 1:
+                                        raise MakeProbeError("native job tree lacks its actual execution")
+                                    parent = native_root_owner(
+                                        machine["roots"], actual_executions[0]["exec"],
+                                    )
                                 make_parents = {
                                     row["pid"] for row in observed["read_trace"]["machine"]["events"]
                                     if row["kind"] == "execute" and row["make"] is True
                                 }
-                                if len(make_parents) != 1:
+                                if parent is None and len(make_parents) != 1:
                                     raise MakeProbeError("native job tree lacks its original Make parent")
-                                parent = next(iter(make_parents))
-                            native_job_tree(
-                                job["tree"], job, parent, config["native_executables"],
-                                count_limit=config["observation_count"],
-                            )
-                            if observed["returncode"] == 0:
+                                if parent is None:
+                                    parent = next(iter(make_parents))
+                            if native_output_paths:
+                                if parent is not None and job["tree"][0]["parent"] != parent:
+                                    raise MakeProbeError("native writable tree changed its actual Make parent")
+                            else:
+                                native_job_tree(
+                                    job["tree"], job, parent, config["native_executables"],
+                                    count_limit=config["observation_count"], writable=False,
+                                )
+                            if observed["returncode"] == 0 and not compact_jobs:
                                 machine_tree = [
                                     row["event"] for row in observed["read_trace"]["machine"]["events"]
                                     if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
@@ -1750,6 +2144,16 @@ class ProbeSession:
                     raise MakeProbeError("native job differs from its actual executable")
                 if sorted(sequence for sequence, _ in dispatches) != list(range(1, len(dispatches) + 1)):
                     raise MakeProbeError("native job dispatch sequences are incomplete or reused")
+                if native_admission_handler is not None:
+                    issued_images = (
+                        [row["event"]["admission"]["sequence"]
+                         for row in observed["read_trace"]["machine"]["events"]
+                         if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"]
+                        if native_output_paths and observed["returncode"] == 0 else
+                        [sequence for sequence, _ in dispatches]
+                    )
+                    if sorted(issued_images) != sorted(native_authorizations):
+                        raise MakeProbeError("native Command admission lacks its completed actual image")
                 if read_selection is not None and observed["returncode"] == 0:
                     children = [
                         (row["dispatch"], row["pid"]) for row in observed["read_trace"]["machine"]["events"]
@@ -1770,6 +2174,35 @@ class ProbeSession:
                         if row["kind"] == "execute" and row["make"] is False
                     }:
                         raise MakeProbeError("native job execution inputs differ from returned machine observation")
+                    if native_output_paths:
+                        authority = observed["read_trace"]["output_authority"]
+                        if (
+                            authority["paths"] != config["native_output_paths"]
+                            or authority.get("resources", []) != config.get("native_resources", [])
+                            or set(authority.get("source_roots", [])) != set(config["native_source_roots"])
+                            or authority.get("compiler") != native_compiler
+                            or any(
+                                job["admission"].get("sequence") not in native_authorizations
+                                or job["admission"] != native_authorizations[job["admission"]["sequence"]][2]
+                                or any(
+                                    row["event"].get("admission", {}).get("sequence") not in native_authorizations
+                                    or row["event"]["admission"] != native_authorizations[row["event"]["admission"]["sequence"]][2]
+                                    for row in observed["read_trace"]["machine"]["events"]
+                                    if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]
+                                    and row["event"]["kind"] == "exec"
+                                )
+                                for job in authority["jobs"]
+                            )
+                            or {
+                                row["dispatch"]: row["admission_owner"]
+                                for row in observed["read_trace"]["machine"]["events"]
+                                if row["kind"] == "execute" and not row["make"]
+                            } != {
+                                job["sequence"]: native_authorizations[job["admission"]["sequence"]][2]["owner"]
+                                for job in authority["jobs"]
+                            }
+                        ):
+                            raise MakeProbeError("native returned archive differs from issued Command authority")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
@@ -1785,6 +2218,8 @@ class ProbeSession:
                 raise MakeProbeError("invalid trusted metadata comparison status")
             if mode != "make" and not metadata_validation and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
+            if finite_plan is not None and observed["returncode"] == 0:
+                return result, observed, finite_captures
             return result, observed
 
     @staticmethod
@@ -1862,6 +2297,10 @@ class ProbeSession:
                 raise MakeProbeError("generated output conflicts with immutable source")
         return names
 
+    def _native_source_roots(self):
+        return tuple(sorted(self.snapshot.gitlink_roots | {
+            path for path, entry in self.loader.entries.items() if entry.mode == "160000"
+        }))
 
     def _capture_outputs(self, root, names):
         if not names:
@@ -1898,53 +2337,14 @@ class ProbeSession:
 
     @staticmethod
     def _dependency_options(command, sources, outputs):
-        if (
-            command.argv[0] != "/usr/bin/cc" or command.native_tool is not None
-            or len(outputs) != 1 or not outputs[0].endswith(".d")
-        ):
-            raise MakeProbeError("dependency profile requires host cc and one declared .d output")
-        modes = set()
-        includes = []
-        translation_unit = target = None
-        arguments = iter(command.argv[1:])
-        for argument in arguments:
-            if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
-                if argument in modes:
-                    raise MakeProbeError("duplicate dependency mode")
-                modes.add(argument)
-                continue
-            option = next(
-                (name for name in ("-iquote", "-MT", "-I", "-D", "-U") if argument.startswith(name)),
-                None,
-            )
-            if option is not None:
-                value = argument[len(option):] if argument != option else next(arguments, "")
-                if not value or value.startswith("@") or "\n" in value or "\r" in value:
-                    raise MakeProbeError("invalid or missing dependency option value")
-                if option in {"-I", "-iquote"}:
-                    if value.startswith(("=", "$SYSROOT")):
-                        raise MakeProbeError("sysroot-special dependency include operand is unsupported")
-                    if value.startswith("-"):
-                        raise MakeProbeError("dependency include path is not repository-relative")
-                    includes.append(value if value == "." else relative_path(value))
-                elif option in {"-D", "-U"}:
-                    name, separator, _ = value.partition("=")
-                    if not VARIABLE.fullmatch(name) or option == "-U" and separator:
-                        raise MakeProbeError("dependency macro requires a symbolic name")
-                else:
-                    if target is not None or not TARGET.fullmatch(value) or value.startswith("-"):
-                        raise MakeProbeError("invalid or duplicate dependency target")
-                    target = relative_path(value)
-                continue
-            if argument.startswith(("-", "@")) or translation_unit is not None or not argument.endswith(".c"):
-                raise MakeProbeError("unsupported dependency compiler option or source")
-            translation_unit = relative_path(argument)
-        if (
-            not {"-E", "-MM", "-nostdinc", "-undef"} <= modes
-            or target is None or translation_unit not in sources
-        ):
-            raise MakeProbeError("dependency profile requires exact modes, target and declared C source")
-        return tuple(dict.fromkeys(includes))
+        if command.native_tool is not None:
+            raise MakeProbeError("dependency profile cannot use an issued native tool")
+        return ProbeSession._dependency_arguments(command.argv, sources, outputs)
+
+    @staticmethod
+    def _dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/cc",)):
+        from .read_epochs import dependency_arguments
+        return dependency_arguments(argv, sources, outputs, driver_spellings=driver_spellings)
 
 
     def _sealed_native_tool_bytes(self, tool):
@@ -2040,15 +2440,7 @@ class ProbeSession:
             argv = list(command.argv)
             dependency = None
             if command.dependency_only:
-                if self.dependency_compiler is None:
-                    driver, programs = self._compiler_tools(False, ("cc1",))
-                    programs = tuple(sorted({str(_trusted_runtime_path(path, compiler=True)) for path in programs}))
-                    frontends = tuple(path for path in programs if path != driver)
-                    if len(frontends) != 1:
-                        raise MakeProbeError("dependency profile requires one resolved C frontend")
-                    self.dependency_compiler = driver, frontends[0]
-                    self.budget.charge("control", len(encoded(self.dependency_compiler)))
-                    self.dependency_runtime = self._dependency_runtime()
+                self._ensure_dependency_runtime()
                 argv[0] = self.dependency_compiler[0]
                 compiler = self.dependency_compiler
                 dependency = {
@@ -2078,6 +2470,7 @@ class ProbeSession:
                 ],
                 code=code, sources=sources, directories=directories,
                 executables=compiler, dependency=dependency,
+                native_output_paths=outputs if native is not None else (),
                 **({} if original_executable is None else {
                     "repository_outputs": outputs, "cwd": original_cwd,
                     "initial_executable": original_executable,
@@ -2137,6 +2530,70 @@ class ProbeSession:
             if not outputs:
                 self.cache.setdefault(key, []).append(result)
             return result
+
+    def _ensure_dependency_runtime(self):
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("dependency runtime requires an active probe session")
+        self.budget.remaining()
+        if self.dependency_compiler is None:
+            driver, programs = self._compiler_tools(False, ("cc1",))
+            programs = tuple(sorted({str(_trusted_runtime_path(path, compiler=True)) for path in programs}))
+            frontends = tuple(path for path in programs if path != driver)
+            if len(frontends) != 1:
+                raise MakeProbeError("dependency profile requires one resolved C frontend")
+            self.dependency_compiler = driver, frontends[0]
+            self.budget.charge("control", len(encoded(self.dependency_compiler)))
+            self.dependency_runtime = self._dependency_runtime()
+        if self.dependency_runtime is None:
+            raise MakeProbeError("dependency compiler has no complete issued runtime profile")
+
+    @terminal_failure
+    def _sealed_dependency_runtime(self):
+        """Capture the existing derived compiler closure, without execution authority."""
+        self._ensure_dependency_runtime()
+        rows = tuple(
+            (path, self._captured_native_runtime_input(path, sealed=True, dependency=True))
+            for path in self.dependency_runtime["runtime_files"]
+        )
+        self.budget.charge("control", sys.getsizeof(rows) + sum(sys.getsizeof(row) for row in rows))
+        for path in self.dependency_compiler:
+            self._validate_native(dict(rows)[path])
+        return rows
+
+    @terminal_failure
+    def _native_compiler_profile(self, environment):
+        from .read_epochs import native_compiler_profile
+        rows = self._sealed_dependency_runtime()
+        derived = self.dependency_runtime
+        value = {
+            "driver": self.dependency_compiler[0], "frontend": self.dependency_compiler[1],
+            "files": [[path, len(image), image_digest(image)] for path, image in rows],
+            "directories": derived["runtime_directories"], "probes": derived["runtime_stat_probes"],
+            "interpreter": derived["runtime_interpreter"], "libc": derived["runtime_libc"],
+            "environment": dict(environment),
+        }
+        self.budget.charge("cache", len(encoded(value)))
+        value["identity"] = hashlib.sha256(encoded(value)).hexdigest()
+        native_compiler_profile(
+            value, count_limit=self.budget.limits.entries,
+            reserve=lambda size: self.budget.charge("control", size),
+        )
+        return value
+
+    @terminal_failure
+    def _sealed_dependency_root(self, name):
+        rows = self._sealed_dependency_runtime()
+        aliases = tuple(
+            (path, str(_trusted_runtime_path(path, compiler=True)))
+            for path, _ in rows
+            if path != str(_trusted_runtime_path(path, compiler=True))
+        )
+        self.budget.charge(
+            "control", sys.getsizeof(aliases) + sum(
+                sys.getsizeof(row) + sum(sys.getsizeof(path) for path in row) for row in aliases
+            ),
+        )
+        return self._new_root(name, make=True, native_runtime=rows, native_aliases=aliases)
 
     def _dependency_runtime(self):
         interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])
@@ -2400,23 +2857,182 @@ class ProbeSession:
         return variables, cli, environment
 
     @terminal_failure
-    def _native_make_readonly(
+    def _native_make_readonly(self, target, **kwargs):
+        if kwargs.get("writable_outputs"):
+            raise MakeProbeError("readonly native Make cannot request writable output authority")
+        return self._native_make_run(target, **kwargs)
+
+    @terminal_failure
+    def _native_make_writable(self, target, *, outputs, **kwargs):
+        if not outputs:
+            raise MakeProbeError("native writable Make requires exact output paths")
+        return self._native_make_run(target, writable_outputs=outputs, **kwargs)
+
+    @terminal_failure
+    def _native_make_cohort(self, requests, *, variables=(), **kwargs):
+        if (
+            not isinstance(requests, tuple) or not 1 <= len(requests) <= self.budget.limits.entries
+            or any(
+                not isinstance(row, tuple) or len(row) != 3
+                or not isinstance(row[0], str) or not isinstance(row[1], str)
+                or not isinstance(row[2], tuple)
+                or any(
+                    not isinstance(assignment, tuple) or len(assignment) != 3
+                    or any(not isinstance(value, str) for value in assignment)
+                    for assignment in row[2]
+                )
+                for row in requests
+            )
+            or any(name in kwargs for name in (
+                "finite_requests", "target", "makefile", "assignments",
+                "observe_reads", "observe_runtime_completions", "observe_root",
+            ))
+        ):
+            raise MakeProbeError("finite native cohort requires an immutable complete request tuple")
+        target, makefile, assignments = requests[0]
+        return self._native_make_run(
+            target, makefile=makefile, assignments=assignments, variables=variables,
+            observe_reads=True, observe_runtime_completions=True, observe_root=True,
+            finite_requests=requests, **kwargs,
+        )
+
+    def _native_make_run(
         self, target, *, makefile="Makefile", variables=(), assignments=(), observe_reads=False,
         observe_completions=False, native_executables=(), native_runtime_directories=(), native_tool=None,
-        native_libraries=(), observe_runtime_completions=False,
+        native_libraries=(), observe_runtime_completions=False, observe_patterns=False,
         original_tool=False, native_metadata_directories=(),
+        commands=None, writable_outputs=(), native_resources=(), observe_root=False, finite_requests=None,
     ):
         variables, cli, environment = self._make_request(target, makefile, variables, assignments, ())
         if self.published_sources or self.make_depth:
-            raise MakeProbeError("readonly native Make requires an unmapped immutable source session")
+            raise MakeProbeError("native Make requires an unmapped immutable source session")
         if (
             type(observe_reads) is not bool or type(observe_completions) is not bool
             or type(observe_runtime_completions) is not bool
+            or type(observe_patterns) is not bool or observe_patterns and not observe_runtime_completions
+            or type(observe_root) is not bool or observe_root and not observe_runtime_completions
             or type(original_tool) is not bool or original_tool and native_tool is None
             or (observe_completions or observe_runtime_completions) and not observe_reads
             or observe_completions and observe_runtime_completions
         ):
             raise MakeProbeError("invalid native read observation request or completion dependency")
+        if commands is not None and not observe_runtime_completions:
+            raise MakeProbeError("native Command admission requires complete runtime job inputs")
+        writable_outputs = self._output_paths(writable_outputs)
+        from .native_resources import resource_plan, validate_resource_scope
+        native_resources = resource_plan(native_resources)
+        if native_resources and not writable_outputs:
+            raise MakeProbeError("native resource roles require writable native Make")
+        if len(native_resources) > self.budget.limits.entries:
+            raise MakeProbeError("native resource plan exceeds its existing entry bound")
+        validate_resource_scope(
+            native_resources, writable_outputs, (*self.snapshot.files, *self._native_source_roots()),
+        )
+        if writable_outputs and commands is None:
+            raise MakeProbeError("native writable Make requires original Command admission")
+        frozen_snapshot, frozen_tree = self.snapshot, self.tree
+        compiler_profile = None
+        compiler_aliases = ()
+        if self.dependency_compiler is not None and set(self.dependency_compiler) & set(native_executables):
+            if not set(self.dependency_compiler) <= set(native_executables):
+                raise MakeProbeError("native compiler declaration omits its issued driver or frontend")
+            from .read_epochs import compiler_make_environment
+            compiler_profile = self._native_compiler_profile(compiler_make_environment({
+                **ENVIRONMENT,
+                **{name: value for origin, name, value in assignments if origin == "environment"},
+            }, ["/usr/bin/make", "-f", makefile, *cli, target]))
+            compiler_aliases = tuple(
+                (path, str(_trusted_runtime_path(path, compiler=True)))
+                for path in self.dependency_runtime["runtime_files"]
+                if path != str(_trusted_runtime_path(path, compiler=True))
+            )
+            self.budget.charge("control", len(encoded(compiler_aliases)))
+
+        def admit(path, inputs, context=None):
+            if self.snapshot is not frozen_snapshot or self.tree != frozen_tree:
+                raise MakeProbeError("native Command admission crossed its immutable view")
+            try:
+                command = commands[tuple(inputs["argv"])]
+            except KeyError as error:
+                raise MakeProbeError("original native argv lacks its sealed Command") from error
+            if self.snapshot is not frozen_snapshot or self.tree != frozen_tree:
+                raise MakeProbeError("native Command resolver changed its immutable view")
+            if (
+                type(command) is not Command or type(command.argv) is not tuple
+                or command.argv != tuple(inputs["argv"]) or inputs["cwd"] != "/repo"
+                or type(command.dependency_only) is not bool or command.dependency_only
+                or (command.outputs and not writable_outputs) or command.publication_policy != "replace"
+                or any(type(value) is not tuple for value in (
+                    command.code, command.sources, command.directories, command.outputs,
+                ))
+            ):
+                execution_mode = "writable" if writable_outputs else "readonly"
+                raise MakeProbeError(
+                    f"native {execution_mode} Command differs from actual argv or requests output authority"
+                )
+            Command.__post_init__(command)
+            outputs = self._output_paths(command.outputs)
+            resources = resource_plan(command.native_resources)
+            if any(row not in native_resources for row in resources):
+                raise MakeProbeError("native Command resources escape its issued namespace")
+            if any(name not in writable_outputs for name in outputs):
+                raise MakeProbeError("native Command outputs escape its issued namespace")
+            sources = self.sources(command.sources) if command.sources else ()
+            for name in (*command.code, *sources):
+                relative_path(name)
+            if (
+                len(command.code) + len(sources) + len(command.directories) > self.budget.limits.entries
+                or any(name not in self.snapshot.files for name in (*command.code, *sources))
+            ):
+                raise MakeProbeError("native Command inputs escape its immutable source view")
+            directories = self._directories(command.directories)
+            if command.native_tool is not None:
+                if command.native_tool is not native_tool:
+                    raise MakeProbeError("native Command tool differs from the active issued runtime")
+                self._sealed_native_tool_bytes(command.native_tool)
+            self.budget.remaining()
+            tool_identity = None
+            if native_tool is not None:
+                tool_identity = (
+                    native_tool.digest, native_tool.inputs, native_tool.original_output,
+                )
+            payload = encoded([
+                self.snapshot.digest, path, runtime_identity, tool_identity,
+                inputs, command.code, sources, directories,
+            ])
+            self.budget.charge("cache", len(payload))
+            closure = hashlib.sha256(payload).hexdigest()
+            if writable_outputs:
+                self.budget.charge("cache", len(encoded([closure, outputs, resources])))
+            owner = native_command_owner(closure, outputs, resources) if writable_outputs else closure
+            compiler = None
+            if compiler_profile is not None and path in self.dependency_compiler:
+                role = "driver" if path == compiler_profile["driver"] else "frontend"
+                actual_environment = (
+                    compiler_profile["environment"] if context is None else context.get("environment")
+                )
+                from .read_epochs import compiler_environment
+                compiler_environment(
+                    actual_environment, compiler_profile["environment"],
+                    frontend=role == "frontend", driver=compiler_profile["driver"],
+                )
+                includes = self._dependency_arguments(
+                    inputs["argv"], sources, outputs,
+                    driver_spellings=("cc", "/usr/bin/cc", compiler_profile["driver"]),
+                ) if role == "driver" else ()
+                if role == "frontend" and context is None:
+                    raise MakeProbeError("native frontend cannot be an original Make root dispatch")
+                compiler = {
+                    "profile": compiler_profile["identity"], "role": role,
+                    "driver": None if role == "driver" else context["fork_parent"],
+                    "sources": list(sources), "code": list(command.code), "includes": list(includes),
+                    "environment": dict(actual_environment),
+                }
+            return {
+                "owner": owner, "closure": closure, "outputs": list(outputs),
+                **({"resources": [list(row) for row in resources]} if native_resources else {}),
+                **({"compiler": compiler} if compiler is not None else {}),
+            } if writable_outputs else owner
         if (
             not isinstance(native_executables, tuple)
             or len(native_executables) > self.budget.limits.entries
@@ -2451,7 +3067,8 @@ class ProbeSession:
             _trusted_python_directory(path, self.budget) for path in native_runtime_directories
         )
         if (
-            not isinstance(native_metadata_directories, tuple) or len(native_metadata_directories) > 2
+            not isinstance(native_metadata_directories, tuple)
+            or len(native_metadata_directories) > len(NATIVE_METADATA_DIRECTORY_PATHS)
             or any(not isinstance(path, str) for path in native_metadata_directories)
             or len(set(native_metadata_directories)) != len(native_metadata_directories)
         ):
@@ -2459,7 +3076,7 @@ class ProbeSession:
         metadata_directories = tuple(
             _native_metadata_directory(path, self.budget) for path in native_metadata_directories
         )
-        captured = self._captured_native_runtime("/usr/bin/sh")
+        captured = self._captured_native_runtime("/usr/bin/sh", sealed=True)
         native_runtime = tuple(
             ("/bin/sh" if name == "/usr/bin/sh" else name, data) for name, data in captured
         )
@@ -2473,13 +3090,16 @@ class ProbeSession:
             ):
                 raise MakeProbeError("invalid native library resource declaration")
             library_identities.add(canonical)
-            binary = self._captured_native_runtime_input(path)
+            binary = self._captured_native_runtime_input(path, sealed=True)
             self._validate_native(binary)
             if path in runtime and runtime[path] != binary:
                 raise MakeProbeError("native library runtime conflicts with captured bytes")
             runtime[path] = binary
         for path in native_executables:
-            captured = self._captured_native_runtime(path)
+            captured = (
+                self._sealed_dependency_runtime() if compiler_profile is not None and path in self.dependency_compiler
+                else self._captured_native_runtime(path, sealed=True)
+            )
             if _make_interpreter(dict(captured)[path]) != interpreter:
                 raise MakeProbeError("native executable requires an unadmitted interpreter")
             for name, data in captured:
@@ -2501,6 +3121,32 @@ class ProbeSession:
             runtime[tool_path] = binary
             native_executables = (*native_executables, tool_path)
         native_runtime = tuple(sorted(runtime.items()))
+        runtime_identity = None
+        if commands is not None:
+            images = []
+            for kind, rows in (("make", self.make_runtime), ("native", native_runtime)):
+                for path, data in rows:
+                    self.budget.remaining()
+                    self.budget.charge("total", len(data))
+                    images.append((kind, path, image_digest(data)))
+            resources = []
+            for item in self.runtime_inputs:
+                self.budget.remaining()
+                digest = None
+                if item.data is not None:
+                    self.budget.charge("total", len(item.data))
+                    digest = hashlib.sha256(item.data).hexdigest()
+                resources.append((
+                    item.path, item.canonical, item.mode, digest, item.parents, item.aliases,
+                ))
+            closure = encoded([
+                sorted(images), sorted(resources),
+                sorted((self._native_shell_path(), *native_executables)),
+                runtime_directories, metadata_directories,
+                *([compiler_profile] if compiler_profile is not None else []),
+            ])
+            self.budget.charge("cache", len(closure))
+            runtime_identity = hashlib.sha256(closure).hexdigest()
         environment["VO_OBSERVE_NATIVE_READONLY"] = "1"
         read_abi = self._native_read_abi(
             completions=observe_completions or observe_runtime_completions,
@@ -2510,6 +3156,21 @@ class ProbeSession:
         ) if observe_completions or observe_runtime_completions else None
         if observe_reads:
             environment["VO_OBSERVE_READS"] = "1"
+        native_requests = None
+        if finite_requests is not None:
+            native_requests = []
+            for request_target, request_makefile, request_assignments in finite_requests:
+                _, request_cli, request_environment = self._make_request(
+                    request_target, request_makefile, variables, request_assignments, (),
+                )
+                native_requests.append({
+                    "argv": ["/usr/bin/make", "-f", request_makefile, *request_cli, request_target],
+                    "cwd": "/repo",
+                    "environment": {
+                        **request_environment, "VO_OBSERVE_NATIVE_READONLY": "1", "VO_OBSERVE_READS": "1",
+                    },
+                })
+            self.budget.charge("control", len(encoded(native_requests)) + sys.getsizeof(native_requests))
         root_name = f"native-readonly-root-{self.serial + 1}"
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
@@ -2518,7 +3179,7 @@ class ProbeSession:
             lambda: _remove_owned_tree(root.parent / (root.name + "-sources")),
             lambda: (root.parent / (root.name + "-image")).unlink(missing_ok=True),
         ]):
-            self._new_root(root_name, make=True, native_runtime=native_runtime)
+            self._new_root(root_name, make=True, native_runtime=native_runtime, native_aliases=compiler_aliases)
             for path in runtime_directories:
                 if any(
                     name == path or name.startswith(path + "/")
@@ -2551,7 +3212,7 @@ class ProbeSession:
             control.mkdir(mode=0o700)
             result_path = control / "result"
             result_path.touch()
-            completed, observed = self._sandbox_run(
+            sandbox_result = self._sandbox_run(
                 root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
                 environment=environment, native_runtime=native_runtime, read_abi=read_abi,
                 read_selection=read_selection,
@@ -2559,7 +3220,14 @@ class ProbeSession:
                 native_runtime_directories=runtime_directories,
                 native_metadata_directories=metadata_directories,
                 runtime_completions=observe_runtime_completions,
+                observe_patterns=observe_patterns,
+                observe_root=observe_root,
                 original_tool=native_tool if original_tool else None,
+                native_admission_handler=admit if commands is not None else None,
+                native_output_paths=writable_outputs,
+                native_resources=native_resources,
+                native_requests=native_requests,
+                native_compiler=compiler_profile,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     *(self._mount(Path(path), path) for path, identity in metadata_directories
@@ -2569,13 +3237,57 @@ class ProbeSession:
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],
             )
+            completed, observed = sandbox_result[:2]
             if completed.returncode:
+                execution_mode = "writable" if writable_outputs else "readonly"
                 raise MakeProbeError(
-                    f"readonly native GNU Make failed: {completed.returncode}; {completed.stderr!r}"
+                    f"{execution_mode} native GNU Make failed: {completed.returncode}; {completed.stderr!r}"
                 )
+            if native_requests is not None:
+                captures = sandbox_result[2]
+                results = []
+                for request, capture, launch in zip(finite_requests, captures, native_requests):
+                    stdout, stderr, observation, outputs = capture
+                    self.budget.charge("output", len(stdout) + len(stderr))
+                    semantics = _read_observation(observation, request[0], variables)
+                    results.append((
+                        CompletedProcess(launch["argv"], 0, stdout, stderr),
+                        semantics, tuple(GeneratedFile(*output) for output in outputs),
+                    ))
+                return tuple(results), observed
             semantics = _read_observation(
                 self.budget.read_bytes(result_path, "control"), target, variables,
             )
+            if writable_outputs:
+                from .read_epochs import native_output_effects
+                generated = []
+                for name in writable_outputs:
+                    path = root.parent / (root.name + "-sources") / name
+                    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                    try:
+                        before = os.fstat(descriptor)
+                        if not stat.S_ISREG(before.st_mode) or before.st_mode & 0o7000:
+                            raise MakeProbeError("native Make produced a nonregular or special-mode output")
+                        data = self.budget.read_bytes(path, "control")
+                        if (
+                            publication_identity(os.fstat(descriptor)) != publication_identity(before)
+                            or publication_identity(os.stat(path, follow_symlinks=False)) != publication_identity(before)
+                        ):
+                            raise MakeProbeError("native Make output changed during bounded capture")
+                        settlements = [
+                            row for row in native_output_effects(observed["read_trace"])
+                            if row["kind"] == "output-settled" and row["path"] == "/repo/" + name
+                        ]
+                        if (
+                            not settlements or settlements[-1]["identity"] != list(publication_identity(before))
+                            or settlements[-1]["sha256"] != hashlib.sha256(data).hexdigest()
+                        ):
+                            raise MakeProbeError("native Make capture differs from its actual settled producer version")
+                        generated.append(GeneratedFile(name, data, stat.S_IMODE(before.st_mode)))
+                    finally:
+                        os.close(descriptor)
+                generated = tuple(generated)
+                return completed, semantics, observed, generated
             return completed, semantics, observed
 
     def _compiler_source_mounts(self, root, outputs):
@@ -2606,31 +3318,69 @@ class ProbeSession:
             mounts.append(self._mount(source, "/repo/" + name))
         return mounts
 
-    def _captured_native_runtime_input(self, path):
+    def _captured_native_runtime_input(self, path, *, sealed=False, dependency=False):
         if self.base is None or self.snapshot is None:
             raise MakeProbeError("probe session is not active")
         self.budget.remaining()
-        if path not in self.native_runtime_inputs:
+        if type(dependency) is not bool or dependency and (
+            not sealed or self.dependency_runtime is None
+            or path not in self.dependency_runtime["runtime_files"]
+        ):
+            raise MakeProbeError("sealed dependency input is outside its issued runtime closure")
+        trusted_path = (
+            _trusted_runtime_path(path, compiler=True) if dependency else _trusted_runtime_path(path)
+        )
+        key = (path, True) if sealed else path
+        if sealed:
+            self.budget.charge("control", sys.getsizeof(key))
+        if key not in self.native_runtime_inputs:
             core = next((data for name, data in self.make_runtime if name == path), None)
-            data = core if core is not None else _trusted_runtime_bytes(path, self.budget)
-            self.budget.charge(
-                "cache", len(path.encode("utf-8")) + 16 + (0 if core is not None else len(data)),
+            data = (
+                RuntimeImage(trusted_path, self.budget) if sealed else
+                core if core is not None else _trusted_runtime_bytes(path, self.budget)
             )
-            self.native_runtime_inputs[path] = data
-        return self.native_runtime_inputs[path]
+            try:
+                other_key = path if sealed else (path, True)
+                if not sealed:
+                    self.budget.charge("control", sys.getsizeof(other_key))
+                previous = self.native_runtime_inputs.get(other_key)
+                for previous in (previous, core if sealed else None):
+                    if previous is not None:
+                        self.budget.charge("total", sum(
+                            len(body) for body in (data, previous) if isinstance(body, bytes)
+                        ))
+                        if image_digest(data) != image_digest(previous):
+                            self.budget.reject("native runtime differs from earlier captured runtime")
+                self.budget.charge(
+                    "cache", len(path.encode("utf-8")) + 16
+                    + (sys.getsizeof(data) + sys.getsizeof(data.__dict__)
+                       + sys.getsizeof(key) if sealed else 0 if core is not None else len(data)),
+                )
+                self.native_runtime_inputs[key] = data
+            except BaseException as error:
+                finish_cleanup(
+                    [data.close] if isinstance(data, RuntimeImage) else [], primary=error,
+                )
+                raise
+        return self.native_runtime_inputs[key]
 
-    def _captured_native_runtime(self, path):
+    def _captured_native_runtime(self, path, *, sealed=False):
         self.budget.remaining()
-        if path not in self.native_runtimes:
+        key = (path, True) if sealed else path
+        if sealed:
+            self.budget.charge("control", sys.getsizeof(key))
+        if key not in self.native_runtimes:
             captured = _executable_runtime(
-                path, self.budget, read_runtime=self._captured_native_runtime_input,
+                path, self.budget,
+                read_runtime=lambda name: self._captured_native_runtime_input(name, sealed=sealed),
             )
             self.budget.charge(
                 "cache", len(path.encode("utf-8")) + 16
-                + sum(len(name.encode("utf-8")) + 16 for name, _ in captured),
+                + sum(len(name.encode("utf-8")) + 16 for name, _ in captured)
+                + (sys.getsizeof(key) if sealed else 0),
             )
-            self.native_runtimes[path] = captured
-        return self.native_runtimes[path]
+            self.native_runtimes[key] = captured
+        return self.native_runtimes[key]
 
     def _native_completion_selection(self, *, runtime=False):
         from . import read_epochs
@@ -2716,7 +3466,16 @@ class ProbeSession:
 
     def _native_read_abi(self, *, completions=False):
         from . import read_epochs
+        self.budget.remaining()
+        if self.base is None or self.snapshot is None or type(completions) is not bool:
+            raise MakeProbeError("native read ABI requires an active session and boolean completion mode")
         data = dict(self.make_runtime)["/usr/bin/make"]
+        self.budget.charge("total", len(data))
+        key = (hashlib.sha256(data).hexdigest(), completions)
+        if key in self.native_read_abis:
+            captured = self.native_read_abis[key]
+            self.budget.charge("cache", len(captured))
+            return read_epochs.validate_abi(parse_json(captured, "cached native read ABI"), data)
         path = self.base / "read-abi-make"
         path.write_bytes(data)
         image = read_epochs.Elf(data)
@@ -2739,7 +3498,11 @@ class ProbeSession:
         if second.returncode:
             raise MakeProbeError("cannot decode captured Make source reader")
         if not completions:
-            return read_epochs.make_abi(data, first.stdout, second.stdout)
+            result = read_epochs.make_abi(data, first.stdout, second.stdout)
+            captured = encoded(result)
+            self.budget.charge("cache", len(captured))
+            self.native_read_abis[key] = captured
+            return result
         source, _ = read_epochs.source_graph(image, target, read_epochs.instructions(second.stdout, image))
         evaluator = read_epochs.evaluator_target(image, source)
         third = self.budget.run(
@@ -2749,7 +3512,11 @@ class ProbeSession:
         )
         if third.returncode:
             raise MakeProbeError("cannot decode captured Make completion evaluator")
-        return read_epochs.make_abi(data, first.stdout, second.stdout, third.stdout)
+        result = read_epochs.make_abi(data, first.stdout, second.stdout, third.stdout)
+        captured = encoded(result)
+        self.budget.charge("cache", len(captured))
+        self.native_read_abis[key] = captured
+        return result
 
     @terminal_failure
     def make(

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import base64
+from array import array
+from bisect import bisect_right
 import errno
 from collections import Counter
+from collections.abc import Mapping
 import hashlib
 import os
 import posixpath
 import re
+import stat
 import struct
 import sys
 from types import MappingProxyType
@@ -16,12 +20,12 @@ from typing import NamedTuple
 
 if __package__:
     from . import make_lexical
-    from .authority import encoded
+    from .authority import encoded, native_command_owner, relative_path
     from .budget import MakeProbeError
     from .producer_channel import ChannelError, validate_publication_identity
 else:
     import make_lexical
-    from authority import encoded
+    from authority import encoded, native_command_owner, relative_path
     from budget import MakeProbeError
     from producer_channel import ChannelError, validate_publication_identity
 
@@ -31,6 +35,15 @@ NORETURN = frozenset({"fatal", "die", "out_of_memory", "__stack_chk_fail", "__as
 MAX_INSTRUCTIONS = 4096
 COMPLETION_VERSION = 4
 RUNTIME_VERSION = 5
+WRITABLE_VERSION = 6
+PATTERN_RUNTIME_VERSION = 7
+PATTERN_WRITABLE_VERSION = 8
+PATTERN_VERSIONS = frozenset({PATTERN_RUNTIME_VERSION, PATTERN_WRITABLE_VERSION})
+RUNTIME_VERSIONS = frozenset({RUNTIME_VERSION, WRITABLE_VERSION, *PATTERN_VERSIONS})
+WRITABLE_VERSIONS = frozenset({WRITABLE_VERSION, PATTERN_WRITABLE_VERSION})
+MACHINE_VERSIONS = frozenset({COMPLETION_VERSION, *RUNTIME_VERSIONS})
+LOCATION_VERSIONS = frozenset({3, *MACHINE_VERSIONS})
+FINITE_MACHINE_VERSIONS = frozenset({2, 4})
 
 
 class ReadEpochError(MakeProbeError):
@@ -767,6 +780,8 @@ class OriginalPass(NamedTuple):
     effects: tuple = ()
     evaluations: tuple = ()
     expansions: tuple = ()
+    pattern_templates: tuple = ()
+    patterns: tuple = ()
 
 
 class OriginalArchive(NamedTuple):
@@ -776,6 +791,8 @@ class OriginalArchive(NamedTuple):
     version: int = 1
     selection: tuple = ()
     selection_inventory: tuple = ()
+    compiler_profile: OriginalCompilerProfile | None = None
+    compiler_executions: tuple[OriginalCompilerExecution, ...] = ()
 
 
 class OriginalCompletion(NamedTuple):
@@ -799,6 +816,44 @@ class RuntimeLocation(NamedTuple):
 
 class ExpansionLocation(NamedTuple):
     expansion: int
+
+
+class PatternLocation(NamedTuple):
+    pattern: int
+
+
+class PatternDefinition(NamedTuple):
+    pattern: str
+    length: int
+    percent: int
+    name: str
+    value: str
+    file: str
+    line: int
+    offset: int
+    flags: int
+    name_length: int
+
+
+class OriginalPatternTemplate(NamedTuple):
+    number: int
+    entry_seq: int
+    completion_seq: int
+    owner: tuple[str, int]
+    source: OriginalSource
+    definition: PatternDefinition
+
+
+class OriginalPattern(NamedTuple):
+    number: int
+    entry_seq: int
+    completion_seq: int
+    template: OriginalPatternTemplate
+    target: str
+    cwd: str
+    variable: OriginalVariable
+    definition_seq: int | None
+    return_seq: int | None
 
 
 class OriginalExpansion(NamedTuple):
@@ -834,7 +889,7 @@ class OriginalEvaluation(NamedTuple):
     entry_seq: int
     exit_seq: int
     parent: tuple[str, int]
-    location: RuntimeLocation | ExpansionLocation
+    location: RuntimeLocation | ExpansionLocation | PatternLocation
     source: OriginalSource
 
 
@@ -843,6 +898,8 @@ def runtime_location_value(value):
         return None
     if set(value) == {"expansion"}:
         return ExpansionLocation(value["expansion"])
+    if set(value) == {"pattern"}:
+        return PatternLocation(value["pattern"])
     return RuntimeLocation(
         value["visit"], value["source"], value["evaluation"], tuple(value["span"]),
         None if value["offsets"] is None else tuple(value["offsets"]),
@@ -1060,19 +1117,126 @@ def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=No
     raise ReadEpochError("completion physical line count differs from original source bytes")
 
 
-def _statement_index(data, *, checkpoint=lambda: None, count_limit=None, reserve=lambda size: None):
+class _CompactStatementIndex(Mapping):
+    __slots__ = ("_data", "_spans", "_count", "_reserve", "_values")
+
+    def __init__(self, data, *, checkpoint, count_limit, reserve):
+        if not isinstance(data, bytes) or b"\0" in data:
+            raise ReadEpochError("completion source has unsupported bytes")
+        validated = data.decode("utf-8", "strict")
+        reserve(sys.getsizeof(validated))
+        del validated
+        physical_count = data.count(b"\n") + 1
+        if count_limit is not None and physical_count > count_limit:
+            raise ReadEpochError("completion physical source scan exceeds observation bound")
+        self._data, self._reserve, self._count = data, reserve, 0
+        self._values = {}
+        reserve(sys.getsizeof(self._values))
+        seed = array("I", [0])
+        if seed.itemsize != 4 or len(data) >= 1 << 32:
+            raise ReadEpochError("physical source offsets lack bounded 32-bit storage")
+        reserve(sys.getsizeof(seed))
+        self._spans = seed * (physical_count * 4)
+        reserve(sys.getsizeof(self._spans) + sys.getsizeof(self) + sys.getsizeof(reserve))
+        cursor = begin = 0
+        first = 1
+        for line in range(1, physical_count + 1):
+            checkpoint()
+            end = data.find(b"\n", cursor)
+            has_lf = end >= 0
+            if not has_lf:
+                end = len(data)
+            physical_end = end - 1 if has_lf and end > cursor and data[end - 1] == 13 else end
+            slash = physical_end
+            while slash > cursor and data[slash - 1] == 92:
+                slash -= 1
+            cursor = end + 1 if has_lf else end
+            if has_lf and (physical_end - slash) % 2:
+                continue
+            base = self._count * 4
+            self._spans[base] = first
+            self._spans[base + 1] = line
+            self._spans[base + 2] = begin
+            self._spans[base + 3] = end
+            self._count += 1
+            first, begin = line + 1, cursor
+
+    def __len__(self):
+        return self._count
+
+    def __iter__(self):
+        for number in range(self._count):
+            yield self._spans[number * 4]
+
+    def __getitem__(self, key):
+        if key in self._values:
+            return self._values[key]
+        if not isinstance(key, (int, float)):
+            raise KeyError(key)
+        lower, upper = 0, self._count
+        while lower < upper:
+            middle = (lower + upper) // 2
+            if self._spans[middle * 4] < key:
+                lower = middle + 1
+            else:
+                upper = middle
+        if lower == self._count or self._spans[lower * 4] != key:
+            raise KeyError(key)
+        base = lower * 4
+        first, last, begin, end = (self._spans[base + offset] for offset in range(4))
+        chunk = self._data[begin:end]
+        decoded = chunk.decode("utf-8", "strict")
+        parts = decoded.split("\n")
+        self._reserve(
+            sys.getsizeof(chunk) + sys.getsizeof(decoded) + sys.getsizeof(parts)
+            + sum(sys.getsizeof(part) for part in parts),
+        )
+        for number, part in enumerate(parts):
+            if (number < len(parts) - 1 or end < len(self._data)) and part.endswith("\r"):
+                parts[number] = part[:-1]
+                self._reserve(sys.getsizeof(parts[number]))
+        raw = "\n".join(parts)
+        encoded_raw = raw.encode()
+        self._reserve(sys.getsizeof(raw) + sys.getsizeof(encoded_raw))
+        value = (lower + 1, first, last, hashlib.sha256(encoded_raw).hexdigest())
+        self._reserve(
+            sys.getsizeof(begin) + sys.getsizeof(end) + sys.getsizeof(value)
+            + sum(sys.getsizeof(item) for item in value),
+        )
+        table_before = sys.getsizeof(self._values)
+        self._values[first] = value
+        table_after = sys.getsizeof(self._values)
+        if table_after > table_before:
+            self._reserve(table_after)
+        return value
+
+
+def _statement_index(
+    data, *, checkpoint=lambda: None, count_limit=None, reserve=lambda size: None, compact=False,
+):
+    if compact:
+        return _CompactStatementIndex(
+            data, checkpoint=checkpoint, count_limit=count_limit, reserve=reserve,
+        )
     rows = {}
-    reserve(sys.getsizeof(rows))
+    table_bytes = sys.getsizeof(rows)
+    reserve(table_bytes)
     for logical, first, last, raw in physical_statements(
         data, checkpoint=checkpoint, count_limit=count_limit,
     ):
         value = (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
         reserve(
-            sys.getsizeof({None: None}) + sys.getsizeof(first) + sys.getsizeof(value)
+            sys.getsizeof(first) + sys.getsizeof(value)
             + sum(sys.getsizeof(item) for item in value),
         )
         rows[first] = value
-    return MappingProxyType(rows)
+        current_bytes = sys.getsizeof(rows)
+        if current_bytes > table_bytes:
+            reserve(current_bytes)
+            table_bytes = current_bytes
+    result = MappingProxyType(rows)
+    reserve(sys.getsizeof(result))
+    return result
 
 
 def variable_row(row):
@@ -1097,6 +1261,125 @@ def original_variable(memory, pointer, string):
     if name is None or value is None or len(name.encode()) != length:
         raise ReadEpochError("completed original variable lacks its bounded raw name/value")
     return list(variable_row([name, value, flags, string(filename, 4096), line, offset]))
+
+
+def pattern_source_coordinates(definition, owner, source, events, data, *, checkpoint=lambda: None,
+                               reserve=lambda size: None, event_limit=None):
+    """Bind coordinates to the actual reader or evaluated-buffer occurrence."""
+    sources, evaluations, opened = {}, {}, {}
+    reserve(sys.getsizeof(sources) + sys.getsizeof(evaluations) + sys.getsizeof(opened))
+    for index, row in enumerate(events):
+        if event_limit is not None and index >= event_limit:
+            break
+        checkpoint()
+        if row["kind"] == "source-entry":
+            table, key, item = sources, row["visit"], row
+        elif row["kind"] == "eval-entry":
+            table, key, item = evaluations, row["evaluation"], row
+        elif row["kind"] == "source-open":
+            table, key, item = opened, row["visit"], row["source"]
+        else:
+            continue
+        size = sys.getsizeof(table)
+        table[key] = item
+        if sys.getsizeof(table) > size:
+            reserve(sys.getsizeof(table))
+    kind, number = owner
+    if kind == "source":
+        if opened.get(number) != source:
+            raise ReadEpochError("pattern declaration borrowed another original source")
+        expected_file = sources[number]["name"]
+        expected_line = definition["line"]
+    else:
+        occurrence = evaluations[number]
+        location = occurrence["location"]
+        visited = set()
+        reserve(sys.getsizeof(visited))
+        while isinstance(location, dict) and location.get("evaluation") is not None:
+            checkpoint()
+            parent = location["evaluation"]
+            if parent in visited or parent not in evaluations:
+                raise ReadEpochError("pattern declaration has cyclic or foreign eval ancestry")
+            visited.add(parent)
+            reserve(sys.getsizeof(visited))
+            location = evaluations[parent]["location"]
+        if not isinstance(location, dict) or location.get("visit") not in sources:
+            raise ReadEpochError("pattern declaration lacks its source-backed eval location")
+        expected_file = sources[location["visit"]]["name"]
+        expected_line = location["span"][1]
+    if (
+        definition["file"] != expected_file or definition["line"] != expected_line
+        or definition["offset"] != 0
+    ):
+        raise ReadEpochError("pattern declaration coordinates differ from its owning source occurrence")
+    begin = cursor = 0
+    first = line = 1
+    while cursor <= len(data):
+        checkpoint()
+        end = data.find(b"\n", cursor)
+        has_lf = end >= 0
+        if not has_lf:
+            end = len(data)
+        physical_end = end - 1 if has_lf and end > cursor and data[end - 1] == 13 else end
+        slash = physical_end
+        while slash > cursor and data[slash - 1] == 92:
+            slash -= 1
+        cursor = end + 1
+        if has_lf and (physical_end - slash) % 2:
+            line += 1
+            continue
+        start = first
+        first, line = line + 1, line + 1
+        span_begin = begin
+        begin = cursor
+        if kind == "source" and start != definition["line"]:
+            continue
+        chunk = data[span_begin:end]
+        decoded = chunk.decode("utf-8", "strict")
+        reserve(sys.getsizeof(chunk) + sys.getsizeof(decoded))
+        normalized = decoded.replace("\r\n", "\n")
+        if normalized is not decoded:
+            reserve(sys.getsizeof(normalized))
+        raw = normalized.removesuffix("\r")
+        if raw is not normalized:
+            reserve(sys.getsizeof(raw))
+        statement = make_lexical._collapse_make_continuations(raw)
+        reserve(sys.getsizeof(statement))
+        statement = make_lexical.strip_comment(statement, checkpoint=checkpoint, charge=reserve)
+        reserve(sys.getsizeof(statement))
+        boundary, colon = make_lexical._statement_boundary(statement, checkpoint=checkpoint, charge=reserve)
+        if boundary != "rule":
+            continue
+        target, assignment = statement[:colon], statement[colon + 1:]
+        reserve(sys.getsizeof(target) + sys.getsizeof(assignment))
+        boundary, operator = make_lexical._statement_boundary(assignment, checkpoint=checkpoint, charge=reserve)
+        if boundary != "assignment":
+            continue
+        name = re.sub(r"^\s*(?:(?:export|private|override)\s+)*", "", assignment[:operator]).strip()
+        reserve(sys.getsizeof(name))
+        if "$" not in name and name != definition["name"]:
+            continue
+        targets = target.replace("\\%", "%").split()
+        reserve(sys.getsizeof(targets) + sum(sys.getsizeof(item) for item in targets))
+        if "$" not in target and definition["pattern"] not in targets:
+            continue
+        value = re.sub(r"^(?:::=|::=|:=|\?=|\+=|!=|=)[ \t]*", "", assignment[operator:])
+        reserve(sys.getsizeof(value))
+        if not assignment[operator:].startswith("!=") and (
+                (definition["flags"] >> 23) & 7 != 1 or "$" not in value
+        ) and definition["value"] != value:
+            continue
+        return
+    raise ReadEpochError("pattern declaration lacks its pristine source statement")
+
+
+def simple_pattern_binding(definition, variable):
+    if (definition["flags"] >> 23) & 7 == 1 and (
+        variable[1] != definition["value"] or tuple(variable[3:]) != (
+            definition["file"], definition["line"], definition["offset"],
+        )
+    ):
+        raise ReadEpochError("simple pattern lost its effective value/source fields")
 
 
 def validate_completion_sites(selection, *, count_limit, file_limit):
@@ -1245,6 +1528,7 @@ def reconstruct_archive(trace, *, budget):
         for row in trace["sources"]
     }
     executions, visits, effects, evaluations, expansions = {}, {}, {}, {}, {}
+    templates, patterns = {}, {}
     for event in trace["events"]:
         budget.remaining()
         kind = event["kind"]
@@ -1252,6 +1536,7 @@ def reconstruct_archive(trace, *, budget):
             executions[event["exec"]] = {
                 "visits": [], "other": [], "image": None, "completions": [],
                 "effects": [], "evaluations": [], "expansions": [],
+                "pattern_templates": [], "patterns": [],
             }
         elif kind == "pass-entry":
             executions[event["exec"]]["entry"] = event
@@ -1306,6 +1591,30 @@ def reconstruct_archive(trace, *, budget):
                 event["expansion"], entry["seq"], event["seq"], entry["family"],
                 entry["target"], entry["text"], entry["cwd"],
             ))
+        elif kind == "pattern-template-entry":
+            templates[event["template"]] = {"entry": event}
+        elif kind == "pattern-template-completion":
+            retained = templates[event["template"]]
+            entry = retained["entry"]
+            retained["value"] = OriginalPatternTemplate(
+                event["template"], entry["seq"], event["seq"], tuple(event["owner"]),
+                sources[event["source"]], PatternDefinition(**event["definition"]),
+            )
+            executions[event["exec"]]["pattern_templates"].append(retained["value"])
+        elif kind == "pattern-entry":
+            patterns[event["pattern"]] = {"entry": event, "definition": None, "return": None}
+        elif kind == "pattern-definition":
+            patterns[event["pattern"]]["definition"] = event["seq"]
+        elif kind == "pattern-definition-return":
+            patterns[event["pattern"]]["return"] = event["seq"]
+        elif kind == "pattern-completion":
+            retained = patterns[event["pattern"]]
+            entry = retained["entry"]
+            executions[event["exec"]]["patterns"].append(OriginalPattern(
+                event["pattern"], entry["seq"], event["seq"], templates[entry["template"]]["value"],
+                entry["target"], event["cwd"], OriginalVariable(*event["variable"]),
+                retained["definition"], retained["return"],
+            ))
         elif kind == "other-open":
             executions[event["exec"]]["other"].append(OriginalOtherOpen(
                 event["seq"], event["pass"], event["visit"], event["name"], event["mode"], event["result"],
@@ -1324,7 +1633,7 @@ def reconstruct_archive(trace, *, budget):
                 number, started["parent"], started["name"], started["flags"], ended["flags"],
                 started["seq"], ended["seq"], ended["resolved"], ended["error"],
                 None if ended["source"] is None else sources[ended["source"]], tuple(visit["opens"]),
-                runtime_location_value(started.get("location")) if trace["version"] == RUNTIME_VERSION
+                runtime_location_value(started.get("location")) if trace["version"] in RUNTIME_VERSIONS
                 else None if started.get("location") is None else tuple(started["location"]),
             ))
         passes.append(OriginalPass(
@@ -1336,12 +1645,38 @@ def reconstruct_archive(trace, *, budget):
             tuple(sorted(value["effects"], key=lambda effect: effect.number)),
             tuple(sorted(value["evaluations"], key=lambda evaluation: evaluation.number)),
             tuple(value["expansions"]),
+            tuple(value["pattern_templates"]), tuple(value["patterns"]),
         ))
+    compiler_profile = None
+    compiler_executions = []
+    if "compiler" in trace.get("output_authority", {}):
+        reserve = lambda size: budget.charge("cache", size)
+        compiler_profile = native_compiler_profile(
+            trace["output_authority"]["compiler"],
+            count_limit=budget.limits.observation_count, reserve=reserve,
+        )
+        inventory = tuple(row["path"] for row in trace["selection"]["inventory"])
+        reserve(sys.getsizeof(inventory) + sys.getsizeof(compiler_executions))
+        for job in trace["output_authority"]["jobs"]:
+            tree = [row["event"] for row in trace["machine"]["events"]
+                    if row["kind"] == "native-tree" and row["dispatch"] == job["sequence"]]
+            reserve(sys.getsizeof(tree))
+            if any(row["kind"] == "exec" and (
+                row["path"] in {compiler_profile.driver, compiler_profile.frontend}
+                or "compiler" in row["admission"]
+            ) for row in tree):
+                compiler_executions.extend(native_compiler_lineage(
+                    tree, job, compiler_profile, sources=inventory,
+                    count_limit=budget.limits.observation_count, reserve=reserve,
+                ))
+                reserve(sys.getsizeof(compiler_executions))
+        reserve(sys.getsizeof(tuple(compiler_executions)))
     return OriginalArchive(
         trace["scope"], tuple(passes), tuple(sources.values()), trace["version"],
-        tuple(trace["selection"]["names"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION}
+        tuple(trace["selection"]["names"]) if trace["version"] in MACHINE_VERSIONS
         else tuple(tuple(row) for row in trace.get("selection", ())),
-        tuple(trace["selection"]["inventory"]) if trace["version"] in {COMPLETION_VERSION, RUNTIME_VERSION} else (),
+        tuple(trace["selection"]["inventory"]) if trace["version"] in MACHINE_VERSIONS else (),
+        compiler_profile, tuple(compiler_executions),
     )
 
 
@@ -1400,7 +1735,624 @@ def native_execution_input(argv, cwd):
     return {"argv": argv, "cwd": cwd}
 
 
-def native_job_tree(events, job, parent, executables, *, count_limit):
+class OriginalCompilerProfile(NamedTuple):
+    identity: str
+    driver: str
+    frontend: str
+    files: tuple
+    directories: tuple
+    probes: tuple
+    interpreter: str
+    libc: str
+    environment: tuple
+
+
+class OriginalCompilerExecution(NamedTuple):
+    dispatch: int
+    pid: int
+    generation: int
+    admission: int
+    role: str
+    profile: OriginalCompilerProfile
+    driver: tuple | None
+    argv: tuple
+    cwd: str
+    sources: tuple
+    code: tuple
+    includes: tuple
+    outputs: tuple
+    resources: tuple
+    environment: tuple
+
+
+def dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/cc",)):
+    if not argv or argv[0] not in driver_spellings or len(outputs) != 1 or not outputs[0].endswith(".d"):
+        raise MakeProbeError("dependency profile requires host cc and one declared .d output")
+    modes, includes = set(), []
+    translation_unit = target = None
+    arguments = iter(argv[1:])
+    for argument in arguments:
+        if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
+            if argument in modes:
+                raise MakeProbeError("duplicate dependency mode")
+            modes.add(argument)
+            continue
+        option = next((name for name in ("-iquote", "-MT", "-I", "-D", "-U") if argument.startswith(name)), None)
+        if option is not None:
+            value = argument[len(option):] if argument != option else next(arguments, "")
+            if not value or value.startswith("@") or "\n" in value or "\r" in value:
+                raise MakeProbeError("invalid or missing dependency option value")
+            if option in {"-I", "-iquote"}:
+                if value.startswith(("=", "$SYSROOT")):
+                    raise MakeProbeError("sysroot-special dependency include operand is unsupported")
+                if value.startswith("-"):
+                    raise MakeProbeError("dependency include path is not repository-relative")
+                includes.append(value if value == "." else relative_path(value))
+            elif option in {"-D", "-U"}:
+                name, separator, _ = value.partition("=")
+                if not re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) or option == "-U" and separator:
+                    raise MakeProbeError("dependency macro requires a symbolic name")
+            else:
+                if target is not None or not re.fullmatch("[A-Za-z0-9_./+%-]+", value) or value.startswith("-"):
+                    raise MakeProbeError("invalid or duplicate dependency target")
+                target = relative_path(value)
+            continue
+        if argument.startswith(("-", "@")) or translation_unit is not None or not argument.endswith(".c"):
+            raise MakeProbeError("unsupported dependency compiler option or source")
+        translation_unit = relative_path(argument)
+    if not {"-E", "-MM", "-nostdinc", "-undef"} <= modes or target is None or translation_unit not in sources:
+        raise MakeProbeError("dependency profile requires exact modes, target and declared C source")
+    return tuple(dict.fromkeys(includes))
+
+
+COMPILER_BASELINE_NAMES = frozenset({
+    "HOME", "LANG", "LC_ALL", "PATH", "TZ", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL",
+    "GIT_NO_REPLACE_OBJECTS", "GIT_OPTIONAL_LOCKS", "PYTHONDONTWRITEBYTECODE",
+    "SOURCE_DATE_EPOCH", "TMPDIR", "PWD", "MAKELEVEL", "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
+})
+
+
+def compiler_profile_name(name):
+    return (
+        re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) is not None
+        and name not in COMPILER_BASELINE_NAMES
+        and not name.startswith(("LD_", "VO_", "GIT_", "GCC_", "COLLECT_", "OFFLOAD_"))
+        and name not in {"GNUMAKEFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH",
+                         "OBJC_INCLUDE_PATH", "COMPILER_PATH", "LIBRARY_PATH",
+                         "DEPENDENCIES_OUTPUT", "SUNPRO_DEPENDENCIES"}
+    )
+
+
+def compiler_make_environment(environment, argv):
+    """Derive GNU Make's finite command-line inheritance from the issued argv."""
+    assignments = []
+    for argument in argv[1:]:
+        if "=" not in argument:
+            continue
+        name, value = argument.split("=", 1)
+        if (
+            not compiler_profile_name(name)
+            or any(character.isspace() or character in "\\#$" for character in argument)
+        ):
+            raise ReadEpochError("compiler Make profile has unsupported command-line inheritance")
+        assignments.append((name, value))
+    result = dict(environment, PWD="/repo", MAKELEVEL="1", MAKEFLAGS="", MFLAGS="")
+    if assignments:
+        result.update(assignments)
+        result["MAKEFLAGS"] = " -- " + " ".join(name + "=" + value for name, value in reversed(assignments))
+        result["MAKEOVERRIDES"] = "${-*-command-variables-*-}"
+    return result
+
+
+def compiler_environment(environment, expected, *, frontend, driver):
+    """Validate the closed baseline and the immutable driver's finite additions."""
+    baseline = set(COMPILER_BASELINE_NAMES)
+    flags = expected.get("MAKEFLAGS", "") if isinstance(expected, dict) else ""
+    if isinstance(flags, str) and flags.startswith(" -- "):
+        for assignment in flags[4:].split(" "):
+            name, separator, value = assignment.partition("=")
+            if (
+                not separator or not compiler_profile_name(name)
+                or expected.get(name) != value or expected.get("MAKEOVERRIDES") != "${-*-command-variables-*-}"
+            ):
+                raise ReadEpochError("compiler Make profile differs from its issued inheritance")
+            baseline.add(name)
+    additions = {"COLLECT_GCC", "COLLECT_GCC_OPTIONS", "OFFLOAD_TARGET_NAMES", "OFFLOAD_TARGET_DEFAULT"}
+    for values in (environment, expected):
+        if (
+            not isinstance(values, dict) or len(values) > len(baseline) + len(additions)
+            or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                or "\0" in value or any(0xD800 <= ord(char) <= 0xDFFF for char in value)
+                for key, value in values.items()
+            )
+            or sum(len(key.encode()) + len(value.encode()) + 2 for key, value in values.items()) > 65536
+        ):
+            raise ReadEpochError("compiler environment exceeds its closed actual input extent")
+    if (
+        type(frontend) is not bool or not isinstance(driver, str) or not driver
+        or not set(expected) <= baseline
+        or any(environment.get(key) != value for key, value in expected.items())
+        or not set(environment) - set(expected) <= (additions if frontend else set())
+        or frontend and environment.get("COLLECT_GCC") != driver
+        or any(not environment[key] for key in set(environment) - set(expected))
+    ):
+        raise ReadEpochError("compiler environment differs from its issued baseline/driver transformation")
+
+
+def native_compiler_profile(value, *, count_limit, reserve=lambda size: None):
+    fields = {
+        "identity", "driver", "frontend", "files", "directories", "probes",
+        "interpreter", "libc", "environment",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ReadEpochError("compiler profile has an open or incomplete shape")
+    reserve(len(encoded(value)))
+
+    def path(name):
+        return (
+            isinstance(name, str) and name.startswith("/")
+            and posixpath.normpath(name) == name and not name.startswith("//")
+            and not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in name)
+            and len(name.encode("utf-8")) <= 4096
+        )
+
+    def ordered(rows):
+        return (
+            isinstance(rows, list) and len(rows) <= count_limit
+            and all(path(name) for name in rows) and rows == sorted(set(rows))
+        )
+
+    files = value["files"]
+    if (
+        not isinstance(files, list) or not 2 <= len(files) <= min(count_limit, 64)
+        or any(
+            not isinstance(row, list) or len(row) != 3 or not path(row[0])
+            or type(row[1]) is not int or not 0 < row[1] < 1 << 63
+            or not isinstance(row[2], str) or re.fullmatch("[0-9a-f]{64}", row[2]) is None
+            for row in files
+        )
+        or [row[0] for row in files] != sorted({row[0] for row in files})
+        or not ordered(value["directories"]) or not ordered(value["probes"])
+        or any(not path(value[key]) for key in ("driver", "frontend", "interpreter", "libc"))
+        or value["driver"] == value["frontend"]
+        or not {value[key] for key in ("driver", "frontend", "interpreter", "libc")}
+        <= {row[0] for row in files}
+    ):
+        raise ReadEpochError("compiler profile differs from its finite complete image/search closure")
+    environment = value["environment"]
+    if (
+        not isinstance(environment, dict) or len(environment) > count_limit
+        or any(
+            not isinstance(key, str) or re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", key) is None
+            or not isinstance(item, str) or "\0" in item
+            or any(0xD800 <= ord(char) <= 0xDFFF for char in item)
+            or len(item.encode("utf-8")) > 65536
+            for key, item in environment.items()
+        )
+        or not isinstance(value["identity"], str)
+        or value["identity"] != hashlib.sha256(encoded({
+            key: item for key, item in value.items() if key != "identity"
+        })).hexdigest()
+    ):
+        raise ReadEpochError("compiler profile lost its closed environment or issued identity")
+    compiler_environment(environment, environment, frontend=False, driver=value["driver"])
+    result = OriginalCompilerProfile(
+        value["identity"], value["driver"], value["frontend"], tuple(tuple(row) for row in files),
+        tuple(value["directories"]), tuple(value["probes"]), value["interpreter"], value["libc"],
+        tuple(sorted(environment.items())),
+    )
+    reserve(sys.getsizeof(result) + sum(sys.getsizeof(row) for row in result if isinstance(row, tuple)))
+    reserve(sum(sys.getsizeof(row) for row in result.files) + sum(sys.getsizeof(row) for row in result.environment))
+    return result
+
+
+def native_compiler_lineage(events, job, profile, *, sources, count_limit, reserve=lambda size: None):
+    """Compiler semantics after the ordinary closed native job tree is validated."""
+    if not isinstance(profile, OriginalCompilerProfile):
+        raise ReadEpochError("compiler lineage requires a validated issued profile")
+    nodes, executions = {}, []
+    reserve(sys.getsizeof(nodes) + sys.getsizeof(executions))
+    root = job["pid"]
+    if not isinstance(events, list) or not events or len(events) > count_limit:
+        raise ReadEpochError("compiler lineage exceeds its finite native tree extent")
+    for event in events:
+        reserve(len(encoded(event)))
+        kind, pid = event["kind"], event["pid"]
+        if not nodes:
+            if kind != "exec" or pid != root:
+                raise ReadEpochError("compiler lineage lost its original native root")
+            nodes[pid] = {"parent": None, "generation": 0, "actor": None, "fork": None, "retired": False}
+            reserve(sys.getsizeof(nodes) + sys.getsizeof(nodes[pid]))
+        node = nodes.get(pid)
+        if node is None or node["retired"]:
+            raise ReadEpochError("compiler lineage refers to an unknown or retired process")
+        if kind == "fork":
+            child = event["child"]
+            if child in nodes:
+                raise ReadEpochError("compiler lineage reused an actual child")
+            nodes[child] = {
+                "parent": pid, "generation": 0, "actor": None,
+                "fork": node["actor"], "retired": False,
+            }
+            reserve(sys.getsizeof(nodes) + sys.getsizeof(nodes[child]))
+        elif kind == "exec":
+            inputs = native_execution_input(event["argv"], event["cwd"])
+            reserve(sys.getsizeof(inputs))
+            if event["generation"] != node["generation"] + 1:
+                raise ReadEpochError("compiler lineage changed its actual exec generation")
+            node["generation"] = event["generation"]
+            binding = event["admission"].get("compiler")
+            previous = node["actor"]
+            inherited, node["fork"] = node["fork"], None
+            node["actor"] = None
+            if binding is None:
+                if event["path"] in {profile.driver, profile.frontend}:
+                    raise ReadEpochError("compiler image lacks its issued actor binding")
+                continue
+            if (
+                not isinstance(binding, dict)
+                or set(binding) != {"profile", "role", "driver", "sources", "code", "includes", "environment"}
+                or binding["profile"] != profile.identity or not isinstance(binding["role"], str)
+                or binding["role"] not in {"driver", "frontend"}
+                or inputs["cwd"] != "/repo"
+                or type(event["admission"]["sequence"]) is not int or event["admission"]["sequence"] < 1
+            ):
+                raise ReadEpochError("compiler actor has an open or foreign profile binding")
+            compiler_environment(
+                binding["environment"], dict(profile.environment),
+                frontend=binding["role"] == "frontend", driver=profile.driver,
+            )
+            environment = tuple(sorted(binding["environment"].items()))
+            reserve(sys.getsizeof(environment) + sum(sys.getsizeof(row) for row in environment))
+            for key in ("sources", "code", "includes"):
+                rows = binding[key]
+                if (
+                    not isinstance(rows, list) or len(rows) > count_limit
+                    or any(not isinstance(name, str) for name in rows) or len(set(rows)) != len(rows)
+                ):
+                    raise ReadEpochError("compiler actor scope is not finite and unique")
+                for name in rows:
+                    if key == "includes" and name == ".":
+                        continue
+                    relative_path(name)
+                if key != "includes" and any(name not in sources for name in rows):
+                    raise ReadEpochError("compiler actor source scope escapes its immutable inventory")
+            reference = (pid, event["generation"], event["admission"]["sequence"])
+            if binding["role"] == "driver":
+                if event["path"] != profile.driver or binding["driver"] is not None:
+                    raise ReadEpochError("compiler driver differs from its issued image/operation")
+                includes = dependency_arguments(
+                    inputs["argv"], binding["sources"], event["admission"]["outputs"],
+                    driver_spellings=("cc", "/usr/bin/cc", profile.driver),
+                )
+                if tuple(binding["includes"]) != includes:
+                    raise ReadEpochError("compiler driver include scope differs from its actual safe arguments")
+            else:
+                parent = nodes.get(node["parent"])
+                if (
+                    event["path"] != profile.frontend or parent is None or parent["retired"]
+                    or inherited is None or inherited.role != "driver"
+                    or not isinstance(binding["driver"], list) or len(binding["driver"]) != 3
+                    or any(type(number) is not int or number < 1 for number in binding["driver"])
+                    or binding["driver"] != [inherited.pid, inherited.generation, inherited.admission]
+                    or parent["actor"] is not inherited or event["parent"] != inherited.pid
+                    or any(tuple(binding[key]) != getattr(inherited, key)
+                           for key in ("sources", "code", "includes"))
+                    or tuple(event["admission"]["outputs"]) != inherited.outputs
+                    or tuple(tuple(row) for row in event["admission"].get("resources", ())) != inherited.resources
+                    or previous is not None
+                ):
+                    raise ReadEpochError("compiler frontend lost its exact live driver-at-fork lineage/scope")
+            actor = OriginalCompilerExecution(
+                job["sequence"], pid, event["generation"], event["admission"]["sequence"],
+                binding["role"], profile,
+                None if binding["driver"] is None else tuple(binding["driver"]),
+                tuple(inputs["argv"]), inputs["cwd"], tuple(binding["sources"]),
+                tuple(binding["code"]), tuple(binding["includes"]), tuple(event["admission"]["outputs"]),
+                tuple(tuple(row) for row in event["admission"].get("resources", ())),
+                environment,
+            )
+            node["actor"] = actor
+            executions.append(actor)
+            reserve(sys.getsizeof(actor) + sys.getsizeof(executions))
+            reserve(sum(sys.getsizeof(value) for value in actor if isinstance(value, tuple)))
+        elif kind == "exit":
+            node["actor"] = None
+            node["retired"] = True
+    if any(not node["retired"] for node in nodes.values()):
+        raise ReadEpochError("compiler lineage omitted an actual terminal process")
+    if not executions:
+        raise ReadEpochError("compiler lineage omitted its issued actual driver/frontend")
+    drivers = {(row.pid, row.generation, row.admission) for row in executions if row.role == "driver"}
+    frontends = [row.driver for row in executions if row.role == "frontend"]
+    reserve(sys.getsizeof(drivers) + sys.getsizeof(frontends))
+    if len(frontends) != len(set(frontends)) or set(frontends) != drivers:
+        raise ReadEpochError("compiler lineage omitted or reused an issued driver/frontend operation")
+    result = tuple(executions)
+    reserve(sys.getsizeof(result))
+    return result
+
+
+def native_fork_references(events, *, reserve=lambda size: None):
+    """Replay parent occurrences after the ordinary writable tree is validated."""
+    actors, pending, result = {}, {}, {}
+    reserve(sum(sys.getsizeof(value) for value in (actors, pending, result)))
+    for event in events:
+        pid, kind = event["pid"], event["kind"]
+        if kind == "fork":
+            pending[event["child"]] = actors.get(pid)
+            reserve(sys.getsizeof(pending))
+        elif kind == "exec":
+            reference = (pid, event["generation"], event["admission"]["sequence"])
+            index = (pid, event["generation"])
+            result[index] = pending.pop(pid, None)
+            actors[pid] = reference
+            reserve(sys.getsizeof(reference) + sys.getsizeof(index) + sys.getsizeof(actors) + sys.getsizeof(result))
+        elif kind == "exit":
+            actors.pop(pid, None)
+            pending.pop(pid, None)
+    return result
+
+
+def native_image_admission(admission, inputs, outputs, resources, *, resource_field, compiler_profile=None):
+    if __package__:
+        from .native_resources import resource_plan
+    else:
+        from native_resources import resource_plan
+    if (
+        not isinstance(admission, dict)
+        or set(admission) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
+            {"resources"} if resource_field else set()
+        ) | ({"compiler"} if compiler_profile is not None and "compiler" in admission else set())
+        or type(admission["sequence"]) is not int or admission["sequence"] < 1
+        or any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
+               for key in ("owner", "closure", "input_sha256"))
+        or not isinstance(admission["outputs"], list)
+        or any(not isinstance(path, str) or path not in outputs for path in admission["outputs"])
+        or len(set(admission["outputs"])) != len(admission["outputs"])
+        or inputs is not None and admission["input_sha256"] != hashlib.sha256(encoded(inputs)).hexdigest()
+    ):
+        raise ReadEpochError("native image lacks its closed Command owner and operands")
+    try:
+        selected = resource_plan(admission.get("resources", ()))
+        if any(row not in resource_plan(resources) for row in selected):
+            raise ReadEpochError("native image resources escape its original Command owner")
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
+    if admission["owner"] != native_command_owner(
+        admission["closure"], admission["outputs"], admission.get("resources", ()),
+    ):
+        raise ReadEpochError("native image operands differ from its issued Command owner")
+    if "compiler" in admission:
+        binding = admission["compiler"]
+        if (
+            not isinstance(compiler_profile, OriginalCompilerProfile) or not isinstance(binding, dict)
+            or set(binding) != {"profile", "role", "driver", "sources", "code", "includes", "environment"}
+            or binding["profile"] != compiler_profile.identity or not isinstance(binding["role"], str)
+            or binding["role"] not in {"driver", "frontend"}
+        ):
+            raise ReadEpochError("native compiler admission lacks its issued profile")
+        compiler_environment(
+            binding["environment"], dict(compiler_profile.environment),
+            frontend=binding["role"] == "frontend", driver=compiler_profile.driver,
+        )
+
+
+def _native_range_failure_binding(event, binding):
+    if (
+        event.get("owner") != binding[3] or event.get("source") != binding[2]
+        or event.get("destination") is not None
+    ):
+        raise ReadEpochError("native failed close_range changed its affected object binding")
+
+
+def _native_lock_range(event):
+    if (
+        set(event) != {"seq", "kind", "pid", "first", "last", "flags", "result", "bindings"}
+        or type(event["first"]) is not int or type(event["last"]) is not int
+        or not 0 <= event["first"] <= event["last"] < 1 << 32
+        or type(event["flags"]) is not int or event["flags"] != 0
+        or type(event["result"]) is not int or not -4095 <= event["result"] <= 0
+        or not isinstance(event["bindings"], list) or not event["bindings"]
+        or any(
+            not isinstance(binding, dict) or set(binding) != {"fd", "serial", "description"}
+            or any(type(binding[key]) is not int for key in binding)
+            or not event["first"] <= binding["fd"] <= event["last"]
+            or binding["serial"] < 1 or binding["description"] < 1
+            for binding in event["bindings"]
+        )
+        or [binding["fd"] for binding in event["bindings"]] != sorted({
+            binding["fd"] for binding in event["bindings"]
+        })
+    ):
+        raise ReadEpochError("native job tree has an invalid inherited lock close_range")
+
+
+def native_root_inputs(command_line, environment):
+    def words(data):
+        if not isinstance(data, bytes) or not data or not data.endswith(b"\0"):
+            raise ReadEpochError("native root input lacks its complete NUL extent")
+        try:
+            return [word.decode("utf-8", "strict") for word in data[:-1].split(b"\0")]
+        except UnicodeDecodeError as error:
+            raise ReadEpochError("native root input is not strict UTF-8") from error
+
+    argv = words(command_line)
+    values = {}
+    for word in words(environment):
+        key, separator, value = word.partition("=")
+        if not separator or not key or key in values:
+            raise ReadEpochError("native root environment has an invalid or duplicate key")
+        values[key] = value
+    return argv, values
+
+
+def validate_native_root(value, *, argv, cwd, environment, returncode, machine=None):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"version", "pid", "argv", "cwd", "environment", "exit_stop", "wait"}
+        or type(value["version"]) is not int or value["version"] != 1
+        or type(value["pid"]) is not int or not 0 < value["pid"] < 1 << 31
+        or value["argv"] != argv or value["cwd"] != cwd or value["environment"] != environment
+        or type(value["exit_stop"]) is not int or type(value["wait"]) is not int
+        or not 0 <= value["wait"] < 1 << 32 or value["exit_stop"] != value["wait"]
+        or not (os.WIFEXITED(value["wait"]) or os.WIFSIGNALED(value["wait"]))
+        or type(returncode) is not int or os.waitstatus_to_exitcode(value["wait"]) != returncode
+    ):
+        raise ReadEpochError("native root report differs from its actual request or terminal")
+    native_execution_input(value["argv"], value["cwd"])
+    if machine is not None and {
+        row["pid"] for row in machine["events"] if row["kind"] == "execute" and row["make"]
+    } != {value["pid"]}:
+        raise ReadEpochError("native root report differs from its actual machine Make PID")
+    if machine is not None and machine["version"] in FINITE_MACHINE_VERSIONS and (
+        len(machine["roots"]) != 1 or machine["roots"][0]["initial"] != value
+    ):
+        raise ReadEpochError("native root report differs from its actual machine root inputs")
+    return value
+
+
+def native_request_plan(value, *, count_limit, file_limit):
+    if not isinstance(value, list) or not 1 <= len(value) <= count_limit:
+        raise ReadEpochError("finite native plan has an invalid request extent")
+    result = []
+    total_size = 0
+    for request in value:
+        if (
+            not isinstance(request, dict) or set(request) != {"argv", "cwd", "environment"}
+            or not isinstance(request["environment"], dict) or not request["environment"]
+            or any(
+                not isinstance(key, str) or not key or "=" in key or "\0" in key
+                or not isinstance(text, str) or "\0" in text
+                or any(0xD800 <= ord(char) <= 0xDFFF for char in key + text)
+                for key, text in request["environment"].items()
+            )
+        ):
+            raise ReadEpochError("finite native plan has invalid initial inputs")
+        native_execution_input(request["argv"], request["cwd"])
+        try:
+            size = len(encoded(request))
+        except UnicodeError as error:
+            raise ReadEpochError("finite native plan inputs are not UTF-8") from error
+        total_size += size
+        if total_size > file_limit:
+            raise ReadEpochError("finite native plan exceeds its existing file bound")
+        result.append((
+            tuple(request["argv"]), request["cwd"],
+            tuple(sorted(request["environment"].items())),
+        ))
+    return tuple(result)
+
+
+def validate_native_results(value, plan, trace, *, count_limit, file_limit, output_limit, reserve):
+    roots = trace["machine"].get("roots")
+    if (
+        trace["machine"]["version"] not in FINITE_MACHINE_VERSIONS or not isinstance(value, list)
+        or len(value) != len(plan) or len(value) > count_limit
+        or not isinstance(roots, list) or len(roots) != len(plan)
+    ):
+        raise ReadEpochError("finite native results omit their complete root plan")
+
+    def captured(text):
+        if not isinstance(text, str) or len(text) > 4 * ((file_limit + 2) // 3):
+            raise ReadEpochError("finite native capture exceeds its existing file bound")
+        reserve(3 * ((len(text) + 3) // 4))
+        try:
+            data = base64.b64decode(text, validate=True)
+        except (ValueError, UnicodeError) as error:
+            raise ReadEpochError("finite native capture is not bounded base64") from error
+        if len(data) > file_limit or base64.b64encode(data).decode("ascii") != text:
+            raise ReadEpochError("finite native capture exceeds its existing file bound")
+        return data
+
+    total_output = 0
+    decoded = []
+    latest = {}
+    machine_index = 0
+    output_paths = {"/repo/" + path for path in trace.get("output_authority", {}).get("paths", ())}
+    reserve(
+        sys.getsizeof(latest) + sys.getsizeof(output_paths)
+        + sum(sys.getsizeof(path) for path in output_paths)
+    )
+    for ordinal, (row, request, boundary) in enumerate(zip(value, plan, roots), 1):
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"ordinal", "initial", "stdout", "stderr", "observation", "outputs"}
+            or type(row["ordinal"]) is not int or row["ordinal"] != ordinal
+            or row["initial"] != boundary["initial"]
+            or not isinstance(row["outputs"], list) or len(row["outputs"]) > count_limit
+        ):
+            raise ReadEpochError("finite native result has a foreign or reordered root")
+        argv, cwd, environment = request
+        validate_native_root(
+            row["initial"], argv=list(argv), cwd=cwd, environment=dict(environment), returncode=0,
+        )
+        stdout, stderr = captured(row["stdout"]), captured(row["stderr"])
+        total_output += len(stdout) + len(stderr)
+        if total_output > output_limit:
+            raise ReadEpochError("finite native results exceed their cumulative process output bound")
+        observation = captured(row["observation"])
+        while machine_index < boundary["last"]:
+            event = trace["machine"]["events"][machine_index]
+            machine_index += 1
+            if event["kind"] == "native-output":
+                effect = event["event"]
+                if effect["kind"] == "output-settled":
+                    before = sys.getsizeof(latest)
+                    latest[effect["path"]] = effect
+                    if sys.getsizeof(latest) > before:
+                        reserve(sys.getsizeof(latest))
+                elif effect["kind"] == "output-retire":
+                    latest.pop(effect["destination"], None)
+                elif effect["kind"] == "output-replace":
+                    previous = latest.pop(effect["source"], None)
+                    if previous is None:
+                        raise ReadEpochError("finite native output replacement lost its settlement")
+                    replacement = dict(effect, sha256=previous["sha256"])
+                    reserve(sys.getsizeof(replacement))
+                    latest[effect["path"]] = replacement
+        outputs = []
+        names = set()
+        for output in row["outputs"]:
+            if (
+                not isinstance(output, dict)
+                or set(output) != {"path", "owner", "serial", "revision", "identity", "data"}
+                or not isinstance(output["path"], str) or output["path"] in names
+                or output["path"] not in output_paths
+                or any(type(output[key]) is not int for key in ("owner", "serial", "revision"))
+                or not isinstance(output["identity"], list) or len(output["identity"]) != 7
+                or any(type(value) is not int for value in output["identity"])
+                or output["identity"][2] & 0o7000
+            ):
+                raise ReadEpochError("finite native output escapes its issued namespace")
+            data = captured(output["data"])
+            try:
+                validate_publication_identity(
+                    output["identity"], stat.S_IMODE(output["identity"][2]), len(data),
+                )
+            except ChannelError as error:
+                raise ReadEpochError(str(error)) from error
+            settlement = latest.get(output["path"])
+            if (
+                settlement is None
+                or any(output[key] != settlement[key] for key in (
+                    "path", "owner", "serial", "revision", "identity",
+                ))
+                or hashlib.sha256(data).hexdigest() != settlement["sha256"]
+            ):
+                raise ReadEpochError("finite native output differs from its actual settled version")
+            names.add(output["path"])
+            outputs.append((output["path"][6:], data, stat.S_IMODE(output["identity"][2])))
+        if names != latest.keys() & output_paths:
+            raise ReadEpochError("finite native result omitted an actual settled output")
+        decoded.append((stdout, stderr, observation, tuple(outputs)))
+        reserve(sys.getsizeof(outputs) + sys.getsizeof(decoded) + sys.getsizeof(decoded[-1]))
+    return tuple(decoded)
+
+
+def native_job_tree(events, job, parent, executables, *, count_limit, writable=False,
+                    compiler_profile=None, compiler_sources=(), reserve=lambda size: None):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")
     nodes, signals = {}, []
@@ -1412,10 +2364,13 @@ def native_job_tree(events, job, parent, executables, *, count_limit):
             raise ReadEpochError("native job tree has an invalid event")
         kind = event["kind"]
         fields = {
-            "exec": {"parent", "generation", "path", "argv", "cwd"},
+            "exec": {"parent", "generation", "path", "argv", "cwd"} | (
+                {"admission"} if writable else set()
+            ),
             "fork": {"child"}, "start": set(), "exit": {"status"},
             "signal": {"child", "code", "status"},
             "pipe-error": {"syscall", "error"},
+            **({"close-range": {"first", "last", "flags", "result", "bindings"}} if writable else {}),
         }
         if (
             kind not in fields or set(event) != {"seq", "kind", "pid"} | fields[kind]
@@ -1464,8 +2419,21 @@ def native_job_tree(events, job, parent, executables, *, count_limit):
                 or type(event["error"]) is not int or event["error"] != errno.EPIPE
             ):
                 raise ReadEpochError("native job tree has an invalid owned pipe error")
+        elif kind == "close-range":
+            _native_lock_range(event)
         elif kind == "exec":
-            native_execution_input(event["argv"], event["cwd"])
+            inputs = native_execution_input(event["argv"], event["cwd"])
+            if writable:
+                root_admission = job.get("admission")
+                if not isinstance(root_admission, dict) or not isinstance(root_admission.get("outputs"), list):
+                    raise ReadEpochError("native job tree lacks its root Command owner")
+                native_image_admission(
+                    event["admission"], inputs, root_admission["outputs"],
+                    root_admission.get("resources", ()), resource_field="resources" in root_admission,
+                    compiler_profile=compiler_profile,
+                )
+                if number == 1 and event["admission"] != root_admission:
+                    raise ReadEpochError("native root image changed its original Command owner")
             if (
                 type(event["parent"]) is not int or event["parent"] != node["parent"]
                 or type(event["generation"]) is not int or event["generation"] != node["generation"] + 1
@@ -1490,6 +2458,16 @@ def native_job_tree(events, job, parent, executables, *, count_limit):
         code = 1 if os.WIFEXITED(status) else 3 if os.WCOREDUMP(status) else 2
         if event["status"] != expected or event["code"] != code:
             raise ReadEpochError("native child signal differs from its actual terminal status")
+    if compiler_profile is not None and any(
+        event["kind"] == "exec" and (
+            event["path"] in {compiler_profile.driver, compiler_profile.frontend}
+            or "compiler" in event["admission"]
+        ) for event in events
+    ):
+        native_compiler_lineage(
+            events, job, compiler_profile, sources=compiler_sources, count_limit=count_limit,
+            reserve=reserve,
+        )
     return nodes
 
 
@@ -1511,13 +2489,93 @@ def native_job_context(value):
     return value
 
 
-def validate_machine_observations(value, trace, *, count_limit):
+def _machine_events(value, *, count_limit):
     if (
-        not isinstance(value, dict) or set(value) != {"version", "events", "closed"}
-        or type(value["version"]) is not int or value["version"] != 1 or value["closed"] is not True
+        not isinstance(value, dict)
+        or type(value.get("version")) is not int or value["version"] not in {1, 2, 3, 4}
+        or set(value) != {"version", "events", "closed"} | ({"roots"} if value["version"] in FINITE_MACHINE_VERSIONS else set())
+        or value["closed"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
     ):
         raise ReadEpochError("incomplete native machine observations")
+    return value["events"]
+
+def native_machine_roots(value, trace, *, count_limit, reserve):
+    roots = value["roots"]
+    if (
+        trace["version"] not in RUNTIME_VERSIONS
+        or not isinstance(roots, list) or not 1 <= len(roots) <= count_limit
+    ):
+        raise ReadEpochError("finite native machine lacks its complete root extent")
+    pids, next_machine, next_exec = set(), 1, 1
+    reserve(sys.getsizeof(pids))
+    for ordinal, row in enumerate(roots, 1):
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"ordinal", "initial", "first", "last", "first_exec", "last_exec"}
+            or any(type(row[key]) is not int for key in ("ordinal", "first", "last", "first_exec", "last_exec"))
+            or row["ordinal"] != ordinal or row["first"] != next_machine
+            or not row["first"] <= row["last"] <= len(value["events"])
+            or row["first_exec"] != next_exec
+            or not row["first_exec"] <= row["last_exec"] <= len(trace["events"])
+            or not isinstance(row["initial"], dict)
+        ):
+            raise ReadEpochError("finite native machine has a foreign or unordered root range")
+        initial = row["initial"]
+        if (
+            not {"argv", "cwd", "environment"} <= initial.keys()
+            or not isinstance(initial["environment"], dict)
+            or any(
+                not isinstance(key, str) or not key or "=" in key or "\0" in key
+                or not isinstance(item, str) or "\0" in item
+                or any(0xD800 <= ord(char) <= 0xDFFF for word in (key, item) for char in word)
+                for key, item in initial["environment"].items()
+            )
+        ):
+            raise ReadEpochError("finite native root has malformed initial inputs")
+        validate_native_root(
+            initial, argv=initial["argv"], cwd=initial["cwd"],
+            environment=initial["environment"], returncode=0,
+        )
+        if initial["pid"] in pids:
+            raise ReadEpochError("finite native machine reused an actual root PID")
+        first = value["events"][row["first"] - 1]
+        if (
+            not isinstance(first, dict)
+            or
+            first.get("kind") != "clear" or first.get("pid") != initial["pid"]
+            or first.get("exec") != row["first_exec"] - 1
+        ):
+            raise ReadEpochError("finite native root omits its actual initial register clear")
+        previous_size = sys.getsizeof(pids)
+        pids.add(initial["pid"])
+        if sys.getsizeof(pids) > previous_size:
+            reserve(sys.getsizeof(pids))
+        next_machine, next_exec = row["last"] + 1, row["last_exec"] + 1
+    if next_machine != len(value["events"]) + 1 or next_exec != trace["events"][-1]["execs"] + 1:
+        raise ReadEpochError("finite native machine omits actual root rows or executions")
+    return roots
+
+
+def native_root_owner(roots, execution):
+    index = bisect_right(roots, execution, key=lambda row: row["first_exec"]) - 1
+    if index < 0 or execution > roots[index]["last_exec"]:
+        raise ReadEpochError("finite native execution has no actual root owner")
+    return roots[index]["initial"]["pid"]
+
+
+def validate_machine_observations(value, trace, *, count_limit, reserve=lambda size: None):
+    _machine_events(value, count_limit=count_limit)
+    roots = native_machine_roots(
+        value, trace, count_limit=count_limit, reserve=reserve,
+    ) if value["version"] in FINITE_MACHINE_VERSIONS else None
+    patterns = trace["version"] in PATTERN_VERSIONS
+    if (value["version"] in {3, 4}) != patterns:
+        raise ReadEpochError("native machine version differs from the issued pattern protocol")
+    def make_owner(execution):
+        if roots is None:
+            return make_pid
+        return native_root_owner(roots, execution)
     common = {"seq", "kind", "trace_seq", "pid", "exec", "pass"}
     fields = {
         "clear": {"registers"}, "arm": {"registers", "slots"},
@@ -1527,7 +2585,7 @@ def validate_machine_observations(value, trace, *, count_limit):
         "native-policy": {"dispatch", "child", "context", "ignored", "status"},
     }
     purposes = {"pass-entry", "source-entry", "source-return", "pass-return", "assignment-completion"}
-    runtime = trace["version"] == RUNTIME_VERSION
+    runtime = trace["version"] in RUNTIME_VERSIONS
     if runtime:
         fields["execute"] |= {"input_sha256"}
         purposes |= {"effect-entry", "effect-return", "effect-completion", "eval-entry", "eval-return", "expansion-entry", "expansion-return"}
@@ -1537,16 +2595,44 @@ def validate_machine_observations(value, trace, *, count_limit):
             "expansion-input": {"expansion", "sha256"},
             "native-tree": {"dispatch", "event", "sha256"},
         })
+    if trace["version"] in WRITABLE_VERSIONS:
+        fields["execute"].add("admission_owner")
+        fields["native-output"] = {"dispatch", "event", "sha256"}
+        fields["generated-source-entry"] = {
+            "visit", "owner", "serial", "revision", "path", "identity", "sha256",
+        }
     runtime_bindings = {kind: set() for kind in ("effect-input", "effect-result", "eval-buffer", "expansion-input")}
+    pattern_bindings = {
+        "pattern-template-input": ("template", "pattern-template-entry"),
+        "pattern-template-result": ("template", "pattern-template-completion"),
+        "pattern-input": ("pattern", "pattern-entry"),
+        "pattern-definition-input": ("pattern", "pattern-definition"),
+        "pattern-definition-result": ("pattern", "pattern-definition-return"),
+        "pattern-result": ("pattern", "pattern-completion"),
+    } if patterns else {}
+    for kind, (key, _) in pattern_bindings.items():
+        fields[kind] = {key, "sha256"}
+        runtime_bindings[kind] = set()
+    if patterns:
+        purposes |= {"pattern-selection", "pattern-completion", "pattern-definition-return"}
     postread_guards = set()
     armed, retired = {}, set()
     previous = 0
     make_pid = None
     make_execs, child_dispatches = set(), set()
     native_roots, native_trees = {}, {}
+    output_bindings, range_closure = {}, None
     native_policies = set()
     native_owners, native_cleared, previous_pid_events = {}, set(), {}
+    root_index = 0
     for number, row in enumerate(value["events"], 1):
+        if roots is not None:
+            if number > roots[root_index]["last"]:
+                if native_policies != child_dispatches or range_closure is not None or output_bindings:
+                    raise ReadEpochError("finite native root crossed incomplete job or descriptor custody")
+                root_index += 1
+            root = roots[root_index]
+            make_pid = root["initial"]["pid"]
         if (
             not isinstance(row, dict) or not isinstance(row.get("kind"), str)
             or row["kind"] not in fields or set(row) != common | fields[row["kind"]]
@@ -1567,6 +2653,8 @@ def validate_machine_observations(value, trace, *, count_limit):
         ):
             raise ReadEpochError("native machine observation has a foreign trace context")
         kind, pid = row["kind"], row["pid"]
+        if roots is not None and not root["first_exec"] - 1 <= row["exec"] <= root["last_exec"]:
+            raise ReadEpochError("finite native machine row borrowed another root execution")
         prior_pid = previous_pid_events.get(pid)
         previous_pid_events[pid] = row
         if kind in {"clear", "arm"}:
@@ -1612,20 +2700,24 @@ def validate_machine_observations(value, trace, *, count_limit):
                         and issued.get(1, [None, None])[1] == "source-entry"
                     ) and not (
                         len(issued) == 4
-                        and context is not None and context["kind"] in {"pass-exit", "expansion-exit"}
+                        and context is not None and context["kind"] in (
+                            {"pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"pass-exit", "expansion-exit"}
+                        )
                         and issued.get(0, [None, None])[1] == "expansion-entry"
-                        and issued.get(1, [None, None])[1] == "source-entry"
+                        and issued.get(1, [None, None])[1] == ("pattern-selection" if patterns else "source-entry")
                         and issued.get(2, [None, None])[1] == "eval-entry"
                         and issued.get(3, [None, None])[1] == "effect-entry"
                     ) and not (
                         len(issued) == 4
-                        and context is not None and context["kind"] not in {"exec", "pass-exit", "expansion-exit"}
+                        and context is not None and context["kind"] not in (
+                            {"exec", "pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"exec", "pass-exit", "expansion-exit"}
+                        )
                         and issued.get(0, [None, None])[1] == "source-entry"
                         and issued.get(1, [None, None])[1] == "eval-entry"
                         and issued.get(2, [None, None])[1] == "effect-entry"
                         and issued.get(3, [None, None])[1] in {
                             "pass-return", "source-return", "eval-return", "effect-return", "effect-completion", "expansion-return",
-                        }
+                        } | ({"pattern-completion", "pattern-definition-return"} if patterns else set())
                     )
                 )
                 or registers[:4] != [issued.get(index, [0])[0] for index in range(4)]
@@ -1634,7 +2726,9 @@ def validate_machine_observations(value, trace, *, count_limit):
                 raise ReadEpochError("native readback differs from its issued slots/control")
             if make_pid is not None and pid != make_pid:
                 raise ReadEpochError("native arm belongs to a foreign Make child")
-            if runtime and context is not None and context["kind"] in {"pass-exit", "expansion-exit"}:
+            if runtime and context is not None and context["kind"] in (
+                {"pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"pass-exit", "expansion-exit"}
+            ):
                 if previous in postread_guards:
                     raise ReadEpochError("runtime post-read guard is repeated")
                 postread_guards.add(previous)
@@ -1667,9 +2761,20 @@ def validate_machine_observations(value, trace, *, count_limit):
                         or re.fullmatch("[0-9a-f]{64}", row["input_sha256"]) is None
                     )
                 )
+                or trace["version"] in WRITABLE_VERSIONS and (
+                    row["make"] and row["admission_owner"] is not None
+                    or not row["make"] and (
+                        not isinstance(row["admission_owner"], str)
+                        or re.fullmatch("[0-9a-f]{64}", row["admission_owner"]) is None
+                    )
+                )
             ):
                 raise ReadEpochError("native execution lacks its immediately preceding child clear")
             if row["make"]:
+                if roots is not None and (
+                    pid != make_pid or not root["first_exec"] <= row["exec"] + 1 <= root["last_exec"]
+                ):
+                    raise ReadEpochError("finite native execution differs from its actual root")
                 make_execs.add((previous + 1, row["exec"] + 1, pid))
             else:
                 child_dispatches.add(row["dispatch"])
@@ -1677,7 +2782,7 @@ def validate_machine_observations(value, trace, *, count_limit):
                 native_trees[row["dispatch"]] = []
                 if runtime and pid in native_owners:
                     raise ReadEpochError("native root execution reused an owned process")
-                native_owners[pid] = row["dispatch"]
+                native_owners[pid] = (row["dispatch"], False)
         elif kind == "native-policy":
             dispatch = row["dispatch"]
             if (
@@ -1705,14 +2810,14 @@ def validate_machine_observations(value, trace, *, count_limit):
                 or not isinstance(event, dict) or event.get("pid") != pid
                 or not isinstance(row["sha256"], str)
                 or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
-                or native_owners.get(pid) != dispatch or pid not in native_cleared
+                or native_owners.get(pid, (None, False))[0] != dispatch or pid not in native_cleared
             ):
                 raise ReadEpochError("native machine tree lost its actual root/event payload")
             if event.get("kind") == "fork":
                 child = event.get("child")
                 if type(child) is not int or child <= 0 or child in native_owners:
                     raise ReadEpochError("native machine tree reused its owned child")
-                native_owners[child] = dispatch
+                native_owners[child] = (dispatch, False)
                 native_cleared.discard(child)
             elif event.get("kind") == "exec":
                 if prior_pid is None or not (
@@ -1723,13 +2828,130 @@ def validate_machine_observations(value, trace, *, count_limit):
                     raise ReadEpochError("native tree exec omitted its actual register clear")
             elif event.get("kind") == "start" and (prior_pid is None or prior_pid["kind"] != "clear"):
                 raise ReadEpochError("native tree start omitted its inherited register clear")
+            if event.get("kind") in {"exec", "start"}:
+                native_owners[pid] = (dispatch, True)
+            if event.get("kind") == "close-range":
+                _native_lock_range(event)
+                expected_bindings = [
+                    {"fd": descriptor, "serial": binding[0], "description": binding[1]}
+                    for (process, descriptor), binding in sorted(output_bindings.items())
+                    if process == pid and event["first"] <= descriptor <= event["last"]
+                ]
+                shared_paths = {
+                    "/repo/" + path
+                    for role, path in trace.get("output_authority", {}).get("resources", ())
+                    if role == "shared-lock"
+                }
+                if (
+                    range_closure is not None or event["bindings"] != expected_bindings
+                    or not expected_bindings
+                    or any(
+                        output_bindings[(pid, binding["fd"])][2] not in shared_paths
+                        or not any(
+                            process != pid and previous[:2] == (binding["serial"], binding["description"])
+                            for (process, _), previous in output_bindings.items()
+                        )
+                        for binding in expected_bindings
+                    )
+                ):
+                    raise ReadEpochError("native close_range lost its complete inherited lock bindings")
+                range_closure = (dispatch, pid, event["result"], list(expected_bindings))
+            if trace["version"] in WRITABLE_VERSIONS and event.get("kind") == "exit":
+                del native_owners[pid]
+                native_cleared.discard(pid)
             native_trees[dispatch].append(event)
+        elif kind == "native-output":
+            dispatch, event = row["dispatch"], row["event"]
+            if (
+                type(dispatch) is not int or dispatch not in native_roots
+                or native_roots[dispatch]["pid"] != pid
+                or not isinstance(event, dict)
+                or row["sha256"] != hashlib.sha256(encoded(event)).hexdigest()
+            ):
+                raise ReadEpochError("native output machine event lost its actual job binding")
+            actor = event.get("pid")
+            if (
+                dispatch in native_policies
+                or actor is not None and (
+                    type(actor) is not int
+                    or native_owners.get(actor, (None, False))[0] != dispatch
+                    or not native_owners[actor][1] and event.get("kind") != "output-inherit"
+                )
+                or actor is None and (dispatch, True) not in native_owners.values()
+                or event.get("kind") == "output-inherit" and (
+                    type(event.get("parent")) is not int
+                    or native_owners.get(event["parent"]) != (dispatch, True)
+                    or not native_trees[dispatch]
+                    or native_trees[dispatch][-1].get("kind") != "fork"
+                    or native_trees[dispatch][-1].get("child") != actor
+                    or native_trees[dispatch][-1].get("pid") != event["parent"]
+                )
+            ):
+                raise ReadEpochError("native output event lacks its live job actor at the actual sequence")
+            if range_closure is not None:
+                expected_dispatch, expected_actor, result, pending_bindings = range_closure
+                if dispatch != expected_dispatch or actor != expected_actor:
+                    raise ReadEpochError("native close_range return lost its actual actor")
+                if result == 0:
+                    expected = pending_bindings.pop(0)
+                    if event.get("kind") != "output-range-close" or any(
+                        event.get(key) != expected[key] for key in expected
+                    ):
+                        raise ReadEpochError("native close_range omitted or changed its descriptor retirement")
+                    if not pending_bindings:
+                        range_closure = None
+                elif (
+                    event.get("kind") != "output-operation-failed"
+                    or event.get("operation") != "close-range" or event.get("result") != result
+                ):
+                    raise ReadEpochError("native close_range changed its failed descriptor lifetime")
+                else:
+                    _native_range_failure_binding(
+                        event, output_bindings[(actor, pending_bindings[0]["fd"])],
+                    )
+                    range_closure = None
+            elif event.get("kind") == "output-range-close":
+                raise ReadEpochError("native range closure lacks its actual close_range return")
+            if event.get("kind") in {"output-open", "output-inherit", "output-dup"}:
+                required_binding = {"serial", "description", "path", "owner", "fd"} | (
+                    {"result"} if event["kind"] == "output-dup" else set()
+                )
+                if (
+                    not required_binding <= event.keys() or type(actor) is not int
+                    or any(type(event[key]) is not int or event[key] < 1 for key in ("serial", "description", "owner"))
+                    or type(event["fd"]) is not int or event["fd"] < 0
+                    or event["path"] is not None and not isinstance(event["path"], str)
+                    or event["kind"] == "output-dup" and (
+                        type(event["result"]) is not int or event["result"] < 0
+                    )
+                ):
+                    raise ReadEpochError("native machine output has an invalid descriptor binding")
+                descriptor = event["result"] if event["kind"] == "output-dup" else event["fd"]
+                output_bindings[(actor, descriptor)] = (
+                    event["serial"], event["description"], event["path"], event["owner"],
+                )
+            elif event.get("kind") in {
+                "output-close", "output-range-close", "output-exec-close", "output-close-failed", "output-duplicate-release",
+            }:
+                if type(actor) is not int or type(event.get("fd")) is not int or event["fd"] < 0:
+                    raise ReadEpochError("native machine output has an invalid descriptor retirement")
+                output_bindings.pop((actor, event["fd"]), None)
+            if event.get("kind") == "output-exec-close":
+                execs = [
+                    prior for prior in native_trees[dispatch]
+                    if prior.get("kind") == "exec" and prior.get("pid") == event.get("pid")
+                ]
+                if (
+                    not execs or type(event.get("generation")) is not int
+                    or execs[-1]["generation"] != event["generation"]
+                ):
+                    raise ReadEpochError("native exec output closure lacks its successful actual image generation")
         elif kind in runtime_bindings:
-            event_kind = {
+            event_kind = pattern_bindings[kind][1] if kind in pattern_bindings else {
                 "effect-input": "effect-entry", "effect-result": "effect-completion",
                 "eval-buffer": "eval-entry", "expansion-input": "expansion-entry",
             }[kind]
-            key = "evaluation" if kind == "eval-buffer" else "expansion" if kind == "expansion-input" else "effect"
+            key = pattern_bindings[kind][0] if kind in pattern_bindings else "evaluation" if kind == "eval-buffer" else "expansion" if kind == "expansion-input" else "effect"
             if (
                 context is None or context["kind"] != event_kind or pid != make_pid
                 or type(row[key]) is not int or row[key] <= 0
@@ -1746,13 +2968,25 @@ def validate_machine_observations(value, trace, *, count_limit):
             elif row["sha256"] != hashlib.sha256(encoded(context)).hexdigest():
                 raise ReadEpochError("runtime machine effect payload differs from its observed event")
             runtime_bindings[kind].add(row[key])
+        elif kind == "generated-source-entry":
+            if (
+                pid != make_pid or context is None or context["kind"] != "source-entry"
+                or type(row["visit"]) is not int or row["visit"] != context["visit"]
+            ):
+                raise ReadEpochError("generated source pin lacks its actual Make entry")
         else:
+            failed_generated = (
+                trace["version"] in WRITABLE_VERSIONS and context is not None
+                and context["kind"] == "source-exit" and context["error"] > 0
+                and context["source"] is None and row["source"] is None
+            )
             if (
                 context is None or context["kind"] != "source-exit"
                 or pid != make_pid
-                or any(type(row[key]) is not int or row[key] <= 0 for key in ("visit", "source"))
+                or type(row["visit"]) is not int or row["visit"] <= 0
+                or not failed_generated and (type(row["source"]) is not int or row["source"] <= 0)
                 or (row["visit"], row["source"]) != (context["visit"], context["source"])
-                or context["error"] != 0 or row["visit"] in retired
+                or not failed_generated and context["error"] != 0 or row["visit"] in retired
             ):
                 raise ReadEpochError("native pin retirement lacks its successful source return")
             opens = [
@@ -1760,13 +2994,45 @@ def validate_machine_observations(value, trace, *, count_limit):
                 if event["kind"] == "source-open" and event["visit"] == row["visit"]
                 and event["source"] == row["source"]
             ]
-            if len(opens) != 1 or row["identity"] != opens[0]["identity"]:
+            generated = (
+                trace["version"] in WRITABLE_VERSIONS and len(opens) == 1
+                and isinstance(opens[0]["custody"], dict)
+                and opens[0]["custody"]["kind"] == "native-output"
+            )
+            if failed_generated or generated:
+                entries = [
+                    entry for entry in value["events"][:number - 1]
+                    if entry["kind"] == "generated-source-entry" and entry["visit"] == row["visit"]
+                ]
+                if (
+                    len(opens) != 1 or len(entries) != 1
+                    or failed_generated and opens[0]["result"] != -context["error"]
+                    or opens[0]["custody"] != {"kind": "native-output", "entry": entries[0]["seq"]}
+                    or not isinstance(row["identity"], list) or len(row["identity"]) != 7
+                    or any(type(item) is not int for item in row["identity"])
+                ):
+                    raise ReadEpochError("generated pin retirement lacks its actual open and entry")
+            elif len(opens) != 1 or row["identity"] != opens[0]["identity"]:
                 raise ReadEpochError("native retired pin identity differs from its actual open")
             retired.add(row["visit"])
     expected = {
         event["visit"] for event in trace["events"]
         if event["kind"] == "source-exit" and event["source"] is not None
     }
+    if trace["version"] in WRITABLE_VERSIONS:
+        expected.update(
+            event["visit"] for event in trace["events"]
+            if event["kind"] == "source-open" and event["result"] < 0
+            and isinstance(event["custody"], dict) and event["custody"].get("kind") == "native-output"
+        )
+    if trace["version"] in WRITABLE_VERSIONS and {
+        row["seq"] for row in value["events"] if row["kind"] == "generated-source-entry"
+    } != {
+        event["custody"]["entry"] for event in trace["events"]
+        if event["kind"] == "source-open" and isinstance(event["custody"], dict)
+        and event["custody"].get("kind") == "native-output"
+    }:
+        raise ReadEpochError("generated source entries omit their actual opened consumers")
     trap_kinds = {
         "pass-entry": "pass-entry", "source-entry": "source-entry",
         "source-exit": "source-return", "assignment-completion": "assignment-completion",
@@ -1779,12 +3045,27 @@ def validate_machine_observations(value, trace, *, count_limit):
             "eval-exit": "eval-return",
             "expansion-entry": "expansion-entry", "expansion-exit": "expansion-return",
         })
+    if patterns:
+        trap_kinds.update({
+            "pattern-entry": "pattern-selection",
+            "pattern-definition": "effect-entry",
+            "pattern-definition-return": "pattern-definition-return",
+            "pattern-completion": "pattern-completion",
+        })
     immediate_effects = {
         event["effect"] for event in trace["events"]
         if event["kind"] == "effect-entry" and event["caller"] == "reader"
     } if runtime else set()
+    def trap_predecessor(event):
+        previous = event["seq"] - 1
+        if patterns:
+            while previous and trace["events"][previous - 1]["kind"] in {
+                "pattern-template-entry", "pattern-template-completion",
+            }:
+                previous -= 1
+        return previous
     required = {
-        (event["seq"] - 1, trap_kinds[event["kind"]])
+        (trap_predecessor(event), trap_kinds[event["kind"]])
         for event in trace["events"] if event["kind"] in trap_kinds
         and not (runtime and event["kind"] == "effect-completion" and event["effect"] in immediate_effects)
     }
@@ -1793,13 +3074,15 @@ def validate_machine_observations(value, trace, *, count_limit):
     }
     if (
         retired != expected or (required != observed if runtime else not required <= observed)
-        or len(value["events"]) + len(trace["events"]) > count_limit
+        or len(value["events"]) + len(trace["events"]) + (len(roots) if roots is not None else 0) > count_limit
         or make_execs != {
-            (event["seq"], event["exec"], make_pid)
+            (event["seq"], event["exec"], make_owner(event["exec"]))
             for event in trace["events"] if event["kind"] == "exec"
         }
     ):
         raise ReadEpochError("native machine observations omit traps or live pin retirement")
+    if range_closure is not None:
+        raise ReadEpochError("native machine observations omit close_range completion")
     if native_policies != child_dispatches:
         raise ReadEpochError("native job machine observations omit completed policy bindings")
     if runtime and any(
@@ -1811,11 +3094,13 @@ def validate_machine_observations(value, trace, *, count_limit):
             ("effect-result", "effect", "effect-completion"),
             ("eval-buffer", "evaluation", "eval-entry"),
             ("expansion-input", "expansion", "expansion-entry"),
-        )
+        ) + tuple((kind, key, event_kind) for kind, (key, event_kind) in pattern_bindings.items())
     ):
         raise ReadEpochError("runtime machine observations omit effect/eval payload bindings")
     if runtime and postread_guards != {
-        event["seq"] for event in trace["events"] if event["kind"] in {"pass-exit", "expansion-exit"}
+        event["seq"] for event in trace["events"] if event["kind"] in (
+            {"pass-exit", "expansion-exit", "pattern-completion"} if patterns else {"pass-exit", "expansion-exit"}
+        )
     }:
         raise ReadEpochError("runtime machine observations omit the actual post-read guard")
     if runtime:
@@ -1830,10 +3115,18 @@ def validate_machine_observations(value, trace, *, count_limit):
                 raise ReadEpochError("native machine tree differs from its original job inputs")
             native_job_tree(
                 events, {
-                    "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
+                    "sequence": dispatch, "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
                     "executable": first["path"], "terminal_status": last["status"],
-                }, make_pid, {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
+                    **({"admission": first.get("admission")} if trace["version"] in WRITABLE_VERSIONS else {}),
+                }, make_owner(native_roots[dispatch]["exec"]), {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
                 count_limit=count_limit,
+                writable=trace["version"] in WRITABLE_VERSIONS,
+                compiler_profile=(
+                    native_compiler_profile(trace["output_authority"]["compiler"], count_limit=count_limit, reserve=reserve)
+                    if "compiler" in trace.get("output_authority", {}) else None
+                ),
+                compiler_sources=tuple(row["path"] for row in trace["selection"]["inventory"]),
+                reserve=reserve,
             )
     return value
 
@@ -1848,27 +3141,812 @@ def _read_event_keys(version):
         "pass-exit": {"exec", "pass", "goals"}, "complete": {"execs", "passes", "visits"},
         "entry-image": {"exec", "pass", "barrier", "input_sha256", "image_sha256"},
     }
-    if version in {3, COMPLETION_VERSION, RUNTIME_VERSION}:
+    if version in LOCATION_VERSIONS:
         keys["source-entry"] |= {"location"}
     if version in {3, COMPLETION_VERSION}:
         keys["assignment-completion"] = {
             "exec", "pass", "visit", "source", "site", "name", "operator", "cwd", "variable",
         }
-    if version in {COMPLETION_VERSION, RUNTIME_VERSION}:
+    if version in MACHINE_VERSIONS:
         keys["source-open"] |= {"path", "custody"}
-    if version == RUNTIME_VERSION:
+    if version in RUNTIME_VERSIONS:
         keys["complete"] |= {"effects", "evaluations", "expansions"}
+    if version in PATTERN_VERSIONS:
+        keys["complete"] |= {"templates", "patterns", "pattern_returns"}
     return keys
+
+
+def native_output_effects(trace):
+    return [row["event"] for row in trace["machine"]["events"] if row["kind"] == "native-output"]
+
+
+def validate_native_output_authority(trace, *, count_limit, file_limit, reserve):
+    authority = trace["output_authority"]
+    resources = authority.get("resources", ()) if isinstance(authority, dict) else ()
+    source_roots = authority.get("source_roots", []) if isinstance(authority, dict) else []
+    if __package__:
+        from .native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope, require_retained_source, validate_terminal_resources
+    else:
+        from native_resources import resource_plan, resource_role, resource_operation, validate_resource_scope, require_retained_source, validate_terminal_resources
+    try:
+        resources = resource_plan(resources)
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
+    if (
+        not isinstance(authority, dict) or set(authority) != {"paths", "jobs"} | (
+            {"resources"} if resources else set()
+        ) | ({"source_roots"} if source_roots else set()) | ({"compiler"} if "compiler" in authority else set())
+        or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit
+               for key in authority if key != "compiler")
+        or not authority["paths"]
+        or any(
+            not isinstance(path, str) or not path or path.startswith("/")
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+            for path in authority["paths"]
+        )
+        or len(set(authority["paths"])) != len(authority["paths"])
+    ):
+        raise ReadEpochError("malformed native output authority")
+    if (
+        any(not isinstance(path, str) for path in source_roots)
+        or len(set(source_roots)) != len(source_roots)
+    ):
+        raise ReadEpochError("native output authority has invalid immutable source roots")
+    reserve(len(encoded(authority)))
+    compiler_profile = (
+        native_compiler_profile(authority["compiler"], count_limit=count_limit, reserve=reserve)
+        if "compiler" in authority else None
+    )
+    try:
+        for path in source_roots:
+            relative_path(path)
+        sources = tuple(row["path"] for row in trace["selection"]["inventory"])
+        reserve(sys.getsizeof(sources))
+        if source_roots:
+            root_paths = tuple(source_roots)
+            reserve(sys.getsizeof(root_paths))
+            sources += root_paths
+            reserve(sys.getsizeof(sources))
+        validate_resource_scope(resources, authority["paths"], sources)
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
+    for path in authority["paths"]:
+        try:
+            relative_path(path)
+        except MakeProbeError as error:
+            raise ReadEpochError(f"native output plan has an invalid path: {error}") from error
+        if any(
+            path == source or path.startswith(source + "/")
+            or source.startswith(path + "/")
+            for source in sources
+        ) or any(other != path and other.startswith(path + "/") for other in authority["paths"]):
+            raise ReadEpochError("native output plan conflicts with immutable source or another output")
+    jobs = {}
+    machine = trace["machine"]["events"]
+    effects = native_output_effects(trace)
+    for number, record in enumerate(authority["jobs"], 1):
+        if (
+            not isinstance(record, dict) or set(record) != {"sequence", "pid", "admission"}
+            or type(record["sequence"]) is not int or record["sequence"] != number
+            or type(record["pid"]) is not int or record["pid"] < 1
+            or not isinstance(record["admission"], dict)
+            or set(record["admission"]) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
+                {"resources"} if resources else set()
+            ) | ({"compiler"} if compiler_profile is not None and "compiler" in record["admission"] else set())
+        ):
+            raise ReadEpochError("native output job lacks its closed dispatch binding")
+        tree = [
+            row["event"] for row in machine
+            if row["kind"] == "native-tree" and row["dispatch"] == number
+        ]
+        reserve(sys.getsizeof(tree))
+        if not tree:
+            raise ReadEpochError("native output job lacks its closed dispatch binding")
+        job = dict(record, tree=tree)
+        reserve(sys.getsizeof(job))
+        admission = job["admission"]
+        native_image_admission(
+            admission, None, authority["paths"], resources, resource_field=bool(resources),
+            compiler_profile=compiler_profile,
+        )
+        for index, event in enumerate(job["tree"]):
+            if not isinstance(event, dict) or not isinstance(event.get("kind"), str):
+                raise ReadEpochError("native output authority has a malformed image tree")
+            if event["kind"] == "exec":
+                if not {"argv", "cwd", "admission"} <= event.keys():
+                    raise ReadEpochError("native image lacks its actual Command owner")
+                native_image_admission(
+                    event["admission"], native_execution_input(event["argv"], event["cwd"]),
+                    admission["outputs"], admission.get("resources", ()),
+                    resource_field="resources" in admission,
+                    compiler_profile=compiler_profile,
+                )
+                if index == 0 and event["admission"] != admission:
+                    raise ReadEpochError("native root image changed its original Command owner")
+        try:
+            if any(row not in resources for row in resource_plan(admission.get("resources", ()))):
+                raise ReadEpochError("native job resources escape their closed plan")
+        except MakeProbeError as error:
+            raise ReadEpochError(str(error)) from error
+        if (
+            any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
+                for key in ("owner", "closure", "input_sha256"))
+            or not isinstance(admission["outputs"], list)
+            or any(not isinstance(path, str) or path not in authority["paths"] for path in admission["outputs"])
+            or len(set(admission["outputs"])) != len(admission["outputs"])
+            or not any(
+                row["kind"] == "execute" and row["dispatch"] == number
+                and row["pid"] == job["pid"] and row["input_sha256"] == admission["input_sha256"]
+                for row in machine
+            )
+        ):
+            raise ReadEpochError("native output job differs from its actual machine lifecycle")
+        if (
+            admission["owner"] != native_command_owner(
+                admission["closure"], admission["outputs"], admission.get("resources", ()),
+            )
+            or any(
+                row["admission_owner"] != admission["owner"] for row in machine
+                if row["kind"] == "execute" and not row["make"] and row["dispatch"] == number
+            )
+        ):
+            raise ReadEpochError("native output plan differs from its issued Command owner")
+        jobs[number] = job
+    if set(jobs) != {row["dispatch"] for row in machine if row["kind"] == "execute" and not row["make"]}:
+        raise ReadEpochError("native output authority omitted or added an actual job dispatch")
+    image_sequences = [
+        event["admission"]["sequence"] for job in jobs.values()
+        for event in job["tree"] if event["kind"] == "exec"
+    ]
+    if sorted(image_sequences) != list(range(1, len(image_sequences) + 1)):
+        raise ReadEpochError("native image admissions omitted or reused an issued request")
+    common = {"sequence", "kind", "owner", "serial", "revision", "path"}
+    fields = {
+        "output-open": {"pid", "fd", "operation_owner", "identity", "writing", "description"},
+        "output-write-entry": {"pid", "fd", "request", "requested_count", "offset", "description", "identity"},
+        "output-write": {"pid", "fd", "request", "result", "identity"},
+        "output-truncate": {"pid", "fd", "identity"},
+        "output-write-failed": {"pid", "fd", "request", "result"},
+        "output-settled": {"identity", "sha256"},
+        "output-close": {"pid", "fd", "description"},
+        "output-exec-close": {"pid", "fd", "description", "generation"},
+        "output-duplicate-release": {"pid", "fd", "description"},
+        "output-close-failed": {"pid", "fd", "result"},
+        "output-dup": {"pid", "fd", "result", "description"},
+        "output-inherit": {"parent", "pid", "fd", "description"},
+        "output-mkdir": {"pid", "identity"},
+        "output-rmdir": {"pid", "identity"},
+        "output-directory-change": {"pid", "operation", "identity", "source", "destination", "entries", "before"},
+    }
+    if resources:
+        fields["output-settled"].add("pid")
+        fields["output-close-failed"].add("description")
+        fields["output-range-close"] = {"pid", "fd", "description"}
+        fields.update({
+            "output-lock": {"pid", "fd", "description", "flags", "result", "mode"},
+            "output-mode": {"pid", "fd", "mode", "identity"},
+            "output-replace": {"pid", "source", "identity"},
+            "output-retire": {"pid", "operation_owner", "identity", "destination"},
+            "output-lock-release": {"pid", "fd", "description", "mode"},
+        })
+    objects, bindings, descriptions, readers, directories = {}, {}, set(), {}, {}
+    writes = {}
+    lock_modes = {}
+    released_locks = {}
+    parent_returns = {}
+    request_number = 0
+    process_plans = {}
+    retained_paths = {"/repo/" + path for path in authority["paths"]}
+    def settled_retained_read(serial, path):
+        return (
+            type(serial) is int and serial in objects and objects[serial]["settled"]
+            and isinstance(path, str) and path in retained_paths and path == objects[serial]["path"]
+            and not any(binding[0] == serial and binding[2] for binding in bindings.values())
+            and not any(pending["serial"] == serial for pending in writes.values())
+        )
+    def parent_request(pid, operation, source, destination=None, *, readonly=False):
+        parents = {
+            path.rpartition("/")[0] for path in (source, destination)
+            if path is not None and path.rpartition("/")[0] in directories
+        }
+        if parents:
+            parent_returns[pid] = {"operation": operation, "source": source,
+                                   "destination": destination, "parents": parents,
+                                   "readonly": readonly}
+    number = 0
+    issued_serial = 0
+    for observation in machine:
+        if observation["kind"] == "native-tree":
+            event = observation["event"]
+            if event["kind"] == "exec":
+                process_plans[event["pid"]] = event["admission"]
+            elif event["kind"] == "fork":
+                process_plans[event["child"]] = {}
+            elif event["kind"] == "exit":
+                process_plans.pop(event["pid"], None)
+            continue
+        if observation["kind"] == "generated-source-entry":
+            serial, visit = observation["serial"], observation["visit"]
+            try:
+                require_retained_source(observation["path"], authority["paths"])
+            except MakeProbeError as error:
+                raise ReadEpochError(str(error)) from error
+            if (
+                any(type(observation[key]) is not int or observation[key] < 1 for key in ("owner", "serial", "visit"))
+                or type(observation["revision"]) is not int or observation["revision"] < 0
+                or visit in readers
+            ):
+                raise ReadEpochError("generated source entry has a malformed producer version")
+            item = objects.get(serial)
+            if (
+                item is None or not item["settled"]
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+                or observation["owner"] != item["owner"]
+                or "/repo/" + observation["path"] != item["path"]
+                or observation["revision"] != item["revision"]
+                or observation["identity"] != item["identity"]
+                or observation["sha256"] != item["sha256"]
+            ):
+                raise ReadEpochError("generated source entry borrowed an unsettled or foreign version")
+            readers[visit] = serial
+            continue
+        if observation["kind"] == "pin-retired":
+            serial = readers.pop(observation["visit"], None)
+            if serial is not None and observation["identity"] != objects[serial]["identity"]:
+                raise ReadEpochError("generated pin retirement differs from its current generated version")
+            continue
+        if observation["kind"] != "native-output":
+            continue
+        number += 1
+        row = observation["event"]
+        dispatch = observation["dispatch"]
+        actor_job = jobs.get(dispatch)
+        image_plan = process_plans.get(row["pid"], {}) if (
+            isinstance(row, dict) and type(row.get("pid")) is int
+        ) else {}
+        image_outputs = image_plan.get("outputs", ())
+        image_resources = image_plan.get("resources", ())
+        def role(path):
+            return resource_role(actor_job["admission"].get("resources", ()), path, actor_job["pid"])
+        def image_role(path):
+            return resource_role(image_resources, path, actor_job["pid"])
+        def permitted(path, operation):
+            return actor_job is not None and resource_operation(
+                image_resources, path, actor_job["pid"], image_outputs, operation,
+            )
+        readonly_existing = (
+            isinstance(row, dict) and row.get("kind") == "output-open"
+            and row.get("writing") is False
+            and settled_retained_read(row.get("serial"), row.get("path"))
+            and not permitted(row["path"], "open")
+        )
+        if isinstance(row, dict) and row.get("kind") == "output-operation-failed":
+            if type(row.get("pid")) is int and row["pid"] in writes:
+                raise ReadEpochError("native failed operation omitted its pending write return")
+            operation = row.get("operation")
+            readonly_failed = (
+                operation == "open" and isinstance(row.get("source"), str)
+                and type(row.get("flags")) is int and row["flags"] >= 0
+                and not row["flags"] & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)
+                and row["flags"] & os.O_TMPFILE != os.O_TMPFILE
+                and any(
+                    settled_retained_read(serial, row["source"]) for serial in objects
+                )
+            )
+            extra = {"flags"} if operation == "open" else {
+                "descriptor", "duplicate_kind", "target", "minimum", "flags",
+            } if operation == "dup" else set()
+            if resources and isinstance(operation, str) and operation in {"mkdir", "replace"}:
+                extra.add("flags")
+            if (
+                set(row) != {"sequence", "kind", "owner", "pid", "operation", "source", "destination", "result"} | extra | (
+                    {"preimages"} if resources else set()
+                )
+                or type(row["sequence"]) is not int or row["sequence"] != number
+                or type(row["owner"]) is not int or row["owner"] not in jobs
+                or not isinstance(row["operation"], str)
+                or row["operation"] not in {"open", "dup", "duplicate-release", "exec", "close-range", "mkdir", "rmdir", "remove", "replace"}
+                or (not isinstance(row["destination"], str) if operation == "replace" else row["destination"] is not None)
+                or not isinstance(row["source"], str)
+                or operation != "dup" and row["source"] not in {
+                    "/repo/" + path for path in jobs[row["owner"]]["admission"]["outputs"]
+                } and not (actor_job is not None and role(row["source"]) is not None)
+                and not readonly_failed
+                or type(row["pid"]) is not int
+                or actor_job is None
+                or row["pid"] not in {event["pid"] for event in actor_job["tree"]}
+                or type(row["result"]) is not int or not -4095 <= row["result"] < 0
+            ):
+                raise ReadEpochError("native failed descriptor transition lost its actual job or preimage")
+            if operation in {"open", "mkdir", "rmdir", "remove", "replace"}:
+                if row["owner"] != dispatch:
+                    raise ReadEpochError("native failed operation owner differs from its actual pathname dispatch")
+                if (
+                    not readonly_failed and not permitted(row["source"], operation)
+                    or operation == "replace" and not permitted(row["destination"], "replace")
+                ):
+                    raise ReadEpochError("native failed namespace operation escaped its resource role matrix for the current image")
+            if resources:
+                if actor_job is None:
+                    raise ReadEpochError("native failed operation lost its actual actor")
+                expected = []
+                for path in (row["source"], row["destination"]) if operation == "replace" else (row["source"],):
+                    item = directories.get(path) or next((item for item in objects.values() if item["path"] == path), None)
+                    expected.append([path, None if item is None else item["identity"],
+                                     None if item is None or "entries" not in item else item["entries"]])
+                parents = {path.rpartition("/")[0] for path in (row["source"], row["destination"]) if path is not None}
+                for parent in sorted(parents):
+                    if parent in directories:
+                        item = directories[parent]
+                        expected.append([parent, item["identity"], item["entries"]])
+                if operation in {"mkdir", "rmdir", "remove", "replace", "open"} and row["preimages"] != expected:
+                    raise ReadEpochError("native failed namespace operation changed its observed operands")
+            if operation in {"mkdir", "rmdir"}:
+                if not resources or image_role(row["source"]) != "directory":
+                    raise ReadEpochError("native failed directory operation lacks its exact resource role")
+                if operation == "mkdir" and (
+                    type(row["flags"]) is not int or row["flags"] & ~0o777 or row["flags"] & 0o700 != 0o700
+                ):
+                    raise ReadEpochError("native failed mkdir changed its requested mode")
+                continue
+            if operation in {"replace", "remove"}:
+                if not resources:
+                    raise ReadEpochError("native failed namespace operation escaped its resource role matrix")
+                if operation == "replace" and (
+                    type(row["flags"]) is not int or row["flags"] not in {0, 1}
+                ):
+                    raise ReadEpochError("native failed replacement lost its destination plan")
+                continue
+            if operation == "open":
+                if (
+                    type(row["flags"]) is not int or row["flags"] < 0
+                    or row["flags"] & os.O_APPEND or row["flags"] & os.O_TMPFILE == os.O_TMPFILE
+                    or row["flags"] & os.O_TRUNC and any(
+                        binding[2] and objects[binding[0]]["path"] == row["source"]
+                        for binding in bindings.values()
+                    )
+                    or resources and (
+                        image_role(row["source"]) == "shared-lock" and row["flags"] & (os.O_WRONLY | os.O_TRUNC | os.O_EXCL)
+                    )
+                ):
+                    raise ReadEpochError("native failed open changed its admitted flags or active writer preimage")
+            elif operation == "dup":
+                kind, target, minimum, flags = (
+                    row["duplicate_kind"], row["target"], row["minimum"], row["flags"],
+                )
+                binding = bindings.get((row["pid"], row["descriptor"])) if type(row["descriptor"]) is int else None
+                if (
+                    binding is None or objects[binding[0]]["owner"] != row["owner"]
+                    or row["source"] != "source-fd:" + str(row["descriptor"])
+                    or not isinstance(kind, str) or kind not in {"dup", "dup2", "dup3", "fcntl-dupfd", "fcntl-dupfd-cloexec"}
+                    or type(flags) is not int or flags not in ({0, os.O_CLOEXEC} if kind == "dup3" else {0})
+                    or kind in {"dup2", "dup3"} and (
+                        type(target) is not int or not -(1 << 31) <= target < 1 << 31 or minimum is not None
+                    )
+                    or kind == "dup" and (target is not None or minimum is not None)
+                    or kind.startswith("fcntl-") and (
+                        target is not None or type(minimum) is not int or not -(1 << 31) <= minimum < 1 << 31
+                    )
+                ):
+                    raise ReadEpochError("native failed duplicate changed its actual source or operand plan")
+            elif not any(
+                pid == row["pid"] and objects[binding[0]]["owner"] == row["owner"]
+                and objects[binding[0]]["path"] == row["source"]
+                for (pid, descriptor), binding in bindings.items()
+            ):
+                raise ReadEpochError("native failed descriptor transition lost its live source binding")
+            continue
+        if (
+            not isinstance(row, dict) or not isinstance(row.get("kind"), str) or row["kind"] not in fields
+            or set(row) != common | fields[row["kind"]]
+            or type(row["sequence"]) is not int or row["sequence"] != number
+            or any(type(row[key]) is not int or row[key] < 1 for key in ("owner", "serial"))
+            or type(row["revision"]) is not int or row["revision"] < 0
+            or row["owner"] not in jobs
+            or not isinstance(row["path"], str) and not (
+                resources and row["kind"] == "output-retire" and row["path"] is None
+                and isinstance(row.get("destination"), str)
+            )
+            or actor_job is None
+            or (
+                row.get("destination") if row["kind"] == "output-retire" else row["path"]
+            ) not in {"/repo/" + path for path in image_outputs}
+            and not image_role(row.get("destination") if row["kind"] == "output-retire" else row["path"])
+            and not (
+                row["kind"] not in {
+                    "output-open", "output-mkdir", "output-rmdir", "output-replace",
+                    "output-retire", "output-directory-change",
+                } and row["serial"] in objects
+            )
+            and not (row["kind"] == "output-directory-change" and row["path"] in directories)
+            and not readonly_existing
+        ):
+            raise ReadEpochError("native output effect escapes its actual job plan")
+        job = actor_job
+        pids = {job["pid"]} | {event["pid"] for event in job["tree"]} | {
+            event["child"] for event in job["tree"] if "child" in event
+        }
+        if "pid" in row and (type(row["pid"]) is not int or row["pid"] not in pids):
+            raise ReadEpochError("native output effect borrowed another dispatch process")
+        if "identity" in row and (
+            not isinstance(row["identity"], list) or len(row["identity"]) != 7
+            or any(type(value) is not int for value in row["identity"])
+        ):
+            raise ReadEpochError("native output effect has a malformed inode identity")
+        if "identity" in row:
+            identity = row["identity"]
+            if row["kind"] in {"output-mkdir", "output-rmdir", "output-directory-change"}:
+                parent = parent_returns.get(row.get("pid"))
+                directory = directories.get(row["path"])
+                readonly_parent = (
+                    row["kind"] == "output-directory-change" and parent is not None
+                    and parent["readonly"] and directory is not None
+                    and identity == row.get("before") == directory["identity"]
+                    and row.get("entries") == directory["entries"]
+                )
+                if (
+                    not resources or role(row["path"]) != "directory" and not readonly_parent
+                    or not stat.S_ISDIR(identity[2]) or identity[2] & 0o7000
+                    or identity[2] & 0o700 != 0o700 or any(value < 0 for value in identity)
+                ):
+                    raise ReadEpochError("native directory effect lacks its issued traversable identity")
+            else:
+                try:
+                    validate_publication_identity(
+                        identity[:6] + [1] if row["kind"] == "output-retire" and identity[6] == 0 else identity,
+                        identity[2] & 0o777, identity[3],
+                    )
+                except ChannelError as error:
+                    raise ReadEpochError(f"native output effect has an invalid object identity: {error}") from error
+            if identity[3] > file_limit:
+                raise ReadEpochError("native output effect exceeds its original file bound")
+        if "sha256" in row and (
+            not isinstance(row["sha256"], str) or re.fullmatch("[0-9a-f]{64}", row["sha256"]) is None
+        ):
+            raise ReadEpochError("native settled output lacks its exact content digest")
+        if "operation_owner" in row and (
+            type(row["operation_owner"]) is not int
+            or row["operation_owner"] != dispatch
+        ):
+            raise ReadEpochError("native output open borrowed another producer")
+        if any(
+            type(row[key]) is not int or row[key] < 0 for key in ("fd", "description")
+            if key in row
+        ) or "description" in row and row["description"] == 0:
+            raise ReadEpochError("native output effect has an invalid descriptor lineage")
+        kind, serial = row["kind"], row["serial"]
+        parents = parent_returns.get(row.get("pid"))
+        if parents is not None and kind not in {"output-directory-change", "output-settled"} and not (
+            kind == "output-replace" and parents["operation"] == "remove" and parents["source"] == row["path"]
+        ):
+            raise ReadEpochError("native namespace operation omitted its parent return")
+        pending = writes.get(row.get("pid"))
+        if pending is not None and kind not in {"output-write", "output-write-failed"}:
+            raise ReadEpochError("native output process omitted its pending write return")
+        if kind == "output-mkdir":
+            if row["owner"] != dispatch:
+                raise ReadEpochError("native directory owner differs from its creating dispatch")
+            if serial <= issued_serial:
+                raise ReadEpochError("native directory reused an issued custody serial")
+            issued_serial = serial
+            if row["path"] in directories or row["identity"][6] != 2 or row["revision"] != 0 or serial in objects or any(item["serial"] == serial for item in directories.values()):
+                raise ReadEpochError("native mkdir reused an issued directory object")
+            directories[row["path"]] = {
+                "serial": serial, "owner": row["owner"], "identity": row["identity"], "entries": [],
+            }
+            parent_request(row["pid"], "mkdir", row["path"])
+            continue
+        if kind in {"output-rmdir", "output-directory-change"}:
+            item = directories.get(row["path"])
+            if item is None or item["serial"] != serial or item["owner"] != row["owner"] or row["revision"] != 0 or row["identity"][:3] != item["identity"][:3]:
+                raise ReadEpochError("native directory transition lost its issued object")
+            if kind == "output-rmdir":
+                if item["entries"] or row["identity"][6] != 0:
+                    raise ReadEpochError("native rmdir retired a populated directory")
+                del directories[row["path"]]
+                parent_request(row["pid"], "rmdir", row["path"])
+            else:
+                if parents is None or row["path"] not in parents["parents"] or any(
+                    row[key] != parents[key] for key in ("operation", "source", "destination")
+                ):
+                    raise ReadEpochError("native directory change borrowed another namespace operation")
+                if row["before"] != item["identity"] or row["operation"] not in {"open", "mkdir", "rmdir", "remove", "replace"}:
+                    raise ReadEpochError("native directory change lost its namespace preimage")
+                entries = set(item["entries"])
+                for selected, removing in (
+                    (row["source"], row["operation"] in {"rmdir", "remove", "replace"}),
+                    (row["destination"], False),
+                ):
+                    if selected is None or selected.rpartition("/")[0] != row["path"]:
+                        continue
+                    name = selected.rpartition("/")[2]
+                    if removing:
+                        if name not in entries:
+                            raise ReadEpochError("native directory change removed an unknown child")
+                        entries.remove(name)
+                    else:
+                        entries.add(name)
+                if row["entries"] != sorted(entries):
+                    raise ReadEpochError("native directory change absorbed unrelated entries")
+                item.update(identity=row["identity"], entries=row["entries"])
+                parents["parents"].remove(row["path"])
+                if not parents["parents"]:
+                    del parent_returns[row["pid"]]
+            continue
+        item = objects.get(serial)
+        if kind == "output-settled" and any(entry["serial"] == serial for entry in writes.values()):
+            raise ReadEpochError("native output settlement omitted its pending write return")
+        if kind in {"output-write", "output-write-failed"}:
+            if (
+                pending is None or type(row["request"]) is not int
+                or any(row[key] != pending[key] for key in ("request", "owner", "serial", "path", "pid", "fd"))
+                or bindings.get((row["pid"], row["fd"])) != (serial, pending["description"], True)
+                or item is None or item["identity"] != pending["identity"]
+                or item["revision"] != pending["revision"]
+            ):
+                raise ReadEpochError("native write return lost its stopped request or preimage")
+            del writes[row["pid"]]
+        if kind == "output-retire":
+            if (
+                not permitted(row["destination"], "remove")
+                or
+                item is None or item["owner"] != row["owner"] or item["path"] != row["destination"]
+                or row["path"] is not None or row["revision"] != item["revision"]
+                or row["identity"][:5] != item["identity"][:5] or row["identity"][6] != item["identity"][6] - 1
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+                or not item["settled"]
+            ):
+                raise ReadEpochError("native retirement lost its settled prior version")
+            item.update(identity=row["identity"], path=None)
+            parent_request(row["pid"], "remove", row["destination"])
+            continue
+        if kind == "output-replace":
+            if (
+                not isinstance(row["source"], str)
+                or not permitted(row["source"], "replace") or not permitted(row["path"], "replace")
+                or
+                item is None or item["owner"] != row["owner"] or row["source"] != item["path"]
+                or row["revision"] != item["revision"] or row["identity"][:5] != item["identity"][:5]
+                or row["identity"][6] != item["identity"][6] or not item["settled"]
+                or serial in readers.values()
+                or any(other is not item and other["path"] == row["path"] for other in objects.values())
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+            ):
+                raise ReadEpochError("native replacement lost its settled source or destination")
+            item.update(identity=row["identity"], path=row["path"])
+            parent_returns.pop(row["pid"], None)
+            parent_request(row["pid"], "replace", row["source"], row["path"])
+            continue
+        if kind == "output-open":
+            if (
+                resources and not readonly_existing and not permitted(row["path"], "open")
+                or
+                type(row["writing"]) is not bool or (row["pid"], row["fd"]) in bindings
+                or row["description"] in descriptions
+                or row["writing"] and serial in readers.values()
+            ):
+                raise ReadEpochError("native output open reused a live descriptor")
+            descriptions.add(row["description"])
+            if item is None:
+                if row["owner"] != dispatch:
+                    raise ReadEpochError("native file owner differs from its creating dispatch")
+                if row["revision"] != 0:
+                    raise ReadEpochError("native file has a forged initial revision")
+                if serial <= issued_serial:
+                    raise ReadEpochError("native file reused an issued custody serial")
+                issued_serial = serial
+                if any(
+                    other["path"] == row["path"] or other["identity"][:2] == row["identity"][:2]
+                    for other in objects.values()
+                ):
+                    raise ReadEpochError("native output open issued an alias of an existing object")
+                item = {"owner": row["owner"], "path": row["path"], "revision": row["revision"],
+                        "identity": row["identity"], "settled": False}
+                objects[serial] = item
+            elif any(row[key] != item[key] for key in ("owner", "path", "revision", "identity")):
+                raise ReadEpochError("native output open adopted a different produced object")
+            if role(row["path"]) == "shared-lock" and row["writing"]:
+                raise ReadEpochError("native shared lock acquired content writer authority")
+            bindings[(row["pid"], row["fd"])] = serial, row["description"], row["writing"]
+            if resources:
+                parent_request(row["pid"], "open", row["path"], readonly=readonly_existing)
+        elif item is None or row["owner"] != item["owner"] or row["path"] != item["path"]:
+            raise ReadEpochError("native output effect lacks its issued live object")
+        elif kind == "output-mode":
+            binding = bindings.get((row["pid"], row["fd"]))
+            if (
+                binding is None or binding[0] != serial or serial in readers.values()
+                or not binding[2]
+                or type(row["mode"]) is not int or not 0 <= row["mode"] <= 0o777
+                or row["identity"][:2] != item["identity"][:2] or row["identity"][3:5] != item["identity"][3:5]
+                or row["identity"][6] != item["identity"][6] or row["identity"][2] != stat.S_IFREG | row["mode"]
+                or role(row["path"]) == "shared-lock" or row["revision"] != item["revision"]
+            ):
+                raise ReadEpochError("native mode transition changed unrelated content or binding")
+            item.update(identity=row["identity"], settled=False)
+        elif kind == "output-write-entry":
+            if (
+                type(row["request"]) is not int or row["request"] != request_number + 1
+                or any(type(row[key]) is not int or not 0 <= row[key] <= file_limit for key in ("requested_count", "offset"))
+                or row["offset"] + row["requested_count"] > file_limit
+                or bindings.get((row["pid"], row["fd"])) != (serial, row["description"], True)
+                or row["identity"] != item["identity"] or row["revision"] != item["revision"]
+                or serial in readers.values() or any(entry["serial"] == serial for entry in writes.values())
+            ):
+                raise ReadEpochError("native write entry lost its bounded live descriptor and preimage")
+            request_number += 1
+            writes[row["pid"]] = row
+        elif kind == "output-truncate":
+            following = effects[number] if number < len(effects) else None
+            if (
+                row["identity"][:3] != item["identity"][:3]
+                or any(binding[0] == serial and binding[2] for binding in bindings.values())
+                or serial in readers.values()
+                or row["identity"][3] != 0 or row["identity"][6] != item["identity"][6]
+                or row["revision"] != item["revision"] + 1
+                or not isinstance(following, dict) or following.get("kind") != "output-open"
+                or any(following.get(key) != row[key] for key in (
+                    "owner", "serial", "revision", "path", "pid", "fd", "identity",
+                ))
+                or following.get("writing") is not True
+            ):
+                raise ReadEpochError("native truncating open lost its paired object transition")
+            item.update(identity=row["identity"], revision=row["revision"], settled=False)
+        elif kind == "output-write":
+            binding = bindings.get((row["pid"], row["fd"]))
+            if (
+                binding is None or binding[0] != serial or not binding[2]
+                or serial in readers.values()
+                or type(row["result"]) is not int
+                or not 0 <= row["result"] <= pending["requested_count"]
+                or row["identity"][3] != (
+                    max(pending["identity"][3], pending["offset"] + row["result"])
+                    if row["result"] > 0 else pending["identity"][3]
+                )
+                or row["identity"][:3] != item["identity"][:3]
+                or row["identity"][6] != item["identity"][6]
+                or row["revision"] != item["revision"] + (row["identity"] != item["identity"])
+                or row["result"] == 0 and row["identity"] != item["identity"]
+            ):
+                raise ReadEpochError("native output write changed its binding or unrelated identity")
+            item.update(identity=row["identity"], revision=row["revision"], settled=False)
+        elif row["revision"] != item["revision"]:
+            raise ReadEpochError("native output effect borrowed a stale content revision")
+        elif kind == "output-settled":
+            if row["identity"] != item["identity"]:
+                raise ReadEpochError("native output settlement changed its observed preimage")
+            writers = [
+                (key, binding) for key, binding in bindings.items()
+                if binding[0] == serial and binding[2]
+            ]
+            if writers:
+                following = effects[number] if number < len(effects) else None
+                if (
+                    len(writers) != 1 or not isinstance(following, dict)
+                    or following.get("kind") not in {"output-close", "output-exec-close", "output-duplicate-release", "output-close-failed"}
+                    or (following.get("pid"), following.get("fd")) != writers[0][0]
+                    or following.get("serial") != serial
+                    or (following.get("kind") != "output-close-failed" or resources)
+                    and following.get("description") != writers[0][1][1]
+                ):
+                    raise ReadEpochError("native output settlement precedes its final writable retirement")
+            item["settled"] = True
+            item["sha256"] = row["sha256"]
+        elif kind == "output-inherit":
+            if type(row["parent"]) is not int or row["parent"] not in pids:
+                raise ReadEpochError("native inherited output has a foreign or malformed parent")
+            binding = bindings.get((row["parent"], row["fd"]))
+            if binding is None or binding[:2] != (serial, row["description"]):
+                raise ReadEpochError("native inherited output lost its original description")
+            target = (row["pid"], row["fd"])
+            if target in bindings:
+                raise ReadEpochError("native inherited output reused a live descriptor")
+            bindings[target] = binding
+        else:
+            binding = bindings.get((row["pid"], row["fd"]))
+            if binding is None or binding[0] != serial:
+                raise ReadEpochError("native output return lost its actual descriptor")
+            if kind == "output-dup":
+                target = (row["pid"], row["result"])
+                if type(row["result"]) is not int or row["result"] < 0 or binding[1] != row["description"]:
+                    raise ReadEpochError("native duplicate output changed its description")
+                if target != (row["pid"], row["fd"]) and target in bindings:
+                    raise ReadEpochError("native duplicate output reused an unretired descriptor")
+                bindings[target] = binding
+            elif kind in {"output-close", "output-range-close", "output-exec-close", "output-duplicate-release"}:
+                if binding[1] != row["description"]:
+                    raise ReadEpochError("native output retirement changed its description")
+                if kind == "output-range-close" and (
+                    role(row["path"]) != "shared-lock"
+                    or not any(
+                        process != row["pid"] and value[1] == binding[1]
+                        for (process, _), value in bindings.items()
+                    )
+                ):
+                    raise ReadEpochError("native range retirement lacks its surviving inherited lock binding")
+                if (
+                    lock_modes.get(row["description"], 0)
+                    and sum(value[1] == row["description"] for value in bindings.values()) == 1
+                ):
+                    raise ReadEpochError("native last close omitted its lock release")
+                released_locks.pop(row["description"], None)
+                del bindings[(row["pid"], row["fd"])]
+                if not any(value[1] == row["description"] for value in bindings.values()):
+                    lock_modes.pop(row["description"], None)
+            elif kind == "output-write-failed":
+                if not binding[2] or type(row["result"]) is not int or not -4095 <= row["result"] < 0:
+                    raise ReadEpochError("native failed write lacks its writable binding and errno")
+            elif kind == "output-lock":
+                import fcntl
+                if (
+                    binding[1] != row["description"] or role(row["path"]) != "shared-lock"
+                    or type(row["flags"]) is not int
+                    or row["flags"] not in {fcntl.LOCK_SH, fcntl.LOCK_EX, fcntl.LOCK_UN, fcntl.LOCK_SH | fcntl.LOCK_NB, fcntl.LOCK_EX | fcntl.LOCK_NB}
+                    or type(row["result"]) is not int or row["result"] not in {0, -errno.EAGAIN, -errno.EINTR}
+                    or type(row["mode"]) is not int or row["mode"] not in {0, fcntl.LOCK_SH, fcntl.LOCK_EX}
+                    or row["result"] == 0 and row["mode"] != (0 if row["flags"] == fcntl.LOCK_UN else row["flags"] & ~fcntl.LOCK_NB)
+                ):
+                    raise ReadEpochError("native shared lock lost its actual description or return")
+                requested = row["flags"] & ~fcntl.LOCK_NB
+                previous = lock_modes.get(row["description"], 0)
+                if row["result"] < 0 and (
+                    requested == fcntl.LOCK_UN
+                    or row["result"] == -errno.EAGAIN and not row["flags"] & fcntl.LOCK_NB
+                    or row["mode"] != (previous if previous == requested else 0)
+                ):
+                    raise ReadEpochError("native failed flock changed its actual description preimage")
+                lock_modes[row["description"]] = row["mode"]
+            elif kind == "output-lock-release":
+                following = effects[number] if number < len(effects) else None
+                if (
+                    binding[1] != row["description"]
+                    or type(row["mode"]) is not int or row["mode"] not in {1, 2}
+                    or row["mode"] != lock_modes.get(row["description"], 0)
+                    or sum(value[1] == row["description"] for value in bindings.values()) != 1
+                    or row["description"] in released_locks
+                    or not isinstance(following, dict)
+                    or following.get("kind") not in {"output-close", "output-exec-close", "output-duplicate-release", "output-close-failed"}
+                    or any(following.get(key) != row[key] for key in ("pid", "fd", "serial", "description"))
+                ):
+                    raise ReadEpochError("native lock release lost its last actual description binding")
+                lock_modes[row["description"]] = 0
+                released_locks[row["description"]] = (row["pid"], row["fd"])
+            elif kind == "output-close-failed":
+                if type(row["result"]) is not int or row["result"] not in {
+                    -errno.EINTR, -errno.EIO, -errno.ENOSPC, -errno.EDQUOT,
+                }:
+                    raise ReadEpochError("native failed close lacks its supported released-FD errno")
+                description = row["description"] if resources else binding[1]
+                if binding[1] != description or (
+                    lock_modes.get(description, 0)
+                    and sum(value[1] == description for value in bindings.values()) == 1
+                ):
+                    raise ReadEpochError("native failed last close omitted its lock release")
+                released_locks.pop(description, None)
+                del bindings[(row["pid"], row["fd"])]
+                if not any(value[1] == description for value in bindings.values()):
+                    lock_modes.pop(description, None)
+    if bindings or readers or writes or parent_returns or released_locks or any(lock_modes.values()) or any(not item["settled"] for item in objects.values()):
+        raise ReadEpochError("native output archive omitted descriptor retirement or content settlement")
+    try:
+        validate_terminal_resources(
+            authority["paths"], resources, (item["path"] for item in objects.values() if item["path"] is not None),
+        )
+    except MakeProbeError as error:
+        raise ReadEpochError(str(error)) from error
 
 
 def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
     if (
-        set(value) != {"version", "scope", "events", "sources", "complete", "selection", "machine"}
+        set(value) != {"version", "scope", "events", "sources", "complete", "selection", "machine"} | (
+            {"output_authority"} if value["version"] in WRITABLE_VERSIONS else set()
+        )
         or value["scope"] != scope or value["complete"] is not True
         or not isinstance(value["events"], list) or not 1 <= len(value["events"]) <= count_limit
         or not isinstance(value["sources"], list) or len(value["sources"]) > count_limit
     ):
         raise ReadEpochError("incomplete runtime source/effect trace")
+    _machine_events(value["machine"], count_limit=count_limit)
     selection = validate_completion_selection(
         value["selection"], count_limit=count_limit, file_limit=file_limit,
     )
@@ -1896,6 +3974,8 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         snapshots[row["id"]] = (row, data)
 
     stack, opens, opened_paths, evaluations, effects, expansions = [], {}, {}, {}, {}, {}
+    templates, patterns = {}, {}
+    pattern_protocol = value["version"] in PATTERN_VERSIONS
     source_kinds, basic = {}, []
     common = {"seq", "kind", "exec", "pass"}
     fields = {
@@ -1907,9 +3987,25 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         "expansion-entry": {"expansion", "family", "target", "text", "cwd"},
         "expansion-exit": {"expansion"},
     }
-    basic_fields = _read_event_keys(RUNTIME_VERSION)
+    if pattern_protocol:
+        fields.update({
+            "pattern-template-entry": {"template", "owner"},
+            "pattern-template-completion": {"template", "owner", "source", "definition"},
+            "pattern-entry": {"pattern", "template", "target", "cwd"},
+            "pattern-definition": {"pattern", "name", "value", "flavor", "origin"},
+            "pattern-definition-return": {"pattern", "variable"},
+            "pattern-completion": {"pattern", "cwd", "variable"},
+        })
+    basic_fields = _read_event_keys(value["version"])
 
     def location(row):
+        if pattern_protocol and isinstance(row, dict) and set(row) == {"pattern"}:
+            if (
+                type(row["pattern"]) is not int or not stack or stack[0] != ("pattern", row["pattern"])
+                or any(frame[0] in {"source", "eval"} for frame in stack)
+            ):
+                raise ReadEpochError("runtime eval borrowed a foreign pattern root")
+            return
         if isinstance(row, dict) and set(row) == {"expansion"}:
             if (
                 type(row["expansion"]) is not int
@@ -1929,12 +4025,16 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
         sources = [frame for frame in stack if frame[0] == "source"]
         if (
             sources and sources[-1][1] != row["visit"]
-            or not sources and (row["visit"] is not None or not stack or stack[0][0] != "expansion")
+            or not sources and (row["visit"] is not None or not stack or stack[0][0] not in (
+                {"expansion", "pattern"} if pattern_protocol else {"expansion"}
+            ))
         ):
             raise ReadEpochError("runtime location belongs to another active reader")
         data = snapshots[row["source"]][1]
         if row["source"] not in indexes:
-            indexes[row["source"]] = _statement_index(data, count_limit=count_limit, reserve=reserve)
+            indexes[row["source"]] = _statement_index(
+                data, count_limit=count_limit, reserve=reserve, compact=pattern_protocol,
+            )
         span = indexes[row["source"]].get(row["span"][1])
         if span is None or list(span[:3]) != row["span"]:
             raise ReadEpochError("runtime location differs from pristine physical source")
@@ -1965,10 +4065,133 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             if (
                 set(event) != common | fields[kind]
                 or any(type(event[key]) is not int for key in ("exec", "pass"))
-                or context != (event["exec"], event["pass"]) or not stack and kind != "expansion-entry"
+                or context != (event["exec"], event["pass"]) or not stack and kind not in {"expansion-entry", "pattern-entry"}
             ):
                 raise ReadEpochError("runtime event has a foreign pass or wire shape")
-            if kind == "expansion-entry":
+            if kind.startswith("pattern-template-"):
+                number = event["template"]
+                parsers = [frame for frame in stack if frame[0] in {"source", "eval"}]
+                if (
+                    type(number) is not int or not parsers or event["owner"] != list(parsers[-1])
+                ):
+                    raise ReadEpochError("pattern template borrowed a foreign parser occurrence")
+                if kind == "pattern-template-entry":
+                    if number != len(templates) + 1:
+                        raise ReadEpochError("pattern template reused an issued ID")
+                    templates[number] = {"entry": event, "completion": None}
+                else:
+                    retained = templates.get(number)
+                    owner = tuple(event["owner"])
+                    source = opens.get(owner[1]) if owner[0] == "source" else evaluations[owner[1]]["source"]
+                    definition = event["definition"]
+                    if (
+                        retained is None or retained["completion"] is not None
+                        or retained["entry"]["owner"] != event["owner"]
+                        or retained["entry"]["exec"] != event["exec"]
+                        or type(event["source"]) is not int or event["source"] != source
+                        or source not in snapshots
+                        or not isinstance(definition, dict) or set(definition) != set(PatternDefinition._fields)
+                    ):
+                        raise ReadEpochError("pattern completion substituted source/version/owner fields")
+                    for key, maximum in (("pattern", 4096), ("name", 128), ("value", file_limit), ("file", 4096)):
+                        text = definition[key]
+                        if (
+                            not isinstance(text, str) or "\0" in text
+                            or any(0xD800 <= ord(char) <= 0xDFFF for char in text)
+                            or len(text.encode("utf-8")) > maximum
+                            or key != "value" and not text
+                        ):
+                            raise ReadEpochError("pattern template has unbounded completed fields")
+                    if (
+                        any(type(definition[key]) is not int for key in ("length", "percent", "line", "offset", "flags", "name_length"))
+                        or definition["length"] != len(definition["pattern"].encode("utf-8"))
+                        or "%" not in definition["pattern"] or definition["line"] < 1 or definition["offset"] < 0
+                        or not 0 <= definition["percent"] < definition["length"]
+                        or definition["pattern"].encode("utf-8")[definition["percent"]:definition["percent"] + 1] != b"%"
+                        or definition["name_length"] != len(definition["name"].encode("utf-8"))
+                        or not 0 <= definition["flags"] < 1 << 31
+                        or not 1 <= (definition["flags"] >> 23) & 7 <= 6
+                        or (definition["flags"] >> 26) & 7 > 6
+                    ):
+                        raise ReadEpochError("pattern template has invalid captured layout values")
+                    pattern_source_coordinates(
+                        definition, owner, source, value["events"],
+                        snapshots[source][1], reserve=reserve, event_limit=sequence,
+                    )
+                    retained["completion"] = event
+            elif kind == "pattern-entry":
+                number, template = event["pattern"], event["template"]
+                retained = templates.get(template) if type(template) is int else None
+                if (
+                    stack or type(number) is not int or number != len(patterns) + 1
+                    or retained is None or retained["completion"] is None
+                    or retained["completion"]["exec"] != event["exec"]
+                    or not isinstance(event["target"], str) or not event["target"]
+                    or any(0xD800 <= ord(char) <= 0xDFFF for char in event["target"])
+                    or "\0" in event["target"] or len(event["target"].encode("utf-8")) > 4096
+                    or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
+                    or any(0xD800 <= ord(char) <= 0xDFFF for char in event["cwd"])
+                    or "\0" in event["cwd"] or len(event["cwd"].encode("utf-8")) > 4096
+                ):
+                    raise ReadEpochError("pattern materialization lacks a completed current-exec template/target")
+                definition = retained["completion"]["definition"]
+                pattern, target = definition["pattern"].encode("utf-8"), event["target"].encode("utf-8")
+                percent = definition["percent"]
+                if (
+                    len(target) < len(pattern) - 1 or not target.startswith(pattern[:percent])
+                    or not target.endswith(pattern[percent + 1:])
+                ):
+                    raise ReadEpochError("pattern materialization target differs from its actual stem selection")
+                patterns[number] = {"entry": event, "definition": None, "return": None, "completion": None}
+                stack.append(("pattern", number))
+                basic.append({"seq": len(basic) + 1, "kind": "pattern-entry", "exec": event["exec"], "pass": event["pass"], "pattern": number})
+            elif kind in {"pattern-definition", "pattern-definition-return", "pattern-completion"}:
+                number = event["pattern"]
+                expected = "pattern-effect" if kind == "pattern-definition-return" else "pattern"
+                if type(number) is not int or not stack or stack[-1] != (expected, number) or number not in patterns:
+                    raise ReadEpochError("pattern effect retired across an active occurrence")
+                materialized = patterns[number]
+                definition = templates[materialized["entry"]["template"]]["completion"]["definition"]
+                flavor, origin = (definition["flags"] >> 23) & 7, (definition["flags"] >> 26) & 7
+                if kind == "pattern-definition":
+                    if (
+                        flavor == 1 or materialized["definition"] is not None
+                        or (event["name"], event["value"], event["flavor"], event["origin"])
+                        != (definition["name"], definition["value"], flavor, origin)
+                        or type(event["flavor"]) is not int or type(event["origin"]) is not int
+                    ):
+                        raise ReadEpochError("pattern definition substituted its captured inputs/flavor")
+                    materialized["definition"] = event
+                    stack.append(("pattern-effect", number))
+                elif kind == "pattern-definition-return":
+                    variable = variable_row(event["variable"])
+                    simple_pattern_binding(definition, variable)
+                    if (
+                        materialized["definition"] is None or materialized["return"] is not None
+                        or flavor == 1 or variable[0] != definition["name"]
+                    ):
+                        raise ReadEpochError("pattern definition return lost its effective binding")
+                    materialized["return"] = event
+                    stack.pop()
+                else:
+                    variable = variable_row(event["variable"])
+                    simple_pattern_binding(definition, variable)
+                    if (
+                        materialized["completion"] is not None
+                        or (materialized["definition"] is not None) != (flavor != 1)
+                        or (materialized["return"] is not None) != (flavor != 1)
+                        or variable[0] != definition["name"]
+                        or variable[2] & 0x60000088 != definition["flags"] & 0x60000088
+                        or event["cwd"] != materialized["entry"]["cwd"]
+                        or not isinstance(event["cwd"], str) or not event["cwd"].startswith("/")
+                        or any(0xD800 <= ord(char) <= 0xDFFF for char in event["cwd"])
+                        or "\0" in event["cwd"] or len(event["cwd"].encode("utf-8")) > 4096
+                    ):
+                        raise ReadEpochError("pattern completion lost its branch/return/effective modifiers")
+                    materialized["completion"] = event
+                    stack.pop()
+                    basic.append({"seq": len(basic) + 1, "kind": "pattern-exit", "exec": event["exec"], "pass": event["pass"], "pattern": number})
+            elif kind == "expansion-entry":
                 number = event["expansion"]
                 if (
                     stack or type(number) is not int or number != len(expansions) + 1
@@ -2065,6 +4288,11 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
                 number = event["evaluation"]
                 if type(number) is not int or stack[-1] != ("eval", number) or evaluations[number]["source"] != event["source"]:
                     raise ReadEpochError("runtime eval retired across an active occurrence")
+                if any(
+                    row["entry"]["owner"] == ["eval", number] and row["completion"] is None
+                    for row in templates.values()
+                ):
+                    raise ReadEpochError("runtime eval retired an incomplete pattern template")
                 stack.pop()
             continue
         if (
@@ -2084,7 +4312,7 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             stack.append(("pass", event["pass"]))
         elif kind == "source-entry":
             parent_location = row.pop("location", None)
-            if any(frame[0] in {"source", "expansion"} for frame in stack):
+            if any(frame[0] in {"source", "expansion", "pattern"} for frame in stack):
                 location(parent_location)
             elif parent_location is not None:
                 raise ReadEpochError("runtime root reader borrowed an include location")
@@ -2095,23 +4323,70 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             path, custody = row.pop("path"), row.pop("custody")
             if event["result"] >= 0:
                 source = event["source"]
-                if type(source) is not int or source not in snapshots or source_kinds.get(source) == "eval" or custody != {"kind": "snapshot"}:
+                if type(source) is not int or source not in snapshots or source_kinds.get(source) == "eval":
                     raise ReadEpochError("runtime file open substituted evaluated/publication bytes")
                 captured = snapshots[source][0]
                 if not isinstance(path, str):
                     raise ReadEpochError("runtime file has no exact inventory path")
-                entry = inventory.get(path)
-                if entry is None or entry["mode"] != captured["mode"] or entry["size"] != captured["bytes"] or entry["sha256"] != captured["sha256"]:
-                    raise ReadEpochError("runtime file differs from frozen immutable inventory")
+                if custody == {"kind": "snapshot"}:
+                    entry = inventory.get(path)
+                    if entry is None or entry["mode"] != captured["mode"] or entry["size"] != captured["bytes"] or entry["sha256"] != captured["sha256"]:
+                        raise ReadEpochError("runtime file differs from frozen immutable inventory")
+                elif (
+                    value["version"] in WRITABLE_VERSIONS and isinstance(custody, dict)
+                    and set(custody) == {"kind", "entry"} and custody["kind"] == "native-output"
+                    and type(custody["entry"]) is int
+                    and 1 <= custody["entry"] <= len(value["machine"]["events"])
+                ):
+                    entry = value["machine"]["events"][custody["entry"] - 1]
+                    if (
+                        not isinstance(entry, dict) or entry.get("kind") != "generated-source-entry"
+                        or any(key not in entry for key in (
+                            "visit", "trace_seq", "path", "identity", "sha256",
+                        ))
+                        or type(entry["trace_seq"]) is not int
+                        or not isinstance(entry["identity"], list) or len(entry["identity"]) != 7
+                        or any(type(part) is not int for part in entry["identity"])
+                        or entry["visit"] != event["visit"]
+                        or entry["trace_seq"] >= event["seq"] or entry["path"] != path
+                        or entry["identity"] != event["identity"]
+                        or entry["sha256"] != captured["sha256"]
+                        or entry["identity"][3] != captured["bytes"]
+                        or entry["identity"][2] & 0o777 != captured["mode"]
+                    ):
+                        raise ReadEpochError("runtime generated file differs from its original pinned entry")
+                else:
+                    raise ReadEpochError("runtime file open substituted evaluated/publication bytes")
                 opens[event["visit"]] = source
                 opened_paths[event["visit"]] = path
                 source_kinds[source] = "file"
             elif path is not None or custody is not None:
-                raise ReadEpochError("failed runtime open claims source custody")
+                if (
+                    value["version"] not in WRITABLE_VERSIONS or event["source"] is not None
+                    or event["identity"] is not None or not isinstance(path, str)
+                    or not isinstance(custody, dict) or set(custody) != {"kind", "entry"}
+                    or custody["kind"] != "native-output" or type(custody["entry"]) is not int
+                    or not 1 <= custody["entry"] <= len(value["machine"]["events"])
+                ):
+                    raise ReadEpochError("failed runtime open claims source custody")
+                entry = value["machine"]["events"][custody["entry"] - 1]
+                if (
+                    not isinstance(entry, dict) or entry.get("kind") != "generated-source-entry"
+                    or any(key not in entry for key in ("visit", "trace_seq", "path"))
+                    or type(entry["trace_seq"]) is not int
+                    or entry["visit"] != event["visit"]
+                    or entry["trace_seq"] >= event["seq"] or entry["path"] != path
+                ):
+                    raise ReadEpochError("failed runtime open borrowed another generated entry")
         elif kind in {"source-exit", "pass-exit"}:
             expected = ("source", event["visit"]) if kind == "source-exit" else ("pass", event["pass"])
             if not stack or stack[-1] != expected:
                 raise ReadEpochError("runtime reader/pass retired across an active invocation")
+            if any(
+                row["entry"]["owner"] == list(expected) and row["completion"] is None
+                for row in templates.values()
+            ):
+                raise ReadEpochError("runtime reader retired an incomplete pattern template")
             if kind == "source-exit" and event["source"] is not None and (
                 not isinstance(event["resolved"], str)
                 or _resolved_source_path(event["resolved"]) != "/repo/" + opened_paths[event["visit"]]
@@ -2130,30 +4405,45 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             row.pop("effects")
             row.pop("evaluations")
             row.pop("expansions")
+            if pattern_protocol:
+                if (
+                    any(type(event.get(key)) is not int for key in ("templates", "patterns", "pattern_returns"))
+                    or event["templates"] != len(templates) or event["patterns"] != len(patterns)
+                    or event["pattern_returns"] != sum(item["return"] is not None for item in patterns.values())
+                    or any(item["completion"] is None for item in (*templates.values(), *patterns.values()))
+                ):
+                    raise ReadEpochError("runtime terminal counters omit actual pattern occurrences")
+                for key in ("templates", "patterns", "pattern_returns"):
+                    row.pop(key)
         row["seq"] = len(basic) + 1
         basic.append(row)
     if set(source_kinds) != set(snapshots):
         raise ReadEpochError("runtime trace has unused or unbound captured sources")
     mapping = {old: new for new, old in enumerate(sorted(number for number, kind in source_kinds.items() if kind == "file"), 1)}
-    basic_sources = []
+    basic_sources, basic_data = {}, {}
     for old, new in mapping.items():
         row = dict(snapshots[old][0])
         row["id"] = new
-        basic_sources.append(row)
+        basic_sources[new] = row
+        basic_data[new] = snapshots[old][1]
     for row in basic:
         if row["kind"] in {"source-open", "source-exit"} and row["source"] is not None:
             row["source"] = mapping[row["source"]]
-    _validate_read_trace(
-        {"version": 2, "scope": scope, "events": basic, "sources": basic_sources, "complete": True},
-        scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve, expansion_projection=True,
+    _validate_captured_read_events(
+        {"version": 2, "scope": scope, "events": basic, "sources": list(basic_sources.values()), "complete": True},
+        basic_sources, basic_data,
+        scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve,
+        expansion_projection=True, pattern_projection=pattern_protocol,
     )
     reserve(len(encoded(value["machine"])))
-    validate_machine_observations(value["machine"], value, count_limit=count_limit)
+    validate_machine_observations(value["machine"], value, count_limit=count_limit, reserve=reserve)
+    if value["version"] in WRITABLE_VERSIONS:
+        validate_native_output_authority(value, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return value
 
 
 def validate_trace(value, scope, *, count_limit, file_limit, reserve=lambda size: None):
-    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] == RUNTIME_VERSION:
+    if isinstance(value, dict) and type(value.get("version")) is int and value["version"] in RUNTIME_VERSIONS:
         return validate_runtime_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
     return _validate_read_trace(value, scope, count_limit=count_limit, file_limit=file_limit, reserve=reserve)
 
@@ -2170,18 +4460,7 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
         or len(value["sources"]) > count_limit
     ):
         raise ReadEpochError("incomplete or foreign original read trace")
-    sources, source_indexes = {}, {}
-    selection = (
-        validate_completion_sites(value["selection"], count_limit=count_limit, file_limit=file_limit)
-        if value["version"] == 3 else
-        validate_completion_selection(value["selection"], count_limit=count_limit, file_limit=file_limit)
-        if value["version"] == COMPLETION_VERSION else []
-    )
-    selected = {tuple(row) for row in selection} if value["version"] == 3 else set()
-    selected_names = set(selection["names"]) if value["version"] == COMPLETION_VERSION else set()
-    inventory = {
-        row["path"]: row for row in selection.get("inventory", ())
-    } if value["version"] == COMPLETION_VERSION else {}
+    sources, source_data = {}, {}
     for row in value["sources"]:
         if (
             not isinstance(row, dict) or set(row) != {"id", "mode", "bytes", "sha256", "data"}
@@ -2200,13 +4479,36 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
         if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"] or base64.b64encode(data).decode() != row["data"]:
             raise ReadEpochError("original source snapshot differs from its captured bytes")
         sources[row["id"]] = row
+        source_data[row["id"]] = data
+    return _validate_captured_read_events(
+        value, sources, source_data, scope, count_limit=count_limit, file_limit=file_limit,
+        reserve=reserve, expansion_projection=expansion_projection,
+    )
+
+
+def _validate_captured_read_events(
+    value, sources, source_data, scope, *, count_limit, file_limit, reserve,
+    expansion_projection=False, pattern_projection=False,
+):
+    """Validate lifetimes using bytes already checked by the enclosing trace decoder."""
+    source_indexes = {}
+    selection = (
+        validate_completion_sites(value["selection"], count_limit=count_limit, file_limit=file_limit)
+        if value["version"] == 3 else
+        validate_completion_selection(value["selection"], count_limit=count_limit, file_limit=file_limit)
+        if value["version"] == COMPLETION_VERSION else []
+    )
+    selected = {tuple(row) for row in selection} if value["version"] == 3 else set()
+    selected_names = set(selection["names"]) if value["version"] == COMPLETION_VERSION else set()
+    inventory = {
+        row["path"]: row for row in selection.get("inventory", ())
+    } if value["version"] == COMPLETION_VERSION else {}
 
     def source_span(number, first, last):
         if number not in source_indexes:
-            reserve(sources[number]["bytes"])
-            data = base64.b64decode(sources[number]["data"], validate=True)
             source_indexes[number] = _statement_index(
-                data, count_limit=count_limit, reserve=reserve,
+                source_data[number], count_limit=count_limit, reserve=reserve,
+                compact=pattern_projection,
             )
         span = source_indexes[number].get(first)
         if span is None or span[2] != last:
@@ -2231,6 +4533,11 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
         keys.update({
             "expansion-entry": {"exec", "pass", "expansion"},
             "expansion-exit": {"exec", "pass", "expansion"},
+        })
+    if pattern_projection:
+        keys.update({
+            "pattern-entry": {"exec", "pass", "pattern"},
+            "pattern-exit": {"exec", "pass", "pattern"},
         })
     for sequence, event in enumerate(value["events"], 1):
         if (
@@ -2266,15 +4573,16 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
             continue
         if type(event["exec"]) is not int or event["exec"] != execs or type(event["pass"]) is not int:
             raise ReadEpochError("original read event has a foreign exec/pass")
-        if kind in {"expansion-entry", "expansion-exit"}:
-            if in_pass or active or not passes or event["pass"] != passes or type(event["expansion"]) is not int or event["expansion"] < 1:
+        if kind in {"expansion-entry", "expansion-exit", "pattern-entry", "pattern-exit"}:
+            key = "pattern" if kind.startswith("pattern-") else "expansion"
+            if in_pass or active or not passes or event["pass"] != passes or type(event[key]) is not int or event[key] < 1:
                 raise ReadEpochError("postread source interval crossed its original pass")
-            if kind == "expansion-entry":
+            if kind.endswith("-entry"):
                 if expansion is not None:
                     raise ReadEpochError("postread source intervals overlap")
-                expansion = event["expansion"]
+                expansion = (key, event[key])
             else:
-                if expansion != event["expansion"]:
+                if expansion != (key, event[key]):
                     raise ReadEpochError("postread source interval has a foreign return")
                 expansion = None
             continue
@@ -2450,9 +4758,8 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
                             and re.fullmatch("[0-9a-f]{64}", custody["owner"]) is not None
                         ):
                             raise ReadEpochError("completion source open lacks exact snapshot/publication custody")
-                        data = base64.b64decode(source["data"], validate=True)
                         rows, references, dependencies = completion_source_facts(
-                            path, data, checkpoint=lambda: reserve(0),
+                            path, source_data[event["source"]], checkpoint=lambda: reserve(0),
                             count_limit=count_limit, charge=reserve,
                         )
                         require_completion_reference_closure(
@@ -2486,5 +4793,5 @@ def _validate_read_trace(value, scope, *, count_limit, file_limit, reserve, expa
         raise ReadEpochError("original read trace has no complete terminal lifetime")
     if "machine" in value:
         reserve(len(encoded(value["machine"])))
-        validate_machine_observations(value["machine"], value, count_limit=count_limit)
+        validate_machine_observations(value["machine"], value, count_limit=count_limit, reserve=reserve)
     return value
