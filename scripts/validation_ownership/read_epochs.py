@@ -2047,7 +2047,9 @@ def validate_runtime_trace(value, scope, *, count_limit, file_limit, reserve):
             raise ReadEpochError("runtime location belongs to another active reader")
         data = snapshots[row["source"]][1]
         if row["source"] not in indexes:
-            indexes[row["source"]] = _statement_index(data, count_limit=count_limit, reserve=reserve)
+            indexes[row["source"]] = _statement_index(
+                data, count_limit=count_limit, reserve=reserve, compact=True,
+            )
         span = indexes[row["source"]].get(row["span"][1])
         if span is None or list(span[:3]) != row["span"]:
             raise ReadEpochError("runtime location differs from pristine physical source")

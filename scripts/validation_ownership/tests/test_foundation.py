@@ -1866,6 +1866,22 @@ class FoundationTests(unittest.TestCase):
                 self.assertEqual(semantics["domains"]["SELECTED"]["value"], "value")
                 archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
                 self.assertEqual(archive.passes[0].visits[0].source.data, session.snapshot.files["Makefile"])
+                replay_costs = []
+                original_index = read_epochs._statement_index
+                for eager_replay in (False, True):
+                    def replay_index(data, **options):
+                        if eager_replay:
+                            options["compact"] = False
+                        return original_index(data, **options)
+                    charges = []
+                    with patch.object(read_epochs, "_statement_index", replay_index):
+                        read_epochs.validate_trace(
+                            observed["read_trace"], observed["read_trace"]["scope"],
+                            count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes, reserve=charges.append,
+                        )
+                    replay_costs.append(sum(charges))
+                self.assertLess(replay_costs[0], replay_costs[1])
                 costs.append(observed["observation_bytes"])
             self.assert_clean(session)
         self.assertLess(costs[0] + (self.root / "Makefile").stat().st_size, costs[1])
