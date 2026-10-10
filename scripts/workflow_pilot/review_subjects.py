@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import importlib
+import io
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shlex
+import symtable
 import sys
 import types
+import unittest
+from unittest.mock import patch
 
 from scripts.workflow_pilot import review_family as review
 from scripts.workflow_pilot.raw_diff_check import ProcessCleanupError, run_process
@@ -30,6 +37,8 @@ BINDINGS = (
     SubjectSpec("TC-GAMEPLAY-006", "aoe-item-dispatch", "aoe"),
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
+    SubjectSpec("TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
+                "sealed-platform-storage", "platform-storage"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -41,6 +50,74 @@ EVENT_SCHEMA = "scripts/generated_data/eventlists/schema.py"
 EVENT_SOURCE = "src/data/ch2_eventlists.json"
 PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
+PLATFORM_SOURCE = "scripts/validation_ownership/runtime_image.py"
+PLATFORM_TEST = "scripts/validation_ownership/tests/test_platform_image.py"
+PLATFORM_OWNER = "tests/workflows/test_ownership_probe.py"
+PLATFORM_MAKE = "scripts/validation_ownership/foundation.mk"
+PLATFORM_TOPOLOGY = "tests/workflows/test_build_ci_topology.py"
+PLATFORM_CONDITIONS = "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+PLATFORM_WORKFLOW = ".github/workflows/build.yml"
+PLATFORM_FIELDS = (
+    "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size",
+    "st_mtime_ns", "st_ctime_ns",
+)
+PLATFORM_DEPENDENCIES = (
+    "scripts/validation_ownership/__init__.py",
+    "scripts/validation_ownership/tests/__init__.py",
+    "scripts/validation_ownership/authority.py",
+    "scripts/validation_ownership/budget.py",
+    "scripts/validation_ownership/lifecycle.py",
+    "scripts/validation_ownership/producer_channel.py",
+)
+
+
+def platform_parse_only(paths):
+    executed = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES}
+    inventories = {PLATFORM_OWNER, PLATFORM_TOPOLOGY, PLATFORM_CONDITIONS}
+    return {path for path in paths if path not in executed and (
+        path in inventories or (
+            path.startswith("scripts/validation_ownership/tests/") and path.endswith(".py")
+        )
+    )}
+
+
+def platform_inventory_path(path):
+    return Path("build/platform-inventory") / (path + ".source")
+
+def platform_parser_path(path):
+    return Path("build/platform-trusted-parsers") / (path + ".source")
+
+
+def platform_inputs(tree):
+    """Execution imports are closed; other native suites are parsed, never imported."""
+    inputs = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES,
+              PLATFORM_OWNER, PLATFORM_MAKE, PLATFORM_TOPOLOGY,
+              PLATFORM_CONDITIONS, PLATFORM_WORKFLOW}
+    for path in (PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES):
+        parsed = ast.parse(tree.read(path))
+        package = path.removesuffix(".py").replace("/", ".").rpartition(".")[0]
+        if path.endswith("/__init__.py"):
+            package = path[:-len("/__init__.py")].replace("/", ".")
+        for node in ast.walk(parsed):
+            modules = []
+            if isinstance(node, ast.Import):
+                modules = [item.name for item in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    parent = package.split(".")[:len(package.split(".")) - node.level + 1]
+                    modules = [".".join((*parent, node.module or ""))]
+                else:
+                    modules = [node.module or ""]
+            for module in modules:
+                if module.startswith(("scripts.", "tests.")):
+                    relative = module.replace(".", "/") + ".py"
+                    review.require(relative in inputs,
+                                   "platform execution import needs a reviewed closure")
+    # These files define the complete Make selection, not another execution grant.
+    for path in tree.under("scripts/validation_ownership/tests"):
+        if path.endswith(".py"):
+            inputs.add(path)
+    return inputs
 
 
 def event_validation_inputs(tree):
@@ -208,6 +285,47 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                     "trusted coordinator", "typed requests/rounds/task observations",
                     "exact scope/head/round and sticky hold", family + ":" + role,
                     (REVIEW_SOURCE,))
+    elif spec.model == "platform-storage":
+        inputs = platform_inputs(tree)
+        # AST identifies the reviewed finite mutation predicates. Runtime/test
+        # outcomes, not this structural check, establish coverage.
+        platform_mutation(tree.read(PLATFORM_SOURCE), "admission")
+        platform_mutation(tree.read(PLATFORM_SOURCE), "identity")
+        platform_mutation(tree.read(PLATFORM_SOURCE), "workspace")
+        for role, name, predicate, probe in (
+            ("producers", "complete-capture", "RuntimeImage.__init__", "capture"),
+            ("consumers", "complete-materialization", "RuntimeImage.materialize", "materialize"),
+            ("validators", "source-admission", "RuntimeImage.__init__", "admission"),
+            ("replay", "sealed-body", "RuntimeImage.require_sealed", "sealed"),
+            ("stale-bindings", "source-identity", "RuntimeImage.__init__/_identity", "identity"),
+        ):
+            add("wire", role, name, PLATFORM_SOURCE + ":" + predicate, PLATFORM_TEST,
+                "complete owned body / original-suite semantic mutation",
+                "real API inputs and unchanged baseline suite", "platform:" + probe, inputs)
+        for role, predicate, probe in (
+            ("entries", "RuntimeImage.__init__", "entries"),
+            ("preservation", "cleanup_scope/finish_cleanup", "preservation"),
+            ("resets", "ProbeBudget.charge/remaining", "resets"),
+            ("terminals", "RuntimeImage.close/close_images", "terminals"),
+        ):
+            add("lifecycle", role, "owned-storage", PLATFORM_SOURCE + ":" + predicate,
+                PLATFORM_TEST, "owned source/backing/destination/primary exception",
+                "capture/materialize success, failure and interruption",
+                "platform:" + probe, inputs)
+        for role, name, probe in (
+            ("enabled", "bounded-slices", "workspace"),
+            ("disabled", "byte-body", "bytes"),
+        ):
+            add("resource", role, name, PLATFORM_SOURCE + ":materialize_image/__getitem__",
+                PLATFORM_TEST, "sealed budget-owned / compatibility caller-owned bytes",
+                "workspace, quota, deadline and closed-body controls",
+                "platform:" + probe, inputs, profile=role)
+        for role in review.FAMILIES["generated"]:
+            add("generated", role, "probe-inventory", PLATFORM_MAKE, PLATFORM_WORKFLOW,
+                "parsed Make argv / source test inventory / full-only workflow owner",
+                "selected versus expected modules and enabled/disabled owner",
+                "platform-owner:" + role, inputs, kind="parsed",
+                evidence=("positive", "adversarial", "generated"))
     else:
         raise review.ReviewError("unknown finite source model")
     for path in {path for member in result for path in member.inputs}:
@@ -497,6 +615,395 @@ def _session_probe(probe: str) -> dict:
     return {"kind": "host", "checks": 2, "detail": "registered production reducer executed"}
 
 
+def platform_mutation(source, kind):
+    """Remove one finite production predicate, retaining all other operations."""
+    parsed = ast.parse(source)
+    providers = [node for node in parsed.body
+                 if isinstance(node, ast.ClassDef) and node.name == "RuntimeImage"]
+    review.require(len(providers) == 1, "unknown platform provider")
+    identities = [node for node in parsed.body
+                  if isinstance(node, ast.FunctionDef) and node.name == "_identity"]
+    review.require(len(identities) == 1, "unknown platform identity")
+    returns = [node for node in identities[0].body if isinstance(node, ast.Return)]
+    review.require(len(returns) == 1 and isinstance(returns[0].value, ast.Tuple)
+                   and all(isinstance(node, ast.Attribute) for node in returns[0].value.elts)
+                   and len(returns[0].value.elts) == len(PLATFORM_FIELDS)
+                   and {node.attr for node in returns[0].value.elts} == set(PLATFORM_FIELDS),
+                   "changed platform identity fields need a reviewed model")
+    method_name = "__getitem__" if kind == "workspace" else "__init__"
+    methods = [node for node in providers[0].body
+               if isinstance(node, ast.FunctionDef) and node.name == method_name]
+    review.require(len(methods) == 1, "unknown platform predicate")
+    changed = 0
+    for node in ast.walk(methods[0]):
+        if not isinstance(node, ast.If):
+            continue
+        terms = tuple(ast.walk(node.test))
+        if kind == "admission" and any(
+            isinstance(term, ast.Attribute) and term.attr == "st_uid"
+            for term in terms
+        ):
+            review.require(isinstance(node.test, ast.BoolOp) and isinstance(node.test.op, ast.Or)
+                           and len(node.test.values) == 4, "unknown admission guard")
+            node.test = ast.Constant(False)
+            changed += 1
+        elif kind == "identity" and any(
+            isinstance(term, ast.Call) and isinstance(term.func, ast.Name)
+            and term.func.id == "_identity" for term in terms
+        ):
+            review.require(isinstance(node.test, ast.BoolOp) and isinstance(node.test.op, ast.Or)
+                           and len(node.test.values) == 3, "unknown postcapture identity guard")
+            node.test = node.test.values[0]
+            changed += 1
+        elif kind == "workspace" and isinstance(node.test, ast.Compare) and (
+            isinstance(node.test.left, ast.Name)
+            and len(node.test.ops) == 1 and isinstance(node.test.ops[0], ast.Gt)
+            and isinstance(node.test.comparators[0], ast.Name)
+            and node.test.comparators[0].id == "BLOCK_BYTES"
+        ):
+            node.test = ast.Constant(False)
+            changed += 1
+    review.require(changed == 1, "missing/ambiguous platform mutation predicate")
+    return ast.fix_missing_locations(parsed), method_name
+
+
+def _platform_suite(module, names=None):
+    loader = unittest.TestLoader()
+    suite = (loader.loadTestsFromTestCase(module.PlatformImageTests) if names is None else
+             unittest.TestSuite(module.PlatformImageTests(name) for name in names))
+    review.require(not loader.errors and suite.countTestCases() > 0, "empty platform test selection")
+    result = unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+    check(not result.skipped and not result.expectedFailures
+          and not result.unexpectedSuccesses,
+          "provider tests skipped or used expected-failure outcomes")
+    return result
+
+
+def _platform_tests(names):
+    module = importlib.import_module(PLATFORM_TEST.removesuffix(".py").replace("/", "."))
+    result = _platform_suite(module, names)
+    check(result.testsRun == len(names) and result.wasSuccessful(),
+          "selected actual provider tests failed: " + str(result.failures + result.errors)[:1800])
+    return result.testsRun
+
+
+@probe_result("host")
+def _platform_coverage(kind):
+    module = importlib.import_module(PLATFORM_TEST.removesuffix(".py").replace("/", "."))
+    provider = importlib.import_module(PLATFORM_SOURCE.removesuffix(".py").replace("/", "."))
+    baseline = _platform_suite(module)
+    check(baseline.wasSuccessful(), "original source suite fails before mutation")
+    parsed, method = platform_mutation(Path(PLATFORM_SOURCE).read_bytes(), kind)
+    mutant = types.ModuleType("scripts.validation_ownership._review_platform_mutant")
+    mutant.__package__ = "scripts.validation_ownership"
+    exec(compile(parsed, PLATFORM_SOURCE + ":semantic-mutation", "exec"), mutant.__dict__)
+    with patch.object(provider.RuntimeImage, method, getattr(mutant.RuntimeImage, method)):
+        result = _platform_suite(module)
+    review.require(result.testsRun == baseline.testsRun and not result.errors,
+                   "mutation execution incomplete or errored")
+    expected = {"admission": 9, "identity": 16, "workspace": 3}[kind]
+    check(len(result.failures) == expected,
+          f"coverage gap, not an old runtime violation: original {baseline.testsRun}-case suite "
+          f"has {len(result.failures)}/{expected} input assertion failures after actual {kind} "
+          "predicate removal; original unmutated suite passed")
+    return {"kind": "host", "checks": baseline.testsRun + result.testsRun,
+            "detail": f"original unmutated {baseline.testsRun}-case suite passed; actual {kind} "
+                      f"predicate removal killed by all {expected} independent input assertions; "
+                      "coverage observation, not a claim of historical runtime malfunction"}
+
+
+@probe_result("host")
+def _platform(probe):
+    from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
+    from scripts.validation_ownership.runtime_image import (
+        RuntimeImage, close_images, image_digest, materialize_image,
+    )
+    cases = {
+        "capture": (
+            "test_complete_body_and_materialization_use_actual_immutable_backing",
+            "test_real_frontend_body_uses_snapshot_not_source_file_allowance",
+        ),
+        "materialize": (
+            "test_failed_materialization_removes_owned_file_and_preserves_failure",
+            "test_materialization_handles_actual_short_writes_and_failed_open",
+        ),
+        "entries": (
+            "test_source_descriptor_closes_if_fdopen_handoff_fails",
+            "test_complete_storage_and_work_quotas_fail_without_leaking_descriptors",
+        ),
+        "preservation": (
+            "test_capture_preserves_primary_with_source_and_backing_close_failures",
+            "test_materialization_preserves_primary_with_combined_cleanup_failures",
+        ),
+    }
+    if probe in cases:
+        checks = _platform_tests(cases[probe])
+    else:
+        body = b"caller-owned compatibility body"
+        target = Path("build/platform-output")
+        budget = ProbeBudget()
+        image = None
+        try:
+            if probe == "bytes":
+                check(materialize_image(target, body) == len(body) and target.read_bytes() == body,
+                      "compatibility bytes do not materialize completely")
+                check(image_digest(body) == hashlib.sha256(body).hexdigest(),
+                      "compatibility digest differs")
+                target.unlink()
+                cache = {"bytes": body}
+                close_images(cache)
+                check(cache == {}, "compatibility cache cleanup failed")
+                original_open = os.fdopen
+                for amount in (0, None, -1, len(body) + 1, True, object()):
+                    streams = []
+
+                    def wrap(descriptor, *args, **kwargs):
+                        stream = original_open(descriptor, *args, **kwargs)
+                        streams.append(stream)
+                        return types.SimpleNamespace(
+                            write=lambda data, amount=amount: amount, close=stream.close,
+                        )
+
+                    with patch("scripts.validation_ownership.runtime_image.os.fdopen", wrap):
+                        try:
+                            materialize_image(target, body)
+                        except MakeProbeError:
+                            pass
+                        else:
+                            check(False, "compatibility invalid progress succeeded")
+                    check(not target.exists() and len(streams) == 1 and streams[0].closed,
+                          "compatibility failure retained owned file/descriptor")
+            else:
+                image = RuntimeImage(Path("/usr/bin/make").resolve(), budget)
+                if probe == "sealed":
+                    import errno
+                    import fcntl
+                    from scripts.validation_ownership.runtime_image import IMAGE_SEALS
+                    descriptor = image.descriptor
+                    check(fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) == IMAGE_SEALS,
+                          "backing seals differ")
+                    before = image.digest(), image[:64]
+                    for action in (lambda: os.pwrite(descriptor, b"X", 0),
+                                   lambda: os.ftruncate(descriptor, 0),
+                                   lambda: os.ftruncate(descriptor, len(image) + 1)):
+                        try:
+                            action()
+                        except OSError as error:
+                            check(error.errno == errno.EPERM, "wrong seal refusal")
+                        else:
+                            check(False, "sealed mutation succeeded")
+                        check((image.digest(), image[:64]) == before, "sealed replay changed body")
+                elif probe == "resets":
+                    charged = dict(budget.bytes)
+                    budget.limits = Limits(snapshot_bytes=len(image))
+                    for _ in range(2):
+                        try:
+                            image.materialize(target)
+                        except MakeProbeError:
+                            pass
+                        else:
+                            check(False, "exhausted owner budget resumed")
+                    check(budget.failed and budget.bytes["snapshot"] == charged["snapshot"]
+                          and all(budget.bytes[key] >= value for key, value in charged.items())
+                          and not target.exists(),
+                          "failure reset charges or opened destination")
+                elif probe == "terminals":
+                    descriptor = image.descriptor
+                    cache = {"owned": image, "bytes": body}
+                    close_images(cache)
+                    close_images(cache)
+                    image.close()
+                    check(cache == {} and image.descriptor == -1, "terminal retained ownership")
+                    try:
+                        os.fstat(descriptor)
+                    except OSError as error:
+                        import errno
+                        check(error.errno == errno.EBADF, "wrong descriptor retirement")
+                    else:
+                        check(False, "owned descriptor remains open")
+                    for call in (image.digest, lambda: image[:1], lambda: image.materialize(target)):
+                        try:
+                            call()
+                        except MakeProbeError:
+                            pass
+                        else:
+                            check(False, "closed owned body remained usable")
+                    check(not target.exists(), "closed body opened a destination")
+                else:
+                    raise review.ReviewError("unknown platform API probe")
+            checks = 3
+        finally:
+            if image is not None:
+                image.close()
+            budget.close()
+    return {"kind": "host", "checks": checks,
+            "detail": probe + ": actual capture/materialize/ownership inputs executed"}
+
+
+def _platform_parsers():
+    """Execute only the existing finite parser functions, not their suite imports."""
+    names = {"_job_blocks", "_direct_job_if", "_run_block_commands",
+             "_step_blocks", "_direct_step_mapping_fields"}
+    parsed = ast.parse(platform_parser_path(PLATFORM_TOPOLOGY).read_bytes())
+    functions = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                 and node.name in names]
+    review.require({node.name for node in functions} == names, "missing owner parsers")
+    namespace = {"re": re, "ast": ast}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), PLATFORM_TOPOLOGY, "exec"), namespace)
+    parsed = ast.parse(platform_parser_path(PLATFORM_CONDITIONS).read_bytes())
+    predicates = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "workflow_condition"]
+    classes = [node for node in parsed.body if isinstance(node, ast.ClassDef)
+               and node.name == "WorkflowTests"]
+    review.require(len(predicates) == len(classes) == 1, "missing owner condition parser")
+    contexts = [node for node in classes[0].body if isinstance(node, ast.FunctionDef)
+                and node.name == "context"]
+    review.require(len(contexts) == 1, "missing finite owner contexts")
+    exec(compile(ast.Module(body=[*predicates, *contexts], type_ignores=[]),
+                 PLATFORM_CONDITIONS, "exec"), namespace)
+    return types.SimpleNamespace(**namespace)
+
+def platform_owner_recipe(source):
+    targets = {"ownership-probe-check", "ownership-probe-test"}
+    recipes, phony, current = {}, None, None
+    lines = []
+    for line in source.split("\n"):
+        line = line.removesuffix("\r")
+        if lines and lines[-1].endswith("\\"):
+            previous = lines.pop()
+            review.require(previous.startswith("\t") and not previous.endswith("\\\\"),
+                           "owner continuation requires one literal recipe escape")
+            review.require("'" not in previous and '"' not in previous,
+                           "quoted owner continuation requires a reviewed model")
+            lines.append(previous[:-1] + line.removeprefix("\t"))
+        else:
+            lines.append(line)
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        review.require("$" not in line, "owner Make expansion requires a reviewed model")
+        if line.startswith("\t"):
+            review.require(current is not None and current not in recipes,
+                           "owner recipe is missing, duplicated or multiline")
+            words = shlex.split(line.strip())
+            review.require(words and not any(char in line for char in ";|&<>`"),
+                           "owner recipe is not a literal command")
+            recipes[current] = words
+        elif line.startswith(".PHONY:"):
+            review.require(phony is None, "duplicate owner PHONY declaration")
+            phony = line.removeprefix(".PHONY:").split()
+            review.require(len(phony) == len(targets) and set(phony) == targets,
+                           "owner PHONY target set changed")
+            current = None
+        else:
+            match = re.fullmatch(r"(ownership-probe-check|ownership-probe-test)\s*:\s*", line)
+            review.require(match is not None and match[1] not in recipes,
+                           "owner Make requires literal standalone targets")
+            review.require(current is None or current in recipes, "owner target lacks a recipe")
+            current = match[1]
+    review.require(phony is not None and set(recipes) == targets,
+                   "owner Make target or recipe is incomplete")
+    review.require(recipes["ownership-probe-check"] == [
+        "/usr/bin/python3", "-I", "-S", "-B", "scripts/validation_ownership/isolated_launcher.py",
+    ], "owner check recipe changed")
+    return recipes["ownership-probe-test"]
+
+
+@probe_result("parsed")
+def _platform_owner(role):
+    parsed = ast.parse(platform_inventory_path(PLATFORM_OWNER).read_bytes())
+    declarations = [node for node in parsed.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == "PROBE_TEST_MODULES"
+                            for target in node.targets)]
+    review.require(len(declarations) == 1, "unknown owner inventory")
+    expected = ast.literal_eval(declarations[0].value)
+    review.require(isinstance(expected, tuple) and all(isinstance(name, str) for name in expected),
+                   "nonfinite owner inventory")
+    argv = platform_owner_recipe(Path(PLATFORM_MAKE).read_text())
+    check(argv[:3] == ["python3", "-m", "unittest"] and argv[-1:] == ["-v"],
+          "generated Make test command changed")
+    selected = argv[3:-1]
+    check(len(selected) == len(set(selected)), "duplicate generated test modules")
+    provider_module = PLATFORM_TEST.removesuffix(".py").replace("/", ".")
+    inventories = {}
+    for name in sorted(set(selected) | set(expected)):
+        review.require(name.startswith("scripts.validation_ownership.tests.test_")
+                       and all(part.isidentifier() for part in name.split(".")),
+                       "unknown native test selector")
+        path = name.replace(".", "/") + ".py"
+        content = (Path(path) if path == PLATFORM_TEST else platform_inventory_path(path)).read_bytes()
+        source = ast.parse(content)
+        symbols = symtable.symtable(content, path, "exec")
+        hooks = [symbols.lookup(name) for name in ("load_tests", "__getattr__", "__dir__")
+                 if name in symbols.get_identifiers()]
+        review.require(
+            not any(hook.is_assigned() or hook.is_imported() or hook.is_namespace()
+                    for hook in hooks)
+            and not any(isinstance(node, ast.ImportFrom)
+                        and any(alias.name == "*" for alias in node.names)
+                        for node in ast.walk(source)),
+            "custom selection needs a reviewed model",
+        )
+        inventories[name] = tuple(
+            name + "." + node.name + "." + method.name
+            for node in source.body if isinstance(node, ast.ClassDef)
+            and any(isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name)
+                    and base.value.id == "unittest" and base.attr == "TestCase"
+                    for base in node.bases)
+            for method in node.body if isinstance(method, ast.FunctionDef)
+            and method.name.startswith("test_")
+        )
+        check(bool(inventories[name]), "parsed owner module has no finite native cases")
+    if role in {"owners", "drift-checks"}:
+        check(len(expected) == len(set(expected)) and sorted(selected) == sorted(expected),
+              "parsed Make selected-versus-expected owner inventory differs")
+        check(sorted(case for name in selected for case in inventories[name])
+              == sorted(case for name in expected for case in inventories[name]),
+              "parsed Make selected-versus-expected case inventory differs")
+        check(provider_module in expected, "provider absent from owner inventory")
+    elif role == "outputs":
+        check(provider_module in selected, "generated Make output omits provider")
+        module = importlib.import_module(provider_module)
+        suite = unittest.TestLoader().loadTestsFromModule(module)
+
+        def identifiers(items):
+            for item in items:
+                if isinstance(item, unittest.TestSuite):
+                    yield from identifiers(item)
+                else:
+                    yield item.id()
+
+        check(sorted(identifiers(suite)) == sorted(inventories[provider_module]),
+              "actual provider selection differs from parsed generated inventory")
+    elif role == "consumers":
+        parsers = _platform_parsers()
+        jobs = parsers._job_blocks(Path(PLATFORM_WORKFLOW).read_text())
+        owners = []
+        for name, job in jobs.items():
+            for step in parsers._step_blocks(job):
+                for run in parsers._run_block_commands(step):
+                    if "ownership-probe-test" in run:
+                        check(shlex.split(run) == [
+                            "make", "-f", PLATFORM_MAKE, "ownership-probe-test",
+                        ], "workflow changed generated consumer command")
+                        fields = parsers._direct_step_mapping_fields(step)
+                        check(fields is not None and len(fields) == len(set(fields))
+                              and {"name", "run"} <= set(fields) <= {"name", "run", "id"},
+                              "workflow test consumer is conditional, duplicated or ignorable")
+                        owners.append(name)
+        check(owners == ["extended-host-tests"], "generated provider has missing/duplicate owner")
+        condition = parsers._direct_job_if(jobs[owners[0]])
+        for event in ("pull_request", "push", "workflow_dispatch"):
+            for mode in ("full", "metadata-only", "review-first"):
+                context = parsers.context(None, event, mode)
+                check(parsers.workflow_condition(condition, context) == (mode == "full"),
+                      "full/disabled owner resource selection differs")
+    else:
+        raise review.ReviewError("unknown platform owner role")
+    return {"kind": "parsed", "checks": 2,
+            "detail": role + ": actual Make argv/source inventory/parsed workflow selection"}
+
+
 def run_probe(probe: str) -> dict:
     allowed = {
         *(f"aoe-phase:{phase}" for phase in PHASES),
@@ -505,6 +1012,11 @@ def run_probe(probe: str) -> dict:
         "aoe-reference:enabled", "aoe-reference:disabled", "aoe-arm:enabled", "aoe-arm:disabled",
         "generated-output", "generated-consumer", "generated-drift",
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
+        *(f"platform:{name}" for name in (
+            "admission", "identity", "workspace", "capture", "materialize", "entries",
+            "preservation", "sealed", "resets", "terminals", "bytes",
+        )),
+        *(f"platform-owner:{role}" for role in review.FAMILIES["generated"]),
     }
     if probe.startswith("generated-owner:"):
         from scripts.generated_data import registry
@@ -520,6 +1032,12 @@ def run_probe(probe: str) -> dict:
         return _generated(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
+    if probe.startswith("platform-owner:"):
+        return _platform_owner(probe.partition(":")[2])
+    if probe.startswith("platform:"):
+        name = probe.partition(":")[2]
+        return (_platform_coverage(name) if name in {"admission", "identity", "workspace"}
+                else _platform(name))
     raise review.ReviewError("unregistered probe")
 
 
