@@ -1278,7 +1278,7 @@ class ProbeSession:
         runtime_completions=False, observe_patterns=False, observe_root=False,
         repository_outputs=(), cwd="/repo", initial_executable=None,
         original_tool=None, native_admission_handler=None,
-        native_output_paths=(), native_resources=(), native_requests=None,
+        native_output_paths=(), native_resources=(), native_requests=None, native_compiler=None,
     ):
         self.budget.remaining()
         if type(observe_patterns) is not bool or observe_patterns and not (
@@ -1306,6 +1306,23 @@ class ProbeSession:
             or repository_outputs and not native_output_paths or not callable(native_admission_handler)
         ):
             raise MakeProbeError("native Command admission requires unmapped runtime observation")
+        if native_compiler is not None:
+            from .read_epochs import native_compiler_profile
+            profile = native_compiler_profile(
+                native_compiler, count_limit=self.budget.limits.entries,
+                reserve=lambda size: self.budget.charge("control", size),
+            )
+            if not native_output_paths or native_admission_handler is None or not {
+                profile.driver, profile.frontend,
+            } <= set(native_executables):
+                raise MakeProbeError("native compiler requires its complete writable Command runtime")
+            expected_profile = self._native_compiler_profile({
+                **{name: value for name, value in environment.items()
+                   if name != "LD_PRELOAD" and not name.startswith("VO_")},
+                "PWD": "/repo", "MAKELEVEL": "1", "MAKEFLAGS": "", "MFLAGS": "",
+            })
+            if native_compiler != expected_profile:
+                raise MakeProbeError("native compiler profile differs from its session-issued runtime/request")
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
         if repository_outputs:
@@ -1511,6 +1528,8 @@ class ProbeSession:
             config["native_source_roots"] = list(self._native_source_roots())
             if native_resources:
                 config["native_resources"] = [list(row) for row in native_resources]
+        if native_compiler is not None:
+            config["native_compiler"] = native_compiler
         counter_names = {
             "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
             "observations", "live_process_peak", "memory_peak",
@@ -1631,10 +1650,14 @@ class ProbeSession:
                         **{key: request[key] for key in ("dispatch", "pid", "generation")},
                         "fork_parent": fork_parent,
                     }
+                    if native_compiler is not None and request.get("path") in {
+                        native_compiler["driver"], native_compiler["frontend"],
+                    }:
+                        context["environment"] = request.get("environment")
                 if (
                     set(request) != {"kind", "scope", "sequence", "path", "argv", "cwd", "counters"} | (
                         {"dispatch", "pid", "generation", "fork_parent"} if image_request else set()
-                    )
+                    ) | ({"environment"} if context is not None and "environment" in context else set())
                     or request["kind"] not in {"native-request", "native-exec-request"}
                     or type(request["sequence"]) is not int or request["sequence"] != sequence + 1
                     or request["path"] not in config["native_executables"]
@@ -1647,11 +1670,31 @@ class ProbeSession:
                 settle(request["counters"])
                 sequence += 1
                 authorization = native_admission_handler(request["path"], inputs, context)
+                compiler_binding = authorization.get("compiler") if isinstance(authorization, dict) else None
+                if compiler_binding is not None and compiler_binding["role"] == "frontend":
+                    reference = compiler_binding["driver"]
+                    if (
+                        context is None or not isinstance(reference, list) or len(reference) != 3
+                        or any(type(number) is not int or number < 1 for number in reference)
+                    ):
+                        raise MakeProbeError("native frontend lacks its actual issued driver-at-fork")
+                    driver = native_authorizations.get(reference[2])
+                    parent_binding = driver[2].get("compiler") if driver is not None else None
+                    if (
+                        parent_binding is None or parent_binding["role"] != "driver"
+                        or driver[0] != native_compiler["driver"]
+                        or any(compiler_binding[key] != parent_binding[key] for key in ("profile", "sources", "code"))
+                        or authorization["outputs"] != driver[2]["outputs"]
+                        or authorization.get("resources", []) != driver[2].get("resources", [])
+                    ):
+                        raise MakeProbeError("native frontend changed its issued driver source/output scope")
+                    compiler_binding["includes"] = parent_binding["includes"]
+                    self.budget.charge("control", len(encoded(compiler_binding)))
                 if native_output_paths:
                     if (
                         not isinstance(authorization, dict) or set(authorization) != {"owner", "closure", "outputs"} | (
                             {"resources"} if native_resources else set()
-                        )
+                        ) | ({"compiler"} if native_compiler is not None and "compiler" in authorization else set())
                         or not isinstance(authorization["outputs"], list)
                         or any(path not in native_output_paths for path in authorization["outputs"])
                         or len(set(authorization["outputs"])) != len(authorization["outputs"])
@@ -1681,6 +1724,7 @@ class ProbeSession:
                     **({"closure": authorization["closure"]} if native_output_paths else {}),
                     **({"outputs": authorization["outputs"]} if native_output_paths else {}),
                     **({"resources": authorization["resources"]} if native_resources else {}),
+                    **({"compiler": authorization["compiler"]} if native_compiler is not None and "compiler" in authorization else {}),
                 }
                 native_authorizations[sequence] = (request["path"], inputs, admission) + (
                     (context,) if native_output_paths else ()
@@ -1999,6 +2043,9 @@ class ProbeSession:
                                 native_job_tree(
                                     job["tree"], job, None, config["native_executables"],
                                     count_limit=config["observation_count"], writable=True,
+                                    compiler_profile=profile if native_compiler is not None else None,
+                                    compiler_sources=self.snapshot.files,
+                                    reserve=lambda size: self.budget.charge("control", size),
                                 )
                                 from .read_epochs import native_fork_references
                                 fork_references = native_fork_references(
@@ -2026,6 +2073,8 @@ class ProbeSession:
                                                 else list(fork_references[(event["pid"], event["generation"])])
                                             ),
                                         }
+                                        if "compiler" in image:
+                                            expected_context["environment"] = image["compiler"]["environment"]
                                         if issued != (
                                             event["path"], native_execution_input(event["argv"], event["cwd"]),
                                             image, expected_context,
@@ -2126,6 +2175,7 @@ class ProbeSession:
                             authority["paths"] != config["native_output_paths"]
                             or authority.get("resources", []) != config.get("native_resources", [])
                             or set(authority.get("source_roots", [])) != set(config["native_source_roots"])
+                            or authority.get("compiler") != native_compiler
                             or any(
                                 job["admission"].get("sequence") not in native_authorizations
                                 or job["admission"] != native_authorizations[job["admission"]["sequence"]][2]
@@ -2288,53 +2338,8 @@ class ProbeSession:
 
     @staticmethod
     def _dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/cc",)):
-        if (
-            not argv or argv[0] not in driver_spellings
-            or len(outputs) != 1 or not outputs[0].endswith(".d")
-        ):
-            raise MakeProbeError("dependency profile requires host cc and one declared .d output")
-        modes = set()
-        includes = []
-        translation_unit = target = None
-        arguments = iter(argv[1:])
-        for argument in arguments:
-            if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
-                if argument in modes:
-                    raise MakeProbeError("duplicate dependency mode")
-                modes.add(argument)
-                continue
-            option = next(
-                (name for name in ("-iquote", "-MT", "-I", "-D", "-U") if argument.startswith(name)),
-                None,
-            )
-            if option is not None:
-                value = argument[len(option):] if argument != option else next(arguments, "")
-                if not value or value.startswith("@") or "\n" in value or "\r" in value:
-                    raise MakeProbeError("invalid or missing dependency option value")
-                if option in {"-I", "-iquote"}:
-                    if value.startswith(("=", "$SYSROOT")):
-                        raise MakeProbeError("sysroot-special dependency include operand is unsupported")
-                    if value.startswith("-"):
-                        raise MakeProbeError("dependency include path is not repository-relative")
-                    includes.append(value if value == "." else relative_path(value))
-                elif option in {"-D", "-U"}:
-                    name, separator, _ = value.partition("=")
-                    if not VARIABLE.fullmatch(name) or option == "-U" and separator:
-                        raise MakeProbeError("dependency macro requires a symbolic name")
-                else:
-                    if target is not None or not TARGET.fullmatch(value) or value.startswith("-"):
-                        raise MakeProbeError("invalid or duplicate dependency target")
-                    target = relative_path(value)
-                continue
-            if argument.startswith(("-", "@")) or translation_unit is not None or not argument.endswith(".c"):
-                raise MakeProbeError("unsupported dependency compiler option or source")
-            translation_unit = relative_path(argument)
-        if (
-            not {"-E", "-MM", "-nostdinc", "-undef"} <= modes
-            or target is None or translation_unit not in sources
-        ):
-            raise MakeProbeError("dependency profile requires exact modes, target and declared C source")
-        return tuple(dict.fromkeys(includes))
+        from .read_epochs import dependency_arguments
+        return dependency_arguments(argv, sources, outputs, driver_spellings=driver_spellings)
 
 
     def _sealed_native_tool_bytes(self, tool):
@@ -2921,6 +2926,22 @@ class ProbeSession:
         if writable_outputs and commands is None:
             raise MakeProbeError("native writable Make requires original Command admission")
         frozen_snapshot, frozen_tree = self.snapshot, self.tree
+        compiler_profile = None
+        compiler_aliases = ()
+        if self.dependency_compiler is not None and set(self.dependency_compiler) & set(native_executables):
+            if not set(self.dependency_compiler) <= set(native_executables):
+                raise MakeProbeError("native compiler declaration omits its issued driver or frontend")
+            compiler_profile = self._native_compiler_profile({
+                **ENVIRONMENT,
+                **{name: value for origin, name, value in assignments if origin == "environment"},
+                "PWD": "/repo", "MAKELEVEL": "1", "MAKEFLAGS": "", "MFLAGS": "",
+            })
+            compiler_aliases = tuple(
+                (path, str(_trusted_runtime_path(path, compiler=True)))
+                for path in self.dependency_runtime["runtime_files"]
+                if path != str(_trusted_runtime_path(path, compiler=True))
+            )
+            self.budget.charge("control", len(encoded(compiler_aliases)))
 
         def admit(path, inputs, context=None):
             if self.snapshot is not frozen_snapshot or self.tree != frozen_tree:
@@ -2979,9 +3000,33 @@ class ProbeSession:
             if writable_outputs:
                 self.budget.charge("cache", len(encoded([closure, outputs, resources])))
             owner = native_command_owner(closure, outputs, resources) if writable_outputs else closure
+            compiler = None
+            if compiler_profile is not None and path in self.dependency_compiler:
+                role = "driver" if path == compiler_profile["driver"] else "frontend"
+                actual_environment = (
+                    compiler_profile["environment"] if context is None else context.get("environment")
+                )
+                from .read_epochs import compiler_environment
+                compiler_environment(
+                    actual_environment, compiler_profile["environment"],
+                    frontend=role == "frontend", driver=compiler_profile["driver"],
+                )
+                includes = self._dependency_arguments(
+                    inputs["argv"], sources, outputs,
+                    driver_spellings=("cc", "/usr/bin/cc", compiler_profile["driver"]),
+                ) if role == "driver" else ()
+                if role == "frontend" and context is None:
+                    raise MakeProbeError("native frontend cannot be an original Make root dispatch")
+                compiler = {
+                    "profile": compiler_profile["identity"], "role": role,
+                    "driver": None if role == "driver" else context["fork_parent"],
+                    "sources": list(sources), "code": list(command.code), "includes": list(includes),
+                    "environment": dict(actual_environment),
+                }
             return {
                 "owner": owner, "closure": closure, "outputs": list(outputs),
                 **({"resources": [list(row) for row in resources]} if native_resources else {}),
+                **({"compiler": compiler} if compiler is not None else {}),
             } if writable_outputs else owner
         if (
             not isinstance(native_executables, tuple)
@@ -3046,7 +3091,10 @@ class ProbeSession:
                 raise MakeProbeError("native library runtime conflicts with captured bytes")
             runtime[path] = binary
         for path in native_executables:
-            captured = self._captured_native_runtime(path, sealed=True)
+            captured = (
+                self._sealed_dependency_runtime() if compiler_profile is not None and path in self.dependency_compiler
+                else self._captured_native_runtime(path, sealed=True)
+            )
             if _make_interpreter(dict(captured)[path]) != interpreter:
                 raise MakeProbeError("native executable requires an unadmitted interpreter")
             for name, data in captured:
@@ -3090,6 +3138,7 @@ class ProbeSession:
                 sorted(images), sorted(resources),
                 sorted((self._native_shell_path(), *native_executables)),
                 runtime_directories, metadata_directories,
+                *([compiler_profile] if compiler_profile is not None else []),
             ])
             self.budget.charge("cache", len(closure))
             runtime_identity = hashlib.sha256(closure).hexdigest()
@@ -3125,7 +3174,7 @@ class ProbeSession:
             lambda: _remove_owned_tree(root.parent / (root.name + "-sources")),
             lambda: (root.parent / (root.name + "-image")).unlink(missing_ok=True),
         ]):
-            self._new_root(root_name, make=True, native_runtime=native_runtime)
+            self._new_root(root_name, make=True, native_runtime=native_runtime, native_aliases=compiler_aliases)
             for path in runtime_directories:
                 if any(
                     name == path or name.startswith(path + "/")
@@ -3173,6 +3222,7 @@ class ProbeSession:
                 native_output_paths=writable_outputs,
                 native_resources=native_resources,
                 native_requests=native_requests,
+                native_compiler=compiler_profile,
                 mounts=[
                     *(self._mount(Path(path), path, executable=True) for path in runtime_directories),
                     *(self._mount(Path(path), path) for path, identity in metadata_directories

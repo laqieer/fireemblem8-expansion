@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -71,6 +72,128 @@ class RuntimeImageSessionTests(unittest.TestCase):
 
     def tearDown(self):
         self.fixture.tearDown()
+
+    def test_actual_native_dependency_compiler_binds_source_environment_and_output_custody(self):
+        from scripts.validation_ownership.make_probe import Command
+        self.fixture.add("src/query.c", '#include "query.h"\nint value = VALUE;\n')
+        self.fixture.add("include/query.h", "#define VALUE 7\n")
+        with self.fixture.session() as setup:
+            setup._sealed_dependency_runtime()
+            driver, frontend = setup.dependency_compiler
+        output = ".dep/query.d"
+        recipe = (
+            "mkdir -p .dep; " + driver +
+            " -E -MM -MG -nostdinc -undef -MT query.o -Iinclude src/query.c > " + output
+        )
+        self.fixture.add("Makefile", (
+            "-include " + output + "\n.PHONY: all\nall: ; @v=done; printf '%s' \"$$v\"\n"
+            + output + ": src/query.c include/query.h\n\t@" + recipe + "\n"
+        ))
+        baseline = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", "all"], cwd=self.fixture.root,
+            capture_output=True, check=True, timeout=15,
+        )
+        expected = (self.fixture.root / output).read_bytes()
+        (self.fixture.root / output).unlink()
+        resources = (("directory", ".dep"),)
+        missing_code = False
+
+        class Commands:
+            def __getitem__(owner, argv):
+                if argv == ("/bin/sh", "-c", recipe) or argv == ("mkdir", "-p", ".dep"):
+                    return Command(argv, outputs=(output,), native_resources=resources)
+                if argv == ("/bin/sh", "-c", "v=done; printf '%s' \"$v\""):
+                    return Command(argv)
+                if argv[0] not in {driver, frontend}:
+                    raise KeyError(argv)
+                return Command(
+                    argv, sources=("src/query.c",), code=() if missing_code else ("include/query.h",),
+                    directories=("src", "include"), outputs=(output,), native_resources=resources,
+                )
+
+        session = self.fixture.session(runtime_files=(
+            "/proc/filesystems", "/proc/mounts", "/etc/selinux/config",
+        ))
+        with session:
+            session._sealed_dependency_runtime()
+            completed, _, observed, generated = session._native_make_writable(
+                "all", outputs=(output,), commands=Commands(), native_resources=resources,
+                native_executables=(driver, frontend, "/usr/bin/mkdir"),
+                native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                observe_reads=True, observe_runtime_completions=True,
+            )
+            self.assertEqual((completed.stdout, completed.stderr), (baseline.stdout, b""))
+            self.assertEqual([(item.path, item.data, item.mode) for item in generated],
+                             [(output, expected, 0o644)])
+            trace = observed["read_trace"]
+            profile = read_epochs.native_compiler_profile(
+                trace["output_authority"]["compiler"], count_limit=32768,
+            )
+            job = observed["native_jobs"][0]
+            tree = [row["event"] for row in trace["machine"]["events"]
+                    if row["kind"] == "native-tree" and row["dispatch"] == 1]
+            actors = read_epochs.native_compiler_lineage(
+                tree, job, profile, sources=session.snapshot.files, count_limit=32768,
+            )
+            self.assertEqual([actor.role for actor in actors], ["driver", "frontend"])
+            self.assertEqual(actors[1].driver, (actors[0].pid, actors[0].generation, actors[0].admission))
+            effects = read_epochs.native_output_effects(trace)
+            writes = [row for row in effects if row["kind"] == "output-write"]
+            self.assertEqual([(row["pid"], row["fd"], row["result"]) for row in writes],
+                             [(actors[1].pid, 1, len(expected))])
+            self.assertEqual([row["exec"] for row in trace["events"] if row["kind"] == "entry-image"],
+                             [1, 2])
+            self.assertEqual(observed["consumed"], ["src/query.c"])
+            self.assertEqual(observed["code_consumed"], ["include/query.h"])
+            for defect in ("profile", "driver", "source", "environment", "missing-profile"):
+                changed = json.loads(json.dumps(trace))
+                if defect == "missing-profile":
+                    del changed["output_authority"]["compiler"]
+                else:
+                    row = next(row for row in changed["machine"]["events"]
+                               if row["kind"] == "native-tree" and row["event"]["kind"] == "exec"
+                               and row["event"]["pid"] == actors[1].pid)
+                    binding = row["event"]["admission"]["compiler"]
+                    if defect == "profile":
+                        binding["profile"] = "0" * 64
+                    elif defect == "driver":
+                        binding["driver"][0] += 1
+                    elif defect == "source":
+                        binding["sources"] = ["Makefile"]
+                    else:
+                        del binding["environment"]
+                    row["sha256"] = hashlib.sha256(read_epochs.encoded(row["event"])).hexdigest()
+                with self.subTest(replay=defect), self.assertRaises(MakeProbeError):
+                    read_epochs.validate_trace(
+                        changed, trace["scope"], count_limit=32768,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+        self.fixture.assert_clean(session)
+        for defect in ("environment", "source"):
+            missing_code = defect == "source"
+            if defect == "environment":
+                recipe = "CPATH=/repo/include; export CPATH; " + recipe
+            else:
+                recipe = recipe.removeprefix("CPATH=/repo/include; export CPATH; ")
+            self.fixture.add("Makefile", (
+                "-include " + output + "\n.PHONY: all\nall: ;\n"
+                + output + ": src/query.c include/query.h\n\t@" + recipe + "\n"
+            ))
+            session = self.fixture.session(runtime_files=(
+                "/proc/filesystems", "/proc/mounts", "/etc/selinux/config",
+            ))
+            with self.subTest(actual=defect), session:
+                session._sealed_dependency_runtime()
+                with self.assertRaisesRegex(MakeProbeError, "compiler environment|issued source scope"):
+                    session._native_make_writable(
+                        "all", outputs=(output,), commands=Commands(), native_resources=resources,
+                        native_executables=(driver, frontend, "/usr/bin/mkdir"),
+                        native_metadata_directories=("/sys/fs/selinux", "/selinux"),
+                        observe_reads=True, observe_runtime_completions=True,
+                    )
+                self.assertTrue(session.budget.failed)
+            self.fixture.assert_clean(session)
 
     def test_derived_compiler_closure_owns_complete_sealed_images_without_exec_authority(self):
         session = self.fixture.session()

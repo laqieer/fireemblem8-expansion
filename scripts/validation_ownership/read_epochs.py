@@ -1619,6 +1619,46 @@ class OriginalCompilerExecution(NamedTuple):
     environment: tuple
 
 
+def dependency_arguments(argv, sources, outputs, *, driver_spellings=("/usr/bin/cc",)):
+    if not argv or argv[0] not in driver_spellings or len(outputs) != 1 or not outputs[0].endswith(".d"):
+        raise MakeProbeError("dependency profile requires host cc and one declared .d output")
+    modes, includes = set(), []
+    translation_unit = target = None
+    arguments = iter(argv[1:])
+    for argument in arguments:
+        if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
+            if argument in modes:
+                raise MakeProbeError("duplicate dependency mode")
+            modes.add(argument)
+            continue
+        option = next((name for name in ("-iquote", "-MT", "-I", "-D", "-U") if argument.startswith(name)), None)
+        if option is not None:
+            value = argument[len(option):] if argument != option else next(arguments, "")
+            if not value or value.startswith("@") or "\n" in value or "\r" in value:
+                raise MakeProbeError("invalid or missing dependency option value")
+            if option in {"-I", "-iquote"}:
+                if value.startswith(("=", "$SYSROOT")):
+                    raise MakeProbeError("sysroot-special dependency include operand is unsupported")
+                if value.startswith("-"):
+                    raise MakeProbeError("dependency include path is not repository-relative")
+                includes.append(value if value == "." else relative_path(value))
+            elif option in {"-D", "-U"}:
+                name, separator, _ = value.partition("=")
+                if not re.fullmatch("[A-Za-z_][A-Za-z0-9_]*", name) or option == "-U" and separator:
+                    raise MakeProbeError("dependency macro requires a symbolic name")
+            else:
+                if target is not None or not re.fullmatch("[A-Za-z0-9_./+%-]+", value) or value.startswith("-"):
+                    raise MakeProbeError("invalid or duplicate dependency target")
+                target = relative_path(value)
+            continue
+        if argument.startswith(("-", "@")) or translation_unit is not None or not argument.endswith(".c"):
+            raise MakeProbeError("unsupported dependency compiler option or source")
+        translation_unit = relative_path(argument)
+    if not {"-E", "-MM", "-nostdinc", "-undef"} <= modes or target is None or translation_unit not in sources:
+        raise MakeProbeError("dependency profile requires exact modes, target and declared C source")
+    return tuple(dict.fromkeys(includes))
+
+
 def compiler_environment(environment, expected, *, frontend, driver):
     """Validate the closed baseline and the immutable driver's finite additions."""
     baseline = {
@@ -1791,11 +1831,7 @@ def native_compiler_lineage(events, job, profile, *, sources, count_limit, reser
             if binding["role"] == "driver":
                 if event["path"] != profile.driver or binding["driver"] is not None:
                     raise ReadEpochError("compiler driver differs from its issued image/operation")
-                if __package__:
-                    from .make_probe import ProbeSession
-                else:
-                    from make_probe import ProbeSession
-                includes = ProbeSession._dependency_arguments(
+                includes = dependency_arguments(
                     inputs["argv"], binding["sources"], event["admission"]["outputs"],
                     driver_spellings=("cc", "/usr/bin/cc", profile.driver),
                 )
@@ -1868,7 +1904,7 @@ def native_fork_references(events, *, reserve=lambda size: None):
     return result
 
 
-def native_image_admission(admission, inputs, outputs, resources, *, resource_field):
+def native_image_admission(admission, inputs, outputs, resources, *, resource_field, compiler_profile=None):
     if __package__:
         from .native_resources import resource_plan
     else:
@@ -1877,7 +1913,7 @@ def native_image_admission(admission, inputs, outputs, resources, *, resource_fi
         not isinstance(admission, dict)
         or set(admission) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
             {"resources"} if resource_field else set()
-        )
+        ) | ({"compiler"} if compiler_profile is not None and "compiler" in admission else set())
         or type(admission["sequence"]) is not int or admission["sequence"] < 1
         or any(not isinstance(admission[key], str) or re.fullmatch("[0-9a-f]{64}", admission[key]) is None
                for key in ("owner", "closure", "input_sha256"))
@@ -1897,6 +1933,19 @@ def native_image_admission(admission, inputs, outputs, resources, *, resource_fi
         admission["closure"], admission["outputs"], admission.get("resources", ()),
     ):
         raise ReadEpochError("native image operands differ from its issued Command owner")
+    if "compiler" in admission:
+        binding = admission["compiler"]
+        if (
+            not isinstance(compiler_profile, OriginalCompilerProfile) or not isinstance(binding, dict)
+            or set(binding) != {"profile", "role", "driver", "sources", "code", "includes", "environment"}
+            or binding["profile"] != compiler_profile.identity or not isinstance(binding["role"], str)
+            or binding["role"] not in {"driver", "frontend"}
+        ):
+            raise ReadEpochError("native compiler admission lacks its issued profile")
+        compiler_environment(
+            binding["environment"], dict(compiler_profile.environment),
+            frontend=binding["role"] == "frontend", driver=compiler_profile.driver,
+        )
 
 
 def _native_range_failure_binding(event, binding):
@@ -2111,7 +2160,8 @@ def validate_native_results(value, plan, trace, *, count_limit, file_limit, outp
     return tuple(decoded)
 
 
-def native_job_tree(events, job, parent, executables, *, count_limit, writable=False):
+def native_job_tree(events, job, parent, executables, *, count_limit, writable=False,
+                    compiler_profile=None, compiler_sources=(), reserve=lambda size: None):
     if not isinstance(events, list) or not 2 <= len(events) <= count_limit:
         raise ReadEpochError("native job tree has an incomplete event extent")
     nodes, signals = {}, []
@@ -2189,6 +2239,7 @@ def native_job_tree(events, job, parent, executables, *, count_limit, writable=F
                 native_image_admission(
                     event["admission"], inputs, root_admission["outputs"],
                     root_admission.get("resources", ()), resource_field="resources" in root_admission,
+                    compiler_profile=compiler_profile,
                 )
                 if number == 1 and event["admission"] != root_admission:
                     raise ReadEpochError("native root image changed its original Command owner")
@@ -2216,6 +2267,16 @@ def native_job_tree(events, job, parent, executables, *, count_limit, writable=F
         code = 1 if os.WIFEXITED(status) else 3 if os.WCOREDUMP(status) else 2
         if event["status"] != expected or event["code"] != code:
             raise ReadEpochError("native child signal differs from its actual terminal status")
+    if compiler_profile is not None and any(
+        event["kind"] == "exec" and (
+            event["path"] in {compiler_profile.driver, compiler_profile.frontend}
+            or "compiler" in event["admission"]
+        ) for event in events
+    ):
+        native_compiler_lineage(
+            events, job, compiler_profile, sources=compiler_sources, count_limit=count_limit,
+            reserve=reserve,
+        )
     return nodes
 
 
@@ -2863,12 +2924,18 @@ def validate_machine_observations(value, trace, *, count_limit, reserve=lambda s
                 raise ReadEpochError("native machine tree differs from its original job inputs")
             native_job_tree(
                 events, {
-                    "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
+                    "sequence": dispatch, "pid": native_roots[dispatch]["pid"], "argv": first["argv"], "cwd": first["cwd"],
                     "executable": first["path"], "terminal_status": last["status"],
                     **({"admission": first.get("admission")} if trace["version"] in WRITABLE_VERSIONS else {}),
                 }, make_owner(native_roots[dispatch]["exec"]), {event["path"] for event in events if isinstance(event, dict) and event.get("kind") == "exec" and isinstance(event.get("path"), str)},
                 count_limit=count_limit,
                 writable=trace["version"] in WRITABLE_VERSIONS,
+                compiler_profile=(
+                    native_compiler_profile(trace["output_authority"]["compiler"], count_limit=count_limit, reserve=reserve)
+                    if "compiler" in trace.get("output_authority", {}) else None
+                ),
+                compiler_sources=tuple(row["path"] for row in trace["selection"]["inventory"]),
+                reserve=reserve,
             )
     return value
 
@@ -2917,8 +2984,9 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     if (
         not isinstance(authority, dict) or set(authority) != {"paths", "jobs"} | (
             {"resources"} if resources else set()
-        ) | ({"source_roots"} if source_roots else set())
-        or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit for key in authority)
+        ) | ({"source_roots"} if source_roots else set()) | ({"compiler"} if "compiler" in authority else set())
+        or any(not isinstance(authority[key], list) or len(authority[key]) > count_limit
+               for key in authority if key != "compiler")
         or not authority["paths"]
         or any(
             not isinstance(path, str) or not path or path.startswith("/")
@@ -2934,6 +3002,10 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
     ):
         raise ReadEpochError("native output authority has invalid immutable source roots")
     reserve(len(encoded(authority)))
+    compiler_profile = (
+        native_compiler_profile(authority["compiler"], count_limit=count_limit, reserve=reserve)
+        if "compiler" in authority else None
+    )
     try:
         for path in source_roots:
             relative_path(path)
@@ -2969,7 +3041,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
             or not isinstance(record["admission"], dict)
             or set(record["admission"]) != {"sequence", "owner", "closure", "input_sha256", "outputs"} | (
                 {"resources"} if resources else set()
-            )
+            ) | ({"compiler"} if compiler_profile is not None and "compiler" in record["admission"] else set())
         ):
             raise ReadEpochError("native output job lacks its closed dispatch binding")
         tree = [
@@ -2984,6 +3056,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
         admission = job["admission"]
         native_image_admission(
             admission, None, authority["paths"], resources, resource_field=bool(resources),
+            compiler_profile=compiler_profile,
         )
         for index, event in enumerate(job["tree"]):
             if not isinstance(event, dict) or not isinstance(event.get("kind"), str):
@@ -2995,6 +3068,7 @@ def validate_native_output_authority(trace, *, count_limit, file_limit, reserve)
                     event["admission"], native_execution_input(event["argv"], event["cwd"]),
                     admission["outputs"], admission.get("resources", ()),
                     resource_field="resources" in admission,
+                    compiler_profile=compiler_profile,
                 )
                 if index == 0 and event["admission"] != admission:
                     raise ReadEpochError("native root image changed its original Command owner")

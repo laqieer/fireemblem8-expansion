@@ -3124,9 +3124,11 @@ native/public-archive qualification remain outstanding.
 
 This storage seam issues **no native execution, metadata, source or output
 authority**. The default native Make request still runs without compiler
-permissions. Native driver/frontend ancestry, compiler-specific source scope,
-inherited `.dep` writer custody and every wire/replay consumer remain
-unimplemented acceptance work. The selected design trusts the verified
+permissions. Explicitly declaring both session-resolved compiler images in
+`native_executables` now selects their issued profile for writable native
+Make; partial declarations refuse. That integration binds driver/frontend
+ancestry, source scope and inherited `.dep` descriptors, but complete original
+production qualification remains outstanding. The selected design trusts the verified
 immutable driver's transformation under the existing dependency threat model;
 it does not add a GCC `-###` planning mode/parser or independently predict
 frontend arguments. Complete storage proof is not original cohort fitness.
@@ -3165,15 +3167,41 @@ Every issued driver in the model needs one frontend; duplicate, missing,
 foreign, stale and boolean-aliased
 references refuse. Exact observed model charges and one-byte-short quota
 controls are local finite accounting evidence, not original cohort fitness.
-The existing native protocol rejects these new admission fields.
+The ordinary native protocol still rejects compiler admission fields without
+the complete issued profile.
 
-No new runtime version is yet enabled, and the profile/model is not carried by
-the public typed archive. Actual stopped-process admission, compiler-specific
-source/runtime-purpose enforcement, output-authority publication and complete
-host/machine/archive replay propagation still require joint wiring before any
-native compiler execution can be qualified. Machine3/4 need no new event
-format; the selected future opt-in writable runtime will gate the nested
-admission semantics while defaults6/8 remain unchanged.
+The writable trace's optional `output_authority.compiler` carries the complete
+issued profile; it does not add a machine event, command registry or feature
+flag. The existing private admission channel carries the actual exec-stop
+environment. Frontend authority requires the exact still-live driver occurrence
+at fork, with identical source/header/include/output/resource scope. Actual reads
+are restricted to declared sources and headers; existing negative-source
+observations distinguish absent search candidates from undeclared existing files.
+Output metadata does not turn an output into a readable compiler source.
+Standalone replay validates the same closed profile and complete lineage.
+The host additionally compares it with session-issued sealed images and request
+inputs; recomputing a profile identity is not an alternate runtime grant.
+Default non-compiler v6/v8 traces keep their existing schemas.
+
+For this component of **TC-WORKFLOW-NATIVE-MAKE-001**, start from a clean Linux
+checkout with the existing namespace/ptrace launcher and host GCC:
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_runtime_image.RuntimeImageSessionTests.test_actual_native_dependency_compiler_binds_source_environment_and_output_custody -v`.
+   The clean fixture first runs ordinary Make, then native Make. Require identical
+   `.dep/query.d` bytes and mode0644, actual source/header consumption, driver and
+   frontend admissions, the frontend's inherited FD1 write, two Make passes,
+   and complete owned-resource cleanup.
+2. The same case exports hostile `CPATH` and removes the required header grant
+   in separate clean native sessions. Both must refuse without leaked children,
+   descriptors or outputs. Its saved-trace controls remove the profile/environment
+   or alter profile, driver-at-fork and source bindings; each must reject even
+   after updating the enclosing tree-event checksum.
+3. Retain ordinary readonly admission and finite-model controls. The pre-fix
+   actual case refuses the resolved cc1 image before compiler production.
+   This small native dependency case is not the original 2,148-source initial
+   semantic family or eight-query qualification; those remain separate required
+   criteria under one unchanged budget/deadline. No ROM/RAM/save/locale or
+   gameplay-profile change is introduced.
 
 For the storage member of `TC-WORKFLOW-NATIVE-MAKE-001` (#275), use the same
 clean Linux x86-64 checkout and namespace prerequisites:

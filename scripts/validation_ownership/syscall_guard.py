@@ -432,6 +432,22 @@ class Policy:
         if self.native_readonly and not self.native_executables <= self.runtime_closure:
             raise Violation("native executable is outside captured runtime closure")
         dependency = config.get("dependency")
+        self.native_compiler = None
+        if config.get("native_compiler") is not None:
+            self.native_compiler = read_epochs.native_compiler_profile(
+                config["native_compiler"], count_limit=config["observation_count"],
+                reserve=self.charge_metadata,
+            )
+            profile = self.native_compiler
+            dependency = {
+                "executables": [profile.driver, profile.frontend],
+                "runtime_files": [row[0] for row in profile.files],
+                "runtime_directories": list(profile.directories), "runtime_stat_probes": list(profile.probes),
+                "runtime_interpreter": profile.interpreter, "runtime_libc": profile.libc,
+            }
+            if not self.native_readonly or not {profile.driver, profile.frontend} <= self.native_executables:
+                raise Violation("native compiler lost its issued runtime admission")
+        self.dependency_profile = dependency
         if dependency:
             self.runtime_closure.update(dependency["runtime_files"])
         self.runtime_directories = set()
@@ -467,6 +483,7 @@ class Policy:
             }
             self.dependency_stat_probes = {
                 self.resolve(path) for path in dependency["runtime_stat_probes"]
+                if self.native_compiler is None or not path.startswith("/proc/")
             }
             self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
             self.dependency_interpreter = self.resolve(dependency["runtime_interpreter"])
@@ -715,11 +732,16 @@ class Policy:
             state.native_inputs = None
             if self.native_outputs is not None:
                 if descendant:
-                    state.native_admission = self.native_admit(state.exec_path, inputs, {
+                    context = {
                         "dispatch": state.native_dispatch, "pid": pid,
                         "generation": state.native_execs,
                         "fork_parent": None if fork_parent is None else list(fork_parent),
-                    })
+                    }
+                    if self.native_compiler is not None and state.exec_path in {
+                        self.native_compiler.driver, self.native_compiler.frontend,
+                    }:
+                        _, context["environment"] = self.verify_dependency_environment(pid, state.exec_path)
+                    state.native_admission = self.native_admit(state.exec_path, inputs, context)
                     root_admission = row["admission"]
                     if (
                         any(path not in root_admission["outputs"] for path in state.native_admission["outputs"])
@@ -731,6 +753,26 @@ class Policy:
                     state.native_admission = dict(row["admission"])
             else:
                 state.native_admission = None
+            state.dependency_image = None
+            if self.native_compiler is not None and state.exec_path in {
+                self.native_compiler.driver, self.native_compiler.frontend,
+            }:
+                self.verify_dependency_image(pid, state.exec_path)
+                _, environment = self.verify_dependency_environment(pid, state.exec_path)
+                binding = state.native_admission.get("compiler")
+                if binding is None or binding["environment"] != environment:
+                    raise Violation("native compiler actual environment differs from its issued actor")
+                if binding["role"] == "frontend":
+                    parent = self.processes.get(state.native_parent)
+                    parent_binding = parent.native_admission.get("compiler") if parent and parent.native_admission else None
+                    if (
+                        fork_parent is None or binding["driver"] != list(fork_parent)
+                        or parent_binding is None or parent_binding["role"] != "driver"
+                        or parent.native_execs != fork_parent[1] or parent.native_admission["sequence"] != fork_parent[2]
+                    ):
+                        raise Violation("native frontend lost its exact live driver-at-fork")
+                state.dependency_image = state.exec_path
+                state.dependency_stop = None
             return {
                 "kind": "exec", "pid": pid, "parent": state.native_parent,
                 "generation": state.native_execs, "path": state.exec_path, **inputs,
@@ -1046,6 +1088,9 @@ class Policy:
                 row["tree"], row, self.make_pid, self.native_executables,
                 count_limit=self.config["observation_count"],
                 writable=self.native_outputs is not None,
+                compiler_profile=self.native_compiler,
+                compiler_sources=tuple(row["path"] for row in self.read_trace.selection["inventory"]),
+                reserve=self.charge_metadata,
             )
         self.native_job_event({"sequence": row["sequence"], "wait_status": status, "flags": flags})
         row["waited"], row["ignored"] = True, bool(flags & 1)
@@ -2034,7 +2079,8 @@ class Policy:
         return True
 
     def dependency_negative_purpose(self, state, path, operation):
-        if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
+        dependency = getattr(self, "dependency_profile", self.config.get("dependency"))
+        if state.dependency_stop is None or state.dependency_image not in dependency["executables"]:
             raise Violation("dependency negative probe has no verified syscall context")
         pid, number, ip = state.dependency_stop
         self.reserve_observation("accessed", f"dependency-purpose:{pid}:{number}:{ip}:{operation}:{path}")
@@ -2052,7 +2098,7 @@ class Policy:
         driver = (
             operation == "metadata"
             and path in self.dependency_stat_probes | self.dependency_directories
-            and state.dependency_image == self.config["dependency"]["executables"][0]
+            and state.dependency_image == dependency["executables"][0]
             and origin in {
                 self.dependency_image_ids[state.dependency_image],
                 self.dependency_image_ids[self.dependency_libc],
@@ -2084,13 +2130,16 @@ class Policy:
             + sum(sys.getsizeof(value) for value in argv)
             + sum(sys.getsizeof(key) + sys.getsizeof(value) for key, value in environment.items())
         )
-        executables = self.config["dependency"]["executables"]
+        native_compiler = getattr(self, "native_compiler", None)
+        executables = getattr(self, "dependency_profile", self.config.get("dependency"))["executables"]
         if image not in executables:
             raise Violation("dependency compiler environment lacks its issued image")
         read_epochs.compiler_environment(
-            environment, self.config["environment"], frontend=image == executables[1],
-            driver=self.config["argv"][0],
+            environment, dict(native_compiler.environment) if native_compiler is not None else self.config["environment"],
+            frontend=image == executables[1],
+            driver=native_compiler.driver if native_compiler is not None else self.config["argv"][0],
         )
+        return argv, environment
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
@@ -2136,11 +2185,34 @@ class Policy:
             if observer and path == "/control/result" and operation == "write":
                 return
             raise Violation(f"supervisor channel denied: {operation} {path}")
-        if self.config.get("dependency") and not (
+        if (self.config.get("dependency") or state.dependency_image is not None) and not (
             path in {"/repo", "/work"} or path.startswith(("/repo/", "/work/"))
         ):
             # No generic runtime prefix may authorize a dependency source.
             self.dependency_runtime_access(state, path, operation)
+            return
+        if self.config.get("native_compiler") and state.dependency_image is not None and path.startswith("/repo/") and operation != "write":
+            binding = state.native_admission["compiler"]
+            relative = path.removeprefix("/repo/")
+            files = set(binding["sources"]) | set(binding["code"])
+            directories = {parent.as_posix() for name in files for parent in Path(name).parents}
+            directories.update(binding["includes"])
+            outputs = set(state.native_admission["outputs"])
+            directories.update(parent.as_posix() for name in outputs for parent in Path(name).parents)
+            if operation in {"read", "metadata"} and relative not in files and self.source_mode(path) is None:
+                self.absent_source(state, path, operation)
+                return
+            if (
+                operation == "read" and relative not in files
+                or operation == "metadata" and relative not in files | directories | outputs
+                or operation == "directory"
+            ):
+                raise Violation(f"native compiler access escapes its issued source scope: {operation} {path}")
+            self.defer_observation(
+                state, "consumed" if operation == "read" and relative in binding["sources"]
+                else "code_consumed" if operation == "read" else "accessed",
+                relative if operation == "read" else path,
+            )
             return
         if path == "/dev/null":
             return
@@ -2372,7 +2444,7 @@ class Policy:
         state.kernel_io = None
         state.metadata_pending = None
         state.path_context = None
-        state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") else None
+        state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") or state.dependency_image is not None else None
         state.native_stop = (pid, r.orig_rax, r.rip) if self.native_readonly and state.role == "native" else None
         state.observations.clear()
         state.observation_needs_bytes = False
@@ -3004,7 +3076,7 @@ def supervise(config, drop_privileges):
                 {"closure", "outputs"} if policy.native_outputs is not None else set()
             ) | (
                 {"resources"} if config.get("native_resources") else set()
-            )
+            ) | ({"compiler"} if policy.native_compiler is not None and "compiler" in reply else set())
             or reply["kind"] != "native-authorized" or reply["scope"] != config["producer_scope"]
             or type(reply["sequence"]) is not int or reply["sequence"] != sequence
             or not isinstance(reply["owner"], str) or re.fullmatch("[0-9a-f]{64}", reply["owner"]) is None
@@ -3039,6 +3111,7 @@ def supervise(config, drop_privileges):
             **({"closure": reply["closure"]} if policy.native_outputs is not None else {}),
             **({"outputs": reply["outputs"]} if policy.native_outputs is not None else {}),
             **({"resources": reply["resources"]} if config.get("native_resources") else {}),
+            **({"compiler": reply["compiler"]} if policy.native_compiler is not None and "compiler" in reply else {}),
         }
 
     if policy.native_admission:
