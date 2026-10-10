@@ -3130,6 +3130,9 @@ The undeclared Python parent directory must remain denied at its actual read.
 Readonly settlement failure retains the preceding successful kernel-open
 binding, but no settled digest; terminal completion and owned-FD cleanup
 controls remain mandatory.
+Explicit source-return fixtures initialize the inactive pattern lane. The
+host-decision mutation removes both current dependency predicate inputs only
+within the injected check, restoring configuration and typed image afterwards.
 
 The same compiler subcase checks the actual kernel exec-stop environment before
 the driver or frontend begins user code. The driver must have the closed issued

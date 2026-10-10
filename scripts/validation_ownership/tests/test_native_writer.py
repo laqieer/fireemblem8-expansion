@@ -3232,6 +3232,7 @@ guard.supervise=measured_supervise
                 descriptors = []
                 trace = NativeReadTrace.__new__(NativeReadTrace)
                 trace.active = []
+                trace.patterns = None
                 def create(name, data):
                     descriptor = os.open(self.root / name, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
                     descriptors.append(descriptor)
