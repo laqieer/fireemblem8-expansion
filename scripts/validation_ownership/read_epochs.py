@@ -1063,7 +1063,7 @@ def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=No
 
 
 class _CompactStatementIndex(Mapping):
-    __slots__ = ("_data", "_spans", "_count", "_reserve", "_values", "_failed")
+    __slots__ = ("_data", "_spans", "_count", "_reserve", "_values", "_failed", "_checkpoint")
 
     def __init__(self, data, *, checkpoint, count_limit, reserve):
         if not isinstance(data, bytes) or b"\0" in data:
@@ -1075,6 +1075,7 @@ class _CompactStatementIndex(Mapping):
         if count_limit is not None and physical_count > count_limit:
             raise ReadEpochError("completion physical source scan exceeds observation bound")
         self._data, self._reserve, self._count = data, reserve, 0
+        self._checkpoint = checkpoint
         self._failed = False
         self._values = {}
         reserve(sys.getsizeof(self._values))
@@ -1115,6 +1116,7 @@ class _CompactStatementIndex(Mapping):
             yield self._spans[number * 4]
 
     def __getitem__(self, key):
+        self._checkpoint()
         if self._failed:
             raise ReadEpochError("compact statement memoization was not admitted")
         if key in self._values:
@@ -1139,6 +1141,7 @@ class _CompactStatementIndex(Mapping):
             + sum(sys.getsizeof(part) for part in parts),
         )
         for number, part in enumerate(parts):
+            self._checkpoint()
             if (number < len(parts) - 1 or end < len(self._data)) and part.endswith("\r"):
                 parts[number] = part[:-1]
                 self._reserve(sys.getsizeof(parts[number]))

@@ -1911,6 +1911,24 @@ class FoundationTests(unittest.TestCase):
         finally:
             budget.close()
 
+    def test_compact_statement_lazy_lookup_preserves_checkpoint_failure(self):
+        from scripts.validation_ownership import read_epochs
+        admitted = True
+        def checkpoint():
+            if not admitted:
+                raise MakeProbeError("owned checkpoint expired")
+        index = read_epochs._statement_index(
+            b"FIRST := one\\\n two\n", compact=True, checkpoint=checkpoint,
+        )
+        admitted = False
+        with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
+            index[1]
+        admitted = True
+        index[1]
+        admitted = False
+        with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
+            index[1]
+
     def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
         import tracemalloc
         from scripts.validation_ownership import make_lexical, read_epochs
