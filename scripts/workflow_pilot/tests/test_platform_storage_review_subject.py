@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import shlex
+import subprocess
 import types
 import unittest
 from unittest.mock import patch
@@ -413,6 +414,31 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         members = tuple(item for item in self.tools.members(self.scope(head))
                         if item.family == "generated")
         self.assert_satisfied(self.run_members(members, head))
+
+    def test_recipe_continuation_does_not_insert_word_separation(self):
+        makefile = self.tools.subjects.PLATFORM_MAKE
+        source = (self.repo.root / makefile).read_text()
+        spliced = source.replace("\tpython3 -m unittest ", "\tpython3\\\n-m unittest ")
+        self.assertNotEqual(source, spliced)
+        temporary = self.repo.root / "token-splice.mk"
+        temporary.write_text(spliced)
+        try:
+            result = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-f", str(temporary),
+                 "ownership-probe-test"],
+                cwd=self.repo.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(b"python3-m", result.stderr)
+        finally:
+            temporary.unlink()
+        head = self.repo.commit({makefile: spliced})
+        members = tuple(item for item in self.tools.members(self.scope(head))
+                        if item.family == "generated")
+        observed = next(item for item in self.run_members(members, head)
+                        if item.obligation.member == "owners:probe-inventory")
+        self.assertEqual(observed.verdict, "contract-violation", observed.detail)
 
     def test_runtime_regression_and_unexecutable_suite_cannot_pass_coverage(self):
         source = (self.repo.root / SOURCE).read_text()
