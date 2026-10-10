@@ -3170,6 +3170,18 @@ controls are local finite accounting evidence, not original cohort fitness.
 The ordinary native protocol still rejects compiler admission fields without
 the complete issued profile.
 
+Retained pattern validation still rereads all80object bytes and every pointed
+string at the existing source/eval/reuse and live retirement boundaries.
+For a completed definition it compares those fields directly with the retained
+mapping rather than constructing and serializing another identical mapping.
+The bounded comparison tuple and every native read remain charged. New definitions
+retain the original serialized-field charge. This removes redundant allocation,
+not validation, and does not raise or refund any quota. The existing full-field
+mutation and real live-retirement controls remain mandatory; the focused
+`test_retained_decode_reads_every_field_without_reallocating_definition` additionally
+compares the exact native read sequence and measured allocation difference.
+This component cost reduction is not original eight-query resource fitness.
+
 The writable trace's optional `output_authority.compiler` carries the complete
 issued profile; it does not add a machine event, command registry or feature
 flag. The existing private admission channel carries the actual exec-stop

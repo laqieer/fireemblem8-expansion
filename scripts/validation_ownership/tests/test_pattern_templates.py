@@ -210,6 +210,32 @@ class PatternTemplateTests(unittest.TestCase):
                     with self.assertRaisesRegex(read_epochs.ReadEpochError, "full fields"):
                         action()
 
+    def test_retained_decode_reads_every_field_without_reallocating_definition(self):
+        trace = self.trace
+        trace.template(128, "%.a")
+        trace.put_number(8, 128)
+        self.templates.complete(["source", 1], 1)
+        retained = self.templates.objects[128]["definition"]
+        trace.transferred.clear()
+        before = trace.charged
+        decoded = self.templates.decode(128)[1]
+        fresh_cost = trace.charged - before
+        reads = tuple(trace.transferred)
+        trace.transferred.clear()
+        before = trace.charged
+        current = self.templates.decode(128, retained)[1]
+        retained_cost = trace.charged - before
+        self.assertIs(current, retained)
+        self.assertEqual(current, decoded)
+        self.assertEqual(tuple(trace.transferred), reads)
+        self.assertEqual(fresh_cost - retained_cost, len(read_epochs.encoded(decoded)) + sys.getsizeof(decoded))
+        self.assertGreater(retained_cost, sum(size for _, size in reads))
+        trace.transferred.clear()
+        self.templates.validate_retirement()
+        self.assertIn((128, 80), trace.transferred)
+        with patch.object(trace, "memory", side_effect=AssertionError("retired memory unavailable")):
+            self.templates.retire()
+
     def test_live_retirement_rejects_incomplete_and_retire_never_reads_dead_memory(self):
         self.trace.template(128, "%.a", value=None)
         self.trace.put_number(8, 128)

@@ -129,7 +129,7 @@ class PatternTemplates:
                 return [frame["kind"], frame.get("visit") if frame["kind"] == "source" else frame["number"]]
         return None
 
-    def decode(self, pointer):
+    def decode(self, pointer, retained=None):
         trace = self.trace
         raw = trace.memory(pointer, self.abi["object_bytes"])
         following, suffix, target, length, name, value, file, line, offset, nlen, flags = struct.unpack(
@@ -146,13 +146,21 @@ class PatternTemplates:
             or suffix_value is None or suffix_value.encode("utf-8") != pattern_bytes[suffix_offset:]
         ):
             raise read_epochs.ReadEpochError("pattern template has a substituted actual suffix")
-        definition = {
-            "pattern": pattern, "length": length, "percent": suffix_offset - 1,
-            "name": trace.string(name, 129) if name else None,
-            "value": trace.string(value, trace.config["file_limit"] + 1) if value else None,
-            "file": trace.string(file, 4097) if file else None,
-            "line": line, "offset": offset, "flags": flags, "name_length": nlen,
-        }
+        keys = ("pattern", "length", "percent", "name", "value", "file",
+                "line", "offset", "flags", "name_length")
+        values = (
+            pattern, length, suffix_offset - 1,
+            trace.string(name, 129) if name else None,
+            trace.string(value, trace.config["file_limit"] + 1) if value else None,
+            trace.string(file, 4097) if file else None,
+            line, offset, flags, nlen,
+        )
+        trace.policy.charge_metadata(sys.getsizeof(values))
+        if retained is not None:
+            if any(retained[key] != value for key, value in zip(keys, values)):
+                raise read_epochs.ReadEpochError("retained pattern changed its source-bound full fields")
+            return following, retained
+        definition = dict(zip(keys, values))
         trace.policy.charge_metadata(len(encoded(definition)) + sys.getsizeof(definition))
         return following, definition
 
@@ -168,11 +176,10 @@ class PatternTemplates:
             trace.policy.charge_metadata(sys.getsizeof(pointer) + 2 * sys.getsizeof((pointer,)))
             seen.add(pointer)
             retained = self.objects.get(pointer)
-            following, definition = self.decode(pointer)
-            if retained is not None and retained["definition"] is not None:
-                if definition != retained["definition"]:
-                    raise read_epochs.ReadEpochError("retained pattern changed its source-bound full fields")
-            else:
+            following, definition = self.decode(
+                pointer, None if retained is None else retained["definition"],
+            )
+            if retained is None or retained["definition"] is None:
                 if retained is None:
                     owner = self.owner()
                     if owner is None:
