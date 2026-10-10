@@ -1087,6 +1087,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001": {
+                        "document": "docs/platform-runtime-storage.md",
+                        "commands": {
+                            "python3 -B -m unittest "
+                            "scripts.validation_ownership.tests.test_platform_image -v",
+                        },
+                    },
                     "TC-WORKFLOW-HOST-PYTHON-DEPS-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1442,7 +1449,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     case_heading = next(
                         line[3:]
                         for line in procedure.splitlines()
-                        if line.startswith("## " + case_id + ":")
+                        if line == "## " + case_id or line.startswith("## " + case_id + ":")
                     )
                     case_section = markdown_section(
                         procedure,

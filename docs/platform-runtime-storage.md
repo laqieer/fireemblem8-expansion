@@ -61,6 +61,8 @@ Linked issue: #279. Supported profile: Linux host source tooling with Python3,
 `/proc`, memfd/seal support, GNU Make, Python and the standard host GCC.
 Start from a clean source checkout; no ROM or game save is required.
 
+### Actions
+
 1. Run
    `python3 -B -m unittest scripts.validation_ownership.tests.test_platform_image -v`.
    The same module is wired into the existing `ownership-probe-test` owner.
@@ -106,11 +108,19 @@ Start from a clean source checkout; no ROM or game save is required.
    control exhaustion and elapsed-deadline inputs must refuse before reads
    and retain owned-body cleanup. Closed backing must also refuse.
 
-All assertions are deterministic host automation. Each case owns and cleans
-its temporary paths and descriptors; reset between cases through the test's
-ordinary cleanup. The historical exact pre-fix materialization and combined
-teardown operations frozen under #275 remain the component negative controls.
+### Expected result
+
+Complete bodies, digests, kernel seals and materialized bytes agree. Quota,
+identity and invalid-progress inputs refuse explicitly; secondary cleanup
+failures preserve the primary operation exception and report retained state.
+
+### Negative control
+
+The historical exact pre-fix materialization and combined teardown operations
+frozen under #275 remain the component negative controls.
 They are not evidence of native Make lineage or original qualification.
+
+### Interactions and save compatibility
 
 Dependencies: existing `ProbeBudget` and lifecycle cleanup from the merged
 native foundation (#274). Dependents: #275, #270, #180 and #186. The provider
@@ -120,6 +130,20 @@ Default execution routes and modern debug/release/archival behavior are
 unchanged. ROM, RAM, save/migration, generated game data and localization
 impact: none. Rollback is an ordinary revert before dependent integration;
 required dependents must not merge before this API is delivered.
+
+### Automation
+
+All assertions map to
+`python3 -B -m unittest scripts.validation_ownership.tests.test_platform_image -v`,
+also selected by the existing `ownership-probe-test` owner. No subjective manual
+judgment is required.
+
+### Cleanup and limitations
+
+Each case owns and cleans its temporary paths and descriptors; reset between
+cases through the test's ordinary cleanup. Linux memfd/seal support is required.
+The caller owns a private destination without concurrent replacement; this
+API does not provide atomic publication or hostile same-UID isolation.
 
 ## Finite review-subject binding
 
