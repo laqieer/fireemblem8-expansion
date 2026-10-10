@@ -1066,6 +1066,7 @@ class _CompactStatementIndex(Mapping):
     __slots__ = ("_data", "_spans", "_count", "_reserve", "_values", "_failed", "_checkpoint")
 
     def __init__(self, data, *, checkpoint, count_limit, reserve):
+        checkpoint()
         if not isinstance(data, bytes) or b"\0" in data:
             raise ReadEpochError("completion source has unsupported bytes")
         validated = data.decode("utf-8", "strict")

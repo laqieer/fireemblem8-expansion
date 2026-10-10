@@ -1923,6 +1923,10 @@ class FoundationTests(unittest.TestCase):
         admitted = False
         with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
             index[1]
+        with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
+            read_epochs._statement_index(
+                b"FIRST := one\n", compact=True, count_limit=1, checkpoint=checkpoint,
+            )
         admitted = True
         index[1]
         admitted = False
