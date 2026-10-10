@@ -1794,6 +1794,186 @@ class FoundationTests(unittest.TestCase):
                 self.assertFalse(session.budget.failed)
             self.assert_clean(session)
 
+    def test_compact_statement_mapping_preserves_full_spans_and_memoized_charges(self):
+        from scripts.validation_ownership import read_epochs
+        sources = [b"", b"\n", b"\r\n", b"x\r", b"x\r\n", b"x\n\n",
+                   "TEXT := caf\u00e9\r\n".encode()]
+        for terminator in (b"\n", b"\r\n"):
+            for slashes in range(4):
+                source = terminator.join([b"A := " + b"\\" * slashes, b" second", b"LAST := value"])
+                sources.extend((source, source + terminator))
+        for source in sources:
+            expected = {
+                first: (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
+                for logical, first, last, raw in read_epochs.physical_statements(source)
+            }
+            charges = []
+            index = read_epochs._statement_index(source, compact=True, reserve=charges.append)
+            with self.subTest(source=source):
+                self.assertEqual(list(index), list(expected))
+                self.assertEqual(dict(index), expected)
+                complete = sum(charges)
+                self.assertEqual(dict(index.items()), expected)
+                self.assertEqual(sum(charges), complete)
+                self.assertIsNone(index.get(99999))
+                with self.assertRaises(TypeError):
+                    index[1] = index[1]
+                for limit in (complete, complete - 1):
+                    budget = ProbeBudget(Limits(control_bytes=limit))
+                    try:
+                        if limit == complete:
+                            observed = read_epochs._statement_index(
+                                source, compact=True,
+                                reserve=lambda size: budget.charge("control", size),
+                            )
+                            self.assertEqual(dict(observed), expected)
+                        else:
+                            with self.assertRaisesRegex(MakeProbeError, "budget exhausted"):
+                                dict(read_epochs._statement_index(
+                                    source, compact=True,
+                                    reserve=lambda size: budget.charge("control", size),
+                                ))
+                    finally:
+                        budget.close()
+        for source, limit, error in (
+            (b"A := a\n", 1, read_epochs.ReadEpochError),
+            (b"A := \0", None, read_epochs.ReadEpochError),
+            (b"A := \xff", None, UnicodeDecodeError),
+        ):
+            with self.subTest(source=source), self.assertRaises(error):
+                read_epochs._statement_index(source, compact=True, count_limit=limit)
+
+    def test_native_runtime_compact_spans_preserve_source_and_reduce_sparse_cost(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "".join(f"unused_{index}: ; @true\n" for index in range(600)) +
+                 "SELECTED := value\nall: ; @v=owned; printf '%s' '$(SELECTED)'\n")
+        costs = []
+        for eager in (False, True):
+            body = (
+                "before=guard.read_epochs._statement_index\n"
+                "def eager(data,**kwargs):\n"
+                " kwargs['compact']=False\n"
+                " return before(data,**kwargs)\n"
+                "guard.read_epochs._statement_index=eager\n"
+            ) if eager else ""
+            session = self.session()
+            with session, self.native_supervisor(body):
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("SELECTED",), observe_reads=True,
+                    observe_runtime_completions=True,
+                )
+                self.assertEqual((completed.stdout, completed.stderr), (b"value", b""))
+                self.assertEqual(semantics["domains"]["SELECTED"]["value"], "value")
+                archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                self.assertEqual(archive.passes[0].visits[0].source.data, session.snapshot.files["Makefile"])
+                replay_costs = []
+                original_index = read_epochs._statement_index
+                for eager_replay in (False, True):
+                    def replay_index(data, **options):
+                        if eager_replay:
+                            options["compact"] = False
+                        return original_index(data, **options)
+                    charges = []
+                    with patch.object(read_epochs, "_statement_index", replay_index):
+                        read_epochs.validate_trace(
+                            observed["read_trace"], observed["read_trace"]["scope"],
+                            count_limit=session.budget.limits.observation_count,
+                            file_limit=session.budget.limits.file_bytes, reserve=charges.append,
+                        )
+                    replay_costs.append(sum(charges))
+                self.assertLess(replay_costs[0], replay_costs[1])
+                costs.append(observed["observation_bytes"])
+            self.assert_clean(session)
+        self.assertLess(costs[0] + (self.root / "Makefile").stat().st_size, costs[1])
+
+    def test_compact_statement_keys_match_eager_before_and_after_memoization(self):
+        from decimal import Decimal
+        from fractions import Fraction
+        from scripts.validation_ownership import read_epochs
+        expected = read_epochs._statement_index(b"FIRST := one\nLAST := two")
+        class EqualKey(int):
+            def __ne__(self, other):
+                raise AssertionError("Mapping lookup must not use inequality")
+
+        for key in (True, 1.0, Fraction(1, 1), Decimal(1), 1 + 0j, EqualKey(1)):
+            index = read_epochs._statement_index(b"FIRST := one\nLAST := two", compact=True)
+            with self.subTest(key=key):
+                self.assertIn(key, index)
+                self.assertEqual(index[key], expected[key])
+                self.assertEqual(index[1], expected[1])
+                self.assertEqual(index[key], expected[key])
+        for key in (None, "1", 1.5, float("nan"), [], {}):
+            for compact in (False, True):
+                index = read_epochs._statement_index(b"FIRST := one", compact=compact)
+                with self.subTest(key=key, compact=compact):
+                    with self.assertRaises(TypeError if isinstance(key, (list, dict)) else KeyError):
+                        index[key]
+
+    def test_compact_statement_failed_memoization_cannot_succeed_on_retry(self):
+        from scripts.validation_ownership import read_epochs
+        charges = []
+        measured = read_epochs._statement_index(b"", compact=True, reserve=charges.append)
+        measured[1]
+        budget = ProbeBudget(Limits(control_bytes=sum(charges) - 1))
+        try:
+            index = read_epochs._statement_index(
+                b"", compact=True, reserve=lambda size: budget.charge("control", size),
+            )
+            with self.assertRaisesRegex(MakeProbeError, "budget exhausted"):
+                index[1]
+            self.assertTrue(budget.failed)
+            with self.assertRaises(MakeProbeError):
+                index[1]
+        finally:
+            budget.close()
+
+    def test_compact_statement_lazy_lookup_preserves_checkpoint_failure(self):
+        from scripts.validation_ownership import read_epochs
+        admitted = True
+        def checkpoint():
+            if not admitted:
+                raise MakeProbeError("owned checkpoint expired")
+        index = read_epochs._statement_index(
+            b"FIRST := one\\\n two\n", compact=True, checkpoint=checkpoint,
+        )
+        admitted = False
+        with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
+            index[1]
+        with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
+            read_epochs._statement_index(
+                b"FIRST := one\n", compact=True, count_limit=1, checkpoint=checkpoint,
+            )
+        admitted = True
+        index[1]
+        admitted = False
+        with self.assertRaisesRegex(MakeProbeError, "checkpoint expired"):
+            index[1]
+
+    def test_runtime_archive_unreferenced_sources_reject_invalid_bytes(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", "all: ; @v=owned; printf '%s' \"$${v}\"\n")
+        self.add("unused.mk", "# unused source\n")
+        session = self.session()
+        with session:
+            _, _, observed = session._native_make_readonly(
+                "all", observe_reads=True, observe_runtime_completions=True,
+            )
+            original = observed["read_trace"]
+            for data in (b"# bad\0source\n", b"# bad\xffsource\n"):
+                changed = json.loads(json.dumps(original))
+                changed["sources"].append({
+                    "id": len(changed["sources"]) + 1, "mode": 0o644, "bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "data": base64.b64encode(data).decode(),
+                })
+                with self.subTest(data=data), self.assertRaises((read_epochs.ReadEpochError, UnicodeDecodeError)):
+                    read_epochs.validate_trace(
+                        changed, changed["scope"], count_limit=session.budget.limits.observation_count,
+                        file_limit=session.budget.limits.file_bytes,
+                        reserve=lambda size: session.budget.charge("control", size),
+                    )
+        self.assert_clean(session)
+
     def test_completion_expression_depth_rejects_before_nested_body_allocation(self):
         import tracemalloc
         from scripts.validation_ownership import make_lexical, read_epochs

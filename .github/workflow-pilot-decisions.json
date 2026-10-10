@@ -2,6 +2,17 @@
   "schema_version": 1,
   "pull_requests": [
     {
+      "pull_request": 288,
+      "risk_boundaries": ["runtime", "lifecycle"],
+      "threshold": {
+        "triggers": ["major-boundaries"],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {"depth": 0, "parent_pr": null, "exception_reason": null},
+      "pilot": {"included": false, "disposition": "baseline-only"}
+    },
+    {
       "pull_request": 286,
       "risk_boundaries": [
         "none"
