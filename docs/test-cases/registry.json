@@ -46,6 +46,7 @@
       "build-ci-default-release-reproduction",
       "typed-authoring-conveniences",
       "workflow-governance",
+      "parallel-local-analysis-tools",
       "expansion-locale-selection",
       "full-game-localization",
       "atomic-text-publication",
@@ -58,6 +59,18 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "parallel-local-analysis-tools",
+      "title": "Parallel-safe local analysis tool selection",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/285"
+      ],
+      "reference": "CONTRIBUTING.md",
+      "status": "current",
+      "required_cases": [
+        "TC-TOOLS-MCP-001"
+      ]
+    },
     {
       "id": "atomic-text-publication",
       "title": "Atomic shared text output publication",
@@ -801,6 +814,42 @@
         {
           "command": "python3 -B -m unittest scripts.validation_ownership.tests.test_platform_image -v",
           "evidence": "scripts/validation_ownership/tests/test_platform_image.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-TOOLS-MCP-001",
+      "title": "Retire shared-project Ghidra MCP without changing IDA",
+      "feature_id": "parallel-local-analysis-tools",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/285"
+      ],
+      "document": "CONTRIBUTING.md",
+      "anchor": "local-analysis-tools-and-mcp-troubleshooting",
+      "profiles": [
+        "Local Copilot CLI configuration with IDA and shared-project Ghidra stdio MCP"
+      ],
+      "purpose": "Select IDA MCP without launching competing Ghidra processes against one locked project.",
+      "prerequisites": "Record the parsed IDA entry before removal; retain local pre-removal evidence without publishing machine configuration or credentials.",
+      "actions": "Remove only the ghidra MCP entry, compare parsed IDA entries before and after, and run copilot mcp list in a fresh process.",
+      "expected_result": "The parsed configuration and fresh listing omit Ghidra and retain IDA unchanged.",
+      "negative_control": "The pre-removal configuration or an existing generated session snapshot still contains Ghidra; no competing server is started against a live project.",
+      "interactions": "Requires a local Copilot CLI configuration; no framework feature dependencies or conflicts. Separate Ghidra projects remain necessary for concurrent CLI processes.",
+      "save_compatibility": "No save, configuration identity, ROM/RAM, modern/archival, generated-data, or localization changes.",
+      "cleanup": "Restart existing sessions to replace generated configuration snapshots. Keep Ghidra installations and projects; do not terminate unrelated sessions or change system limits.",
+      "limitations": "Checks configuration selection, not IDA runtime connectivity, generic Ghidra HTTP concurrency, or recovery from watcher exhaustion.",
+      "automation": [
+        {
+          "command": "copilot mcp list",
+          "evidence": "CONTRIBUTING.md"
+        },
+        {
+          "command": "python3 -c 'import json, sys; before, after = [json.load(open(path))[\"mcpServers\"] for path in sys.argv[1:]]; assert \"ghidra\" in before; assert \"ghidra\" not in after; assert before[\"ida\"] == after[\"ida\"]' BEFORE_JSON AFTER_JSON",
+          "evidence": "CONTRIBUTING.md"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_mcp_removal_compares_ida_structurally -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },
