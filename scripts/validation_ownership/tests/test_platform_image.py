@@ -246,7 +246,7 @@ class PlatformImageTests(unittest.TestCase):
                         control_bytes=budget.bytes["control"] + 128 + sys.getsizeof(b"") + 64 - 1,
                     )
                 else:
-                    budget.started = 0
+                    budget.started -= budget.limits.seconds + 1
                 with self.subTest(fault=fault), patch(
                     "scripts.validation_ownership.runtime_image.os.pread", wraps=os.pread,
                 ) as read:
@@ -294,7 +294,7 @@ class PlatformImageTests(unittest.TestCase):
                     if fault == "read":
                         raise primary
                     if fault == "deadline":
-                        budget.started = 0
+                        budget.started -= budget.limits.seconds + 1
                         try:
                             budget.remaining()
                         except MakeProbeError as error:
@@ -548,7 +548,7 @@ class PlatformImageTests(unittest.TestCase):
                         count = self.stream.write(data)
                         written += count
                         if fault == "deadline":
-                            budget.started = 0
+                            budget.started -= budget.limits.seconds + 1
                         if fault == "backing" and written == len(image):
                             image.close()
                         return count

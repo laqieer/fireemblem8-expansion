@@ -2,11 +2,13 @@
 
 import ast
 from dataclasses import replace
+import io
 import json
 from pathlib import Path
 import shlex
 import types
 import unittest
+from unittest.mock import patch
 
 from scripts.workflow_pilot.tests.test_review_subjects import SubjectTestCase
 from scripts.workflow_pilot.tests.review_support import request
@@ -354,6 +356,33 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         observed = next(item for item in self.run_members(members, head)
                         if item.obligation.probe == "platform:admission")
         self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
+
+    def test_provider_deadline_controls_expire_on_fresh_monotonic_epoch(self):
+        from scripts.validation_ownership import budget
+        names = (
+            "test_capture_preserves_primary_with_source_and_backing_close_failures",
+            "test_failed_materialization_removes_owned_file_and_preserves_failure",
+            "test_slice_quota_and_deadline_refuse_before_reading_owned_body",
+        )
+        original_init = budget.ProbeBudget.__init__
+
+        def start_on_clock(instance, *args, **kwargs):
+            original_init(instance, *args, **kwargs)
+            instance.started = budget.time.monotonic()
+
+        # The dataclass captures its default factory before this clock substitution.
+        with patch.object(budget.time, "monotonic", return_value=60.0), patch.object(
+            budget.ProbeBudget, "__init__", start_on_clock,
+        ):
+            suite = unittest.defaultTestLoader.loadTestsFromNames([
+                "scripts.validation_ownership.tests.test_platform_image.PlatformImageTests." + name
+                for name in names
+            ])
+            output = io.StringIO()
+            result = unittest.TextTestRunner(stream=output).run(suite)
+        self.assertEqual(result.testsRun, len(names), output.getvalue())
+        self.assertTrue(result.wasSuccessful(), output.getvalue())
+        self.assertFalse(result.skipped)
 
     def test_semantic_local_rename_and_identity_field_order_remain_green(self):
         parsed = ast.parse((self.repo.root / SOURCE).read_bytes())
