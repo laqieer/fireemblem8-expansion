@@ -1118,7 +1118,7 @@ def statement_at(data, start, nlines, *, checkpoint=lambda: None, count_limit=No
 
 
 class _CompactStatementIndex(Mapping):
-    __slots__ = ("_data", "_spans", "_count", "_reserve", "_values")
+    __slots__ = ("_data", "_spans", "_count", "_reserve", "_values", "_checkpoint")
 
     def __init__(self, data, *, checkpoint, count_limit, reserve):
         if not isinstance(data, bytes) or b"\0" in data:
@@ -1130,16 +1130,16 @@ class _CompactStatementIndex(Mapping):
         if count_limit is not None and physical_count > count_limit:
             raise ReadEpochError("completion physical source scan exceeds observation bound")
         self._data, self._reserve, self._count = data, reserve, 0
+        self._checkpoint = checkpoint
         self._values = {}
         reserve(sys.getsizeof(self._values))
         seed = array("I", [0])
         if seed.itemsize != 4 or len(data) >= 1 << 32:
             raise ReadEpochError("physical source offsets lack bounded 32-bit storage")
         reserve(sys.getsizeof(seed))
-        self._spans = seed * (physical_count * 4)
+        self._spans = seed * (physical_count * 2)
         reserve(sys.getsizeof(self._spans) + sys.getsizeof(self) + sys.getsizeof(reserve))
-        cursor = begin = 0
-        first = 1
+        cursor = 0
         for line in range(1, physical_count + 1):
             checkpoint()
             end = data.find(b"\n", cursor)
@@ -1153,22 +1153,21 @@ class _CompactStatementIndex(Mapping):
             cursor = end + 1 if has_lf else end
             if has_lf and (physical_end - slash) % 2:
                 continue
-            base = self._count * 4
-            self._spans[base] = first
-            self._spans[base + 1] = line
-            self._spans[base + 2] = begin
-            self._spans[base + 3] = end
+            base = self._count * 2
+            self._spans[base] = line
+            self._spans[base + 1] = end
             self._count += 1
-            first, begin = line + 1, cursor
 
     def __len__(self):
         return self._count
 
     def __iter__(self):
         for number in range(self._count):
-            yield self._spans[number * 4]
+            self._checkpoint()
+            yield 1 if number == 0 else self._spans[(number - 1) * 2] + 1
 
     def __getitem__(self, key):
+        self._checkpoint()
         if key in self._values:
             return self._values[key]
         if not isinstance(key, (int, float)):
@@ -1176,29 +1175,36 @@ class _CompactStatementIndex(Mapping):
         lower, upper = 0, self._count
         while lower < upper:
             middle = (lower + upper) // 2
-            if self._spans[middle * 4] < key:
+            first = 1 if middle == 0 else self._spans[(middle - 1) * 2] + 1
+            if first < key:
                 lower = middle + 1
             else:
                 upper = middle
-        if lower == self._count or self._spans[lower * 4] != key:
+        first = 1 if lower == 0 else self._spans[(lower - 1) * 2] + 1
+        if lower == self._count or first != key:
             raise KeyError(key)
-        base = lower * 4
-        first, last, begin, end = (self._spans[base + offset] for offset in range(4))
-        chunk = self._data[begin:end]
-        decoded = chunk.decode("utf-8", "strict")
-        parts = decoded.split("\n")
-        self._reserve(
-            sys.getsizeof(chunk) + sys.getsizeof(decoded) + sys.getsizeof(parts)
-            + sum(sys.getsizeof(part) for part in parts),
-        )
-        for number, part in enumerate(parts):
-            if (number < len(parts) - 1 or end < len(self._data)) and part.endswith("\r"):
-                parts[number] = part[:-1]
-                self._reserve(sys.getsizeof(parts[number]))
-        raw = "\n".join(parts)
-        encoded_raw = raw.encode()
-        self._reserve(sys.getsizeof(raw) + sys.getsizeof(encoded_raw))
-        value = (lower + 1, first, last, hashlib.sha256(encoded_raw).hexdigest())
+        base = lower * 2
+        last, end = self._spans[base], self._spans[base + 1]
+        begin = 0 if lower == 0 else self._spans[base - 1] + 1
+        digest = hashlib.sha256()
+        data = memoryview(self._data)
+        self._reserve(sys.getsizeof(digest) + sys.getsizeof(data))
+        cursor = begin
+        # UTF-8 was validated at capture; only CR immediately before LF is normalized.
+        while True:
+            self._checkpoint()
+            carriage = self._data.find(b"\r\n", cursor, end)
+            if carriage == -1:
+                break
+            part = data[cursor:carriage]
+            self._reserve(sys.getsizeof(part))
+            digest.update(part)
+            cursor = carriage + 1
+        finish = end - 1 if end < len(self._data) and end > begin and self._data[end - 1] == 13 else end
+        part = data[cursor:finish]
+        self._reserve(sys.getsizeof(part))
+        digest.update(part)
+        value = (lower + 1, first, last, digest.hexdigest())
         self._reserve(
             sys.getsizeof(begin) + sys.getsizeof(end) + sys.getsizeof(value)
             + sum(sys.getsizeof(item) for item in value),
@@ -1207,7 +1213,11 @@ class _CompactStatementIndex(Mapping):
         self._values[first] = value
         table_after = sys.getsizeof(self._values)
         if table_after > table_before:
-            self._reserve(table_after)
+            try:
+                self._reserve(table_after)
+            except BaseException:
+                del self._values[first]
+                raise
         return value
 
 

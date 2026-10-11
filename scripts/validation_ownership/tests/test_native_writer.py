@@ -98,6 +98,44 @@ class NativeReadonlyVariableTests(unittest.TestCase):
         with self.assertRaisesRegex(read_epochs.ReadEpochError, "unsupported bytes"):
             read_epochs._statement_index(b"V := \0")
 
+    def test_compact_normalized_spans_preserve_physical_oracle(self):
+        from scripts.validation_ownership import read_epochs
+        for source in (
+            b"", b"\n", b"FIRST := a\r\nLAST := b\r", b"FIRST := a\\\r\n b\r\n",
+            b"FIRST := a\\\\\r\nLAST := b\n", b"FIRST := a\\\n",
+            "VALUE := 日本語\\\r\n 中文\r\nLAST := end\r\r\n".encode(),
+        ):
+            with self.subTest(source=source):
+                expected = {
+                    first: (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
+                    for logical, first, last, raw in read_epochs.physical_statements(source)
+                }
+                index = read_epochs._statement_index(source, compact=True)
+                self.assertEqual(list(index), list(expected))
+                self.assertEqual(dict(index), expected)
+                self.assertEqual(dict(index), expected)
+                with self.assertRaises(KeyError):
+                    index[len(source) + 2]
+
+    def test_compact_large_utf8_statement_fits_unchanged_control_budget(self):
+        from scripts.validation_ownership import read_epochs
+        source = b"VALUE := " + ("日本語" * 1_000_000).encode() + b"\r\nTAIL := end\n"
+        self.assertLess(len(source), make_probe.Limits().file_bytes)
+        expected = {
+            first: (logical, first, last, hashlib.sha256(raw.encode()).hexdigest())
+            for logical, first, last, raw in read_epochs.physical_statements(source)
+        }
+        budget = ProbeBudget()
+        try:
+            index = read_epochs._statement_index(
+                source, compact=True, reserve=lambda size: budget.charge("control", size),
+                checkpoint=budget.remaining,
+            )
+            self.assertEqual(dict(index), expected)
+            self.assertFalse(budget.failed)
+        finally:
+            budget.close()
+
     def test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only(self):
         runtime = "/usr/lib/python3/dist-packages"
         self.add("Makefile", (

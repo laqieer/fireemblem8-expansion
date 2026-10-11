@@ -2883,6 +2883,19 @@ The upstream-port workflow verifier mirrors this same outer-envelope contract;
 it still requires the complete ordered gate set and rejects other execution
 contexts or timeout substitutions.
 
+The native source index stores two 32-bit terminal coordinates per statement;
+its starting line and byte position derive from the previous terminal. Lazy
+digests normalize CRLF using readonly views of validated UTF-8 source bytes,
+without repeated decoded/split/joined copies. Spans, digests, immutable source
+capture, event/archive schemas and all existing byte/count limits are unchanged.
+Run `NativeReadonlyVariableTests.test_compact_normalized_spans_preserve_physical_oracle`
+and `test_compact_large_utf8_statement_fits_unchanged_control_budget` for the
+independent physical-statement oracle, mixed line endings/continuations and
+large supported UTF-8 input under the default control budget. Existing actual
+native compact-source, finite generated-pattern and compiler-root tests retain
+live/host/archive and cleanup controls. This reduction is component resource
+evidence, not qualification of the original initial-plus-eight/all-551 cohort.
+
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old
 runtime-completion protocol alone does not qualify their post-read
