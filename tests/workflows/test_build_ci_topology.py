@@ -5275,7 +5275,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     else WORKER_CONDITION
                 ),
                 "runs-on": "ubuntu-latest",
-                "timeout-minutes": "90" if job_name == "build" else "60",
+                "timeout-minutes": "90" if job_name in {"build", "extended-host-tests"} else "60",
                 "env": "",
                 "steps": "",
             }
@@ -5383,7 +5383,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "shell": "untrusted-shell {0}",
         }
         for job_name in COMBINED_WORKERS:
-            timeout = "90" if job_name == "build" else "60"
+            timeout = "90" if job_name in {"build", "extended-host-tests"} else "60"
             for field, value in execution_fields.items():
                 with self.subTest(job=job_name, field=field):
                     changed = self.text.replace(
@@ -5411,6 +5411,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         f"{allowed_line}\n{allowed_line}",
                         1,
                     )
+                    self.assertNotEqual(changed_job, job)
                     changed = self.text.replace(job, changed_job, 1)
                     self.assertTrue(
                         any(
@@ -5438,6 +5439,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
             )
             with self.subTest(job=job_name, reordered=True):
+                self.assertNotEqual(reordered, job)
                 changed = self.text.replace(job, reordered, 1)
                 self.assertTrue(
                     any(
@@ -5455,11 +5457,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ):
                 with self.subTest(job=job_name, replacement=replacement):
                     job = _job_blocks(self.text)[job_name]
-                    changed = self.text.replace(
-                        job,
-                        job.replace(original, replacement, 1),
-                        1,
-                    )
+                    changed_job = job.replace(original, replacement, 1)
+                    self.assertNotEqual(changed_job, job)
+                    changed = self.text.replace(job, changed_job, 1)
                     self.assertTrue(
                         any(
                             f"{job_name} direct job mapping differs" in error
