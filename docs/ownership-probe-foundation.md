@@ -2879,6 +2879,9 @@ native suite alone measured 58 minutes before CJK, codecs, publication and
 configuration gates. Every command and fail-closed final check remains required.
 This is CI operational headroom, not an increase/reset of any individual
 `ProbeBudget`, native observation, or original-cohort resource allowance.
+The upstream-port workflow verifier mirrors this same outer-envelope contract;
+it still requires the complete ordered gate set and rejects other execution
+contexts or timeout substitutions.
 
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old
