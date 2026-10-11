@@ -1596,7 +1596,7 @@ jobs:
     - name: Install extended host dependencies
       run: |
         sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-venv || exit "$?"
-        sudo chmod go-w /usr/share/locale
+        sudo chmod go-w /usr/share /usr/share/locale
 
     - name: Run ownership-probe process suite
       run: make -f scripts/validation_ownership/foundation.mk ownership-probe-test

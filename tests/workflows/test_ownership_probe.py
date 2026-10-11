@@ -175,7 +175,7 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         steps = topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
         setup = next(step for step in steps if "Install extended host dependencies" in step)
         commands = [shlex.split(line) for line in topology._run_block_commands(setup)]
-        self.assertIn(["sudo", "chmod", "go-w", "/usr/share/locale"], commands)
+        self.assertIn(["sudo", "chmod", "go-w", "/usr/share", "/usr/share/locale"], commands)
         self.assertLess(steps.index(setup), steps.index(self.owner_step(text)))
         with tempfile.TemporaryDirectory() as temporary:
             calls = Path(temporary) / "calls"
@@ -189,17 +189,21 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
             )
             self.assertEqual(failed.returncode, 7)
             self.assertEqual(calls.read_text().splitlines(), ["apt-get update"])
-            locale = Path(temporary) / "locale"
-            locale.mkdir(mode=0o777)
-            locale.chmod(0o777)
+            share = Path(temporary) / "usr/share"
+            locale = share / "locale"
+            locale.mkdir(parents=True)
+            for directory in (share, locale):
+                directory.chmod(0o777)
             content = locale / "messages"
             content.write_bytes(b"unchanged locale")
-            before = locale.stat()
+            before = [directory.stat() for directory in (share, locale)]
             argv = next(command[1:] for command in commands if command[:2] == ["sudo", "chmod"])
-            subprocess.run([*argv[:-1], str(locale)], check=True)
-            after = locale.stat()
-            self.assertEqual((after.st_uid, after.st_gid), (before.st_uid, before.st_gid))
-            self.assertEqual(after.st_mode & 0o777, 0o755)
+            operands = [str(Path(temporary) / path.lstrip("/")) for path in argv[2:]]
+            subprocess.run([*argv[:2], *operands], check=True)
+            for directory, original in zip((share, locale), before):
+                after = directory.stat()
+                self.assertEqual((after.st_uid, after.st_gid), (original.st_uid, original.st_gid))
+                self.assertEqual(after.st_mode & 0o777, 0o755)
             self.assertEqual(content.read_bytes(), b"unchanged locale")
 
     def test_missing_duplicate_or_disabled_owner_rejects(self):

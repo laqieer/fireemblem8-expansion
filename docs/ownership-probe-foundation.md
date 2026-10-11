@@ -2867,7 +2867,8 @@ tool options for writable original jobs. No new command resolver or authority
 registry is added.
 
 The disposable CI runner's existing dependency setup removes only group/other
-write access from `/usr/share/locale`; affected runner images ship it as 0777.
+write access from `/usr/share` and `/usr/share/locale`, non-recursively;
+affected runner images ship both directories as 0777.
 The production root-owner, canonical-path and non-writable metadata checks stay
 strict. Local shared host directories are not modified. The workflow regression
 uses an owned temporary locale directory to verify resulting mode, owner and
