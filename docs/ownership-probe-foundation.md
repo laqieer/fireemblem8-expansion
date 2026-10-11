@@ -2874,6 +2874,11 @@ strict. Local shared host directories are not modified. The workflow regression
 uses an owned temporary locale directory to verify resulting mode, owner and
 content before the native suite starts.
 Package-update/install failure exits before permission setup or test execution.
+The combined extended CI worker has a 90-minute outer envelope: its complete
+native suite alone measured 58 minutes before CJK, codecs, publication and
+configuration gates. Every command and fail-closed final check remains required.
+This is CI operational headroom, not an increase/reset of any individual
+`ProbeBudget`, native observation, or original-cohort resource allowance.
 
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old

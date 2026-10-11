@@ -1621,7 +1621,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         if indent != 4 or line.startswith("    -"):
             continue
         direct_lines.append(line)
-    expected_timeout = 90 if job_name == "build" else 60
+    expected_timeout = 90 if job_name in {"build", "extended-host-tests"} else 60
     expected_condition = HOST_BUILD_CONDITION if job_name in METADATA_ADAPTER_JOBS else WORKER_CONDITION
     expected_direct = [
         f"    {WORKER_NEEDS}",
@@ -2179,7 +2179,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "event-classifier": 5,
         "host-tests": 60,
         "build": 90,
-        "extended-host-tests": 60,
+        "extended-host-tests": 90,
         "legacy": 60,
         "summary": 5,
     }
@@ -5222,7 +5222,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "event-classifier": 5,
             "host-tests": 60,
             "build": 90,
-            "extended-host-tests": 60,
+            "extended-host-tests": 90,
             "legacy": 60,
             "summary": 5,
         }
