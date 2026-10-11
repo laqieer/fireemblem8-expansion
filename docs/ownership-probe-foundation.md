@@ -2872,6 +2872,7 @@ The production root-owner, canonical-path and non-writable metadata checks stay
 strict. Local shared host directories are not modified. The workflow regression
 uses an owned temporary locale directory to verify resulting mode, owner and
 content before the native suite starts.
+Package-update/install failure exits before permission setup or test execution.
 
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old

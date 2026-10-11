@@ -129,7 +129,10 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
                 self.assertIsNotNone(fields)
                 self.assertEqual(len(fields), len(set(fields)))
                 self.assertTrue({"name", "run"} <= set(fields) <= {"name", "run", "id"})
-                installers.append((index, words[len(prefix):]))
+                packages = words[len(prefix):]
+                if packages[-3:] == ["||", "exit", "$?"]:
+                    packages = packages[:-3]
+                installers.append((index, packages))
         self.assertEqual(len(installers), 1)
         index, packages = installers[0]
         self.assertEqual(set(packages), NATIVE_PACKAGES)
@@ -175,6 +178,17 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.assertIn(["sudo", "chmod", "go-w", "/usr/share/locale"], commands)
         self.assertLess(steps.index(setup), steps.index(self.owner_step(text)))
         with tempfile.TemporaryDirectory() as temporary:
+            calls = Path(temporary) / "calls"
+            sudo = Path(temporary) / "sudo"
+            sudo.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\nexit 7\n')
+            sudo.chmod(0o755)
+            failed = subprocess.run(
+                ["/bin/bash", "-e", "-c", "\n".join(topology._run_block_commands(setup))],
+                env={"PATH": temporary + ":/usr/bin:/bin", "CALLS": str(calls)},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self.assertEqual(failed.returncode, 7)
+            self.assertEqual(calls.read_text().splitlines(), ["apt-get update"])
             locale = Path(temporary) / "locale"
             locale.mkdir(mode=0o777)
             locale.chmod(0o777)
