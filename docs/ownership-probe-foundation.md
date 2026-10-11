@@ -2866,6 +2866,13 @@ Use the existing `commands`, `writable_outputs`, `native_resources` and sealed
 tool options for writable original jobs. No new command resolver or authority
 registry is added.
 
+The disposable CI runner's existing dependency setup removes only group/other
+write access from `/usr/share/locale`; affected runner images ship it as 0777.
+The production root-owner, canonical-path and non-writable metadata checks stay
+strict. Local shared host directories are not modified. The workflow regression
+uses an owned temporary locale directory to verify resulting mode, owner and
+content before the native suite starts.
+
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old
 runtime-completion protocol alone does not qualify their post-read

@@ -3,6 +3,7 @@
 import importlib
 import shlex
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -165,6 +166,27 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         owner = self.owner_step(text)
         with self.assertRaises(AssertionError):
             self.native_dependencies(text.replace(installer, "", 1).replace(owner, owner + installer, 1))
+
+    def test_native_runner_locale_setup_preserves_content_and_removes_write_permissions(self):
+        text = topology.WORKFLOW.read_text(encoding="utf-8")
+        steps = topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
+        setup = next(step for step in steps if "Install extended host dependencies" in step)
+        commands = [shlex.split(line) for line in topology._run_block_commands(setup)]
+        self.assertIn(["sudo", "chmod", "go-w", "/usr/share/locale"], commands)
+        self.assertLess(steps.index(setup), steps.index(self.owner_step(text)))
+        with tempfile.TemporaryDirectory() as temporary:
+            locale = Path(temporary) / "locale"
+            locale.mkdir(mode=0o777)
+            locale.chmod(0o777)
+            content = locale / "messages"
+            content.write_bytes(b"unchanged locale")
+            before = locale.stat()
+            argv = next(command[1:] for command in commands if command[:2] == ["sudo", "chmod"])
+            subprocess.run([*argv[:-1], str(locale)], check=True)
+            after = locale.stat()
+            self.assertEqual((after.st_uid, after.st_gid), (before.st_uid, before.st_gid))
+            self.assertEqual(after.st_mode & 0o777, 0o755)
+            self.assertEqual(content.read_bytes(), b"unchanged locale")
 
     def test_missing_duplicate_or_disabled_owner_rejects(self):
         text = topology.WORKFLOW.read_text(encoding="utf-8")
