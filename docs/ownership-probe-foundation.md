@@ -2888,6 +2888,10 @@ its starting line and byte position derive from the previous terminal. Lazy
 digests normalize CRLF using readonly views of validated UTF-8 source bytes,
 without repeated decoded/split/joined copies. Spans, digests, immutable source
 capture, event/archive schemas and all existing byte/count limits are unchanged.
+NUL-free ASCII source is already valid UTF-8 and needs no decoded validation
+copy; non-ASCII source still undergoes strict UTF-8 decoding. The ASCII
+validation regression preserves malformed, overlong, surrogate and truncated
+UTF-8 refusals and the independent physical-statement digest oracle.
 Run `NativeReadonlyVariableTests.test_compact_normalized_spans_preserve_physical_oracle`
 and `test_compact_large_utf8_statement_fits_unchanged_control_budget` for the
 independent physical-statement oracle, mixed line endings/continuations and

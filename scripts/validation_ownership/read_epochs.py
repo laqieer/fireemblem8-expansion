@@ -1123,9 +1123,10 @@ class _CompactStatementIndex(Mapping):
     def __init__(self, data, *, checkpoint, count_limit, reserve):
         if not isinstance(data, bytes) or b"\0" in data:
             raise ReadEpochError("completion source has unsupported bytes")
-        validated = data.decode("utf-8", "strict")
-        reserve(sys.getsizeof(validated))
-        del validated
+        if not data.isascii():
+            validated = data.decode("utf-8", "strict")
+            reserve(sys.getsizeof(validated))
+            del validated
         physical_count = data.count(b"\n") + 1
         if count_limit is not None and physical_count > count_limit:
             raise ReadEpochError("completion physical source scan exceeds observation bound")

@@ -136,6 +136,20 @@ class NativeReadonlyVariableTests(unittest.TestCase):
         finally:
             budget.close()
 
+    def test_compact_ascii_validation_needs_no_decoded_source_copy(self):
+        from scripts.validation_ownership import read_epochs
+        source = b"VALUE := " + b"x" * 131072 + b"\r\n"
+        charges = []
+        index = read_epochs._statement_index(source, compact=True, reserve=charges.append)
+        self.assertLess(sum(charges), len(source))
+        first = next(read_epochs.physical_statements(source))
+        self.assertEqual(index[1], (*first[:3], hashlib.sha256(first[3].encode()).hexdigest()))
+        for invalid in (b"V := \x80", b"V := \xc0\x80", b"V := \xed\xa0\x80", b"V := \xe2\x82"):
+            with self.subTest(invalid=invalid), self.assertRaises(UnicodeDecodeError):
+                read_epochs._statement_index(invalid, compact=True)
+        with self.assertRaises(read_epochs.ReadEpochError):
+            read_epochs._statement_index(source + b"\0", compact=True)
+
     def test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only(self):
         runtime = "/usr/lib/python3/dist-packages"
         self.add("Makefile", (
