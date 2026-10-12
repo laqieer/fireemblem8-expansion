@@ -1189,6 +1189,20 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-SCRIPT-EXTRACTION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_ci_entrypoints "
+                            "tests.upstream_port.test_drift_workflow -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract "
+                            "tests.upstream_port.test_verify.VerifyCliCwdTests."
+                            "test_missing_symlinked_or_oversized_archival_helper_refuses -v",
+                            "actionlint .github/workflows/build.yml "
+                            ".github/workflows/upstream-port-drift.yml",
+                        },
+                    },
                     "TC-WORKFLOW-GATE-OWNERSHIP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

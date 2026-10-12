@@ -3,6 +3,7 @@ import inspect
 import io
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -915,7 +916,41 @@ class VerifyCliCwdTests(unittest.TestCase):
             workflow_bytes = source.read()
         with open(target_workflow, "wb") as destination:
             destination.write(workflow_bytes)
+        helper = os.path.join("scripts", "ci", "install_archival_compilers.sh")
+        os.makedirs(os.path.dirname(os.path.join(target, helper)), exist_ok=True)
+        shutil.copy2(os.path.join(REPO_ROOT, helper), os.path.join(target, helper))
         return target
+
+    def test_archival_helper_is_part_of_the_target_gate_contract(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            verify_mod._require_target_gate_equivalence(target)
+            with open(helper, encoding="utf-8") as source:
+                original = source.read()
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("# harmless formatting change\n" + original)
+            verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("exit 0\n")
+            with self.assertRaisesRegex(ValueError, "differs"):
+                verify_mod._require_target_gate_equivalence(target)
+
+    def test_missing_symlinked_or_oversized_archival_helper_refuses(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            os.unlink(helper)
+            with self.assertRaisesRegex(ValueError, "regular checkout file"):
+                verify_mod._require_target_gate_equivalence(target)
+            os.symlink(os.path.join(REPO_ROOT, "scripts", "ci", "install_archival_compilers.sh"), helper)
+            with self.assertRaisesRegex(ValueError, "regular checkout file"):
+                verify_mod._require_target_gate_equivalence(target)
+            os.unlink(helper)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("#" * 16385)
+            with self.assertRaisesRegex(ValueError, "exceeds 16 KiB"):
+                verify_mod._require_target_gate_equivalence(target)
 
     def job_bounds(self, workflow, job_name):
         start = workflow.index(f"\n  {job_name}:\n") + 1

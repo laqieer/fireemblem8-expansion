@@ -1730,7 +1730,7 @@ def _parse_bash_run_script_commands(script, step_label):
     return tuple(parsed)
 
 
-def _parse_step(block, job_name, index):
+def _parse_step(block, job_name, index, repository_root=None):
     lines = block.split("\n")
     first_index = next(
         (
@@ -1834,6 +1834,29 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
+    if (
+        job_name == "legacy"
+        and values.get("name") == "Install pinned archival agbcc compilers"
+        and values.get("run") == (("bash", "scripts/ci/install_archival_compilers.sh"),)
+    ):
+        root = _SOURCE_ROOT if repository_root is None else repository_root
+        helper = os.path.join(root, "scripts", "ci", "install_archival_compilers.sh")
+        try:
+            if (
+                os.path.islink(helper)
+                or not os.path.isfile(helper)
+                or os.path.commonpath((os.path.realpath(root), os.path.realpath(helper)))
+                != os.path.realpath(root)
+            ):
+                raise ValueError(f"{step_label} archival helper must be a regular checkout file")
+            with open(helper, "rb") as handle:
+                script = handle.read(16385)
+            if len(script) > 16384:
+                raise ValueError(f"{step_label} archival helper exceeds 16 KiB")
+            values["run"] = _parse_bash_run_script_commands(script.decode("utf-8"), step_label)
+        except (OSError, UnicodeError) as error:
+            raise ValueError(f"{step_label} cannot read archival helper: {error}") from error
+
     if job_name == "event-identity":
         if (
             index != 0
@@ -2078,7 +2101,7 @@ def _parse_step(block, job_name, index):
     )
 
 
-def _parse_job_steps(job_name, body):
+def _parse_job_steps(job_name, body, repository_root=None):
     lines = body.splitlines(keepends=True)
     step_headers = [
         index
@@ -2111,7 +2134,7 @@ def _parse_job_steps(job_name, body):
         for index, start in enumerate(step_headers)
     ]
     steps = tuple(
-        _parse_step(block, job_name, index)
+        _parse_step(block, job_name, index, repository_root)
         for index, block in enumerate(blocks)
     )
     names = [step[1] for step in steps if step[1] is not None]
@@ -2134,7 +2157,7 @@ def _parse_job_steps(job_name, body):
     return steps
 
 
-def _parse_workflow_structure_text(text):
+def _parse_workflow_structure_text(text, repository_root=None):
     workflow_context = _parse_workflow_context(text)
     jobs = _workflow_job_entries(text)
     names = tuple(name for name, _ in jobs)
@@ -2150,7 +2173,7 @@ def _parse_workflow_structure_text(text):
         (
             name,
             _parse_job_context(name, blocks[name]),
-            _parse_job_steps(name, blocks[name]),
+            _parse_job_steps(name, blocks[name], repository_root),
         )
         for name in _EXPECTED_JOBS
     )
@@ -2200,7 +2223,7 @@ def _read_workflow_gate_contract(repository_root):
             text = handle.read()
     except (OSError, UnicodeError) as error:
         raise ValueError(f"cannot read target Build workflow {path!r}: {error}") from error
-    return _parse_workflow_structure_text(text)
+    return _parse_workflow_structure_text(text, repository_root)
 
 
 def _mirrored_workflow_commands(contract):

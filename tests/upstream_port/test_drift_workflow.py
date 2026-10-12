@@ -66,7 +66,19 @@ _FORBIDDEN_SUBSTRINGS = [
 
 def _read_workflow_text() -> str:
     with open(_WORKFLOW_PATH, encoding="utf-8") as fh:
-        return fh.read()
+        text = fh.read()
+    for relative in (
+        "scripts/ci/configure_upstream_remote.sh",
+        "scripts/ci/render_upstream_drift.sh",
+    ):
+        invocation = f"        run: bash {relative}"
+        if text.count(invocation) != 1:
+            raise ValueError(f"workflow must invoke exactly one {relative}")
+        with open(os.path.join(_REPO_ROOT, relative), encoding="utf-8") as helper:
+            script = helper.read()
+        expanded = "\n".join("          " + line for line in script.splitlines())
+        text = text.replace(invocation, "        run: |\n" + expanded)
+    return text
 
 
 class WorkflowStaticPolicyTests(unittest.TestCase):
