@@ -4,6 +4,100 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-GATE-OWNERSHIP-001: Retain broad validation after a bounded shadow pilot
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #180](https://github.com/laqieer/fireemblem8-expansion/issues/180).
+- **Supported configuration or artifact:** clean Linux host source checkout
+  with Python 3 and Git. No ROM, save, ARM toolchain or credentials are needed.
+- **Prerequisites and clean starting state:** run from the source root.
+  The historical experiment used commit
+  `3ae133fc2176e9671bc95d1f8336a6073996ae7c`; its artifact-guard producer and
+  consumer were unchanged from `c30227bc1fecfee39cf1f454b22d457fcfb3e2b1`.
+  New source versions are not silently qualified by that result.
+
+### Actions
+
+1. Exercise the real immutable-input criterion and existing broad owner:
+
+   ```bash
+   python3 -m unittest scripts.artifact_guard_tests.test_artifact_guard.TestImmutability -v
+   python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v
+   python3 scripts/artifact_guard.py --revision HEAD
+   ```
+
+   The criterion commits safe bytes, replaces only the worktree bytes with
+   an ELF signature, and invokes both the production revision and index CLI
+   routes. Both must still report the safe immutable Git bytes.
+2. Read the historical [component observations](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+   and [corrected per-scenario execution records](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
+   as evidence artifacts only. **Do not execute code copied from their mutable
+   comment bodies.** Python import isolation and removing two token variables
+   do not provide credential or filesystem isolation. No supported prototype
+   executable is installed or required by this source-build procedure.
+3. Compare the recorded real child observations, assertion results and
+   separately specified expectation table. The corrected experiment actually
+   executed the broad owner and revision CLI for every scenario; older assigned
+   route strings alone are not that evidence. A proposed owner for one criterion
+   does not prove complete ownership of the changed producer file.
+4. Inspect the recorded disconnected-consumer and wrong-input controls.
+   A constant successful result left the assertion green but supplied no
+   production-consumer observations; reading the mutated worktree bytes caused
+   an actual assertion failure. These are historical experiment observations,
+   not controls injected into a tester's normal checkout.
+5. For any future separately accepted experiment, measure broad and focused
+   elapsed time, actual intermediate time avoided,
+   setup, maintenance, review and coordination costs separately. Unknown
+   costs are not zero. Do not expand or deploy narrowing without demonstrated
+   bounded safety and positive net value.
+
+### Expected result
+
+The historical real criterion passed, its wrong-input control failed, and the
+disconnected consumer lacked ownership observations despite a green assertion.
+All nine shadow expectation scenarios retained the **actual broad route**.
+The three broad runs each executed 15 tests. Median broad/focused times were
+4.010/0.169 seconds; the 3.841-second difference was only potential savings.
+Actual validation avoided: zero. Complete file ownership and positive net value
+were not established, so the existing broad route remains the supported result.
+
+### Negative control
+
+The wrong-input mutation produces an actual assertion failure. The disconnected
+consumer demonstrates why a test success label alone cannot prove ownership.
+Do not interpret either as a deployed safety incident or qualify the deferred
+global graph from these bounded observations.
+
+### Interactions and save compatibility
+
+Dependencies: existing artifact-guard CLI, Git fixtures and case catalog.
+Conflicts: none while the prototype remains shadow-only. Scheduling under
+#181 is independent; native/global ownership and deferred #270/#275/#287 are
+not prerequisites. No ROM/RAM, save, configuration identity, generated game
+data, localization, modern debug/release or archival behavior changes.
+All final delivery gates remain mandatory.
+
+### Automation
+
+The existing `TestImmutability` and artifact-guard suite automate every current
+production assertion in this procedure. The linked records preserve the finite
+experiment's native observations, negative controls, expectation table and
+timing; they are not executable authority or a permanent CI gate.
+The existing parsed Build/local-command mirror retains the broad suite.
+No subjective manual criterion applies.
+
+### Cleanup and limitations
+
+The corrected prototype owns and removes its temporary fixtures. Preserve
+unattributed historical fixtures rather than deleting them by a shared prefix.
+The supported source-build procedure requires no downloaded scratch executable.
+Remove only your own reports after retaining required evidence.
+Python call observations are operational diagnostics, not hostile-same-UID
+isolation, complete source ownership or a general observation platform.
+Historical measurements are not promises about future versions or runners.
+Rollback of this disposition is an ordinary revert; it never removes the
+existing broader checks.
+
 ## TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001: Ignore unrelated check lifecycle
 
 Originating bug: [#281](https://github.com/laqieer/fireemblem8-expansion/issues/281).

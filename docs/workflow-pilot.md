@@ -7,6 +7,41 @@ reporter before any dependent issue changes delivery behavior. It does not
 select CI, order review, alter a merge gate, or create a mutable delivery
 ledger.
 
+## Bounded ownership pilot: retain broad validation
+
+The revised [#180 contract](https://github.com/laqieer/fireemblem8-expansion/issues/180)
+starts with one host-only criterion, not whole-repository ownership.
+Its [corrected native routing experiment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
+exercised the artifact guard's immutable Git-blob inputs through the actual
+CLI consumer. The existing assertion passed with the real consumer and also
+with a disconnected fake consumer; runtime observations distinguished them.
+Reading mutated worktree bytes instead of Git blobs failed the assertion.
+
+Three runs of the existing 15-test broad suite had a median of 4.010 seconds;
+the single criterion had a median of 0.169 seconds. The difference, 3.841
+seconds, is potential intermediate savings, **not time actually avoided**.
+Every actual route remained broad. Complete ownership of changes to the
+producer file was not established, and recurring maintenance, review and
+coordination costs remain unknown rather than zero.
+
+The linked comments retain historical observations, not executable authority.
+Do not execute their mutable prototype bodies. The supported source-build
+procedure uses only the repository's existing artifact-guard tests and CLI.
+
+The supported outcome is therefore **retain the existing broad validation**:
+no selector, workflow reduction, additional ownership service or expansion is
+installed. Empty, unknown, ambiguous, stale, incomplete and unsupported
+ownership are ordinary optimization misses, not delivery holds or obligations
+to model another domain. A safety miss stops narrowing of that surface;
+coverage and cost misses retain broad validation. Any future proposal must
+establish its bounded safety and positive net value before narrowing.
+
+[#181 scheduling](https://github.com/laqieer/fireemblem8-expansion/issues/181)
+remains independent. The deferred native/global graph is not a prerequisite.
+Exact-head review, security and full Build, exact-master Build, and completion
+gates are unchanged. Replay and limitations are indexed under
+[`TC-WORKFLOW-GATE-OWNERSHIP-001`](test-cases/workflow-governance.md#tc-workflow-gate-ownership-001-retain-broad-validation-after-a-bounded-shadow-pilot).
+
 ## Frozen boundary and authoritative sources
 
 The immutable baseline fixture is

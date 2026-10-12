@@ -1189,6 +1189,16 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-GATE-OWNERSHIP-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.artifact_guard_tests."
+                            "test_artifact_guard.TestImmutability -v",
+                            "python3 -m unittest discover -s scripts/artifact_guard_tests "
+                            "-p 'test_*.py' -v",
+                            "python3 scripts/artifact_guard.py --revision HEAD",
+                        },
+                    },
                     "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
