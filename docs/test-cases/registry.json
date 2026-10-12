@@ -519,6 +519,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
         "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180",
         "https://github.com/laqieer/fireemblem8-expansion/issues/181",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
@@ -547,6 +548,7 @@
         "TC-WORKFLOW-BODY-EDIT-001",
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-GATE-OWNERSHIP-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-PROBE-NATIVE-EVENT-ORDER-001",
@@ -2632,6 +2634,38 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+      "title": "Retain broad validation after a bounded shadow pilot",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/180"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-gate-ownership-001-retain-broad-validation-after-a-bounded-shadow-pilot",
+      "profiles": ["Clean Linux host source checkout with Python 3 and Git"],
+      "purpose": "Observe one artifact-guard immutable-input criterion and retain existing broad validation when complete ownership or positive net value is unproved.",
+      "prerequisites": "Clean source checkout; no credentials, ROM, save or new dependency. Historical source and experiment are explicitly identified in the procedure.",
+      "actions": "Run the real TestImmutability criterion, existing 15-test broad suite and revision check. Replay the linked finite session-only prototype against the clean checkout; compare real child observations, a disconnected consumer, wrong worktree inputs, nine separately specified shadow expectations and measured costs.",
+      "expected_result": "Real immutable revision/index inputs pass and wrong worktree inputs fail. A disconnected green assertion lacks ownership observations. All actual routes remain broad; 3.841 seconds of historical potential savings is not actual validation avoided or proven net value.",
+      "negative_control": "Wrong-input mutation fails the actual criterion; disconnected-consumer success cannot qualify ownership. Empty, unknown, ambiguous, stale, incomplete and unsupported evidence retains the existing broad route.",
+      "interactions": "Existing artifact guard and case catalog only; #181 scheduling is independent. No global/native ownership, SDK or deferred #270/#275/#287 prerequisite. No workflow selector or permanent new gate is installed.",
+      "save_compatibility": "No ROM/RAM, save, configuration identity, generated game data, localization, modern debug/release or archival change.",
+      "cleanup": "Corrected prototype removes its owned fixtures. Remove only your own scratch scripts/reports; retain unattributed historical fixtures.",
+      "limitations": "One criterion does not prove full-file ownership. Maintenance/review/coordination costs and positive net value remain unproved. Runtime observations are diagnostics, not authenticated proof or hostile-same-UID isolation.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.artifact_guard_tests.test_artifact_guard.TestImmutability -v",
+          "evidence": "scripts/artifact_guard_tests/test_artifact_guard.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v",
+          "evidence": "scripts/artifact_guard_tests/test_artifact_guard.py"
+        },
+        {
+          "command": "python3 scripts/artifact_guard.py --revision HEAD",
+          "evidence": "scripts/artifact_guard.py"
         }
       ]
     },

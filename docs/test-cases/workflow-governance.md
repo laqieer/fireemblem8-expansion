@@ -4,6 +4,97 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-GATE-OWNERSHIP-001: Retain broad validation after a bounded shadow pilot
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #180](https://github.com/laqieer/fireemblem8-expansion/issues/180).
+- **Supported configuration or artifact:** clean Linux host source checkout
+  with Python 3 and Git. No ROM, save, ARM toolchain or credentials are needed.
+- **Prerequisites and clean starting state:** run from the source root.
+  The historical experiment used commit
+  `3ae133fc2176e9671bc95d1f8336a6073996ae7c`; its artifact-guard producer and
+  consumer were unchanged from `c30227bc1fecfee39cf1f454b22d457fcfb3e2b1`.
+  New source versions are not silently qualified by that result.
+
+### Actions
+
+1. Exercise the real immutable-input criterion and existing broad owner:
+
+   ```bash
+   python3 -m unittest scripts.artifact_guard_tests.test_artifact_guard.TestImmutability -v
+   python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v
+   python3 scripts/artifact_guard.py --revision HEAD
+   ```
+
+   The criterion commits safe bytes, replaces only the worktree bytes with
+   an ELF signature, and invokes both the production revision and index CLI
+   routes. Both must still report the safe immutable Git bytes.
+2. For the historical shadow replay, save the two finite prototype scripts
+   from the [experiment comment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+   beside each other in your own scratch directory. Run
+   `env -u GH_TOKEN -u GITHUB_TOKEN python3 -I -S -B /path/to/scratch/run-artifact-shadow.py /path/to/clean/source/checkout`.
+   Use the existing clean checkout directly; do not copy a linked worktree's
+   `.git` backlink. These scripts are an experiment, not installed production
+   selectors or authenticated evidence.
+3. Compare the real child-call observations and assertion results with the
+   separately specified expectation table. Empty, unknown, ambiguous, stale,
+   incomplete, unsupported, disconnected-consumer and failed-criterion inputs
+   must retain broad validation. A proposed owner for this one criterion does
+   not prove complete ownership of the changed producer file.
+4. Compare the disconnected-consumer and wrong-input controls. Returning a
+   constant successful CLI result can leave the existing assertion green,
+   but supplies no production-consumer observations. Actually reading the
+   mutated worktree bytes instead of Git blobs must fail the assertion.
+5. Measure broad and focused elapsed time, actual intermediate time avoided,
+   setup, maintenance, review and coordination costs separately. Unknown
+   costs are not zero. Do not expand or deploy narrowing without demonstrated
+   bounded safety and positive net value.
+
+### Expected result
+
+The historical real criterion passed, its wrong-input control failed, and the
+disconnected consumer lacked ownership observations despite a green assertion.
+All nine shadow expectation scenarios retained the **actual broad route**.
+The three broad runs each executed 15 tests. Median broad/focused times were
+4.010/0.169 seconds; the 3.841-second difference was only potential savings.
+Actual validation avoided: zero. Complete file ownership and positive net value
+were not established, so the existing broad route remains the supported result.
+
+### Negative control
+
+The wrong-input mutation produces an actual assertion failure. The disconnected
+consumer demonstrates why a test success label alone cannot prove ownership.
+Do not interpret either as a deployed safety incident or qualify the deferred
+global graph from these bounded observations.
+
+### Interactions and save compatibility
+
+Dependencies: existing artifact-guard CLI, Git fixtures and case catalog.
+Conflicts: none while the prototype remains shadow-only. Scheduling under
+#181 is independent; native/global ownership and deferred #270/#275/#287 are
+not prerequisites. No ROM/RAM, save, configuration identity, generated game
+data, localization, modern debug/release or archival behavior changes.
+All final delivery gates remain mandatory.
+
+### Automation
+
+The existing `TestImmutability` and artifact-guard suite automate production
+behavior. The linked finite prototype automates native observations, negative
+controls, the expectation table and timing. It is not a permanent CI gate.
+The existing parsed Build/local-command mirror retains the broad suite.
+No subjective manual criterion applies.
+
+### Cleanup and limitations
+
+The corrected prototype owns and removes its temporary fixtures. Preserve
+unattributed historical fixtures rather than deleting them by a shared prefix.
+Remove only your own scratch scripts/reports after retaining required evidence.
+Python call observations are operational diagnostics, not hostile-same-UID
+isolation, complete source ownership or a general observation platform.
+Historical measurements are not promises about future versions or runners.
+Rollback of this disposition is an ordinary revert; it never removes the
+existing broader checks.
+
 ## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
 
 - **Feature / originating issue:** `workflow-governance` /
