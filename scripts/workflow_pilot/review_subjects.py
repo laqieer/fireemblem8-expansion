@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 from dataclasses import dataclass
 import importlib
 import io
@@ -69,10 +70,116 @@ PLATFORM_DEPENDENCIES = (
     "scripts/validation_ownership/lifecycle.py",
     "scripts/validation_ownership/producer_channel.py",
 )
+PLATFORM_INITIALIZERS = ("scripts/__init__.py", "tests/__init__.py")
+PLATFORM_COVERAGE_CASES = frozenset({
+    "test_source_admission_rejects_each_untrusted_observation_before_backing",
+    "test_capture_rejects_each_changed_descriptor_and_path_identity",
+    "test_slices_enforce_actual_workspace_and_key_boundaries",
+    "test_slice_quota_and_deadline_refuse_before_reading_owned_body",
+})
+
+
+def platform_execution_inputs():
+    return {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES}
+
+
+def platform_source_model(source, path):
+    parsed = ast.parse(source)
+    if path == PLATFORM_SOURCE:
+        for node in parsed.body:
+            if isinstance(node, ast.FunctionDef) and node.name == "_identity":
+                for returned in node.body:
+                    if isinstance(returned, ast.Return) and isinstance(returned.value, ast.Tuple):
+                        values = returned.value.elts
+                        if (len(values) == len(PLATFORM_FIELDS)
+                            and all(isinstance(value, ast.Attribute)
+                                    and isinstance(value.value, ast.Name)
+                                    and value.value.id == "info" for value in values)
+                            and {value.attr for value in values} == set(PLATFORM_FIELDS)):
+                            returned.value.elts.sort(key=lambda value: value.attr)
+            if not isinstance(node, ast.ClassDef) or node.name != "RuntimeImage":
+                continue
+            for method in node.body:
+                if not isinstance(method, ast.FunctionDef) or method.name != "__init__":
+                    continue
+                bindings = [
+                    value.targets[0].id for value in ast.walk(method)
+                    if isinstance(value, ast.Assign) and len(value.targets) == 1
+                    and isinstance(value.targets[0], ast.Name)
+                    and isinstance(value.value, ast.Call)
+                    and isinstance(value.value.func, ast.Attribute)
+                    and isinstance(value.value.func.value, ast.Name)
+                    and value.value.func.value.id == "os" and value.value.func.attr == "fstat"
+                ]
+                if len(bindings) == 1:
+                    for value in ast.walk(method):
+                        if isinstance(value, ast.Name) and value.id == bindings[0]:
+                            value.id = "@platform-source-info"
+    return parsed
+
+
+def platform_execution_sources(tree, tool_tree):
+    """Bind finite candidate modules to reviewed code; never execute candidate Python."""
+    paths = platform_execution_inputs() | set(PLATFORM_INITIALIZERS)
+    sources = {}
+    for path in sorted(paths):
+        present = path in tree.entries
+        trusted = path in tool_tree.entries
+        review.require(present == trusted, "unmodeled platform package initializer: " + path)
+        if not present:
+            continue
+        candidate = platform_source_model(tree.read(path), path)
+        source = tool_tree.read(path)
+        model = platform_source_model(source, path)
+        variants = [(model, source)]
+        if path == PLATFORM_TEST:
+            names = {node.id for node in ast.walk(model) if isinstance(node, ast.Name)}
+            names.update(node.name for node in model.body
+                         if isinstance(node, (ast.FunctionDef, ast.ClassDef)))
+            names.update({"load_tests", "__getattr__", "__dir__"})
+            for node in tuple(candidate.body):
+                if (not isinstance(node, ast.FunctionDef) or node.name in names
+                    or node.name.startswith("__") or node.decorator_list or node.returns is not None
+                    or node.type_comment is not None or node.args.posonlyargs or node.args.args
+                    or node.args.vararg or node.args.kwonlyargs or node.args.kwarg
+                    or node.args.defaults or node.args.kw_defaults
+                    or getattr(node, "type_params", ())):
+                    continue
+                body = node.body
+                neutral = (
+                    len(body) == 1 and isinstance(body[0], ast.Return)
+                    and isinstance(body[0].value, ast.Name)
+                ) or (
+                    len(body) == 2 and isinstance(body[0], ast.Assign)
+                    and len(body[0].targets) == 1 and isinstance(body[0].targets[0], ast.Name)
+                    and isinstance(body[0].value, ast.Constant) and body[0].value.value is None
+                    and isinstance(body[1], ast.Return) and isinstance(body[1].value, ast.Name)
+                    and body[1].value.id == body[0].targets[0].id
+                )
+                if neutral:
+                    candidate.body.remove(node)
+            prior = copy.deepcopy(model)
+            owners = [node for node in prior.body if isinstance(node, ast.ClassDef)
+                      and node.name == "PlatformImageTests"]
+            review.require(len(owners) == 1, "reviewed platform suite lacks its finite owner")
+            removed = {node.name for node in owners[0].body if isinstance(node, ast.FunctionDef)
+                       and node.name in PLATFORM_COVERAGE_CASES}
+            review.require(removed == PLATFORM_COVERAGE_CASES,
+                           "reviewed platform suite lacks its coverage-origin model")
+            owners[0].body = [node for node in owners[0].body
+                             if not isinstance(node, ast.FunctionDef)
+                             or node.name not in PLATFORM_COVERAGE_CASES]
+            variants.append((prior, ast.unparse(prior).encode("utf-8")))
+        matches = [body for model, body in variants
+                   if ast.dump(candidate, include_attributes=False)
+                   == ast.dump(model, include_attributes=False)]
+        review.require(len(matches) == 1, "unmodeled platform executable source: " + path)
+        sources[path] = matches[0]
+    return sources
 
 
 def platform_parse_only(paths):
-    executed = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES}
+    executed = platform_execution_inputs() | set(PLATFORM_INITIALIZERS)
     inventories = {PLATFORM_OWNER, PLATFORM_TOPOLOGY, PLATFORM_CONDITIONS}
     return {path for path in paths if path not in executed and (
         path in inventories or (
@@ -93,6 +200,7 @@ def platform_inputs(tree):
     inputs = {PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES,
               PLATFORM_OWNER, PLATFORM_MAKE, PLATFORM_TOPOLOGY,
               PLATFORM_CONDITIONS, PLATFORM_WORKFLOW}
+    inputs.update(path for path in PLATFORM_INITIALIZERS if path in tree.entries)
     for path in (PLATFORM_SOURCE, PLATFORM_TEST, *PLATFORM_DEPENDENCIES):
         parsed = ast.parse(tree.read(path))
         package = path.removesuffix(".py").replace("/", ".").rpartition(".")[0]
