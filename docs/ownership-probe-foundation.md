@@ -2900,6 +2900,14 @@ native compact-source, finite generated-pattern and compiler-root tests retain
 live/host/archive and cleanup controls. This reduction is component resource
 evidence, not qualification of the original initial-plus-eight/all-551 cohort.
 
+Each hardware trap reserves its observation before kernel capture, then appends
+that same machine row without a second reservation. Other rows reserve normally.
+The actual-trap regression compares the unchanged recorded traps, values and
+archive against old duplicate bookkeeping: the count difference must equal the
+trap population. Exhausted count allowance must still refuse before GETSIGINFO,
+retain a failed budget and clean owned state. Register captures, restoration
+checks and all emitted observations remain required.
+
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old
 runtime-completion protocol alone does not qualify their post-read

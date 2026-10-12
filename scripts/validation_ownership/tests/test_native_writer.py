@@ -150,6 +150,65 @@ class NativeReadonlyVariableTests(unittest.TestCase):
         with self.assertRaises(read_epochs.ReadEpochError):
             read_epochs._statement_index(source + b"\0", compact=True)
 
+    def test_actual_native_trap_observation_is_reserved_once(self):
+        from scripts.validation_ownership import read_epochs
+        self.add("Makefile", (
+            "".join("V%d := literal%d\n" % (index, index) for index in range(30)) +
+            "VALUE := $(V29)\nall: ; @v=owned; printf '%s' '$(VALUE)'\n"
+        ))
+        observations = []
+        for duplicate in (False, True):
+            body = (
+                "append=guard.NativeReadTrace._append_machine_event\n"
+                "def duplicated(self,kind,pid,**fields):\n"
+                " if kind=='trap':self.policy.reserve_trace_observation()\n"
+                " return append(self,kind,pid,**fields)\n"
+                "guard.NativeReadTrace._append_machine_event=duplicated\n"
+            ) if duplicate else ""
+            session = self.session()
+            with session, foundation.FoundationTests.native_supervisor(self, body):
+                completed, semantics, observed = session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True,
+                    observe_runtime_completions=True,
+                )
+                self.assertEqual((completed.returncode, completed.stdout, completed.stderr),
+                                 (0, b"literal29", b""))
+                self.assertEqual(semantics["domains"]["VALUE"]["value"], "literal29")
+                trace = observed["read_trace"]
+                archive = read_epochs.reconstruct_archive(trace, budget=session.budget)
+                self.assertEqual(archive.passes[0].visits[0].source.data,
+                                 session.snapshot.files["Makefile"])
+                traps = [row for row in trace["machine"]["events"] if row["kind"] == "trap"]
+                self.assertTrue(traps)
+                observations.append((observed, len(traps)))
+            self.assert_clean(session)
+        actual, original = observations
+        self.assertEqual(actual[1], original[1])
+        self.assertEqual(original[0]["observations"] - actual[0]["observations"], actual[1])
+        self.assertGreater(original[0]["observation_bytes"], actual[0]["observation_bytes"])
+        body = (
+            "before=guard.NativeReadTrace.trap\n"
+            "def exhausted(self,pid,state):\n"
+            " self.config['observation_count']=self.policy.observation_count()\n"
+            " ptrace=self.native.ptrace\n"
+            " def no_capture(request,*args):\n"
+            "  if request==0x4202:raise AssertionError('unadmitted kernel trap capture')\n"
+            "  return ptrace(request,*args)\n"
+            " self.native.ptrace=no_capture\n"
+            " try:return before(self,pid,state)\n"
+            " finally:self.native.ptrace=ptrace\n"
+            "guard.NativeReadTrace.trap=exhausted\n"
+        )
+        session = self.session()
+        with session, foundation.FoundationTests.native_supervisor(self, body):
+            with self.assertRaisesRegex(MakeProbeError, "native trace observation budget exhausted"):
+                session._native_make_readonly(
+                    "all", variables=("VALUE",), observe_reads=True,
+                    observe_runtime_completions=True,
+                )
+            self.assertTrue(session.budget.failed)
+        self.assert_clean(session)
+
     def test_native_managed_python_ancestor_metadata_is_exact_and_metadata_only(self):
         runtime = "/usr/lib/python3/dist-packages"
         self.add("Makefile", (

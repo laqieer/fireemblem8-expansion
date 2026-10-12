@@ -144,6 +144,12 @@ class NativeReadTrace:
         if rows is None:
             return
         self.policy.reserve_trace_observation()
+        self._append_machine_event(kind, pid, **fields)
+
+    def _append_machine_event(self, kind, pid, **fields):
+        rows = self.machine
+        if rows is None:
+            return
         row = {
             "seq": len(rows) + 1, "kind": kind, "trace_seq": len(self.events), "pid": pid,
             "exec": self.execs, "pass": self.passes,
@@ -395,7 +401,7 @@ class NativeReadTrace:
             raise read_epochs.ReadEpochError("original read breakpoint is stale or unissued")
         index = indices[0]
         purpose = self.purposes.get(index)
-        self.machine_event(
+        self._append_machine_event(
             "trap", pid, index=index, purpose=purpose, pc=registers.rip,
             status=status, sigcode=TRAP_HWBKPT,
         )
