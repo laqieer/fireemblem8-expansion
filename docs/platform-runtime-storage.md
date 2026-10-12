@@ -166,13 +166,18 @@ compatibility, generated Make selection and its full-only workflow consumer.
 
 Select the reviewed binding at an explicit immutable tool revision using the
 existing `ReviewTools.members` and `ReviewTools.run_obligations` APIs. The
-existing `_stage` route materializes each origin/candidate from `GitTree` and
-runs the closed probes in its credential-free child. It does not import the
-candidate into the coordinator collector. Every obligation carries the shared
+existing `_stage` route reads each origin/candidate from `GitTree` as data.
+It binds the complete executable provider/test/import closure to its reviewed
+finite model before dispatch. Only selected `tool_tree` executable bytes run
+in the credential-free observer; candidate Python is never imported into that
+observer or the coordinator collector. Every obligation carries the shared
 execution closure and actual Git blob identities: provider, provider tests,
 budget/lifecycle/channel/authority imports and package roots, foundation Make
 file, native test inventory sources, owner tests, workflow and the existing
-finite workflow parser/condition functions. Other native suites are parsed as
+finite workflow parser/condition functions. Root package initializer presence is also bound, including required absence.
+Candidate executable modules are relocated to nonimportable inventory paths;
+their importable counterparts come only from the selected tool revision.
+Other native suites are parsed as
 inventory inputs, not imported or executed by this binding. Dynamic import
 attempts cannot reach them through ordinary Python module lookup: staging moves
 their exact source bytes to `build/platform-inventory/<original-path>.source`,
@@ -194,12 +199,20 @@ consumer, so neither parser regression can pass through an unrelated mismatch.
 Only the explicit platform inventory sources move; a mixed-subject review
 retains other subjects' executable modules at their original import paths.
 A changed import
-closure, identity field set or unrecognized mutation guard blocks; no arbitrary
+closure, identity field set or unmodeled executable source blocks before any
+observer process starts. Defaults, decorators and module effects are part of
+that model, not permissions to execute candidate code. Parsed equivalence
+preserves comments/formatting, the constructor's local source-info rename,
+identity tuple field order and the existing neutral unused zero-argument helper
+forms. It does not sort effectful statements or ignore arbitrary function bodies.
+This is a finite execution-trust boundary, not a repository-wide source identity
+gate or a substitute for behavioral observations; no arbitrary
 caller test, evaluator, service, budget or execution permission is introduced.
 
 Coverage findings are **not historical runtime defects**. For each admission,
 post-capture identity and oversized-workspace predicate, the worker first runs
-the actual source revision's complete provider suite unchanged. It then removes
+the reviewed model's complete provider suite unchanged, bound to that candidate's
+parsed source. It then removes
 only that production predicate through its finite AST model and reruns that
 same original suite. The coverage contract requires 9, 16 and 3 independent
 input-assertion failures respectively, without errors, skips or expected
@@ -223,8 +236,24 @@ The regression's reconstructed coverage-gap fixture instead removes four
 coverage methods from the current thirteen-method class, leaving nine tests;
 it is not an exact historical Git-tree claim. The
 current thirteen-test provider suite kills them with 9/16/3 input failures.
+The nine-case fixture has a separate explicit model derived by removing those
+same four methods from the reviewed suite; its executed bytes are tool-owned,
+not taken from the candidate. An unmatched historical source is unavailable,
+not reconstructed or relabeled as verified. Evidence identifies both candidate
+Git objects and selected tool revision and is described as reviewed-model
+execution bound to candidate source, never execution of candidate bytes.
 Those results establish missing regression coverage, not incorrect old
 admission, identity or slice runtime behavior.
+For the observer-integrity component of
+`TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001`, run
+`test_candidate_execution_and_initializer_poison_refuse_before_dispatch`.
+From the clean source fixture, add the reproduced `_platform_suite`/`check`
+override and an owned-file write to each provider, test, dependency and package
+initializer in turn, including absent root initializers. Require unavailable
+zero-check observations, no dispatched observer process and no written file.
+Run the semantic-refactor/comments controls and the complete-role test: require
+all bound obligations satisfied and actual thirteen-case baseline plus 9/16/3
+causal assertion failures. No hostile same-UID isolation is claimed.
 Owner recipe checks do not run GNU Make, including `--dry-run`: Make expansion
 can execute or forge its output even without running a recipe. The reviewed
 finite model accepts the existing literal PHONY/two-target recipe layout,

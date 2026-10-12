@@ -404,6 +404,10 @@ class ReviewTools:
     def _stage(self, tree, root, members):
         paths = {path for member in members for path in member.source_inputs}
         probes = {item.probe for item in members}
+        platform = any(probe.startswith(("platform:", "platform-owner:")) for probe in probes)
+        platform_sources = (
+            self.subjects.platform_execution_sources(tree, self.tool_tree) if platform else {}
+        )
         tree.materialize(root, sorted(paths))
         tool_paths = ("scripts/workflow_pilot/__init__.py",
                       "scripts/workflow_pilot/raw_diff_check.py",
@@ -411,7 +415,12 @@ class ReviewTools:
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
         self.tool_tree.materialize(root, tool_paths)
         (root / "build").mkdir(exist_ok=True)
-        if any(probe.startswith(("platform:", "platform-owner:")) for probe in probes):
+        if platform:
+            for path, source in platform_sources.items():
+                destination = root / self.subjects.platform_inventory_path(path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                (root / path).rename(destination)
+                (root / path).write_bytes(source)
             for path in (self.subjects.PLATFORM_TOPOLOGY, self.subjects.PLATFORM_CONDITIONS):
                 destination = root / self.subjects.platform_parser_path(path)
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -447,15 +456,15 @@ class ReviewTools:
 
         try:
             root = Path(directory.name)
-            self._stage(tree, root, members)
             home = root / "build/home"
-            home.mkdir()
+            home.mkdir(parents=True)
             environment = {
                 "HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
                 "TMPDIR": str(root / "build"), "PYTHONDONTWRITEBYTECODE": "1",
                 **self.arm_tools,
             }
             try:
+                self._stage(tree, root, members)
                 cleanup = False
                 completed = self.subjects.run_process(
                     [sys.executable, "-I", "-B", "-c", WORKER_CODE, str(root)],
