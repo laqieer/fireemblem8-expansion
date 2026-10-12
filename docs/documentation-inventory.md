@@ -49,6 +49,10 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - CONTRIBUTING.md | laqieer | current | Contribution workflow: prep, fast checks, full gates, PR provenance
 - .github/copilot-instructions.md | laqieer | current | GitHub Copilot agent guidance for this repository
 - .github/skills/development-workflow/SKILL.md | laqieer | current | Project-scoped Copilot skill for feature and bug triage, implementation, evidence, and autonomous merge
+- AGENTS.md | laqieer | current | Repository governance and engineering-skill configuration pointers
+- docs/agents/issue-tracker.md | laqieer | current | GitHub issue tracker, ticket operations, and Wayfinder conventions
+- docs/agents/triage-labels.md | laqieer | current | Default engineering-skill triage roles and GitHub label mapping
+- docs/agents/domain.md | laqieer | current | Single-context domain-document consumer rules and configuration maintenance
 - .github/PULL_REQUEST_TEMPLATE.md | laqieer | template | PR checklist template shape referenced by CONTRIBUTING.md
 - CHANGELOG.md | laqieer | current | Human-readable changelog; its Unreleased section is rendered deterministically from changelog_fragments/*.json (issue #9)
 - changelog_fragments/README.md | laqieer | current | Machine changelog-fragment schema, authoring, and validation/render/write contract (issue #9)

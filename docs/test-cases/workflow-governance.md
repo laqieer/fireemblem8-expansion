@@ -97,6 +97,61 @@ Historical measurements are not promises about future versions or runners.
 Rollback of this disposition is an ordinary revert; it never removes the
 existing broader checks.
 
+## TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001: Ignore unrelated check lifecycle
+
+Originating bug: [#281](https://github.com/laqieer/fireemblem8-expansion/issues/281).
+Supported profile: Linux/Python source checkout with the existing host-test
+dependencies. No ROM, save, emulator, credentials or live workflow mutation is
+needed; fixtures require no reset or filesystem cleanup.
+
+### Actions
+
+1. Run `python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v`.
+2. Supply coherent successful exact-head CodeQL and GitGuardian records.
+   Append unrelated skipped Build jobs with completion one second before
+   start, malformed active/completion timestamps and unknown lifecycle values.
+   The returned named security records must be identical; unrelated records
+   alone must return no security evidence.
+3. Apply malformed chronology/completion/status, wrong head/app, duplicate
+   identity or invalid ID to the required named checks. Every invalid required
+   check must explicitly refuse. Missing named checks remain missing, never
+   become synthetic success.
+4. Corrupt the response envelope, unrelated app/ID/head or duplicate ID.
+   Envelope refusal remains intact; name selection does not bypass complete
+   pagination, identity or SHA checks.
+
+### Expected result
+
+Unrelated lifecycle leaves the two named security records unchanged and cannot
+supply a missing check. Required check lifecycle, app/head identity, uniqueness,
+response counts and pagination retain their explicit refusals.
+
+### Negative control
+
+The pre-fix collector refuses unrelated reversed skipped-job chronology before
+selecting security names. The focused regression must fail under that original
+operation.
+
+### Interactions and save compatibility
+
+Dependencies: existing exact-head
+security and counted GitHub response collector. Dependent: #279/#280 delivery.
+Conflicts: none. ROM/RAM/save/generated-game-data/locale/default and archival
+impact: none.
+
+### Automation
+
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v`
+executes all positive and adversarial parser assertions above. No subjective
+manual criterion applies.
+
+### Cleanup and limitations
+
+Fixtures are in-memory and require no filesystem reset. Fixture timestamps are
+not changed live GitHub data. This does not tolerate malformed *required*
+security timing, synthesize missing evidence, or replace actual named security
+checks and full candidate/master Build evidence.
+
 ## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
 
 - **Feature / originating issue:** `workflow-governance` /
