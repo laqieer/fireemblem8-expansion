@@ -196,8 +196,10 @@ Require an explicit consumer violation, not a satisfied observation.
 Restore each old parser lookup independently in an owned source-bound tool
 fixture. Each vulnerable lookup must falsely satisfy that same disabled
 consumer, so neither parser regression can pass through an unrelated mismatch.
-Only the explicit platform inventory sources move; a mixed-subject review
-retains other subjects' executable modules at their original import paths.
+Platform and non-platform obligations use separate invocations of the existing
+staging/worker seam, each with its own complete execution inputs. A mixed-subject
+request cannot import generated-data candidate code into the platform observer.
+Other subjects retain their own execution route and source bindings.
 A changed import
 closure, identity field set or unmodeled executable source blocks before any
 observer process starts. Defaults, decorators and module effects are part of
@@ -205,6 +207,8 @@ that model, not permissions to execute candidate code. Parsed equivalence
 preserves comments/formatting, the constructor's local source-info rename,
 identity tuple field order and the existing neutral unused zero-argument helper
 forms. It does not sort effectful statements or ignore arbitrary function bodies.
+Implicit unittest module fixtures (`setUpModule` and `tearDownModule`) remain
+executable model inputs, not neutral helpers.
 This is a finite execution-trust boundary, not a repository-wide source identity
 gate or a substitute for behavioral observations; no arbitrary
 caller test, evaluator, service, budget or execution permission is introduced.
@@ -254,6 +258,14 @@ zero-check observations, no dispatched observer process and no written file.
 Run the semantic-refactor/comments controls and the complete-role test: require
 all bound obligations satisfied and actual thirteen-case baseline plus 9/16/3
 causal assertion failures. No hostile same-UID isolation is claimed.
+Repeat `test_mixed_subject_poison_cannot_restore_disabled_platform_consumer`
+with the generated-data subject also selected. Poison its candidate registry
+with the same observer overrides and disable the platform workflow owner.
+Require the platform's actual missing-owner violation; the other subject's
+process cannot turn it into a satisfied observation. Repeat
+`test_implicit_unittest_module_fixtures_are_not_neutral_helpers` with each
+implicit fixture reading an undefined name: both must refuse before dispatch,
+while the ordinary unused-helper positive remains green.
 Owner recipe checks do not run GNU Make, including `--dry-run`: Make expansion
 can execute or forge its output even without running a recipe. The reviewed
 finite model accepts the existing literal PHONY/two-target recipe layout,
