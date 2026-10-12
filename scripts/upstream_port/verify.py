@@ -1704,11 +1704,12 @@ def _bash_line_state(line, state):
     return state, False
 
 
-def _parse_bash_run_script_commands(script, step_label):
+def _parse_bash_run_script_commands(script, step_label, *, raw_helper=False):
     state = "normal"
     current = ""
     parsed = []
-    for line in script.splitlines():
+    lines = script.split("\n") if raw_helper else script.splitlines()
+    for line in lines:
         current += line
         state, continued = _bash_line_state(line, state)
         if continued:
@@ -1717,7 +1718,9 @@ def _parse_bash_run_script_commands(script, step_label):
         if state != "normal":
             current += "\n"
             continue
-        if current.strip() and not current.lstrip().startswith("#"):
+        significant = current.strip(" \t") if raw_helper else current.strip()
+        leading = current.lstrip(" \t") if raw_helper else current.lstrip()
+        if significant and not leading.startswith("#"):
             command = tuple(shlex.split(current))
             if not command:
                 raise ValueError(f"{step_label} run command is empty")
@@ -1844,6 +1847,7 @@ def _parse_step(block, job_name, index, repository_root=None):
         try:
             if (
                 os.path.islink(helper)
+                or os.path.realpath(helper) != os.path.abspath(helper)
                 or not os.path.isfile(helper)
                 or os.path.commonpath((os.path.realpath(root), os.path.realpath(helper)))
                 != os.path.realpath(root)
@@ -1853,7 +1857,11 @@ def _parse_step(block, job_name, index, repository_root=None):
                 script = handle.read(16385)
             if len(script) > 16384:
                 raise ValueError(f"{step_label} archival helper exceeds 16 KiB")
-            values["run"] = _parse_bash_run_script_commands(script.decode("utf-8"), step_label)
+            if b"\r" in script:
+                raise ValueError(f"{step_label} archival helper must use LF line endings")
+            values["run"] = _parse_bash_run_script_commands(
+                script.decode("utf-8"), step_label, raw_helper=True
+            )
         except (OSError, UnicodeError) as error:
             raise ValueError(f"{step_label} cannot read archival helper: {error}") from error
 

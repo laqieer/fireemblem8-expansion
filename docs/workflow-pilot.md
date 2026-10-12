@@ -62,7 +62,10 @@ are unchanged.
 
 The parsed local Build contract follows the archival helper's actual body from
 the selected checkout. A missing, symlinked, oversized, or semantically changed
-helper cannot satisfy the reviewed command contract. The source is parsed,
+helper, including symlinks in any parent component, cannot satisfy the reviewed
+command contract. Raw helper line boundaries are Bash's literal LF, not Python
+universal line splitting; CRLF and other separator substitutions cannot compare
+equal while changing interpreter behavior. The source is parsed,
 not imported or executed by that verifier; comments/formatting remain neutral.
 
 Raw pre-checkout identity/bootstrap and closed no-checkout metadata/security/

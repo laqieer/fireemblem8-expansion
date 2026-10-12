@@ -952,6 +952,50 @@ class VerifyCliCwdTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exceeds 16 KiB"):
                 verify_mod._require_target_gate_equivalence(target)
 
+    def test_archival_helper_refuses_every_symlinked_parent_component(self):
+        for relative in ("scripts", os.path.join("scripts", "ci")):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as parent:
+                target = self.clone_target(parent)
+                directory = os.path.join(target, relative)
+                alternate = os.path.join(target, "redirected-helper-directory")
+                os.rename(directory, alternate)
+                os.symlink(alternate, directory)
+                with self.assertRaisesRegex(ValueError, "regular checkout file"):
+                    verify_mod._require_target_gate_equivalence(target)
+
+    def test_helper_parser_preserves_actual_bash_line_boundaries(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            with open(helper, "rb") as source:
+                original = source.read()
+            for separator in ("\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e",
+                              "\x85", "\u2028", "\u2029"):
+                with self.subTest(separator=repr(separator)):
+                    changed = original.decode("utf-8").replace("\n", separator)
+                    with open(helper, "wb") as destination:
+                        destination.write(changed.encode("utf-8"))
+                    with self.assertRaises(ValueError):
+                        verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "wb") as destination:
+                destination.write(original.replace(b"\n", b"\r\n"))
+            actual = subprocess.run(
+                ["bash", helper], cwd=target,
+                env={"PATH": os.environ["PATH"]},
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(actual.returncode, 0)
+            self.assertIn("invalid option", actual.stderr)
+            for whitespace in ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"):
+                with self.subTest(whitespace=repr(whitespace)):
+                    with open(helper, "wb") as destination:
+                        destination.write(whitespace.encode("utf-8") + b"\n" + original)
+                    with self.assertRaises(ValueError):
+                        verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "wb") as destination:
+                destination.write("# neutral Unicode comment \u2028 data\n".encode("utf-8") + original)
+            verify_mod._require_target_gate_equivalence(target)
+
     def job_bounds(self, workflow, job_name):
         start = workflow.index(f"\n  {job_name}:\n") + 1
         body_start = workflow.index("\n", start) + 1

@@ -2676,7 +2676,7 @@
       "prerequisites": "Source root; exclusively owned host fixtures. No host credential, ROM, network fetch or ARM compiler for fixture tests; real publication uses the existing CI environment.",
       "actions": "Run actual helper and drift suites, parsed mirror/helper-drift tests and actionlint. Compare remote identity/refusal, fresh-ref/report/status preservation and compiler pins/destinations/failure cutoffs. After merge require real exact-master patch creation/upload and remote completion.",
       "expected_result": "All helper effects and failure behavior agree with the original programs; eight jobs and 31 commands remain. Parsed target helper bodies bind to the reviewed source. Actual exact-master Build publishes the SHA-bound patch-only BPS artifact.",
-      "negative_control": "Wrong remote URL remains unchanged and refuses; missing state signals 3; drift/failed scan preserve reports. Failed fetch/wrong pin stop before compiler execution. No-op, missing, symlinked or oversized helper refuses equivalence. Candidate or skipped publisher cannot supply master publication proof.",
+      "negative_control": "Wrong remote URL remains unchanged and refuses; missing state signals 3; drift/failed scan preserve reports. Failed fetch/wrong pin stop before compiler execution. No-op, missing, final/parent-symlinked or oversized helper refuses equivalence. CRLF and other non-LF separators cannot normalize away behavior drift; real CRLF Bash execution fails, while ordinary/Unicode comments remain neutral. Candidate or skipped publisher cannot supply master publication proof.",
       "interactions": "Delivered workflow/publisher, upstream CLI/constants and parsed verifier only. Real shared-helper changes require normal refresh of affected open heads, not cancellation of unaffected immutable runs. No global ownership/SDK prerequisite or new gate/platform.",
       "save_compatibility": "No ROM/RAM/save/configuration identity/generated game data/localization/default modern debug-release/archival payload/fingerprint change.",
       "cleanup": "Host fixtures remove their own temporary paths; preserve unrelated locked/active delivery workspaces. Never run CI dependency cleanup outside its owned environment.",
@@ -2688,6 +2688,10 @@
         },
         {
           "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component tests.upstream_port.test_verify.VerifyCliCwdTests.test_helper_parser_preserves_actual_bash_line_boundaries -v",
           "evidence": "tests/upstream_port/test_verify.py"
         },
         {

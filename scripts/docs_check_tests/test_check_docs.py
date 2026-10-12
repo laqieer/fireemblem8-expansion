@@ -1199,6 +1199,10 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract "
                             "tests.upstream_port.test_verify.VerifyCliCwdTests."
                             "test_missing_symlinked_or_oversized_archival_helper_refuses -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component "
+                            "tests.upstream_port.test_verify.VerifyCliCwdTests."
+                            "test_helper_parser_preserves_actual_bash_line_boundaries -v",
                             "actionlint .github/workflows/build.yml "
                             ".github/workflows/upstream-port-drift.yml",
                         },

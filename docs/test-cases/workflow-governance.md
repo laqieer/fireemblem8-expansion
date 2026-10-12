@@ -38,7 +38,16 @@ workflow, using credentials, or changing ROM behavior.
 
    The same eight jobs and 31 validation commands remain. Harmless helper
    comments preserve equivalence; replacing its body with a no-op fails.
-   Missing, symlinked and over-16-KiB helper bodies explicitly refuse.
+   Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
+   refuse. Replay the line-boundary controls:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component tests.upstream_port.test_verify.VerifyCliCwdTests.test_helper_parser_preserves_actual_bash_line_boundaries -v
+   ```
+
+   CRLF and other separator-only rewrites cannot compare equal to the reviewed
+   LF helper; actual CRLF Bash execution fails. Ordinary and Unicode comments
+   remain neutral data.
 3. Validate the actual workflow input format:
 
    ```bash
