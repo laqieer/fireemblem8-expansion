@@ -29,8 +29,10 @@ workflow, using credentials, or changing ROM behavior.
    The criterion commits safe bytes, replaces only the worktree bytes with
    an ELF signature, and invokes both the production revision and index CLI
    routes. Both must still report the safe immutable Git bytes.
-2. For the historical shadow replay, save the two finite prototype scripts
-   from the [experiment comment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+2. For the historical shadow replay, save the child script from the
+   [original experiment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+   and the corrected runner from the
+   [native routing replay](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
    beside each other in your own scratch directory. Run
    `env -u GH_TOKEN -u GITHUB_TOKEN python3 -I -S -B /path/to/scratch/run-artifact-shadow.py /path/to/clean/source/checkout`.
    Use the existing clean checkout directly; do not copy a linked worktree's
