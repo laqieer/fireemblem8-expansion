@@ -199,7 +199,7 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                 observed = next(item for item in self.run_members(members, head)
                                 if item.obligation.member == "owners:probe-inventory")
                 self.assertEqual(observed.verdict, "unavailable", observed.detail)
-                self.assertIn("custom selection needs a reviewed model", observed.detail)
+                self.assertIn("unmodeled platform executable source: " + TESTS, observed.detail)
         harmless = (
             "\ndef helper():\n    load_tests = None\n    return load_tests\n"
             "\ndef read_hook():\n    return load_tests\n"
@@ -240,8 +240,8 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                                 if item.family == "generated")
                 observed = next(item for item in self.run_members(members, head)
                                 if item.obligation.member == "outputs:probe-inventory")
-                self.assertEqual(observed.verdict, "contract-violation", observed.detail)
-                self.assertIn("actual provider selection differs", observed.detail)
+                self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
+                self.assertIn("unmodeled platform executable source: " + TESTS, observed.detail)
 
     def test_parse_only_inventory_cannot_be_imported_by_executed_provider(self):
         source = (self.repo.root / SOURCE).read_text()
@@ -262,7 +262,7 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                 observed = next(item for item in self.run_members(members, head)
                                 if item.obligation.member == "outputs:probe-inventory")
                 self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
-                self.assertIn("ModuleNotFoundError", observed.detail)
+                self.assertIn("unmodeled platform executable source: " + SOURCE, observed.detail)
 
     def test_mixed_generated_data_and_platform_subjects_keep_execution_inputs(self):
         scope = self.scope()
@@ -306,7 +306,8 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                         members = tuple(item for item in complete if item.family == selected.family)
                         observed = next(item for item in self.run_members(members, head)
                                         if item.obligation == selected)
-                        self.assertEqual(observed.verdict, "contract-violation", observed.detail)
+                        self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
+                        self.assertIn("unmodeled platform executable source: " + TESTS, observed.detail)
 
     def test_changed_execution_import_and_identity_inventory_fail_closed(self):
         source = (self.repo.root / SOURCE).read_text()
@@ -469,8 +470,8 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                         if item.family == "wire")
         observed = next(item for item in self.run_members(members, head)
                         if item.obligation.probe == "platform:admission")
-        self.assertEqual(observed.verdict, "contract-violation")
-        self.assertIn("fails before mutation", observed.detail)
+        self.assertEqual((observed.verdict, observed.checks), ("unavailable", 0))
+        self.assertIn("unmodeled platform executable source: " + SOURCE, observed.detail)
         head = self.repo.commit({TESTS: "raise RuntimeError('unexecutable original suite')\n"})
         members = tuple(item for item in self.tools.members(self.scope(head))
                         if item.family == "wire")
@@ -514,6 +515,40 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                 returned = next(item for item in node.body if isinstance(item, ast.Return))
                 returned.value.elts.reverse()
         head = self.repo.commit({SOURCE: ast.unparse(parsed)})
+        members = self.tools.members(self.scope(head))
+        self.assert_satisfied(self.run_members(members, head))
+
+    def test_candidate_execution_and_initializer_poison_refuse_before_dispatch(self):
+        from scripts.workflow_pilot import review_subjects
+        marker = self.repo.root / "build/candidate-observer-entered"
+        poison = (
+            "\nfrom pathlib import Path\n"
+            f"Path({str(marker)!r}).write_bytes(b'entered')\n"
+            "import sys,types\n"
+            "observer=sys.modules['scripts.workflow_pilot.review_subjects']\n"
+            "observer.check=lambda *args,**kwargs:None\n"
+            "observer._platform_suite=lambda *args,**kwargs:types.SimpleNamespace("
+            "testsRun=13,failures=[],errors=[],skipped=[],expectedFailures=[],"
+            "unexpectedSuccesses=[],wasSuccessful=lambda:True)\n"
+        )
+        for path in sorted(review_subjects.platform_execution_inputs()
+                           | set(review_subjects.PLATFORM_INITIALIZERS)):
+            with self.subTest(path=path):
+                original = (self.repo.root / path).read_text() if (self.repo.root / path).exists() else ""
+                head = self.repo.commit({path: original + poison})
+                members = self.tools.members(self.scope(head))
+                with patch.object(self.tools.subjects, "run_process",
+                                  side_effect=AssertionError("unbound candidate dispatched")):
+                    observed = self.run_members(members, head)
+                self.assertTrue(observed)
+                self.assertEqual({(item.verdict, item.checks) for item in observed},
+                                 {("unavailable", 0)})
+                self.assertTrue(all("unmodeled platform" in item.detail for item in observed))
+                self.assertFalse(marker.exists())
+
+    def test_comments_and_formatting_bind_without_executing_candidate_bodies(self):
+        source = "# candidate formatting is data\n\n" + (self.repo.root / SOURCE).read_text()
+        head = self.repo.commit({SOURCE: source})
         members = self.tools.members(self.scope(head))
         self.assert_satisfied(self.run_members(members, head))
 
