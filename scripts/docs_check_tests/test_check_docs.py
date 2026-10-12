@@ -1189,6 +1189,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -B -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_adaptive_gate.SecurityTests -v",
+                        },
+                    },
                     "TC-WORKFLOW-METADATA-EDIT-RACE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

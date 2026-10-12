@@ -11,6 +11,8 @@ Supported profile: Linux/Python source checkout with the existing host-test
 dependencies. No ROM, save, emulator, credentials or live workflow mutation is
 needed; fixtures require no reset or filesystem cleanup.
 
+### Actions
+
 1. Run `python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v`.
 2. Supply coherent successful exact-head CodeQL and GitGuardian records.
    Append unrelated skipped Build jobs with completion one second before
@@ -25,14 +27,37 @@ needed; fixtures require no reset or filesystem cleanup.
    Envelope refusal remains intact; name selection does not bypass complete
    pagination, identity or SHA checks.
 
+### Expected result
+
+Unrelated lifecycle leaves the two named security records unchanged and cannot
+supply a missing check. Required check lifecycle, app/head identity, uniqueness,
+response counts and pagination retain their explicit refusals.
+
+### Negative control
+
 The pre-fix collector refuses unrelated reversed skipped-job chronology before
 selecting security names. The focused regression must fail under that original
-operation. Deterministic parser automation covers every assertion; fixture
-timestamps are not changed live GitHub data. Dependencies: existing exact-head
+operation.
+
+### Interactions and save compatibility
+
+Dependencies: existing exact-head
 security and counted GitHub response collector. Dependent: #279/#280 delivery.
 Conflicts: none. ROM/RAM/save/generated-game-data/locale/default and archival
-impact: none. This does not tolerate malformed *required* security timing or
-replace full candidate/master Build evidence.
+impact: none.
+
+### Automation
+
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v`
+executes all positive and adversarial parser assertions above. No subjective
+manual criterion applies.
+
+### Cleanup and limitations
+
+Fixtures are in-memory and require no filesystem reset. Fixture timestamps are
+not changed live GitHub data. This does not tolerate malformed *required*
+security timing, synthesize missing evidence, or replace actual named security
+checks and full candidate/master Build evidence.
 
 ## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
 
