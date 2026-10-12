@@ -2946,7 +2946,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #199](https://github.com/laqieer/fireemblem8-expansion/issues/199);
   queued-run chronology regression
-  [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277).
+  [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277);
+  pre-full preparation regression
+  [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283).
 - **Supported configuration or artifact:** clean source checkout with Python
   3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
   token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
@@ -2961,6 +2963,38 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   required.
 
 ### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests -v`.
+   This directly owning class covers every preparation selector listed in the
+   catalog and the unchanged transaction, recovery and full-authority controls.
+   Start with a complete positively bound review-first preflight and no full
+   Build. Correct the body through the existing helper, with and without an
+   essential reason. Require exactly one metadata PATCH and the existing
+   immutable intent/confirmation pair, preserve both returned comment IDs,
+   and require the result to leave full Build and reconciliation pending.
+   The pre-fix negative refuses before changing metadata despite the complete
+   safe preflight inventory. Empty, unbound, unrelated-only, unknown, missing
+   candidate/base binding, active or full inventories cannot authorize
+   preparation. No cancellation, full dispatch or full-success credit occurs.
+   Repeat with a completed metadata-only run whose existing classifier emits
+   the candidate binding; verify subsequent correction and authoritative-pair
+   no-op preserve the full/reconciliation hold. Remove or contradict its marker
+   and require fail-closed identity handling. Set a build, host or summary job
+   active inside a completed preflight at each of the three snapshots: no
+   metadata PATCH occurs, and the post-intent race retains the existing
+   append-only abort rather than hiding actual comment mutation.
+   Repeat the live-job races with an essential reason. Introduce an active or
+   completed full run or an unbound metadata run at the second snapshot of an
+   initially authorized essential preparation. Require deferral without any
+   write: a changed inventory cannot silently switch authorization modes.
+   Start with an actually running preflight, with and without a successful
+   candidate marker and active build/host/summary jobs or terminal child jobs.
+   Both default and essential edits must stop without any write; a workflow's
+   active status cannot be used as essential-full permission. Retain the
+   separate initially active-full/unproven path's existing positive controls.
+   Existing active-run, version/identity drift, transaction/abort/recovery
+   controls and final candidate/master gates remain required.
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_accepts_optional_ordered_start_without_full_evidence scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_rejects_invalid_chronology_and_conclusion -v`.
