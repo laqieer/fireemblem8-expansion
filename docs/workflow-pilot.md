@@ -11,7 +11,7 @@ ledger.
 
 The revised [#180 contract](https://github.com/laqieer/fireemblem8-expansion/issues/180)
 starts with one host-only criterion, not whole-repository ownership.
-Its [native shadow experiment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+Its [corrected native routing experiment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
 exercised the artifact guard's immutable Git-blob inputs through the actual
 CLI consumer. The existing assertion passed with the real consumer and also
 with a disconnected fake consumer; runtime observations distinguished them.
@@ -23,6 +23,10 @@ seconds, is potential intermediate savings, **not time actually avoided**.
 Every actual route remained broad. Complete ownership of changes to the
 producer file was not established, and recurring maintenance, review and
 coordination costs remain unknown rather than zero.
+
+The linked comments retain historical observations, not executable authority.
+Do not execute their mutable prototype bodies. The supported source-build
+procedure uses only the repository's existing artifact-guard tests and CLI.
 
 The supported outcome is therefore **retain the existing broad validation**:
 no selector, workflow reduction, additional ownership service or expansion is

@@ -2672,13 +2672,13 @@
       "profiles": ["Clean Linux host source checkout with Python 3 and Git"],
       "purpose": "Observe one artifact-guard immutable-input criterion and retain existing broad validation when complete ownership or positive net value is unproved.",
       "prerequisites": "Clean source checkout; no credentials, ROM, save or new dependency. Historical source and experiment are explicitly identified in the procedure.",
-      "actions": "Run the real TestImmutability criterion, existing 15-test broad suite and revision check. Replay the linked finite session-only prototype against the clean checkout; compare real child observations, a disconnected consumer, wrong worktree inputs, nine separately specified shadow expectations and measured costs.",
+      "actions": "Run the repository's real TestImmutability criterion, existing broad suite and revision check. Read the historical component and corrected per-scenario records as evidence only; compare recorded real child observations, disconnected-consumer and wrong-input controls, nine shadow expectations and measured costs. Do not execute mutable issue-comment prototype code.",
       "expected_result": "Real immutable revision/index inputs pass and wrong worktree inputs fail. A disconnected green assertion lacks ownership observations. All actual routes remain broad; 3.841 seconds of historical potential savings is not actual validation avoided or proven net value.",
       "negative_control": "Wrong-input mutation fails the actual criterion; disconnected-consumer success cannot qualify ownership. Empty, unknown, ambiguous, stale, incomplete and unsupported evidence retains the existing broad route.",
       "interactions": "Existing artifact guard and case catalog only; #181 scheduling is independent. No global/native ownership, SDK or deferred #270/#275/#287 prerequisite. No workflow selector or permanent new gate is installed.",
       "save_compatibility": "No ROM/RAM, save, configuration identity, generated game data, localization, modern debug/release or archival change.",
-      "cleanup": "Corrected prototype removes its owned fixtures. Remove only your own scratch scripts/reports; retain unattributed historical fixtures.",
-      "limitations": "One criterion does not prove full-file ownership. Maintenance/review/coordination costs and positive net value remain unproved. Runtime observations are diagnostics, not authenticated proof or hostile-same-UID isolation.",
+      "cleanup": "The historical corrected experiment removed its owned fixtures. This source-build procedure requires no downloaded executable; remove only your own reports and retain unattributed historical fixtures.",
+      "limitations": "One criterion does not prove full-file ownership. Maintenance/review/coordination costs and positive net value remain unproved. Comment records are historical evidence, not executable authority. Runtime observations are diagnostics, not authenticated proof or hostile-same-UID isolation.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.artifact_guard_tests.test_artifact_guard.TestImmutability -v",

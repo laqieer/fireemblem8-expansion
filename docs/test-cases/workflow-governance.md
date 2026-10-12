@@ -29,25 +29,24 @@ workflow, using credentials, or changing ROM behavior.
    The criterion commits safe bytes, replaces only the worktree bytes with
    an ELF signature, and invokes both the production revision and index CLI
    routes. Both must still report the safe immutable Git bytes.
-2. For the historical shadow replay, save the child script from the
-   [original experiment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
-   and the corrected runner from the
-   [native routing replay](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
-   beside each other in your own scratch directory. Run
-   `env -u GH_TOKEN -u GITHUB_TOKEN python3 -I -S -B /path/to/scratch/run-artifact-shadow.py /path/to/clean/source/checkout`.
-   Use the existing clean checkout directly; do not copy a linked worktree's
-   `.git` backlink. These scripts are an experiment, not installed production
-   selectors or authenticated evidence.
-3. Compare the real child-call observations and assertion results with the
-   separately specified expectation table. Empty, unknown, ambiguous, stale,
-   incomplete, unsupported, disconnected-consumer and failed-criterion inputs
-   must retain broad validation. A proposed owner for this one criterion does
-   not prove complete ownership of the changed producer file.
-4. Compare the disconnected-consumer and wrong-input controls. Returning a
-   constant successful CLI result can leave the existing assertion green,
-   but supplies no production-consumer observations. Actually reading the
-   mutated worktree bytes instead of Git blobs must fail the assertion.
-5. Measure broad and focused elapsed time, actual intermediate time avoided,
+2. Read the historical [component observations](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+   and [corrected per-scenario execution records](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
+   as evidence artifacts only. **Do not execute code copied from their mutable
+   comment bodies.** Python import isolation and removing two token variables
+   do not provide credential or filesystem isolation. No supported prototype
+   executable is installed or required by this source-build procedure.
+3. Compare the recorded real child observations, assertion results and
+   separately specified expectation table. The corrected experiment actually
+   executed the broad owner and revision CLI for every scenario; older assigned
+   route strings alone are not that evidence. A proposed owner for one criterion
+   does not prove complete ownership of the changed producer file.
+4. Inspect the recorded disconnected-consumer and wrong-input controls.
+   A constant successful result left the assertion green but supplied no
+   production-consumer observations; reading the mutated worktree bytes caused
+   an actual assertion failure. These are historical experiment observations,
+   not controls injected into a tester's normal checkout.
+5. For any future separately accepted experiment, measure broad and focused
+   elapsed time, actual intermediate time avoided,
    setup, maintenance, review and coordination costs separately. Unknown
    costs are not zero. Do not expand or deploy narrowing without demonstrated
    bounded safety and positive net value.
@@ -80,9 +79,10 @@ All final delivery gates remain mandatory.
 
 ### Automation
 
-The existing `TestImmutability` and artifact-guard suite automate production
-behavior. The linked finite prototype automates native observations, negative
-controls, the expectation table and timing. It is not a permanent CI gate.
+The existing `TestImmutability` and artifact-guard suite automate every current
+production assertion in this procedure. The linked records preserve the finite
+experiment's native observations, negative controls, expectation table and
+timing; they are not executable authority or a permanent CI gate.
 The existing parsed Build/local-command mirror retains the broad suite.
 No subjective manual criterion applies.
 
@@ -90,7 +90,8 @@ No subjective manual criterion applies.
 
 The corrected prototype owns and removes its temporary fixtures. Preserve
 unattributed historical fixtures rather than deleting them by a shared prefix.
-Remove only your own scratch scripts/reports after retaining required evidence.
+The supported source-build procedure requires no downloaded scratch executable.
+Remove only your own reports after retaining required evidence.
 Python call observations are operational diagnostics, not hostile-same-UID
 isolation, complete source ownership or a general observation platform.
 Historical measurements are not promises about future versions or runners.
