@@ -80,10 +80,20 @@ Use tools according to the evidence needed:
   cross-compiled debug ELF can be controlled through a real emulator target.
 - IDA Pro/IDALib CLI or MCP as the preferred primary disassembler/decompiler
   when available; project experience finds it more stable.
-- Ghidra/PyGhidra CLI or MCP as a cross-check, fallback, or batch-analysis
-  path.
+- Ghidra/PyGhidra CLI as a cross-check, fallback, or batch-analysis path,
+  using a separate project per concurrent process. Do not enable the retired
+  shared-project Ghidra stdio MCP configuration for parallel Copilot sessions:
+  separate server processes contend for the same Ghidra project lock.
+  This does not imply that a single Ghidra HTTP server cannot serve multiple
+  clients. Keep IDA MCP as the preferred MCP analysis path.
 - `arm-none-eabi` binutils and repository scripts for symbol, relocation,
   section, and disassembly checks.
+
+For MCP configuration-watch startup errors, distinguish per-process file
+descriptor limits from Linux per-user inotify-instance limits before changing
+tools or limits. Removing Ghidra MCP is not proof that an `os error 24` watcher
+failure is fixed. See the
+[local MCP troubleshooting procedure](../../../CONTRIBUTING.md#local-analysis-tools-and-mcp-troubleshooting).
 
 Install another local tool when investigation shows a concrete benefit and its
 source is trusted. Record every tool installed for the task, its version, and
