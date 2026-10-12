@@ -54,25 +54,7 @@ jobs:
 
       - name: Configure/verify the pinned canonical upstream remote (local .git/config only)
         id: remote
-        run: |
-          set -euo pipefail
-          CANONICAL_URL=$(python3 -c "from scripts.upstream_port import constants; print(constants.CANONICAL_UPSTREAM_URL)")
-          REMOTE_NAME=$(python3 -c "from scripts.upstream_port import constants; print(constants.DEFAULT_REMOTE_NAME)")
-
-          if git remote get-url "$REMOTE_NAME" >/dev/null 2>&1; then
-            EXISTING_URL=$(git remote get-url "$REMOTE_NAME")
-            if [ "$EXISTING_URL" != "$CANONICAL_URL" ]; then
-              echo "::error::remote '$REMOTE_NAME' URL '$EXISTING_URL' does not match pinned canonical URL '$CANONICAL_URL'"
-              exit 1
-            fi
-          else
-            # Adding a remote only writes an entry to .git/config; it does
-            # not fetch, checkout, or touch any tracked file.
-            git remote add "$REMOTE_NAME" "$CANONICAL_URL"
-          fi
-
-          echo "remote_name=$REMOTE_NAME" >> "$GITHUB_OUTPUT"
-          echo "canonical_url=$CANONICAL_URL" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/configure_upstream_remote.sh
 
       - name: Explicitly fetch canonical objects/refs (read-only; no checkout, no execution)
         run: |
@@ -89,67 +71,7 @@ jobs:
 
       - name: Run read-only drift + scan against the freshly-fetched canonical ref
         id: drift
-        run: |
-          set +e
-          STATE_PATH="config/upstream-port-state.json"
-          if [ ! -f "$STATE_PATH" ]; then
-            echo "## Upstream Port Drift Scan" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "no state file found at $STATE_PATH" >> "$GITHUB_STEP_SUMMARY"
-            echo "exit_code=3" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          RECORDED_LAST_PORTED_SHA=$(python3 -c "import json;print(json.load(open('$STATE_PATH'))['last_ported']['sha'])")
-          FRESH_REF=$(python3 -c "import json;print(json.load(open('$STATE_PATH'))['last_ported']['ref'])")
-
-          # Run drift/scan against the just-fetched local remote-tracking ref
-          # (e.g. `decomp/master`), which now reflects the real, live tip of
-          # the canonical upstream branch -- never against the recorded SHA
-          # itself, so this can genuinely detect new upstream commits instead
-          # of only re-checking this repo's own history for self-consistency.
-          python3 -m scripts.upstream_port drift --ref "$FRESH_REF" --format json > drift-report.json
-          code=$?
-
-          # Best-effort human-readable enumeration of any new commits; never
-          # gates the job's pass/fail decision (drift.py already reports
-          # unreviewed_count/has_drift, which is authoritative) and never
-          # aborts before the summary is written even if scan itself errors
-          # (e.g. on a diverged-history integrity problem, which `drift`
-          # above already flags via exit code 3).
-          python3 -m scripts.upstream_port scan --ref "$FRESH_REF" --format json > scan-report.json 2> scan-report.err
-          scan_code=$?
-
-          {
-            echo "## Upstream Port Drift Scan"
-            echo ""
-            echo "Recorded boundary: \`$FRESH_REF\` @ \`$RECORDED_LAST_PORTED_SHA\`"
-            echo "Freshly fetched tip of \`$FRESH_REF\` was scanned/drift-checked below --"
-            echo "this run explicitly fetched the pinned canonical remote first (see the"
-            echo "preceding job steps), so a moved ref here reflects a real upstream change,"
-            echo "not just this repo's own history."
-            echo ""
-            echo "### drift"
-            echo '```json'
-            cat drift-report.json
-            echo '```'
-            echo ""
-            echo "### scan (best-effort; new commits since the recorded last_ported boundary)"
-            if [ "$scan_code" -eq 0 ]; then
-              echo '```json'
-              cat scan-report.json
-              echo '```'
-            else
-              echo "scan could not enumerate individual commits (exit $scan_code); see drift"
-              echo "output above for the authoritative drift/integrity signal:"
-              echo '```text'
-              cat scan-report.err
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          exit 0
+        run: bash scripts/ci/render_upstream_drift.sh
 
       - name: Upload drift + scan report artifacts
         if: always()

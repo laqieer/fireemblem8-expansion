@@ -521,6 +521,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/179",
         "https://github.com/laqieer/fireemblem8-expansion/issues/180",
         "https://github.com/laqieer/fireemblem8-expansion/issues/181",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/196",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
         "https://github.com/laqieer/fireemblem8-expansion/issues/225",
@@ -549,6 +550,7 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-GATE-OWNERSHIP-001",
+        "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-PROBE-NATIVE-EVENT-ORDER-001",
@@ -2659,6 +2661,50 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
+      "title": "Preserve post-checkout program effects",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/196"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-script-extraction-001-preserve-post-checkout-program-effects",
+      "profiles": ["Clean Linux source checkout with Python 3, Bash, Git and actionlint; automatic exact-master Build for real patch publication"],
+      "purpose": "Preserve selected post-checkout workflow program effects, parsed helper ownership and actual build-once master publication without changing trust boundaries or gates.",
+      "prerequisites": "Source root; exclusively owned host fixtures. No host credential, ROM, network fetch or ARM compiler for fixture tests; real publication uses the existing CI environment.",
+      "actions": "Run actual helper and drift suites, parsed mirror/helper-drift tests and actionlint. Compare remote identity/refusal, fresh-ref/report/status preservation and compiler pins/destinations/failure cutoffs. After merge require real exact-master patch creation/upload and remote completion.",
+      "expected_result": "All helper effects and failure behavior agree with the original programs; eight jobs and 31 commands remain. Parsed target helper bodies bind to the reviewed source. Actual exact-master Build publishes the SHA-bound patch-only BPS artifact.",
+      "negative_control": "Wrong remote URL remains unchanged and refuses; missing state signals 3; drift/failed scan preserve reports. Failed fetch/wrong pin stop before compiler execution. No-op, missing, final/parent-symlinked or oversized helper refuses equivalence. CRLF and other non-LF separators cannot normalize away behavior drift; real CRLF Bash execution fails, while ordinary/Unicode comments remain neutral. Removing/changing variable, path, pin, destination or command-substitution quotes refuses equivalence; actual unquoted runner paths fail with spaces. Concatenating quoted pin-test/directory words with following arguments refuses; actual pin-test mutation stops before compilation, ordinary word spacing stays neutral. Candidate or skipped publisher cannot supply master publication proof.",
+      "interactions": "Delivered workflow/publisher, upstream CLI/constants and parsed verifier only. Real shared-helper changes require normal refresh of affected open heads, not cancellation of unaffected immutable runs. No global ownership/SDK prerequisite or new gate/platform.",
+      "save_compatibility": "No ROM/RAM/save/configuration identity/generated game data/localization/default modern debug-release/archival payload/fingerprint change.",
+      "cleanup": "Host fixtures remove their own temporary paths; preserve unrelated locked/active delivery workspaces. Never run CI dependency cleanup outside its owned environment.",
+      "limitations": "Controlled external CLI/dependency inputs do not claim real compiler installation or live upstream scan. Raw pre-checkout/bootstrap and closed no-checkout adapters remain at their existing authority boundary.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_ci_entrypoints tests.upstream_port.test_drift_workflow -v",
+          "evidence": "tests/workflows/test_ci_entrypoints.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component tests.upstream_port.test_verify.VerifyCliCwdTests.test_helper_parser_preserves_actual_bash_line_boundaries -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_concatenated_pin_test_argument_stops_before_compiler_execution -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "actionlint .github/workflows/build.yml .github/workflows/upstream-port-drift.yml",
+          "evidence": ".github/workflows/build.yml"
         }
       ]
     },

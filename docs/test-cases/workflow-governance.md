@@ -4,7 +4,128 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-SCRIPT-EXTRACTION-001: Preserve post-checkout program effects
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #196](https://github.com/laqieer/fireemblem8-expansion/issues/196).
+- **Supported configuration or artifact:** clean Linux source checkout with
+  Python 3, Bash, Git and actionlint. Host fixtures need no ROM, credentials,
+  network fetch or ARM compiler. The real final publisher is tested by the
+  existing automatic exact-master Build.
+- **Prerequisites and clean starting state:** run from the repository root.
+  Fixtures own temporary repositories, report paths, compiler-driver stand-ins
+  and dependency directories; do not run the CI installer on a normal host
+  without its documented CI environment.
+
+### Actions
+
+1. Execute the actual helpers against their controlled external boundaries:
+
+   ```bash
+   python3 -m unittest tests.workflows.test_ci_entrypoints tests.upstream_port.test_drift_workflow -v
+   ```
+
+   Require real remote-add/repeat/mismatch behavior; freshly fetched-ref
+   drift/scan argv, report bytes and status preservation; missing-state refusal;
+   and both compiler pins/build/install destinations. Failed fetch and wrong
+   revision must stop before compiler execution. The existing real synthetic
+   Git replay still proves drift after fetch without changing HEAD or state.
+2. Exercise the actual parsed workflow and helper-owner closure:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v
+   ```
+
+   The same eight jobs and 31 validation commands remain. Harmless helper
+   comments preserve equivalence; replacing its body with a no-op fails.
+   Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
+   refuse. Replay the line-boundary controls:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component tests.upstream_port.test_verify.VerifyCliCwdTests.test_helper_parser_preserves_actual_bash_line_boundaries -v
+   ```
+
+   CRLF and other separator-only rewrites cannot compare equal to the reviewed
+   LF helper; actual CRLF Bash execution fails. Ordinary and Unicode comments
+   remain neutral data.
+   Raw helper tokens also retain quoting. Check variable-bearing paths,
+   compiler pins, install destinations and command substitution:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v
+   ```
+
+   Removing or changing those quotes must refuse target equivalence. The actual
+   unquoted-runner-path mutation cannot preserve installation with spaces.
+   Also retain argument adjacency, not just quote marks:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_concatenated_pin_test_argument_stops_before_compiler_execution -v
+   ```
+
+   Concatenating the first pin-test word with `=` or a quoted second-compiler
+   directory with `remote`, `fetch` or `checkout` refuses equivalence. The actual
+   pin-test mutation fails before compiler execution; extra ordinary word
+   spacing remains neutral.
+3. Validate the actual workflow input format:
+
+   ```bash
+   actionlint .github/workflows/build.yml .github/workflows/upstream-port-drift.yml
+   ```
+
+   Permissions, exact checkouts, no-checkout authority adapters, artifacts and
+   the existing master-only publisher remain intact. Only the three selected
+   post-checkout program invocations move.
+4. After candidate gates and merge, inspect the automatic Build for that exact
+   master SHA. Both **Create and verify patch artifact** and **Upload patch-only
+   artifact** must actually succeed, not be skipped. Require the patch-only BPS
+   artifact bound to that SHA and `make remote-completion-check`.
+
+### Expected result
+
+The extracted helpers preserve their original observable inputs, effects,
+outputs, failure cutoffs and authoritative signals. Controlled CLI/dependency
+boundaries do not claim a real compiler installation or live upstream scan;
+existing real CLI replay and comprehensive Build supply those separate checks.
+The verifier binds the target helper body as well as its invocation.
+The actual exact-master build-once publisher packages and uploads the patch.
+
+### Negative control
+
+Remote URL mismatch remains unchanged and refuses; missing state publishes
+error signal 3; drift 2 plus scan failure still writes diagnostics before the
+job applies the original signal. Failed compiler fetch and wrong pin do not
+reach build/install. A changed/no-op, absent, symlinked or oversized helper
+cannot pass local command equivalence. A candidate or skipped publisher is not
+master publication evidence.
+
+### Interactions and save compatibility
+
+Dependencies: delivered workflow/publisher, upstream CLI/constants and parsed
+verifier. Conflicts: shared helper invocation changes require normal master
+refresh for open heads that lack them; unaffected immutable CI is retained.
+No #180/global/native/SDK prerequisite or new platform/gate. No ROM/RAM, save,
+configuration identity, generated game data, localization, default modern
+debug/release, archival payload or fingerprint change.
+
+### Automation
+
+The named host suites execute real helper programs and parsed owner/consumer
+contracts; actionlint checks workflow syntax. Automatic exact-master Build
+proves the real patch publisher. All assertions are deterministic; no subjective
+manual criterion or human approval is required.
+
+### Cleanup and limitations
+
+Fixtures remove only their own temporary paths. Never delete, unlock or force
+remove unrelated delivery workspaces. The legacy installer is CI-only and
+retains its existing owned dependency paths; it is not part of bare modern
+`make` or quickstart. Raw pre-checkout identity/bootstrap and closed no-checkout
+adapters are intentionally not extracted. Rollback is an ordinary PR revert,
+not restoration of a separate publisher or execution platform.
+
 ## TC-WORKFLOW-GATE-OWNERSHIP-001: Retain broad validation after a bounded shadow pilot
+
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #180](https://github.com/laqieer/fireemblem8-expansion/issues/180).
