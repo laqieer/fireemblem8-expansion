@@ -1162,6 +1162,10 @@ class _CompactStatementIndex(Mapping):
     def __len__(self):
         return self._count
 
+    @property
+    def source_bytes(self):
+        return self._data
+
     def __iter__(self):
         for number in range(self._count):
             self._checkpoint()

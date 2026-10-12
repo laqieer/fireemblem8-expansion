@@ -5,7 +5,6 @@ from __future__ import annotations
 import struct
 import sys
 import hashlib
-import base64
 
 if __package__:
     from .authority import encoded
@@ -232,8 +231,10 @@ class PatternTemplates:
             ):
                 raise read_epochs.ReadEpochError("completed pattern lacks source-bound actual fields")
             if trace.version in read_epochs.PATTERN_VERSIONS:
-                data = base64.b64decode(trace.sources[source - 1]["data"], validate=True)
-                trace.policy.charge_metadata(len(data))
+                index = trace.statement_indexes.get(source)
+                if not isinstance(index, read_epochs._CompactStatementIndex):
+                    raise read_epochs.ReadEpochError("pattern declaration lacks its captured immutable source")
+                data = index.source_bytes
                 read_epochs.pattern_source_coordinates(
                     definition, owner, source, trace.events, data, checkpoint=trace.deadline,
                     reserve=trace.policy.charge_metadata,

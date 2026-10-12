@@ -2912,6 +2912,20 @@ in the existing bounded event prefix rather than copying the whole history
 into transient dictionaries. Latest source-open, file/line/offset, nested eval
 ancestry and cyclic/foreign/prefix refusals remain unchanged; no new cache,
 ledger or event representation is introduced.
+Live pattern completion reuses immutable source bytes held by that source's
+validated compact index, rather than decoding the same archive body once per
+declaration. Missing captured indexes fail explicitly; independent archive
+decoding and byte/hash/coordinate validation remain unchanged.
+For this component of `TC-WORKFLOW-NATIVE-MAKE-001`, run
+`NativePatternTemplateTests.test_large_source_pattern_declarations_reuse_captured_bytes`.
+From its clean source fixture, declare ten patterns after a 2 MiB ASCII comment
+and execute the actual native Make protocol under unchanged limits. Require ten
+typed archived templates, the exact source bytes, successful completion and
+owned cleanup. Restore the removed full-body allocation per declaration:
+the same native input must exhaust its observation byte budget, mark failure
+and clean owned state. Remove the captured index instead: completion must refuse
+without an archive-body fallback. These component controls do not establish
+original-cohort qualification.
 
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old

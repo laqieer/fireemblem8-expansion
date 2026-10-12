@@ -430,6 +430,54 @@ class NativePatternTemplateTests(unittest.TestCase):
     assert_clean = foundation.FoundationTests.assert_clean
     native_supervisor = foundation.FoundationTests.native_supervisor
 
+    def test_large_source_pattern_declarations_reuse_captured_bytes(self):
+        source = "# " + "x" * (2 * 1024 * 1024) + "\n"
+        source += "".join("%%.out: V%d = value%d\n" % (index, index) for index in range(10))
+        source += "all: ; @v=owned; printf '%s' '$(V9)'\n"
+        self.add("Makefile", source)
+        for control in (None, "copy", "missing"):
+            body = {
+                None: "",
+                "copy":
+                "reader=guard.read_epochs._CompactStatementIndex.source_bytes\n"
+                "def copied(index):\n"
+                " data=memoryview(reader.fget(index)).tobytes()\n"
+                " index._reserve(len(data))\n"
+                " return data\n"
+                "guard.read_epochs._CompactStatementIndex.source_bytes=property(copied)\n",
+                "missing":
+                "import pattern_templates\n"
+                "complete=pattern_templates.PatternTemplates.complete\n"
+                "def missing(self,owner,source):\n"
+                " self.trace.statement_indexes.pop(source,None)\n"
+                " return complete(self,owner,source)\n"
+                "pattern_templates.PatternTemplates.complete=missing\n",
+            }[control]
+            session = self.session()
+            with self.subTest(control=control), session, self.native_supervisor(body):
+                if control is not None:
+                    error = ("observation byte budget exhausted" if control == "copy"
+                             else "pattern declaration lacks its captured immutable source")
+                    with self.assertRaisesRegex(MakeProbeError, error):
+                        session._native_make_readonly(
+                            "all", observe_reads=True, observe_runtime_completions=True,
+                            observe_patterns=True,
+                        )
+                    self.assertTrue(session.budget.failed)
+                else:
+                    completed, _, observed = session._native_make_readonly(
+                        "all", observe_reads=True, observe_runtime_completions=True,
+                        observe_patterns=True,
+                    )
+                    self.assertEqual((completed.returncode, completed.stdout, completed.stderr),
+                                     (0, b"", b""))
+                    archive = read_epochs.reconstruct_archive(observed["read_trace"], budget=session.budget)
+                    part, = archive.passes
+                    self.assertEqual(len(part.pattern_templates), 10)
+                    self.assertEqual(part.visits[0].source.data, source.encode())
+                    self.assertFalse(session.budget.failed)
+            self.assert_clean(session)
+
     def test_actual_retained_pattern_reexec_and_exit_require_live_validation(self):
         recipe = "printf '%s\\n' 'VALUE := complete' > generated.mk"
         final = "v=done; printf '%s' 'complete'"
