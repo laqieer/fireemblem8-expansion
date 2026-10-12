@@ -3,6 +3,7 @@
 import errno
 import fcntl
 import hashlib
+import io
 import os
 from pathlib import Path
 import stat
@@ -14,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.validation_ownership.authority import ENVIRONMENT
+from scripts.validation_ownership import budget
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
 from scripts.validation_ownership.runtime_image import (
     BLOCK_BYTES, IMAGE_SEALS, RuntimeImage, close_images, image_digest, materialize_image,
@@ -21,6 +23,28 @@ from scripts.validation_ownership.runtime_image import (
 
 
 class PlatformImageTests(unittest.TestCase):
+    def test_deadline_controls_expire_on_fresh_monotonic_epoch(self):
+        original_init = ProbeBudget.__init__
+
+        def start_on_clock(instance, *args, **kwargs):
+            original_init(instance, *args, **kwargs)
+            instance.started = budget.time.monotonic()
+
+        names = (
+            "test_capture_preserves_primary_with_source_and_backing_close_failures",
+            "test_failed_materialization_removes_owned_file_and_preserves_failure",
+            "test_slice_quota_and_deadline_refuse_before_reading_owned_body",
+        )
+        with patch.object(budget.time, "monotonic", return_value=60.0), patch.object(
+            ProbeBudget, "__init__", start_on_clock,
+        ):
+            suite = unittest.TestSuite(type(self)(name) for name in names)
+            output = io.StringIO()
+            result = unittest.TextTestRunner(stream=output).run(suite)
+        self.assertEqual(result.testsRun, len(names), output.getvalue())
+        self.assertTrue(result.wasSuccessful(), output.getvalue())
+        self.assertFalse(result.skipped)
+
     def test_capture_rejects_invalid_read_and_backing_write_progress_and_closes_fds(self):
         source = Path("/usr/bin/make").resolve()
         original_write, original_memfd, original_fdopen = os.write, os.memfd_create, os.fdopen

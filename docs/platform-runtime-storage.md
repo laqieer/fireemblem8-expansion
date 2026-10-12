@@ -2,8 +2,9 @@
 
 `scripts.validation_ownership.runtime_image` provides complete immutable
 platform bodies independently of execution or source authority. This is the
-storage prerequisite of #275; native compiler admission, generated-source
-custody and original end-to-end qualification are not supplied by this API.
+standalone storage API for complete external bodies. Native compiler admission,
+generated-source custody and original end-to-end qualification are not supplied
+by this API or prerequisites of its delivery.
 
 Two intended uses are large Python/platform images and GCC frontend images.
 The latter can exceed the source-file allowance. Consumers must first issue
@@ -123,9 +124,11 @@ They are not evidence of native Make lineage or original qualification.
 ### Interactions and save compatibility
 
 Dependencies: existing `ProbeBudget` and lifecycle cleanup from the merged
-native foundation (#274). Dependents: #275, #270, #180 and #186. The provider
-has no independent profile conflicts; session/cache/root/alias/permission and
-archive integrations remain the dependent owner's responsibility.
+native foundation (#274). There are no active unmerged consumer dependencies.
+The deferred #275/#270 contracts retain their own acceptance if resumed; the
+bounded #180 pilot and #181 scheduling do not require this API for completeness.
+The provider has no independent profile conflicts; session/cache/root/alias/
+permission and archive integrations remain each actual consumer's responsibility.
 Default execution routes and modern debug/release/archival behavior are
 unchanged. ROM, RAM, save/migration, generated game data and localization
 impact: none. Rollback is an ordinary revert before dependent integration;
@@ -138,8 +141,8 @@ All assertions map to
 also selected by the existing `ownership-probe-test` owner. No subjective manual
 judgment is required.
 
-The finite review-subject test
-`test_provider_deadline_controls_expire_on_fresh_monotonic_epoch` runs the
+The provider regression
+`test_deadline_controls_expire_on_fresh_monotonic_epoch` runs the
 capture, materialization and slice controls with a 60-second monotonic epoch.
 Their deliberately expired start derives from each actual issued budget,
 not an assumed machine uptime. Require the same refusal, primary-error
@@ -151,175 +154,3 @@ Each case owns and cleans its temporary paths and descriptors; reset between
 cases through the test's ordinary cleanup. Linux memfd/seal support is required.
 The caller owns a private destination without concurrent replacement; this
 API does not provide atomic publication or hostile same-UID isolation.
-
-## Finite review-subject binding
-
-The existing `review_subjects.BINDINGS` entry for
-`TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001/sealed-platform-storage` supplies
-15 obligations: all five wire roles, four lifecycle roles, two resource roles
-and four generated-owner roles. The accepted findings map individually to
-`owners:probe-inventory`, `validators:source-admission`,
-`stale-bindings:source-identity` and `enabled:bounded-slices`. The remaining
-roles cover complete capture/materialization, sealed replay, FD handoff,
-primary-error preservation, no budget reset, retirement, caller-owned byte
-compatibility, generated Make selection and its full-only workflow consumer.
-
-Select the reviewed binding at an explicit immutable tool revision using the
-existing `ReviewTools.members` and `ReviewTools.run_obligations` APIs. The
-existing `_stage` route reads each origin/candidate from `GitTree` as data.
-It binds the complete executable provider/test/import closure to its reviewed
-finite model before dispatch. Only selected `tool_tree` executable bytes run
-in the credential-free observer; candidate Python is never imported into that
-observer or the coordinator collector. Every obligation carries the shared
-execution closure and actual Git blob identities: provider, provider tests,
-budget/lifecycle/channel/authority imports and package roots, foundation Make
-file, native test inventory sources, owner tests, workflow and the existing
-finite workflow parser/condition functions. Root package initializer presence is also bound, including required absence.
-Candidate executable modules are relocated to nonimportable inventory paths;
-their importable counterparts come only from the selected tool revision.
-Other native suites are parsed as
-inventory inputs, not imported or executed by this binding. Dynamic import
-attempts cannot reach them through ordinary Python module lookup: staging moves
-their exact source bytes to `build/platform-inventory/<original-path>.source`,
-outside the importable module paths. The parsers consume those relocated bytes
-while observations retain the original Git paths and object bindings. This is
-physical staging separation, not a claim of hostile same-UID isolation.
-Executable workflow parser and condition functions come only from the selected
-trusted tool revision, staged separately under `build/platform-trusted-parsers`.
-Candidate parser bodies, defaults and decorators remain inventory data; they
-cannot execute or substitute a forged workflow-consumer result. The actual
-candidate workflow still supplies every full/disabled owner input.
-Run `test_candidate_parser_cannot_restore_disabled_consumer_or_execute_defaults`
-with the finite review-subject tests: both candidate parser sources attempt to
-restore a disabled workflow at definition time and through forged parse results.
-Require an explicit consumer violation, not a satisfied observation.
-Restore each old parser lookup independently in an owned source-bound tool
-fixture. Each vulnerable lookup must falsely satisfy that same disabled
-consumer, so neither parser regression can pass through an unrelated mismatch.
-Platform and non-platform obligations use separate invocations of the existing
-staging/worker seam, each with its own complete execution inputs. A mixed-subject
-request cannot import generated-data candidate code into the platform observer.
-Other subjects retain their own execution route and source bindings.
-A changed import
-closure, identity field set or unmodeled executable source blocks before any
-observer process starts. Defaults, decorators and module effects are part of
-that model, not permissions to execute candidate code. Parsed equivalence
-preserves comments/formatting, the constructor's local source-info rename,
-identity tuple field order and the existing neutral unused zero-argument helper
-forms. It does not sort effectful statements or ignore arbitrary function bodies.
-Implicit unittest module fixtures (`setUpModule` and `tearDownModule`) remain
-executable model inputs, not neutral helpers.
-This is a finite execution-trust boundary, not a repository-wide source identity
-gate or a substitute for behavioral observations; no arbitrary
-caller test, evaluator, service, budget or execution permission is introduced.
-
-Coverage findings are **not historical runtime defects**. For each admission,
-post-capture identity and oversized-workspace predicate, the worker first runs
-the reviewed model's complete provider suite unchanged, bound to that candidate's
-parsed source. It then removes
-only that production predicate through its finite AST model and reruns that
-same original suite. The coverage contract requires 9, 16 and 3 independent
-input-assertion failures respectively, without errors, skips or expected
-failures. Admission observations cover nine early refusals; identity
-observations independently change all eight fields at both FD and path checks.
-The unchanged current suite additionally executes zero/N-1/N, negative,
-clamped, empty and step-one slices, scalar/step and N+1/full-body refusals,
-short reads, quotas, deadline and closed-body controls. A surviving mutation
-is reported as a **coverage gap**, explicitly retaining that the unmutated
-original suite passed. A failed baseline or unavailable execution never
-qualifies as a successful coverage observation.
-
-The initial missing owner inventory at
-`deb861f4acfd8f26e54501a0362a8a94d148727a` is reproduced by parsed Make
-selected-versus-expected module equality. This is a closed dedicated probe of
-the original inventory and real generated command, not a claim to have run
-the entire original workflow-test import closure. The coverage origin at
-`20ce99cc816b85647569f0a6ba4600326870ddc8` has eight original provider tests;
-actual original-suite runs survive all three semantic guard removals.
-The regression's reconstructed coverage-gap fixture instead removes four
-coverage methods from the current thirteen-method class, leaving nine tests;
-it is not an exact historical Git-tree claim. The
-current thirteen-test provider suite kills them with 9/16/3 input failures.
-The nine-case fixture has a separate explicit model derived by removing those
-same four methods from the reviewed suite; its executed bytes are tool-owned,
-not taken from the candidate. An unmatched historical source is unavailable,
-not reconstructed or relabeled as verified. Evidence identifies both candidate
-Git objects and selected tool revision and is described as reviewed-model
-execution bound to candidate source, never execution of candidate bytes.
-Those results establish missing regression coverage, not incorrect old
-admission, identity or slice runtime behavior.
-For the observer-integrity component of
-`TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001`, run
-`test_candidate_execution_and_initializer_poison_refuse_before_dispatch`.
-From the clean source fixture, add the reproduced `_platform_suite`/`check`
-override and an owned-file write to each provider, test, dependency and package
-initializer in turn, including absent root initializers. Require unavailable
-zero-check observations, no dispatched observer process and no written file.
-Run the semantic-refactor/comments controls and the complete-role test: require
-all bound obligations satisfied and actual thirteen-case baseline plus 9/16/3
-causal assertion failures. No hostile same-UID isolation is claimed.
-Repeat `test_mixed_subject_poison_cannot_restore_disabled_platform_consumer`
-with the generated-data subject also selected. Poison its candidate registry
-with the same observer overrides and disable the platform workflow owner.
-Require the platform's actual missing-owner violation; the other subject's
-process cannot turn it into a satisfied observation. Repeat
-`test_implicit_unittest_module_fixtures_are_not_neutral_helpers` with each
-implicit fixture reading an undefined name: both must refuse before dispatch,
-while the ordinary unused-helper positive remains green.
-Owner recipe checks do not run GNU Make, including `--dry-run`: Make expansion
-can execute or forge its output even without running a recipe. The reviewed
-finite model accepts the existing literal PHONY/two-target recipe layout,
-comments, blank lines and continuations; includes, expansions, assignments,
-extra commands and missing/duplicate targets refuse. Typed module inventory
-and actual workflow-owner checks consume that parsed argv independently.
-`test_make_owner_expansion_cannot_forge_recipe_or_mutate_inventory` requires
-refusal for a forged `$(info ...)` argv with an empty target and for file/shell
-expansion effects. A syntax-preserving literal recipe remains accepted, and
-the parser never launches a process.
-Recipe continuation removes the escaped newline and one continuation-line
-recipe-prefix tab; it never inserts a word separator. The ordinary GNU Make
-control for `python3\\` followed directly by `-m` attempts `python3-m`, and the
-owner model must reject that same command. Whitespace-separated continuation
-stays supported; unmodeled non-recipe or multiple-escape continuation refuses.
-Quoted recipe continuations are outside this literal model and refuse:
-single quotes preserve the escaped newline as part of the shell word.
-Every selected provider execution and unchanged baseline must complete without
-skips, expected failures or unexpected successes; unittest's success status or
-test count alone is insufficient.
-
-Historical #275 operation controls remain separate: the session-only
-comparison adapts exact `3a32` materialization operations, `7c522` destination
-ownership and `c8d6117` constructor operations to the extracted provider,
-producing 22/12/3 expected failures without errors; the exact `deb861f4`
-owner tests produce one selected-versus-expected failure. These are explicit
-component adaptations, not full exact-origin-tree qualification. Neither
-these controls nor this binding complete the held #275/#270/#180/#186 work.
-Exact-head independent/remote review, security, complete candidate/master
-Builds and every existing completion gate remain unchanged.
-
-Focused binding regression:
-`python3 -B -m unittest scripts.workflow_pilot.tests.test_platform_storage_review_subject -v`.
-
-The binding regression module is included by the existing registered review-family
-`test_*review*.py` discovery. Its parsed owner model rejects module-level `load_tests`
-and module `__getattr__`/`__dir__` bindings and wildcard imports instead of executing
-custom selection or enumeration hooks.
-Actual module selection is compared with the parsed provider inventory, including
-hooks introduced dynamically through the module namespace.
-It exercises the real staged route, all finite roles, coverage-only origins,
-owner omission, missing sibling/stale-tool refusal, malformed execution
-closure, runtime regression and unavailable original-suite execution.
-
-For the provider's original directly launched CLI review, retain native task
-`call_fyfIDetIpYPYd3XEg7d6KtNs`, reviewer
-`c7bfd6a2-7afc-44f0-8f4c-0be5f54d4eba`, observed original head
-`ba125e3d90279c21eaaa9e81554b4821d0045dc5` and original report/findings.
-Native start/completion chronology and nine observed candidate paths remain
-session evidence, not reconstructed historical `begin`/`finish` lease fields. Total runtime
-file count remains unknown; the original broader advertised tool set is not
-relabeled as an enforced read-only allowlist. The byte-budget finding is
-retained and explicitly rejected against the frozen caller-owned bytes
-contract, not erased or converted into a clean original report. Later scoped
-reviews, accepted remote findings and exact current-head gates remain separate.
-These historical observations do not establish the mandatory independent-review
-admission facts; retain that precise hold rather than reconstructing a lease.
