@@ -136,7 +136,7 @@ def platform_execution_sources(tree, tool_tree):
             names = {node.id for node in ast.walk(model) if isinstance(node, ast.Name)}
             names.update(node.name for node in model.body
                          if isinstance(node, (ast.FunctionDef, ast.ClassDef)))
-            names.update({"load_tests", "__getattr__", "__dir__"})
+            names.update({"load_tests", "__getattr__", "__dir__", "setUpModule", "tearDownModule"})
             for node in tuple(candidate.body):
                 if (not isinstance(node, ast.FunctionDef) or node.name in names
                     or node.name.startswith("__") or node.decorator_list or node.returns is not None

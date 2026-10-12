@@ -274,6 +274,36 @@ class PlatformStorageSubjectTests(SubjectTestCase):
                          {CASE + "/" + SUBJECT, "TC-CORE-004/generated-eventlists"})
         self.assert_satisfied(self.run_members(members, self.repo.base))
 
+    def test_mixed_subject_poison_cannot_restore_disabled_platform_consumer(self):
+        source = (self.repo.root / ".github/workflows/build.yml").read_text()
+        disabled = source.replace("ownership-probe-test", "all")
+        self.assertNotEqual(source, disabled)
+        registry = "scripts/generated_data/registry.py"
+        poison = (
+            "\nimport sys,types\n"
+            "observer=sys.modules['scripts.workflow_pilot.review_subjects']\n"
+            "observer.check=lambda *args,**kwargs:None\n"
+            "observer._platform_suite=lambda *args,**kwargs:types.SimpleNamespace("
+            "testsRun=13,failures=[],errors=[],skipped=[],expectedFailures=[],"
+            "unexpectedSuccesses=[],wasSuccessful=lambda:True)\n"
+        )
+        head = self.repo.commit({
+            ".github/workflows/build.yml": disabled,
+            registry: (self.repo.root / registry).read_text() + poison,
+        })
+        scope = self.scope(head)
+        scope["subjects"].append({"case_id": "TC-CORE-004", "subject": "generated-eventlists"})
+        members = self.tools.members(scope)
+        platform = tuple(member for member in members if member.probe.startswith("platform"))
+        self.assertTrue(platform)
+        self.assertTrue(all(registry not in member.source_inputs for member in platform))
+        observations = self.run_members(members, head)
+        consumer = next(item for item in observations
+                        if item.obligation.subject == CASE + "/" + SUBJECT
+                        and item.obligation.member == "consumers:probe-inventory")
+        self.assertEqual(consumer.verdict, "contract-violation", consumer.detail)
+        self.assertIn("generated provider has missing/duplicate owner", consumer.detail)
+
     def test_each_selected_provider_case_requires_actual_success(self):
         source = (self.repo.root / TESTS).read_text()
         selected = {
@@ -551,6 +581,18 @@ class PlatformStorageSubjectTests(SubjectTestCase):
         head = self.repo.commit({SOURCE: source})
         members = self.tools.members(self.scope(head))
         self.assert_satisfied(self.run_members(members, head))
+
+    def test_implicit_unittest_module_fixtures_are_not_neutral_helpers(self):
+        source = (self.repo.root / TESTS).read_text()
+        for name in ("setUpModule", "tearDownModule"):
+            with self.subTest(name=name):
+                head = self.repo.commit({TESTS: source + f"\ndef {name}():\n    return missing_fixture_name\n"})
+                members = self.tools.members(self.scope(head))
+                with patch.object(self.tools.subjects, "run_process",
+                                  side_effect=AssertionError("unbound module fixture dispatched")):
+                    observations = self.run_members(members, head)
+                self.assertEqual({(item.verdict, item.checks) for item in observations},
+                                 {("unavailable", 0)})
 
 
 if __name__ == "__main__":
