@@ -1085,6 +1085,71 @@ class GateTests(unittest.TestCase):
 
 
 class SecurityTests(unittest.TestCase):
+    def collect(self, rows):
+        pr = SimpleNamespace(repository="owner/repository", repository_id=1, head_sha="a" * 40)
+        payload = {"total_count": len(rows), "check_runs": rows}
+        client = SimpleNamespace(request=lambda *args, **kwargs: SimpleNamespace(payload=payload, headers={}))
+        return gate.security_checks(client, pr)
+
+    def coherent_rows(self):
+        return [
+            {"id": index, "name": name, "app": {"id": app, "slug": slug},
+             "head_sha": "a" * 40, "status": "completed", "conclusion": "success",
+             "started_at": "2026-01-01T00:00:00Z", "completed_at": "2026-01-01T00:01:00Z"}
+            for index, (name, app, slug) in enumerate(sorted(gate.SECURITY_CHECKS), 1)
+        ]
+
+    def test_unrelated_lifecycle_cannot_replace_or_block_required_security(self):
+        rows = self.coherent_rows()
+        expected = self.collect(rows)
+        unrelated = {
+            "id": 113786526363, "name": "extended-host-tests",
+            "app": {"id": 1, "slug": "github-actions"}, "head_sha": "a" * 40,
+            "status": "completed", "conclusion": "skipped",
+            "started_at": "2026-10-09T10:53:26Z", "completed_at": "2026-10-09T10:53:25Z",
+        }
+        for changes in (
+            {}, {"name": "legacy"},
+            {"status": "queued", "completed_at": "not-a-security-timestamp"},
+            {"status": "in_progress", "started_at": None},
+            {"created_at": "2026-10-09T10:53:27Z"},
+            {"status": "unknown", "conclusion": "unknown"},
+        ):
+            with self.subTest(changes=changes):
+                candidate = {**unrelated, **changes}
+                self.assertEqual(self.collect([*rows, candidate]), expected)
+                self.assertEqual(self.collect([candidate]), ())
+
+    def test_named_security_keeps_every_chronology_and_identity_refusal(self):
+        for changes in (
+            {"started_at": "2026-01-01T00:02:00Z"},
+            {"completed_at": None}, {"completed_at": "invalid"},
+            {"created_at": "2026-01-01T00:00:01Z"},
+            {"status": "in_progress"}, {"status": "queued"},
+            {"status": "unknown"}, {"conclusion": "unknown"},
+            {"started_at": None}, {"head_sha": "b" * 40},
+            {"app": {"id": 1, "slug": "github-actions"}}, {"id": True},
+        ):
+            rows = self.coherent_rows()
+            rows[0].update(changes)
+            with self.subTest(changes=changes), self.assertRaises((ValueError, reporter.PilotDataError)):
+                self.collect(rows)
+        rows = self.coherent_rows()
+        for duplicate in (dict(rows[0]), {**rows[0], "id": 33}):
+            with self.subTest(duplicate=duplicate), self.assertRaises(ValueError):
+                self.collect([*rows, duplicate])
+        for changes in (
+            {"head_sha": "b" * 40}, {"id": True}, {"id": 1}, {"app": None},
+        ):
+            unrelated = {
+                **self.coherent_rows()[0], "id": 7, "name": "legacy",
+                "app": {"id": 1, "slug": "github-actions"}, **changes,
+            }
+            with self.subTest(envelope=changes), self.assertRaises((ValueError, reporter.PilotDataError)):
+                self.collect([*self.coherent_rows(), unrelated])
+        for missing in (0, 1):
+            self.assertEqual(len(self.collect([self.coherent_rows()[missing]])), 1)
+
     def test_actual_client_parser_binds_app_sha_completion_and_pagination(self):
         pr = SimpleNamespace(repository="owner/repository", repository_id=1, head_sha="a" * 40)
         rows = [{"id": index, "name": name, "app": {"id": app, "slug": slug},

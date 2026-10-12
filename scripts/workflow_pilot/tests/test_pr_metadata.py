@@ -620,6 +620,35 @@ def _bind_full_jobs(jobs, *, number=PR_NUMBER, head=HEAD, base=BASE, base_ref="m
     }]
 
 
+def _review_first_run():
+    record, jobs = _run(101, 10, mode="full", success=False)
+    jobs = [job for job in jobs if job["name"] != "patch-release"]
+    next(job for job in jobs if job["name"] == "event-classifier")["name"] = "review-first-classifier"
+    for job in jobs:
+        if job["name"] in {"extended-host-tests", "legacy"}:
+            job.update(_job(
+                job["name"], job_id=job["id"], run_id=101,
+                conclusion="skipped", runner_name=None,
+            ))
+        elif job["name"] == "summary":
+            job["conclusion"] = "failure"
+    return record, jobs
+
+
+def _bound_metadata_run():
+    from scripts.workflow_pilot.adaptive_gate import binding_name
+    record, jobs = _run(202, 11, mode="metadata-only", success=False)
+    classifier = next(job for job in jobs if job["name"] == "metadata-classifier")
+    classifier["steps"].append({
+        "name": binding_name(PR_NUMBER, HEAD, BASE, "master"),
+        "number": 2,
+        "status": "completed", "conclusion": "success",
+        "started_at": classifier["started_at"],
+        "completed_at": classifier["completed_at"],
+    })
+    return record, jobs
+
+
 def _fixture_full_compare(jobs):
     from scripts.workflow_pilot.adaptive_gate import binding_base_ref, parse_binding
     return any(
@@ -2337,6 +2366,220 @@ class PullRequestMetadataTests(unittest.TestCase):
             essential_reason=None,
         )
         self.assertEqual(decision.action, "updated")
+
+    def test_review_first_pre_full_metadata_preparation_preserves_transaction_and_final_hold(self):
+        for reason in (None, "Correct the real stack parent before its first full Build"):
+            with self.subTest(essential_reason=reason):
+                client = ScriptedClient()
+                runs = [_bound_metadata_run(), _review_first_run()]
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, runs, copies=2)
+                client.add(
+                    "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                    _pr(body="Correct parent", updated_at="2026-09-04T00:00:05Z"),
+                )
+                _add_edit_transaction(client, runs, body="Correct parent")
+                decision = pr_metadata.edit_metadata(
+                    client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                    head_sha=HEAD, base_sha=BASE, title=None,
+                    body="Correct parent", essential_reason=reason,
+                )
+                self.assertEqual(decision.action, "updated")
+                self.assertTrue(decision.mutated)
+                self.assertIsNone(decision.run_id)
+                self.assertIsNotNone(decision.intent_comment_id)
+                self.assertIsNotNone(decision.confirmation_comment_id)
+                self.assertIn("after the exact-head full Build succeeds", decision.reason)
+                mutations = [(method, endpoint, body) for method, endpoint, body in client.calls
+                             if method != "GET" and endpoint != "graphql"]
+                self.assertEqual(sum(method == "PATCH" for method, _, _ in mutations), 1)
+                self.assertFalse(any("/cancel" in endpoint or "/dispatches" in endpoint
+                                     for _, endpoint, _ in mutations))
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                parsed = ScriptedClient()
+                _add_snapshot(parsed, runs)
+                inventory = pr_metadata.list_candidate_runs(parsed, state)
+                with self.assertRaisesRegex(pr_metadata.MetadataEditError, "no exact-head full Build"):
+                    pr_metadata._current_full_authorization(inventory)
+
+    def test_pre_full_preparation_requires_complete_positive_candidate_run_inventory(self):
+        client = ScriptedClient()
+        _add_snapshot(client, [_review_first_run()])
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        run = pr_metadata.list_candidate_runs(client, state)[0]
+        self.assertTrue(pr_metadata._pre_full_preparation((run,)))
+        self.assertFalse(pr_metadata._pre_full_preparation(()))
+        for changes in (
+            {"binding": "unbound"}, {"binding": "explicit-other"},
+            {"candidate_binding": None}, {"candidate_base_ref": None},
+            {"status": "in_progress"}, {"mode": "full"}, {"mode": "active-full"},
+            {"mode": "active-review-first"}, {"mode": "metadata-only"}, {"mode": "unknown"},
+        ):
+            with self.subTest(changes=changes):
+                changed = replace(run, **changes)
+                self.assertFalse(pr_metadata._pre_full_preparation((changed,)))
+                if changed.binding != "explicit-other" and changed.mode != "metadata-only":
+                    self.assertFalse(pr_metadata._pre_full_preparation((run, changed)))
+
+    def test_pre_full_preparation_defers_a_new_full_at_the_second_snapshot(self):
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [_review_first_run()])
+        _add_snapshot(client, [_run(202, 11, mode="full", active=True), _review_first_run()])
+        decision = pr_metadata.edit_metadata(
+            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=None, body="Correct parent",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+        self.assertEqual(decision.run_id, 202)
+        self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+
+    def test_essential_pre_full_preparation_cannot_switch_to_refreshed_full_authority(self):
+        for mode, active in (("full", True), ("full", False), ("metadata-only", False)):
+            with self.subTest(mode=mode, active=active):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [_review_first_run()])
+                refreshed = [_run(202, 11, mode=mode, active=active), _review_first_run()]
+                _add_snapshot(client, refreshed)
+                _add_edit_transaction(client, refreshed, body="Correct parent")
+                client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                           _pr(body="Correct parent", updated_at="2026-09-04T00:00:05Z"))
+                decision = pr_metadata.edit_metadata(
+                    client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                    head_sha=HEAD, base_sha=BASE, title=None, body="Correct parent",
+                    essential_reason="Correct actual parent before full Build",
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertFalse(decision.mutated)
+                self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+
+    def test_pre_full_prepared_pair_no_op_retains_full_reconciliation_hold(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [_bound_metadata_run(), _review_first_run()], copies=2)
+        _add_metadata_versions(client, (_pr(), confirmation.metadata_version))
+        client.add_stable_comment_pages(
+            "GET", _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
+            [_intent_comment(receipt), _confirmation_comment(confirmation)],
+        )
+        decision = pr_metadata.edit_metadata(
+            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title="Stable title", body="Stable body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "no-op")
+        self.assertFalse(decision.mutated)
+        self.assertEqual((decision.intent_comment_id, decision.confirmation_comment_id), (401, 402))
+        self.assertIn("full Build and reconciliation remain required", decision.reason)
+        self.assertFalse(any(method != "GET" and endpoint != "graphql"
+                             for method, endpoint, _ in client.calls))
+
+    def test_initially_active_review_first_never_grants_essential_full_permission(self):
+        for marker in (False, True):
+            for active_job in (None, "build", "host-tests", "summary"):
+                for reason in (None, "Correct parent before full Build"):
+                    with self.subTest(marker=marker, active_job=active_job, reason=reason):
+                        running = _review_first_run()
+                        running[0].update(status="in_progress", conclusion=None)
+                        if not marker:
+                            next(job for job in running[1]
+                                 if job["name"] == "review-first-classifier")["steps"] = []
+                        if active_job is not None:
+                            job = next(job for job in running[1] if job["name"] == active_job)
+                            job.update(_job(active_job, job_id=job["id"], run_id=101,
+                                            status="in_progress", conclusion=None))
+                        client = ScriptedClient()
+                        _add_pr_states(client, _pr(), _pr())
+                        _add_snapshot(client, [running], copies=2)
+                        _add_edit_transaction(client, [running], body="Correct parent")
+                        client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                                   _pr(body="Correct parent", updated_at="2026-09-04T00:00:05Z"))
+                        arguments = dict(repository=REPOSITORY, pr_number=PR_NUMBER,
+                                         head_sha=HEAD, base_sha=BASE, title=None,
+                                         body="Correct parent", essential_reason=reason)
+                        if reason is not None:
+                            with self.assertRaisesRegex(pr_metadata.MetadataEditError, "no exact-head full Build"):
+                                unexpected = pr_metadata.edit_metadata(client, **arguments)
+                                self.assertEqual(unexpected.action, "updated")
+                                self.assertTrue(unexpected.mutated)
+                                self.assertEqual(sum(method == "PATCH" for method, _, _ in client.calls), 1)
+                        else:
+                            decision = pr_metadata.edit_metadata(client, **arguments)
+                            self.assertEqual(decision.action, "deferred")
+                            self.assertFalse(decision.mutated)
+                        self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+
+    def test_pre_full_preparation_rejects_active_jobs_at_every_snapshot(self):
+        self._assert_preparation_active_job_races(None)
+
+    def test_essential_pre_full_preparation_rejects_active_jobs_at_every_snapshot(self):
+        self._assert_preparation_active_job_races("Correct parent before full Build")
+
+    def _assert_preparation_active_job_races(self, reason):
+        for snapshot in range(3):
+            for name in ("build", "host-tests", "summary"):
+                with self.subTest(snapshot=snapshot, job=name):
+                    client = ScriptedClient()
+                    _add_pr_states(client, _pr(), _pr())
+                    invalid = _review_first_run()
+                    job = next(job for job in invalid[1] if job["name"] == name)
+                    job.update(_job(
+                        name, job_id=job["id"], run_id=101,
+                        status="in_progress", conclusion=None,
+                    ))
+                    for index in range(min(snapshot + 1, 2)):
+                        _add_snapshot(client, [invalid if index == snapshot else _review_first_run()])
+                    if snapshot == 2:
+                        _add_edit_transaction(client, [invalid], body="Correct parent")
+                        def abort_response(*, body, **_kwargs):
+                            return _comment(403, body["body"], created_at="2026-09-04T00:00:04Z",
+                                            updated_at="2026-09-04T00:00:04Z")
+                        client.routes[("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))][1] = abort_response
+                    arguments = dict(repository=REPOSITORY, pr_number=PR_NUMBER,
+                                     head_sha=HEAD, base_sha=BASE, title=None,
+                                     body="Correct parent", essential_reason=reason)
+                    if snapshot == 0 and reason is not None:
+                        with self.assertRaisesRegex(pr_metadata.MetadataEditError, "no exact-head full Build"):
+                            pr_metadata.edit_metadata(client, **arguments)
+                        self.assertFalse(any(method != "GET" for method, _, _ in client.calls))
+                        continue
+                    decision = pr_metadata.edit_metadata(client, **arguments)
+                    self.assertIn(decision.action, {"refused", "deferred"})
+                    self.assertEqual(decision.mutated, snapshot == 2)
+                    if snapshot == 2:
+                        self.assertEqual(decision.abort_comment_id, 403)
+                    self.assertFalse(any(method == "PATCH" for method, _, _ in client.calls))
+
+    def test_pre_full_metadata_binding_is_parsed_and_required(self):
+        for mutation in ("missing", "wrong-pr", "wrong-base", "wrong-ref"):
+            with self.subTest(mutation=mutation):
+                from scripts.workflow_pilot.adaptive_gate import binding_name
+                metadata = _bound_metadata_run()
+                step = next(job for job in metadata[1] if job["name"] == "metadata-classifier")["steps"]
+                if mutation == "missing":
+                    step.pop()
+                else:
+                    step[-1]["name"] = binding_name(
+                        PR_NUMBER + 1 if mutation == "wrong-pr" else PR_NUMBER, HEAD,
+                        "f" * 40 if mutation == "wrong-base" else BASE,
+                        "other" if mutation == "wrong-ref" else "master",
+                    )
+                client = ScriptedClient()
+                _add_snapshot(client, [metadata])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                if mutation == "wrong-pr":
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata.list_candidate_runs(client, state)
+                else:
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertFalse(pr_metadata._pre_full_preparation(runs))
+                    if mutation != "missing":
+                        self.assertIsNotNone(runs[0].candidate_binding)
 
     def test_provided_and_changed_fields_drive_exact_patch_and_versions(self):
         cases = (

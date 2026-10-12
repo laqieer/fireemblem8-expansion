@@ -1196,6 +1196,50 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-SCRIPT-EXTRACTION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_ci_entrypoints "
+                            "tests.upstream_port.test_drift_workflow -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract "
+                            "tests.upstream_port.test_verify.VerifyCliCwdTests."
+                            "test_missing_symlinked_or_oversized_archival_helper_refuses -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component "
+                            "tests.upstream_port.test_verify.VerifyCliCwdTests."
+                            "test_helper_parser_preserves_actual_bash_line_boundaries -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence "
+                            "tests.workflows.test_ci_entrypoints.CiEntrypointTests."
+                            "test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence "
+                            "tests.workflows.test_ci_entrypoints.CiEntrypointTests."
+                            "test_concatenated_pin_test_argument_stops_before_compiler_execution -v",
+                            "actionlint .github/workflows/build.yml "
+                            ".github/workflows/upstream-port-drift.yml",
+                        },
+                    },
+                    "TC-WORKFLOW-GATE-OWNERSHIP-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.artifact_guard_tests."
+                            "test_artifact_guard.TestImmutability -v",
+                            "python3 -m unittest discover -s scripts/artifact_guard_tests "
+                            "-p 'test_*.py' -v",
+                            "python3 scripts/artifact_guard.py --revision HEAD",
+                        },
+                    },
+                    "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -B -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_adaptive_gate.SecurityTests -v",
+                        },
+                    },
                     "TC-WORKFLOW-METADATA-EDIT-RACE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

@@ -36,6 +36,7 @@ the authoritative technical documentation and are checked by CI.
 | Build or verify the patch-only maximal profile artifact | [`patch_release.md`](patch_release.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
+| Configure engineering-skill issue tracking, triage, and domain docs | [`../AGENTS.md`](../AGENTS.md) |
 | Reproduce the workflow-efficiency baseline, event selection, or bounded exact-SHA handoffs | [`workflow-pilot.md`](workflow-pilot.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
 | Come from the old decomp-base/agbcc workflow | [`migration-from-decomp.md`](migration-from-decomp.md) |
@@ -129,6 +130,10 @@ and
 
 | Document | Status | Scope |
 | --- | --- | --- |
+| [`../AGENTS.md`](../AGENTS.md) | Current | Repository governance and engineering-skill configuration pointers |
+| [`agents/issue-tracker.md`](agents/issue-tracker.md) | Current | GitHub issue tracker, ticket operations, and Wayfinder conventions |
+| [`agents/triage-labels.md`](agents/triage-labels.md) | Current | Default engineering-skill triage roles and GitHub label mapping |
+| [`agents/domain.md`](agents/domain.md) | Current | Single-context domain-document consumer rules and configuration maintenance |
 | [`quickstart.md`](quickstart.md) | Current | One-command setup, modern default + archival `--legacy` path |
 | [`framework-support.md`](framework-support.md) | Current | Supported hosts/toolchains/targets/outputs |
 | [`architecture.md`](architecture.md) | Current | Concise architecture map + later integration slots |

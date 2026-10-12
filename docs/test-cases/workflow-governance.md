@@ -4,6 +4,276 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-SCRIPT-EXTRACTION-001: Preserve post-checkout program effects
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #196](https://github.com/laqieer/fireemblem8-expansion/issues/196).
+- **Supported configuration or artifact:** clean Linux source checkout with
+  Python 3, Bash, Git and actionlint. Host fixtures need no ROM, credentials,
+  network fetch or ARM compiler. The real final publisher is tested by the
+  existing automatic exact-master Build.
+- **Prerequisites and clean starting state:** run from the repository root.
+  Fixtures own temporary repositories, report paths, compiler-driver stand-ins
+  and dependency directories; do not run the CI installer on a normal host
+  without its documented CI environment.
+
+### Actions
+
+1. Execute the actual helpers against their controlled external boundaries:
+
+   ```bash
+   python3 -m unittest tests.workflows.test_ci_entrypoints tests.upstream_port.test_drift_workflow -v
+   ```
+
+   Require real remote-add/repeat/mismatch behavior; freshly fetched-ref
+   drift/scan argv, report bytes and status preservation; missing-state refusal;
+   and both compiler pins/build/install destinations. Failed fetch and wrong
+   revision must stop before compiler execution. The existing real synthetic
+   Git replay still proves drift after fetch without changing HEAD or state.
+2. Exercise the actual parsed workflow and helper-owner closure:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v
+   ```
+
+   The same eight jobs and 31 validation commands remain. Harmless helper
+   comments preserve equivalence; replacing its body with a no-op fails.
+   Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
+   refuse. Replay the line-boundary controls:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component tests.upstream_port.test_verify.VerifyCliCwdTests.test_helper_parser_preserves_actual_bash_line_boundaries -v
+   ```
+
+   CRLF and other separator-only rewrites cannot compare equal to the reviewed
+   LF helper; actual CRLF Bash execution fails. Ordinary and Unicode comments
+   remain neutral data.
+   Raw helper tokens also retain quoting. Check variable-bearing paths,
+   compiler pins, install destinations and command substitution:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v
+   ```
+
+   Removing or changing those quotes must refuse target equivalence. The actual
+   unquoted-runner-path mutation cannot preserve installation with spaces.
+   Also retain argument adjacency, not just quote marks:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_concatenated_pin_test_argument_stops_before_compiler_execution -v
+   ```
+
+   Concatenating the first pin-test word with `=` or a quoted second-compiler
+   directory with `remote`, `fetch` or `checkout` refuses equivalence. The actual
+   pin-test mutation fails before compiler execution; extra ordinary word
+   spacing remains neutral.
+3. Validate the actual workflow input format:
+
+   ```bash
+   actionlint .github/workflows/build.yml .github/workflows/upstream-port-drift.yml
+   ```
+
+   Permissions, exact checkouts, no-checkout authority adapters, artifacts and
+   the existing master-only publisher remain intact. Only the three selected
+   post-checkout program invocations move.
+4. After candidate gates and merge, inspect the automatic Build for that exact
+   master SHA. Both **Create and verify patch artifact** and **Upload patch-only
+   artifact** must actually succeed, not be skipped. Require the patch-only BPS
+   artifact bound to that SHA and `make remote-completion-check`.
+
+### Expected result
+
+The extracted helpers preserve their original observable inputs, effects,
+outputs, failure cutoffs and authoritative signals. Controlled CLI/dependency
+boundaries do not claim a real compiler installation or live upstream scan;
+existing real CLI replay and comprehensive Build supply those separate checks.
+The verifier binds the target helper body as well as its invocation.
+The actual exact-master build-once publisher packages and uploads the patch.
+
+### Negative control
+
+Remote URL mismatch remains unchanged and refuses; missing state publishes
+error signal 3; drift 2 plus scan failure still writes diagnostics before the
+job applies the original signal. Failed compiler fetch and wrong pin do not
+reach build/install. A changed/no-op, absent, symlinked or oversized helper
+cannot pass local command equivalence. A candidate or skipped publisher is not
+master publication evidence.
+
+### Interactions and save compatibility
+
+Dependencies: delivered workflow/publisher, upstream CLI/constants and parsed
+verifier. Conflicts: shared helper invocation changes require normal master
+refresh for open heads that lack them; unaffected immutable CI is retained.
+No #180/global/native/SDK prerequisite or new platform/gate. No ROM/RAM, save,
+configuration identity, generated game data, localization, default modern
+debug/release, archival payload or fingerprint change.
+
+### Automation
+
+The named host suites execute real helper programs and parsed owner/consumer
+contracts; actionlint checks workflow syntax. Automatic exact-master Build
+proves the real patch publisher. All assertions are deterministic; no subjective
+manual criterion or human approval is required.
+
+### Cleanup and limitations
+
+Fixtures remove only their own temporary paths. Never delete, unlock or force
+remove unrelated delivery workspaces. The legacy installer is CI-only and
+retains its existing owned dependency paths; it is not part of bare modern
+`make` or quickstart. Raw pre-checkout identity/bootstrap and closed no-checkout
+adapters are intentionally not extracted. Rollback is an ordinary PR revert,
+not restoration of a separate publisher or execution platform.
+
+## TC-WORKFLOW-GATE-OWNERSHIP-001: Retain broad validation after a bounded shadow pilot
+
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #180](https://github.com/laqieer/fireemblem8-expansion/issues/180).
+- **Supported configuration or artifact:** clean Linux host source checkout
+  with Python 3 and Git. No ROM, save, ARM toolchain or credentials are needed.
+- **Prerequisites and clean starting state:** run from the source root.
+  The historical experiment used commit
+  `3ae133fc2176e9671bc95d1f8336a6073996ae7c`; its artifact-guard producer and
+  consumer were unchanged from `c30227bc1fecfee39cf1f454b22d457fcfb3e2b1`.
+  New source versions are not silently qualified by that result.
+
+### Actions
+
+1. Exercise the real immutable-input criterion and existing broad owner:
+
+   ```bash
+   python3 -m unittest scripts.artifact_guard_tests.test_artifact_guard.TestImmutability -v
+   python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v
+   python3 scripts/artifact_guard.py --revision HEAD
+   ```
+
+   The criterion commits safe bytes, replaces only the worktree bytes with
+   an ELF signature, and invokes both the production revision and index CLI
+   routes. Both must still report the safe immutable Git bytes.
+2. Read the historical [component observations](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6128232738)
+   and [corrected per-scenario execution records](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
+   as evidence artifacts only. **Do not execute code copied from their mutable
+   comment bodies.** Python import isolation and removing two token variables
+   do not provide credential or filesystem isolation. No supported prototype
+   executable is installed or required by this source-build procedure.
+3. Compare the recorded real child observations, assertion results and
+   separately specified expectation table. The corrected experiment actually
+   executed the broad owner and revision CLI for every scenario; older assigned
+   route strings alone are not that evidence. A proposed owner for one criterion
+   does not prove complete ownership of the changed producer file.
+4. Inspect the recorded disconnected-consumer and wrong-input controls.
+   A constant successful result left the assertion green but supplied no
+   production-consumer observations; reading the mutated worktree bytes caused
+   an actual assertion failure. These are historical experiment observations,
+   not controls injected into a tester's normal checkout.
+5. For any future separately accepted experiment, measure broad and focused
+   elapsed time, actual intermediate time avoided,
+   setup, maintenance, review and coordination costs separately. Unknown
+   costs are not zero. Do not expand or deploy narrowing without demonstrated
+   bounded safety and positive net value.
+
+### Expected result
+
+The historical real criterion passed, its wrong-input control failed, and the
+disconnected consumer lacked ownership observations despite a green assertion.
+All nine shadow expectation scenarios retained the **actual broad route**.
+The three broad runs each executed 15 tests. Median broad/focused times were
+4.010/0.169 seconds; the 3.841-second difference was only potential savings.
+Actual validation avoided: zero. Complete file ownership and positive net value
+were not established, so the existing broad route remains the supported result.
+
+### Negative control
+
+The wrong-input mutation produces an actual assertion failure. The disconnected
+consumer demonstrates why a test success label alone cannot prove ownership.
+Do not interpret either as a deployed safety incident or qualify the deferred
+global graph from these bounded observations.
+
+### Interactions and save compatibility
+
+Dependencies: existing artifact-guard CLI, Git fixtures and case catalog.
+Conflicts: none while the prototype remains shadow-only. Scheduling under
+#181 is independent; native/global ownership and deferred #270/#275/#287 are
+not prerequisites. No ROM/RAM, save, configuration identity, generated game
+data, localization, modern debug/release or archival behavior changes.
+All final delivery gates remain mandatory.
+
+### Automation
+
+The existing `TestImmutability` and artifact-guard suite automate every current
+production assertion in this procedure. The linked records preserve the finite
+experiment's native observations, negative controls, expectation table and
+timing; they are not executable authority or a permanent CI gate.
+The existing parsed Build/local-command mirror retains the broad suite.
+No subjective manual criterion applies.
+
+### Cleanup and limitations
+
+The corrected prototype owns and removes its temporary fixtures. Preserve
+unattributed historical fixtures rather than deleting them by a shared prefix.
+The supported source-build procedure requires no downloaded scratch executable.
+Remove only your own reports after retaining required evidence.
+Python call observations are operational diagnostics, not hostile-same-UID
+isolation, complete source ownership or a general observation platform.
+Historical measurements are not promises about future versions or runners.
+Rollback of this disposition is an ordinary revert; it never removes the
+existing broader checks.
+
+## TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001: Ignore unrelated check lifecycle
+
+Originating bug: [#281](https://github.com/laqieer/fireemblem8-expansion/issues/281).
+Supported profile: Linux/Python source checkout with the existing host-test
+dependencies. No ROM, save, emulator, credentials or live workflow mutation is
+needed; fixtures require no reset or filesystem cleanup.
+
+### Actions
+
+1. Run `python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v`.
+2. Supply coherent successful exact-head CodeQL and GitGuardian records.
+   Append unrelated skipped Build jobs with completion one second before
+   start, malformed active/completion timestamps and unknown lifecycle values.
+   The returned named security records must be identical; unrelated records
+   alone must return no security evidence.
+3. Apply malformed chronology/completion/status, wrong head/app, duplicate
+   identity or invalid ID to the required named checks. Every invalid required
+   check must explicitly refuse. Missing named checks remain missing, never
+   become synthetic success.
+4. Corrupt the response envelope, unrelated app/ID/head or duplicate ID.
+   Envelope refusal remains intact; name selection does not bypass complete
+   pagination, identity or SHA checks.
+
+### Expected result
+
+Unrelated lifecycle leaves the two named security records unchanged and cannot
+supply a missing check. Required check lifecycle, app/head identity, uniqueness,
+response counts and pagination retain their explicit refusals.
+
+### Negative control
+
+The pre-fix collector refuses unrelated reversed skipped-job chronology before
+selecting security names. The focused regression must fail under that original
+operation.
+
+### Interactions and save compatibility
+
+Dependencies: existing exact-head
+security and counted GitHub response collector. Dependent: #279/#280 delivery.
+Conflicts: none. ROM/RAM/save/generated-game-data/locale/default and archival
+impact: none.
+
+### Automation
+
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v`
+executes all positive and adversarial parser assertions above. No subjective
+manual criterion applies.
+
+### Cleanup and limitations
+
+Fixtures are in-memory and require no filesystem reset. Fixture timestamps are
+not changed live GitHub data. This does not tolerate malformed *required*
+security timing, synthesize missing evidence, or replace actual named security
+checks and full candidate/master Build evidence.
+
 ## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -2946,7 +3216,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #199](https://github.com/laqieer/fireemblem8-expansion/issues/199);
   queued-run chronology regression
-  [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277).
+  [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277);
+  pre-full preparation regression
+  [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283).
 - **Supported configuration or artifact:** clean source checkout with Python
   3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
   token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
@@ -2961,6 +3233,38 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   required.
 
 ### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests -v`.
+   This directly owning class covers every preparation selector listed in the
+   catalog and the unchanged transaction, recovery and full-authority controls.
+   Start with a complete positively bound review-first preflight and no full
+   Build. Correct the body through the existing helper, with and without an
+   essential reason. Require exactly one metadata PATCH and the existing
+   immutable intent/confirmation pair, preserve both returned comment IDs,
+   and require the result to leave full Build and reconciliation pending.
+   The pre-fix negative refuses before changing metadata despite the complete
+   safe preflight inventory. Empty, unbound, unrelated-only, unknown, missing
+   candidate/base binding, active or full inventories cannot authorize
+   preparation. No cancellation, full dispatch or full-success credit occurs.
+   Repeat with a completed metadata-only run whose existing classifier emits
+   the candidate binding; verify subsequent correction and authoritative-pair
+   no-op preserve the full/reconciliation hold. Remove or contradict its marker
+   and require fail-closed identity handling. Set a build, host or summary job
+   active inside a completed preflight at each of the three snapshots: no
+   metadata PATCH occurs, and the post-intent race retains the existing
+   append-only abort rather than hiding actual comment mutation.
+   Repeat the live-job races with an essential reason. Introduce an active or
+   completed full run or an unbound metadata run at the second snapshot of an
+   initially authorized essential preparation. Require deferral without any
+   write: a changed inventory cannot silently switch authorization modes.
+   Start with an actually running preflight, with and without a successful
+   candidate marker and active build/host/summary jobs or terminal child jobs.
+   Both default and essential edits must stop without any write; a workflow's
+   active status cannot be used as essential-full permission. Retain the
+   separate initially active-full/unproven path's existing positive controls.
+   Existing active-run, version/identity drift, transaction/abort/recovery
+   controls and final candidate/master gates remain required.
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_accepts_optional_ordered_start_without_full_evidence scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_rejects_invalid_chronology_and_conclusion -v`.

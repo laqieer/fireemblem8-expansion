@@ -519,7 +519,9 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
         "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180",
         "https://github.com/laqieer/fireemblem8-expansion/issues/181",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/196",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
         "https://github.com/laqieer/fireemblem8-expansion/issues/225",
@@ -549,6 +551,8 @@
         "TC-WORKFLOW-BODY-EDIT-001",
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-GATE-OWNERSHIP-001",
+        "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-PROBE-NATIVE-EVENT-ORDER-001",
@@ -561,6 +565,7 @@
         "TC-WORKFLOW-REVIEW-FAMILY-001",
         "TC-WORKFLOW-REVIEW-PATHS-001",
         "TC-WORKFLOW-REVIEW-FIRST-001",
+        "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
@@ -2554,6 +2559,30 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
+      "title": "Ignore unrelated check lifecycle",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/281"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-security-check-isolation-001-ignore-unrelated-check-lifecycle",
+      "profiles": ["Linux host Python source checkout"],
+      "purpose": "Keep unrelated Build lifecycle outside required exact security evidence while preserving all named-check validation.",
+      "prerequisites": "Existing host-test dependencies; no ROM, save, credentials or live mutation.",
+      "actions": "Run focused SecurityTests. Compare required named results with and without unrelated reversed skipped-job and malformed lifecycle records, then corrupt required check lifecycle, identity and response envelope.",
+      "expected_result": "Unrelated lifecycle leaves named results identical and cannot supply missing security checks; every invalid required check or envelope explicitly refuses.",
+      "negative_control": "Exact pre-fix collector refuses reversed unrelated skipped-job chronology before selecting security names.",
+      "interactions": "Existing exact-head security and counted GitHub response collector; dependent #279/#280; no conflicts.",
+      "save_compatibility": "No ROM/RAM/save, generated game data, locale, profile/default or archival change.",
+      "cleanup": "In-memory fixtures only; no filesystem reset needed.",
+      "limitations": "Parser fixtures do not represent successful candidate or master Build evidence and do not normalize live timestamps.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.SecurityTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-REVIEW-FIRST-001",
       "title": "Gate expensive Builds after accepted review",
       "feature_id": "workflow-governance",
@@ -2662,6 +2691,82 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
+      "title": "Preserve post-checkout program effects",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/196"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-script-extraction-001-preserve-post-checkout-program-effects",
+      "profiles": ["Clean Linux source checkout with Python 3, Bash, Git and actionlint; automatic exact-master Build for real patch publication"],
+      "purpose": "Preserve selected post-checkout workflow program effects, parsed helper ownership and actual build-once master publication without changing trust boundaries or gates.",
+      "prerequisites": "Source root; exclusively owned host fixtures. No host credential, ROM, network fetch or ARM compiler for fixture tests; real publication uses the existing CI environment.",
+      "actions": "Run actual helper and drift suites, parsed mirror/helper-drift tests and actionlint. Compare remote identity/refusal, fresh-ref/report/status preservation and compiler pins/destinations/failure cutoffs. After merge require real exact-master patch creation/upload and remote completion.",
+      "expected_result": "All helper effects and failure behavior agree with the original programs; eight jobs and 31 commands remain. Parsed target helper bodies bind to the reviewed source. Actual exact-master Build publishes the SHA-bound patch-only BPS artifact.",
+      "negative_control": "Wrong remote URL remains unchanged and refuses; missing state signals 3; drift/failed scan preserve reports. Failed fetch/wrong pin stop before compiler execution. No-op, missing, final/parent-symlinked or oversized helper refuses equivalence. CRLF and other non-LF separators cannot normalize away behavior drift; real CRLF Bash execution fails, while ordinary/Unicode comments remain neutral. Removing/changing variable, path, pin, destination or command-substitution quotes refuses equivalence; actual unquoted runner paths fail with spaces. Concatenating quoted pin-test/directory words with following arguments refuses; actual pin-test mutation stops before compilation, ordinary word spacing stays neutral. Candidate or skipped publisher cannot supply master publication proof.",
+      "interactions": "Delivered workflow/publisher, upstream CLI/constants and parsed verifier only. Real shared-helper changes require normal refresh of affected open heads, not cancellation of unaffected immutable runs. No global ownership/SDK prerequisite or new gate/platform.",
+      "save_compatibility": "No ROM/RAM/save/configuration identity/generated game data/localization/default modern debug-release/archival payload/fingerprint change.",
+      "cleanup": "Host fixtures remove their own temporary paths; preserve unrelated locked/active delivery workspaces. Never run CI dependency cleanup outside its owned environment.",
+      "limitations": "Controlled external CLI/dependency inputs do not claim real compiler installation or live upstream scan. Raw pre-checkout/bootstrap and closed no-checkout adapters remain at their existing authority boundary.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_ci_entrypoints tests.upstream_port.test_drift_workflow -v",
+          "evidence": "tests/workflows/test_ci_entrypoints.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component tests.upstream_port.test_verify.VerifyCliCwdTests.test_helper_parser_preserves_actual_bash_line_boundaries -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_concatenated_pin_test_argument_stops_before_compiler_execution -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "actionlint .github/workflows/build.yml .github/workflows/upstream-port-drift.yml",
+          "evidence": ".github/workflows/build.yml"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+      "title": "Retain broad validation after a bounded shadow pilot",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/180"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-gate-ownership-001-retain-broad-validation-after-a-bounded-shadow-pilot",
+      "profiles": ["Clean Linux host source checkout with Python 3 and Git"],
+      "purpose": "Observe one artifact-guard immutable-input criterion and retain existing broad validation when complete ownership or positive net value is unproved.",
+      "prerequisites": "Clean source checkout; no credentials, ROM, save or new dependency. Historical source and experiment are explicitly identified in the procedure.",
+      "actions": "Run the repository's real TestImmutability criterion, existing broad suite and revision check. Read the historical component and corrected per-scenario records as evidence only; compare recorded real child observations, disconnected-consumer and wrong-input controls, nine shadow expectations and measured costs. Do not execute mutable issue-comment prototype code.",
+      "expected_result": "Real immutable revision/index inputs pass and wrong worktree inputs fail. A disconnected green assertion lacks ownership observations. All actual routes remain broad; 3.841 seconds of historical potential savings is not actual validation avoided or proven net value.",
+      "negative_control": "Wrong-input mutation fails the actual criterion; disconnected-consumer success cannot qualify ownership. Empty, unknown, ambiguous, stale, incomplete and unsupported evidence retains the existing broad route.",
+      "interactions": "Existing artifact guard and case catalog only; #181 scheduling is independent. No global/native ownership, SDK or deferred #270/#275/#287 prerequisite. No workflow selector or permanent new gate is installed.",
+      "save_compatibility": "No ROM/RAM, save, configuration identity, generated game data, localization, modern debug/release or archival change.",
+      "cleanup": "The historical corrected experiment removed its owned fixtures. This source-build procedure requires no downloaded executable; remove only your own reports and retain unattributed historical fixtures.",
+      "limitations": "One criterion does not prove full-file ownership. Maintenance/review/coordination costs and positive net value remain unproved. Comment records are historical evidence, not executable authority. Runtime observations are diagnostics, not authenticated proof or hostile-same-UID isolation.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.artifact_guard_tests.test_artifact_guard.TestImmutability -v",
+          "evidence": "scripts/artifact_guard_tests/test_artifact_guard.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v",
+          "evidence": "scripts/artifact_guard_tests/test_artifact_guard.py"
+        },
+        {
+          "command": "python3 scripts/artifact_guard.py --revision HEAD",
+          "evidence": "scripts/artifact_guard.py"
         }
       ]
     },
@@ -2931,23 +3036,32 @@
       "feature_id": "workflow-governance",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/277"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/277",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/283"
       ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-metadata-edit-race-001-defer-metadata-edits-and-reconcile-continuity",
       "profiles": [
         "Clean source checkout with Python 3 and synthetic GitHub PR/run/job/comment authority"
       ],
-      "purpose": "Prevent title/body-only edits from racing an active exact-head full Build while retaining an explicit essential correction and lightweight reconciliation path. Require run-emitted immutable event-transition evidence rather than a watermark guess for edit attribution.",
+      "purpose": "Prevent title/body-only edits from racing an active exact-head full Build while retaining an explicit essential correction and lightweight reconciliation path. Permit review-first/no-full metadata preparation from a complete positively bound terminal preflight, including authoritative-pair no-op without full-success credit. Require run-emitted immutable event-transition evidence rather than a watermark guess for edit attribution.",
       "prerequisites": "Start at the repository root with the isolated pr-metadata helper, existing Build classifier/continuity contracts, workflow guidance, and registry unchanged; no token, live PR, ROM, emulator, or ARM runtime is required.",
-      "actions": "Run helper/documentation and isolated-launcher suites; build the linked transaction graph and exercise confirmation/abort ordering independently. Accept equal-second higher-ID terminal edges; reject later-time equal/lower IDs and earlier-time higher IDs. Preserve equal-second aborted-predecessor/successor recovery, active ambiguity, duplicate/conflicting terminal, GraphQL, selector, and history controls. Observe a concurrent confirmation/abort before active-intent drift and preserve its terminal. Mutate every canonical-comment response author field. Run the read-only metadata-history probe against open and closed PR fixtures, and reject closed fixtures in every mutation mode. Return actual HTTP 422/nonzero gh rejection, refresh complete authority, abort, then correct values and retry. Preserve the watermark while changing run membership, attempts, bindings, status/conclusion, timestamps or jobs, including active essential-run progress; introduce newer or same-second ambiguous active intents. Compare post-rejection holds with unchanged rejection recovery, terminal precedence despite run drift, and pre-PATCH actual-observation aborts. Contrast timeout/network/server/invalid-envelope outcomes and their pre-state hold versus applied-target recovery through real functions and the isolated CLI. Exercise first body edits from empty/nonempty content with original-snapshot materialization (0-to-2), subsequent 2-to-3 edits, confirmation/reconciliation and applied-target recovery. Inject two real edits, forged original content/identity/timing, deleted or malformed history, and same-second ambiguous authorship.",
-      "expected_result": "Every confirmation and abort links to an exact intent ID/nonce/candidate and independently satisfies terminal createdAt >= intent createdAt plus terminal comment ID > intent comment ID. Neither invariant compensates for the other. Terminal intents are excluded before active selection; historical closed records remain validated. Terminal observations defer without conflicting writes. Every canonical-comment author field, including site-admin status, remains bound. Open and closed live fixtures return validated metadata history, while edit/reconcile/evidence-comment modes still require an open PR. A definite rejected PATCH creates one immutable patch-rejected abort only after fresh run/comment and same-response metadata authority checks; corrected values then use a new ordered intent. The fourth run/job snapshot must equal the complete pre-PATCH snapshot and selected active-intent authority must remain unique and latest; watermark survival alone is insufficient. Changed valid authority holds without a new terminal, but observed terminals retain precedence and unchanged essential active runs still allow definite-rejection recovery. Ambiguous pre-state stays deferred without duplicate PATCH or abort; exact applied-target authority can recover confirmation. Only a first edit may advance by two, with a distinct original node bound to PR creation/author, canonical pre-body digest, and shared immutable materialization timestamps. Subsequent edits require exactly plus one; latest owner/body authority and the serialized original proof remain confirmation-bound.",
-      "negative_control": "Accepting a later timestamp with equal/lower terminal ID, accepting a higher ID with predating timestamp, rejecting equal-second higher-ID edges, selecting before terminal linkage, conflicting terminals, duplicate edges, or nonce resurrection fails closed without unintended PATCH, wrong reconciliation, comment mutation, cancellation, or full dispatch. Mutated comment author identity, unknown PR state, and closed-PR mutation authority also reject. Before the fix, an observed confirmation caused an abort, a site-admin response was accepted, and closing the live fixture made the history probe fail. The rejected-PATCH control lost structured HTTP status and permanently blocked corrected values, while unmatched pre-state retried PATCH. The later drift control incorrectly created patch-rejected aborts for valid changed run/job snapshots preserving the watermark and for newer or same-second ambiguous active intents. These must hold without disabling unchanged rejection recovery or pre-PATCH final-observation aborts. Diagnostic-only rejection evidence, cached abort observations, unsafe ambiguous retries and intent-only no-op authority must fail. The pre-fix first-edit check incorrectly requires 0-to-1 and rejects GitHub's original-plus-edited 0-to-2 history. A broad count allowlist without original-snapshot proof must fail the forged-initial and multiple-edit controls; missing/deleted/malformed proof and unprovable same-second order must never confirm.",
+      "actions": "Run helper/documentation and isolated-launcher suites; build the linked transaction graph and exercise confirmation/abort ordering independently. Start with a complete positively bound terminal review-first preflight and no full Build; correct metadata with and without an essential reason, then repeat the authoritative-pair no-op. Require exactly one PATCH and the existing intent/confirmation pair for a change, zero writes for no-op, and a retained full/reconciliation hold in both cases. Vary empty, unbound, unrelated-only, active, full and changed run inventories at every snapshot; do not switch preparation to refreshed full authority. Accept equal-second higher-ID terminal edges; reject later-time equal/lower IDs and earlier-time higher IDs. Preserve equal-second aborted-predecessor/successor recovery, active ambiguity, duplicate/conflicting terminal, GraphQL, selector, and history controls. Observe a concurrent confirmation/abort before active-intent drift and preserve its terminal. Mutate every canonical-comment response author field. Run the read-only metadata-history probe against open and closed PR fixtures, and reject closed fixtures in every mutation mode. Return actual HTTP 422/nonzero gh rejection, refresh complete authority, abort, then correct values and retry. Preserve the watermark while changing run membership, attempts, bindings, status/conclusion, timestamps or jobs, including active essential-run progress; introduce newer or same-second ambiguous active intents. Compare post-rejection holds with unchanged rejection recovery, terminal precedence despite run drift, and pre-PATCH actual-observation aborts. Contrast timeout/network/server/invalid-envelope outcomes and their pre-state hold versus applied-target recovery through real functions and the isolated CLI. Exercise first body edits from empty/nonempty content with original-snapshot materialization (0-to-2), subsequent 2-to-3 edits, confirmation/reconciliation and applied-target recovery. Inject two real edits, forged original content/identity/timing, deleted or malformed history, and same-second ambiguous authorship.",
+      "expected_result": "Complete terminal review-first/no-full authority permits metadata preparation through the unchanged intent/confirmation transaction. Authoritative-pair no-op performs zero writes. Both retain the full/reconciliation hold: preflight is not full Build, reconciliation or merge evidence, and neither path cancels or dispatches a workflow. Every confirmation and abort links to an exact intent ID/nonce/candidate and independently satisfies terminal createdAt >= intent createdAt plus terminal comment ID > intent comment ID. Neither invariant compensates for the other. Terminal intents are excluded before active selection; historical closed records remain validated. Terminal observations defer without conflicting writes. Every canonical-comment author field, including site-admin status, remains bound. Open and closed live fixtures return validated metadata history, while edit/reconcile/evidence-comment modes still require an open PR. A definite rejected PATCH creates one immutable patch-rejected abort only after fresh run/comment and same-response metadata authority checks; corrected values then use a new ordered intent. The fourth run/job snapshot must equal the complete pre-PATCH snapshot and selected active-intent authority must remain unique and latest; watermark survival alone is insufficient. Changed valid authority holds without a new terminal, but observed terminals retain precedence and unchanged essential active runs still allow definite-rejection recovery. Ambiguous pre-state stays deferred without duplicate PATCH or abort; exact applied-target authority can recover confirmation. Only a first edit may advance by two, with a distinct original node bound to PR creation/author, canonical pre-body digest, and shared immutable materialization timestamps. Subsequent edits require exactly plus one; latest owner/body authority and the serialized original proof remain confirmation-bound.",
+      "negative_control": "The pre-fix preparation refuses a complete positively bound terminal review-first/no-full inventory before changing metadata. Empty, unbound, unrelated-only or active inventories, active child jobs, a newly observed full run and identity/version drift cannot authorize preparation or authoritative-pair no-op; preserve explicit deferral and the final full/reconciliation hold. Accepting a later timestamp with equal/lower terminal ID, accepting a higher ID with predating timestamp, rejecting equal-second higher-ID edges, selecting before terminal linkage, conflicting terminals, duplicate edges, or nonce resurrection fails closed without unintended PATCH, wrong reconciliation, comment mutation, cancellation, or full dispatch. Mutated comment author identity, unknown PR state, and closed-PR mutation authority also reject. Before the fix, an observed confirmation caused an abort, a site-admin response was accepted, and closing the live fixture made the history probe fail. The rejected-PATCH control lost structured HTTP status and permanently blocked corrected values, while unmatched pre-state retried PATCH. The later drift control incorrectly created patch-rejected aborts for valid changed run/job snapshots preserving the watermark and for newer or same-second ambiguous active intents. These must hold without disabling unchanged rejection recovery or pre-PATCH final-observation aborts. Diagnostic-only rejection evidence, cached abort observations, unsafe ambiguous retries and intent-only no-op authority must fail. The pre-fix first-edit check incorrectly requires 0-to-1 and rejects GitHub's original-plus-edited 0-to-2 history. A broad count allowlist without original-snapshot proof must fail the forged-initial and multiple-edit controls; missing/deleted/malformed proof and unprovable same-second order must never confirm.",
       "interactions": "Depends on the Build event classifier, metadata continuity attestation/job shapes, canonical evidence comment, isolated workflow-pilot launcher, and GitHub PR/run/job authority; delivery coordinators depend on it; conflicts with mutable pending ledgers, stale identity, incomplete pagination, unguarded metadata edits during active Build, and same-SHA cancellation.",
       "save_compatibility": "Host-only orchestration; no feature flag, save, generated-data, localization, ROM/RAM, modern debug/release output, gameplay, target build, or archival impact.",
       "cleanup": "No cleanup is required because the tests use only synthetic API responses and make no remote mutation.",
       "limitations": "GitHub cannot atomically combine intent creation, PATCH, metadata-version observation, confirmation creation, and workflow materialization. The immutable GitHub comment protocol recovers exact applied targets and proven rejected mutations without cross-subsystem timestamp ordering. Reconciliation/no-op additionally require the run/attempt-bound fingerprint of the original webhook's complete pre/target transition and a unique native metadata-version match. Earlier delayed unrelated runs cannot authorize this edit; absent proof, legacy bases/runs, same-second revision ambiguity, disagreeing field instants, duplicate matches, or an unproven competitor hold explicitly. No current-PR query can reconstruct a missing original trigger. A crash or failed abort write with no terminal cannot retrospectively prove rejection; an ambiguous pre-state remains held rather than duplicating PATCH. Title history and the newest-first body edit connection are bounded; incomplete or ambiguous history fails closed. No manual-only criterion or ARM runtime test applies.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_essential_pre_full_preparation_cannot_switch_to_refreshed_full_authority scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_essential_pre_full_preparation_rejects_active_jobs_at_every_snapshot scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_initially_active_review_first_never_grants_essential_full_permission -v",
+          "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_review_first_pre_full_metadata_preparation_preserves_transaction_and_final_hold scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_pre_full_preparation_requires_complete_positive_candidate_run_inventory scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_pre_full_prepared_pair_no_op_retains_full_reconciliation_hold scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_pre_full_preparation_defers_a_new_full_at_the_second_snapshot scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_pre_full_preparation_rejects_active_jobs_at_every_snapshot scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_pre_full_metadata_binding_is_parsed_and_required -v",
+          "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
+        },
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_accepts_optional_ordered_start_without_full_evidence scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_queued_run_rejects_invalid_chronology_and_conclusion -v",
           "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"

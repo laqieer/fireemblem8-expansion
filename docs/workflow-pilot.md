@@ -7,7 +7,90 @@ reporter before any dependent issue changes delivery behavior. It does not
 select CI, order review, alter a merge gate, or create a mutable delivery
 ledger.
 
+## Bounded ownership pilot: retain broad validation
+
+The revised [#180 contract](https://github.com/laqieer/fireemblem8-expansion/issues/180)
+starts with one host-only criterion, not whole-repository ownership.
+Its [corrected native routing experiment](https://github.com/laqieer/fireemblem8-expansion/issues/180#issuecomment-6129057666)
+exercised the artifact guard's immutable Git-blob inputs through the actual
+CLI consumer. The existing assertion passed with the real consumer and also
+with a disconnected fake consumer; runtime observations distinguished them.
+Reading mutated worktree bytes instead of Git blobs failed the assertion.
+
+Three runs of the existing 15-test broad suite had a median of 4.010 seconds;
+the single criterion had a median of 0.169 seconds. The difference, 3.841
+seconds, is potential intermediate savings, **not time actually avoided**.
+Every actual route remained broad. Complete ownership of changes to the
+producer file was not established, and recurring maintenance, review and
+coordination costs remain unknown rather than zero.
+
+The linked comments retain historical observations, not executable authority.
+Do not execute their mutable prototype bodies. The supported source-build
+procedure uses only the repository's existing artifact-guard tests and CLI.
+
+The supported outcome is therefore **retain the existing broad validation**:
+no selector, workflow reduction, additional ownership service or expansion is
+installed. Empty, unknown, ambiguous, stale, incomplete and unsupported
+ownership are ordinary optimization misses, not delivery holds or obligations
+to model another domain. A safety miss stops narrowing of that surface;
+coverage and cost misses retain broad validation. Any future proposal must
+establish its bounded safety and positive net value before narrowing.
+
+[#181 scheduling](https://github.com/laqieer/fireemblem8-expansion/issues/181)
+remains independent. The deferred native/global graph is not a prerequisite.
+Exact-head review, security and full Build, exact-master Build, and completion
+gates are unchanged. Replay and limitations are indexed under
+[`TC-WORKFLOW-GATE-OWNERSHIP-001`](test-cases/workflow-governance.md#tc-workflow-gate-ownership-001-retain-broad-validation-after-a-bounded-shadow-pilot).
+
 ## Frozen boundary and authoritative sources
+
+### Post-checkout workflow entrypoints
+
+The behavior-preserving #196 extraction moves only three post-checkout programs:
+`scripts/ci/install_archival_compilers.sh`,
+`scripts/ci/configure_upstream_remote.sh` and
+`scripts/ci/render_upstream_drift.sh`. Run them through Bash from the checked-out
+source root; their existing CI environment supplies compiler pins, workspace,
+runner temporary directory, step output and summary paths.
+
+The archival installer retains both exact dependency pins and installation
+destinations. The upstream workflow still configures the sole canonical remote,
+fetches objects/refs without executing upstream code, and checks its freshly
+fetched ref. Drift and best-effort scan reports are written before the final
+job applies the original exit-code signal. Permissions and report artifacts
+are unchanged.
+
+The parsed local Build contract follows the archival helper's actual body from
+the selected checkout. A missing, symlinked, oversized, or semantically changed
+helper, including symlinks in any parent component, cannot satisfy the reviewed
+command contract. Raw helper line boundaries are Bash's literal LF, not Python
+universal line splitting; CRLF and other separator substitutions cannot compare
+equal while changing interpreter behavior. Raw helper tokens retain shell
+quoting and word adjacency through paired existing POSIX and quote-preserving
+token views. Unquoting space-containing paths, changing variable/command
+substitution quoting, or concatenating a quoted word with its next argument
+cannot disappear during comparison. This is the finite reviewed helper
+contract, not a general shell semantic proof. The source is parsed,
+not imported or executed by that verifier; comments/formatting remain neutral.
+
+Raw pre-checkout identity/bootstrap and closed no-checkout metadata/security/
+summary adapters stay at their existing workflow authority boundary. Moving
+them into checkout helpers would change that contract and is outside this
+extraction. The eight Build jobs, 31 mirrored validation commands and existing
+master-only build-once patch publisher remain unchanged.
+
+Dependencies: delivered workflow, upstream CLI/constants, existing verifier
+and patch publisher. No ownership/SDK prerequisite, extra platform, policy
+flag or new gate. A master merge that introduces these shared helper invocations
+requires ordinary refresh of open candidate heads that genuinely lack them;
+already-dispatched immutable runs are not cancelled solely for master movement.
+ROM/RAM, save, configuration identity, generated game data, localization,
+modern debug/release, archival payloads and fingerprints are unchanged.
+Rollback is a normal dedicated-PR revert.
+
+[`TC-WORKFLOW-SCRIPT-EXTRACTION-001`](test-cases/workflow-governance.md#tc-workflow-script-extraction-001-preserve-post-checkout-program-effects)
+defines direct helper effects, adversarial inputs, parsed owner/consumer drift
+and actual exact-master patch-publication evidence.
 
 The immutable baseline fixture is
 [`scripts/workflow_pilot/tests/fixtures/baseline.json`](../scripts/workflow_pilot/tests/fixtures/baseline.json).
@@ -1602,7 +1685,8 @@ complete run/job snapshot and immediately returns `deferred` without changing
 metadata. A mutation-eligible default edit takes three complete exact-candidate
 run/job snapshots: initial, pre-intent, and post-intent immediately before
 PATCH. It returns `deferred` when a later snapshot differs from its predecessor
-or no longer proves the same successful full Build. If the pre-intent snapshot
+or no longer proves the same successful full Build or pre-full preparation
+inventory described below. If the pre-intent snapshot
 already requires deferral, the helper stops there without creating an intent
 or taking the third snapshot.
 Its structured guidance points to the canonical comment route:
@@ -1628,8 +1712,31 @@ Every job in that terminal snapshot must also be terminal; an inconsistent
 run-completed/job-active response cannot authorize the edit.
 Permission to edit does not authorize successful CI continuity: that failed
 full run remains ineligible even if a later metadata-only run is green.
-Default nonessential edits still require successful full evidence, and an
-essential edit still needs an exact full-run identity to bind.
+Ordinarily, default nonessential edits require successful full evidence and
+essential edits need an exact full-run identity. Before the first full Build,
+the same helper can prepare a correction when its complete, nonempty inventory
+contains at least one positively same-candidate, completed review-first
+preflight and every relevant run is a positively bound completed review-first
+or metadata-only run. Empty, unbound, unknown, active or full-run inventories
+cannot use this preparation route. This fixes [#283](https://github.com/laqieer/fireemblem8-expansion/issues/283)'s
+ordering deadlock without a direct metadata-edit bypass.
+
+Preparation preserves the existing append-only intent/confirmation pair,
+metadata-specific version and all three run/identity snapshots. Preserve both
+returned comment IDs. Its initial preparation inventory must remain unchanged
+at the later snapshots, including for essential corrections; a newly observed
+full or unproven run cannot switch preparation into the older essential-active
+full authorization path. That path remains available only when initially
+selected under its existing contract. An initially active review-first run is
+a blocker, never essential-full permission, even when its classifier binding
+already succeeded. Active full/unproven overrides retain their existing
+contract; preparation eligibility is computed once and must remain unchanged.
+The result explicitly leaves the exact-head full Build
+and confirmation-bound reconciliation required; it is not continuity or merge
+evidence. A matching authoritative pair may return a non-mutating preparation
+no-op with that same hold. Reconciliation still refuses without a successful
+full Build. No full dispatch, cancellation, new service or mutable ledger is
+introduced.
 
 Transaction-comment creation accepts HTTP 201 `Location` only when it names
 the same canonical API comment resource attested by the response body.

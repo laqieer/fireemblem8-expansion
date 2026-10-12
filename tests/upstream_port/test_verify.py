@@ -3,6 +3,7 @@ import inspect
 import io
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -915,7 +916,135 @@ class VerifyCliCwdTests(unittest.TestCase):
             workflow_bytes = source.read()
         with open(target_workflow, "wb") as destination:
             destination.write(workflow_bytes)
+        helper = os.path.join("scripts", "ci", "install_archival_compilers.sh")
+        os.makedirs(os.path.dirname(os.path.join(target, helper)), exist_ok=True)
+        shutil.copy2(os.path.join(REPO_ROOT, helper), os.path.join(target, helper))
         return target
+
+    def test_archival_helper_is_part_of_the_target_gate_contract(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            verify_mod._require_target_gate_equivalence(target)
+            with open(helper, encoding="utf-8") as source:
+                original = source.read()
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("# harmless formatting change\n" + original)
+            verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("exit 0\n")
+            with self.assertRaisesRegex(ValueError, "differs"):
+                verify_mod._require_target_gate_equivalence(target)
+
+    def test_missing_symlinked_or_oversized_archival_helper_refuses(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            os.unlink(helper)
+            with self.assertRaisesRegex(ValueError, "regular checkout file"):
+                verify_mod._require_target_gate_equivalence(target)
+            os.symlink(os.path.join(REPO_ROOT, "scripts", "ci", "install_archival_compilers.sh"), helper)
+            with self.assertRaisesRegex(ValueError, "regular checkout file"):
+                verify_mod._require_target_gate_equivalence(target)
+            os.unlink(helper)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("#" * 16385)
+            with self.assertRaisesRegex(ValueError, "exceeds 16 KiB"):
+                verify_mod._require_target_gate_equivalence(target)
+
+    def test_archival_helper_refuses_every_symlinked_parent_component(self):
+        for relative in ("scripts", os.path.join("scripts", "ci")):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as parent:
+                target = self.clone_target(parent)
+                directory = os.path.join(target, relative)
+                alternate = os.path.join(target, "redirected-helper-directory")
+                os.rename(directory, alternate)
+                os.symlink(alternate, directory)
+                with self.assertRaisesRegex(ValueError, "regular checkout file"):
+                    verify_mod._require_target_gate_equivalence(target)
+
+    def test_helper_parser_preserves_actual_bash_line_boundaries(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            with open(helper, "rb") as source:
+                original = source.read()
+            for separator in ("\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e",
+                              "\x85", "\u2028", "\u2029"):
+                with self.subTest(separator=repr(separator)):
+                    changed = original.decode("utf-8").replace("\n", separator)
+                    with open(helper, "wb") as destination:
+                        destination.write(changed.encode("utf-8"))
+                    with self.assertRaises(ValueError):
+                        verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "wb") as destination:
+                destination.write(original.replace(b"\n", b"\r\n"))
+            actual = subprocess.run(
+                ["bash", helper], cwd=target,
+                env={"PATH": os.environ["PATH"]},
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(actual.returncode, 0)
+            self.assertIn("invalid option", actual.stderr)
+            for whitespace in ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"):
+                with self.subTest(whitespace=repr(whitespace)):
+                    with open(helper, "wb") as destination:
+                        destination.write(whitespace.encode("utf-8") + b"\n" + original)
+                    with self.assertRaises(ValueError):
+                        verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "wb") as destination:
+                destination.write("# neutral Unicode comment \u2028 data\n".encode("utf-8") + original)
+            verify_mod._require_target_gate_equivalence(target)
+
+    def test_raw_helper_quoting_is_part_of_target_equivalence(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            with open(helper, encoding="utf-8") as source:
+                original = source.read()
+            for quoted in (
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci"',
+                '"$AGBCC_COMMIT"',
+                '"$MGFEMBP_AGBCC_COMMIT"',
+                '"$GITHUB_WORKSPACE"',
+                '"$GITHUB_WORKSPACE/mgfembp"',
+                '"$(git -C .deps/agbcc-ci rev-parse HEAD)"',
+            ):
+                for replacement in (quoted[1:-1], "'" + quoted[1:-1] + "'"):
+                    with self.subTest(quoted=quoted, replacement=replacement):
+                        changed = original.replace(quoted, replacement)
+                        self.assertNotEqual(changed, original)
+                        with open(helper, "w", encoding="utf-8") as destination:
+                            destination.write(changed)
+                        with self.assertRaisesRegex(ValueError, "differs"):
+                            verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("# neutral comment\n" + original)
+            verify_mod._require_target_gate_equivalence(target)
+
+    def test_raw_helper_argument_adjacency_is_part_of_target_equivalence(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            with open(helper, encoding="utf-8") as source:
+                original = source.read()
+            boundaries = (
+                '"$(git -C .deps/agbcc-ci rev-parse HEAD)" =',
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci" remote',
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci" fetch',
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci" checkout',
+            )
+            for boundary in boundaries:
+                with self.subTest(boundary=boundary):
+                    changed = original.replace(boundary, boundary.replace('" ', '"', 1))
+                    self.assertNotEqual(changed, original)
+                    with open(helper, "w", encoding="utf-8") as destination:
+                        destination.write(changed)
+                    with self.assertRaisesRegex(ValueError, "differs"):
+                        verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write(original.replace("test ", "test  "))
+            verify_mod._require_target_gate_equivalence(target)
 
     def job_bounds(self, workflow, job_name):
         start = workflow.index(f"\n  {job_name}:\n") + 1

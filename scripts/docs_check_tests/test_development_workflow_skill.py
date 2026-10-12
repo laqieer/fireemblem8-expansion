@@ -4618,7 +4618,10 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-BODY-EDIT-001",
             "TC-WORKFLOW-METADATA-EDIT-RACE-001",
+            "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
+            "TC-WORKFLOW-GATE-OWNERSHIP-001",
+            "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
             "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
             "TC-WORKFLOW-PROBE-PRODUCER-001",
             "TC-PROBE-NATIVE-EVENT-ORDER-001",
@@ -4841,6 +4844,21 @@ printf '%s\t%s\t%s\n' "$result" \
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)
+
+        for field, requirements in {
+            "purpose": ("review-first/no-full metadata preparation", "authoritative-pair no-op"),
+            "actions": ("positively bound terminal review-first", "no full Build",
+                        "exactly one PATCH", "zero writes for no-op",
+                        "every snapshot", "refreshed full authority"),
+            "expected_result": ("intent/confirmation transaction", "zero writes",
+                                "full/reconciliation hold", "preflight is not full Build",
+                                "neither path cancels or dispatches"),
+            "negative_control": ("pre-fix preparation refuses", "before changing metadata",
+                                 "unbound", "active child jobs", "identity/version drift"),
+        }.items():
+            for requirement in requirements:
+                with self.subTest(registry_field=field, requirement=requirement):
+                    self.assertIn(normalize_policy(requirement), normalize_policy(indexed[field]))
 
     def test_manual_handoff_human_lifecycle_mutations_fail_closed(self):
         surfaces = (
