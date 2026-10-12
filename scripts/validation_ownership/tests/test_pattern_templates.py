@@ -268,6 +268,45 @@ class PatternTemplateTests(unittest.TestCase):
             finally:
                 budget.close()
 
+    def test_coordinates_lookup_only_owning_occurrences_without_copied_history(self):
+        definition = {"file": "Makefile", "line": 1, "offset": 0, "pattern": "%.out",
+                      "name": "VALUE", "flags": 1 << 23, "value": "value"}
+        data = b"%.out: VALUE := value\n"
+        source = [{"kind": "source-entry", "visit": 1, "name": "Makefile"},
+                  {"kind": "source-open", "visit": 1, "source": 1}]
+        charges = []
+        for count in (0, 1000):
+            history = [
+                row for number in range(2, count + 2)
+                for row in ({"kind": "source-entry", "visit": number, "name": "unused"},
+                            {"kind": "source-open", "visit": number, "source": number})
+            ]
+            observed = []
+            read_epochs.pattern_source_coordinates(
+                definition, ("source", 1), 1, history + source, data,
+                reserve=observed.append,
+            )
+            charges.append(sum(observed))
+        self.assertEqual(charges[0], charges[1])
+        evaluation = source + [
+            {"kind": "eval-entry", "evaluation": 1,
+             "location": {"visit": 1, "evaluation": None, "span": [1, 1, 1]}},
+            {"kind": "eval-entry", "evaluation": 2,
+             "location": {"visit": 1, "evaluation": 1, "span": [1, 1, 1]}},
+        ]
+        read_epochs.pattern_source_coordinates(definition, ("eval", 2), 1, evaluation, data)
+        for owner, events, limit in (
+            (("source", 1), source + [{"kind": "source-open", "visit": 1, "source": 2}], None),
+            (("source", 1), source, 1),
+            (("eval", 2), evaluation, 3),
+            (("eval", 2), evaluation + [{"kind": "eval-entry", "evaluation": 1,
+                                       "location": {"evaluation": 2}}], None),
+        ):
+            with self.subTest(owner=owner, limit=limit), self.assertRaises(read_epochs.ReadEpochError):
+                read_epochs.pattern_source_coordinates(
+                    definition, owner, 1, events, data, event_limit=limit,
+                )
+
     def test_live_retirement_rejects_incomplete_and_retire_never_reads_dead_memory(self):
         self.trace.template(128, "%.a", value=None)
         self.trace.put_number(8, 128)

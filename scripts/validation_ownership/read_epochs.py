@@ -1277,46 +1277,49 @@ def original_variable(memory, pointer, string):
 def pattern_source_coordinates(definition, owner, source, events, data, *, checkpoint=lambda: None,
                                reserve=lambda size: None, event_limit=None):
     """Bind coordinates to the actual reader or evaluated-buffer occurrence."""
-    sources, evaluations, opened = {}, {}, {}
-    reserve(sys.getsizeof(sources) + sys.getsizeof(evaluations) + sys.getsizeof(opened))
-    for index, row in enumerate(events):
-        if event_limit is not None and index >= event_limit:
-            break
-        checkpoint()
-        if row["kind"] == "source-entry":
-            table, key, item = sources, row["visit"], row
-        elif row["kind"] == "eval-entry":
-            table, key, item = evaluations, row["evaluation"], row
-        elif row["kind"] == "source-open":
-            table, key, item = opened, row["visit"], row["source"]
-        else:
-            continue
-        size = sys.getsizeof(table)
-        table[key] = item
-        if sys.getsizeof(table) > size:
-            reserve(sys.getsizeof(table))
+    limit = len(events) if event_limit is None else min(event_limit, len(events))
+
+    def occurrence(kind, field, number):
+        indices = range(limit - 1, -1, -1)
+        reserve(sys.getsizeof(indices))
+        for index in indices:
+            checkpoint()
+            row = events[index]
+            if row["kind"] == kind and row[field] == number:
+                return row
+        return None
+
+    closure = occurrence.__closure__ or ()
+    reserve(sys.getsizeof(occurrence) + sys.getsizeof(closure)
+            + sum(sys.getsizeof(cell) for cell in closure))
     kind, number = owner
     if kind == "source":
-        if opened.get(number) != source:
+        opened = occurrence("source-open", "visit", number)
+        entry = occurrence("source-entry", "visit", number)
+        if opened is None or opened["source"] != source or entry is None:
             raise ReadEpochError("pattern declaration borrowed another original source")
-        expected_file = sources[number]["name"]
+        expected_file = entry["name"]
         expected_line = definition["line"]
     else:
-        occurrence = evaluations[number]
-        location = occurrence["location"]
+        entry = occurrence("eval-entry", "evaluation", number)
+        if entry is None:
+            raise ReadEpochError("pattern declaration lacks its original eval occurrence")
+        location = entry["location"]
         visited = set()
         reserve(sys.getsizeof(visited))
         while isinstance(location, dict) and location.get("evaluation") is not None:
             checkpoint()
             parent = location["evaluation"]
-            if parent in visited or parent not in evaluations:
+            entry = occurrence("eval-entry", "evaluation", parent)
+            if parent in visited or entry is None:
                 raise ReadEpochError("pattern declaration has cyclic or foreign eval ancestry")
             visited.add(parent)
             reserve(sys.getsizeof(visited))
-            location = evaluations[parent]["location"]
-        if not isinstance(location, dict) or location.get("visit") not in sources:
+            location = entry["location"]
+        entry = occurrence("source-entry", "visit", location.get("visit")) if isinstance(location, dict) else None
+        if entry is None:
             raise ReadEpochError("pattern declaration lacks its source-backed eval location")
-        expected_file = sources[location["visit"]]["name"]
+        expected_file = entry["name"]
         expected_line = location["span"][1]
     if (
         definition["file"] != expected_file or definition["line"] != expected_line

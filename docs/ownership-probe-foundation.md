@@ -2907,6 +2907,11 @@ archive against old duplicate bookkeeping: the count difference must equal the
 trap population. Exhausted count allowance must still refuse before GETSIGINFO,
 retain a failed budget and clean owned state. Register captures, restoration
 checks and all emitted observations remain required.
+Pattern-coordinate binding looks up only the owning source/eval occurrences
+in the existing bounded event prefix rather than copying the whole history
+into transient dictionaries. Latest source-open, file/line/offset, nested eval
+ancestry and cyclic/foreign/prefix refusals remain unchanged; no new cache,
+ledger or event representation is introduced.
 
 The original Makefile has non-simple pattern-specific variables. Its complete
 cohort must select the shipped `observe_patterns=True` protocol; the old
