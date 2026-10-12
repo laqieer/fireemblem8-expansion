@@ -396,8 +396,15 @@ class ReviewTools:
                     previous = members.setdefault(member.identity, member)
                     model.require(previous == member, "member mapping changed across finding origins")
         result = tuple(members[key] for key in sorted(members))
-        inputs = tuple(sorted({path for member in result for path in member.inputs}))
-        result = tuple(replace(member, execution_inputs=inputs) for member in result)
+        def platform(member):
+            return member.probe.startswith(("platform:", "platform-owner:"))
+
+        inputs = {
+            group: tuple(sorted({path for member in result if platform(member) == group
+                                 for path in member.inputs}))
+            for group in (False, True)
+        }
+        result = tuple(replace(member, execution_inputs=inputs[platform(member)]) for member in result)
         model.validate_members(result)
         return result
 
@@ -437,6 +444,14 @@ class ReviewTools:
         tree = self.tree(revision)
         members = tuple(members)
         model.validate_members(members)
+        platform = tuple(member for member in members
+                         if member.probe.startswith(("platform:", "platform-owner:")))
+        other = tuple(member for member in members if member not in platform)
+        if platform and other:
+            observed = {item.obligation.identity: item
+                        for group in (platform, other)
+                        for item in self.run_obligations(group, revision)}
+            return tuple(observed[member.identity] for member in members)
         inputs = {path for member in members for path in member.source_inputs}
         model.require(all(set(member.source_inputs) == inputs for member in members),
                       "obligation omits shared worker candidate inputs")
