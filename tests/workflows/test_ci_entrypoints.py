@@ -198,3 +198,33 @@ elif command == "rev-parse":
         result = self.run_helper("install_archival_compilers.sh")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(list(self.work.glob("**/*.result")))
+
+    def test_unquoted_runner_path_cannot_preserve_installation_with_spaces(self):
+        self.archival_boundary()
+        original = (HELPERS / "install_archival_compilers.sh").read_text()
+        mutant = self.work / "unquoted-installer.sh"
+        mutant.write_text(original.replace(
+            '"$RUNNER_TEMP/mgfembp-agbcc-ci"', "$RUNNER_TEMP/mgfembp-agbcc-ci",
+        ))
+        result = subprocess.run(
+            ["bash", str(mutant)], cwd=self.work, env=self.env,
+            text=True, capture_output=True, timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        correct = Path(self.env["RUNNER_TEMP"]) / "mgfembp-agbcc-ci" / "install.sh.result"
+        self.assertFalse(correct.exists())
+
+    def test_concatenated_pin_test_argument_stops_before_compiler_execution(self):
+        self.archival_boundary()
+        original = (HELPERS / "install_archival_compilers.sh").read_text()
+        mutant = self.work / "concatenated-test-arguments.sh"
+        mutant.write_text(original.replace(
+            '"$(git -C .deps/agbcc-ci rev-parse HEAD)" =',
+            '"$(git -C .deps/agbcc-ci rev-parse HEAD)"=',
+        ))
+        result = subprocess.run(
+            ["bash", str(mutant)], cwd=self.work, env=self.env,
+            text=True, capture_output=True, timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(list(self.work.glob("**/*.result")))

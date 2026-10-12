@@ -48,6 +48,25 @@ workflow, using credentials, or changing ROM behavior.
    CRLF and other separator-only rewrites cannot compare equal to the reviewed
    LF helper; actual CRLF Bash execution fails. Ordinary and Unicode comments
    remain neutral data.
+   Raw helper tokens also retain quoting. Check variable-bearing paths,
+   compiler pins, install destinations and command substitution:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v
+   ```
+
+   Removing or changing those quotes must refuse target equivalence. The actual
+   unquoted-runner-path mutation cannot preserve installation with spaces.
+   Also retain argument adjacency, not just quote marks:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence tests.workflows.test_ci_entrypoints.CiEntrypointTests.test_concatenated_pin_test_argument_stops_before_compiler_execution -v
+   ```
+
+   Concatenating the first pin-test word with `=` or a quoted second-compiler
+   directory with `remote`, `fetch` or `checkout` refuses equivalence. The actual
+   pin-test mutation fails before compiler execution; extra ordinary word
+   spacing remains neutral.
 3. Validate the actual workflow input format:
 
    ```bash

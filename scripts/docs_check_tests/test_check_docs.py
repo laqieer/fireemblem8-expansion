@@ -1203,6 +1203,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "VerifyCliCwdTests.test_archival_helper_refuses_every_symlinked_parent_component "
                             "tests.upstream_port.test_verify.VerifyCliCwdTests."
                             "test_helper_parser_preserves_actual_bash_line_boundaries -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_raw_helper_quoting_is_part_of_target_equivalence "
+                            "tests.workflows.test_ci_entrypoints.CiEntrypointTests."
+                            "test_unquoted_runner_path_cannot_preserve_installation_with_spaces -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_raw_helper_argument_adjacency_is_part_of_target_equivalence "
+                            "tests.workflows.test_ci_entrypoints.CiEntrypointTests."
+                            "test_concatenated_pin_test_argument_stops_before_compiler_execution -v",
                             "actionlint .github/workflows/build.yml "
                             ".github/workflows/upstream-port-drift.yml",
                         },

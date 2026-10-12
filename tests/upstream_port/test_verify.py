@@ -996,6 +996,56 @@ class VerifyCliCwdTests(unittest.TestCase):
                 destination.write("# neutral Unicode comment \u2028 data\n".encode("utf-8") + original)
             verify_mod._require_target_gate_equivalence(target)
 
+    def test_raw_helper_quoting_is_part_of_target_equivalence(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            with open(helper, encoding="utf-8") as source:
+                original = source.read()
+            for quoted in (
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci"',
+                '"$AGBCC_COMMIT"',
+                '"$MGFEMBP_AGBCC_COMMIT"',
+                '"$GITHUB_WORKSPACE"',
+                '"$GITHUB_WORKSPACE/mgfembp"',
+                '"$(git -C .deps/agbcc-ci rev-parse HEAD)"',
+            ):
+                for replacement in (quoted[1:-1], "'" + quoted[1:-1] + "'"):
+                    with self.subTest(quoted=quoted, replacement=replacement):
+                        changed = original.replace(quoted, replacement)
+                        self.assertNotEqual(changed, original)
+                        with open(helper, "w", encoding="utf-8") as destination:
+                            destination.write(changed)
+                        with self.assertRaisesRegex(ValueError, "differs"):
+                            verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write("# neutral comment\n" + original)
+            verify_mod._require_target_gate_equivalence(target)
+
+    def test_raw_helper_argument_adjacency_is_part_of_target_equivalence(self):
+        with tempfile.TemporaryDirectory() as parent:
+            target = self.clone_target(parent)
+            helper = os.path.join(target, "scripts", "ci", "install_archival_compilers.sh")
+            with open(helper, encoding="utf-8") as source:
+                original = source.read()
+            boundaries = (
+                '"$(git -C .deps/agbcc-ci rev-parse HEAD)" =',
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci" remote',
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci" fetch',
+                '"$RUNNER_TEMP/mgfembp-agbcc-ci" checkout',
+            )
+            for boundary in boundaries:
+                with self.subTest(boundary=boundary):
+                    changed = original.replace(boundary, boundary.replace('" ', '"', 1))
+                    self.assertNotEqual(changed, original)
+                    with open(helper, "w", encoding="utf-8") as destination:
+                        destination.write(changed)
+                    with self.assertRaisesRegex(ValueError, "differs"):
+                        verify_mod._require_target_gate_equivalence(target)
+            with open(helper, "w", encoding="utf-8") as destination:
+                destination.write(original.replace("test ", "test  "))
+            verify_mod._require_target_gate_equivalence(target)
+
     def job_bounds(self, workflow, job_name):
         start = workflow.index(f"\n  {job_name}:\n") + 1
         body_start = workflow.index("\n", start) + 1

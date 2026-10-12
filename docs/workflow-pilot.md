@@ -65,7 +65,12 @@ the selected checkout. A missing, symlinked, oversized, or semantically changed
 helper, including symlinks in any parent component, cannot satisfy the reviewed
 command contract. Raw helper line boundaries are Bash's literal LF, not Python
 universal line splitting; CRLF and other separator substitutions cannot compare
-equal while changing interpreter behavior. The source is parsed,
+equal while changing interpreter behavior. Raw helper tokens retain shell
+quoting and word adjacency through paired existing POSIX and quote-preserving
+token views. Unquoting space-containing paths, changing variable/command
+substitution quoting, or concatenating a quoted word with its next argument
+cannot disappear during comparison. This is the finite reviewed helper
+contract, not a general shell semantic proof. The source is parsed,
 not imported or executed by that verifier; comments/formatting remain neutral.
 
 Raw pre-checkout identity/bootstrap and closed no-checkout metadata/security/

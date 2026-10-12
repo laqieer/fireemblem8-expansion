@@ -1721,9 +1721,11 @@ def _parse_bash_run_script_commands(script, step_label, *, raw_helper=False):
         significant = current.strip(" \t") if raw_helper else current.strip()
         leading = current.lstrip(" \t") if raw_helper else current.lstrip()
         if significant and not leading.startswith("#"):
-            command = tuple(shlex.split(current))
+            command = tuple(shlex.split(current, posix=not raw_helper))
             if not command:
                 raise ValueError(f"{step_label} run command is empty")
+            if raw_helper:
+                command = (tuple(shlex.split(current, posix=True)), command)
             parsed.append(command)
         current = ""
     if current:
