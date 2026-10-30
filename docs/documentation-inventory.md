@@ -49,6 +49,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - CONTRIBUTING.md | laqieer | current | Contribution workflow: prep, fast checks, full gates, PR provenance
 - .github/copilot-instructions.md | laqieer | current | GitHub Copilot agent guidance for this repository
 - .github/skills/development-workflow/SKILL.md | laqieer | current | Project-scoped Copilot skill for feature and bug triage, implementation, evidence, and autonomous merge
+- .agents/skills/gh/SKILL.md | laqieer | current | GitHub CLI skill for agent command invocation, structured output, pagination, and API fallbacks
 - AGENTS.md | laqieer | current | Repository governance and engineering-skill configuration pointers
 - docs/agents/issue-tracker.md | laqieer | current | GitHub issue tracker, ticket operations, and Wayfinder conventions
 - docs/agents/triage-labels.md | laqieer | current | Default engineering-skill triage roles and GitHub label mapping
