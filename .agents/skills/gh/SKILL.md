@@ -122,6 +122,9 @@ blocked-by/blocking relationships.
 - If the body references an attached path, `gh` rewrites that Markdown
   reference to the uploaded URL. The reference keeps its existing alt text.
   Otherwise, `gh` appends the attachment to the body. For example:
+  <!-- Repository-local patch: fence the image and video examples so
+       scripts/check_docs.py does not treat illustrative paths as links.
+       Preserve this formatting when refreshing the installed gh skill. -->
   ```sh
   gh pr edit 23 --body '![error](./login.png)' --attach ./login.png
   ```
