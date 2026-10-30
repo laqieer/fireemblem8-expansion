@@ -94,6 +94,12 @@ bindings too. Contradictory embedded paths are rejected rather than silently
 validating stock records; directory-backed objective/strategy providers must
 contain their declared owner members. Unselected per-bundle sources remain
 authoritative.
+The optional `TableSchema.validate_source_bindings(records, diagnostics,
+inputs)` hook runs for the selected table and its loaded dependency tables
+before content validation. It does not replace embedded owners with registry
+defaults or enable the test-only supplied-dependency route. Numeric item
+loading needs no message header; symbolic IDs load their selected header
+once per source-file load without a shared cache.
 
 C replacements keep the original logical object path and linker position.
 Generated whole-table C and `src/msg_data.c` are selected through their data
