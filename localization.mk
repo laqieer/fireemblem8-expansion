@@ -13,7 +13,7 @@
 # Included directly by the top-level Makefile, mirroring generated_data.mk's
 # own standalone-fast-target convention (see that file/docs/generated_data.md).
 
-LOCALIZATION_OUT_DIR := build/expansion-localization/generated
+LOCALIZATION_OUT_DIR := $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/generated/expansion-localization,build/expansion-localization/generated)
 
 .PHONY: localization-validate localization-generate localization-check \
 	localization-test localization-budget localized-ui-graphics-check \
@@ -29,13 +29,13 @@ EU_LOCALIZATION_ROM ?= ../FE8EU(EnFrDeEsIt).gba
 # silent on success, fails with an actionable message otherwise. Never
 # writes any file.
 localization-validate:
-	python3 -m scripts.localization.cli validate
+	python3 -m scripts.localization.cli validate $(FE8_PROJECT_UI_ARGS)
 
 # generate -- validate, then write the generated header/C/budget report
 # under $(LOCALIZATION_OUT_DIR) (write-if-unchanged).
 localization-generate:
 	@mkdir -p $(LOCALIZATION_OUT_DIR)
-	python3 -m scripts.localization.cli generate --out-dir $(LOCALIZATION_OUT_DIR)
+	python3 -m scripts.localization.cli generate $(FE8_PROJECT_UI_ARGS) --out-dir $(LOCALIZATION_OUT_DIR)
 
 # check -- the CI-suitable gate: validate + generate, self-healing the
 # generated files under $(LOCALIZATION_OUT_DIR) -- never touches anything
@@ -55,7 +55,7 @@ localization-test:
 # and their configured limits) to stdout.
 localization-budget:
 	@mkdir -p $(LOCALIZATION_OUT_DIR)
-	python3 -m scripts.localization.cli budget --out-dir $(LOCALIZATION_OUT_DIR)
+	python3 -m scripts.localization.cli budget $(FE8_PROJECT_UI_ARGS) --out-dir $(LOCALIZATION_OUT_DIR)
 
 # Issue #18 static UI artwork is a separate, provenance-pinned asset family:
 # check uses only committed decompressed sources; extract is an explicit,

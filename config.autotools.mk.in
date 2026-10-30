@@ -4,6 +4,9 @@
 # values continue to come from config.mk or modern.mk, and `make VAR=value`
 # remains an explicit one-invocation override.
 
+@FE8_CFG_PROJECT@
+@FE8_CFG_PROJECT_PROFILE@
+
 @FE8_CFG_ROM_SIZE@
 @FE8_CFG_TEXT_SHIFT@
 @FE8_CFG_ITEM_ID_CAP@

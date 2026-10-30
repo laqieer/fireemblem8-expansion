@@ -17,6 +17,28 @@ else
     AC_MSG_ERROR([Python 3 is required])
 fi
 
+AC_ARG_WITH(
+    [project],
+    [AS_HELP_STRING(
+        [--with-project=NAME],
+        [select default or a reviewed bundled project])],
+    [AS_CASE(
+        [$withval],
+        [yes|no|""], [AC_MSG_ERROR([--with-project requires a project name])],
+        [fe8_project=$withval])],
+    [fe8_project=])
+
+AC_ARG_WITH(
+    [project-profile],
+    [AS_HELP_STRING(
+        [--with-project-profile=NAME],
+        [select a preset belonging to the selected project])],
+    [AS_CASE(
+        [$withval],
+        [yes|no|""], [AC_MSG_ERROR([--with-project-profile requires a preset name])],
+        [fe8_project_profile=$withval])],
+    [fe8_project_profile=])
+
 AC_ARG_ENABLE(
     [mechanics-hooks],
     [AS_HELP_STRING(
@@ -253,6 +275,16 @@ AC_ARG_WITH(
     [fe8_text_shift=])
 
 AS_IF(
+    [test -n "$fe8_project"],
+    [FE8_CFG_PROJECT="FE8_PROJECT := $fe8_project"],
+    [FE8_CFG_PROJECT=])
+AS_IF(
+    [test -n "$fe8_project_profile"],
+    [FE8_CFG_PROJECT_PROFILE="ifeq (\$(FE8_PROJECT),${fe8_project:-default})
+FE8_PROJECT_PROFILE := $fe8_project_profile
+endif"],
+    [FE8_CFG_PROJECT_PROFILE=])
+AS_IF(
     [test -n "$fe8_mechanics_hooks"],
     [FE8_CFG_MECHANICS_HOOKS="EXPANSION_MECHANICS_HOOKS := $fe8_mechanics_hooks"],
     [FE8_CFG_MECHANICS_HOOKS=])
@@ -335,6 +367,8 @@ AS_IF(
     [FE8_CFG_TEXT_SHIFT="MODERN_TEXT_SHIFT := $fe8_text_shift"],
     [FE8_CFG_TEXT_SHIFT=])
 
+AC_SUBST([FE8_CFG_PROJECT])
+AC_SUBST([FE8_CFG_PROJECT_PROFILE])
 AC_SUBST([FE8_CFG_MECHANICS_HOOKS])
 AC_SUBST([FE8_CFG_MECHANICS_SAMPLE])
 AC_SUBST([FE8_CFG_DANGER_OVERLAY_MENU])
@@ -358,7 +392,6 @@ AC_SUBST([FE8_CFG_ROM_SIZE])
 AC_SUBST([FE8_CFG_ITEM_ID_CAP])
 AC_SUBST([FE8_CFG_TEXT_SHIFT])
 
-fe8_validate_rom_size=${fe8_rom_size:-16M}
 fe8_validate_text_shift=${fe8_text_shift:-0}
 fe8_validate_config=release
 if test "$fe8_autoplay_planner" = 1
@@ -366,6 +399,31 @@ then
     fe8_validate_config=debug
 fi
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
+
+fe8_query_project () {
+    set -- --repo-root "$fe8_abs_srcdir" --project "${fe8_project:-default}"
+    if test -n "$fe8_project_profile"
+    then
+        set -- "$@" --project-profile "$fe8_project_profile"
+    fi
+    "$PYTHON" "$fe8_abs_srcdir/scripts/modernize/expansion_config.py" project "$@"
+}
+AC_MSG_CHECKING([selected project and preset])
+fe8_project_output=`fe8_query_project 2>&1`
+fe8_project_status=$?
+AS_IF(
+    [test "$fe8_project_status" -eq 0],
+    [AC_MSG_RESULT([valid])],
+    [AC_MSG_RESULT([invalid])
+     AC_MSG_ERROR([$fe8_project_output])])
+fe8_validate_project_profile=`printf '%s\n' "$fe8_project_output" |
+    "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("profile"))'`
+fe8_validate_rom_size=$fe8_rom_size
+if test -z "$fe8_validate_rom_size"
+then
+    fe8_validate_rom_size=`printf '%s\n' "$fe8_project_output" |
+        "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("settings").get("MODERN_ROM_SIZE", "16M"))'`
+fi
 
 AC_MSG_CHECKING([configured expansion profile])
 fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
@@ -376,6 +434,8 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --rom-size "$fe8_validate_rom_size" \
     --text-shift "$fe8_validate_text_shift" \
     --repo-root "$fe8_abs_srcdir" \
+    --project "${fe8_project:-default}" \
+    --project-profile "$fe8_validate_project_profile" \
     --enabled-locales "$fe8_enabled_locales" \
     --default-locale "$fe8_default_locale" \
     --pseudo-locale "$fe8_pseudo_locale" \

@@ -299,8 +299,24 @@ MODERN_CFLAGS := \
 # explicit, per-step cap define (or none) on top of this instead.
 MODERN_CFLAGS_NOCAP := $(filter-out -DFE8_ITEM_ID_CAP=%,$(MODERN_CFLAGS))
 
-MODERN_BUILD_ROOT := build/expansion-modern
-MODERN_OUTPUT_DIR := $(MODERN_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+MODERN_BUILD_ROOT ?= $(if $(filter-out default,$(FE8_PROJECT)),build,build/expansion-modern)
+MODERN_SELECTED_BUILD_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_BUILD_ROOT)/projects/$(FE8_PROJECT)/$(FE8_PROJECT_PROFILE),$(MODERN_BUILD_ROOT))
+MODERN_OUTPUT_DIR := $(MODERN_SELECTED_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+
+ifneq ($(filter game-text,$(FE8_PROJECT_REPLACE)),)
+MODERN_PROJECT_TEXT_DIR := $(MODERN_OUTPUT_DIR)/generated/text
+MODERN_PROJECT_TEXT_C := $(MODERN_PROJECT_TEXT_DIR)/msg_data.c
+MODERN_PROJECT_MSG_HEADER := $(MODERN_PROJECT_TEXT_DIR)/include/constants/msg.h
+MODERN_PROJECT_TEXT_INPUTS := $(shell find $(FE8_PROJECT_DIR) texts -type f -name '*.txt')
+MODERN_CFLAGS += -I$(MODERN_PROJECT_TEXT_DIR)/include -include $(MODERN_PROJECT_MSG_HEADER)
+
+$(MODERN_PROJECT_TEXT_C) $(MODERN_PROJECT_MSG_HEADER) &: \
+	$(FE8_PROJECT_TEXT_MAIN) $(FE8_PROJECT_TEXT_DEFS) $(MODERN_PROJECT_TEXT_INPUTS) \
+	$(FE8_PROJECT_DECLARATION) scripts/texttools/textprocess.py scripts/texttools/huffman.py
+	@mkdir -p "$(MODERN_PROJECT_TEXT_DIR)/include/constants"
+	$(PYTHON) scripts/texttools/textprocess.py "$(FE8_PROJECT_TEXT_MAIN)" \
+		"$(FE8_PROJECT_TEXT_DEFS)" "$(MODERN_PROJECT_TEXT_C)" "$(MODERN_PROJECT_MSG_HEADER)" utf8
+endif
 
 MODERN_COHORT_SOURCES ?= \
 	src/fe3_dummy.c \
@@ -379,6 +395,12 @@ endif
 
 MODERN_ALL_DATA_C_SOURCES ?= $(wildcard src/data/*.c src/data/mapanim/*.c src/data/menu/*.c src/data/ending/*.c src/data/worldmap/*.c src/data/ui/*.c)
 
+ifneq ($(filter-out $(MODERN_ALL_C_SOURCES) $(MODERN_ALL_DATA_C_SOURCES),$(FE8_PROJECT_C_SLOTS)),)
+$(error project replacement has no ordinary C object slot: $(filter-out $(MODERN_ALL_C_SOURCES) $(MODERN_ALL_DATA_C_SOURCES),$(FE8_PROJECT_C_SLOTS)))
+endif
+MODERN_ALL_C_SOURCES += $(FE8_PROJECT_C_SOURCES)
+modern_c_source = $(if $(and $(filter src/msg_data.c,$(1)),$(MODERN_PROJECT_TEXT_C)),$(MODERN_PROJECT_TEXT_C),$(or $(call fe8_project_c_source,$(1)),$(1)))
+
 # A separate default list from MODERN_COHORT_ASM_SOURCES (not derived from
 # it), so a caller overriding one does not silently blank out the other.
 MODERN_ALL_ASM_SOURCES ?= \
@@ -453,9 +475,9 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 # localization output, instead of silently leaving it behind under a
 # sibling path clean never touched.
 MODERN_LOCALIZATION_CLI := scripts/localization/cli.py
-MODERN_LOCALIZATION_REGISTRY := texts/expansion/registry.json
+MODERN_LOCALIZATION_REGISTRY := $(or $(FE8_PROJECT_UI_REGISTRY),texts/expansion/registry.json)
 MODERN_LOCALIZATION_AVAILABLE := $(and $(wildcard $(MODERN_LOCALIZATION_CLI)),$(wildcard $(MODERN_LOCALIZATION_REGISTRY)))
-MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG)
+MODERN_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/expansion-localization,$(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG))
 MODERN_LOCALIZATION_GENERATED_DIR := $(MODERN_LOCALIZATION_ROOT)/generated
 MODERN_LOCALIZATION_CATALOG_C := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_locale_catalog.c
 MODERN_LOCALIZATION_MSG_IDS_H := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_msg_ids.h
@@ -465,7 +487,7 @@ MODERN_LOCALIZATION_EMISSION_PROFILE := $(if $(filter debug,$(MODERN_CONFIG)),de
 # files written before catalog payloads became profile-specific. New objects
 # depend on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is
 # safe because it never filters debug-only IDs.
-MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(MODERN_BUILD_ROOT)/expansion-localization/generated
+MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/expansion-localization/compat,$(MODERN_BUILD_ROOT)/expansion-localization/generated)
 MODERN_LOCALIZATION_LEGACY_MSG_IDS_H := $(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)/expansion_msg_ids.h
 
 # --- Full-game CJK catalog (issue #18 game-catalog slice) -------------------
@@ -523,7 +545,7 @@ MODERN_GAME_LOCALIZATION_AVAILABLE := $(and \
 	$(wildcard texts/locales/fixed_width_display_aliases.json),\
 	$(wildcard texts/locales/mapping/fe8u_target_map.json),\
 	$(wildcard texts/locales/mapping/fe8eu_to_fe8u.json))
-MODERN_GAME_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/game-localization
+MODERN_GAME_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/game-localization,$(MODERN_BUILD_ROOT)/game-localization)
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated
 MODERN_GAME_LOCALIZATION_CONFIG_H := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/localized_game_text_data.h
 MODERN_GAME_LOCALIZATION_HEADER := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_catalog.h
@@ -799,6 +821,30 @@ MODERN_ALL_DATA_ASSET_DEPS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DAT
 # (there is no .pre.c stage for these sources).
 MODERN_ALL_C_HEADER_DEPS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.headers.d))
 
+MODERN_PROJECT_DATA_TARGETS := \
+	$(GENERATED_DATA_LINKED_C) $(GENERATED_DATA_CH2_UNITS_C) $(GENERATED_DATA_CH2_TRAPS_C) \
+	$(GENERATED_DATA_CH2_SHOPS_C) $(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP) \
+	$(GENERATED_DATA_TERRAINSTATS_C) $(GENERATED_DATA_MOVECOST_C) \
+	$(GENERATED_DATA_WEAPONTRIANGLE_C) $(GENERATED_DATA_CHAPTEROBJECTIVES_C) \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C) $(GENERATED_DATA_ITEM_CAP_STAMP) \
+	$(GENERATED_DATA_ACTIVE_OUTPUTS) $(GENERATED_DATA_CONTENT_TEXT_HEADER) \
+	$(MODERN_UI_PRESENTATION_MANIFEST_C)
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+$(MODERN_ALL_OBJECTS) $(MODERN_COHORT_C_OBJECTS) $(MODERN_ALL_DATA_PRE) \
+$(MODERN_ALL_C_HEADER_DEPS) $(MODERN_ALL_DATA_ASSET_DEPS) \
+$(MODERN_PROJECT_DATA_TARGETS): $(FE8_PROJECT_DECLARATION)
+$(MODERN_PROJECT_DATA_TARGETS): $(FE8_PROJECT_DATA_INPUTS) $(FE8_PROJECT_UI_INPUTS)
+endif
+
+ifneq ($(strip $(MODERN_PROJECT_MSG_HEADER)),)
+$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS) $(MODERN_COHORT_C_OBJECTS) \
+$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_PROJECT_MSG_HEADER)
+$(MODERN_PROJECT_DATA_TARGETS): $(MODERN_PROJECT_MSG_HEADER)
+game-localization-validate game-localization-generate game-localization-budget \
+game-localization-width-check game-localization-leakage-audit \
+game-localization-leakage-check: $(MODERN_PROJECT_MSG_HEADER)
+endif
+
 # Only these goals ever touch the full data/normal C source lists;
 # expansion-modern-cohort, expansion-modern-toolchain-check, and
 # expansion-modern-clean must stay untouched by (and not pay the cost of)
@@ -834,7 +880,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-shifted-check \
 	expansion-modern-linker-check
 
-CLEAN_DIRS += $(MODERN_BUILD_ROOT)
+CLEAN_DIRS += $(MODERN_SELECTED_BUILD_ROOT)
 
 .PHONY: $(MODERN_GOALS)
 
@@ -910,7 +956,8 @@ expansion-modern-all: expansion-modern-toolchain-check \
 
 $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 
-$(MODERN_OUTPUT_DIR)/%.o: %.c
+.SECONDEXPANSION:
+$(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -919,11 +966,11 @@ $(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o: $(MODERN_UI_PRESE
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
-$(MODERN_UI_PRESENTATION_MANIFEST_C): src/data/ui_presentation.json \
+$(MODERN_UI_PRESENTATION_MANIFEST_C): $(or $(call generated_data_source,ui_presentation,src/data/ui_presentation.json),src/data/ui_presentation.json) \
 	scripts/generated_data/ui_presentation/schema.py \
 	scripts/generated_data/registry.py \
 	texts/expansion/registry.json $(wildcard texts/expansion/catalog.*.json)
-	$(PYTHON) -m scripts.generated_data generate --table ui_presentation --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(or $(GENERATED_DATA_CLI),$(PYTHON) -m scripts.generated_data) generate --table ui_presentation --out-dir $(GENERATED_DATA_OUT_DIR)
 endif
 
 ifneq ($(strip $(MODERN_BGM_REGISTRY_AVAILABLE)),)
@@ -932,8 +979,8 @@ $(MODERN_BGM_REGISTRY_C): $(MODERN_BGM_REGISTRY_JSON) \
 	include/constants/songs.h include/id_space.h src/eventinfo.c
 	$(PYTHON) $(MODERN_BGM_REGISTRY_SCRIPT) generate
 
-$(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(MODERN_BGM_REGISTRY_C) \
-	expansion-modern-bgm-registry-check
+$(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(call modern_c_source,$(MODERN_BGM_REGISTRY_C)) \
+	$(if $(filter $(MODERN_BGM_REGISTRY_C),$(call modern_c_source,$(MODERN_BGM_REGISTRY_C))),expansion-modern-bgm-registry-check)
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -1203,7 +1250,7 @@ $(MODERN_OUTPUT_DIR)/%.o: %.s
 # top-level Makefile's own generation rules (e.g. %.4bpp: %.png) before
 # preproc is ever invoked, on the very first invocation -- rather than
 # preproc failing hard on the first unresolved INCBIN it hits.
-$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: %.c $(MODERN_PREPROC)
+$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $(MODERN_PREPROC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_PREPROC)" ]; then \
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
@@ -1392,7 +1439,7 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 	' _
   FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
 endif
-$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCANINC)
+$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $(MODERN_SCANINC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_SCANINC)" ]; then \
 		printf '%s\n' "error: modern scaninc not found or not executable: $(MODERN_SCANINC)" >&2; \
@@ -1544,7 +1591,7 @@ MODERN_GENERATED_HEADER_BASENAME_RE := $(subst .,\.,$(MODERN_LOCALIZATION_MSG_ID
 # invocations that *is* command-line identical on GNU and BSD/macOS sed
 # (both accept `-E` for extended regexes), so no $(SED)/uname branch is
 # needed here at all. No backup file is ever created either way.
-$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c
+$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
 	@"$(MODERN_CC)" $(MODERN_CFLAGS) -MM -MG -MT "$(MODERN_OUTPUT_DIR)/$*.o" "$<" > "$@.tmp" || { \
 		rm -f "$@.tmp"; \
@@ -1564,7 +1611,7 @@ include $(MODERN_ALL_C_HEADER_DEPS)
 endif
 
 expansion-modern-clean:
-	$(RM) -r "$(MODERN_BUILD_ROOT)"
+	$(RM) -r "$(MODERN_SELECTED_BUILD_ROOT)"
 
 # ---------------------------------------------------------------------------
 # Transitional modern ELF target (issue #3)
@@ -1748,6 +1795,8 @@ $(MODERN_BUILD_METADATA_JSON): FORCE_MODERN_BUILD_METADATA
 	@mkdir -p "$(MODERN_GENERATED_DIR)"
 ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 	@$(MODERN_EXPANSION_CONFIG_RUNNER) generate \
+		--project "$(or $(FE8_PROJECT),default)" \
+		--project-profile "$(or $(FE8_PROJECT_PROFILE),default)" \
 		--config-mk config.mk \
 		--config "$(MODERN_CONFIG)" \
 		--abi "$(MODERN_ABI)" \
@@ -1818,6 +1867,8 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   # from config.mk alone (which would silently ignore a command-line
   # override and desync the compiled ROM from the generated metadata).
   MODERN_EXPANSION_CONFIG_RESOLVE := $(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve \
+	--project "$(or $(FE8_PROJECT),default)" \
+	--project-profile "$(or $(FE8_PROJECT_PROFILE),default)" \
 	--config-mk config.mk \
 	--config "$(MODERN_CONFIG)" \
 	--abi "$(MODERN_ABI)" \
@@ -2329,9 +2380,10 @@ $(MODERN_OUTPUT_DIR)/src/m4a_1.o $(MODERN_OUTPUT_DIR)/src/m4a_hq_mixer.o: \
 .PHONY: FORCE_MODERN_LOCALIZATION
 FORCE_MODERN_LOCALIZATION:
 
-$(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION
+$(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION $(FE8_PROJECT_UI_INPUTS) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_LOCALIZATION_GENERATED_DIR)"
 	@python3 -m scripts.localization.cli generate \
+		$(FE8_PROJECT_UI_ARGS) \
 		--out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)" \
 		--emission-profile "$(MODERN_LOCALIZATION_EMISSION_PROFILE)"
 
@@ -2394,9 +2446,11 @@ FORCE_MODERN_GAME_LOCALIZATION:
 
 $(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER) \
 $(MODERN_GAME_LOCALIZATION_C) $(MODERN_GAME_LOCALIZATION_REPORT_JSON) \
-$(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION
+$(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION \
+	$(FE8_PROJECT_GAME_INPUTS) $(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)"
 	@python3 -m scripts.localization.game_catalog generate \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 

@@ -215,19 +215,6 @@ def read_msg_constants(header=MSG_HEADER):
     return constants
 
 
-# Cache keyed by header path: the MSG_* family is ~3.4k entries and every
-# record in a table load would otherwise re-read the whole header.
-_MSG_CONSTANTS_CACHE = {}
-
-
-def _msg_constants(header=MSG_HEADER):
-    cached = _MSG_CONSTANTS_CACHE.get(header)
-    if cached is None:
-        cached = read_msg_constants(header)
-        _MSG_CONSTANTS_CACHE[header] = cached
-    return cached
-
-
 def read_item_icon_count(source=ITEM_ICON_SOURCE):
     """Derive the number of item-icon graphics tiles from
     ``src/data/data_item_icon.c`` by counting ``u8 item_icon_*[] =
@@ -254,7 +241,7 @@ def _optional_int(node, default=0):
     return node.as_int(), node.loc
 
 
-def _optional_text_id(node, msg_header=MSG_HEADER):
+def _optional_text_id(node, msg_header=MSG_HEADER, msg_constants=None):
     """``nameTextId``/``descTextId``/``useDescTextId``.
 
     Accepts either the vanilla authoring form -- a plain integer, which the
@@ -272,7 +259,7 @@ def _optional_text_id(node, msg_header=MSG_HEADER):
         return 0, None
     if node.is_scalar() and isinstance(node.value, str):
         symbol = node.as_str()
-        constants = _msg_constants(msg_header)
+        constants = read_msg_constants(msg_header) if msg_constants is None else msg_constants
         if symbol not in constants:
             raise GeneratedDataError(
                 "unknown text ID '{}': no '#define {} ...' in {} (author it in "
@@ -455,7 +442,7 @@ class ItemRecordList(list):
         self.loc = loc
 
 
-def _load_records_file(source_path):
+def _load_records_file(source_path, msg_header=MSG_HEADER):
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
     if schema_node.as_str() != SCHEMA_ID:
@@ -464,14 +451,18 @@ def _load_records_file(source_path):
             schema_node.loc,
         )
     items_node = root.require("items")
+    msg_constants = read_msg_constants(msg_header)
     records = []
     for item_node in items_node.as_list():
         item_name_node = item_node.require("item")
         weapon_type_node = item_node.require("weaponType")
 
-        name_text_id, name_text_loc = _optional_text_id(item_node.get("nameTextId"))
-        desc_text_id, desc_text_loc = _optional_text_id(item_node.get("descTextId"))
-        use_desc_text_id, use_desc_text_loc = _optional_text_id(item_node.get("useDescTextId"))
+        name_text_id, name_text_loc = _optional_text_id(
+            item_node.get("nameTextId"), msg_header, msg_constants)
+        desc_text_id, desc_text_loc = _optional_text_id(
+            item_node.get("descTextId"), msg_header, msg_constants)
+        use_desc_text_id, use_desc_text_loc = _optional_text_id(
+            item_node.get("useDescTextId"), msg_header, msg_constants)
 
         attributes_node = item_node.get("attributes")
         attributes = [n.as_str() for n in attributes_node.as_list()] if attributes_node is not None else []
@@ -546,16 +537,17 @@ def _load_records_file(source_path):
     return ItemRecordList(records, items_node.loc)
 
 
-def load_records(source_path, item_cap=None, overlay_source=None):
+def load_records(source_path, item_cap=None, overlay_source=None, msg_header=MSG_HEADER,
+                 include_overlay=True):
     """Load ItemData records, merging the opt-in expansion overlay only
     when the resolved item ID cap has been raised to include those IDs.
     Default (cap 0xCD) is byte-identical to the vanilla single-file load."""
-    records = _load_records_file(source_path)
+    records = _load_records_file(source_path, msg_header)
     cap = item_cap if item_cap is not None else idspace.resolve_item_id_cap()
-    if cap >= idspace.ITEM_EXPANSION_FIRST:
+    if include_overlay and cap >= idspace.ITEM_EXPANSION_FIRST:
         overlay_source = overlay_source or ITEMS_EXPANSION_SOURCE
         if os.path.exists(overlay_source):
-            overlay = _load_records_file(overlay_source)
+            overlay = _load_records_file(overlay_source, msg_header)
             return ItemRecordList(list(records) + list(overlay), records.loc)
     return records
 
@@ -756,10 +748,17 @@ class ItemsTableSchema(TableSchema):
         )
 
     def load_records(self, source_path):
-        return load_records(source_path, overlay_source=ITEMS_EXPANSION_SOURCE)
+        return load_records(
+            source_path, overlay_source=ITEMS_EXPANSION_SOURCE,
+            msg_header=self.message_header or MSG_HEADER,
+            include_overlay=not self.replacement_source,
+        )
 
     def validate(self, records, diagnostics):
-        validate(records, diagnostics, expansion_header=ITEMS_EXPANSION_HEADER)
+        validate(
+            records, diagnostics, expansion_header=ITEMS_EXPANSION_HEADER,
+            msg_header=self.message_header or MSG_HEADER,
+        )
 
     def generate_c(self, records, source_path):
         from . import generate as items_generate

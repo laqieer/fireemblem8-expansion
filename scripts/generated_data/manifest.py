@@ -29,7 +29,7 @@ import hashlib
 
 from . import registry  # noqa: F401  (import registers table schemas)
 from .diagnostics import GeneratedDataError
-from .schema import REGISTRY, DependencyGraph
+from .schema import REGISTRY, DependencyGraph, SchemaInputs
 
 
 class ManifestEntry:
@@ -58,15 +58,16 @@ class ManifestEntry:
         return self.record_count <= self.record_budget
 
 
-def collect_entries(source_overrides=None):
+def collect_entries(source_overrides=None, inputs=None):
     """Load every registered table and return a name-sorted list of
     :class:`ManifestEntry`. ``source_overrides`` maps ``table -> path`` to
     override a table's ``default_source`` (used by tests/fixtures).
     """
     source_overrides = source_overrides or {}
+    inputs = inputs or SchemaInputs(source_overrides)
     entries = []
     for name in REGISTRY.all_names():
-        schema = REGISTRY.resolve(name)
+        schema = inputs.resolve(name)
         source_path = source_overrides.get(name) or schema.default_source
         if not source_path:
             raise GeneratedDataError(

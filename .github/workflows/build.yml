@@ -1486,6 +1486,16 @@ jobs:
         python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v
         python3 -m unittest discover -s scripts/modernize/tests -p "test_quickstart.py" -v
 
+    # Extended-host has no ARM GCC; exercise the selected-provider compile
+    # and link controls here using the already installed modern toolchain.
+    - name: Check selected project ARM providers (issue #313)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: |
+        python3 -m unittest \
+          scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
+          scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
+          scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot -v
+
     # Generated-data platform (Issue #5 Chapter 2 slice, Batch C): validates
     # every registered table's JSON source, cross-table references, the
     # whole-bundle chapter manifest, and committed inventory drift. Pure

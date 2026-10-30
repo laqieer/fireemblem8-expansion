@@ -110,6 +110,7 @@ ROM/RAM, generated-data, or localization changes.
 | Change type | Where | Primary commands |
 | --- | --- | --- |
 | **Content authoring** (characters, classes, items, supports, Chapter 2 slice) | `src/data/*.json` | `make generated-data-validate`, `make generated-data-generate`, `make generated-data-test` — see [`docs/generated_data_tutorial.md`](docs/generated_data_tutorial.md) |
+| **Bundled project inputs** | `examples/NAME/project.mk` and project-owned content | `make FE8_PROJECT=NAME`, or `./configure --with-project=NAME` — see [`docs/project_selection.md`](docs/project_selection.md) |
 | **Starter content/mechanics/QoL** | `src/data/items_expansion.json`, typed callbacks under `src/`/`include/` | See the dependency-safe profiles and matrices in [`docs/starter_features.md`](docs/starter_features.md) |
 | **Localization** | `texts/expansion/registry.json`, `texts/expansion/catalog.<locale>.json` | `make localization-validate`, `make localization-generate`, `make localization-test` — see [`docs/localization.md`](docs/localization.md) |
 | **Shared text generation** | `scripts/texttools/textprocess.py`, `texts/` | `python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v` — see [`docs/text_generation.md`](docs/text_generation.md) for atomic per-file publication and controlled reader/concurrency evidence |

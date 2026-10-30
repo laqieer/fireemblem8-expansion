@@ -17,6 +17,7 @@ the authoritative technical documentation and are checked by CI.
 | Understand what's actually supported (hosts, toolchains, targets) | [`framework-support.md`](framework-support.md) |
 | Get the architecture map before diving into source | [`architecture.md`](architecture.md) |
 | Author game content (characters/classes/items/etc.) | [`generated_data_tutorial.md`](generated_data_tutorial.md) |
+| Select a bundled project's inputs and isolated build profile | [`project_selection.md`](project_selection.md) |
 | Enable/extend starter content, mechanics, or Danger QoL | [`starter_features.md`](starter_features.md) |
 | Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
 | Drive or optionally delegate blue units through the existing AI, including bounded semantic runtime scenarios | [`autoplay.md`](autoplay.md) |
@@ -81,6 +82,7 @@ numbers mark merged (closed) contracts only:
 | Optional HQ PCM mixer (issue #83) | Default-off modern MP2K mixer selection, IWRAM budget, and target PCM procedure | [`audio.md`](audio.md) |
 | Typed IDs / caps (issue #10) | `include/id_space.h` (DEFAULT), `build/generated/data/id_space_active.h` (ACTIVE), `FE8_ITEM_ID_CAP` | [`id_space.md`](id_space.md), [`../reports/id_space_audit.md`](../reports/id_space_audit.md) |
 | Config / ROM identity | `struct ExpansionMetadata` (`include/expansion_metadata.h`), `EXPANSION_SAVE_COMPAT_EPOCH` | [`config_identity.md`](config_identity.md), [`save_format.md`](save_format.md) |
+| Project input selection | `FE8_PROJECT`, `FE8_PROJECT_PROFILE`, reviewed `examples/NAME/project.mk`, existing inherit/replace providers | [`project_selection.md`](project_selection.md) |
 | Debug-tools extension (issues #11/#128) | Action-registration API (`include/expansion_debugtools.h`), `FE8_EXPANSION_DEBUGTOOLS_ENABLED`, isolated volatile save fixtures | [`debugtools.md`](debugtools.md), [`debug_save_fixtures.md`](debug_save_fixtures.md) |
 | Release-safe mGBA logging (issue #68) | Bounded typed API (`include/expansion_log.h`), existing `FE8_EXPANSION_LOGGING_ENABLED` debug profile gate | [`debugtools.md`](debugtools.md#release-safe-mgba-logging-issue-68) |
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |

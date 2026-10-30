@@ -50,6 +50,9 @@ AUTOTOOLS_CONFIG_MK ?= config.autotools.mk
 AUTOTOOLS_BUILD_DIR ?= .
 -include $(wildcard $(AUTOTOOLS_CONFIG_MK))
 
+.DEFAULT_GOAL := all
+include project_selection.mk
+
 # Keep the archival guard default-disabled before modern.mk has included the
 # committed config.mk. Command-line and configured values still override this.
 EXPANSION_HQ_MIXER ?= 0
@@ -99,8 +102,6 @@ ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 # default goal explicitly, before the include, so this include-order
 # requirement can never regress bare `make`'s behavior regardless of
 # what any included makefile defines first.
-.DEFAULT_GOAL := all
-
 include generated_data.mk
 
 # Issue #18 sprint 1: fast, Python-only localization catalog targets

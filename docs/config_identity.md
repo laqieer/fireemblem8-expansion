@@ -37,6 +37,23 @@ specialized ROM, asset, linker, and runtime-gate recipes. `make distclean`
 removes generated Autoconf state. Contributors changing `configure.ac` must
 regenerate the committed `configure` script with `autoreconf -fi`.
 
+### Project and profile selection
+
+`FE8_PROJECT` / `FE8_PROJECT_PROFILE` and the corresponding
+`--with-project` / `--with-project-profile` options select reviewed input
+providers without changing the engine root. Project-required settings supply
+defaults before `config.mk`; explicit overrides must remain semantically
+equivalent to those requirements. A saved profile is bound to its saved
+project, so changing projects recomputes the default profile and derived
+settings. Nondefault selections are modern AAPCS only.
+
+Nondefault project/profile names join the existing diagnostic fingerprint and
+metadata JSON. `default/default` retains the old fingerprint inputs and JSON
+shape. Selection does not change the save envelope or automatically allocate
+a compatibility epoch. See [project selection](project_selection.md) for
+providers, output namespaces, supported combinations and
+[TC-PROJECT-SELECTION-001](project_selection.md#tc-project-selection-001).
+
 ### `config.mk` (root, committed)
 
 | Setting | Constraint | Default | Affects |
