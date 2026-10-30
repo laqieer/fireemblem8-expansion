@@ -46,6 +46,11 @@ def network_git_environment(repository_root: Path) -> dict[str, str]:
         f"https://github.com/{repository}.git",
     ):
         raise reporter.PilotDataError("authenticated hydration requires a GitHub HTTPS origin")
+    effective_remote = reporter.run_git(
+        repository_root, "remote", "get-url", "origin",
+    ).decode("utf-8").strip()
+    if effective_remote != remote:
+        raise reporter.PilotDataError("authenticated hydration rejects rewritten origin URLs")
     authorization = base64.b64encode(f"x-access-token:{token}".encode("ascii")).decode("ascii")
     for index, (key, value) in enumerate((
         (f"http.{remote}.extraheader", f"AUTHORIZATION: basic {authorization}"),

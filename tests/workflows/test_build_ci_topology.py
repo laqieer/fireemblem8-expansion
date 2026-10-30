@@ -2863,6 +2863,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, expected)
             self.assertEqual((root / ".git/config").read_bytes(), config_before)
+            for replacement in ("file:///untrusted/", "ssh://example.invalid/",
+                                "https://example.invalid/"):
+                with self.subTest(replacement=replacement):
+                    key = f"url.{replacement}.insteadOf"
+                    _git_run(root, "config", key, "https://github.com/", check=True)
+                    try:
+                        with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                            with self.assertRaises(reporter.PilotDataError):
+                                hydrate_authority.network_git_environment(root)
+                    finally:
+                        _git_run(root, "config", "--unset", key, check=True)
             for remote in ("https://example.invalid/owner/repo.git",
                            "git@github.com:owner/repo.git"):
                 _git_run(root, "remote", "set-url", "origin", remote, check=True)

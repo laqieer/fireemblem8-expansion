@@ -1313,7 +1313,8 @@ is not an authorization decision. Private Git authority hydration uses the
 existing read-only `github.token` only in its hydration step. The helper supplies
 an origin-scoped HTTPS authorization header through Git's process environment,
 disables redirects (including conflicting origin-specific presets) and credential
-helpers, and never saves credentials to Git
+helpers, rejects origin URL rewrites before passing authorization to Git, and
+never saves credentials to Git
 configuration. Offline authority reads and later host checks retain their
 credential-free environments. No personal token or repository visibility change
 is required. See

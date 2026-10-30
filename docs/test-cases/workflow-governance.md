@@ -25,7 +25,8 @@ Public and private payloads preserve exact repository, head and base binding.
 Missing/nonboolean visibility and wrong repository identities fail. Real Git
 resolves the synthetic authorization header only for the expected GitHub origin,
 with redirects and credential helpers disabled even when local origin-specific
-configuration enables redirects. Other origins receive no header;
+configuration enables redirects. Authenticated URL rewrites to file, SSH or
+another HTTPS origin are rejected before transport execution. Other origins receive no header;
 configuration stays byte-identical. Offline Git receives no token, and
 unauthenticated fixture hydration preserves HEAD, refs and `FETCH_HEAD` while
 restoring required authority.
