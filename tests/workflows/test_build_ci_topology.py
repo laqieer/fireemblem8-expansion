@@ -2693,21 +2693,20 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "Run workflow-pilot reporter regression suite (issue #176)",
             "Validate workflow-pilot baseline against checked-out Git history",
         )
-        env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
-        variants = (
-            "",
-            *(
-                env_block.replace(f"{entry}\n", "")
-                for entry in SCRUBBED_STEP_ENV
-            ),
-            env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
-            env_block + "        GITHUB_ENV: build/mask\n",
-            env_block.replace("      env:", '      "env":'),
-            env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
-            env_block.replace("        ENV: ''", "        ENV: &mask ''"),
-            env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
-        )
         for name in names:
+            entries = (HYDRATION_STEP_ENV if name == "Hydrate workflow-pilot Git authority"
+                       else SCRUBBED_STEP_ENV)
+            env_block = "      env:\n" + "\n".join(entries) + "\n"
+            variants = (
+                "",
+                *(env_block.replace(f"{entry}\n", "") for entry in entries),
+                env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
+                env_block + "        GITHUB_ENV: build/mask\n",
+                env_block.replace("      env:", '      "env":'),
+                env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
+                env_block.replace("        ENV: ''", "        ENV: &mask ''"),
+                env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
+            )
             for variant in variants:
                 with self.subTest(name=name, variant=variant):
                     step_start = self.text.index(f"    - name: {name}\n")
@@ -2821,11 +2820,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             root = Path(temporary)
             _git_run(root, "init", check=True)
             _git_run(root, "remote", "add", "origin", origin, check=True)
+            _git_run(root, "config", f"http.{origin}.followRedirects", "true", check=True)
             config_before = (root / ".git/config").read_bytes()
-            with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+            with mock.patch.dict(os.environ, {"GH_TOKEN": token, "GITHUB_TOKEN": token}):
                 environment = hydrate_authority.network_git_environment(root)
+                offline_environment = reporter.git_environment(offline=True)
+                self.assertNotIn("GH_TOKEN", offline_environment)
+                self.assertNotIn("GITHUB_TOKEN", offline_environment)
+                self.assertNotIn(token, repr(offline_environment))
             self.assertNotIn("GH_TOKEN", environment)
-            self.assertNotIn(token, repr(reporter.git_environment(offline=True)))
+            self.assertNotIn("GITHUB_TOKEN", environment)
+            with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                redirects = hydrate_authority.run_git(
+                    root, "config", "--get-urlmatch", "http.followRedirects", origin,
+                )
+            self.assertEqual(redirects.stdout, b"false\n")
             for url, expected in (
                 (origin, 0),
                 ("https://github.com/owner/another.git", 1),

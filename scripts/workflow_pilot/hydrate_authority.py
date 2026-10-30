@@ -51,10 +51,11 @@ def network_git_environment(repository_root: Path) -> dict[str, str]:
         (f"http.{remote}.extraheader", f"AUTHORIZATION: basic {authorization}"),
         ("credential.helper", ""),
         ("http.followRedirects", "false"),
+        (f"http.{remote}.followRedirects", "false"),
     )):
         environment[f"GIT_CONFIG_KEY_{index}"] = key
         environment[f"GIT_CONFIG_VALUE_{index}"] = value
-    environment["GIT_CONFIG_COUNT"] = "3"
+    environment["GIT_CONFIG_COUNT"] = "4"
     return environment
 
 
