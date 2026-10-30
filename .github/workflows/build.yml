@@ -874,6 +874,7 @@ jobs:
     - name: Hydrate workflow-pilot Git authority
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:
+        GH_TOKEN: ${{ github.token }}
         BASH_ENV: ''
         ENV: ''
         GIT_ALTERNATE_OBJECT_DIRECTORIES: ''

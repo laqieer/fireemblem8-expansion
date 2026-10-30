@@ -1869,6 +1869,30 @@ class LauncherSandbox:
 
 
 class PullRequestMetadataTests(unittest.TestCase):
+    def test_public_and_private_repositories_retain_exact_identity_binding(self):
+        for private in (False, True):
+            with self.subTest(private=private):
+                payload = _pr()
+                payload["base"]["repo"]["private"] = private
+                state = pr_metadata._parse_pull_request_payload(payload, REPOSITORY, PR_NUMBER)
+                self.assertEqual((state.repository, state.head_sha, state.base_sha),
+                                 (REPOSITORY, HEAD, BASE))
+                payload["base"]["repo"]["full_name"] = "another/repo"
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_pull_request_payload(payload, REPOSITORY, PR_NUMBER)
+
+    def test_repository_visibility_must_be_an_explicit_boolean(self):
+        for private in (None, 0, 1, "false", "true", [], {}):
+            with self.subTest(private=private):
+                payload = _pr()
+                payload["base"]["repo"]["private"] = private
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_pull_request_payload(payload, REPOSITORY, PR_NUMBER)
+        payload = _pr()
+        del payload["base"]["repo"]["private"]
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            pr_metadata._parse_pull_request_payload(payload, REPOSITORY, PR_NUMBER)
+
     def test_candidate_marker_lifecycle_matrix_retains_non_authorizing_history(self):
         from scripts.workflow_pilot.adaptive_gate import binding_name
         marker = binding_name(PR_NUMBER, HEAD, BASE, "master")
