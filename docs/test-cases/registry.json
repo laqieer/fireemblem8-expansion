@@ -538,11 +538,13 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/256",
         "https://github.com/laqieer/fireemblem8-expansion/issues/258",
         "https://github.com/laqieer/fireemblem8-expansion/issues/260",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/279"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/279",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/309"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
+        "TC-WORKFLOW-PRIVATE-CI-001",
         "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
         "TC-WORKFLOW-CI-WAIT-001",
@@ -2867,6 +2869,34 @@
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",
           "evidence": "scripts/workflow_pilot/tests/test_worktree_cleanup.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PRIVATE-CI-001",
+      "title": "Preserve CI for private repositories",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/309"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-private-ci-001-preserve-ci-for-private-repositories",
+      "profiles": [
+        "Linux source checkout with Python 3 and Git; private-repository full Build CI"
+      ],
+      "purpose": "Restore private PR routing and authenticated immutable Git authority hydration without changing visibility or final gates.",
+      "prerequisites": "Run from the repository root. Local fixtures use synthetic credentials only; live hydration uses the existing read-only Actions contents token.",
+      "actions": "Exercise public/private PR parsing, malformed visibility and identity controls, real Git URL-scoped authorization resolution, disabled redirects/helpers, unchanged configuration, parsed hydration-step token scope and existing immutable authority hydration.",
+      "expected_result": "Both Boolean visibility values retain exact identity binding. Only the expected HTTPS origin receives process-local authorization; offline Git, unrelated origins and subsequent steps receive no token. HEAD, refs, FETCH_HEAD and credential-free persisted configuration remain unchanged.",
+      "negative_control": "The original parser rejects private repositories and original hydration supplies no authorization. Malformed visibility, identity drift, unsupported authenticated origins and removed workflow token refuse.",
+      "interactions": "Depends on the isolated launcher, immutable authority checks, repository identity and read-only contents access. Conflicts with credential persistence, redirects or bypassed trusted-base checks.",
+      "save_compatibility": "Source-only CI tooling; no ROM/RAM, save/config, generated-data, localization, modern/debug/release or archival impact.",
+      "cleanup": "Temporary fixture repositories clean themselves up. Never record real tokens in source or evidence.",
+      "limitations": "Local tests prove parser and real Git configuration semantics, not GitHub token permissions; full live Build proves private fetch access. An old immutable PR base rejecting private payloads remains a bootstrap blocker. No manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_public_and_private_repositories_retain_exact_identity_binding scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_repository_visibility_must_be_an_explicit_boolean tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_hydration_authentication_is_ephemeral_and_origin_scoped tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_workflow_pilot_authority_hydration_is_exact_and_ordered tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_exact_fixture_hydration_restores_force_pushed_commit -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
         }
       ]
     },

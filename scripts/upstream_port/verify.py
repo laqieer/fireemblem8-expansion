@@ -2090,7 +2090,11 @@ def _parse_step(block, job_name, index, repository_root=None):
                         if ": " in entry
                         else (entry[:-1], "")
                     )
-                    for entry in _SCRUBBED_PILOT_ENV
+                    for entry in (
+                        (*_SCRUBBED_PILOT_ENV, "GH_TOKEN: ${{ github.token }}")
+                        if name == "Hydrate workflow-pilot Git authority"
+                        else _SCRUBBED_PILOT_ENV
+                    )
                 )
             ):
                 raise ValueError(

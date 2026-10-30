@@ -1087,6 +1087,22 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-PRIVATE-CI-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests."
+                            "test_public_and_private_repositories_retain_exact_identity_binding "
+                            "scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests."
+                            "test_repository_visibility_must_be_an_explicit_boolean "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_hydration_authentication_is_ephemeral_and_origin_scoped "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_workflow_pilot_authority_hydration_is_exact_and_ordered "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_exact_fixture_hydration_restores_force_pushed_commit -v",
+                        },
+                    },
                     "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001": {
                         "document": "docs/platform-runtime-storage.md",
                         "commands": {

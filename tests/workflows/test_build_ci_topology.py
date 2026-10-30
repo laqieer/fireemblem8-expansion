@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import fnmatch
 import http.server
@@ -307,6 +308,7 @@ SCRUBBED_STEP_ENV = (
     "        PATH: /usr/bin:/bin",
     "        PYTHONPATH: ''",
 )
+HYDRATION_STEP_ENV = ("        GH_TOKEN: ${{ github.token }}", *SCRUBBED_STEP_ENV)
 
 
 def _git_run(
@@ -1491,7 +1493,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             "Hydrate workflow-pilot Git authority",
             (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
             if_expression=FULL_WORKER_STEP_CONDITION,
-            env_lines=SCRUBBED_STEP_ENV,
+            env_lines=HYDRATION_STEP_ENV,
         ),
         _run_step_is_exact(
             steps[4],
@@ -2397,7 +2399,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         jobs["host-tests"],
         WORKFLOW_PILOT_AUTHORITY_HYDRATION,
         if_expression=FULL_WORKER_STEP_CONDITION,
-        env_lines=SCRUBBED_STEP_ENV,
+        env_lines=HYDRATION_STEP_ENV,
     ):
         errors.append(
             "candidate host lost exact workflow-pilot Git authority hydration"
@@ -2691,21 +2693,20 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "Run workflow-pilot reporter regression suite (issue #176)",
             "Validate workflow-pilot baseline against checked-out Git history",
         )
-        env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
-        variants = (
-            "",
-            *(
-                env_block.replace(f"{entry}\n", "")
-                for entry in SCRUBBED_STEP_ENV
-            ),
-            env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
-            env_block + "        GITHUB_ENV: build/mask\n",
-            env_block.replace("      env:", '      "env":'),
-            env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
-            env_block.replace("        ENV: ''", "        ENV: &mask ''"),
-            env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
-        )
         for name in names:
+            entries = (HYDRATION_STEP_ENV if name == "Hydrate workflow-pilot Git authority"
+                       else SCRUBBED_STEP_ENV)
+            env_block = "      env:\n" + "\n".join(entries) + "\n"
+            variants = (
+                "",
+                *(env_block.replace(f"{entry}\n", "") for entry in entries),
+                env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
+                env_block + "        GITHUB_ENV: build/mask\n",
+                env_block.replace("      env:", '      "env":'),
+                env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
+                env_block.replace("        ENV: ''", "        ENV: &mask ''"),
+                env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
+            )
             for variant in variants:
                 with self.subTest(name=name, variant=variant):
                     step_start = self.text.index(f"    - name: {name}\n")
@@ -2762,13 +2763,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 host,
                 WORKFLOW_PILOT_AUTHORITY_HYDRATION,
                 if_expression=FULL_WORKER_STEP_CONDITION,
-                env_lines=SCRUBBED_STEP_ENV,
+                env_lines=HYDRATION_STEP_ENV,
             )
         )
         self.assertLess(
             host.index("Hydrate workflow-pilot Git authority"),
             host.index("Run workflow-pilot reporter regression suite"),
         )
+        hydration = next(step for step in _step_blocks(host)
+                         if _step_name(step) == "Hydrate workflow-pilot Git authority")
+        without_token = hydration.replace("        GH_TOKEN: ${{ github.token }}\n", "", 1)
+        self.assertTrue(_protected_host_prefix_errors(host.replace(hydration, without_token, 1)))
         replacements = (
             "true",
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(" -I ", " "),
@@ -2807,6 +2812,81 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         for error in _errors(changed, False)
                     )
                 )
+
+    def test_hydration_authentication_is_ephemeral_and_origin_scoped(self):
+        token = "fixture-token"
+        origin = "https://github.com/owner/repo.git"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _git_run(root, "init", check=True)
+            _git_run(root, "remote", "add", "origin", origin, check=True)
+            _git_run(root, "config", f"http.{origin}.followRedirects", "true", check=True)
+            config_before = (root / ".git/config").read_bytes()
+            with mock.patch.dict(os.environ, {"GH_TOKEN": token, "GITHUB_TOKEN": token}):
+                environment = hydrate_authority.network_git_environment(root)
+                offline_environment = reporter.git_environment(offline=True)
+                self.assertNotIn("GH_TOKEN", offline_environment)
+                self.assertNotIn("GITHUB_TOKEN", offline_environment)
+                self.assertNotIn(token, repr(offline_environment))
+            self.assertNotIn("GH_TOKEN", environment)
+            self.assertNotIn("GITHUB_TOKEN", environment)
+            with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                redirects = hydrate_authority.run_git(
+                    root, "config", "--get-urlmatch", "http.followRedirects", origin,
+                )
+            self.assertEqual(redirects.stdout, b"false\n")
+            for url, expected in (
+                (origin, 0),
+                ("https://github.com/owner/another.git", 1),
+                ("https://example.invalid/owner/repo.git", 1),
+            ):
+                with self.subTest(url=url):
+                    with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                        result = hydrate_authority.run_git(
+                            root, "config", "--get-urlmatch", "http.extraheader", url,
+                            check=False,
+                        )
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    if expected == 0:
+                        scheme, encoded = result.stdout.decode().strip().split("basic ")
+                        self.assertEqual(scheme, "AUTHORIZATION: ")
+                        self.assertEqual(base64.b64decode(encoded),
+                                         f"x-access-token:{token}".encode())
+                    else:
+                        self.assertEqual(result.stdout, b"")
+            for key, expected in (("http.followRedirects", b"false\n"),
+                                  ("credential.helper", b"\n")):
+                result = subprocess.run(
+                    reporter.git_command(root, "config", "--get", key),
+                    env=environment, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, expected)
+            self.assertEqual((root / ".git/config").read_bytes(), config_before)
+            for replacement in ("file:///untrusted/", "ssh://example.invalid/",
+                                "https://example.invalid/"):
+                with self.subTest(replacement=replacement):
+                    key = f"url.{replacement}.insteadOf"
+                    _git_run(root, "config", key, "https://github.com/", check=True)
+                    try:
+                        with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                            with self.assertRaises(reporter.PilotDataError):
+                                hydrate_authority.network_git_environment(root)
+                    finally:
+                        _git_run(root, "config", "--unset", key, check=True)
+            for remote in ("https://example.invalid/owner/repo.git",
+                           "git@github.com:owner/repo.git"):
+                _git_run(root, "remote", "set-url", "origin", remote, check=True)
+                with mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                    with self.assertRaises(reporter.PilotDataError):
+                        hydrate_authority.network_git_environment(root)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(hydrate_authority.network_git_environment(ROOT),
+                             reporter.git_environment(offline=False))
+        for token in ("", "line\nbreak", "non-ascii-\N{LATIN SMALL LETTER E WITH ACUTE}"):
+            with self.subTest(token=token), mock.patch.dict(os.environ, {"GH_TOKEN": token}):
+                with self.assertRaises(reporter.PilotDataError):
+                    hydrate_authority.network_git_environment(ROOT)
 
     def test_isolated_launcher_and_closed_modes_are_pinned(self):
         commands = (
@@ -3005,10 +3085,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_exact_fixture_hydration_restores_force_pushed_commit(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
+        with mock.patch.dict(os.environ), tempfile.TemporaryDirectory(
             prefix="workflow-authority-hydration-",
             dir=artifact_root,
         ) as temporary:
+            os.environ.pop("GH_TOKEN", None)
             root = Path(temporary)
             seed = root / "seed"
             remote = root / "remote.git"
