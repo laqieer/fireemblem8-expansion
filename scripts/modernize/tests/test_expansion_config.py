@@ -454,7 +454,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             "MODERN_OUTPUT_DIR", "GENERATED_DATA_OUT_DIR", "LOCALIZATION_OUT_DIR",
             "GAME_LOCALIZATION_OUT_DIR", "MODERN_LOCALIZATION_GENERATED_DIR",
             "MODERN_GAME_LOCALIZATION_GENERATED_DIR", "ASSET_OUTPUT_DIR",
-            "ASSET_DISCOVERY_ROOT",
+            "ASSET_DISCOVERY_ROOT", "BANIM_OBJECT", "MODERN_ELF_BANIM_SYM",
         )
         output = ROOT / "build/selection-root/projects" / self.project.name
         self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
@@ -479,15 +479,18 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         for variable in variables:
             with self.subTest(variable=variable):
                 self.assertTrue(Path(paths[variable]).is_relative_to(Path(prefix)), paths[variable])
-        for variable in (
-            "FE8_PROJECT_OUTPUT_DIR", "MODERN_OUTPUT_DIR", "GENERATED_DATA_OUT_DIR",
-            "ASSET_OUTPUT_DIR",
+        for variable, value in (
+            ("FE8_PROJECT_OUTPUT_DIR", "build/outside"),
+            ("MODERN_OUTPUT_DIR", "build/outside"),
+            ("GENERATED_DATA_OUT_DIR", "build/outside"),
+            ("ASSET_OUTPUT_DIR", "build/outside"),
+            ("MODERN_BUILD_ROOT", ""),
         ):
             with self.subTest(override=variable):
                 rejected = subprocess.run(
                     [
                         "make", "--no-print-directory", "-s", "-f", "project_selection.mk",
-                        f"FE8_PROJECT={self.project.name}", f"{variable}=build/outside",
+                        f"FE8_PROJECT={self.project.name}", f"{variable}={value}",
                         "project-selection-config",
                     ],
                     cwd=ROOT, text=True, capture_output=True, check=False,
@@ -657,7 +660,15 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                     )
 
     def test_selected_projects_reject_archival_mixed_and_non_aapcs_requests(self):
-        for goals in (["legacy"], ["all", "fireemblem8.gba"], ["src/time.o"]):
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        legacy_generated = (
+            f"build/projects/{self.project.name}/primary/debug/aapcs/generated/data/data_items.o"
+        )
+        for goals in (
+            ["legacy"], ["all", "fireemblem8.gba"], ["src/time.o"],
+            [legacy_generated], ["asm/fe6sio.o"],
+        ):
             with self.subTest(goals=goals):
                 result = subprocess.run(
                     [
@@ -759,6 +770,84 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertEqual(generated.read_bytes(), previous)
 
+    def test_standalone_data_goals_build_and_refresh_the_selected_header(self):
+        text = self.project / "texts.txt"
+        text.write_text(
+            '#include "../../texts/texts.txt"\n'
+            "## MSG_PROJECT_DATA_FIRST\nFirst selected text.[X]\n",
+            encoding="utf-8",
+        )
+        items = self.project / "items.json"
+        data = json.loads((ROOT / "src/data/items.json").read_text(encoding="utf-8"))
+        data["items"][0]["nameTextId"] = "MSG_PROJECT_DATA_FIRST"
+        items.write_text(json.dumps(data), encoding="utf-8")
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := game-text items\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_TEXT_MAIN := {text.relative_to(ROOT)}\n"
+                "FE8_PROJECT_TEXT_DEFS := texts/textdefs.txt\n"
+                f"FE8_PROJECT_SOURCE_items := {items.relative_to(ROOT)}\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        header = output / "primary/release/aapcs/generated/text/include/constants/msg.h"
+        from scripts.generated_data.validators import extract_define_constants
+
+        for goal, symbol, expected in (
+            ("generated-data-validate", "MSG_PROJECT_DATA_FIRST", 3414),
+            ("generated-data-manifest", "MSG_PROJECT_DATA_SECOND", 3415),
+        ):
+            with self.subTest(goal=goal):
+                if expected == 3415:
+                    with text.open("a", encoding="utf-8") as stream:
+                        stream.write("## MSG_PROJECT_DATA_SECOND\nSecond selected text.[X]\n")
+                    data["items"][0]["nameTextId"] = symbol
+                    items.write_text(json.dumps(data), encoding="utf-8")
+                result = subprocess.run(
+                    [
+                        "make", "--no-print-directory", "-s", "NODEP=1",
+                        f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=release", goal,
+                    ],
+                    cwd=ROOT, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(extract_define_constants(str(header))[symbol][0], expected)
+
+    @unittest.skipUnless(
+        shutil.which("arm-none-eabi-as") and (ROOT / "tools/scaninc/scaninc").is_file(),
+        "ARM assembler and built scaninc required",
+    )
+    def test_modern_project_link_preparation_builds_real_shared_assembly(self):
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        query = subprocess.run(
+            [
+                "make", "--no-print-directory", "-s", "-f", "Makefile", "-f", "-", "NODEP=1",
+                f"FE8_PROJECT={self.project.name}", "project-shared-input",
+            ],
+            input="project-shared-input:\n"
+            "\t@printf '%s\\n' '$(firstword $(filter sound/songs/%.o,$(MODERN_ELF_LEGACY_ASM)))'\n",
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(query.returncode, 0, query.stderr)
+        shared = query.stdout.splitlines()[-1]
+        self.assertTrue(shared.startswith("sound/") and shared.endswith(".o"), shared)
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-s", "NODEP=1",
+                f"FE8_PROJECT={self.project.name}", "expansion-modern-legacy-ready",
+                f"MODERN_ELF_LEGACY_ASM={shared}", "MODERN_ELF_LEGACY_MIDI=",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        elf = subprocess.run(
+            ["arm-none-eabi-readelf", "-h", str(ROOT / shared)],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertRegex(elf.stdout, r"Machine:\s+ARM\b")
+
     def test_selected_translation_and_mapping_use_the_real_engine_root(self):
         authored = self.project / "authored.fr.json"
         data = json.loads(
@@ -829,6 +918,51 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(compiled.returncode, 0, compiled.stderr)
         observed = subprocess.run([str(binary)], capture_output=True, check=True)
         self.assertEqual(observed.stdout, b"Project proof.\x1f\n")
+
+
+@unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "modern ROM toolchain required")
+class ProjectSelectionRomTests(unittest.TestCase):
+    def test_selected_project_rom_links_and_boots(self):
+        projects = ROOT / "examples"
+        projects.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="selection-rom-", dir=projects) as directory:
+            project = Path(directory)
+            (project / "project.mk").write_text(
+                "FE8_PROJECT_PROFILES := probe\n"
+                "FE8_PROJECT_DEFAULT_PROFILE := probe\n"
+                "FE8_PROJECT_REQUIRED_SETTINGS := MODERN_ROM_SIZE\n"
+                "FE8_PROJECT_probe_MODERN_ROM_SIZE := 32M\n"
+                "FE8_PROJECT_INHERIT := $(FE8_PROJECT_MODULES)\n",
+                encoding="utf-8",
+            )
+            output = ROOT / "build/projects" / project.name
+            self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-s", "-j2",
+                    f"FE8_PROJECT={project.name}", "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                    "expansion-modern-boot-check",
+                ],
+                cwd=ROOT, text=True, capture_output=True, check=False, timeout=1800,
+            )
+            self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-20000:])
+            profile = output / "probe/debug/aapcs"
+            self.assertEqual((profile / "fireemblem8.gba").stat().st_size, 32 * 1024 * 1024)
+            metadata = json.loads(
+                (profile / "generated/expansion_build_metadata.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["project"], project.name)
+            self.assertEqual(metadata["project_profile"], "probe")
+            pinned = []
+            for line in (profile / "fireemblem8.map").read_text(encoding="utf-8").splitlines():
+                fields = line.split()
+                if (
+                    len(fields) == 4 and fields[0] == ".data"
+                    and fields[1].startswith("0x") and fields[2].startswith("0x")
+                    and int(fields[1], 16) == 0x08C02000 and int(fields[2], 16) > 0
+                ):
+                    pinned.append((ROOT / fields[3]).resolve())
+            self.assertEqual(pinned, [(profile / "banim/data_banim.o").resolve()])
 
 
 class ValidateTitleTests(unittest.TestCase):

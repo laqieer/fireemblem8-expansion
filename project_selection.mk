@@ -221,10 +221,16 @@ FE8_PROJECT_GAME_ARGS = \
 	$(foreach pair,$(FE8_PROJECT_UI_CATALOGS),--expansion-catalog $(call fe8_project_quote,$(pair)))
 
 ifneq ($(FE8_PROJECT),default)
+ifneq ($(origin MODERN_BUILD_ROOT),undefined)
+ifeq ($(strip $(MODERN_BUILD_ROOT)),)
+$(error MODERN_BUILD_ROOT must be a nonempty outer build directory)
+endif
+endif
 ifneq ($(or $(MODERN_ABI),aapcs),aapcs)
 $(error FE8_PROJECT=$(FE8_PROJECT) supports only modern AAPCS)
 endif
-ifneq ($(filter legacy legacy-% fireemblem8% objects.lst shiftcheck% build/shiftcheck/% build/legacy/% src/% asm/% data/% sound/% banim/%,$(MAKECMDGOALS)),)
+FE8_PROJECT_ARCHIVAL_C_GOALS := $(strip $(foreach goal,$(MAKECMDGOALS),$(if $(and $(filter %.o %.s,$(goal)),$(wildcard $(basename $(goal)).c)),$(goal))))
+ifneq ($(filter legacy legacy-% fireemblem8% objects.lst shiftcheck% build/shiftcheck/% build/legacy/% src/%.c banim/data_banim.o%,$(MAKECMDGOALS))$(FE8_PROJECT_ARCHIVAL_C_GOALS),)
 $(error FE8_PROJECT=$(FE8_PROJECT) is unsupported by the archival lane, including mixed requests)
 endif
 define fe8_reject_project_output_override
@@ -232,7 +238,7 @@ ifneq ($$(origin $(1)),undefined)
 $$(error $(1) is derived for selected projects; set MODERN_BUILD_ROOT instead)
 endif
 endef
-$(foreach variable,FE8_PROJECT_OUTPUT_DIR MODERN_SELECTED_BUILD_ROOT MODERN_OUTPUT_DIR GENERATED_DATA_OUT_DIR LOCALIZATION_OUT_DIR GAME_LOCALIZATION_OUT_DIR ASSET_OUTPUT_DIR,$(eval $(call fe8_reject_project_output_override,$(variable))))
+$(foreach variable,FE8_PROJECT_OUTPUT_DIR MODERN_SELECTED_BUILD_ROOT MODERN_OUTPUT_DIR GENERATED_DATA_OUT_DIR LOCALIZATION_OUT_DIR GAME_LOCALIZATION_OUT_DIR ASSET_OUTPUT_DIR BANIM_OBJECT,$(eval $(call fe8_reject_project_output_override,$(variable))))
 endif
 
 FE8_PROJECT_OUTPUT_DIR = $(or $(MODERN_BUILD_ROOT),build)/projects/$(FE8_PROJECT)/$(FE8_PROJECT_PROFILE)/$(or $(MODERN_CONFIG),debug)/$(or $(MODERN_ABI),aapcs)
@@ -242,3 +248,7 @@ fe8_project_settings_env = $(foreach setting,$(FE8_PROJECT_REQUIRED_SETTINGS),FE
 .PHONY: project-selection-config
 project-selection-config:
 	@FE8_PROJECT=$(call fe8_project_quote,$(FE8_PROJECT)) FE8_PROJECT_PROFILE=$(call fe8_project_quote,$(FE8_PROJECT_PROFILE)) FE8_PROJECT_REQUIRED_SETTINGS=$(call fe8_project_quote,$(FE8_PROJECT_REQUIRED_SETTINGS)) FE8_PROJECT_ASSET_MANIFEST=$(call fe8_project_quote,$(if $(filter assets,$(FE8_PROJECT_REPLACE)),$(FE8_PROJECT_SOURCE_assets))) $(fe8_project_settings_env) $(PYTHON) -c 'import json,os; keys=os.environ["FE8_PROJECT_REQUIRED_SETTINGS"].split(); print(json.dumps({"project":os.environ["FE8_PROJECT"],"profile":os.environ["FE8_PROJECT_PROFILE"],"settings":{key:os.environ["FE8_PROJECT_SETTING_"+key] for key in keys},"asset_manifest":os.environ["FE8_PROJECT_ASSET_MANIFEST"] or None},sort_keys=True))'
+
+.PHONY: project-selection-archival-guard
+project-selection-archival-guard:
+	@$(if $(filter-out default,$(FE8_PROJECT)),$(error FE8_PROJECT=$(FE8_PROJECT) is unsupported by the archival lane),:)

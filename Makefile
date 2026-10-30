@@ -162,7 +162,7 @@ C_OBJECTS    := $(CFILES:.c=.o)
 LEGACY_MSG_OBJECT := $(C_SUBDIR)/msg_data.o
 LEGACY_C_OBJECTS := $(filter-out $(LEGACY_MSG_OBJECT),$(C_OBJECTS))
 ASM_OBJECTS  := $(SFILES:.s=.o)
-BANIM_OBJECT := banim/data_banim.o
+BANIM_OBJECT := $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/banim/data_banim.o,banim/data_banim.o)
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # Issue #5 Batch 3a: unlike GENERATED_DATA_LINKED_OBJECTS (whole-file
@@ -477,6 +477,15 @@ CLEAN_SONGS := $(MID_SUBDIR)/*.s
 # Isolated, opt-in modern GCC object rules (no modern ELF/ROM target).
 include modern.mk
 
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+FE8_PROJECT_ARCHIVAL_OBJECTS := $(filter-out $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI) $(BANIM_OBJECT),$(ALL_OBJECTS))
+ifneq ($(filter $(FE8_PROJECT_ARCHIVAL_OBJECTS),$(MAKECMDGOALS)),)
+$(error FE8_PROJECT=$(FE8_PROJECT) is unsupported by the archival lane, including mixed requests)
+endif
+$(FE8_PROJECT_ARCHIVAL_OBJECTS): | project-selection-archival-guard
+$(BANIM_OBJECT): $(MODERN_COMPILE_SETTINGS)
+endif
+
 # Issue #60: one versioned manifest owns asset-to-existing-seam dependencies.
 # Include this after modern.mk so its generated fragment can name the active
 # MODERN_OUTPUT_DIR as well as the archival object without a second registry.
@@ -653,7 +662,12 @@ sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
 
 # Battle Animation Recipes
 
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+$(BANIM_OBJECT): $$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
+else
 $(BANIM_OBJECT): $(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
+endif
+	@mkdir -p "$(@D)"
 	$(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
 
 %_modes.bin: %_motion.o

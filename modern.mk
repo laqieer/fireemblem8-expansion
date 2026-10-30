@@ -840,6 +840,12 @@ ifneq ($(strip $(MODERN_PROJECT_MSG_HEADER)),)
 $(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS) $(MODERN_COHORT_C_OBJECTS) \
 $(MODERN_ALL_C_HEADER_DEPS): $(MODERN_PROJECT_MSG_HEADER)
 $(MODERN_PROJECT_DATA_TARGETS): $(MODERN_PROJECT_MSG_HEADER)
+generated-data-validate generated-data-generate generated-data-manifest \
+generated-data-manifest-check generated-data-idspace-active \
+generated-data-idspace-active-check: $(MODERN_PROJECT_MSG_HEADER)
+ifeq ($(EXPANSION_STARTER_CONTENT),1)
+generated-data-content-text: $(MODERN_PROJECT_MSG_HEADER)
+endif
 game-localization-validate game-localization-generate game-localization-budget \
 game-localization-width-check game-localization-leakage-audit \
 game-localization-leakage-check: $(MODERN_PROJECT_MSG_HEADER)

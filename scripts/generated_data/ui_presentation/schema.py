@@ -89,11 +89,15 @@ def load_records(source_path):
 
 def _load_localization(registry_path=None, catalog_paths=None):
     from scripts.localization.catalog import DEFAULT_REGISTRY_PATH, load_catalog
+    from scripts.localization.schema import SchemaError
 
-    return load_catalog(
-        registry_path=registry_path or DEFAULT_REGISTRY_PATH,
-        catalog_paths=catalog_paths,
-    )
+    try:
+        return load_catalog(
+            registry_path=registry_path or DEFAULT_REGISTRY_PATH,
+            catalog_paths=catalog_paths,
+        )
+    except SchemaError as exc:
+        raise GeneratedDataError(str(exc)) from exc
 
 
 def validate(records, diagnostics, dependency_records=None, catalog=None):

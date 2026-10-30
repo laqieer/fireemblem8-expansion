@@ -823,8 +823,8 @@
       ],
       "purpose": "Bind actual selected configuration, code, data, text/header, font and asset inputs while preserving default behavior and project/profile/config/ABI isolation.",
       "prerequisites": "Modern quickstart tools, Python 3, GNU Make, host cc, ARM GCC/binutils and Git; preserve existing work and do not clean or supply a ROM.",
-      "actions": "Run the documented focused project and generated-data modules. Exercise direct and persistent default/project/default switching, compiled code/font/message inputs, native UI/catalog decoding, selected TMX bytes, custom outer roots and invalid provider/profile/lane requests.",
-      "expected_result": "Parsed character HP is 0/23/0 without cleaning and the restored default table is byte-identical. Selected message IDs, font bytes, UI titles and decoded French payloads reach their actual consumers. The selected TMX first word is 8 rather than default 4160. Selected outputs retain all four namespace dimensions and framework sources/reports remain unchanged.",
+      "actions": "Run the documented focused project and generated-data modules plus the separate selected-ROM probe. Exercise direct and persistent default/project/default switching, compiled code/font/message inputs, native UI/catalog decoding, selected TMX bytes, shared assembly preparation, standalone header freshness, coherent/conflicting bundle providers, custom outer roots and invalid provider/profile/lane requests.",
+      "expected_result": "Parsed character HP is 0/23/0 without cleaning and the restored default table is byte-identical. Selected message IDs, font bytes, UI titles and decoded French payloads reach their actual consumers. The selected TMX first word is 8 rather than default 4160. Standalone headers refresh and numeric-only items need no message header. One inherited-content debug/32 MiB selected ROM links and boot-verifies, with its private battle-animation object pinned at 0x08C02000. Selected outputs retain all four namespace dimensions and framework sources/reports remain unchanged.",
       "negative_control": "Unknown or contradictory selections, missing/duplicate/competing providers, inherited replacement sources, invalid item message symbols and selected archival/mixed/non-AAPCS requests fail. Default content and later default ACTIVE counts remain unchanged; invalid item regeneration preserves previous output.",
       "interactions": "Uses the existing configuration, generated-data, localization, asset and modern compiler interfaces. Required profile settings and existing feature dependencies remain enforced. Selected projects conflict with archival/APCS and derived-output overrides. Semantic non-stock message-set qualification is the independent #314 contract.",
       "save_compatibility": "No save envelope, automatic epoch, migration or runtime selector is added. Projects explicitly choose save-compatible meanings and epochs. Default metadata/fingerprints remain unchanged; nondefault project/profile names affect diagnostic identity only.",
@@ -838,6 +838,10 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_idspace_active.ActiveContractModelTests -v",
           "evidence": "scripts/generated_data/tests/test_cli.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
         }
       ]
     },

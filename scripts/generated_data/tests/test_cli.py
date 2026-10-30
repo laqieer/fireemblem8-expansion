@@ -1,4 +1,6 @@
+import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -20,6 +22,33 @@ def run_cli(args, cwd=REPO_ROOT):
 
 
 class CliValidateTests(unittest.TestCase):
+    def test_nested_bundle_consumers_reject_a_conflicting_selected_provider(self):
+        for table in ("chapterbundle", "chapterobjectives", "autoplaystrategies"):
+            with self.subTest(table=table):
+                code, out, err = run_cli([
+                    "--source-override",
+                    "units=" + fixture_path("chapterbundle", "deps_units_orphan.json"),
+                    "validate", "--table", table,
+                ])
+                self.assertNotEqual(code, 0, out + err)
+
+    def test_nested_bundle_consumers_accept_matching_selected_sources(self):
+        with scratch_dir() as directory:
+            units = os.path.join(directory, "selected_units.json")
+            bundle = os.path.join(directory, "selected_bundle.json")
+            shutil.copyfile(os.path.join(REPO_ROOT, "src/data/ch2_units.json"), units)
+            with open(os.path.join(REPO_ROOT, "src/data/ch2_bundle.json")) as handle:
+                data = json.load(handle)
+            data["tables"]["units"]["source"] = units
+            with open(bundle, "w") as handle:
+                json.dump(data, handle)
+            code, out, err = run_cli([
+                "--source-override", "chapterbundle=" + bundle,
+                "--source-override", "units=" + units,
+                "validate", "--table", "chapterbundle",
+            ])
+        self.assertEqual(code, 0, out + err)
+
     def test_valid_fixture_passes(self):
         code, out, err = run_cli([
             "validate", "--table", "supports",

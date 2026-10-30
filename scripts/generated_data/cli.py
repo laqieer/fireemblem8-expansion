@@ -40,8 +40,6 @@ from . import manifest as manifest_mod
 from .cgen import write_if_changed
 from .diagnostics import GeneratedDataError, DiagnosticCollector
 from .schema import REGISTRY, SchemaInputs, parse_source_overrides
-from scripts.localization.catalog import parse_catalog_paths
-from scripts.localization.schema import SchemaError
 
 DEFAULT_OUT_DIR = os.path.join("build", "generated", "data")
 DEFAULT_MANIFEST_REPORT = os.path.join("reports", "generated_data_manifest.md")
@@ -50,6 +48,18 @@ MANIFEST_HEADER_NAME = "generated_data_manifest.h"
 
 def _resolve_schema(table, inputs=None):
     return (inputs or SchemaInputs()).resolve(table)
+
+
+def _selected_ui_catalog_paths(values):
+    if values is None:
+        return None
+    from scripts.localization.catalog import parse_catalog_paths
+    from scripts.localization.schema import SchemaError
+
+    try:
+        return parse_catalog_paths(values)
+    except SchemaError as exc:
+        raise GeneratedDataError(str(exc)) from exc
 
 
 def _load_dependency_records(schema, dep_source_overrides, reference_profiles=None, inputs=None):
@@ -91,6 +101,16 @@ def _load_and_validate(
         reference_profiles,
         inputs,
     )
+    inputs = inputs or SchemaInputs()
+    bindings = [(schema, records)] + [
+        (inputs.resolve(name), dependency) for name, dependency in (dependency_records or {}).items()
+    ]
+    for selected_schema, selected_records in bindings:
+        validate_bindings = getattr(selected_schema, "validate_source_bindings", None)
+        if validate_bindings is not None:
+            validate_bindings(selected_records, diagnostics, inputs)
+    if diagnostics.errors:
+        return records, diagnostics
     if dependency_records is not None:
         schema.validate(records, diagnostics, dependency_records)
     else:
@@ -132,7 +152,7 @@ def cmd_validate(args):
             args.inputs,
         )
         records = _configure_records(schema, records, args)
-    except (GeneratedDataError, SchemaError) as exc:
+    except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
@@ -177,7 +197,7 @@ def cmd_generate(args):
             args.inputs,
         )
         records = _configure_records(schema, records, args)
-    except (GeneratedDataError, SchemaError) as exc:
+    except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
@@ -240,7 +260,7 @@ def cmd_check(args):
             args.inputs,
         )
         records = _configure_records(schema, records, args)
-    except (GeneratedDataError, SchemaError) as exc:
+    except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
@@ -518,7 +538,7 @@ def main(argv=None):
         args.inputs = SchemaInputs(
             sources=args.source_overrides, message_header=args.message_header,
             localization_registry=args.ui_registry,
-            localization_catalogs=parse_catalog_paths(args.ui_catalog),
+            localization_catalogs=_selected_ui_catalog_paths(args.ui_catalog),
         )
         if hasattr(args, "table"):
             explicit_dependencies = parse_source_overrides(args.dep_source)
@@ -540,7 +560,7 @@ def main(argv=None):
         if args.command == "manifest" and args.inventory_dir:
             args.report = os.path.join(
                 args.inventory_dir, os.path.basename(args.report or DEFAULT_MANIFEST_REPORT))
-    except (GeneratedDataError, SchemaError) as exc:
+    except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     return args.func(args)

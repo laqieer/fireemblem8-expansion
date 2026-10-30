@@ -1272,6 +1272,40 @@ class ChapterBundleTableSchema(TableSchema):
     def validate(self, records, diagnostics, dependency_records=None):
         validate(records, diagnostics, dependency_records)
 
+    def validate_source_bindings(self, records, diagnostics, inputs):
+        for record in records:
+            bindings = [
+                (table.name, table.source, table.source_loc) for table in record.tables
+            ]
+            bindings.append((
+                "supports", record.support_owners.source, record.support_owners.source_loc))
+            for name, reference in (
+                ("chapterobjectives", record.chapter_objectives),
+                ("autoplaystrategies", record.autoplay_strategies),
+            ):
+                if reference is not None:
+                    bindings.append((name, reference.source, reference.source_loc))
+            for name, source, location in bindings:
+                if name not in inputs.sources:
+                    continue
+                dependency = inputs.resolve(name)
+                selected = {
+                    _source_path(path, record.repository_root)
+                    for path in dependency.source_paths(inputs.sources[name])
+                }
+                declared = {
+                    _source_path(path, record.repository_root)
+                    for path in dependency.source_paths(
+                        _source_path(source, record.repository_root))
+                }
+                if not declared.issubset(selected):
+                    diagnostics.add(_err(
+                        "selected '{}' provider conflicts with bundle '{}' source '{}'; "
+                        "select matching table and bundle sources".format(
+                            name, record.chapter.id, source),
+                        location, "bundles[chapter={}].sources.{}".format(record.chapter.id, name),
+                    ))
+
     def build_inventory(self, records):
         from . import inventory as chapterbundle_inventory
         return chapterbundle_inventory.build_inventory(records)

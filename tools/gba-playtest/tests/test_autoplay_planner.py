@@ -2193,7 +2193,10 @@ class PlannerBridgeTests(unittest.TestCase):
         )
         self.assertEqual(new_positional.to_dict(), new_keyword.to_dict())
         self.assertEqual(new_positional.autoplay_planner, 1)
-        identity_fields = tuple(expansion_config.ExpansionIdentity.__dataclass_fields__)
+        identity_fields = tuple(
+            name for name in expansion_config.ExpansionIdentity.__dataclass_fields__
+            if name not in ("project", "project_profile")
+        )
         self.assertEqual(
             identity_fields[-4:],
             (

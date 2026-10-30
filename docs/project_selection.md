@@ -25,9 +25,10 @@ but cannot contradict a profile's required settings. Other explicitly
 configured feature options remain configured when the project changes.
 
 Nondefault projects support modern `debug` and `release` with `aapcs`.
-Archival targets, direct archival objects, mixed modern/archival requests and
-`apcs-gnu` are rejected. The default project's explicit archival lane is
-unchanged.
+Archival targets, archival-only objects, mixed modern/archival requests and
+`apcs-gnu` are rejected. Shared assembly/MIDI prerequisites remain available
+to modern link preparation; they are not classified as an archival game build.
+The default project's explicit archival lane is unchanged.
 
 ## Declaration
 
@@ -88,6 +89,11 @@ ID-space outputs for a selected project are build-local; generation does not
 rewrite the framework's committed reports. A complete replacement `items`
 source supplies its own expanded records instead of implicitly appending the
 framework's starter overlay.
+When replacing a table used by a chapter bundle, select matching bundle
+bindings too. Contradictory embedded paths are rejected rather than silently
+validating stock records; directory-backed objective/strategy providers must
+contain their declared owner members. Unselected per-bundle sources remain
+authoritative.
 
 C replacements keep the original logical object path and linker position.
 Generated whole-table C and `src/msg_data.c` are selected through their data
@@ -140,7 +146,10 @@ build/projects/PROJECT/PROFILE/CONFIG/ABI/
 ```
 
 This includes data, text/header, UI/game catalogs, asset generation/discovery,
-objects, metadata, ELF, map and ROM outputs. A custom
+battle-animation objects/sidecars, objects, metadata, ELF, map and ROM outputs.
+The selected battle-animation object retains its pinned ROM address and
+depends on the actual selected script and existing compile-settings stamp,
+so changing asset selections cannot reuse another selection's object. A custom
 `MODERN_BUILD_ROOT=build/custom` changes the outer root to
 `build/custom/projects/PROJECT/PROFILE/CONFIG/ABI/`; it does not remove any
 selection dimension. Do not override derived output-directory variables.
@@ -185,6 +194,7 @@ project outputs and fixtures. They do not modify the contributor's index.
    ```sh
    python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests -v
    python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_idspace_active.ActiveContractModelTests -v
+   python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
    ```
 
 2. Observe the direct and persistent default/project/default sequence without
@@ -200,12 +210,19 @@ project outputs and fixtures. They do not modify the contributor's index.
    catalog descriptor; selected French text decodes through the actual native
    codec; the selected TMX derivative starts with metatile word **8**, not
    the default **4160**.
+   The separate inherited-content debug/32 MiB ROM probe links and verifies
+   real emulator boot checkpoints. Its linker map places the private
+   battle-animation object at `0x08C02000`, not a shared default object.
 
 4. Observe negative controls: unknown projects/profiles, missing or competing
    providers, inherited replacement inputs, contradictory profiles, invalid
    item message symbols and archival/mixed/non-AAPCS requests fail. Invalid
    item regeneration preserves the previous generated output. Normalized
    equivalent locale/epoch overrides succeed.
+   Standalone data validation and manifest generation build and refresh the
+   selected header. Numeric-only item loading needs no message-header file.
+   Nested bundle/objective/strategy validation rejects conflicting providers
+   and accepts coherent bindings.
 
 5. Confirm selected data/UI/game/asset outputs retain all four namespace
    dimensions with a custom outer root, committed framework source/report
@@ -214,8 +231,9 @@ project outputs and fixtures. They do not modify the contributor's index.
 
 The first command covers actual configure/Make/generated/compiled/native
 behavior; the second covers generated-data validation, report isolation and
-invocation-local counts. Missing ARM tools make the ARM-specific probes
-unavailable, not passed. There is no subjective manual criterion in this build
+invocation-local counts; the third covers one selected ROM/link/boot path.
+Missing ARM tools make the ARM-specific probes unavailable, not passed.
+There is no subjective manual criterion in this build
 case. It does not establish a playable Grado campaign, full translated corpus,
 glyph qualification, physical ROM/RAM fit for that game, or M0A/M0B/release
 acceptance.

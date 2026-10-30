@@ -294,7 +294,7 @@ SECTIONS
         /* Outside the section list so the exclusion covers .data and .data.*. */
         EXCLUDE_FILE (
             *banim_data.o
-            banim/data_banim.o
+            *banim/data_banim.o
             *banim_terrain_data.o
             *data_banim_terrain.o
             *banim_pal_chara.o
@@ -314,7 +314,7 @@ SECTIONS
 
         FILL(0x00);
         . = 0xC02000;
-        banim/data_banim.o(.data)
+        *banim/data_banim.o(.data)
 
         FILL(0xFF);
         . = 0xEE0000;

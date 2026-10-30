@@ -246,6 +246,9 @@ class TableSchema:
     def validate(self, records, diagnostics, dependency_records=None):
         raise NotImplementedError
 
+    def validate_source_bindings(self, records, diagnostics, inputs):
+        """Check selected providers against embedded owners before validation."""
+
     def generate_c(self, records, source_path):
         """Return generated C89 source text, or ``None`` to skip generation
         entirely (metadata-only tables that have nothing to compile)."""

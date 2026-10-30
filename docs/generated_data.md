@@ -541,6 +541,15 @@ through this registry instead of hardcoding imports, so `cli.py` has zero
 per-table branches -- adding a table means adding a package plus its
 registration seam in `registry.py`, nothing else.
 
+`TableSchema.validate_source_bindings(records, diagnostics, inputs)` is an
+optional pre-validation hook for embedded owners. The CLI invokes it for the
+selected table and its loaded dependency tables. Chapter bundles reject
+explicit replacement sources that disagree with their declared table,
+support, objective or strategy members; directory providers must contain the
+declared members. Without a replacement, each bundle's own sources remain
+authoritative. The CLI does not globally replace those sources with preloaded
+registry defaults or enable the test-only supplied-dependency path.
+
 Schema discovery, primary-source selection/loading, and JSON fallback map
 dimensions do not initialize the TMX parser. `chapterbundle` imports that
 parser only when `read_chapter_map_dimensions()` reaches an actual TMX source;
@@ -563,6 +572,9 @@ entries are not file-read authority. The items schema declares its actual
 `include/constants/items.h` input rather than replacing its archival enum-based
 count with the active count or container length. Default and cap `0xCE` loads
 therefore retain 206 committed records and 206/207 active records respectively.
+Numeric-only item loading does not read the gameplay message header.
+Symbolic IDs load that header lazily, once per source-file load, so a selected
+header can change between invocations without a shared stale cache.
 
 The [confined registry adapter](ownership-probe-producers.md) discovers these
 declarations without source reads, then runs the real loader and count method

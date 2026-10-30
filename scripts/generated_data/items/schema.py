@@ -451,18 +451,24 @@ def _load_records_file(source_path, msg_header=MSG_HEADER):
             schema_node.loc,
         )
     items_node = root.require("items")
-    msg_constants = read_msg_constants(msg_header)
+    msg_constants = None
     records = []
     for item_node in items_node.as_list():
         item_name_node = item_node.require("item")
         weapon_type_node = item_node.require("weaponType")
 
+        text_nodes = tuple(item_node.get(key) for key in
+                           ("nameTextId", "descTextId", "useDescTextId"))
+        if msg_constants is None and any(
+                node is not None and node.is_scalar() and isinstance(node.value, str)
+                for node in text_nodes):
+            msg_constants = read_msg_constants(msg_header)
         name_text_id, name_text_loc = _optional_text_id(
-            item_node.get("nameTextId"), msg_header, msg_constants)
+            text_nodes[0], msg_header, msg_constants)
         desc_text_id, desc_text_loc = _optional_text_id(
-            item_node.get("descTextId"), msg_header, msg_constants)
+            text_nodes[1], msg_header, msg_constants)
         use_desc_text_id, use_desc_text_loc = _optional_text_id(
-            item_node.get("useDescTextId"), msg_header, msg_constants)
+            text_nodes[2], msg_header, msg_constants)
 
         attributes_node = item_node.get("attributes")
         attributes = [n.as_str() for n in attributes_node.as_list()] if attributes_node is not None else []

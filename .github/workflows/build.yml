@@ -1494,7 +1494,8 @@ jobs:
         python3 -m unittest \
           scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
           scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
-          scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot -v
+          scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
+          scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly -v
 
     # Generated-data platform (Issue #5 Chapter 2 slice, Batch C): validates
     # every registered table's JSON source, cross-table references, the
@@ -1522,6 +1523,10 @@ jobs:
       run: |
         make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
         make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2
+
+    - name: Link and boot an isolated selected project (issue #313)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
 
     # Issue #10 acceptance ("Boundary, serialization, and migration tests
     # gate CI"): runs the real, booted expansion ROM's item-ID-expansion
