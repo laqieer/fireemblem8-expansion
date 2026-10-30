@@ -1593,7 +1593,7 @@ def _parse_pull_request_payload(
     owner, name = repository.split("/", 1)
     if (
         base_repo.get("name") != name
-        or base_repo.get("private") is not False
+        or type(base_repo.get("private")) is not bool
         or base_repo.get("url") != _api_url(_endpoint(repository, ""))
         .rstrip("/")
         or base_repo.get("html_url") != f"https://github.com/{repository}"
