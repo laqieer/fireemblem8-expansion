@@ -203,8 +203,8 @@ EXPECTED_HASHED_REQUIREMENTS = {
         "sha256:3cdec01fa790a186d430433fdd4d4ffb70eed6f0eeb4bf05c8dbe2dce0a9bcb8",
     ),
     "pillow": (
-        "12.3.0",
-        "sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91",
+        "13.0.0",
+        "sha256:42d63be3af4f9b951b199b0a9d23365d37ab14687e6d77b74940432c8515c4ca",
     ),
     "ttp": (
         "0.10.1",
