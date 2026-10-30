@@ -3085,10 +3085,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_exact_fixture_hydration_restores_force_pushed_commit(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
+        with mock.patch.dict(os.environ), tempfile.TemporaryDirectory(
             prefix="workflow-authority-hydration-",
             dir=artifact_root,
         ) as temporary:
+            os.environ.pop("GH_TOKEN", None)
             root = Path(temporary)
             seed = root / "seed"
             remote = root / "remote.git"
