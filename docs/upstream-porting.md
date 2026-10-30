@@ -560,9 +560,12 @@ git calls).
    that freshly-fetched local ref — not against the recorded `last_ported`
    SHA itself — so it can genuinely detect new commits that have landed on
    the live canonical branch since the last recorded scan/port boundary.
-4. Writes the textual drift/scan report to the job summary and uploads it as
-   an artifact, whether or not drift was found, before deciding the job's
-   pass/fail status.
+4. Writes drift/scan previews to the job summary, limited to 256 KiB per
+   report so large histories stay below GitHub's 1 MiB per-step summary limit.
+   Truncated previews identify the `upstream-port-drift-report` artifact, which
+   retains complete `drift-report.json`, `scan-report.json`, and
+   `scan-report.err` diagnostics, whether or not drift was found, before
+   deciding the job's pass/fail status.
 5. Fails the job (as a visibility signal only, never a state change) when the
    `drift` subcommand's exit code is non-zero — real upstream drift found
    (`2`) or an integrity problem/tool error (`3`/other).

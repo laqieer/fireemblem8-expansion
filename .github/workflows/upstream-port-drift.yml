@@ -23,8 +23,8 @@ name: Upstream Port Drift Scan
 #     anything, and NEVER mutates config/upstream-port-state.json (only the
 #     explicit, human-invoked `update-state` subcommand does that -- this
 #     workflow never calls it);
-#   - publishes the textual drift/scan report to the job summary and as an
-#     artifact, and fails the job only to surface a signal (real drift,
+#   - publishes bounded drift/scan previews to the job summary and complete
+#     reports as an artifact, and fails the job only to surface a signal (real drift,
 #     an integrity problem, or a genuine tool error) to maintainers -- it
 #     never treats "drift detected" as a reason to skip writing the report,
 #     and never auto-applies any state update in response.
@@ -81,6 +81,7 @@ jobs:
           path: |
             drift-report.json
             scan-report.json
+            scan-report.err
           if-no-files-found: ignore
           retention-days: 30
 
@@ -90,7 +91,8 @@ jobs:
           code="${{ steps.drift.outputs.exit_code }}"
           if [ -z "$code" ] || [ "$code" != "0" ]; then
             echo "drift scan reported exit code ${code:-unknown} (0=clean, 2=new upstream commits/drift found, 3=integrity problem or tool error)"
-            echo "See the job summary above for the full textual report. This failure is only"
+            echo "See the job summary for previews and the upstream-port-drift-report artifact"
+            echo "for complete reports. This failure is only"
             echo "a visibility signal for maintainers -- no state, source, or history was"
             echo "changed by this job."
             exit 1

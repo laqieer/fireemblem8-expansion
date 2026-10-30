@@ -86,7 +86,7 @@ class CiEntrypointTests(unittest.TestCase):
         ).strip()
         self.assertEqual(actual, "https://example.invalid/other.git")
 
-    def drift_boundary(self, drift_exit, scan_exit):
+    def drift_boundary(self, drift_exit, scan_exit, report_repetitions=0):
         state = self.work / "config" / "upstream-port-state.json"
         state.parent.mkdir()
         state.write_text(json.dumps({
@@ -94,6 +94,7 @@ class CiEntrypointTests(unittest.TestCase):
         }))
         self.env["DRIFT_EXIT"] = str(drift_exit)
         self.env["SCAN_EXIT"] = str(scan_exit)
+        self.env["REPORT_REPETITIONS"] = str(report_repetitions)
         self.executable("python3", """
 import json, os, sys
 args = sys.argv[1:]
@@ -104,14 +105,16 @@ with open(os.environ["CALLS"], "a") as stream:
 if args[:2] != ["-m", "scripts.upstream_port"]:
     raise SystemExit(99)
 command = args[2]
+padding = "界" * int(os.environ["REPORT_REPETITIONS"])
 if command == "drift":
-    print(json.dumps({"has_drift": int(os.environ["DRIFT_EXIT"]) == 2}))
+    print(json.dumps({"has_drift": int(os.environ["DRIFT_EXIT"]) == 2,
+                      "details": padding}, ensure_ascii=False))
     raise SystemExit(int(os.environ["DRIFT_EXIT"]))
 if command == "scan":
     if int(os.environ["SCAN_EXIT"]):
-        print("controlled scan failure", file=sys.stderr)
+        print("controlled scan failure" + padding, file=sys.stderr)
     else:
-        print(json.dumps({"unreviewed_count": 1}))
+        print(json.dumps({"unreviewed_count": 1, "details": padding}, ensure_ascii=False))
     raise SystemExit(int(os.environ["SCAN_EXIT"]))
 raise SystemExit(98)
 """)
@@ -124,18 +127,50 @@ raise SystemExit(98)
             ["-m", "scripts.upstream_port", "scan", "--ref", "decomp/master", "--format", "json"],
         ])
         self.assertEqual(Path(self.env["GITHUB_OUTPUT"]).read_text(), f"exit_code={drift_exit}\n")
-        summary = Path(self.env["GITHUB_STEP_SUMMARY"]).read_text()
-        self.assertIn((self.work / "drift-report.json").read_text().strip(), summary)
+        summary_bytes = Path(self.env["GITHUB_STEP_SUMMARY"]).read_bytes()
+        self.assertLess(len(summary_bytes), 1024 * 1024)
+        summary = summary_bytes.decode("utf-8")
+        drift_report = self.work / "drift-report.json"
+        self.assertEqual(json.loads(drift_report.read_text()), {
+            "has_drift": drift_exit == 2, "details": "界" * report_repetitions,
+        })
         if scan_exit:
-            self.assertIn((self.work / "scan-report.err").read_text().strip(), summary)
+            scan_report = self.work / "scan-report.err"
+            self.assertEqual(scan_report.read_text(), "controlled scan failure"
+                             + "界" * report_repetitions + "\n")
         else:
-            self.assertIn((self.work / "scan-report.json").read_text().strip(), summary)
+            scan_report = self.work / "scan-report.json"
+            self.assertEqual(json.loads(scan_report.read_text()), {
+                "unreviewed_count": 1, "details": "界" * report_repetitions,
+            })
+        if report_repetitions:
+            self.assertLess(len(summary_bytes), 512 * 1024 + 4096)
+            self.assertEqual(summary.count("```"), 4)
+            self.assertIn("upstream-port-drift-report", summary)
+            for report in (drift_report, scan_report):
+                self.assertGreater(report.stat().st_size, 1024 * 1024)
+                self.assertIn(report.name, summary)
+                self.assertIn(report.read_bytes()[:256 * 1024].decode("utf-8", errors="ignore"),
+                              summary)
+            self.assertEqual(summary.count("truncated"), 2)
+        else:
+            self.assertIn(drift_report.read_text().strip(), summary)
+            self.assertIn(scan_report.read_text().strip(), summary)
 
     def test_drift_and_failed_scan_keep_reports_and_authoritative_signal(self):
         self.drift_boundary(2, 3)
 
     def test_clean_drift_and_successful_scan_keep_complete_reports(self):
         self.drift_boundary(0, 0)
+
+    def test_oversized_reports_keep_bounded_summary_and_complete_artifacts(self):
+        self.drift_boundary(2, 0, report_repetitions=400000)
+
+    def test_oversized_clean_reports_preserve_clean_signal(self):
+        self.drift_boundary(0, 0, report_repetitions=400000)
+
+    def test_oversized_scan_error_keeps_diagnostics_and_integrity_signal(self):
+        self.drift_boundary(3, 3, report_repetitions=400000)
 
     def test_missing_state_publishes_error_signal_without_running_cli(self):
         result = self.run_helper("render_upstream_drift.sh")
