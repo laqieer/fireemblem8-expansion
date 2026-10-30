@@ -89,6 +89,11 @@ proves private fetch access. No subjective manual criterion.
    and both compiler pins/build/install destinations. Failed fetch and wrong
    revision must stop before compiler execution. The existing real synthetic
    Git replay still proves drift after fetch without changing HEAD or state.
+   Exercise clean, drift and integrity-error signals with multi-byte reports
+   larger than 1 MiB each. Require valid UTF-8 previews of at most 256 KiB per
+   report, closed code fences, a summary below 1 MiB and a notice identifying
+   the complete report artifact. Parse the unchanged full JSON reports and
+   compare full scan-error diagnostics; small reports remain complete inline.
 2. Exercise the actual parsed workflow and helper-owner closure:
 
    ```bash
@@ -153,7 +158,9 @@ The actual exact-master build-once publisher packages and uploads the patch.
 
 Remote URL mismatch remains unchanged and refuses; missing state publishes
 error signal 3; drift 2 plus scan failure still writes diagnostics before the
-job applies the original signal. Failed compiler fetch and wrong pin do not
+job applies the original signal. Without preview limits, oversized-report
+fixtures exceed GitHub's 1 MiB summary limit for all three signals.
+Failed compiler fetch and wrong pin do not
 reach build/install. A changed/no-op, absent, symlinked or oversized helper
 cannot pass local command equivalence. A candidate or skipped publisher is not
 master publication evidence.

@@ -18,6 +18,20 @@ code=$?
 python3 -m scripts.upstream_port scan --ref "$FRESH_REF" --format json > scan-report.json 2> scan-report.err
 scan_code=$?
 
+append_report_preview() {
+    python3 -c '
+import sys
+
+limit = 256 * 1024
+with open(sys.argv[1], "rb") as stream:
+    preview = stream.read(limit + 1)
+print(preview[:limit].decode("utf-8", errors="ignore"), end="")
+if len(preview) > limit:
+    print("\n[truncated; full " + sys.argv[1]
+          + " is in the upstream-port-drift-report artifact]")
+' "$1"
+}
+
 {
     echo "## Upstream Port Drift Scan"
     echo ""
@@ -29,19 +43,19 @@ scan_code=$?
     echo ""
     echo "### drift"
     echo '```json'
-    cat drift-report.json
+    append_report_preview drift-report.json
     echo '```'
     echo ""
     echo "### scan (best-effort; new commits since the recorded last_ported boundary)"
     if [ "$scan_code" -eq 0 ]; then
         echo '```json'
-        cat scan-report.json
+        append_report_preview scan-report.json
         echo '```'
     else
         echo "scan could not enumerate individual commits (exit $scan_code); see drift"
         echo "output above for the authoritative drift/integrity signal:"
         echo '```text'
-        cat scan-report.err
+        append_report_preview scan-report.err
         echo '```'
     fi
 } >> "$GITHUB_STEP_SUMMARY"
