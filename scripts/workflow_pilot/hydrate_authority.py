@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +30,34 @@ BLOB_FETCH_OPTIONS = (
 )
 
 
+def network_git_environment(repository_root: Path) -> dict[str, str]:
+    environment = reporter.git_environment(offline=False)
+    token = os.environ.get("GH_TOKEN")
+    if token is None:
+        return environment
+    if not token or not token.isascii() or any(ord(char) < 33 for char in token):
+        raise reporter.PilotDataError("invalid Git hydration token")
+    remote = reporter.run_git(
+        repository_root, "config", "--get", "remote.origin.url",
+    ).decode("utf-8").strip()
+    repository = reporter._github_repository_from_remote(remote)
+    if remote not in (
+        f"https://github.com/{repository}",
+        f"https://github.com/{repository}.git",
+    ):
+        raise reporter.PilotDataError("authenticated hydration requires a GitHub HTTPS origin")
+    authorization = base64.b64encode(f"x-access-token:{token}".encode("ascii")).decode("ascii")
+    for index, (key, value) in enumerate((
+        (f"http.{remote}.extraheader", f"AUTHORIZATION: basic {authorization}"),
+        ("credential.helper", ""),
+        ("http.followRedirects", "false"),
+    )):
+        environment[f"GIT_CONFIG_KEY_{index}"] = key
+        environment[f"GIT_CONFIG_VALUE_{index}"] = value
+    environment["GIT_CONFIG_COUNT"] = "3"
+    return environment
+
+
 def run_git(
     repository_root: Path,
     *arguments: str,
@@ -36,7 +66,7 @@ def run_git(
     try:
         completed = subprocess.run(
             reporter.git_command(repository_root, *arguments),
-            env=reporter.git_environment(offline=False),
+            env=network_git_environment(repository_root),
             check=False,
             capture_output=True,
             timeout=FETCH_TIMEOUT_SECONDS,

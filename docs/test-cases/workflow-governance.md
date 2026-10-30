@@ -4,6 +4,63 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-PRIVATE-CI-001: Preserve CI for private repositories
+
+- **Bug / originating issue:** `workflow-governance` /
+  [issue #309](https://github.com/laqieer/fireemblem8-expansion/issues/309).
+- **Configuration and prerequisites:** a clean Linux source checkout, Python 3
+  and Git. Local fixtures require no credentials, network or ROM. Live Build CI
+  uses its existing read-only contents token; keep repository visibility private.
+### Actions
+
+From the repository root, run:
+
+```bash
+python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_public_and_private_repositories_retain_exact_identity_binding scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_repository_visibility_must_be_an_explicit_boolean tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_hydration_authentication_is_ephemeral_and_origin_scoped tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_workflow_pilot_authority_hydration_is_exact_and_ordered tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_exact_fixture_hydration_restores_force_pushed_commit -v
+```
+
+### Expected result
+
+Public and private payloads preserve exact repository, head and base binding.
+Missing/nonboolean visibility and wrong repository identities fail. Real Git
+resolves the synthetic authorization header only for the expected GitHub origin,
+with redirects and credential helpers disabled. Other origins receive no header;
+configuration stays byte-identical. Offline Git receives no token, and
+unauthenticated fixture hydration preserves HEAD, refs and `FETCH_HEAD` while
+restoring required authority.
+
+### Negative control
+
+The pre-fix parser rejects the private positive, and pre-fix hydration has no
+authenticated network configuration. Removing the scoped token from the workflow
+fails its parsed step contract; changing origin or visibility never produces a
+success-shaped fallback.
+
+### Interactions and save compatibility
+
+Depends on the existing isolated launcher, immutable Git authority, repository
+identity and read-only Actions contents access. Conflicts with persisted
+credentials, token-bearing later steps, unauthenticated private fetches, or
+weakening trusted-base checks. No ROM/RAM, save/config, generated-data,
+localization, modern/debug/release or archival changes.
+
+### Automation
+
+The command above covers parser behavior, real Git authorization configuration,
+workflow token scope and immutable fixture hydration. For live integration,
+require a full exact-head Build with successful `event-router`, `host-tests` and
+the remaining required jobs, then automatic exact-master Build and remote
+completion. Routing executes the immutable PR base; an old base that still
+rejects private payloads is a real bootstrap blocker, not permission to bypass
+its failure or change visibility.
+
+### Cleanup and limitations
+
+Temporary fixture repositories clean themselves up; do not write tokens to
+source or evidence. Local checks prove parser behavior, real Git configuration
+semantics and fixture hydration, not GitHub token permissions. The live workflow
+proves private fetch access. No subjective manual criterion.
+
 ## TC-WORKFLOW-SCRIPT-EXTRACTION-001: Preserve post-checkout program effects
 
 - **Feature / originating issue:** `workflow-governance` /

@@ -1307,6 +1307,17 @@ The automated and human procedure is
 
 ## Build event classification and candidate evidence
 
+Both public and private repositories retain the same exact repository, owner,
+URL, base and head identity checks. Visibility must be an explicit Boolean; it
+is not an authorization decision. Private Git authority hydration uses the
+existing read-only `github.token` only in its hydration step. The helper supplies
+an origin-scoped HTTPS authorization header through Git's process environment,
+disables redirects and credential helpers, and never saves credentials to Git
+configuration. Offline authority reads and later host checks retain their
+credential-free environments. No personal token or repository visibility change
+is required. See
+[TC-WORKFLOW-PRIVATE-CI-001](test-cases/workflow-governance.md#tc-workflow-private-ci-001-preserve-ci-for-private-repositories).
+
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
 adds a no-checkout `event-identity` validator, parsed fail-closed
 `event-router`, and mode-specific classifier check ahead of the four expensive
