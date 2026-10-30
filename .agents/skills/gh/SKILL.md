@@ -122,9 +122,16 @@ blocked-by/blocking relationships.
 - If the body references an attached path, `gh` rewrites that Markdown
   reference to the uploaded URL. The reference keeps its existing alt text.
   Otherwise, `gh` appends the attachment to the body. For example:
-  `gh pr edit 23 --body '![error](./login.png)' --attach ./login.png`.
-- Videos cannot take alt text. A standalone `![recording](./repro.mp4)` becomes
-  a bare player URL, while an inline video image becomes a link. A
+  ```sh
+  gh pr edit 23 --body '![error](./login.png)' --attach ./login.png
+  ```
+- Videos cannot take alt text. A standalone video image, for example:
+
+  ```markdown
+  ![recording](./repro.mp4)
+  ```
+
+  becomes a bare player URL, while an inline video image becomes a link. A
   reference-style video image such as `![recording][clip]` with
   `[clip]: ./repro.mp4` is rejected; use a reference-style link instead.
 - `gh issue create` and `gh pr create`: `--attach` cannot be used with
