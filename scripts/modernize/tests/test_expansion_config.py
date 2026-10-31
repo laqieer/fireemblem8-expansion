@@ -582,6 +582,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "make", "--no-print-directory", "-s", "-n", "NODEP=1", "MAKE=echo",
+                "MODERN_CC=/missing-arm-compiler",
                 "-o", "expansion-modern-rom", "-o", "expansion-modern-all",
                 f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
                 "expansion-modern-gdb-smoke",
@@ -603,6 +604,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             cwd=ROOT, text=True, capture_output=True, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(output.rglob("*.headers.d")), [])
         artifacts = []
         portrait_roots = []
         for line in result.stdout.replace("\\\n", " ").splitlines():

@@ -666,7 +666,7 @@ $(BANIM_OBJECT): $(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_s
 	$(FE8_PROJECT_BANIM_LOCK) $(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
 
 ifneq ($(filter-out default,$(FE8_PROJECT)),)
-$(BANIM_OBJECT): $$(patsubst $(abspath $(ASSET_OUTPUT_DIR))/%,$(ASSET_OUTPUT_DIR)/%,$$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m)) $(MODERN_COMPILE_SETTINGS)
+$(BANIM_OBJECT): $$(if $$(MODERN_DRY_RUN),,$$(patsubst $(abspath $(ASSET_OUTPUT_DIR))/%,$(ASSET_OUTPUT_DIR)/%,$$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m))) $(MODERN_COMPILE_SETTINGS)
 endif
 
 %_modes.bin: %_motion.o
