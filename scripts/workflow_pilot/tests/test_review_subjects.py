@@ -9,6 +9,7 @@ if __package__ in (None, ""):
 import copy
 from dataclasses import replace
 import json
+import os
 import re
 import shlex
 import shutil
@@ -82,6 +83,39 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         return request(
             "TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case",
             self.repo.base, head or self.repo.base)
+
+    def test_retired_recursive_subject_cannot_execute_candidate_programs(self):
+        selectors = [
+            "authored-binding:" + role for role in self.model.FAMILIES["generated"]
+        ]
+        selectors.append("authored-binding:guide-destinations")
+        selectors += [
+            "authored-fixture:" + role for role in self.model.FAMILIES["wire"]
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "build").mkdir()
+            marker = root / "candidate-program-executed"
+            (root / "build/review-subject-binding.py").write_text(
+                f"with open({str(marker)!r}, 'wb') as output:\n"
+                "    output.write(b'executed')\n"
+            )
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                observed = self.tools.subjects.worker(selectors)
+            finally:
+                os.chdir(previous)
+            self.assertFalse(marker.exists(), "retired route executed a candidate program")
+        self.assertEqual(
+            [(item["kind"], item["verdict"], item["checks"]) for item in observed],
+            [(None, "unavailable", 0)] * len(selectors),
+        )
+        scope = request(
+            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+            self.repo.base, self.repo.base)
+        with self.assertRaisesRegex(ValueError, "unknown subject"):
+            self.tools.members(scope)
 
     def test_actual_case_consumer_rejects_missing_member_and_recovers(self):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
@@ -159,35 +193,6 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         self.assertEqual([(item.obligation.member, item.verdict) for item in observed
                           if item.verdict != "satisfied"],
                          [("drift-checks:full-game-localization", "contract-violation")])
-
-    def test_captured_guide_resolution_has_its_own_source_failure_and_repair(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        original = (self.repo.root / path).read_text()
-        correct = '''            check((case["document"], case["anchor"]) in {
-                check_docs.internal_link_destination(feature["reference"], link)
-                for _, link in check_docs.extract_internal_link_targets(reference)
-                if not check_docs._is_external(link)
-            },'''
-        raw = '''            destination = os.path.relpath(
-                case["document"], Path(feature["reference"]).parent)
-            target = destination + "#" + case["anchor"]
-            check(target in {link for _, link in
-                             check_docs.extract_internal_link_targets(reference)},'''
-        broken = original.replace(correct, raw, 1)
-        self.assertNotEqual(original, broken)
-        before = self.repo.commit({path: broken})
-        after = self.repo.commit({path: original}, parent=before)
-        scope = request("TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-                        self.repo.base, after)
-        members = self.tools.members(scope, (before,))
-        self.assert_satisfied(self.run_members(members, after))
-        observed = self.run_members(members, before)
-        guide = next(item for item in observed
-                     if item.obligation.member == "drift-checks:guide-destinations")
-        self.assertEqual((guide.verdict, guide.checks), ("contract-violation", 1))
-        anchor = next(item for item in observed
-                      if item.obligation.member == "drift-checks:authored-case-binding")
-        self.assertEqual(anchor.verdict, "satisfied")
 
     def test_refactors_preserve_members_and_syntax_failure_is_not_semantic_evidence(self):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
@@ -315,71 +320,8 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         renamed = ast.unparse(RenameLocal().visit(source))
         tool_revision = self.repo.commit({path: renamed})
         tools = ReviewTools(GitTree(self.repo.root, tool_revision), self.repo.root)
-        scope = request(
-            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-            self.repo.base, self.repo.base)
+        scope = self.case_scope()
         self.assert_satisfied(tools.run_obligations(tools.members(scope), self.repo.base))
-
-    def test_equivalent_keyword_binding_preserves_members_and_real_probes(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        original = (self.repo.root / path).read_text()
-        base_scope = request(
-            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-            self.repo.base, self.repo.base)
-        declaration = (
-            'SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case")'
-        )
-        for replacement in (
-            'SubjectSpec(model="authored-case", name="authored-scope-case", '
-            'case_id="TC-LOCALIZATION-AUTHORED-SCOPE-001")',
-            'SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", model="authored-case", '
-            'name="authored-scope-case")',
-        ):
-            with self.subTest(declaration=replacement):
-                changed = original.replace(declaration, replacement, 1)
-                self.assertNotEqual(original, changed)
-                head = self.repo.commit({path: changed})
-                members = self.tools.members({**base_scope, "candidate_sha": head})
-                self.assertEqual(members, self.tools.members(base_scope))
-                self.assert_satisfied(self.tools.run_obligations(members, head))
-        aliased = original.replace("BINDINGS = (", "ReviewSpec = SubjectSpec\nBINDINGS = (", 1)
-        aliased = aliased.replace(declaration, declaration.replace("SubjectSpec(", "ReviewSpec("), 1)
-        head = self.repo.commit({path: aliased})
-        members = self.tools.members({**base_scope, "candidate_sha": head})
-        self.assertEqual(members, self.tools.members(base_scope))
-        self.assert_satisfied(self.tools.run_obligations(members, head))
-        removed = original.replace("BINDINGS = (", "RETIRED_BINDINGS = (", 1)
-        head = self.repo.commit({path: removed})
-        with self.assertRaisesRegex(ValueError, "reviewed finite model"):
-            self.tools.members({**base_scope, "candidate_sha": head})
-
-    def test_captured_fixture_model_rejection_keeps_unavailable_zero_credit(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        original = (self.repo.root / path).read_text()
-        broken = original + (
-            "\n_original_fixture = locale_case_program_fixture\n"
-            "def locale_case_program_fixture(raw, variant):\n"
-            "    if variant == 'reject':\n"
-            "        text = raw.decode()\n"
-            "        changed = text.replace("
-            "'set(features[feature_id][\"required_cases\"])', 'set()', 1)\n"
-            "        review.require(changed != text, 'unsupported fixture spelling')\n"
-            "        return changed.encode()\n"
-            "    return _original_fixture(raw, variant)\n"
-        )
-        before = self.repo.commit({path: broken})
-        after = self.repo.commit({path: original}, parent=before)
-        scope = request(
-            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-            self.repo.base, after)
-        members = self.tools.members(scope, (before,))
-        self.assert_satisfied(self.run_members(members, after))
-        observed = self.run_members(members, before)
-        consumer = next(item for item in observed
-                        if item.obligation.family == "wire"
-                        and item.obligation.role == "consumers")
-        self.assertEqual((consumer.verdict, consumer.checks), ("unavailable", 0))
-        self.assertIn(path, consumer.obligation.inputs)
 
     def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
         path = "docs/test-cases/registry.json"
@@ -410,105 +352,6 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 head = self.repo.commit({path: json.dumps(catalog)})
                 with self.assertRaisesRegex(ValueError, "reviewed finite model"):
                     self.tools.members(self.case_scope(head))
-
-    def test_captured_source_separates_contract_failures_from_unavailable_origins(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        original = (self.repo.root / path).read_text()
-        mutants = (
-            (original.replace('indexed[name].get("automation")',
-                              'indexed[name]["automation"]', 1), "owners", ("unavailable", 0)),
-            (original.replace(
-                "consumer.test_registry_owns_the_eight_stable_localization_cases()",
-                "None", 1), "consumers", ("contract-violation", 1)),
-            (original.replace('case["anchor"] == anchors[start[0]]',
-                              'case["anchor"] in check_docs.compute_heading_slugs(stripped)',
-                              1), "drift-checks", ("contract-violation", 1)),
-            (original.replace('"reference": feature["reference"],',
-                              '"anchor": case["anchor"], "reference": feature["reference"],',
-                              1), "drift-checks", ("contract-violation", 1)),
-        )
-        for broken, role, expected in mutants:
-            with self.subTest(role=role):
-                self.assertNotEqual(broken, original)
-                before = self.repo.commit({path: broken})
-                after = self.repo.commit({path: original}, parent=before)
-                scope = request(
-                    "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-                    self.repo.base, after)
-                members = self.tools.members(scope, (before,))
-                self.assert_satisfied(self.run_members(members, after))
-                observed = self.run_members(members, before)
-                selected = next(item for item in observed if item.obligation.role == role)
-                self.assertEqual((selected.verdict, selected.checks),
-                                 expected, selected.detail)
-                self.assertIn(path, selected.obligation.inputs)
-                self.assertEqual(selected.source_objects[0][0], path)
-
-    def test_tool_owned_fixtures_do_not_overwrite_mixed_candidate_inputs(self):
-        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
-        original = (self.repo.root / path).read_text()
-        stale = original.replace(
-            '        "TC-LOCALIZATION-AUTHORED-SCOPE-001",\n', "", 1)
-        head = self.repo.commit({path: stale})
-        scope = self.case_scope(head)
-        scope["subjects"].append({
-            "case_id": "TC-WORKFLOW-REVIEW-FAMILY-001",
-            "subject": "authored-case-binding",
-        })
-        observed = self.run_members(self.tools.members(scope), head)
-        self.assertEqual(
-            [(item.obligation.subject, item.obligation.member, item.verdict)
-             for item in observed if item.verdict != "satisfied"],
-            [("TC-LOCALIZATION-AUTHORED-SCOPE-001/authored-scope-case",
-              "consumers:full-game-localization", "contract-violation")])
-
-    def test_each_counterexample_backend_failure_has_zero_semantic_credit(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        original = (self.repo.root / path).read_text()
-        cases = (
-            (
-                "owner-counterexample", "generated", "owners:authored-case-binding",
-                '    indexed = {item["id"]: item for item in catalog["cases"]}',
-                '\n    if role == "owners" and not AUTHORED_FEATURE_CASES <= set(indexed):'
-                '\n        raise RuntimeError("controlled owner backend failure")',
-            ),
-            (
-                "external-counterexample", "generated", "drift-checks:guide-destinations",
-                '            reference = check_docs.strip_fenced_blocks(Path(feature["reference"]).read_text())',
-                '\n            if "https://example.com/" in reference:'
-                '\n                raise RuntimeError("controlled external backend failure")',
-            ),
-            (
-                "equivalent-program", "wire", "consumers:fixture-program",
-                'def _authored_binding(probe):',
-                '\n    if "fixture_features" in (Path(BINDING_FIXTURE) / LOCALE_CASE_PROGRAM).read_text():'
-                '\n        raise RuntimeError("controlled equivalent-program backend failure")',
-            ),
-        )
-        for label, family, member, selector, injection in cases:
-            with self.subTest(case=label):
-                broken = original.replace(selector, selector + injection, 1)
-                self.assertNotEqual(original, broken)
-                head = self.repo.commit({path: broken})
-                scope = request("TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-                                self.repo.base, head)
-                members = tuple(item for item in self.tools.members(scope) if item.family == family)
-                observed = self.run_members(members, head)
-                failed = next(item for item in observed if item.obligation.member == member)
-                self.assertEqual((failed.verdict, failed.checks), ("unavailable", 0))
-
-    def test_captured_tool_import_failure_cannot_receive_semantic_credit(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        original = (self.repo.root / path).read_text()
-        head = self.repo.commit({path: original + "\nraise ImportError\n"})
-        scope = request(
-            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
-            self.repo.base, head)
-        observed = self.run_members(self.tools.members(scope), head)
-        self.assertTrue(observed)
-        self.assertEqual({(item.verdict, item.checks) for item in observed},
-                         {("unavailable", 0)})
-
 
 class SubjectTests(SubjectTestCase):
     @staticmethod
