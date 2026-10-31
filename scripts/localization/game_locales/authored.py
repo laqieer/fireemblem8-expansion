@@ -351,7 +351,14 @@ def build_authored_catalogs(
     repo_root: Path,
     *,
     manifest_path: Path = DEFAULT_MANIFEST_PATH,
+    locales: Tuple[str, ...] = LOCALES,
 ) -> Dict[str, Dict[str, Any]]:
+    if (
+        not isinstance(locales, (tuple, list)) or not locales
+        or any(not isinstance(locale, str) or locale not in LOCALES for locale in locales)
+        or len(set(locales)) != len(locales)
+    ):
+        raise AuthoredCatalogError("authored locales must be a nonempty unique JA/ZH subset")
     repo_root = Path(repo_root)
     manifest_file = repo_root / manifest_path
     _, manifest = _load_json(manifest_file)
@@ -462,7 +469,7 @@ def build_authored_catalogs(
 
     catalogs: Dict[str, Dict[str, Any]] = {}
     locale_records: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    for locale in LOCALES:
+    for locale in locales:
         locale_data = locale_manifest[locale]
         if not isinstance(locale_data, dict) or set(locale_data) != {
             "catalog_path",
@@ -591,11 +598,12 @@ def build_authored_catalogs(
         }
         locale_records[locale] = records
 
-    for target_id in sorted(expected_ids):
-        if locale_records["ja"][target_id]["key"] != locale_records["zh-Hans"][
-            target_id
-        ]["key"]:
-            raise AuthoredCatalogError(f"{target_id}: locale key parity drift")
+    if len(locale_records) == len(LOCALES):
+        for target_id in sorted(expected_ids):
+            if locale_records["ja"][target_id]["key"] != locale_records["zh-Hans"][
+                target_id
+            ]["key"]:
+                raise AuthoredCatalogError(f"{target_id}: locale key parity drift")
     return catalogs
 
 
@@ -620,9 +628,10 @@ def check_authored_catalogs(
     repo_root: Path,
     *,
     manifest_path: Path = DEFAULT_MANIFEST_PATH,
+    locales: Tuple[str, ...] = LOCALES,
 ) -> Dict[str, Path]:
     repo_root = Path(repo_root)
-    catalogs = build_authored_catalogs(repo_root, manifest_path=manifest_path)
+    catalogs = build_authored_catalogs(repo_root, manifest_path=manifest_path, locales=locales)
     _, manifest = _load_json(repo_root / manifest_path)
     checked = {}
     mismatches = []
