@@ -34,6 +34,9 @@ or versions, duplicate keys, malformed data, incorrect size/checksum, truncated
 or trailing streams and nested envelopes fail explicitly.
 Numeric tokens that would become non-finite host values, including exponent
 overflow, reject before mutation; representable finite exponents remain valid.
+Unpaired surrogate keys or values reject through `ResourceIndexError` before
+return or publication. Valid escaped Unicode pairs still round-trip; failed
+encoding leaves the previous stored file unchanged.
 
 Logical schema, FEHRR source priority, immutable FEBuilder baseline and
 glyph/width/bitmap checks are unchanged. Physical checksums bind the actual
@@ -273,8 +276,8 @@ real generated-file consumer to reject without changing any named output.
 Restoring current metadata must succeed. Before packing, it also copies the
 plain state to a second independent owned root; both actual CLI fresh encodes
 must produce identical usage, inventory and manifest bytes with the same
-encoder build. Repeating packed on an already-packed input is separately
-idempotence, not proof of fresh compression.
+encoder build. Repeating packed on an already-packed input separately proves
+idempotence, not fresh-compression determinism.
 Existing corrupt/truncated/trailing/bounded-input controls remain mandatory.
 This is another indivisible generated-index conversion: report every deleted
 line and alternative complete-data proof, retain the unchanged 4 MiB raw

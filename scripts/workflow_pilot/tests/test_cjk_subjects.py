@@ -118,7 +118,10 @@ class CjkSubjectTests(unittest.TestCase):
                 {**envelope, "decoded_bytes": len(nested),
                  "payload": base64.b64encode(lzma.compress(nested)).decode()},
             )
-        ] + [b'{"value":1,"value":2}', b'{"value":1e999}', b'{"value":NaN}']
+        ] + [
+            b'{"value":1,"value":2}', b'{"value":1e999}', b'{"value":NaN}',
+            b'{"value":"\\ud800"}', b'{"\\udfff":"value"}', b'{"value":["\\ud800"]}',
+        ]
         for data in cases:
             with self.subTest(reference=data[:80]):
                 head = self.repo.commit({"fonts/cjk/fehrr-sources.json": data})
@@ -145,6 +148,14 @@ class CjkSubjectTests(unittest.TestCase):
         original = (self.repo.root / "scripts/fonttools/cjk/resource_index.py").read_text()
         self.remediation(original.replace("if not math.isfinite(number):", "if False:", 1),
                          "wire", "consumers")
+
+    def test_real_surrogate_decoder_mutation_is_not_false_credit(self):
+        original = (self.repo.root / "scripts/fonttools/cjk/resource_index.py").read_text()
+        broken = original.replace(
+            '        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")\n',
+            "", 1,
+        )
+        self.remediation(broken, "wire", "consumers")
 
     def test_real_recompression_mutation_is_not_false_credit(self):
         original = (self.repo.root / "scripts/fonttools/cjk/resource_index.py").read_text()

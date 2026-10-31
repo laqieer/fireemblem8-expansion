@@ -635,6 +635,7 @@ def _cjk_resource(probe):
         )
         if not isinstance(value, dict):
             raise ValueError("reference resource must be an object")
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         return value
 
     def reference(data):
@@ -841,11 +842,16 @@ def _cjk_resource(probe):
             verify(reference(canonical(stored)) == plain,
                    "producer payload differs from canonical complete input")
             reject(lambda: codec.encode_index({"value": float("nan")}))
+            for value in ({"value": "\ud800"}, {"\udfff": "value"}, {"value": ["\ud800"]}):
+                reject(lambda value=value: codec.encode_index(value))
         elif role == "consumers":
             for number in (1e308, -1e308):
                 value = {"value": number}
                 decoded(canonical(value), value)
                 decoded(canonical(envelope(canonical(value))), value)
+            paired = b'{"value":"\\ud83d\\ude00"}'
+            decoded(paired, {"value": "\U0001F600"})
+            decoded(canonical(envelope(paired)), {"value": "\U0001F600"})
             for token in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
                 data = ('{"value":' + token + "}").encode()
                 for stored in (data, canonical(envelope(data))):
@@ -853,6 +859,7 @@ def _cjk_resource(probe):
             for data in (
                 b'{"value":' + b"[" * 16000 + b"0" + b"]" * 16000 + b"}",
                 b'{"value":' + b"1" * 5000 + b"}",
+                b'{"value":"\\ud800"}', b'{"\\udfff":"value"}', b'{"value":["\\ud800"]}',
             ):
                 for stored in (data, canonical(envelope(data))):
                     reject(lambda stored=stored: codec.decode_index(stored))
