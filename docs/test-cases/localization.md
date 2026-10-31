@@ -16,10 +16,11 @@ separate human judgments.
 
 - **Feature / originating issue:** `full-game-localization` /
   [#344](https://github.com/laqieer/fireemblem8-expansion/issues/344).
-- **Supported configuration or artifact:** host Python, explicit JA-only,
+- **Supported configuration or artifact:** the repository's CPython 3.12 host
+  test profile, explicit JA-only,
   ZH-only, and unchanged default both-locale scope.
 - **Prerequisites and clean starting state:** run from the repository root
-  with Python and Git available and the existing committed manifest/source
+  with CPython 3.12 and Git available and the existing committed manifest/source
   inputs. Do not edit stock catalogs or the real Git index. The regression
   creates its own ignored source fixture and alternate index.
 
@@ -96,6 +97,9 @@ closure never overwrites captured candidate catalog inputs, and a backend
 failure cannot become semantic repair evidence. This remains host evidence,
 not ROM or linguistic qualification.
 
+Internal guide destinations use the documentation checker's shared path and
+fragment resolver. Equivalent `./`, parent-segment and percent-encoded paths
+still bind the same procedure; another document or anchor does not.
 The anchor is checked as catalog content, not baked into member identity:
 a stale anchor rejects but can produce real repaired-origin evidence. The
 captured production model also exercises that repair through real Git trees.

@@ -125,6 +125,53 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
              if item.verdict != "satisfied"],
             [("outputs:full-game-localization", "contract-violation")])
 
+    def test_equivalent_guide_uri_does_not_reject_the_correct_procedure(self):
+        catalog = json.loads((self.repo.root / "docs/test-cases/registry.json").read_text())
+        feature = next(row for row in catalog["features"] if row["id"] == "full-game-localization")
+        path = feature["reference"]
+        original = (self.repo.root / path).read_text()
+        case = next(row for row in catalog["cases"]
+                    if row["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
+        target = "test-cases/localization.md#" + case["anchor"]
+        for equivalent in (
+            "./" + target,
+            "test-cases/../" + target,
+            target.replace("localization.md", "%6Cocalization.md"),
+        ):
+            with self.subTest(destination=equivalent):
+                changed = original.replace(target, equivalent)
+                self.assertNotEqual(original, changed)
+                head = self.repo.commit({path: changed})
+                self.assert_satisfied(self.run_members(self.tools.members(self.case_scope(head)), head))
+
+    def test_captured_guide_resolution_has_its_own_source_failure_and_repair(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        original = (self.repo.root / path).read_text()
+        correct = '''            check((case["document"], case["anchor"]) in {
+                check_docs.internal_link_destination(feature["reference"], link)
+                for _, link in check_docs.extract_internal_link_targets(reference)
+            },'''
+        raw = '''            destination = os.path.relpath(
+                case["document"], Path(feature["reference"]).parent)
+            target = destination + "#" + case["anchor"]
+            check(target in {link for _, link in
+                             check_docs.extract_internal_link_targets(reference)},'''
+        broken = original.replace(correct, raw, 1)
+        self.assertNotEqual(original, broken)
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: original}, parent=before)
+        scope = request("TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+                        self.repo.base, after)
+        members = self.tools.members(scope, (before,))
+        self.assert_satisfied(self.run_members(members, after))
+        observed = self.run_members(members, before)
+        guide = next(item for item in observed
+                     if item.obligation.member == "drift-checks:guide-destinations")
+        self.assertEqual((guide.verdict, guide.checks), ("contract-violation", 1))
+        anchor = next(item for item in observed
+                      if item.obligation.member == "drift-checks:authored-case-binding")
+        self.assertEqual(anchor.verdict, "satisfied")
+
     def test_refactors_preserve_members_and_syntax_failure_is_not_semantic_evidence(self):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
         original = (self.repo.root / path).read_text()
