@@ -91,7 +91,7 @@ def locale_case_metadata(raw):
     return declarations[0]
 
 
-def rejecting_locale_case_program(raw):
+def locale_case_program_fixture(raw, variant):
     source = ast.parse(raw)
     functions = [
         function for owner in source.body
@@ -101,16 +101,33 @@ def rejecting_locale_case_program(raw):
         and function.name == "test_registry_owns_the_eight_stable_localization_cases"
     ]
     review.require(len(functions) == 1, "reviewed consumer selector changed")
+    if variant == "rename":
+        names = {node.id for node in ast.walk(functions[0])
+                 if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)}
+
+        class RenameLocal(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id in names:
+                    node.id = "fixture_" + node.id
+                return node
+
+        RenameLocal().visit(functions[0])
     predicates = [
         node for node in ast.walk(functions[0])
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
         and node.func.attr == "assertEqual" and len(node.args) == 2
     ]
     review.require(bool(predicates), "reviewed consumer assertion model changed")
-    for node in predicates:
-        node.args[0] = ast.Call(
-            func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[],
-        )
+    if variant == "reject":
+        for node in predicates:
+            node.args[0] = ast.Call(
+                func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[],
+            )
+    elif variant == "swap":
+        for node in predicates:
+            node.args.reverse()
+    else:
+        review.require(variant in {"rename", "format"}, "unknown reviewed fixture variant")
     return ast.unparse(ast.fix_missing_locations(source)).encode()
 
 
@@ -280,6 +297,11 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                 "reviewed closed fixture driver", "authored-case:" + role,
                 "real production verdicts for valid and adversarial captured inputs",
                 "authored-binding:" + role, (BINDING_SOURCE,), kind="host")
+        for role in review.FAMILIES["wire"]:
+            add("wire", role, "fixture-program", BINDING_SOURCE + ":run_probe",
+                "reviewed fixture producer and consumer", "authored-binding:consumers",
+                "equivalent reviewed programs preserve actual production fixture behavior",
+                "authored-fixture:" + role, (BINDING_SOURCE,), kind="host")
     elif spec.model == "authored-case":
         _, feature, case = authored_case_declaration(tree.read(CASE_REGISTRY))
         mapping = json.dumps({
@@ -528,7 +550,7 @@ def _authored_binding(probe):
                 checks += 1
         elif role == "consumers":
             Path(LOCALE_CASE_PROGRAM).write_bytes(
-                rejecting_locale_case_program(saved[LOCALE_CASE_PROGRAM]))
+                locale_case_program_fixture(saved[LOCALE_CASE_PROGRAM], "reject"))
             rejected()
             checks += 1
             Path(LOCALE_CASE_PROGRAM).write_bytes(saved[LOCALE_CASE_PROGRAM])
@@ -595,6 +617,64 @@ def _authored_binding(probe):
         for path, raw in saved.items():
             Path(path).write_bytes(raw)
         os.chdir(saved_root)
+
+
+@probe_result("host")
+def _authored_fixture(probe):
+    module = types.ModuleType("captured_authored_fixture_producer")
+    module.__file__ = str(Path(BINDING_CAPTURE).resolve())
+    sys.modules[module.__name__] = module
+    exec(compile(Path(BINDING_CAPTURE).read_bytes(), BINDING_CAPTURE, "exec"), module.__dict__)
+    fixture = Path(BINDING_FIXTURE).resolve()
+    module.BINDING_CAPTURE = str(Path(BINDING_SOURCE).resolve())
+    module.BINDING_FIXTURE = str(fixture)
+    program = fixture / LOCALE_CASE_PROGRAM
+    original = program.read_bytes()
+    root = Path.cwd()
+    role = probe.partition(":")[2]
+    variant = {
+        "producers": "format", "consumers": "rename", "validators": "format",
+        "replay": "rename", "stale-bindings": "swap",
+    }.get(role)
+    review.require(variant is not None, "unknown reviewed fixture wire selector")
+    try:
+        baseline = module.run_probe("authored-binding:consumers")
+        review.require(baseline["verdict"] != "unavailable",
+                       "captured fixture producer backend unavailable")
+        check(baseline["verdict"] == "satisfied" and baseline["checks"] > 0,
+              "captured fixture producer rejects its valid reviewed program")
+        if role == "validators":
+            source = ast.parse(original)
+            for node in ast.walk(source):
+                if (isinstance(node, ast.FunctionDef)
+                        and node.name == "test_registry_owns_the_eight_stable_localization_cases"):
+                    node.name = "unavailable_reviewed_selector"
+            program.write_text(ast.unparse(source))
+            unknown = module.run_probe("authored-binding:consumers")
+            check(unknown["verdict"] == "unavailable" and unknown["checks"] == 0,
+                  "unknown reviewed selector received semantic evidence credit")
+            return {"kind": "host", "checks": 2,
+                    "detail": "captured producer validated known and unknown reviewed selectors"}
+        changed = locale_case_program_fixture(original, variant)
+        program.write_bytes(changed)
+        observed = module.run_probe("authored-binding:consumers")
+        check(observed["verdict"] == "satisfied" and observed["checks"] > 0,
+              "equivalent reviewed program breaks captured fixture producer: "
+              + repr(observed)[:1000])
+        check(Path.cwd() == root and program.read_bytes() == changed,
+              "captured fixture producer leaked cwd or program mutation")
+        checks = 3
+        if role == "replay":
+            program.write_bytes(original)
+            replay = module.run_probe("authored-binding:consumers")
+            check(replay["verdict"] == "satisfied" and replay["checks"] > 0,
+                  "fixture replay retained a stale reviewed-program binding")
+            checks += 1
+        return {"kind": "host", "checks": checks,
+                "detail": "captured fixture producer executed on equivalent reviewed programs"}
+    finally:
+        program.write_bytes(original)
+        os.chdir(root)
 
 
 @probe_result("arm-object")
@@ -810,6 +890,7 @@ def run_probe(probe: str) -> dict:
         "generated-output", "generated-consumer", "generated-drift",
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
         *("authored-binding:" + role for role in review.FAMILIES["generated"]),
+        *("authored-fixture:" + role for role in review.FAMILIES["wire"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -828,6 +909,8 @@ def run_probe(probe: str) -> dict:
         return _authored_case(probe)
     if probe.startswith("authored-binding:"):
         return _authored_binding(probe)
+    if probe.startswith("authored-fixture:"):
+        return _authored_fixture(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")
