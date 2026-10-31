@@ -25,6 +25,24 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class ResourceIndexTests(unittest.TestCase):
+    def test_non_json_numbers_are_rejected_in_both_formats_and_encoding(self):
+        envelope = json.loads(encode_index({"value": 0}, packed=True))
+        for token in ("NaN", "Infinity", "-Infinity"):
+            plain = ('{"value":' + token + "}").encode()
+            wrapped = {
+                **envelope, "decoded_bytes": len(plain),
+                "payload": base64.b64encode(lzma.compress(plain)).decode(),
+            }
+            inputs = (
+                ("plain", lambda: decode_index(plain)),
+                ("packed", lambda: decode_index(json.dumps(wrapped).encode())),
+                ("encode", lambda: encode_index({"value": float(token)})),
+            )
+            for operation, call in inputs:
+                with self.subTest(token=token, operation=operation):
+                    with self.assertRaises(ResourceIndexError):
+                        call()
+
     def test_existing_index_is_plain_byte_stable_and_losslessly_packable(self):
         original = (ROOT / "fonts/cjk/fehrr-sources.json").read_bytes()
         value = decode_index(original)
@@ -36,12 +54,12 @@ class ResourceIndexTests(unittest.TestCase):
         self.assertEqual(decode_index(packed), value)
         self.assertEqual(encode_index(value, packed=True), packed)
         self.assertEqual(decode_index(original), value)
-        originally_packed = json.loads(original).get("kind") == ENVELOPE_KIND
-        self.assertEqual(original, packed if originally_packed else plain)
+        self.assertEqual(encode_like_index(value, ROOT / "fonts/cjk/fehrr-sources.json"), original)
 
     def test_invalid_or_unbounded_envelopes_fail_explicitly(self):
         envelope = json.loads(encode_index({"source": "glyphs"}, packed=True))
         compressed = base64.b64decode(envelope["payload"])
+        nested = json.dumps(envelope).encode()
         cases = [
             {**envelope, "version": 2},
             {**envelope, "version": True},
@@ -51,6 +69,10 @@ class ResourceIndexTests(unittest.TestCase):
             {**envelope, "decoded_bytes": True},
             {**envelope, "decoded_bytes": envelope["decoded_bytes"] + 1},
             {**envelope, "payload": "%%%"},
+            *({**envelope, "payload": value} for value in (None, False, 1, [], {})),
+            {**envelope, "decoded_bytes": len(nested), "payload": base64.b64encode(
+                lzma.compress(nested)
+            ).decode()},
             {**envelope, "payload": base64.b64encode(compressed[:-4]).decode()},
             {**envelope, "payload": base64.b64encode(compressed + b"x").decode()},
             {**envelope, "payload": base64.b64encode(compressed * 2).decode()},
@@ -85,6 +107,26 @@ class ResourceIndexTests(unittest.TestCase):
             with self.assertRaises(ResourceIndexError):
                 encode_like_index(changed, path)
             self.assertEqual(path.read_bytes(), b"invalid index")
+
+    def test_unchanged_packed_json_keeps_a_valid_alternate_encoder_stream(self):
+        value = {"glyphs": [0x4E00, 0x4E01]}
+        standard = encode_index(value, packed=True)
+        alternate = json.loads(standard)
+        alternate["payload"] = base64.b64encode(
+            lzma.compress(encode_index(value), preset=0)
+        ).decode()
+        stored = (json.dumps(alternate, indent=2, sort_keys=True) + "\n").encode()
+        self.assertNotEqual(stored, standard)
+        self.assertEqual(decode_index(stored), value)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "index.json"
+            path.write_bytes(stored)
+            self.assertEqual(encode_like_index(value, path), stored)
+            self.assertEqual(encode_like_index(value, path, packed=True), stored)
+            self.assertEqual(encode_like_index(value, path, packed=False), encode_index(value))
+            changed = {"glyphs": [0x4E00, 0x4E01, 0x4E02]}
+            result = encode_like_index(changed, path)
+            self.assertEqual(decode_index(result), changed)
 
     def test_actual_priority_reader_keeps_physical_checksum_boundary(self):
         original = (ROOT / FEHRR_SOURCES).read_bytes()
@@ -145,8 +187,13 @@ class ResourceIndexTests(unittest.TestCase):
                             cwd=ROOT, capture_output=True, text=True, timeout=180,
                         )
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        stored = (root / relative).read_bytes()
                         self.assertEqual(
-                            decode_index((root / relative).read_bytes()),
+                            json.loads(stored).get("kind") == ENVELOPE_KIND,
+                            representation == "packed",
+                        )
+                        self.assertEqual(
+                            decode_index(stored),
                             decode_index(originals[relative]),
                         )
                         after_assets = check_compact_assets(root)
@@ -158,8 +205,28 @@ class ResourceIndexTests(unittest.TestCase):
                             generated["fonts/cjk/runtime_usage.json"],
                             (root / "fonts/cjk/runtime_usage.json").read_bytes(),
                         )
-            for relative, data in originals.items():
-                self.assertEqual((root / relative).read_bytes(), data)
+            for relative in (FEHRR_SOURCES, "fonts/cjk/runtime_usage.json"):
+                packed = json.loads(originals[relative]).get("kind") == ENVELOPE_KIND
+                self.assertEqual(
+                    (root / relative).read_bytes(),
+                    encode_index(decode_index(originals[relative]), packed=packed),
+                )
+            inventory_path = "fonts/cjk/inventory.json"
+            usage_path = "fonts/cjk/runtime_usage.json"
+            usage = (root / usage_path).read_bytes()
+            expected_inventory = json.loads(originals[inventory_path])
+            expected_inventory["outputs"][usage_path] = {
+                "byte_count": len(usage), "sha256": hashlib.sha256(usage).hexdigest(),
+            }
+            self.assertEqual(json.loads((root / inventory_path).read_bytes()), expected_inventory)
+            expected_manifest = json.loads(originals["graphics/fonts/cjk/manifest.json"])
+            for key, relative in (("inventory", inventory_path), ("fehrr_priority", FEHRR_SOURCES)):
+                expected_manifest["sources"][key]["sha256"] = hashlib.sha256(
+                    (root / relative).read_bytes()
+                ).hexdigest()
+            self.assertEqual(
+                json.loads((root / "graphics/fonts/cjk/manifest.json").read_bytes()), expected_manifest
+            )
             broken = root / FEHRR_SOURCES
             broken.write_bytes(b"invalid index")
             before = {relative: (root / relative).read_bytes() for relative in originals}

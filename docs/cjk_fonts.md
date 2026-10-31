@@ -16,13 +16,19 @@ remains plain. Generation preserves the representation already present. Both
 formats decode to the same complete JSON object.
 The shared `scripts.fonttools.cjk.resource_index` API provides `decode_index`,
 `encode_index(value, packed=False)`, `load_index` and `encode_like_index`.
+The last preserves the existing format unless the maintainer operation
+explicitly supplies its `packed` keyword.
 
 The envelope has exactly `kind`, `version`, `encoding`, `decoded_bytes` and
 `payload` fields. `kind` is `cjk-resource-index`, integer `version` is `1`,
 `encoding` is `xz-base64`, integer `decoded_bytes` is the canonical UTF-8 JSON
 byte count, and `payload` is base64 of one XZ stream. Encoding uses sorted,
 two-space-indented UTF-8 JSON with a final newline and the standard-library XZ
-preset 6. Repeated encoding is deterministic. Stored and decoded indexes are
+preset 6. Repeated encoding is deterministic within one encoder build; valid
+XZ streams can differ across liblzma builds. Generation and same-format
+conversion retain validated stored packed bytes when their canonical JSON
+is unchanged, avoiding false drift without pinning a new toolchain.
+Stored and decoded indexes are
 bounded to 4 MiB; XZ decoding has a 64 MiB decoder-memory bound. Unknown fields
 or versions, duplicate keys, malformed data, incorrect size/checksum, truncated
 or trailing streams and nested envelopes fail explicitly.
@@ -67,12 +73,17 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
    consumers against plain and packed inputs.
 2. Require complete decoded equality, repeated deterministic encoding,
    unchanged plain bytes and every glyph/width/bitmap byte, valid physical
-   checksums, and exact original files after reverse conversion. The
+   checksums, and complete reverse-conversion data in the original format.
+   Same-build streams reproduce the original bytes; cross-build unchanged
+   packed inputs retain their original streams without recompression.
+   Explicit format changes update only the actual physical checksum chain.
+   The
    pre-interface FEHRR reader rejects the packed fixture. An explicit plain
    fixture remains the representation control even after default migrations;
    obtain pre-migration plain data from the exact parent Git blob, not by
    assuming the current checkout still stores that index in plain form.
-3. Exercise malformed encoding, unknown fields/version, boolean size/version,
+3. Exercise malformed encoding, non-JSON NaN/infinity constants, unknown
+   fields/version, non-string payloads, nested envelopes, boolean size/version,
    wrong size, damaged/truncated/trailing streams and oversized expansion.
    Require explicit errors; a corrupt owned CLI input must leave every
    existing index/checksum file unchanged.
