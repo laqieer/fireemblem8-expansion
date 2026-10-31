@@ -261,7 +261,7 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         _, feature, case = authored_case_declaration(tree.read(CASE_REGISTRY))
         mapping = json.dumps({
             "cases": sorted(feature["required_cases"]), "document": case["document"],
-            "anchor": case["anchor"], "reference": feature["reference"],
+            "reference": feature["reference"],
         }, sort_keys=True)
         paths = {
             "owners": {CASE_REGISTRY},
@@ -539,6 +539,33 @@ def _authored_binding(probe):
                 "tc-localization-003-production-expansion-and-full-game-locale-catalogs")
             Path(CASE_REGISTRY).write_text(json.dumps(catalog))
             rejected()
+            checks += 1
+            from scripts.workflow_pilot.trusted_review_gate import GitTree
+
+            git = [
+                "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                "-c", "gc.auto=0",
+                "-c", "maintenance.auto=0", "-c", "user.name=Review fixture",
+                "-c", "user.email=review@example.invalid",
+            ]
+            if not Path(".git").exists():
+                command([*git, "init", "-q"])
+            command([*git, "add", "."])
+            command([*git, "commit", "-qm", "wrong procedure anchor"])
+            before = command([*git, "rev-parse", "HEAD"]).decode().strip()
+            Path(CASE_REGISTRY).write_bytes(saved[CASE_REGISTRY])
+            command([*git, "add", CASE_REGISTRY])
+            command([*git, "commit", "-qm", "correct procedure anchor"])
+            after = command([*git, "rev-parse", "HEAD"]).decode().strip()
+            before_tree, after_tree = GitTree(fixture, before), GitTree(fixture, after)
+            spec = next(item for item in module.BINDINGS if item.name == "authored-scope-case")
+            module.expand_members(spec, after_tree, after_tree)
+            try:
+                module.expand_members(spec, before_tree, after_tree)
+            except module.review.ReviewError as error:
+                raise ContractViolation(
+                    "stale anchor content cannot be repaired through the production model: "
+                    + str(error)) from error
             checks += 1
         else:
             raise review.ReviewError("unknown captured binding probe")

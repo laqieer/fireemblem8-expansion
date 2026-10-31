@@ -419,6 +419,8 @@ class ReviewTools:
             (fixture / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
                 self.tool_tree.read(self.subjects.LOCALE_CASE_CONSUMER))
         tool_paths = ("scripts/workflow_pilot/__init__.py",
+                      "scripts/workflow_pilot/reporter.py",
+                      "scripts/workflow_pilot/trusted_review_gate.py",
                       "scripts/workflow_pilot/raw_diff_check.py",
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)

@@ -96,6 +96,12 @@ closure never overwrites captured candidate catalog inputs, and a backend
 failure cannot become semantic repair evidence. This remains host evidence,
 not ROM or linguistic qualification.
 
+The anchor is checked as catalog content, not baked into member identity:
+a stale anchor rejects but can produce real repaired-origin evidence. The
+captured production model also exercises that repair through real Git trees.
+Equivalent consumer `read_text`/`read_bytes` calls and equality operand order
+do not change the captured literal case-map contract.
+
 ### Cleanup and limitations
 
 Only the regression's owned temporary fixture/index are removed; stock files

@@ -129,6 +129,11 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
         original = (self.repo.root / path).read_text()
         renamed = original.replace("FEATURE_CASES", "LOCALE_CONTRACTS")
+        renamed = renamed.replace(
+            'REGISTRY_PATH.read_text(encoding="utf-8")', "REGISTRY_PATH.read_bytes()")
+        renamed = renamed.replace(
+            'self.assertEqual(set(features[feature_id]["required_cases"]), expected_cases)',
+            'self.assertEqual(expected_cases, set(features[feature_id]["required_cases"]))')
         self.assertNotEqual(original, renamed)
         head = self.repo.commit({path: renamed})
         members = self.tools.members(self.case_scope(head))
@@ -233,13 +238,17 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
 
     def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
         path = "docs/test-cases/registry.json"
-        catalog = json.loads((self.repo.root / path).read_text())
+        original = (self.repo.root / path).read_text()
+        catalog = json.loads(original)
         case = next(item for item in catalog["cases"]
                     if item["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
         case["anchor"] = (
             "tc-localization-003-production-expansion-and-full-game-locale-catalogs")
         head = self.repo.commit({path: json.dumps(catalog)})
-        observed = self.run_members(self.tools.members(self.case_scope(head)), head)
+        after = self.repo.commit({path: original}, parent=head)
+        members = self.tools.members(self.case_scope(after), (head,))
+        self.assert_satisfied(self.run_members(members, after))
+        observed = self.run_members(members, head)
         drift = next(item for item in observed if item.obligation.role == "drift-checks")
         self.assertEqual(drift.verdict, "contract-violation")
 
@@ -268,6 +277,9 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 "None", 1), "consumers"),
             (original.replace('case["anchor"] == anchors[start[0]]',
                               'case["anchor"] in check_docs.compute_heading_slugs(stripped)',
+                              1), "drift-checks"),
+            (original.replace('"reference": feature["reference"],',
+                              '"anchor": case["anchor"], "reference": feature["reference"],',
                               1), "drift-checks"),
         )
         for broken, role in mutants:
