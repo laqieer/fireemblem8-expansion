@@ -25,9 +25,9 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class ResourceIndexTests(unittest.TestCase):
-    def test_non_json_numbers_are_rejected_in_both_formats_and_encoding(self):
+    def test_non_finite_numbers_are_rejected_in_both_formats_and_encoding(self):
         envelope = json.loads(encode_index({"value": 0}, packed=True))
-        for token in ("NaN", "Infinity", "-Infinity"):
+        for token in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
             plain = ('{"value":' + token + "}").encode()
             wrapped = {
                 **envelope, "decoded_bytes": len(plain),
@@ -42,6 +42,13 @@ class ResourceIndexTests(unittest.TestCase):
                 with self.subTest(token=token, operation=operation):
                     with self.assertRaises(ResourceIndexError):
                         call()
+
+    def test_representable_exponents_round_trip_in_both_formats(self):
+        for number in (1e308, -1e308):
+            value = {"value": number}
+            for packed in (False, True):
+                with self.subTest(number=number, packed=packed):
+                    self.assertEqual(decode_index(encode_index(value, packed=packed)), value)
 
     def test_existing_index_is_plain_byte_stable_and_losslessly_packable(self):
         original = (ROOT / "fonts/cjk/fehrr-sources.json").read_bytes()

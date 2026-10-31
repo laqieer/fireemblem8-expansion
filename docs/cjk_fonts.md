@@ -31,6 +31,8 @@ Stored and decoded indexes are
 bounded to 4 MiB; XZ decoding has a 64 MiB decoder-memory bound. Unknown fields
 or versions, duplicate keys, malformed data, incorrect size/checksum, truncated
 or trailing streams and nested envelopes fail explicitly.
+Numeric tokens that would become non-finite host values, including exponent
+overflow, reject before mutation; representable finite exponents remain valid.
 
 Logical schema, FEHRR source priority, immutable FEBuilder baseline and
 glyph/width/bitmap checks are unchanged. Physical checksums bind the actual
