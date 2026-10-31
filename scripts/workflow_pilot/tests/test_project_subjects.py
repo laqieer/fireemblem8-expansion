@@ -39,7 +39,8 @@ class ProjectSubjectTests(unittest.TestCase):
         )
 
     def test_project_action_family_executes_real_frontend_predicates(self):
-        members = self.tools.members(self.scope())
+        members = tuple(item for item in self.tools.members(self.scope())
+                        if item.family == "action")
         self.assertEqual({item.role for item in members}, {"actions", "items", "targets"})
         observed = self.tools.run_obligations(members, self.repo.base)
         self.assertEqual(
@@ -58,6 +59,32 @@ class ProjectSubjectTests(unittest.TestCase):
         head = self.repo.commit({path: changed})
         with self.assertRaisesRegex(ValueError, "reviewed finite model"):
             self.tools.members(self.scope(head))
+
+    def test_project_lifecycle_detects_default_metadata_leak_and_restores_context(self):
+        members = tuple(item for item in self.tools.members(self.scope())
+                        if item.family == "lifecycle")
+        self.assertEqual({item.role for item in members},
+                         {"entries", "preservation", "resets", "terminals"})
+        observed = self.tools.run_obligations(members, self.repo.base)
+        self.assertEqual([(item.obligation.member, item.verdict, item.detail)
+                          for item in observed
+                          if item.verdict != "satisfied" or item.checks <= 0], [])
+        path = "scripts/modernize/expansion_config.py"
+        original = (self.repo.root / path).read_text()
+        changed = original.replace(
+            'if self.project != "default":\n            data["project"] = self.project',
+            'if True:\n            data["project"] = self.project', 1)
+        self.assertNotEqual(original, changed)
+        before = self.repo.commit({path: changed})
+        after = self.repo.commit({path: original}, parent=before)
+        members = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                        if item.family == "lifecycle")
+        broken = self.tools.run_obligations(members, before)
+        preserved = next(item for item in broken if item.obligation.role == "preservation")
+        self.assertEqual((preserved.verdict, preserved.checks), ("contract-violation", 1))
+        repaired = self.tools.run_obligations(members, after)
+        self.assertEqual([(item.obligation.member, item.verdict, item.detail)
+                          for item in repaired if item.verdict != "satisfied"], [])
 
     def test_project_schema_factory_aliases_are_structural_not_spelling(self):
         path = "scripts/generated_data/registry.py"
