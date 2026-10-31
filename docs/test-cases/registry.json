@@ -3650,10 +3650,10 @@
       "document": "docs/test-cases/localization.md",
       "anchor": "tc-localization-authored-scope-001-scope-deterministic-authored-validation",
       "profiles": [
-        "Host Python; explicit JA, explicit ZH-Hans, and default both-locale scope"
+        "Repository CPython 3.12 host test profile; explicit JA, explicit ZH-Hans, and default both-locale scope"
       ],
       "purpose": "Validate only the requested deterministic authored catalogs without weakening default full-scope validation.",
-      "prerequisites": "Repository root with Python, Git and committed manifest/source inputs; never edit stock catalogs or the real index.",
+      "prerequisites": "Repository root with the supported CPython 3.12 host test profile, Git and committed manifest/source inputs; never edit stock catalogs or the real index.",
       "actions": "Run the authored-catalog unittest module and call the public checker with JA-only, ZH-only and omitted scope; observe staged requested/unrequested catalog drift and invalid scope controls.",
       "expected_result": "Valid scoped generated content equals its committed counterpart; stale requested catalogs and invalid scopes reject, while stale unrequested catalogs are ignored.",
       "negative_control": "Default scope still checks both JA/ZH outputs and retains key parity.",
