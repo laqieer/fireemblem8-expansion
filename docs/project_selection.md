@@ -205,12 +205,15 @@ The public resolver carries project/profile as invocation context. The core
 `ExpansionIdentity` positional constructor remains unchanged; only selected
 metadata and fingerprint inputs include that context.
 
-The current review-family `project-selection` action slice exercises the real
-declaration and identity functions against the parsed schema-owner, setting and
-provider domain. It does not execute candidate test programs or claim compiler
-or ROM evidence. Remaining lifecycle, wire, generated and resource family
-bindings are not yet complete; this development slice cannot authorize the
-whole selector handoff or replace any final gate.
+The current review-family `project-selection` action and lifecycle slices
+exercise the real declaration, identity and metadata CLI against the parsed
+schema-owner, setting and provider domain. They cover default/selected entry,
+default preservation, fresh profile resets and failed/recovered publication.
+Their execution-only closure contains production Python plus the declared
+configuration/font slots, not the whole asset/source tree or candidate tests.
+Remaining wire, generated and resource bindings are not yet complete; these
+development slices do not claim compiler/ROM evidence or authorize the whole
+selector handoff or replace any final gate.
 
 Project names and fingerprints are not save-compatibility authorities.
 Projects must explicitly select an appropriate compatibility epoch when their

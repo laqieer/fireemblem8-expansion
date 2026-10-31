@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, replace
+import io
 import json
 import os
 from pathlib import Path
@@ -365,16 +367,25 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
             add("action", role, name, PROJECT_DECLARATION, PROJECT_CONFIG, declaration,
                 "real public frontend with valid and adversarial declarations",
                 "project:" + role, inputs)
+        for role in review.FAMILIES["lifecycle"]:
+            add("lifecycle", role, "invocation-context", PROJECT_CONFIG,
+                PROJECT_DECLARATION, declaration,
+                "public selection and metadata CLI preserve, reset and terminate invocation state",
+                "project-life:" + role, (PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"))
         tool_paths = {
             REVIEW_SOURCE, BINDING_SOURCE, AOE_DRIVER, AOE_DISABLED,
             "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
             "scripts/workflow_pilot/trusted_review_gate.py", "scripts/workflow_pilot/reporter.py",
         }
+        static_inputs = {
+            PROJECT_DECLARATION, "config.mk",
+            *json.loads(declaration)["declarations"]["FONT_SLOTS"],
+        }
         closure = tuple(sorted(
             path for path, (mode, kind, _) in tree.entries.items()
             if mode in {"100644", "100755"} and kind == "blob"
             and path not in tool_paths and "/tests/" not in "/" + path
-            and not path.startswith((".github/", "docs/", "reports/"))
+            and (path in static_inputs or path.startswith("scripts/") and path.endswith(".py"))
         ))
         result = [replace(member, execution_inputs=closure) for member in result]
     elif spec.model == "authored-binding":
@@ -663,8 +674,89 @@ def _project(probe):
     baseline = selection()
     review.require(baseline["project"] == project.name, "project frontend backend unavailable")
     checks = 1
-    role = probe.partition(":")[2]
-    if role == "actions":
+    family, _, role = probe.partition(":")
+    if family == "project-life":
+        def default_identity():
+            return config.load_identity(
+                root / "config.mk", config_preset="debug", abi="aapcs", rom_size=None,
+                repo_root=root, build_id_override="abcdef12", project="default",
+            )
+
+        if role == "entries":
+            check(config.load_project_selection(root, "default") == {
+                "project": "default", "profile": "default",
+                "settings": {}, "asset_manifest": None,
+            }, "default selection acquired project state")
+            check(identity().project_profile == "probe",
+                  "declared default profile was not selected")
+            for name in ("../escape", "bad name", "bad/name", ""):
+                rejects(lambda name=name: config.load_project_selection(root, name))
+            rejects(lambda: config.load_project_selection(root, project.name, "absent"))
+            rejects(lambda: config.load_project_selection(root, "default", "probe"))
+            checks += 8
+        elif role == "preservation":
+            default = default_identity()
+            check("project" not in default.to_dict()
+                  and "project_profile" not in default.to_dict()
+                  and "project" not in default.fingerprint_fields(),
+                  "selected context leaked into default metadata")
+            saved = default.to_dict()
+            selected = identity()
+            check(selected.rom_size_bytes == 32 * 1024 * 1024
+                  and selected.save_compat_epoch == 256,
+                  "selected identity lost its independent resource/save settings")
+            rejects(lambda: identity(rom_size="16M"))
+            check(default.to_dict() == saved and default_identity().to_dict() == saved,
+                  "selected or failed invocation changed default identity")
+            checks += 4
+        elif role == "resets":
+            first = identity()
+            saved = first.to_dict()
+            declare(selected_settings={
+                **settings, "MODERN_ROM_SIZE": "16M", "EXPANSION_ROM_TITLE": "RESETVALID",
+                "EXPANSION_SAVE_COMPAT_EPOCH": "512",
+            })
+            updated = identity()
+            check(updated.rom_size_bytes == 16 * 1024 * 1024
+                  and updated.rom_title == "RESETVALID" and updated.save_compat_epoch == 512
+                  and updated.config_fingerprint != first.config_fingerprint,
+                  "a new invocation reused stale profile settings")
+            declare()
+            check(identity().to_dict() == saved and first.to_dict() == saved,
+                  "restoring declaration failed to reset context without mutation")
+            checks += 2
+        elif role == "terminals":
+            output = root / "build/project-lifecycle-output"
+            arguments = [
+                "generate", "--config-mk", str(root / "config.mk"), "--config", "debug",
+                "--abi", "aapcs", "--rom-size", "32M",
+                "--repo-root", str(root), "--build-id", "abcdef12",
+                "--project", project.name, "--output-dir", str(output),
+            ]
+            with redirect_stdout(io.StringIO()):
+                check(config.main(arguments) == 0, "valid metadata CLI did not complete")
+            saved = {path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                     for path in output.iterdir()}
+            check(set(saved) == {"expansion_build_metadata.json", "expansion_build_metadata.mk"},
+                  "metadata CLI did not publish its complete owned output set")
+            declare(selected_settings={**settings, "UNKNOWN_REQUIRED_SETTING": "1"})
+            errors = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                check(config.main(arguments) != 0 and bool(errors.getvalue().strip()),
+                      "invalid metadata invocation silently completed")
+            check({path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                   for path in output.iterdir()} == saved,
+                  "failed invocation changed previously published metadata")
+            declare()
+            with redirect_stdout(io.StringIO()):
+                check(config.main(arguments) == 0, "metadata CLI failed to recover")
+            check({path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                   for path in output.iterdir()} == saved,
+                  "unchanged recovery rewrote valid metadata")
+            checks += 6
+        else:
+            raise review.ReviewError("unknown direct project lifecycle probe")
+    elif role == "actions":
         valid = identity()
         check(valid.project == project.name and valid.project_profile == "probe",
               "public identity lost selected invocation context")
@@ -1099,6 +1191,7 @@ def run_probe(probe: str) -> dict:
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
         *("authored-binding:" + role for role in review.FAMILIES["generated"]),
         *("project:" + role for role in review.FAMILIES["action"]),
+        *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
         *("authored-fixture:" + role for role in review.FAMILIES["wire"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
@@ -1118,7 +1211,7 @@ def run_probe(probe: str) -> dict:
         return _authored_case(probe)
     if probe.startswith("authored-binding:"):
         return _authored_binding(probe)
-    if probe.startswith("project:"):
+    if probe.startswith(("project:", "project-life:")):
         return _project(probe)
     if probe.startswith("authored-fixture:"):
         return _authored_fixture(probe)
