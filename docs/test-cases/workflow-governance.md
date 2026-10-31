@@ -3381,6 +3381,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    negative applies the body but rejects before confirmation with
    `original body snapshot authority is inconsistent`. Original author,
    authorship/materialization, digest, count and replay controls stay required.
+   Bind the original webhook to that exact later native row version. Also
+   retain an event at the row's logical edit instant when history materializes
+   later. No unrelated instant may match. Return two distinct attested runs,
+   one at each native body instant; require ambiguity without choosing one
+   or rerunning. Changed fields still advance logically and must have a common
+   native instant; no clock window or current-PR reconstruction is permitted.
    Confirm and reconcile this 0-to-2 transition through the real helper and
    isolated CLI, including applied-target recovery without a second PATCH.
    Repeat a subsequent 2-to-3 edit. Return a real second intervening edit
@@ -3681,6 +3687,10 @@ time, as does the original snapshot's `updatedAt`. The current row's exact
 `updatedAt` may be later and remains confirmation/replay-bound; it is not
 normalized to creation. Original authorship strictly precedes latest `editedAt`.
 The latest editor and body remain owner/target-bound.
+For raw-event attribution, the body row's exact confirmed `editedAt` and
+`updatedAt` are the finite admissible instants, intersected with any changed
+title's native instant. Only one stable event-attested run may match; an
+unrelated instant or two matching run identities cannot authorize continuity.
 `body_original` retains the typed original proof in the count-2 metadata
 version, so changing it invalidates a stored confirmation. A lone revision,
 missing/permission-omitted connections, count rollback/jump, two real edits,

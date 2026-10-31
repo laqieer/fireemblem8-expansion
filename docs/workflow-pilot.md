@@ -2014,10 +2014,15 @@ as closed CI setup; neither becomes an additional locally executed gate.
 
 The fingerprint must match the authenticated intent/confirmation's exact
 transition. Its event metadata instant must identify the confirmed native
-history uniquely: every changed field has that same edit instant, and each
-field's pre-version strictly precedes it. First-body original-snapshot proof
+history uniquely. Each changed field's logical edit still strictly advances
+its own pre-version. A title supplies its exact native title-event instant;
+a body supplies the confirmed row's exact `editedAt` and `updatedAt` instants.
+The selector intersects those finite native sets across all changed fields
+and requires one uniquely attested run. This admits delayed history
+materialization and a current-row persistence/version tick without a time
+window, normalization, or today's general PR timestamp. First-body original-snapshot proof
 and subsequent count-plus-one validation remain required. Equal-second
-repeated revisions, disagreeing title/body edit instants, or unavailable native
+repeated revisions, disjoint title/body native instants, or unavailable native
 history cannot establish attribution. This is an exact raw-event/content/
 native-version join, not a timestamp-only ordering guess. Actions and
 issue-comment timestamps are never compared for causality.

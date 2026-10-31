@@ -6642,7 +6642,14 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _run(202, 11, mode="metadata-only", success=True,
                          metadata_event_payload=_metadata_event_payload(
                              _pr(body=initial_body),
-                             _pr(body="new body", updated_at="2026-09-04T00:00:05Z"),
+                             _pr(
+                                 body="new body",
+                                 updated_at=(
+                                     "2026-09-04T00:00:06Z"
+                                     if timing == "updated-later"
+                                     else "2026-09-04T00:00:05Z"
+                                 ),
+                             ),
                          )),
                     _run(101, 10, mode="full"),
                 ], copies=2)
@@ -9178,6 +9185,44 @@ class MetadataEventAttributionTests(unittest.TestCase):
                     self.assertFalse(result.mutated)
                     self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
 
+    def test_body_version_instants_require_one_exact_native_attested_run(self):
+        receipt, confirmation, posts, state = self.pair()
+        confirmation = replace(
+            confirmation,
+            metadata_version=replace(
+                confirmation.metadata_version,
+                body_edit_updated_at="2026-09-04T00:00:06Z",
+            ),
+        )
+        state = {**state, "updated_at": "2026-09-04T00:00:06Z"}
+        pair = (
+            receipt, confirmation,
+            [posts[0], _confirmation_comment(
+                confirmation, created_at="2026-09-04T00:00:06Z"
+            )], state,
+        )
+        events = {
+            second: _metadata_event_payload(
+                _pr(), {**state, "updated_at": f"2026-09-04T00:00:0{second}Z"}
+            )
+            for second in (5, 6, 7)
+        }
+        for second in (5, 6, 7):
+            with self.subTest(event_second=second):
+                result, client = self.decide(pair, [
+                    _run(303, 12, mode="metadata-only",
+                         metadata_event_payload=events[second]),
+                    _run(101, 10, mode="full"),
+                ])
+                self.assertEqual(result.action, "complete" if second in (5, 6) else "deferred")
+                self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            self.decide(pair, [
+                _run(303, 12, mode="metadata-only", metadata_event_payload=events[6]),
+                _run(202, 11, mode="metadata-only", metadata_event_payload=events[5]),
+                _run(101, 10, mode="full"),
+            ])
+
     def test_title_and_combined_edits_require_one_attested_native_transition(self):
         for body in (None, "new body"):
             with self.subTest(body_changed=body is not None):
@@ -9833,7 +9878,12 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     pr_metadata._parse_confirmation_comment_body(recovered[0]["body"]),
                     confirmation,
                 )
-                target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+                target = _pr(
+                    body="new body",
+                    updated_at=(
+                        "2026-09-04T00:00:06Z" if versioned else "2026-09-04T00:00:05Z"
+                    ),
+                )
                 calls = [
                     _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=target),
                     *_cli_snapshot_calls([
