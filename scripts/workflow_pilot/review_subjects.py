@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -32,6 +32,7 @@ BINDINGS = (
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding", "authored-binding"),
+    SubjectSpec("TC-PROJECT-SELECTION-001", "project-selection", "project-selection"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -61,6 +62,78 @@ CASE_SECTIONS = frozenset({
     "Actions", "Expected result", "Negative control",
     "Interactions and save compatibility", "Automation", "Cleanup and limitations",
 })
+PROJECT_DECLARATION = "project_selection.mk"
+PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
+PROJECT_REGISTRY = "scripts/generated_data/registry.py"
+PROJECT_SCHEMAS = frozenset({
+    "supports", "units", "shops", "traps", "items", "eventscripts", "eventlists",
+    "chapterbundle", "classes", "characters", "terrainstats", "movecost",
+    "weapontriangle", "ui_presentation", "chapterobjectives", "autoplaystrategies",
+})
+PROJECT_SETTINGS = frozenset({
+    "MODERN_ROM_SIZE", "EXPANSION_ROM_TITLE", "EXPANSION_ENABLED_LOCALES",
+    "EXPANSION_DEFAULT_LOCALE", "EXPANSION_SAVE_COMPAT_EPOCH",
+})
+PROJECT_GAME_OPTIONS = frozenset({
+    "mapping", "width-registry", "fixed-width-aliases", "eu-mapping",
+    "ja-indexed", "ja-raw", "zh-indexed", "zh-raw", "latin-span-review",
+    "unicode-script-review", "raw-closure",
+})
+
+
+def project_declaration_model(tree):
+    source = ast.parse(tree.read(PROJECT_REGISTRY))
+    functions = {item.name: item for item in source.body if isinstance(item, ast.FunctionDef)}
+    schemas = {}
+    for item in source.body:
+        if not (isinstance(item, ast.Expr) and isinstance(item.value, ast.Call)
+                and isinstance(item.value.func, ast.Attribute)
+                and item.value.func.attr == "register_factory"):
+            continue
+        args = item.value.args
+        review.require(len(args) == 3 and isinstance(args[2], ast.Name),
+                       "unknown project schema factory needs a reviewed finite model")
+        name, version = ast.literal_eval(args[0]), ast.literal_eval(args[1])
+        review.require(args[2].id in functions,
+                       "missing project schema factory needs a reviewed finite model")
+        factory = functions[args[2].id]
+        imports = [node for node in factory.body if isinstance(node, ast.ImportFrom)]
+        returns = [node.value for node in factory.body if isinstance(node, ast.Return)]
+        review.require(
+            len(imports) == 1 and imports[0].level == 1 and len(imports[0].names) == 1
+            and len(returns) == 1 and isinstance(returns[0], ast.Call)
+            and isinstance(returns[0].func, ast.Name)
+            and returns[0].func.id == (imports[0].names[0].asname or imports[0].names[0].name)
+            and not returns[0].args and not returns[0].keywords,
+            "unknown project schema owner needs a reviewed finite model")
+        schemas[name] = (version, imports[0].module)
+    review.require(schemas == {name: (1, name + ".schema") for name in PROJECT_SCHEMAS},
+                   "project schema members or owners need a reviewed finite model")
+    config = ast.parse(tree.read(PROJECT_CONFIG))
+    validators = [
+        item for function in config.body
+        if isinstance(function, ast.FunctionDef) and function.name == "validate_project_requirements"
+        for item in function.body
+        if isinstance(item, ast.Assign) and isinstance(item.value, ast.Dict)
+    ]
+    review.require(len(validators) == 1
+                   and {ast.literal_eval(key) for key in validators[0].value.keys} == PROJECT_SETTINGS,
+                   "project setting members need a reviewed finite model")
+    make = re.sub(r"\\\n[ \t]*", " ", tree.read(PROJECT_DECLARATION).decode())
+    declarations = {}
+    for name in ("GAME_OPTIONS", "GAME_CJK_LOCALES", "GAME_EU_LOCALES", "FONT_SLOTS"):
+        matches = re.findall(r"^FE8_PROJECT_" + name + r"\s*:=\s*([^\n#]*)", make, re.M)
+        review.require(len(matches) == 1, "missing or ambiguous project declaration")
+        declarations[name] = tuple(sorted(matches[0].split()))
+    expected = {
+        "GAME_OPTIONS": tuple(sorted(PROJECT_GAME_OPTIONS)),
+        "GAME_CJK_LOCALES": ("ja", "zh-Hans"),
+        "GAME_EU_LOCALES": ("de", "es", "fr", "it"),
+        "FONT_SLOTS": ("src/data/localized_font_data.c", "src/fontgrp-data.c"),
+    }
+    review.require(declarations == expected, "project provider declarations need a reviewed finite model")
+    return json.dumps({"schemas": schemas, "settings": sorted(PROJECT_SETTINGS),
+                       "declarations": declarations}, sort_keys=True)
 
 
 def authored_case_declaration(raw):
@@ -242,6 +315,28 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         add("generated", "drift-checks", "eventlists", EVENT_SCHEMA + ":build_inventory",
             inventory, "committed generated inventory", "regenerate and compare",
             "generated-drift", inputs | {inventory}, kind="parsed", evidence=("positive", "generated"))
+    elif spec.model == "project-selection":
+        declaration = project_declaration_model(tree)
+        for role, name, inputs in (
+            ("actions", "profile-settings", (PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk")),
+            ("items", "provider-partition", (PROJECT_DECLARATION, PROJECT_REGISTRY)),
+            ("targets", "modern-abi", (PROJECT_CONFIG, PROJECT_DECLARATION)),
+        ):
+            add("action", role, name, PROJECT_DECLARATION, PROJECT_CONFIG, declaration,
+                "real public frontend with valid and adversarial declarations",
+                "project:" + role, inputs)
+        tool_paths = {
+            REVIEW_SOURCE, BINDING_SOURCE, AOE_DRIVER, AOE_DISABLED,
+            "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
+            "scripts/workflow_pilot/trusted_review_gate.py", "scripts/workflow_pilot/reporter.py",
+        }
+        closure = tuple(sorted(
+            path for path, (mode, kind, _) in tree.entries.items()
+            if mode in {"100644", "100755"} and kind == "blob"
+            and path not in tool_paths and "/tests/" not in "/" + path
+            and not path.startswith((".github/", "docs/", "reports/"))
+        ))
+        result = [replace(member, execution_inputs=closure) for member in result]
     elif spec.model == "authored-binding":
         declarations = [
             item for item in ast.walk(ast.parse(tree.read(BINDING_SOURCE)))
@@ -462,6 +557,119 @@ def _authored_case(probe):
             raise review.ReviewError("unknown authored case probe")
     return {"kind": "parsed", "checks": 1,
             "detail": "parsed canonical tester format/member contract; not locale or ROM behavior"}
+
+
+@probe_result("host")
+def _project(probe):
+    from scripts.modernize import expansion_config as config
+    from scripts.generated_data import registry
+
+    root = Path.cwd()
+    project = root / "examples/review-project-source"
+    project.mkdir(parents=True, exist_ok=True)
+    for name, content in (
+        ("input.json", "{}\n"), ("source.c", "int selected_source;\n"),
+        ("texts.txt", "#0\nNative[X]\n"), ("defs.txt", "[X] = 0\n"),
+    ):
+        (project / name).write_text(content)
+    modules = {
+        *PROJECT_SCHEMAS, "assets", "code", "game-text", "ui-text", "fonts",
+        *("game-" + name for name in PROJECT_GAME_OPTIONS),
+        *("game-authored-" + locale for locale in ("ja", "zh-Hans", "fr", "de", "es", "it")),
+        *("game-indexed-" + locale for locale in ("fr", "de", "es", "it")),
+    }
+    review.require(set(registry.REGISTRY.all_names()) == PROJECT_SCHEMAS,
+                   "unknown production registry domain")
+    relative = project.relative_to(root).as_posix()
+    settings = {
+        "MODERN_ROM_SIZE": "32M", "EXPANSION_ROM_TITLE": "NATIVEPROBE",
+        "EXPANSION_ENABLED_LOCALES": "en", "EXPANSION_DEFAULT_LOCALE": "en",
+        "EXPANSION_SAVE_COMPAT_EPOCH": "256",
+    }
+
+    def declare(*, inherit=None, replacement=(), extra="", selected_settings=None):
+        chosen = settings if selected_settings is None else selected_settings
+        (project / "project.mk").write_text(
+            "FE8_PROJECT_PROFILES := probe\nFE8_PROJECT_DEFAULT_PROFILE := probe\n"
+            + "FE8_PROJECT_REQUIRED_SETTINGS := " + " ".join(sorted(chosen)) + "\n"
+            + "".join(f"FE8_PROJECT_probe_{key} := {value}\n" for key, value in chosen.items())
+            + "FE8_PROJECT_INHERIT := " + " ".join(sorted(modules if inherit is None else inherit)) + "\n"
+            + "FE8_PROJECT_REPLACE := " + " ".join(sorted(replacement)) + "\n" + extra
+        )
+
+    def selection():
+        return config.load_project_selection(root, project.name)
+
+    def identity(**overrides):
+        return config.load_identity(
+            root / "config.mk", config_preset="debug", abi=overrides.pop("abi", "aapcs"),
+            rom_size=overrides.pop("rom_size", None), repo_root=root,
+            build_id_override="abcdef12", project=project.name, **overrides,
+        )
+
+    def rejects(function):
+        try:
+            function()
+        except config.ConfigError:
+            return
+        raise ContractViolation("production frontend accepted an invalid project declaration")
+
+    declare()
+    baseline = selection()
+    review.require(baseline["project"] == project.name, "project frontend backend unavailable")
+    checks = 1
+    role = probe.partition(":")[2]
+    if role == "actions":
+        valid = identity()
+        check(valid.project == project.name and valid.project_profile == "probe",
+              "public identity lost selected invocation context")
+        for key, overrides in (
+            ("MODERN_ROM_SIZE", {"rom_size": "16M"}),
+            ("EXPANSION_ROM_TITLE", {"rom_title": "OTHER"}),
+            ("EXPANSION_ENABLED_LOCALES", {"enabled_locales": "en,ja"}),
+            ("EXPANSION_DEFAULT_LOCALE", {"default_locale": "en"}),
+            ("EXPANSION_SAVE_COMPAT_EPOCH", {"save_compat_epoch": "512"}),
+        ):
+            chosen = dict(settings)
+            if key == "EXPANSION_DEFAULT_LOCALE":
+                chosen.update(EXPANSION_ENABLED_LOCALES="en,ja", EXPANSION_DEFAULT_LOCALE="ja")
+            declare(selected_settings=chosen)
+            identity()
+            rejects(lambda: identity(**overrides))
+            checks += 1
+        declare(selected_settings={**settings, "UNKNOWN_REQUIRED_SETTING": "1"})
+        rejects(selection)
+        checks += 1
+    elif role == "items":
+        for module in sorted(modules):
+            extra = ""
+            if module == "code":
+                extra = f"FE8_PROJECT_C_SOURCES := {relative}/source.c\n"
+            elif module == "fonts":
+                extra = f"FE8_PROJECT_FONT_REPLACEMENTS := src/fontgrp-data.c={relative}/source.c\n"
+            elif module == "game-text":
+                extra = (f"FE8_PROJECT_TEXT_MAIN := {relative}/texts.txt\n"
+                         f"FE8_PROJECT_TEXT_DEFS := {relative}/defs.txt\n")
+            elif module == "ui-text":
+                extra = (f"FE8_PROJECT_UI_REGISTRY := {relative}/input.json\n"
+                         f"FE8_PROJECT_UI_CATALOGS := en={relative}/input.json\n")
+            else:
+                extra = f"FE8_PROJECT_SOURCE_{module} := {relative}/input.json\n"
+            declare(inherit=modules - {module}, replacement={module}, extra=extra)
+            selection()
+            declare(inherit=modules, replacement={module}, extra=extra)
+            rejects(selection)
+            declare(inherit=modules - {module})
+            rejects(selection)
+            checks += 3
+    elif role == "targets":
+        identity()
+        rejects(lambda: identity(abi="apcs-gnu"))
+        checks += 1
+    else:
+        raise review.ReviewError("unknown direct project probe")
+    return {"kind": "host", "checks": checks,
+            "detail": "real project declaration/identity functions executed; no compiler/ROM claim"}
 
 
 @probe_result("host")
@@ -790,6 +998,7 @@ def run_probe(probe: str) -> dict:
         "generated-output", "generated-consumer", "generated-drift",
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
         *("authored-binding:" + role for role in review.FAMILIES["generated"]),
+        *("project:" + role for role in review.FAMILIES["action"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -808,6 +1017,8 @@ def run_probe(probe: str) -> dict:
         return _authored_case(probe)
     if probe.startswith("authored-binding:"):
         return _authored_binding(probe)
+    if probe.startswith("project:"):
+        return _project(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")
