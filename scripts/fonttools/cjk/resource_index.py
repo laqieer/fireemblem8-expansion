@@ -7,6 +7,7 @@ import binascii
 import json
 import lzma
 from pathlib import Path
+from typing import NoReturn
 
 
 MAX_INDEX_BYTES = 4 * 1024 * 1024
@@ -33,11 +34,18 @@ def _object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return value
 
 
+def _invalid_constant(value: str) -> NoReturn:
+    raise ResourceIndexError(f"non-JSON numeric constant: {value}")
+
+
 def _json(data: bytes) -> dict[str, object]:
     if len(data) > MAX_INDEX_BYTES:
         raise ResourceIndexError("resource index exceeds 4 MiB")
     try:
-        value = json.loads(data.decode("utf-8"), object_pairs_hook=_object)
+        value = json.loads(
+            data.decode("utf-8"), object_pairs_hook=_object,
+            parse_constant=_invalid_constant,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ResourceIndexError(f"invalid resource index JSON: {error}") from error
     if not isinstance(value, dict):
@@ -115,10 +123,16 @@ def load_index(path: Path) -> dict[str, object]:
     return decode_index(read_index_bytes(path))
 
 
-def encode_like_index(value: dict[str, object], path: Path) -> bytes:
+def encode_like_index(
+    value: dict[str, object], path: Path, *, packed: bool | None = None
+) -> bytes:
     try:
         previous = read_index_bytes(path)
     except FileNotFoundError:
-        return encode_index(value)
-    _, packed = _decode(previous)
+        return encode_index(value, packed=packed is True)
+    previous_value, previous_packed = _decode(previous)
+    if packed is None:
+        packed = previous_packed
+    if packed and previous_packed and json_bytes(previous_value) == json_bytes(value):
+        return previous
     return encode_index(value, packed=packed)

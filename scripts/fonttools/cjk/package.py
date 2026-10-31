@@ -27,7 +27,6 @@ from .inventory import (
 from .resource_index import (
     ResourceIndexError,
     decode_index,
-    encode_index,
     encode_like_index,
     read_index_bytes,
 )
@@ -1737,7 +1736,9 @@ def write_resource_index(
     relative = paths[index]
     check_compact_assets(root)
     generated = check_generated_files(root) if index == "runtime-usage" else None
-    data = encode_index(decode_index(read_index_bytes(root / relative)), packed=packed)
+    data = encode_like_index(
+        decode_index(read_index_bytes(root / relative)), root / relative, packed=packed,
+    )
     manifest_path = f"{ASSET_ROOT}/manifest.json"
     manifest = json.loads((root / manifest_path).read_bytes())
     outputs = {relative: data}
