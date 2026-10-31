@@ -14,14 +14,14 @@ separate human judgments.
 
 ## TC-LOCALIZATION-AUTHORED-SCOPE-001: Scope deterministic authored validation
 
-**Issue:** [#344](https://github.com/laqieer/fireemblem8-expansion/issues/344).
-**Profiles:** host Python, explicit JA-only, ZH-only, and unchanged default
-both-locale scope. This is not a target-ROM or linguistic qualification.
-
-**Prerequisites and reset:** run from the repository root with Python and Git
-available. Use the existing committed manifest/source inputs. Do not edit
-stock catalogs or the real Git index. The regression creates and removes its
-own ignored source fixture and alternate index.
+- **Feature / originating issue:** `full-game-localization` /
+  [#344](https://github.com/laqieer/fireemblem8-expansion/issues/344).
+- **Supported configuration or artifact:** host Python, explicit JA-only,
+  ZH-only, and unchanged default both-locale scope.
+- **Prerequisites and clean starting state:** run from the repository root
+  with Python and Git available and the existing committed manifest/source
+  inputs. Do not edit stock catalogs or the real Git index. The regression
+  creates its own ignored source fixture and alternate index.
 
 ### Actions
 
@@ -44,23 +44,37 @@ own ignored source fixture and alternate index.
    `AuthoredCatalogError`. Empty, repeated, unknown and invalid scope values
    reject before any missing source is read.
 
-### Expected result and controls
+### Expected result
 
 Scoped generated catalog content equals its committed default counterpart.
 The default still checks both JA/ZH catalogs and retains cross-locale key
-parity. A stale unrequested catalog is not a prerequisite for the selected
-scope; a stale requested catalog cannot silently pass. The complete default
-scope remains the negative control against accidentally suppressing checks.
+parity. Only the requested catalogs are returned or checked.
 
-**Interactions and save compatibility:** existing manifest, mapping,
-terminology, shard and generated-catalog contracts remain authoritative.
+### Negative control
+
+A stale unrequested catalog does not block the selected scope, but a stale
+requested catalog and the complete default scope both reject that drift.
+Invalid scopes reject before missing inputs are read. The default control
+therefore cannot silently suppress either locale's check.
+
+### Interactions and save compatibility
+
+Existing manifest, mapping, terminology, shard and generated-catalog contracts
+remain authoritative.
 There are no additional feature conflicts, runtime fields or save migrations.
 Default CLI/writer behavior is unchanged.
 
-**Automation and cleanup:** the named unittest module exercises the real
-builder/checker, parsed generated content and adversarial staged files. It
-does not infer behavior from comments or helper spelling. Only its owned
-temporary fixture/index are removed. No emulator, linguistic judgment or
+### Automation
+
+`python3 -m unittest scripts.localization.tests.test_authored_catalogs -v`
+exercises the real builder/checker, parsed generated content and adversarial
+staged files. It does not infer behavior from comments or helper spelling.
+There is no subjective manual criterion in this host case.
+
+### Cleanup and limitations
+
+Only the regression's owned temporary fixture/index are removed; stock files
+and the real index remain unchanged. No emulator, linguistic judgment or
 production glyph/resource acceptance is established by this host case.
 
 ## Issue #104 semantic evidence mapping
