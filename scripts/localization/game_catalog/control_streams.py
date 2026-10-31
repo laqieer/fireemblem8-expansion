@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from scripts.generated_data.consumer_census import _strip_comments
+from scripts.generated_data.cparse import find_c_array_blocks, find_matching_paren
+from scripts.generated_data.diagnostics import GeneratedDataError
 from scripts.localization.game_locales.ending_metrics import (
     EndingLayoutError,
     _ascii_widths,
@@ -54,9 +56,12 @@ _BRANCH_RE = re.compile(
     r"^\s*(?:BEQ|BNE|BGE|BGT|BLE|BLT|BEQ_EVFLAG|BNE_EVFLAG)"
     r"\s*\(\s*(0x[0-9A-Fa-f]+|\d+)"
 )
-_ARRAY_START_RE = re.compile(
-    r"^\s*(?:CONST_DATA\s+)?(?:EventListScr|EventScr)\s+\w+\s*\[\]\s*=\s*\{"
+_FLOW_COMMANDS = frozenset(
+    ("TEXTSHOW", "WM_TEXT", "EvtTextShow2", "LABEL", "GOTO", "BEQ", "BNE",
+     "BGE", "BGT", "BLE", "BLT", "BEQ_EVFLAG", "BNE_EVFLAG", "TEXTCONT",
+     "REMA", "WM_REMOVETEXT", "ENDA")
 )
+_BARE_FLOW_COMMANDS = frozenset(("TEXTCONT", "REMA", "WM_REMOVETEXT", "ENDA"))
 
 
 class ControlStreamError(ValueError):
@@ -745,24 +750,52 @@ def validate_final_payload(
     }
 
 
+def _event_commands(body: str, path: Path, aliases: Mapping[str, str]) -> List[str]:
+    commands = []
+    consumed = 0
+    matcher = re.compile(r"\b(?:" + "|".join(re.escape(name) for name in aliases) + r")\b")
+    for match in matcher.finditer(body):
+        if match.start() < consumed:
+            continue
+        name = aliases[match.group()]
+        end = match.end()
+        argument = end
+        while argument < len(body) and body[argument].isspace():
+            argument += 1
+        if argument < len(body) and body[argument] == "(":
+            end = find_matching_paren(body, argument) + 1
+        elif name not in _BARE_FLOW_COMMANDS:
+            raise ControlStreamError(f"{path}: malformed event command {match.group()}")
+        commands.append(name + " ".join(body[match.end():end].split()))
+        consumed = end
+    return commands
+
+
 def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[str]]]:
     if not Path(event_root).is_dir():
         raise ControlStreamError(f"{event_root}: event source directory is unavailable")
+    alias_path = Path(__file__).resolve().parents[3] / "include/EAstdlib.h"
+    try:
+        alias_source = _strip_comments(alias_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as error:
+        raise ControlStreamError(f"{alias_path}: event macro aliases are unavailable") from error
+    aliases = {name: name for name in _FLOW_COMMANDS}
+    for short, public in re.findall(
+        r"^\s*#define[ \t]+(\w+)[ \t]+(\w+)[ \t]*$", alias_source, re.MULTILINE
+    ):
+        if short in _FLOW_COMMANDS:
+            aliases[public] = short
     for path in sorted(Path(event_root).rglob("*")):
         if path.suffix not in (".c", ".h") or not path.is_file():
             continue
-        lines = _strip_comments(path.read_text(encoding="utf-8")).splitlines()
-        current: Optional[List[str]] = None
-        for line in lines:
-            if current is None:
-                if _ARRAY_START_RE.search(line):
-                    current = []
-                continue
-            if line.strip() == "};":
-                yield path, current
-                current = None
-                continue
-            current.append(line)
+        source = _strip_comments(path.read_text(encoding="utf-8"))
+        try:
+            for _, body, _ in find_c_array_blocks(
+                source, r"(?:CONST_DATA\s+)?(?:EventListScr|EventScr)"
+            ):
+                yield path, _event_commands(body, path, aliases)
+        except (GeneratedDataError, ValueError) as error:
+            raise ControlStreamError(f"{path}: invalid event source: {error}") from error
 
 
 def _array_continuations(
@@ -810,7 +843,7 @@ def _array_continuations(
                     ) from None
                 target_id = message_ids[operand]
             if (
-                message.group("kind") == "TEXTSHOW"
+                message.group("kind") in ("TEXTSHOW", "EvtTextShow2")
                 and isinstance(target_id, int)
                 and not isinstance(target_id, bool)
                 and -0x8000 <= target_id < 0
@@ -901,8 +934,8 @@ def validate_event_continuations(
     for target_id, target_models in sorted(models.items()):
         if target_id >= len(english_payloads):
             if all(
-                (model.start_kind == "TEXTSHOW" and 0x8000 <= target_id <= 0xFFFF)
-                or (model.start_kind == "EvtTextShow2" and target_id == 0xFFFF)
+                model.start_kind in ("TEXTSHOW", "EvtTextShow2")
+                and 0x8000 <= target_id <= 0xFFFF
                 for model in target_models
             ):
                 continue

@@ -111,7 +111,11 @@ Numeric and active source/header message symbols are resolved before checking
 the actual English allocation. Unknown symbols, missing roots and ordinary
 retired IDs reject rather than disappear from coverage. C comments are not
 event commands, and the world-map command's remaining operand is not a message ID.
-Reserved dynamic/current-text operands remain outside direct-ID coverage.
+Shared C-array/delimiter parsing preserves multiline and inline formatting.
+Public engine macro aliases are read from the existing `EAstdlib.h`; implicit
+`MSG_NNN` symbols from numeric source entries retain their validated bindings.
+Both text subcommands preserve the signed dynamic-operand range outside
+direct-ID coverage.
 Non-stock fixture catalogs must supply their owned event directory instead
 of borrowing unrelated stock events. This is not a competing event language
 or a qualification of arbitrary runtime-indirect message IDs.

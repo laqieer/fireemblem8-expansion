@@ -447,6 +447,20 @@ class FixtureBuildTests(unittest.TestCase):
                 if row["target_id"] == "0x0001"
             )
             self.assertEqual(record["context"], policy.talk_context)
+        texts = self.fixture_dir / "texts.txt"
+        original_texts = texts.read_text()
+        numeric_texts = original_texts.replace("## MSG_FIXTURE_ONE", "#0x1")
+        self.assertNotEqual(original_texts, numeric_texts)
+        texts.write_text(numeric_texts)
+        header = self.fixture_dir / "msg.h"
+        header.write_text(header.read_text().replace("MSG_FIXTURE_ONE", "MSG_001"))
+        source.write_text(
+            "EventScr Selected[] = {\n    TEXTSHOW(MSG_001)\n    ENDA\n};\n"
+        )
+        numeric_build = build_game_catalog(**inputs)
+        self.assertEqual(
+            numeric_build.report["control_stream_validation"]["modeled_target_count"], 1
+        )
         source.write_text(
             "EventScr Selected[] = {\n    TEXTSHOW(0x0003)\n    ENDA\n};\n"
         )

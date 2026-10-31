@@ -161,7 +161,9 @@ receives its existing deterministic-merge check.
 the inherited default is `src/events`. The same `--event-root` input drives
 dialogue-width classification and continuation validation. Message operands
 resolve through the already validated active source/header definitions, not
-stock allocations. A missing directory, unresolved symbol or ordinary
+stock allocations, including generated symbols for numeric source entries.
+Macro aliases use the existing engine header, and formatting does not change
+the modeled commands. A missing directory, unresolved symbol or ordinary
 out-of-range message rejects; reserved dynamic/current-text operands remain
 unmodeled, not certified as direct message IDs. The existing forced catalog
 generation observes edits below the directory without a new scan or ledger.

@@ -48,6 +48,65 @@ def structural_sequence(text):
 
 
 class SelectedEventContinuationTests(unittest.TestCase):
+    def test_public_engine_macro_names_keep_the_same_message_flow(self):
+        english = (b"Zero\0", b"One\x80\x04Two\0", b"Three\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind in ("EvtTextShow", "EvtTextShow2", "WmEvtShowText"):
+                with self.subTest(kind=kind):
+                    tail = ", 0" if kind == "WmEvtShowText" else ""
+                    source.write_text(
+                        f"EventScr Selected[] = {{\n{kind}(0x0001{tail})\n"
+                        "EvtContinueText\nEvtTextRemoveAll\nEvtReturn\n};\n"
+                    )
+                    self.assertEqual(
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        ),
+                        {"modeled_target_count": 1, "model_count": 1},
+                    )
+                    source.write_text(source.read_text().replace("0x0001", "0x0003"))
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        )
+
+    def test_event_formatting_cannot_hide_active_message_references(self):
+        english = (b"Zero\0", b"One\0", b"Two\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind in ("TEXTSHOW", "WM_TEXT", "EvtTextShow2"):
+                tail = ", 0" if kind == "WM_TEXT" else ""
+                forms = (
+                    f"EventScr Selected[] = {{\n{kind}(0x0003\n{tail})\nENDA\n}};\n",
+                    f"EventScr Selected[] =\n{{\n{kind}\n(\n0x0003{tail}\n)\nENDA\n}};\n",
+                    f"EventScr Selected[] = {{ {kind}(0x0003{tail}) ENDA }};\n",
+                )
+                for shape, text in enumerate(forms):
+                    with self.subTest(kind=kind, shape=shape):
+                        source.write_text(text)
+                        with self.assertRaisesRegex(ControlStreamError, "active"):
+                            validate_event_continuations(
+                                english_payloads=english,
+                                localized_payloads={"ja": english},
+                                event_root=event_root,
+                            )
+                        source.write_text(text.replace("0x0003", "0x0001"))
+                        self.assertEqual(
+                            validate_event_continuations(
+                                english_payloads=english,
+                                localized_payloads={"ja": english},
+                                event_root=event_root,
+                            ),
+                            {"modeled_target_count": 1, "model_count": 1},
+                        )
+
     def test_retained_event_ids_must_belong_to_the_active_set(self):
         english = (b"Zero\0", b"One\0", b"Two\0")
         with tempfile.TemporaryDirectory() as directory:
@@ -67,7 +126,9 @@ class SelectedEventContinuationTests(unittest.TestCase):
                         )
             for kind, operand in (
                 ("TEXTSHOW", "0xFFFF"), ("TEXTSHOW", "0x8000"),
-                ("EvtTextShow2", "0xFFFF"),
+                ("TEXTSHOW", "-1"), ("TEXTSHOW", "-32768"),
+                ("EvtTextShow2", "0xFFFF"), ("EvtTextShow2", "0x8000"),
+                ("EvtTextShow2", "-1"), ("EvtTextShow2", "-32768"),
             ):
                 with self.subTest(dynamic=(kind, operand)):
                     source.write_text(

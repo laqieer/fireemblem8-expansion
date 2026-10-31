@@ -1147,8 +1147,8 @@ def build_game_catalog(
     )
     validate_english_source_header(english_entries, target_header_path)
     message_ids = {
-        entry.definition: entry.target_id
-        for entry in english_entries if entry.definition is not None
+        entry.definition or f"MSG_{entry.target_id:03X}": entry.target_id
+        for entry in english_entries
     }
     english_definitions = load_english_definitions(english_definitions_path)
     english_bundle = EnglishCatalogBundle(
