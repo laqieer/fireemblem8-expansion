@@ -19,7 +19,7 @@ class CjkSubjectTests(unittest.TestCase):
         for name in filter(None, names):
             if not (name.startswith("scripts/") and name.endswith(".py")
                     and "/tests/" not in name
-                    or name in ("fonts/cjk/fehrr-sources.json", "fonts/cjk/runtime_usage.json")):
+                    or name.startswith(("fonts/cjk/", "graphics/fonts/cjk/"))):
                 continue
             target = cls.repo.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -54,8 +54,7 @@ class CjkSubjectTests(unittest.TestCase):
         })
         self.assert_satisfied(self.tools.run_obligations(members, self.repo.base))
 
-    def remediation(self, broken, family, role):
-        path = "scripts/fonttools/cjk/resource_index.py"
+    def remediation(self, broken, family, role, path="scripts/fonttools/cjk/resource_index.py"):
         original = (self.repo.root / path).read_text()
         self.assertNotEqual(original, broken)
         before = self.repo.commit({path: broken})
@@ -84,3 +83,19 @@ class CjkSubjectTests(unittest.TestCase):
         renamed = self.repo.commit({path: original.replace("previous", "old_data")})
         members = self.tools.members(self.scope(renamed))
         self.assert_satisfied(self.tools.run_obligations(members, renamed))
+
+    def test_schema2_cli_cause_mutation_does_not_get_legacy_reader_credit(self):
+        path = "scripts/fonttools/cjk/package.py"
+        original = (self.repo.root / path).read_text()
+        broken = original.replace(
+            'f"runtime split provenance JSON is invalid: {error}"',
+            '"runtime split provenance JSON is invalid"', 1)
+        self.remediation(broken, "generated", "consumers", path)
+
+    def test_maintainer_format_mutation_is_not_hidden_by_codec_output(self):
+        path = "scripts/fonttools/cjk/package.py"
+        original = (self.repo.root / path).read_text()
+        broken = original.replace(
+            "decode_index(read_index_bytes(root / relative)), root / relative, packed=packed,",
+            "decode_index(read_index_bytes(root / relative)), root / relative, packed=True,", 1)
+        self.remediation(broken, "generated", "outputs", path)
