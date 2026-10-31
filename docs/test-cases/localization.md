@@ -108,11 +108,6 @@ do not change the captured literal case-map contract.
 Harmless local-variable renames in the selected trusted consumer remain valid.
 Equivalent formatting, local names and operand order are reviewed-program
 inputs, not candidate-supplied test code or arbitrary pass labels.
-Literal positional, keyword and mixed subject constructors, including a direct
-constructor alias, bind the same finite declaration. Only the actual `BINDINGS`
-table owns it; an unrelated matching call elsewhere cannot supply ownership.
-The stale-binding probe compares real owned Git trees through captured
-production member expansion, not a synthetic source identity.
 
 ### Cleanup and limitations
 
