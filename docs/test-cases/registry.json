@@ -64,7 +64,9 @@
       "id": "cjk-resource-storage",
       "title": "Bounded lossless CJK resource index storage",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/348"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/348",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/349",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/350"
       ],
       "reference": "docs/cjk_fonts.md",
       "status": "current",
@@ -878,7 +880,9 @@
       "title": "Bounded lossless resource indexes",
       "feature_id": "cjk-resource-storage",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/348"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/348",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/349",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/350"
       ],
       "document": "docs/cjk_fonts.md",
       "anchor": "tc-cjk-resource-storage-001-bounded-lossless-resource-indexes",
@@ -887,7 +891,7 @@
       "prerequisites": "Clean source checkout with committed indexes and atlas inputs. Tests own their temporary source/font root; no ROM, emulator, external font checkout or manual criterion.",
       "actions": "Run the focused resource-index module. Round-trip both real indexes through the actual CLI, run existing generation/asset consumers, compare complete decoded data and atlas bytes, reverse to exact originals, and exercise each malformed/bounded input.",
       "expected_result": "Both representations work through real consumers, plain output remains byte-identical, repeated packed encoding is deterministic, all checksums bind actual stored bytes, and reverse conversion restores original files.",
-      "negative_control": "The original FEHRR reader rejects the packed fixture. Plain defaults remain valid. Corrupt, truncated, trailing or oversized inputs fail explicitly and leave existing files intact.",
+      "negative_control": "The original FEHRR reader rejects the packed fixture. An explicit plain representation remains valid; default-migration variants obtain original plain data from their exact parent Git blobs rather than assuming the current checkout is plain. Corrupt, truncated, trailing or oversized inputs fail explicitly and leave existing files intact.",
       "interactions": "Existing CJK inventory, FEHRR priority and immutable FEBuilder baseline checks remain mandatory. No new dependency or feature conflict. Default migrations are separate dependent issues349/350.",
       "save_compatibility": "Host-only storage; no atlas, ROM/RAM, locale, save/epoch, config identity, modern debug/release or archival change.",
       "cleanup": "TemporaryDirectory removes only the owned fixture. The suite does not migrate stock files; explicit maintainer conversion updates existing checksum-chain files.",

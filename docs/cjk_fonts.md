@@ -68,8 +68,10 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
 2. Require complete decoded equality, repeated deterministic encoding,
    unchanged plain bytes and every glyph/width/bitmap byte, valid physical
    checksums, and exact original files after reverse conversion. The
-   pre-interface FEHRR reader rejects the packed fixture; the existing plain
-   index remains the default negative control.
+   pre-interface FEHRR reader rejects the packed fixture. An explicit plain
+   fixture remains the representation control even after default migrations;
+   obtain pre-migration plain data from the exact parent Git blob, not by
+   assuming the current checkout still stores that index in plain form.
 3. Exercise malformed encoding, unknown fields/version, boolean size/version,
    wrong size, damaged/truncated/trailing streams and oversized expansion.
    Require explicit errors; a corrupt owned CLI input must leave every
