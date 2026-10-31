@@ -3387,6 +3387,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    one at each native body instant; require ambiguity without choosing one
    or rerunning. Changed fields still advance logically and must have a common
    native instant; no clock window or current-PR reconstruction is permitted.
+   Replay a stored confirmation while changing only the current row's
+   `updatedAt`, first back to creation and then later. Both must reject as
+   stale or forged authority without PATCH or workflow rerun.
    Confirm and reconcile this 0-to-2 transition through the real helper and
    isolated CLI, including applied-target recovery without a second PATCH.
    Repeat a subsequent 2-to-3 edit. Return a real second intervening edit

@@ -6271,6 +6271,38 @@ class PullRequestMetadataTests(unittest.TestCase):
                         version=current_version,
                     )
 
+    def test_only_current_body_updated_at_changes_invalidate_confirmation(self):
+        receipt = _receipt()
+        confirmed = replace(
+            _confirmation(receipt).metadata_version,
+            body_edit_updated_at="2026-09-04T00:00:06Z",
+        )
+        for updated in ("2026-09-04T00:00:05Z", "2026-09-04T00:00:07Z"):
+            with self.subTest(current_updated_at=updated):
+                current = replace(confirmed, body_edit_updated_at=updated)
+                self.assertEqual(
+                    {
+                        field for field in confirmed.canonical_payload()
+                        if confirmed.canonical_payload()[field] != current.canonical_payload()[field]
+                    },
+                    {"body_edit_updated_at"},
+                )
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "edit confirmation authority is stale or forged",
+                ):
+                    _reconcile(
+                        client, receipt=receipt,
+                        confirmation=_confirmation(receipt, version=confirmed),
+                        version=current,
+                    )
+                self.assertFalse(any(
+                    method == "PATCH" or endpoint.endswith("/rerun")
+                    for method, endpoint, _ in client.calls
+                ))
+
     def test_metadata_version_actor_login_and_id_are_owner_bound(self):
         cases = (
             (
