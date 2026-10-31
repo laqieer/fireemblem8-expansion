@@ -20,9 +20,12 @@ class ResourceIndexError(ValueError):
 
 
 def json_bytes(value: object) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    try:
+        return (
+            json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+    except (TypeError, ValueError, RecursionError) as error:
+        raise ResourceIndexError(f"invalid resource index JSON: {error}") from error
 
 
 def _object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -49,6 +52,7 @@ def _json(data: bytes) -> dict[str, object]:
             data.decode("utf-8"), object_pairs_hook=_object,
             parse_float=_finite_number, parse_constant=_finite_number,
         )
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     except (ValueError, RecursionError) as error:
         raise ResourceIndexError(f"invalid resource index JSON: {error}") from error
     if not isinstance(value, dict):
