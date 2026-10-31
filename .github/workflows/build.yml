@@ -472,9 +472,9 @@ jobs:
   # tests are Python/stdlib only and link no C. This is intentionally a
   # separate job from `build` below so host-only regressions are reported
   # before paying for a full ROM/linker build. The exhaustive full-game
-  # localization gate is intentionally measured in minutes. Keep a 60-minute
-  # budget: a normal run is roughly 34 minutes including setup, but shared
-  # runner variance has reached the former 45-minute ceiling.
+  # localization and source-predicate gates are measured in minutes. Both
+  # comprehensive host workers share the modern worker's bounded 90-minute
+  # allowance without omitting any validation step.
   # All host test steps are genuine gates (required status), not advisory.
   # Live branch protection currently requires the canonical `host-tests`,
   # `build`, and `summary` contexts. Metadata-only PR edits therefore run only
