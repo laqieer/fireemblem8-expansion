@@ -59,7 +59,7 @@ _BRANCH_RE = re.compile(
 _FLOW_COMMANDS = frozenset(
     ("TEXTSHOW", "WM_TEXT", "EvtTextShow2", "LABEL", "GOTO", "BEQ", "BNE",
      "BGE", "BGT", "BLE", "BLT", "BEQ_EVFLAG", "BNE_EVFLAG", "TEXTCONT",
-     "REMA", "WM_REMOVETEXT", "ENDA")
+     "REMA", "WM_REMOVETEXT", "ENDA", "CHECK_EVBIT")
 )
 _BARE_FLOW_COMMANDS = frozenset(("TEXTCONT", "REMA", "WM_REMOVETEXT", "ENDA"))
 
@@ -93,6 +93,13 @@ class EventContinuationModel:
     start_kind: str
     continuation_count: int
     source_path: str
+    dialogue_skipped: bool = False
+
+
+@dataclass(frozen=True)
+class SourceEventCommand:
+    text: str
+    adjacent: bool
 
 
 @dataclass(frozen=True)
@@ -750,7 +757,9 @@ def validate_final_payload(
     }
 
 
-def _event_commands(body: str, path: Path, aliases: Mapping[str, str]) -> List[str]:
+def _event_commands(
+    body: str, path: Path, aliases: Mapping[str, str]
+) -> List[SourceEventCommand]:
     commands = []
     consumed = 0
     matcher = re.compile(r"\b(?:" + "|".join(re.escape(name) for name in aliases) + r")\b")
@@ -766,12 +775,15 @@ def _event_commands(body: str, path: Path, aliases: Mapping[str, str]) -> List[s
             end = find_matching_paren(body, argument) + 1
         elif name not in _BARE_FLOW_COMMANDS:
             raise ControlStreamError(f"{path}: malformed event command {match.group()}")
-        commands.append(name + " ".join(body[match.end():end].split()))
+        commands.append(SourceEventCommand(
+            name + " ".join(body[match.end():end].split()),
+            not body[consumed:match.start()].strip(" \t\r\n,"),
+        ))
         consumed = end
     return commands
 
 
-def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[str]]]:
+def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[SourceEventCommand]]]:
     if not Path(event_root).is_dir():
         raise ControlStreamError(f"{event_root}: event source directory is unavailable")
     alias_path = Path(__file__).resolve().parents[3] / "include/EAstdlib.h"
@@ -798,26 +810,38 @@ def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[str]]]:
             raise ControlStreamError(f"{path}: invalid event source: {error}") from error
 
 
+def _dialogue_skip_branch(command: str, previous: str) -> Optional[bool]:
+    checked = re.fullmatch(r"CHECK_EVBIT\s*\(\s*(0x[0-9A-Fa-f]+|\d+)\s*\)", previous)
+    if checked is None or int(checked.group(1), 0) != 3:
+        return None
+    branch = re.fullmatch(
+        r"(BEQ|BNE)\s*\(\s*(?:0x[0-9A-Fa-f]+|\d+)\s*,\s*"
+        r"(EVT_SLOT_C|0x0*[cC]|12)\s*,\s*(EVT_SLOT_0|0x0+|0)\s*\)",
+        command,
+    )
+    return None if branch is None else branch.group(1) == "BNE"
+
+
 def _array_continuations(
     path: Path,
-    lines: Sequence[str],
+    lines: Sequence[SourceEventCommand],
     message_ids: Mapping[str, int],
 ) -> Iterable[EventContinuationModel]:
     labels = {}
-    for index, line in enumerate(lines):
-        match = _LABEL_RE.search(line)
+    for index, command in enumerate(lines):
+        match = _LABEL_RE.search(command.text)
         if match:
             labels[int(match.group(1), 0)] = index
 
-    initial = (0, None, None, 0)
+    initial = (0, None, None, 0, False)
     stack = [initial]
     visited = set()
     results = set()
     max_steps = max(64, len(lines) * 32)
     steps = 0
     while stack:
-        pc, target_id, start_kind, continuations = stack.pop()
-        state = (pc, target_id, start_kind, continuations)
+        pc, target_id, start_kind, continuations, dialogue_skipped = stack.pop()
+        state = (pc, target_id, start_kind, continuations, dialogue_skipped)
         if state in visited:
             continue
         visited.add(state)
@@ -826,13 +850,13 @@ def _array_continuations(
             raise ControlStreamError(f"{path}: event continuation analysis exceeded bound")
         if pc >= len(lines):
             if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations))
+                results.add((target_id, start_kind, continuations, dialogue_skipped))
             continue
-        line = lines[pc]
+        line = lines[pc].text
         message = _MESSAGE_START_RE.search(line)
         if message:
             if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations))
+                results.add((target_id, start_kind, continuations, dialogue_skipped))
             operand = message.group("target").strip()
             try:
                 target_id = int(operand, 0)
@@ -857,33 +881,50 @@ def _array_continuations(
                 raise ControlStreamError(f"{path}: invalid event message operand {operand!r}")
             start_kind = message.group("kind")
             continuations = 0
+            dialogue_skipped = False
         elif re.search(r"\bTEXTCONT\b", line) and target_id is not None:
             continuations += 1
 
-        if re.search(r"\b(REMA|WM_REMOVETEXT|ENDA)\b", line):
+        if re.search(r"\b(REMA|WM_REMOVETEXT)\b", line):
             if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations))
+                results.add((target_id, start_kind, continuations, dialogue_skipped))
+            target_id, start_kind, continuations, dialogue_skipped = None, None, 0, False
+        if re.search(r"\bENDA\b", line):
+            if target_id is not None and start_kind is not None:
+                results.add((target_id, start_kind, continuations, dialogue_skipped))
             continue
 
         goto = _GOTO_RE.search(line)
         if goto:
             destination = labels.get(int(goto.group(1), 0))
             if destination is not None:
-                stack.append((destination + 1, target_id, start_kind, continuations))
+                stack.append((
+                    destination + 1, target_id, start_kind, continuations, dialogue_skipped
+                ))
             continue
         branch = _BRANCH_RE.search(line)
+        taken_skip = None
         if branch:
+            if pc > 0 and lines[pc].adjacent and target_id is not None:
+                taken_skip = _dialogue_skip_branch(line, lines[pc - 1].text)
             destination = labels.get(int(branch.group(1), 0))
             if destination is not None:
-                stack.append((destination + 1, target_id, start_kind, continuations))
-        stack.append((pc + 1, target_id, start_kind, continuations))
+                stack.append((
+                    destination + 1, target_id, start_kind, continuations,
+                    dialogue_skipped or taken_skip is True,
+                ))
+        stack.append((
+            pc + 1, target_id, start_kind, continuations,
+            dialogue_skipped or taken_skip is False,
+        ))
 
-    for target_id, start_kind, continuations in sorted(results):
+    for target_id, start_kind, continuations, dialogue_skipped in sorted(results):
         yield EventContinuationModel(
             target_id=target_id,
             start_kind=start_kind,
             continuation_count=continuations,
             source_path=path.as_posix(),
+            dialogue_skipped=dialogue_skipped,
         )
 
 
@@ -902,13 +943,15 @@ def build_event_continuation_models(
         target_id: tuple(
             sorted(
                 {
-                    (model.start_kind, model.continuation_count, model.source_path): model
+                    (model.start_kind, model.continuation_count, model.source_path,
+                     model.dialogue_skipped): model
                     for model in models
                 }.values(),
                 key=lambda model: (
                     model.start_kind,
                     model.continuation_count,
                     model.source_path,
+                    model.dialogue_skipped,
                 ),
             )
         )
@@ -949,7 +992,9 @@ def validate_event_continuations(
         )
         english_breaks = _break_talk_count(english_tokens)
         for model in target_models:
-            if model.start_kind == "WM_TEXT":
+            if model.dialogue_skipped:
+                compatible = model.continuation_count <= english_breaks
+            elif model.start_kind == "WM_TEXT":
                 compatible = english_breaks in (
                     model.continuation_count,
                     model.continuation_count + 1,

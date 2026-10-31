@@ -48,6 +48,75 @@ def structural_sequence(text):
 
 
 class SelectedEventContinuationTests(unittest.TestCase):
+    def test_explicit_dialogue_skip_guard_does_not_skip_later_id_validation(self):
+        english = (b"Zero\0", b"One\x80\x04Two\0", b"Last\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind, branch in (
+                ("BNE", "BNE(0, EVT_SLOT_C, EVT_SLOT_0)\nTEXTCONT\nLABEL(0)\n"),
+                ("BEQ", "BEQ(1, EVT_SLOT_C, EVT_SLOT_0)\nGOTO(0)\n"
+                        "LABEL(1)\nTEXTCONT\nLABEL(0)\n"),
+            ):
+                with self.subTest(kind=kind):
+                    text = (
+                        "EventScr Selected[] = {\nTEXTSHOW(0x0001)\n"
+                        "CHECK_EVBIT(3)\n" + branch
+                        + "REMA\nTEXTSHOW(0x0002)\nENDA\n};\n"
+                    )
+                    source.write_text(text)
+                    result = validate_event_continuations(
+                        english_payloads=english,
+                        localized_payloads={"ja": english},
+                        event_root=event_root,
+                    )
+                    self.assertEqual(result["modeled_target_count"], 2)
+                    source.write_text(text.replace("0x0002", "0x0003"))
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        )
+                    for opaque in ("CHECK_EVBIT(2)", "CHECK_EVBIT(3)\nASMC(ChangeSlotC)"):
+                        source.write_text(text.replace("CHECK_EVBIT(3)", opaque))
+                        with self.assertRaisesRegex(ControlStreamError, "BreakTalk"):
+                            validate_event_continuations(
+                                english_payloads=english,
+                                localized_payloads={"ja": english},
+                                event_root=event_root,
+                            )
+
+    def test_removal_flushes_the_message_but_does_not_end_the_event(self):
+        english = (b"Zero\0", b"One\0", b"Two\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for removal in (
+                "REMA", "WM_REMOVETEXT", "EvtTextRemoveAll", "WmEvtRemoveText",
+            ):
+                with self.subTest(removal=removal):
+                    source.write_text(
+                        "EventScr Selected[] = {\n"
+                        f"EvtTextShow2(0x0001)\n{removal}\nTEXTCONT\n"
+                        "EvtTextShow2(0x0002)\nEvtReturn\n};\n"
+                    )
+                    self.assertEqual(
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        ),
+                        {"modeled_target_count": 2, "model_count": 2},
+                    )
+                    source.write_text(source.read_text().replace("0x0002", "0x0003"))
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        )
+
     def test_public_engine_macro_names_keep_the_same_message_flow(self):
         english = (b"Zero\0", b"One\x80\x04Two\0", b"Three\0")
         with tempfile.TemporaryDirectory() as directory:
@@ -209,8 +278,8 @@ class FinalControlStreamTests(unittest.TestCase):
             {
                 "fe8u_mouth_topology_validated_payload_count": 656,
                 "max_talk_line_width": 237,
-                "model_count": 286,
-                "modeled_target_count": 275,
+                "model_count": 581,
+                "modeled_target_count": 567,
                 "mouth_balance_validated_payload_count": 6828,
                 "portrait_remapped_target_count": 187,
                 "talk_line_count": 54714,

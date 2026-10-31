@@ -282,6 +282,34 @@ class FixtureBuildTests(unittest.TestCase):
         if self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir)
 
+    def selected_inputs(self):
+        return {
+            "english_texts_path": self.fixture_dir / "texts.txt",
+            "english_definitions_path": self.fixture_dir / "textdefs.txt",
+            "ja_indexed_path": self.fixture_dir / "ja_indexed.txt",
+            "ja_raw_path": self.fixture_dir / "ja_raw.json",
+            "zh_indexed_path": self.fixture_dir / "zh_indexed.txt",
+            "zh_raw_path": self.fixture_dir / "zh_raw.json",
+            "mapping_path": self.fixture_dir / "mapping.json",
+            "target_header_path": self.fixture_dir / "msg.h",
+            "ja_raw_expected_repository": None,
+            "ja_raw_expected_revision": None,
+        }
+
+    def test_composition_derives_required_glyphs_before_render_validation(self):
+        from scripts.localization.game_catalog.build import compose_game_catalog
+
+        source = self.fixture_dir / "ja_indexed.txt"
+        source.write_text(source.read_text().replace("日[CTRL:", "試[CTRL:"))
+        inputs = self.selected_inputs()
+        composition = compose_game_catalog(**inputs)
+        japanese = next(bundle for bundle in composition.locales if bundle.locale == "ja")
+        self.assertEqual(
+            japanese.catalog.decode_entry(0), "試".encode() + b"\x80\x20\0"
+        )
+        with self.assertRaisesRegex(GameCatalogError, "U\\+8A66"):
+            build_game_catalog(**inputs, event_root_path=self.fixture_dir)
+
     def test_selected_header_cannot_bind_a_message_symbol_to_another_entry(self):
         header = self.fixture_dir / "msg.h"
         header.write_text(
@@ -418,19 +446,8 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
 
     def test_selected_events_drive_both_width_context_and_active_id_validation(self):
-        inputs = {
-            "english_texts_path": self.fixture_dir / "texts.txt",
-            "english_definitions_path": self.fixture_dir / "textdefs.txt",
-            "ja_indexed_path": self.fixture_dir / "ja_indexed.txt",
-            "ja_raw_path": self.fixture_dir / "ja_raw.json",
-            "zh_indexed_path": self.fixture_dir / "zh_indexed.txt",
-            "zh_raw_path": self.fixture_dir / "zh_raw.json",
-            "mapping_path": self.fixture_dir / "mapping.json",
-            "target_header_path": self.fixture_dir / "msg.h",
-            "event_root_path": self.fixture_dir,
-            "ja_raw_expected_repository": None,
-            "ja_raw_expected_revision": None,
-        }
+        inputs = self.selected_inputs()
+        inputs["event_root_path"] = self.fixture_dir
         source = self.fixture_dir / "selected.c"
         source.write_text(
             "EventScr Selected[] = {\n"

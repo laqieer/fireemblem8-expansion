@@ -76,6 +76,7 @@ from .english_source import (
     validate_english_source_header,
 )
 from .model import (
+    ComposedGameCatalog,
     EnglishCatalogBundle,
     EntryPayloadMeta,
     GameCatalogBuild,
@@ -1116,7 +1117,7 @@ def _build_budget(
     }
 
 
-def build_game_catalog(
+def compose_game_catalog(
     *,
     english_texts_path: Path = DEFAULT_ENGLISH_TEXTS_PATH,
     english_definitions_path: Path = DEFAULT_ENGLISH_DEFINITIONS_PATH,
@@ -1130,14 +1131,11 @@ def build_game_catalog(
     eu_authored_paths: Optional[Mapping[str, Path]] = None,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
-    fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
-    width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
-    event_root_path: Path = DEFAULT_EVENT_ROOT,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
     ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
-) -> GameCatalogBuild:
+) -> ComposedGameCatalog:
     enabled_locales = _normalize_enabled_locales(enabled_locales)
     target_count = len(load_fe8u_target_ids(target_header_path))
     english_entries = load_english_source_entries(
@@ -1232,6 +1230,65 @@ def build_game_catalog(
                 )
             )
     locale_bundles = tuple(locale_bundles_list)
+    return ComposedGameCatalog(
+        target_count=target_count,
+        mapping=mapping,
+        english=english_bundle,
+        locales=locale_bundles,
+        message_ids=message_ids,
+        portrait_map=portrait_map,
+    )
+
+
+def build_game_catalog(
+    *,
+    english_texts_path: Path = DEFAULT_ENGLISH_TEXTS_PATH,
+    english_definitions_path: Path = DEFAULT_ENGLISH_DEFINITIONS_PATH,
+    ja_indexed_path: Path = DEFAULT_JA_INDEXED_PATH,
+    ja_raw_path: Path = DEFAULT_JA_RAW_PATH,
+    zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
+    zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
+    mapping_path: Path = DEFAULT_MAPPING_PATH,
+    eu_mapping_path: Path = DEFAULT_EU_MAPPING_PATH,
+    eu_indexed_paths: Optional[Mapping[str, Path]] = None,
+    eu_authored_paths: Optional[Mapping[str, Path]] = None,
+    target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
+    authored_paths: Optional[Mapping[str, Path]] = None,
+    fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
+    width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
+    event_root_path: Path = DEFAULT_EVENT_ROOT,
+    enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
+    suffix_share: bool = True,
+    ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
+    ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
+) -> GameCatalogBuild:
+    composition = compose_game_catalog(
+        english_texts_path=english_texts_path,
+        english_definitions_path=english_definitions_path,
+        ja_indexed_path=ja_indexed_path,
+        ja_raw_path=ja_raw_path,
+        zh_indexed_path=zh_indexed_path,
+        zh_raw_path=zh_raw_path,
+        mapping_path=mapping_path,
+        eu_mapping_path=eu_mapping_path,
+        eu_indexed_paths=eu_indexed_paths,
+        eu_authored_paths=eu_authored_paths,
+        target_header_path=target_header_path,
+        authored_paths=authored_paths,
+        enabled_locales=enabled_locales,
+        suffix_share=suffix_share,
+        ja_raw_expected_repository=ja_raw_expected_repository,
+        ja_raw_expected_revision=ja_raw_expected_revision,
+    )
+    target_count = composition.target_count
+    mapping = composition.mapping
+    english_bundle = composition.english
+    english_entries = english_bundle.entries
+    locale_bundles = composition.locales
+    enabled_locales = tuple(bundle.locale for bundle in locale_bundles)
+    portrait_map = composition.portrait_map
+    mapping_source_counts = _mapping_source_counts(mapping)
+    message_ids = composition.message_ids
     width_validation = None
     unwrapped_locale_entries = {
         bundle.locale: bundle.entries for bundle in locale_bundles

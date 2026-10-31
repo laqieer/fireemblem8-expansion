@@ -75,12 +75,12 @@
       },
       "contributions": {
         "system": {
-          "non_ascii_scalar_count": 1178,
-          "record_count": 2389
+          "non_ascii_scalar_count": 1173,
+          "record_count": 2370
         },
         "talk": {
           "non_ascii_scalar_count": 1732,
-          "record_count": 1491
+          "record_count": 1510
         }
       },
       "expansion": {
@@ -103,8 +103,8 @@
       "runtime_usage": {
         "classifications": {
           "both": 319,
-          "system": 2070,
-          "talk": 1172
+          "system": 2051,
+          "talk": 1191
         },
         "expansion_key_count": 145,
         "game_target_count": 3414,
@@ -118,7 +118,7 @@
       "styles": {
         "system": {
           "corpus": "fonts/cjk/corpora/ja.system.txt",
-          "glyph_scalar_count": 1177,
+          "glyph_scalar_count": 1172,
           "runtime_contract": "system/item"
         },
         "talk": {
@@ -136,12 +136,12 @@
       },
       "contributions": {
         "system": {
-          "non_ascii_scalar_count": 1461,
-          "record_count": 2389
+          "non_ascii_scalar_count": 1448,
+          "record_count": 2370
         },
         "talk": {
-          "non_ascii_scalar_count": 2383,
-          "record_count": 1491
+          "non_ascii_scalar_count": 2384,
+          "record_count": 1510
         }
       },
       "expansion": {
@@ -164,8 +164,8 @@
       "runtime_usage": {
         "classifications": {
           "both": 319,
-          "system": 2070,
-          "talk": 1172
+          "system": 2051,
+          "talk": 1191
         },
         "expansion_key_count": 145,
         "game_target_count": 3414,
@@ -179,12 +179,12 @@
       "styles": {
         "system": {
           "corpus": "fonts/cjk/corpora/zh-Hans.system.txt",
-          "glyph_scalar_count": 1460,
+          "glyph_scalar_count": 1447,
           "runtime_contract": "system/item"
         },
         "talk": {
           "corpus": "fonts/cjk/corpora/zh-Hans.talk.txt",
-          "glyph_scalar_count": 2382,
+          "glyph_scalar_count": 2383,
           "runtime_contract": "talk/text"
         }
       }
@@ -193,8 +193,8 @@
   "normalization": "NFC",
   "outputs": {
     "fonts/cjk/corpora/ja.system.txt": {
-      "byte_count": 3530,
-      "sha256": "97d558bb64524ab5eed07a83b27857fbb56114875a33c87bbfa990bd7780bcd2"
+      "byte_count": 3515,
+      "sha256": "0602748c9793155bfc48a80027468d5c8d0dc1c79f28e9adea63c5f5d2789ea9"
     },
     "fonts/cjk/corpora/ja.talk.txt": {
       "byte_count": 5192,
@@ -205,16 +205,16 @@
       "sha256": "1cc85beec05e487680a34b1df921793b3ade4b0be24cd6fe360eab8240ae20d8"
     },
     "fonts/cjk/corpora/zh-Hans.system.txt": {
-      "byte_count": 4378,
-      "sha256": "fc7770f158eca3e13c240f041d148909a37e517d05ee45760254315b1ce2c47a"
+      "byte_count": 4339,
+      "sha256": "4808cabf3aba0dabe2e9ef0efd5bf0ccf5d692771c2bc7226b4fbfbe3b44515e"
     },
     "fonts/cjk/corpora/zh-Hans.talk.txt": {
-      "byte_count": 7144,
-      "sha256": "89410f80531bacfcce6b7e24fb294a318ab30902cb5ea55de40923948b024deb"
+      "byte_count": 7147,
+      "sha256": "89f1cce42787e7827e566f91c944c8f80ef7473eef285d33d97acdd4046595ea"
     },
     "fonts/cjk/febuilder-manifest.json": {
       "byte_count": 5363,
-      "sha256": "91fa5356844a5c302442e367fae0d450f06d53ccebc29ef01508b29a2a981e8a"
+      "sha256": "3586f3997d5770f90b4095285e4f1c0cfda0ef8f98c5101109ad193cefefbb51"
     },
     "fonts/cjk/font-sources.json": {
       "byte_count": 2491,
@@ -233,8 +233,8 @@
       "sha256": "a58c41c11d3c387f9884b0c8539ba729bfdcc26bf6a0540bf3f38e74d6f991d6"
     },
     "fonts/cjk/runtime_usage.json": {
-      "byte_count": 1536069,
-      "sha256": "b68f1aac43db024abc118ce154bb2a82eed0fd5c7b6024bb8e5d6879752f03b8"
+      "byte_count": 1536775,
+      "sha256": "dd41d0b6d0188745d342b4e26a7a6d6114270c98925f89795caea2096b51445e"
     }
   },
   "schema_version": 1,

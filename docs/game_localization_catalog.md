@@ -120,6 +120,18 @@ Non-stock fixture catalogs must supply their owned event directory instead
 of borrowing unrelated stock events. This is not a competing event language
 or a qualification of arbitrary runtime-indirect message IDs.
 
+Source composition is shared with font inventory through
+`compose_game_catalog`, which returns typed source bundles, not a render-ready
+build/report. Font inventory can derive required glyphs before the atlas exists;
+the strict builder still requires valid actual fonts, widths, controls and
+continuations. There is no skip-validation mode.
+Removal flushes the current message and advances to subsequent commands.
+The source model distinguishes the explicit dialogue-skip guard from ordinary
+branches without skipping later ID validation. Correct traversal now covers
+567 direct stock targets in 581 models; the prior 275/286 coverage stopped
+prematurely at removal. All 6,828 final payloads retain the existing FID,
+mouth-topology and line-width contracts.
+
 ## Runtime and build gating
 
 The focused selected-text native check is:

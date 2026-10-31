@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Tuple
 
 from scripts.localization.game_locales.mapping import MappingDocument
 from scripts.texttools.multilang_codec import Catalog
+
+if TYPE_CHECKING:
+    from .control_streams import PortraitOperandMap
 
 
 class GameCatalogError(ValueError):
@@ -51,6 +54,16 @@ class LocaleCatalogBundle:
     locale: str
     entries: Tuple[EntryPayloadMeta, ...]
     catalog: Catalog
+
+
+@dataclass(frozen=True)
+class ComposedGameCatalog:
+    target_count: int
+    mapping: MappingDocument
+    english: EnglishCatalogBundle
+    locales: Tuple[LocaleCatalogBundle, ...]
+    message_ids: Mapping[str, int]
+    portrait_map: PortraitOperandMap
 
 
 @dataclass(frozen=True)

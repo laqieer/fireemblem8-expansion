@@ -19677,9 +19677,9 @@
         {
           "id": "game:0x0973",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -19709,9 +19709,9 @@
         {
           "id": "game:0x0977",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -19757,9 +19757,9 @@
         {
           "id": "game:0x097D",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -19781,9 +19781,9 @@
         {
           "id": "game:0x0980",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -19853,17 +19853,17 @@
         {
           "id": "game:0x0989",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x098A",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -19997,17 +19997,17 @@
         {
           "id": "game:0x099B",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch3-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x099C",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch3-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -20029,9 +20029,9 @@
         {
           "id": "game:0x099F",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch3-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -20237,9 +20237,9 @@
         {
           "id": "game:0x09B9",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch4-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -20453,9 +20453,9 @@
         {
           "id": "game:0x09D4",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch5-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -20469,9 +20469,9 @@
         {
           "id": "game:0x09D6",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch5-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -20709,9 +20709,9 @@
         {
           "id": "game:0x09F4",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch6-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -23469,25 +23469,25 @@
         {
           "id": "game:0x0B4D",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch16a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x0B4E",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch16a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x0B4F",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch16a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -24453,9 +24453,9 @@
         {
           "id": "game:0x0BC8",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch21a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -24773,9 +24773,9 @@
         {
           "id": "game:0x0BF0",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch21xa-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -25061,9 +25061,9 @@
         {
           "id": "game:0x0C14",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch8-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -28814,8 +28814,8 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2070,
-          "talk": 1172
+          "system": 2051,
+          "talk": 1191
         },
         "expansion_key_count": 145,
         "game_target_count": 3414,
@@ -48499,9 +48499,9 @@
         {
           "id": "game:0x0973",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -48531,9 +48531,9 @@
         {
           "id": "game:0x0977",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -48579,9 +48579,9 @@
         {
           "id": "game:0x097D",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -48603,9 +48603,9 @@
         {
           "id": "game:0x0980",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -48675,17 +48675,17 @@
         {
           "id": "game:0x0989",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x098A",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch2-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -48819,17 +48819,17 @@
         {
           "id": "game:0x099B",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch3-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x099C",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch3-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -48851,9 +48851,9 @@
         {
           "id": "game:0x099F",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch3-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -49059,9 +49059,9 @@
         {
           "id": "game:0x09B9",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch4-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -49275,9 +49275,9 @@
         {
           "id": "game:0x09D4",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch5-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -49291,9 +49291,9 @@
         {
           "id": "game:0x09D6",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch5-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -49531,9 +49531,9 @@
         {
           "id": "game:0x09F4",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch6-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -52291,25 +52291,25 @@
         {
           "id": "game:0x0B4D",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch16a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x0B4E",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch16a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
           "id": "game:0x0B4F",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch16a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -53275,9 +53275,9 @@
         {
           "id": "game:0x0BC8",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch21a-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -53595,9 +53595,9 @@
         {
           "id": "game:0x0BF0",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch21xa-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -53883,9 +53883,9 @@
         {
           "id": "game:0x0C14",
           "mapping_source_kind": "indexed",
-          "reason": "default 30-tile system Text field",
+          "reason": "event dialogue: TEXTSHOW@src/events/ch8-eventscript.h",
           "styles": [
-            "system"
+            "talk"
           ]
         },
         {
@@ -57636,8 +57636,8 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 2070,
-          "talk": 1172
+          "system": 2051,
+          "talk": 1191
         },
         "expansion_key_count": 145,
         "game_target_count": 3414,
