@@ -6271,6 +6271,54 @@ class PullRequestMetadataTests(unittest.TestCase):
                         version=current_version,
                     )
 
+    def test_only_current_body_updated_at_changes_invalidate_confirmation(self):
+        pre = _metadata_version(body_last_edited_at=None)
+        edit, posts = _mutation_client(pre_state=_pr(), pre_version=pre)
+        pull = edit.routes[("POST", "graphql")][-1].payload[
+            "data"
+        ]["repository"]["pullRequest"]
+        pull["userContentEdits"]["nodes"][0]["updatedAt"] = "2026-09-04T00:00:06Z"
+        decision = pr_metadata.edit_metadata(
+            edit, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "updated")
+        receipt = pr_metadata._parse_intent_comment_body(posts[0]["body"])
+        confirmation = pr_metadata._parse_confirmation_comment_body(posts[1]["body"])
+        confirmed = confirmation.metadata_version
+        self.assertEqual(receipt.pre_version.body_edit_total_count, 0)
+        self.assertEqual(confirmed.body_edit_total_count, 2)
+        self.assertIsNotNone(confirmed.body_original)
+        self.assertEqual(confirmed.body_edit_created_at, "2026-09-04T00:00:05Z")
+        self.assertEqual(confirmed.body_edit_updated_at, "2026-09-04T00:00:06Z")
+        target = _pr(body="new body", updated_at="2026-09-04T00:00:06Z")
+        for updated in ("2026-09-04T00:00:05Z", "2026-09-04T00:00:07Z"):
+            with self.subTest(current_updated_at=updated):
+                current = replace(confirmed, body_edit_updated_at=updated)
+                self.assertEqual(
+                    {
+                        field for field in confirmed.canonical_payload()
+                        if confirmed.canonical_payload()[field] != current.canonical_payload()[field]
+                    },
+                    {"body_edit_updated_at"},
+                )
+                client = ScriptedClient()
+                _add_pr_states(client, target)
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "edit confirmation authority is stale or forged",
+                ):
+                    _reconcile(
+                        client, receipt=receipt,
+                        confirmation=confirmation, comments=posts,
+                        version=current, state=target, original_body="Stable body",
+                    )
+                self.assertFalse(any(
+                    method == "PATCH" or endpoint.endswith("/rerun")
+                    for method, endpoint, _ in client.calls
+                ))
+
     def test_metadata_version_actor_login_and_id_are_owner_bound(self):
         cases = (
             (
@@ -6585,23 +6633,30 @@ class PullRequestMetadataTests(unittest.TestCase):
 
     def test_real_first_and_subsequent_body_edits_confirm_and_reconcile(self):
         cases = (
-            (None, True, False), ("", True, False),
-            ("Original body 雪\n", True, True), ("Stable body", False, False),
+            (None, True, "unchanged"), ("", True, "unchanged"),
+            ("Original body 雪\n", True, "materialized-later"),
+            ("Original body with a later version\n", True, "updated-later"),
+            ("Stable body", False, "unchanged"),
         )
-        for initial_body, first, delayed in cases:
-            with self.subTest(body=initial_body, first=first, delayed=delayed):
+        for initial_body, first, timing in cases:
+            with self.subTest(body=initial_body, first=first, timing=timing):
                 pre = _metadata_version(
                     body_last_edited_at=None if first else "2026-09-04T00:00:00Z"
                 )
                 client, posts = _mutation_client(
                     pre_state=_pr(body=initial_body), pre_version=pre
                 )
-                if delayed:
+                if timing == "materialized-later":
                     pull = client.routes[("POST", "graphql")][-1].payload[
                         "data"
                     ]["repository"]["pullRequest"]
                     for node in pull["userContentEdits"]["nodes"]:
                         node["createdAt"] = node["updatedAt"] = "2026-09-04T00:00:06Z"
+                elif timing == "updated-later":
+                    pull = client.routes[("POST", "graphql")][-1].payload[
+                        "data"
+                    ]["repository"]["pullRequest"]
+                    pull["userContentEdits"]["nodes"][0]["updatedAt"] = "2026-09-04T00:00:06Z"
                 decision = pr_metadata.edit_metadata(
                     client, repository=REPOSITORY, pr_number=PR_NUMBER,
                     head_sha=HEAD, base_sha=BASE, title=None, body="new body",
@@ -6615,6 +6670,10 @@ class PullRequestMetadataTests(unittest.TestCase):
                 version = confirmation.metadata_version
                 self.assertEqual(version.body_edit_total_count, 2 if first else 3)
                 self.assertEqual(receipt.pre_version, pre)
+                if timing == "updated-later":
+                    self.assertEqual(
+                        version.body_edit_updated_at, "2026-09-04T00:00:06Z"
+                    )
                 if first:
                     self.assertEqual(
                         version.body_original.body_sha256,
@@ -6631,7 +6690,14 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _run(202, 11, mode="metadata-only", success=True,
                          metadata_event_payload=_metadata_event_payload(
                              _pr(body=initial_body),
-                             _pr(body="new body", updated_at="2026-09-04T00:00:05Z"),
+                             _pr(
+                                 body="new body",
+                                 updated_at=(
+                                     "2026-09-04T00:00:06Z"
+                                     if timing == "updated-later"
+                                     else "2026-09-04T00:00:05Z"
+                                 ),
+                             ),
                          )),
                     _run(101, 10, mode="full"),
                 ], copies=2)
@@ -9167,6 +9233,44 @@ class MetadataEventAttributionTests(unittest.TestCase):
                     self.assertFalse(result.mutated)
                     self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
 
+    def test_body_version_instants_require_one_exact_native_attested_run(self):
+        receipt, confirmation, posts, state = self.pair()
+        confirmation = replace(
+            confirmation,
+            metadata_version=replace(
+                confirmation.metadata_version,
+                body_edit_updated_at="2026-09-04T00:00:06Z",
+            ),
+        )
+        state = {**state, "updated_at": "2026-09-04T00:00:06Z"}
+        pair = (
+            receipt, confirmation,
+            [posts[0], _confirmation_comment(
+                confirmation, created_at="2026-09-04T00:00:06Z"
+            )], state,
+        )
+        events = {
+            second: _metadata_event_payload(
+                _pr(), {**state, "updated_at": f"2026-09-04T00:00:0{second}Z"}
+            )
+            for second in (5, 6, 7)
+        }
+        for second in (5, 6, 7):
+            with self.subTest(event_second=second):
+                result, client = self.decide(pair, [
+                    _run(303, 12, mode="metadata-only",
+                         metadata_event_payload=events[second]),
+                    _run(101, 10, mode="full"),
+                ])
+                self.assertEqual(result.action, "complete" if second in (5, 6) else "deferred")
+                self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            self.decide(pair, [
+                _run(303, 12, mode="metadata-only", metadata_event_payload=events[6]),
+                _run(202, 11, mode="metadata-only", metadata_event_payload=events[5]),
+                _run(101, 10, mode="full"),
+            ])
+
     def test_title_and_combined_edits_require_one_attested_native_transition(self):
         for body in (None, "new body"):
             with self.subTest(body_changed=body is not None):
@@ -9197,6 +9301,39 @@ class MetadataEventAttributionTests(unittest.TestCase):
                     result, client = self.decide(pair, runs)
                     self.assertEqual(result.action, "deferred")
                     self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+
+    def test_combined_edit_matches_only_the_shared_later_body_native_instant(self):
+        receipt, confirmation, posts, state = self.pair(title="New title", body="new body")
+        confirmation = replace(
+            confirmation,
+            metadata_version=replace(
+                confirmation.metadata_version,
+                title_event_created_at="2026-09-04T00:00:06Z",
+                body_edit_updated_at="2026-09-04T00:00:06Z",
+            ),
+        )
+        self.assertEqual(
+            confirmation.metadata_version.body_edit_edited_at,
+            "2026-09-04T00:00:05Z",
+        )
+        state = {**state, "updated_at": "2026-09-04T00:00:06Z"}
+        pair = (
+            receipt, confirmation,
+            [posts[0], _confirmation_comment(
+                confirmation, created_at="2026-09-04T00:00:06Z"
+            )], state,
+        )
+        for second in (5, 6):
+            with self.subTest(event_second=second):
+                event = _metadata_event_payload(
+                    _pr(), {**state, "updated_at": f"2026-09-04T00:00:0{second}Z"}
+                )
+                result, client = self.decide(pair, [
+                    _run(303, 12, mode="metadata-only", metadata_event_payload=event),
+                    _run(101, 10, mode="full"),
+                ])
+                self.assertEqual(result.action, "complete" if second == 6 else "deferred")
+                self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
 
     def test_refreshed_event_proof_cannot_rebind_or_authorize_a_rerun(self):
         pair = self.pair()
@@ -9765,13 +9902,29 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         body_path = self.sandbox.root / "body.txt"
         body_path.write_text("new body", encoding="utf-8")
         arguments = [*self.common_arguments(), "--body-file", str(body_path)]
-        for initial_body, first in ((None, True), ("Original body 雪\n", True), ("Stable body", False)):
-            with self.subTest(body=initial_body, first=first):
+
+        def versioned_calls(calls):
+            for call in calls:
+                if call["endpoint"] != "graphql":
+                    continue
+                history = call["payload"]["data"]["repository"]["pullRequest"]["userContentEdits"]
+                if history["totalCount"] == 2:
+                    history["nodes"][0]["updatedAt"] = "2026-09-04T00:00:06Z"
+            return calls
+
+        cases = (
+            (None, True, False), ("Original body 雪\n", True, False),
+            ("Original versioned body\n", True, True), ("Stable body", False, False),
+        )
+        for initial_body, first, versioned in cases:
+            with self.subTest(body=initial_body, first=first, versioned=versioned):
                 state = _pr(body=initial_body)
                 pre = _metadata_version(
                     body_last_edited_at=None if first else "2026-09-04T00:00:00Z"
                 )
                 calls = _cli_rejection_calls("new body", pre_state=state, pre_version=pre)
+                if versioned:
+                    calls = versioned_calls(calls)
                 completed, records = self.sandbox.run("edit", arguments, calls)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(json.loads(completed.stdout)["action"], "updated")
@@ -9780,6 +9933,11 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 self.assertEqual(len(history), 2)
                 confirmation = pr_metadata._parse_confirmation_comment_body(history[1]["body"])
                 self.assertEqual(confirmation.metadata_version.body_edit_total_count, 2 if first else 3)
+                if versioned:
+                    self.assertEqual(
+                        confirmation.metadata_version.body_edit_updated_at,
+                        "2026-09-04T00:00:06Z",
+                    )
                 self.assertEqual(
                     [json.loads(r["input"]) for r in records if r["method"] == "PATCH"],
                     [{"body": "new body"}],
@@ -9788,6 +9946,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     "new body", pre_state=state, pre_version=pre,
                     history=history[:1], recovery=True,
                 )
+                if versioned:
+                    calls = versioned_calls(calls)
                 completed, records = self.sandbox.run("edit", arguments, calls)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(json.loads(completed.stdout)["action"], "recovered")
@@ -9799,7 +9959,12 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     pr_metadata._parse_confirmation_comment_body(recovered[0]["body"]),
                     confirmation,
                 )
-                target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+                target = _pr(
+                    body="new body",
+                    updated_at=(
+                        "2026-09-04T00:00:06Z" if versioned else "2026-09-04T00:00:05Z"
+                    ),
+                )
                 calls = [
                     _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=target),
                     *_cli_snapshot_calls([
