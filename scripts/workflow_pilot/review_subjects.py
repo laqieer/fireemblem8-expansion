@@ -367,13 +367,19 @@ def _authored_case(probe):
 
     catalog, feature, case = authored_case_declaration(Path(CASE_REGISTRY).read_bytes())
     role = probe.partition(":")[2]
+    indexed = {item["id"]: item for item in catalog["cases"]}
+    owners_valid = all(
+        name in indexed and indexed[name].get("feature_id") == AUTHORED_FEATURE
+        and indexed[name].get("automation") and indexed[name].get("profiles")
+        for name in feature["required_cases"])
     if role == "owners":
-        indexed = {item["id"]: item for item in catalog["cases"]}
-        check(all(indexed[name]["feature_id"] == AUTHORED_FEATURE
-                  and indexed[name]["automation"] and indexed[name]["profiles"]
-                  for name in feature["required_cases"]),
+        check(owners_valid,
               "authored feature cases lost their owner or executable profile")
     elif role == "consumers":
+        if not owners_valid:
+            return {"kind": "parsed", "verdict": "unavailable", "checks": 0,
+                    "blocked_by": ["owners:" + AUTHORED_FEATURE],
+                    "detail": "canonical case-owner prerequisite failed"}
         _, expected = locale_case_metadata(Path(LOCALE_CASE_CONSUMER).read_bytes())
         program = Path(LOCALE_CASE_PROGRAM).read_bytes()
         name, _ = locale_case_metadata(program)
