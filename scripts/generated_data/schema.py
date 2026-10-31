@@ -144,11 +144,13 @@ class SchemaInputs:
     def __init__(
         self, sources=None, message_header=None,
         localization_registry=None, localization_catalogs=None,
+        asset_manifest=None,
     ):
         self.sources = dict(sources or {})
         self.message_header = message_header
         self.localization_registry = localization_registry
         self.localization_catalogs = localization_catalogs
+        self.asset_manifest = asset_manifest
 
     def resolve(self, name):
         from . import registry  # noqa: F401
@@ -157,6 +159,7 @@ class SchemaInputs:
         schema.message_header = self.message_header
         schema.localization_registry = self.localization_registry
         schema.localization_catalogs = self.localization_catalogs
+        schema.asset_manifest = self.asset_manifest
         schema.replacement_source = name in self.sources
         return schema
 

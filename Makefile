@@ -484,7 +484,6 @@ ifneq ($(filter $(FE8_PROJECT_ARCHIVAL_OBJECTS),$(MAKECMDGOALS)),)
 $(error FE8_PROJECT=$(FE8_PROJECT) is unsupported by the archival lane, including mixed requests)
 endif
 $(FE8_PROJECT_ARCHIVAL_OBJECTS): | project-selection-archival-guard
-$(BANIM_OBJECT): $(MODERN_COMPILE_SETTINGS)
 endif
 
 # Issue #60: one versioned manifest owns asset-to-existing-seam dependencies.
@@ -663,13 +662,12 @@ sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
 
 # Battle Animation Recipes
 
-ifneq ($(filter-out default,$(FE8_PROJECT)),)
-$(BANIM_OBJECT): $$(patsubst $(abspath $(ASSET_OUTPUT_DIR))/%,$(ASSET_OUTPUT_DIR)/%,$$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m)) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
-else
 $(BANIM_OBJECT): $(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
-endif
-	@mkdir -p "$(@D)"
 	$(FE8_PROJECT_BANIM_LOCK) $(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
+
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+$(BANIM_OBJECT): $$(patsubst $(abspath $(ASSET_OUTPUT_DIR))/%,$(ASSET_OUTPUT_DIR)/%,$$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m)) $(MODERN_COMPILE_SETTINGS)
+endif
 
 %_modes.bin: %_motion.o
 	$(OBJCOPY) -O binary -j .data.modes $< $@

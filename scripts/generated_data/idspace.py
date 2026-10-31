@@ -1213,6 +1213,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python3 -m scripts.generated_data.idspace")
     parser.add_argument("--source-override", action="append", default=[], metavar="TABLE=PATH")
     parser.add_argument("--message-header")
+    parser.add_argument("--asset-manifest")
     sub = parser.add_subparsers(dest="command")
     gen = sub.add_parser("generate", help="write the committed C header + audit files")
     gen.set_defaults(func=cmd_generate)
@@ -1240,8 +1241,9 @@ def main(argv=None):
         return 2
     try:
         args.inputs = SchemaInputs(
-            parse_source_overrides(args.source_override), args.message_header)
-        if (args.inputs.sources or args.message_header) and args.command in ("generate", "check"):
+            parse_source_overrides(args.source_override), args.message_header,
+            asset_manifest=args.asset_manifest)
+        if (args.inputs.sources or args.message_header or args.asset_manifest) and args.command in ("generate", "check"):
             raise CapError("selected inputs are supported only by the build-local ACTIVE commands")
         return args.func(args)
     except (CapError, GeneratedDataError) as exc:

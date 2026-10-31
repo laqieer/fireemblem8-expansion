@@ -95,14 +95,6 @@ build output. The specialized ROM/asset recipes remain in the committed
 Makefile, so existing direct `make VAR=value` commands and bare-`make`
 defaults continue to work.
 
-Bundled projects are selected explicitly with `--with-project=NAME` and
-`--with-project-profile=PROFILE`, or one-off `FE8_PROJECT` /
-`FE8_PROJECT_PROFILE` Make variables. They use reviewed
-`examples/NAME/project.mk` declarations and isolated outputs; an unconfigured
-build still selects `default/default`. See
-[project inputs and profiles](project_selection.md) before authoring a
-declaration.
-
 Bare `make` and `make all` always select the modern release target, including
 after `--enable-autoplay-planner`. Because that persisted planner flag is
 debug-only, bare Make then fails closed with an explicit instruction instead

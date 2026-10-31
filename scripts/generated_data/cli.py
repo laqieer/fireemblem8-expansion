@@ -464,6 +464,7 @@ def build_arg_parser():
         help="keep inventories and the manifest in this build-local directory",
     )
     parser.add_argument("--message-header", help="selected generated gameplay message header")
+    parser.add_argument("--asset-manifest", help="selected runtime asset manifest")
     parser.add_argument("--ui-registry", help="selected expansion UI message registry")
     parser.add_argument("--ui-catalog", action="append", metavar="LOCALE=PATH")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -539,6 +540,7 @@ def main(argv=None):
             sources=args.source_overrides, message_header=args.message_header,
             localization_registry=args.ui_registry,
             localization_catalogs=_selected_ui_catalog_paths(args.ui_catalog),
+            asset_manifest=args.asset_manifest,
         )
         if hasattr(args, "table"):
             explicit_dependencies = parse_source_overrides(args.dep_source)
