@@ -86,34 +86,26 @@ inputs remain distinct from the existing worker staging union. These checks
 are not translated-content or native/ROM evidence; Git records source and
 history, not behavior. The real builder/checker controls above remain separate.
 
-Source-tool findings use the existing
-[`TC-WORKFLOW-REVIEW-FAMILY-001`](workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families)
-`authored-case-binding` subject, not unrelated catalog-data inputs. Its four
-generated-family roles execute the captured production `run_probe` against
-reviewed finite fixtures in a separate worker directory. Owner classification,
-the real selected consumer, every required section and the exact procedure
-anchor have actual source-origin/candidate controls. The tool-owned fixture
-closure never overwrites captured candidate catalog inputs, and a backend
-failure cannot become semantic repair evidence. This remains host evidence,
-not ROM or linguistic qualification.
-Availability is checked separately for every changed input, not inferred from
-the initial positive. A historical source that returns unavailable with zero
-checks remains unavailable; a later passing source does not turn it into
-affected/fixed evidence. Such an origin keeps the handoff blocked until the
-required real production evidence is available.
+The unreleased recursive `authored-case-binding` subject was removed rather
+than extending a second fixture/program interpreter to prove the first.
+Its five generated and five wire selectors now reject as unavailable with
+zero checks, before any candidate program can execute. The regression places
+an executable marker program at the former capture path and verifies both
+nonexecution and closed subject lookup. This is explicit removal evidence,
+not semantic repair credit for an unavailable historical origin.
+The four remaining canonical metadata roles retain their actual source
+inputs and original failing-catalog controls. A backend failure still has zero
+semantic credit; no passing current source manufactures a failing origin.
 
 Internal guide destinations use the documentation checker's shared path and
 fragment resolver. Equivalent `./`, parent-segment and percent-encoded paths
 still bind the same procedure; another document or anchor does not.
 The anchor is checked as catalog content, not baked into member identity:
-a stale anchor rejects but can produce real repaired-origin evidence. The
-captured production model also exercises that repair through real Git trees.
+a stale anchor rejects but can produce real repaired-origin evidence through
+the actual catalog's before/after Git trees.
 Equivalent consumer `read_text`/`read_bytes` calls and equality operand order
 do not change the captured literal case-map contract.
-The rejecting reviewed-tool fixture instruments the selected test function's
-parsed assertions, so harmless local-variable renames remain valid as well.
-The same workflow subject's wire roles execute captured fixture production,
-consumption, unknown-selector validation, replay and stale-program controls.
+Harmless local-variable renames in the selected trusted consumer remain valid.
 Equivalent formatting, local names and operand order are reviewed-program
 inputs, not candidate-supplied test code or arbitrary pass labels.
 Literal positional, keyword and mixed subject constructors, including a direct

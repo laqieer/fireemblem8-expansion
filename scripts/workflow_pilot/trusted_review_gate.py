@@ -406,27 +406,12 @@ class ReviewTools:
         probes = {item.probe for item in members}
         tree.materialize(root, sorted(paths))
         (root / "build").mkdir(exist_ok=True)
-        if any(probe.startswith(("authored-binding:", "authored-fixture:")) for probe in probes):
-            (root / self.subjects.BINDING_CAPTURE).write_bytes(
-                tree.read(self.subjects.BINDING_SOURCE))
-            fixture = root / self.subjects.BINDING_FIXTURE
-            self.tool_tree.materialize(fixture, (
-                self.subjects.CASE_REGISTRY, self.subjects.CASE_DOCUMENT,
-                self.subjects.CASE_TEMPLATE, self.subjects.CASE_REFERENCE,
-                self.subjects.LOCALE_CASE_CONSUMER,
-            ))
-            (fixture / "build").mkdir(exist_ok=True)
-            (fixture / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
-                self.tool_tree.read(self.subjects.LOCALE_CASE_CONSUMER))
         tool_paths = ("scripts/workflow_pilot/__init__.py",
-                      "scripts/workflow_pilot/reporter.py",
-                      "scripts/workflow_pilot/trusted_review_gate.py",
                       "scripts/workflow_pilot/raw_diff_check.py",
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
         self.tool_tree.materialize(root, tool_paths)
-        if any(probe.startswith(("authored-case:", "authored-binding:", "authored-fixture:"))
-               for probe in probes):
+        if any(probe.startswith("authored-case:") for probe in probes):
             self.tool_tree.materialize(root, ("scripts/check_docs.py",))
             (root / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
                 self.tool_tree.read(self.subjects.LOCALE_CASE_CONSUMER))
