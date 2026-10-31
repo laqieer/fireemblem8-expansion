@@ -6,6 +6,11 @@ It is separate from the expansion-framework catalog documented in
 
 The tester-facing production-catalog procedure is
 [`TC-LOCALIZATION-003`](test-cases/localization.md#tc-localization-003-production-expansion-and-full-game-locale-catalogs).
+The host-only
+[`TC-LOCALIZATION-AUTHORED-SCOPE-001`](test-cases/localization.md#tc-localization-authored-scope-001-scope-deterministic-authored-validation)
+procedure covers explicit JA/ZH scopes on the existing authored-catalog
+builder/checker. Omitted scope still validates both locales; it does not
+change the default writer, CLI or runtime profiles.
 
 ## Generate and validate
 
