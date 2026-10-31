@@ -1101,6 +1101,7 @@ def extract_markdown_link_uses(stripped_text, errors=None):
     """Yield supported inline/full/collapsed uses, excluding code and definitions."""
     lines = blank_inline_code_spans(stripped_text).split("\n")
     definitions, issues, definition_lines = extract_reference_definitions(lines)
+    invalid_definition_lines = {number for number, _ in issues}
     if errors is not None:
         errors.extend(issues)
     uses = "\n".join("" if number in definition_lines else line
@@ -1112,7 +1113,7 @@ def extract_markdown_link_uses(stripped_text, errors=None):
         for match in REF_USE_RE.finditer(line):
             text, label = match.groups()
             name = normalize_reference_label(label if label.strip() else text)
-            if name in definitions:
+            if name in definitions and definitions[name][1] not in invalid_definition_lines:
                 yield number, definitions[name][0]
             elif errors is not None:
                 errors.append((number, "undefined reference-style link label '%s'" % name))
