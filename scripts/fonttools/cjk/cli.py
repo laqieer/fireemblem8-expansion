@@ -23,6 +23,7 @@ from .package import (
     check_compact_assets,
     refresh_compact_asset_inventory_provenance,
     record_gate_evidence,
+    write_resource_index,
     write_runtime_split_assets,
     write_fehrr_priority_assets,
     write_compact_assets,
@@ -150,6 +151,14 @@ def _check(args: argparse.Namespace) -> int:
     return 0
 
 
+def _repack_index(args: argparse.Namespace) -> int:
+    outputs = write_resource_index(
+        args.root, args.index, packed=args.format == "packed",
+    )
+    print(f"stored CJK resource index: index={args.index} format={args.format} files={len(outputs)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=_root, default=Path.cwd())
@@ -241,6 +250,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     split.add_argument("--fehrr-root", type=Path, default=None)
     split.set_defaults(handler=_split_runtime_corpora)
+
+    repack = subparsers.add_parser(
+        "repack-index",
+        help="losslessly convert one existing resource index and its physical checksums",
+    )
+    repack.add_argument("--index", choices=("fehrr", "runtime-usage"), required=True)
+    repack.add_argument("--format", choices=("plain", "packed"), required=True)
+    repack.set_defaults(handler=_repack_index)
 
     check = subparsers.add_parser(
         "check",

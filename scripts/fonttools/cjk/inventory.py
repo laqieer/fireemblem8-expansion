@@ -15,6 +15,7 @@ from scripts.localization.game_locales.width_contract import (
     classify_targets,
     load_width_registry,
 )
+from .resource_index import encode_like_index, json_bytes
 
 LOCALES = ("ja", "zh-Hans")
 STYLES = ("system", "talk")
@@ -69,12 +70,6 @@ class CjkFontError(ValueError):
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def json_bytes(value: object) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
 
 
 def scalar_text(value: int) -> str:
@@ -685,7 +680,7 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
     generated["fonts/cjk/maps/union.txt"] = _map_bytes(
         inventory["union_glyphs"]
     )
-    generated[RUNTIME_USAGE_PATH] = json_bytes(
+    generated[RUNTIME_USAGE_PATH] = encode_like_index(
         {
             "kind": "fe8u-cjk-runtime-font-usage",
             "schema_version": 1,
@@ -695,7 +690,8 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
                 "every_supported_runtime_string_is_classified": True,
                 "unclassified_strings_are_forbidden": True,
             },
-        }
+        },
+        root / RUNTIME_USAGE_PATH,
     )
 
     font_sources = _font_source_document(root)

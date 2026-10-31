@@ -7,6 +7,79 @@ bitmaps and width records win whenever they cover a scalar. Only missing
 glyphs retain the immutable FEBuilderGBA/Noto result. Bare `make` does not
 invoke FEHRR, FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
+## Resource index storage
+
+The host tools accept the existing plain JSON representation and the version-1
+`cjk-resource-index` envelope for `fonts/cjk/fehrr-sources.json` and
+`fonts/cjk/runtime_usage.json`. Defaults remain plain; generation preserves the
+representation already present. Both decode to the same complete JSON object.
+The shared `scripts.fonttools.cjk.resource_index` API provides `decode_index`,
+`encode_index(value, packed=False)`, `load_index` and `encode_like_index`.
+
+The envelope has exactly `kind`, `version`, `encoding`, `decoded_bytes` and
+`payload` fields. `kind` is `cjk-resource-index`, integer `version` is `1`,
+`encoding` is `xz-base64`, integer `decoded_bytes` is the canonical UTF-8 JSON
+byte count, and `payload` is base64 of one XZ stream. Encoding uses sorted,
+two-space-indented UTF-8 JSON with a final newline and the standard-library XZ
+preset 6. Repeated encoding is deterministic. Stored and decoded indexes are
+bounded to 4 MiB; XZ decoding has a 64 MiB decoder-memory bound. Unknown fields
+or versions, duplicate keys, malformed data, incorrect size/checksum, truncated
+or trailing streams and nested envelopes fail explicitly.
+
+Logical schema, FEHRR source priority, immutable FEBuilder baseline and
+glyph/width/bitmap checks are unchanged. Physical checksums bind the actual
+stored representation, not a reconstruction of its decoded JSON. A format
+conversion never creates font, content or provenance approval.
+
+For an explicitly selected index in an owned checkout or fixture:
+
+```bash
+python3 -m scripts.fonttools.cjk --root OWNED_ROOT repack-index --index fehrr --format packed
+python3 -m scripts.fonttools.cjk --root OWNED_ROOT repack-index --index runtime-usage --format packed
+python3 -m scripts.fonttools.cjk --root OWNED_ROOT check
+```
+
+Use `--format plain` to reverse the conversion. The operation validates the
+existing compact assets (and generated inventory for runtime usage), prepares
+all bytes before writing, and updates only the selected index and its existing
+inventory/asset-manifest checksum chain. It does not provide a multi-file
+transaction: use an owned, otherwise idle root and inspect every resulting
+file. Invalid input is rejected before writes. Do not hand-edit generated
+indexes or checksums. Revert a migration through the normal Git delivery path.
+
+Dependencies are the existing CJK tools and Python 3.12 standard library;
+there is no new package, service or feature conflict. This host-only interface
+changes no atlas, ROM/RAM, locale, configuration identity, save epoch, modern
+debug/release or archival behavior. Default-index migrations are independent
+dependent contracts [#349](https://github.com/laqieer/fireemblem8-expansion/issues/349)
+and [#350](https://github.com/laqieer/fireemblem8-expansion/issues/350).
+
+### TC-CJK-RESOURCE-STORAGE-001: bounded lossless resource indexes
+
+Issue [#348](https://github.com/laqieer/fireemblem8-expansion/issues/348).
+Start from a clean source checkout on Linux/CPython 3.12 with the committed CJK
+inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
+
+1. Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index -v`.
+   The test creates an owned temporary source/font fixture, converts both
+   indexes through the actual CLI, and runs existing inventory/compact-asset
+   consumers against plain and packed inputs.
+2. Require complete decoded equality, repeated deterministic encoding,
+   unchanged plain bytes and every glyph/width/bitmap byte, valid physical
+   checksums, and exact original files after reverse conversion. The
+   pre-interface FEHRR reader rejects the packed fixture; the existing plain
+   index remains the default negative control.
+3. Exercise malformed encoding, unknown fields/version, boolean size/version,
+   wrong size, damaged/truncated/trailing streams and oversized expansion.
+   Require explicit errors; a corrupt owned CLI input must leave every
+   existing index/checksum file unchanged.
+
+The automation is the codec module above plus actual package/inventory/CLI
+consumers, not a raw-source assertion. It removes only its owned temporary
+files and never converts stock inputs. All existing source/schema/provenance
+checks remain required. This is storage evidence, not font-art, selected-game,
+rendered-text or supported ROM-profile qualification.
+
 ## Inventory contract
 
 Run:

@@ -17,10 +17,19 @@ from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 from .inventory import (
     CjkFontError,
     LOCALES,
+    RUNTIME_USAGE_PATH,
     STYLES,
+    check_generated_files,
     json_bytes,
     scalar_text,
     sha256_bytes,
+)
+from .resource_index import (
+    ResourceIndexError,
+    decode_index,
+    encode_index,
+    encode_like_index,
+    read_index_bytes,
 )
 
 PACKAGE_ARCHIVE = "build/tmp/cjk-fonts/febuilder-schema-v1.zip"
@@ -1201,7 +1210,7 @@ def _read_fehrr_lock(root: Path, sources: Mapping[str, object]) -> Dict[str, obj
     if not isinstance(priority, dict):
         raise CjkFontError("compact asset FEHRR priority provenance is invalid")
     lock_path = root / FEHRR_SOURCES
-    lock_data = lock_path.read_bytes()
+    lock_data = read_index_bytes(lock_path)
     expected = {
         "path": FEHRR_SOURCES,
         "sha256": sha256_bytes(lock_data),
@@ -1210,9 +1219,9 @@ def _read_fehrr_lock(root: Path, sources: Mapping[str, object]) -> Dict[str, obj
     if priority != expected:
         raise CjkFontError("compact asset FEHRR priority provenance drifted")
     try:
-        lock = json.loads(lock_data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise CjkFontError("FEHRR source lock is not valid UTF-8 JSON") from error
+        lock = decode_index(lock_data)
+    except ResourceIndexError as error:
+        raise CjkFontError(f"FEHRR source index is invalid: {error}") from error
     source = lock.get("source", {})
     if (
         lock.get("schema_version") != 1
@@ -1542,6 +1551,7 @@ def build_runtime_split_assets(
 
     inventory_data = (root / "fonts/cjk/inventory.json").read_bytes()
     manifest_data = (root / "fonts/cjk/febuilder-manifest.json").read_bytes()
+    lock_data = encode_like_index(lock, root / FEHRR_SOURCES)
     asset_manifest = {
         "schema_version": 2,
         "contract": {
@@ -1574,7 +1584,7 @@ def build_runtime_split_assets(
             },
             "fehrr_priority": {
                 "path": FEHRR_SOURCES,
-                "sha256": sha256_bytes(json_bytes(lock)),
+                "sha256": sha256_bytes(lock_data),
                 "policy": FEHRR_PRIORITY_POLICY,
             },
         },
@@ -1595,7 +1605,7 @@ def build_runtime_split_assets(
             }
         ],
     }
-    outputs[FEHRR_SOURCES] = json_bytes(lock)
+    outputs[FEHRR_SOURCES] = lock_data
     outputs[f"{ASSET_ROOT}/manifest.json"] = json_bytes(asset_manifest)
     return outputs
 
@@ -1671,7 +1681,7 @@ def build_fehrr_priority_assets(
             "source_style": FEHRR_SOURCE_STYLES[runtime_style],
         }
 
-    lock_data = json_bytes(lock)
+    lock_data = encode_like_index(lock, root / FEHRR_SOURCES)
     sources["fehrr_priority"] = {
         "path": FEHRR_SOURCES,
         "sha256": sha256_bytes(lock_data),
@@ -1718,6 +1728,36 @@ def refresh_compact_asset_inventory_provenance(root: Path) -> Dict[str, bytes]:
     return check_compact_assets(root)
 
 
+def write_resource_index(
+    root: Path, index: str, *, packed: bool
+) -> Dict[str, bytes]:
+    paths = {"fehrr": FEHRR_SOURCES, "runtime-usage": RUNTIME_USAGE_PATH}
+    if index not in paths:
+        raise CjkFontError(f"unknown CJK resource index: {index}")
+    relative = paths[index]
+    check_compact_assets(root)
+    generated = check_generated_files(root) if index == "runtime-usage" else None
+    data = encode_index(decode_index(read_index_bytes(root / relative)), packed=packed)
+    manifest_path = f"{ASSET_ROOT}/manifest.json"
+    manifest = json.loads((root / manifest_path).read_bytes())
+    outputs = {relative: data}
+    if generated is None:
+        manifest["sources"]["fehrr_priority"]["sha256"] = sha256_bytes(data)
+    else:
+        inventory_path = "fonts/cjk/inventory.json"
+        inventory = json.loads(generated[inventory_path])
+        inventory["outputs"][relative] = {
+            "byte_count": len(data), "sha256": sha256_bytes(data),
+        }
+        inventory_data = json_bytes(inventory)
+        outputs[inventory_path] = inventory_data
+        manifest["sources"]["inventory"]["sha256"] = sha256_bytes(inventory_data)
+    outputs[manifest_path] = json_bytes(manifest)
+    for relative_path, content in outputs.items():
+        (root / relative_path).write_bytes(content)
+    return outputs
+
+
 def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]) -> Dict[str, bytes]:
     """Validate assets derived from the immutable full-union FEBuilder baseline."""
 
@@ -1731,8 +1771,9 @@ def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]
     report_data = (root / GENERATION_REPORT).read_bytes()
     try:
         report = json.loads(report_data.decode("utf-8"))
-        lock = json.loads((root / FEHRR_SOURCES).read_text(encoding="utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        lock_data = read_index_bytes(root / FEHRR_SOURCES)
+        lock = decode_index(lock_data)
+    except (UnicodeDecodeError, json.JSONDecodeError, ResourceIndexError) as error:
         raise CjkFontError("runtime split provenance JSON is invalid") from error
     expected_sources = {
         "inventory": {
@@ -1767,7 +1808,7 @@ def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]
     priority = sources.get("fehrr_priority", {})
     if (
         priority.get("path") != FEHRR_SOURCES
-        or priority.get("sha256") != sha256_bytes(json_bytes(lock))
+        or priority.get("sha256") != sha256_bytes(lock_data)
         or priority.get("policy") != FEHRR_PRIORITY_POLICY
         or lock.get("selection_policy") != FEHRR_PRIORITY_POLICY
     ):
@@ -2061,6 +2102,6 @@ def check_compact_assets(root: Path) -> Dict[str, bytes]:
             corpora,
             payloads,
         )
-        outputs[FEHRR_SOURCES] = (root / FEHRR_SOURCES).read_bytes()
+        outputs[FEHRR_SOURCES] = read_index_bytes(root / FEHRR_SOURCES)
     outputs[f"{ASSET_ROOT}/manifest.json"] = asset_manifest_data
     return outputs
