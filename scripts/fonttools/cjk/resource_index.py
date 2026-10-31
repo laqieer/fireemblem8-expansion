@@ -49,7 +49,7 @@ def _json(data: bytes) -> dict[str, object]:
             data.decode("utf-8"), object_pairs_hook=_object,
             parse_float=_finite_number, parse_constant=_finite_number,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (ValueError, RecursionError) as error:
         raise ResourceIndexError(f"invalid resource index JSON: {error}") from error
     if not isinstance(value, dict):
         raise ResourceIndexError("resource index must be an object")

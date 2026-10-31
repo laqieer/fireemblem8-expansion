@@ -74,6 +74,22 @@ class ResourceIndexTests(unittest.TestCase):
         for path in outputs[0]:
             self.assertTrue(outputs[0][path] == outputs[1][path], path + " packed outputs differ")
 
+    def test_parser_limits_are_reported_as_resource_errors_in_both_formats(self):
+        envelope = json.loads(encode_index({"value": 0}, packed=True))
+        cases = (
+            b'{"value":' + b"[" * 16000 + b"0" + b"]" * 16000 + b"}",
+            b'{"value":' + b"1" * 5000 + b"}",
+        )
+        for plain in cases:
+            packed = json.dumps({
+                **envelope, "decoded_bytes": len(plain),
+                "payload": base64.b64encode(lzma.compress(plain)).decode(),
+            }).encode()
+            for name, data in (("plain", plain), ("packed", packed)):
+                with self.subTest(format=name, input_bytes=len(plain)):
+                    with self.assertRaises(ResourceIndexError):
+                        decode_index(data)
+
     def test_decoder_memory_bound_rejects_a_valid_large_dictionary_stream(self):
         value = {"glyphs": [0x4E00]}
         plain = encode_index(value)
@@ -92,24 +108,32 @@ class ResourceIndexTests(unittest.TestCase):
             decode_index(json.dumps(envelope).encode())
 
     def test_cli_rejection_retains_the_original_codec_failure(self):
-        broken = b"invalid index"
-        with self.assertRaises(ResourceIndexError) as failure:
-            decode_index(broken)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for relative in ("fonts/cjk", "graphics/fonts/cjk"):
                 shutil.copytree(ROOT / relative, root / relative)
-            (root / FEHRR_SOURCES).write_bytes(broken)
-            result = subprocess.run(
-                [
-                    sys.executable, "-B", "-m", "scripts.fonttools.cjk",
-                    "--root", str(root), "repack-index",
-                    "--index", "fehrr", "--format", "packed",
-                ],
-                cwd=ROOT, capture_output=True, text=True, timeout=180,
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(str(failure.exception), result.stderr)
+            for broken in (
+                b"invalid index",
+                b'{"value":' + b"[" * 16000 + b"0" + b"]" * 16000 + b"}",
+            ):
+                with self.subTest(input_bytes=len(broken)):
+                    (root / FEHRR_SOURCES).write_bytes(broken)
+                    paths = (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json")
+                    before = {path: (root / path).read_bytes() for path in paths}
+                    result = subprocess.run(
+                        [
+                            sys.executable, "-B", "-m", "scripts.fonttools.cjk",
+                            "--root", str(root), "repack-index",
+                            "--index", "fehrr", "--format", "packed",
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=180,
+                    )
+                    self.assertEqual(result.returncode, 1)
+                    self.assertTrue(result.stderr.startswith("error:"), result.stderr)
+                    with self.assertRaises(ResourceIndexError) as failure:
+                        decode_index(broken)
+                    self.assertIn(str(failure.exception), result.stderr)
+                    self.assertEqual({path: (root / path).read_bytes() for path in paths}, before)
 
     def test_non_finite_numbers_are_rejected_in_both_formats_and_encoding(self):
         envelope = json.loads(encode_index({"value": 0}, packed=True))
