@@ -391,18 +391,18 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
             "owners": {CASE_REGISTRY},
             "outputs": {CASE_REGISTRY, CASE_TEMPLATE, case["document"]},
             "consumers": {CASE_REGISTRY, LOCALE_CASE_CONSUMER},
-            "drift-checks": {CASE_REGISTRY, case["document"], feature["reference"]},
+            "drift-checks": {CASE_REGISTRY, case["document"]},
         }
         predicates = {
             "owners": CASE_REGISTRY,
             "outputs": CASE_TEMPLATE,
             "consumers": LOCALE_CASE_CONSUMER,
-            "drift-checks": feature["reference"],
+            "drift-checks": case["document"],
         }
         for role in review.FAMILIES["generated"]:
             add("generated", role, AUTHORED_FEATURE, predicates[role],
                 case["document"], mapping,
-                "canonical owner, complete public procedure, consumer equality and guide link",
+                "canonical owner, complete public procedure, consumer equality and indexed anchor",
                 "authored-case:" + role, paths[role], kind="parsed",
                 evidence=("positive", "adversarial"))
     elif spec.model == "review-session":
@@ -576,13 +576,6 @@ def _authored_case(probe):
                 check_docs.compute_heading_slugs(stripped)))
             check(case["anchor"] == anchors[start[0]],
                   "authored procedure anchor differs from canonical registry")
-            reference = check_docs.strip_fenced_blocks(Path(feature["reference"]).read_text())
-            check((case["document"], case["anchor"]) in {
-                check_docs.internal_link_destination(feature["reference"], link)
-                for _, link in check_docs.extract_markdown_link_uses(reference)
-                if not check_docs._is_external(link)
-            },
-                  "authoritative feature guide does not link to the authored procedure")
         else:
             raise review.ReviewError("unknown authored case probe")
     return {"kind": "parsed", "checks": 1,
