@@ -194,6 +194,55 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                           if item.verdict != "satisfied"],
                          [("drift-checks:full-game-localization", "contract-violation")])
 
+    def test_reference_guide_links_resolve_only_actual_noncode_uses(self):
+        catalog = json.loads((self.repo.root / "docs/test-cases/registry.json").read_text())
+        feature = next(row for row in catalog["features"] if row["id"] == "full-game-localization")
+        case = next(row for row in catalog["cases"]
+                    if row["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
+        path = feature["reference"]
+        target = "test-cases/localization.md#" + case["anchor"]
+        inline = f"[Procedure]({target})"
+        variants = [
+            (f"[Procedure][case]\n\n[case]: {target}\n", True),
+            (f"[Procedure][]\n\n[Procedure]: {target}\n", True),
+            (f"[Procedure][CASE]\n\n[case]: {target}\n", True),
+            (f"[unused]: {target}\n", False),
+            (f"`{inline}`\n", False),
+            (f"``{inline}``\n", False),
+            (f"``a ` literal {inline}``\n", False),
+            (f"`\n{inline}\n`\n", False),
+            (f"`[Procedure][case]`\n\n[case]: {target}\n", False),
+        ]
+        for guide, navigable in variants:
+            with self.subTest(guide=guide):
+                head = self.repo.commit({path: guide})
+                observations = self.run_members(self.tools.members(self.case_scope(head)), head)
+                drift = next(item for item in observations
+                             if item.obligation.role == "drift-checks")
+                self.assertEqual(
+                    (drift.verdict, drift.checks),
+                    ("satisfied" if navigable else "contract-violation", 1),
+                )
+
+    def test_annotated_literal_metadata_preserves_both_consumer_call_sites(self):
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        original = (self.repo.root / path).read_text()
+        annotated = original.replace(
+            "FEATURE_CASES = {", "FEATURE_CASES: dict[str, set[str]] = {", 1)
+        self.assertNotEqual(original, annotated)
+        head = self.repo.commit({path: annotated})
+        self.assert_satisfied(self.run_members(self.tools.members(self.case_scope(head)), head))
+        annotated_tool = ReviewTools(GitTree(self.repo.root, head), self.repo.root)
+        self.assert_satisfied(annotated_tool.run_obligations(
+            annotated_tool.members(self.case_scope()), self.repo.base))
+        bad = self.repo.commit({
+            path: annotated.replace('        "TC-LOCALIZATION-AUTHORED-SCOPE-001",\n', "", 1),
+        })
+        consumer = next(
+            item for item in self.run_members(self.tools.members(self.case_scope(bad)), bad)
+            if item.obligation.role == "consumers")
+        self.assertEqual((consumer.verdict, consumer.checks), ("contract-violation", 1))
+
     def test_refactors_preserve_members_and_syntax_failure_is_not_semantic_evidence(self):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
         original = (self.repo.root / path).read_text()

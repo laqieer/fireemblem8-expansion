@@ -1024,8 +1024,8 @@ def parse_reference_definition_destination(rest):
 
 
 def blank_inline_code_spans(line):
-    """Blank the contents of single-backtick inline code spans on one
-    line (length-preserving), so reference-style link/definition
+    """Blank equal-backtick-delimited code while preserving length and newlines,
+    so reference-style link/definition
     scanning never mistakes code-only bracket syntax (e.g. a shell regex
     character class like ``[0-9A-Fa-f]`` inside a `` `grep -E '...'` ``
     inline code span) for real Markdown link syntax. This mirrors every
@@ -1035,7 +1035,16 @@ def blank_inline_code_spans(line):
     code font is still a real, checkable URL -- so this helper is used
     only for reference-style link/definition scanning, not URL scanning.)
     """
-    return INLINE_CODE_RE.sub(lambda m: "`" + (" " * len(m.group(1))) + "`", line)
+    return re.sub(
+        r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)",
+        lambda match: (
+            match.group(1)
+            + "".join("\n" if char == "\n" else " " for char in match.group(2))
+            + match.group(1)
+        ),
+        line,
+        flags=re.S,
+    )
 
 
 def extract_reference_definitions(lines):
@@ -1086,6 +1095,27 @@ def extract_reference_definitions(lines):
             continue
         definitions[norm] = (target, lineno, raw_label)
     return definitions, issues, def_line_numbers
+
+
+def extract_markdown_link_uses(stripped_text, errors=None):
+    """Yield supported inline/full/collapsed uses, excluding code and definitions."""
+    lines = blank_inline_code_spans(stripped_text).split("\n")
+    definitions, issues, definition_lines = extract_reference_definitions(lines)
+    if errors is not None:
+        errors.extend(issues)
+    uses = "\n".join("" if number in definition_lines else line
+                     for number, line in enumerate(lines, start=1))
+    yield from extract_internal_link_targets(uses, errors)
+    for number, line in enumerate(lines, start=1):
+        if number in definition_lines:
+            continue
+        for match in REF_USE_RE.finditer(line):
+            text, label = match.groups()
+            name = normalize_reference_label(label if label.strip() else text)
+            if name in definitions:
+                yield number, definitions[name][0]
+            elif errors is not None:
+                errors.append((number, "undefined reference-style link label '%s'" % name))
 
 
 def check_reference_style_links(markdown_files, root):
