@@ -406,7 +406,7 @@ class ReviewTools:
         probes = {item.probe for item in members}
         tree.materialize(root, sorted(paths))
         (root / "build").mkdir(exist_ok=True)
-        if any(probe.startswith("authored-binding:") for probe in probes):
+        if any(probe.startswith(("authored-binding:", "authored-fixture:")) for probe in probes):
             (root / self.subjects.BINDING_CAPTURE).write_bytes(
                 tree.read(self.subjects.BINDING_SOURCE))
             fixture = root / self.subjects.BINDING_FIXTURE
@@ -425,7 +425,8 @@ class ReviewTools:
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
         self.tool_tree.materialize(root, tool_paths)
-        if any(probe.startswith(("authored-case:", "authored-binding:")) for probe in probes):
+        if any(probe.startswith(("authored-case:", "authored-binding:", "authored-fixture:"))
+               for probe in probes):
             self.tool_tree.materialize(root, ("scripts/check_docs.py",))
             (root / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
                 self.tool_tree.read(self.subjects.LOCALE_CASE_CONSUMER))

@@ -103,6 +103,10 @@ Equivalent consumer `read_text`/`read_bytes` calls and equality operand order
 do not change the captured literal case-map contract.
 The rejecting reviewed-tool fixture instruments the selected test function's
 parsed assertions, so harmless local-variable renames remain valid as well.
+The same workflow subject's wire roles execute captured fixture production,
+consumption, unknown-selector validation, replay and stale-program controls.
+Equivalent formatting, local names and operand order are reviewed-program
+inputs, not candidate-supplied test code or arbitrary pass labels.
 
 ### Cleanup and limitations
 
