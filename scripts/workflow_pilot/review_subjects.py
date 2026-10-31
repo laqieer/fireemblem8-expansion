@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass, replace
+import io
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import sys
 import types
 
@@ -31,6 +34,7 @@ BINDINGS = (
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
+    SubjectSpec("TC-PROJECT-SELECTION-001", "project-selection", "project-selection"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -57,6 +61,97 @@ CASE_SECTIONS = frozenset({
     "Actions", "Expected result", "Negative control",
     "Interactions and save compatibility", "Automation", "Cleanup and limitations",
 })
+PROJECT_DECLARATION = "project_selection.mk"
+PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
+PROJECT_REGISTRY = "scripts/generated_data/registry.py"
+PROJECT_SCHEMA_INPUTS = "scripts/generated_data/schema.py"
+PROJECT_CONTEXT_FIELDS = frozenset({
+    "sources", "message_header", "localization_registry", "localization_catalogs", "asset_manifest",
+})
+PROJECT_SCHEMAS = frozenset({
+    "supports", "units", "shops", "traps", "items", "eventscripts", "eventlists",
+    "chapterbundle", "classes", "characters", "terrainstats", "movecost",
+    "weapontriangle", "ui_presentation", "chapterobjectives", "autoplaystrategies",
+})
+PROJECT_SETTINGS = frozenset({
+    "MODERN_ROM_SIZE", "EXPANSION_ROM_TITLE", "EXPANSION_ENABLED_LOCALES",
+    "EXPANSION_DEFAULT_LOCALE", "EXPANSION_SAVE_COMPAT_EPOCH",
+})
+PROJECT_GAME_OPTIONS = frozenset({
+    "mapping", "width-registry", "fixed-width-aliases", "eu-mapping",
+    "ja-indexed", "ja-raw", "zh-indexed", "zh-raw", "latin-span-review",
+    "unicode-script-review", "raw-closure",
+})
+
+
+def project_declaration_model(tree):
+    source = ast.parse(tree.read(PROJECT_REGISTRY))
+    functions = {item.name: item for item in source.body if isinstance(item, ast.FunctionDef)}
+    schemas = {}
+    for item in source.body:
+        if not (isinstance(item, ast.Expr) and isinstance(item.value, ast.Call)
+                and isinstance(item.value.func, ast.Attribute)
+                and item.value.func.attr == "register_factory"):
+            continue
+        args = item.value.args
+        review.require(len(args) == 3 and isinstance(args[2], ast.Name),
+                       "unknown project schema factory needs a reviewed finite model")
+        name, version = ast.literal_eval(args[0]), ast.literal_eval(args[1])
+        review.require(args[2].id in functions,
+                       "missing project schema factory needs a reviewed finite model")
+        factory = functions[args[2].id]
+        imports = [node for node in factory.body if isinstance(node, ast.ImportFrom)]
+        returns = [node.value for node in factory.body if isinstance(node, ast.Return)]
+        review.require(
+            len(imports) == 1 and imports[0].level == 1 and len(imports[0].names) == 1
+            and len(returns) == 1 and isinstance(returns[0], ast.Call)
+            and isinstance(returns[0].func, ast.Name)
+            and returns[0].func.id == (imports[0].names[0].asname or imports[0].names[0].name)
+            and not returns[0].args and not returns[0].keywords,
+            "unknown project schema owner needs a reviewed finite model")
+        schemas[name] = (version, imports[0].module)
+    review.require(schemas == {name: (1, name + ".schema") for name in PROJECT_SCHEMAS},
+                   "project schema members or owners need a reviewed finite model")
+    config = ast.parse(tree.read(PROJECT_CONFIG))
+    validators = [
+        item for function in config.body
+        if isinstance(function, ast.FunctionDef) and function.name == "validate_project_requirements"
+        for item in function.body
+        if isinstance(item, ast.Assign) and isinstance(item.value, ast.Dict)
+    ]
+    review.require(len(validators) == 1
+                   and {ast.literal_eval(key) for key in validators[0].value.keys} == PROJECT_SETTINGS,
+                   "project setting members need a reviewed finite model")
+    make = re.sub(r"\\\n[ \t]*", " ", tree.read(PROJECT_DECLARATION).decode())
+    declarations = {}
+    for name in ("GAME_OPTIONS", "GAME_CJK_LOCALES", "GAME_EU_LOCALES", "FONT_SLOTS"):
+        matches = re.findall(r"^FE8_PROJECT_" + name + r"\s*:=\s*([^\n#]*)", make, re.M)
+        review.require(len(matches) == 1, "missing or ambiguous project declaration")
+        declarations[name] = tuple(sorted(matches[0].split()))
+    expected = {
+        "GAME_OPTIONS": tuple(sorted(PROJECT_GAME_OPTIONS)),
+        "GAME_CJK_LOCALES": ("ja", "zh-Hans"),
+        "GAME_EU_LOCALES": ("de", "es", "fr", "it"),
+        "FONT_SLOTS": ("src/data/localized_font_data.c", "src/fontgrp-data.c"),
+    }
+    review.require(declarations == expected, "project provider declarations need a reviewed finite model")
+    contexts = [
+        item for declaration in ast.parse(tree.read(PROJECT_SCHEMA_INPUTS)).body
+        if isinstance(declaration, ast.ClassDef) and declaration.name == "SchemaInputs"
+        for item in declaration.body
+        if isinstance(item, ast.FunctionDef) and item.name == "__init__"
+    ]
+    review.require(len(contexts) == 1, "unknown project input constructor")
+    parameters = {argument.arg for argument in (
+        *contexts[0].args.posonlyargs, *contexts[0].args.args, *contexts[0].args.kwonlyargs,
+    )} - {"self"}
+    review.require(contexts[0].args.vararg is None and contexts[0].args.kwarg is None
+                   and parameters in (PROJECT_CONTEXT_FIELDS,
+                                      PROJECT_CONTEXT_FIELDS - {"asset_manifest"}),
+                   "project context fields need a reviewed finite model")
+    return json.dumps({"schemas": schemas, "settings": sorted(PROJECT_SETTINGS),
+                       "declarations": declarations,
+                       "context_fields": sorted(PROJECT_CONTEXT_FIELDS)}, sort_keys=True)
 
 
 def authored_case_declaration(raw):
@@ -243,6 +338,86 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         add("generated", "drift-checks", "eventlists", EVENT_SCHEMA + ":build_inventory",
             inventory, "committed generated inventory", "regenerate and compare",
             "generated-drift", inputs | {inventory}, kind="parsed", evidence=("positive", "generated"))
+    elif spec.model == "project-selection":
+        declaration = project_declaration_model(tree)
+        for role, name, inputs in (
+            ("actions", "profile-settings", (PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk")),
+            ("items", "provider-partition", (PROJECT_DECLARATION, PROJECT_REGISTRY)),
+            ("targets", "modern-abi", (PROJECT_CONFIG, PROJECT_DECLARATION)),
+        ):
+            add("action", role, name, PROJECT_DECLARATION, PROJECT_CONFIG, declaration,
+                "real public frontend with valid and adversarial declarations",
+                "project:" + role, inputs)
+        for role in review.FAMILIES["lifecycle"]:
+            add("lifecycle", role, "invocation-context", PROJECT_CONFIG,
+                PROJECT_DECLARATION, declaration,
+                "public selection and metadata CLI preserve, reset and terminate invocation state",
+                "project-life:" + role, (PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"))
+        for role in review.FAMILIES["wire"]:
+            inputs = {PROJECT_SCHEMA_INPUTS, PROJECT_REGISTRY}
+            if role == "producers":
+                inputs = {PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"}
+            elif role == "stale-bindings":
+                inputs.update({
+                    "scripts/generated_data/items/schema.py",
+                    "scripts/generated_data/json_loader.py", "scripts/generated_data/validators.py",
+                })
+            add("wire", role, "selected-inputs", PROJECT_DECLARATION,
+                PROJECT_SCHEMA_INPUTS, declaration,
+                "actual serialized Make arguments and invocation-local schema consumption",
+                "project-wire:" + role, inputs)
+        for role in review.FAMILIES["generated"]:
+            add("generated", role, "selected-schemas", PROJECT_SCHEMA_INPUTS,
+                "scripts/generated_data/cli.py", declaration,
+                "all declared selected sources, actual output namespace and artifact consumers",
+                "project-generated:" + role,
+                (PROJECT_DECLARATION, PROJECT_REGISTRY, PROJECT_SCHEMA_INPUTS,
+                 "scripts/generated_data/cli.py"),
+                evidence=("positive", "adversarial", "generated"))
+        for role in review.FAMILIES["resource"]:
+            add("resource", role, "compiled-context", "modern.mk:MODERN_CFLAGS",
+                "src/expansion_metadata.c:gExpansionMetadata",
+                "FE8_PROJECT profile and embedded ExpansionMetadata",
+                "real default/selected debug/release records and readonly/RAM contribution",
+                "project-resource:" + role,
+                (PROJECT_DECLARATION, "modern.mk", "src/expansion_metadata.c",
+                 "include/expansion_metadata.h"),
+                kind="arm-object", profile="debug-release-aapcs-" + role,
+                evidence=("compile", "default") if role == "disabled" else ("compile",))
+        tool_paths = {
+            REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py", AOE_DRIVER, AOE_DISABLED,
+            "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
+            "scripts/workflow_pilot/trusted_review_gate.py", "scripts/workflow_pilot/reporter.py",
+        }
+        static_inputs = {
+            PROJECT_DECLARATION, "config.mk", "include/constants/msg.h",
+            *json.loads(declaration)["declarations"]["FONT_SLOTS"],
+        }
+        closure = tuple(sorted(
+            path for path, (mode, kind, _) in tree.entries.items()
+            if mode in {"100644", "100755"} and kind == "blob"
+            and path not in tool_paths and "/tests/" not in "/" + path
+            and (path in static_inputs or path.startswith("scripts/") and path.endswith(".py"))
+        ))
+        generated_inputs = event_validation_inputs(tree) | set(tree.under("texts/expansion"))
+        generated_inputs.update(tree.under("assets"))
+        generated_inputs.update({
+            "src/face.c", "src/portrait_data.c", "src/unit_icon_wait_data.c",
+        })
+        for asset in json.loads(tree.read("assets/manifest.json"))["assets"]:
+            generated_inputs.update(asset["sources"])
+        resource_inputs = generated_inputs | {
+            "src/expansion_metadata.c", "Makefile",
+            "src/banim_data.c", "linker_script_banim.txt",
+            "graphics/banim/assets/img/banim_img_rules.mk",
+            *(path for path in tree.entries if "/" not in path and path.endswith(".mk")),
+        }
+        result = [replace(
+            member, execution_inputs=tuple(sorted(
+                set(closure) | (generated_inputs if member.family == "generated"
+                               else resource_inputs if member.family == "resource" else set())
+            )),
+        ) for member in result]
     elif spec.model == "authored-case":
         _, feature, case = authored_case_declaration(tree.read(CASE_REGISTRY))
         mapping = json.dumps({
@@ -442,6 +617,583 @@ def _authored_case(probe):
             raise review.ReviewError("unknown authored case probe")
     return {"kind": "parsed", "checks": 1,
             "detail": "parsed canonical tester format/member contract; not locale or ROM behavior"}
+
+
+def _project(probe):
+    from scripts.modernize import expansion_config as config
+    from scripts.generated_data import registry
+    from scripts.generated_data.diagnostics import GeneratedDataError
+    from scripts.generated_data.schema import SchemaInputs, parse_source_overrides
+
+    root = Path.cwd()
+    project = root / "examples/review-project-source"
+    project.mkdir(parents=True, exist_ok=True)
+    for name, content in (
+        ("input.json", "{}\n"), ("source.c", "int selected_source;\n"),
+        ("texts.txt", "#0\nNative[X]\n"), ("defs.txt", "[X] = 0\n"),
+    ):
+        (project / name).write_text(content)
+    modules = {
+        *PROJECT_SCHEMAS, "assets", "code", "game-text", "ui-text", "fonts",
+        *("game-" + name for name in PROJECT_GAME_OPTIONS),
+        *("game-authored-" + locale for locale in ("ja", "zh-Hans", "fr", "de", "es", "it")),
+        *("game-indexed-" + locale for locale in ("fr", "de", "es", "it")),
+    }
+    review.require(set(registry.REGISTRY.all_names()) == PROJECT_SCHEMAS,
+                   "unknown production registry domain")
+    relative = project.relative_to(root).as_posix()
+    settings = {
+        "MODERN_ROM_SIZE": "32M", "EXPANSION_ROM_TITLE": "NATIVEPROBE",
+        "EXPANSION_ENABLED_LOCALES": "en", "EXPANSION_DEFAULT_LOCALE": "en",
+        "EXPANSION_SAVE_COMPAT_EPOCH": "256",
+    }
+
+    def declare(*, inherit=None, replacement=(), extra="", selected_settings=None):
+        chosen = settings if selected_settings is None else selected_settings
+        (project / "project.mk").write_text(
+            "FE8_PROJECT_PROFILES := probe\nFE8_PROJECT_DEFAULT_PROFILE := probe\n"
+            + "FE8_PROJECT_REQUIRED_SETTINGS := " + " ".join(sorted(chosen)) + "\n"
+            + "".join(f"FE8_PROJECT_probe_{key} := {value}\n" for key, value in chosen.items())
+            + "FE8_PROJECT_INHERIT := " + " ".join(sorted(modules if inherit is None else inherit)) + "\n"
+            + "FE8_PROJECT_REPLACE := " + " ".join(sorted(replacement)) + "\n" + extra
+        )
+
+    def selection():
+        return config.load_project_selection(root, project.name)
+
+    def identity(**overrides):
+        return config.load_identity(
+            root / "config.mk", config_preset="debug", abi=overrides.pop("abi", "aapcs"),
+            rom_size=overrides.pop("rom_size", None), repo_root=root,
+            build_id_override="abcdef12", project=project.name, **overrides,
+        )
+
+    def rejects(function):
+        try:
+            function()
+        except config.ConfigError:
+            return
+        raise ContractViolation("production frontend accepted an invalid project declaration")
+
+    declare()
+    baseline = selection()
+    review.require(baseline["project"] == project.name, "project frontend backend unavailable")
+    checks = 1
+    family, _, role = probe.partition(":")
+    if family == "project-generated":
+        return _project_generated(role, root, project, modules, declare)
+    if family == "project-resource":
+        return _project_resources(role, root, project)
+    if family == "project-wire":
+        fields = {
+            "message_header": relative + "/selected-msg.h",
+            "asset_manifest": relative + "/selected-assets.json",
+            "localization_registry": relative + "/selected-ui.json",
+            "localization_catalogs": {"en": relative + "/selected-en.json"},
+        }
+        sources = {name: relative + "/input.json" for name in sorted(PROJECT_SCHEMAS)}
+        baseline = SchemaInputs()
+        review.require(baseline.resolve("items").name == "items",
+                       "schema input backend unavailable")
+        try:
+            selected = SchemaInputs(sources=sources, **fields)
+        except TypeError as error:
+            raise ContractViolation("accepted schema input fields were rejected") from error
+        if role == "producers":
+            declare(inherit=modules - {"items"}, replacement={"items"},
+                    extra=f"FE8_PROJECT_SOURCE_items := {relative}/input.json\n")
+            recipe = b"review-project-arguments:\n\t@printf '%s\\n' $(FE8_PROJECT_SCHEMA_ARGS)\n"
+            values = command([
+                "make", "--no-print-directory", "-s", "-f", PROJECT_DECLARATION, "-f", "-",
+                "review-project-arguments", f"FE8_PROJECT={project.name}",
+                "MODERN_PROJECT_MSG_HEADER=" + fields["message_header"],
+                "PYTHON=" + sys.executable,
+            ], stdin=recipe).decode().splitlines()
+            check(values == [
+                "--source-override", "items=" + relative + "/input.json",
+                "--message-header", fields["message_header"],
+                "--asset-manifest", "assets/manifest.json",
+            ], "Make serialized a different selected owner/header/manifest")
+            check(parse_source_overrides(values[1:2]) == {"items": relative + "/input.json"},
+                  "serialized provider did not bind the actual schema parser")
+            checks += 2
+        elif role == "consumers":
+            for name in sorted(PROJECT_SCHEMAS):
+                schema = selected.resolve(name)
+                check(schema.name == name and schema.replacement_source
+                      and selected.source(schema) == sources[name],
+                      "selected schema lost its concrete source owner")
+                check(all(getattr(schema, key, None) == value for key, value in fields.items()),
+                      "selected schema lost invocation-local payload fields")
+                default = baseline.resolve(name)
+                check(not default.replacement_source
+                      and baseline.source(default) == default.default_source
+                      and all(getattr(default, key, None) is None for key in fields),
+                      "selected invocation mutated cached default schema fields")
+                checks += 3
+        elif role == "validators":
+            valid = [name + "=" + sources[name] for name in sorted(PROJECT_SCHEMAS)]
+            check(parse_source_overrides(valid) == sources,
+                  "valid serialized source owners were rejected")
+            for invalid in (
+                ["unknown=input.json"], ["items="], ["=input.json"], ["items"],
+                ["items=one.json", "items=two.json"],
+            ):
+                try:
+                    parse_source_overrides(invalid)
+                except GeneratedDataError:
+                    checks += 1
+                else:
+                    raise ContractViolation("invalid serialized provider was accepted")
+        elif role == "replay":
+            other = SchemaInputs(
+                sources={name: relative + "/other.json" for name in sources},
+                message_header=relative + "/other-msg.h", asset_manifest=relative + "/other-assets.json",
+            )
+            for name in sorted(PROJECT_SCHEMAS):
+                first = selected.resolve(name)
+                second = other.resolve(name)
+                fresh = baseline.resolve(name)
+                check(first.message_header == fields["message_header"]
+                      and second.message_header == relative + "/other-msg.h"
+                      and fresh.message_header is None,
+                      "replayed schema resolution rebound another invocation")
+                check(selected.source(first) == sources[name]
+                      and other.source(second) == relative + "/other.json"
+                      and all(getattr(first, key, None) == value for key, value in fields.items()),
+                      "replay retained stale source or mutated an earlier schema")
+                checks += 2
+        elif role == "stale-bindings":
+            source = project / "symbolic-items.json"
+            source.write_text(json.dumps({
+                "$schema": "fe8.items.v1", "items": [{
+                    "item": "ITEM_NONE", "weaponType": "ITYPE_SWORD", "iconId": 0,
+                    "nameTextId": "MSG_REVIEW_CONTEXT",
+                }],
+            }))
+            header = root / fields["message_header"]
+            header.write_text("#define MSG_REVIEW_CONTEXT 256\n#define MSG_COUNT 1024\n")
+            schema = selected.resolve("items")
+            check(schema.message_header == str(header.relative_to(root)),
+                  "item consumer lost the selected message header binding")
+            try:
+                first = schema.load_records(str(source))[0].name_text_id
+                header.write_text("#define MSG_REVIEW_CONTEXT 257\n#define MSG_COUNT 1024\n")
+                second = schema.load_records(str(source))[0].name_text_id
+            except GeneratedDataError as error:
+                raise ContractViolation("valid selected message symbol was rejected") from error
+            check((first, second) == (256, 257),
+                  "item loader ignored or cached a stale selected header")
+            checks += 2
+        else:
+            raise review.ReviewError("unknown direct project wire probe")
+    elif family == "project-life":
+        def default_identity():
+            return config.load_identity(
+                root / "config.mk", config_preset="debug", abi="aapcs", rom_size=None,
+                repo_root=root, build_id_override="abcdef12", project="default",
+            )
+
+        if role == "entries":
+            check(config.load_project_selection(root, "default") == {
+                "project": "default", "profile": "default",
+                "settings": {}, "asset_manifest": None,
+            }, "default selection acquired project state")
+            check(identity().project_profile == "probe",
+                  "declared default profile was not selected")
+            for name in ("../escape", "bad name", "bad/name", ""):
+                rejects(lambda name=name: config.load_project_selection(root, name))
+            rejects(lambda: config.load_project_selection(root, project.name, "absent"))
+            rejects(lambda: config.load_project_selection(root, "default", "probe"))
+            checks += 8
+        elif role == "preservation":
+            default = default_identity()
+            check("project" not in default.to_dict()
+                  and "project_profile" not in default.to_dict()
+                  and "project" not in default.fingerprint_fields(),
+                  "selected context leaked into default metadata")
+            saved = default.to_dict()
+            selected = identity()
+            check(selected.rom_size_bytes == 32 * 1024 * 1024
+                  and selected.save_compat_epoch == 256,
+                  "selected identity lost its independent resource/save settings")
+            rejects(lambda: identity(rom_size="16M"))
+            check(default.to_dict() == saved and default_identity().to_dict() == saved,
+                  "selected or failed invocation changed default identity")
+            checks += 4
+        elif role == "resets":
+            first = identity()
+            saved = first.to_dict()
+            declare(selected_settings={
+                **settings, "MODERN_ROM_SIZE": "16M", "EXPANSION_ROM_TITLE": "RESETVALID",
+                "EXPANSION_SAVE_COMPAT_EPOCH": "512",
+            })
+            updated = identity()
+            check(updated.rom_size_bytes == 16 * 1024 * 1024
+                  and updated.rom_title == "RESETVALID" and updated.save_compat_epoch == 512
+                  and updated.config_fingerprint != first.config_fingerprint,
+                  "a new invocation reused stale profile settings")
+            declare()
+            check(identity().to_dict() == saved and first.to_dict() == saved,
+                  "restoring declaration failed to reset context without mutation")
+            checks += 2
+        elif role == "terminals":
+            output = root / "build/project-lifecycle-output"
+            arguments = [
+                "generate", "--config-mk", str(root / "config.mk"), "--config", "debug",
+                "--abi", "aapcs", "--rom-size", "32M",
+                "--repo-root", str(root), "--build-id", "abcdef12",
+                "--project", project.name, "--output-dir", str(output),
+            ]
+            with redirect_stdout(io.StringIO()):
+                check(config.main(arguments) == 0, "valid metadata CLI did not complete")
+            saved = {path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                     for path in output.iterdir()}
+            check(set(saved) == {"expansion_build_metadata.json", "expansion_build_metadata.mk"},
+                  "metadata CLI did not publish its complete owned output set")
+            declare(selected_settings={**settings, "UNKNOWN_REQUIRED_SETTING": "1"})
+            errors = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                check(config.main(arguments) != 0 and bool(errors.getvalue().strip()),
+                      "invalid metadata invocation silently completed")
+            check({path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                   for path in output.iterdir()} == saved,
+                  "failed invocation changed previously published metadata")
+            declare()
+            with redirect_stdout(io.StringIO()):
+                check(config.main(arguments) == 0, "metadata CLI failed to recover")
+            check({path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                   for path in output.iterdir()} == saved,
+                  "unchanged recovery rewrote valid metadata")
+            checks += 6
+            result = run_process([
+                "make", "--no-print-directory", "-s", "NODEP=1",
+                "FE8_PROJECT=" + project.name, "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                "PYTHON=" + sys.executable, "PYTHON3=" + sys.executable,
+                "game-localization-validate", "game-localization-generate",
+                "game-localization-check", "game-localization-width-check",
+                "game-localization-leakage-audit", "game-localization-leakage-check",
+                "game-localization-budget",
+            ], cwd=root, env=os.environ.copy(), timeout=60, new_session=False)
+            check(result.returncode == 0,
+                  "valid English-only standalone locale work failed: "
+                  + result.stderr.decode(errors="replace")[-1500:])
+            check(not (root / "build/projects" / project.name
+                       / "probe/debug/aapcs/generated/game-localization").exists(),
+                  "English-only standalone work generated translated payloads")
+            checks += 2
+        else:
+            raise review.ReviewError("unknown direct project lifecycle probe")
+    elif role == "actions":
+        valid = identity()
+        check(valid.project == project.name and valid.project_profile == "probe",
+              "public identity lost selected invocation context")
+        for key, overrides in (
+            ("MODERN_ROM_SIZE", {"rom_size": "16M"}),
+            ("EXPANSION_ROM_TITLE", {"rom_title": "OTHER"}),
+            ("EXPANSION_ENABLED_LOCALES", {"enabled_locales": "en,ja"}),
+            ("EXPANSION_DEFAULT_LOCALE", {"default_locale": "en"}),
+            ("EXPANSION_SAVE_COMPAT_EPOCH", {"save_compat_epoch": "512"}),
+        ):
+            chosen = dict(settings)
+            if key == "EXPANSION_DEFAULT_LOCALE":
+                chosen.update(EXPANSION_ENABLED_LOCALES="en,ja", EXPANSION_DEFAULT_LOCALE="ja")
+            declare(selected_settings=chosen)
+            identity()
+            rejects(lambda: identity(**overrides))
+            checks += 1
+        declare(selected_settings={**settings, "UNKNOWN_REQUIRED_SETTING": "1"})
+        rejects(selection)
+        checks += 1
+    elif role == "items":
+        for module in sorted(modules):
+            extra = ""
+            if module == "code":
+                extra = f"FE8_PROJECT_C_SOURCES := {relative}/source.c\n"
+            elif module == "fonts":
+                extra = f"FE8_PROJECT_FONT_REPLACEMENTS := src/fontgrp-data.c={relative}/source.c\n"
+            elif module == "game-text":
+                extra = (f"FE8_PROJECT_TEXT_MAIN := {relative}/texts.txt\n"
+                         f"FE8_PROJECT_TEXT_DEFS := {relative}/defs.txt\n")
+            elif module == "ui-text":
+                extra = (f"FE8_PROJECT_UI_REGISTRY := {relative}/input.json\n"
+                         f"FE8_PROJECT_UI_CATALOGS := en={relative}/input.json\n")
+            else:
+                extra = f"FE8_PROJECT_SOURCE_{module} := {relative}/input.json\n"
+            declare(inherit=modules - {module}, replacement={module}, extra=extra)
+            selection()
+            declare(inherit=modules, replacement={module}, extra=extra)
+            rejects(selection)
+            declare(inherit=modules - {module})
+            rejects(selection)
+            checks += 3
+    elif role == "targets":
+        identity()
+        rejects(lambda: identity(abi="apcs-gnu"))
+        checks += 1
+    else:
+        raise review.ReviewError("unknown direct project probe")
+    return {"kind": "host", "checks": checks,
+            "detail": "real project declaration/identity functions executed; no compiler/ROM claim"}
+
+
+def _project_resources(role, root, project):
+    from scripts.modernize import expansion_config as config
+    from scripts.modernize.verify_rom_header import (
+        EXPANSION_METADATA_STRUCT, ExpansionMetadataError, verify_expansion_metadata,
+    )
+
+    selected = project.name if role == "enabled" else "default"
+    expected_size = (32 if role == "enabled" else 16) * 1024 * 1024
+    objcopy = command([os.environ["MODERN_CC"], "-print-prog-name=objcopy"]).decode().strip()
+    review.require(bool(objcopy), "selected ARM compiler did not resolve objcopy")
+    checks = 0
+    for preset in ("debug", "release"):
+        directory = root / "build/project-resources" / role / preset
+        directory.mkdir(parents=True, exist_ok=True)
+        recipe = "review-resource-flags:;@echo REVIEW_RESOURCE_FLAGS $(MODERN_CFLAGS)"
+        output = command([
+            "make", "--no-print-directory", "-n", "-s", "--eval=" + recipe,
+            "review-resource-flags", "expansion-modern-toolchain-check",
+            "FE8_PROJECT=" + selected, "MODERN_CONFIG=" + preset, "MODERN_ABI=aapcs",
+            "EXPANSION_BUILD_ID=abcdef12", "PYTHON=" + sys.executable,
+            "MODERN_CC=" + os.environ["MODERN_CC"],
+        ]).decode()
+        flags = [line for line in output.splitlines()
+                 if line.startswith("echo REVIEW_RESOURCE_FLAGS ")]
+        review.require(len(flags) == 1, "actual Make compiler flags are missing or ambiguous")
+        object_path, binary = directory / "metadata.o", directory / "metadata.bin"
+        command([
+            os.environ["MODERN_CC"], *shlex.split(flags[0])[2:],
+            "-c", "src/expansion_metadata.c", "-o", str(object_path),
+        ])
+        command([
+            objcopy, "-O", "binary", "--only-section=.rodata",
+            str(object_path), str(binary),
+        ])
+        expected = config.load_identity(
+            root / "config.mk", config_preset=preset, abi="aapcs", rom_size=None,
+            repo_root=root, build_id_override="abcdef12", project=selected,
+        )
+        try:
+            metadata = verify_expansion_metadata(binary.read_bytes(), expected.to_dict())
+        except ExpansionMetadataError as error:
+            raise ContractViolation("compiled project identity differs: " + str(error)) from error
+        check(metadata["rom_size_bytes"] == expected_size
+              and metadata["config_preset"] == preset and metadata["abi"] == "aapcs",
+              "compiled default/selected resource profile differs")
+        symbols = command([
+            os.environ["MODERN_NM"], "-S", "--defined-only", "--extern-only", str(object_path),
+        ]).decode().splitlines()
+        check(len(symbols) == 1 and symbols[0].split()[-1] == "gExpansionMetadata"
+              and int(symbols[0].split()[1], 16) == EXPANSION_METADATA_STRUCT.size,
+              "embedded metadata lost its public sized symbol")
+        sizes = command([os.environ["MODERN_SIZE"], "-B", str(object_path)]).decode().splitlines()
+        allocated = tuple(int(value) for value in sizes[-1].split()[:3])
+        check(allocated == (EXPANSION_METADATA_STRUCT.size, 0, 0),
+              "project identity changed its fixed readonly or mutable-memory contribution")
+        checks += 4
+    return {
+        "kind": "arm-object", "checks": checks,
+        "detail": "real Make/AAPCS debug/release embedded records and sections; not full ROM/RAM",
+    }
+
+
+def _project_generated(role, root, project, modules, declare):
+    import shutil
+    from scripts.generated_data import cli, idspace, registry
+    from scripts.generated_data.schema import SchemaInputs
+
+    sources = {}
+    for name in sorted(PROJECT_SCHEMAS):
+        schema = registry.REGISTRY.resolve(name)
+        original = Path(schema.default_source)
+        selected = project / "providers" / name / original.name
+        selected.parent.mkdir(parents=True, exist_ok=True)
+        if original.is_dir():
+            selected.mkdir(exist_ok=True)
+            for path in schema.source_paths(str(original)):
+                shutil.copyfile(path, selected / Path(path).name)
+        else:
+            shutil.copyfile(original, selected)
+        sources[name] = selected.relative_to(root).as_posix()
+    bundle_schema = registry.REGISTRY.resolve("chapterbundle")
+    for path in bundle_schema.source_paths(sources["chapterbundle"]):
+        path = Path(path)
+        document = json.loads(path.read_bytes())
+        for name, table in document.get("tables", {}).items():
+            if name in sources:
+                table["source"] = sources[name]
+        for name, field in (
+            ("supports", "supportOwners"), ("chapterobjectives", "chapterObjectives"),
+            ("autoplaystrategies", "autoplayStrategies"),
+        ):
+            if field in document:
+                document[field]["source"] = sources[name]
+        path.write_text(json.dumps(document, indent=2) + "\n")
+    declare(
+        inherit=modules - set(sources), replacement=set(sources),
+        extra="".join(f"FE8_PROJECT_SOURCE_{name} := {path}\n"
+                      for name, path in sorted(sources.items())),
+    )
+    serialized = command([
+        "make", "--no-print-directory", "-s", "-f", PROJECT_DECLARATION, "-f", "-",
+        "review-project-generation", f"FE8_PROJECT={project.name}",
+        "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+        "MODERN_BUILD_ROOT=build/review-project-generation",
+        "MODERN_PROJECT_MSG_HEADER=include/constants/msg.h", "PYTHON=" + sys.executable,
+    ], stdin=(
+        b"review-project-generation:\n"
+        b"\t@printf '%s\\n' $(FE8_PROJECT_OUTPUT_DIR) $(FE8_PROJECT_SCHEMA_ARGS)\n"
+    )).decode().splitlines()
+    output_root = Path(serialized[0])
+    check(output_root == Path("build/review-project-generation/projects") / project.name
+          / "probe/debug/aapcs", "producer lost a selected namespace dimension")
+    arguments = serialized[1:]
+    outputs = output_root / "data"
+    inventories = output_root / "inventories"
+    inputs = SchemaInputs(sources=sources, message_header="include/constants/msg.h")
+    committed = {
+        path: Path(path).read_bytes()
+        for path in (registry.REGISTRY.resolve(name).default_inventory_path
+                     for name in sorted(PROJECT_SCHEMAS))
+    }
+    checks = 1
+
+    def invoke(action, name):
+        errors = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(errors):
+            try:
+                status = cli.main([
+                    *arguments, "--inventory-dir", str(inventories),
+                    action, "--table", name,
+                    *([] if action == "validate" else ["--out-dir", str(outputs)]),
+                ])
+            except SystemExit as error:
+                raise RuntimeError("generated CLI arguments rejected: " + errors.getvalue()) from error
+        return status, errors.getvalue()
+
+    def corrupt_source(name, action, consumer=None):
+        schema = inputs.resolve(name)
+        path = Path(schema.source_paths(sources[name])[0])
+        review.require(path.resolve().is_relative_to(project.resolve()),
+                       "selected loader escaped the owned fixture")
+        previous = path.read_bytes()
+        try:
+            path.write_text("{ invalid selected JSON }\n")
+            try:
+                status, diagnostic = invoke(action, consumer or name)
+            except json.JSONDecodeError:
+                return
+            check(status != 0 and bool(diagnostic.strip()),
+                  "invalid selected owner was ignored or silently accepted")
+        finally:
+            path.write_bytes(previous)
+
+    def object_symbols(schema, path, directory, selected_inputs):
+        directory.mkdir(parents=True, exist_ok=True)
+        if schema.name == "items":
+            (directory / "id_space_active.h").write_text(
+                idspace.render_active_header(env={}, inputs=selected_inputs))
+        output = directory / path.with_suffix(".o").name
+        command([
+            os.environ["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb",
+            "-mthumb-interwork", "-mabi=aapcs", "-std=gnu89",
+            "-ffreestanding", "-fno-builtin", "-DFE8_EXPANSION_MODERN_BUILD=1",
+            "-Iinclude", "-Iinclude/generated", "-I" + str(directory),
+            "-c", str(path), "-o", str(output),
+        ])
+        symbols = command([os.environ["MODERN_NM"], "-S", "--defined-only", str(output)])
+        check(bool(symbols.strip()), "generated ARM object lost every defined symbol")
+        return symbols
+
+    for name in sorted(PROJECT_SCHEMAS):
+        schema = inputs.resolve(name)
+        if role == "owners":
+            status, diagnostic = invoke("validate", name)
+            check(status == 0, "valid selected owner rejected: " + diagnostic[-1000:])
+            corrupt_source(name, "validate")
+            checks += 2
+            continue
+        status, diagnostic = invoke("generate", name)
+        check(status == 0, "valid selected producer rejected: " + diagnostic[-1000:])
+        inventory = inventories / Path(schema.default_inventory_path).name
+        targets = [inventory]
+        if schema.default_output_name:
+            targets.append(outputs / schema.default_output_name)
+        check(all(path.is_file() and path.stat().st_size for path in targets),
+              "selected producer did not materialize its complete output set")
+        if role == "outputs":
+            saved = {str(path): (path.read_bytes(), path.stat().st_mtime_ns) for path in targets}
+            status, diagnostic = invoke("generate", name)
+            check(status == 0 and saved == {
+                str(path): (path.read_bytes(), path.stat().st_mtime_ns) for path in targets
+            }, "unchanged producer rewrote or lost selected output")
+            checks += 2
+        elif role == "consumers":
+            if schema.default_output_name:
+                records, diagnostics = cli._load_and_validate(
+                    schema, sources[name], dep_source_overrides=sources, inputs=inputs)
+                review.require(not diagnostics.errors, "selected consumer prerequisite failed")
+                default_inputs = SchemaInputs()
+                default = default_inputs.resolve(name)
+                original, diagnostics = cli._load_and_validate(
+                    default, default.default_source, inputs=default_inputs)
+                review.require(not diagnostics.errors, "default consumer prerequisite failed")
+                baseline_directory = output_root / "objects" / name / "default"
+                baseline_directory.mkdir(parents=True, exist_ok=True)
+                baseline_source = baseline_directory / default.default_output_name
+                baseline_source.write_text(default.generate_c(original, default.default_source))
+                baseline = object_symbols(default, baseline_source, baseline_directory, default_inputs)
+                observed = object_symbols(
+                    schema, outputs / schema.default_output_name,
+                    output_root / "objects" / name / "selected", inputs)
+                check(observed == baseline,
+                      "equal selected records changed actual ARM symbol layout")
+                checks += 3
+            else:
+                consumer = {"chapterbundle": "chapterobjectives", "eventscripts": "eventlists"}[name]
+                status, diagnostic = invoke("generate", consumer)
+                check(status == 0, "selected metadata consumer rejected: " + diagnostic[-1000:])
+                corrupt_source(name, "generate", consumer)
+                checks += 2
+        elif role == "drift-checks":
+            status, diagnostic = invoke("check", name)
+            check(status == 0, "valid selected artifact reported drift: " + diagnostic[-1000:])
+            path = targets[-1]
+            previous = path.read_bytes()
+            try:
+                path.write_bytes(b"")
+                status, diagnostic = invoke("check", name)
+                check(status == 0 and path.read_bytes() == previous,
+                      name + ": selected build-local artifact did not heal from current source")
+            finally:
+                path.write_bytes(previous)
+            checks += 2
+        else:
+            raise review.ReviewError("unknown direct project generated probe")
+    if role == "outputs":
+        from scripts.generated_data import manifest
+        schema = registry.REGISTRY.resolve("supports")
+        payload = json.loads(Path(schema.default_source).read_bytes())
+        review.require(len(payload["records"]) > 3, "manifest source control needs distinct counts")
+        payload["records"] = payload["records"][:3]
+        source = project / "manifest-supports.json"
+        source.write_text(json.dumps(payload))
+        shared = SchemaInputs({"supports": str(source.relative_to(root))})
+        rows = {entry.name: entry for entry in manifest.collect_entries(inputs=shared)}
+        check(rows["supports"].record_count == 3,
+              "public manifest ignored the shared selected source context")
+        defaults = {entry.name: entry for entry in manifest.collect_entries()}
+        check(defaults["supports"].record_count > 3,
+              "selected manifest source leaked into a later default call")
+        checks += 2
+    check(all(Path(path).read_bytes() == content for path, content in committed.items()),
+          "selected generation changed a committed framework inventory")
+    return {
+        "kind": "host", "checks": checks,
+        "detail": "all16 actual selected schema/CLI paths; consumer ARM objects are not ROM evidence",
+    }
 
 
 @probe_result("arm-object")
@@ -656,6 +1408,11 @@ def run_probe(probe: str) -> dict:
         "aoe-reference:enabled", "aoe-reference:disabled", "aoe-arm:enabled", "aoe-arm:disabled",
         "generated-output", "generated-consumer", "generated-drift",
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
+        *("project:" + role for role in review.FAMILIES["action"]),
+        *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
+        *("project-wire:" + role for role in review.FAMILIES["wire"]),
+        *("project-generated:" + role for role in review.FAMILIES["generated"]),
+        *("project-resource:" + role for role in review.FAMILIES["resource"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -672,6 +1429,10 @@ def run_probe(probe: str) -> dict:
         return _generated(probe)
     if probe.startswith("authored-case:"):
         return _authored_case(probe)
+    if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:",
+                         "project-resource:")):
+        kind = "arm-object" if probe.startswith("project-resource:") else "host"
+        return probe_result(kind)(_project)(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")

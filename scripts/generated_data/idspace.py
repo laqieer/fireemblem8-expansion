@@ -31,6 +31,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from .diagnostics import GeneratedDataError
+from .schema import SchemaInputs, parse_source_overrides
 import os
 import re
 import sys
@@ -388,16 +390,23 @@ def default_record_count(domain_key):
     return _load_table_record_count(table)
 
 
-def active_record_count(domain_key, env=None):
+def active_record_count(domain_key, env=None, inputs=None):
     """Record count this configured build actually loads (env-dependent)."""
     table = DOMAIN_RECORD_TABLES.get(domain_key)
     if table is None:
         return None
     if domain_key == "item":
         from .items import schema as items_schema
+        inputs = inputs or SchemaInputs()
         return len(items_schema.load_records(
-            items_schema.ItemsTableSchema.default_source,
-            item_cap=resolve_item_id_cap(env)))
+            inputs.source(inputs.resolve("items")),
+            item_cap=resolve_item_id_cap(env),
+            msg_header=inputs.message_header or items_schema.MSG_HEADER,
+            include_overlay="items" not in inputs.sources,
+        ))
+    if inputs is not None:
+        schema = inputs.resolve(table)
+        return len(schema.load_records(inputs.source(schema)))
     return _load_table_record_count(table)
 
 
@@ -412,7 +421,7 @@ def active_caps(env=None):
     return caps
 
 
-def active_manifest_rows(env=None):
+def active_manifest_rows(env=None, inputs=None):
     """Registry view for THIS build: committed manifest count vs actual load.
 
     reports/generated_data_manifest.md deliberately stays at the committed
@@ -423,22 +432,29 @@ def active_manifest_rows(env=None):
     """
     from .schema import REGISTRY
     from . import registry  # noqa: F401  (import registers table schemas)
+    inputs = inputs or SchemaInputs()
     rows = []
     for name in REGISTRY.all_names():
-        schema = REGISTRY.resolve(name)
+        schema = inputs.resolve(name)
         if name == "items":
             from .items import schema as items_schema
             records = items_schema.load_records(
-                schema.default_source, item_cap=resolve_item_id_cap(env),
-                overlay_source=items_schema.ITEMS_EXPANSION_SOURCE)
+                inputs.source(schema), item_cap=resolve_item_id_cap(env),
+                overlay_source=items_schema.ITEMS_EXPANSION_SOURCE,
+                msg_header=inputs.message_header or items_schema.MSG_HEADER,
+                include_overlay=name not in inputs.sources)
         elif name == "autoplaystrategies":
             records = schema.configure_records(
-                schema.load_records(schema.default_source),
+                schema.load_records(inputs.source(schema)),
                 reference_profiles=resolve_autoplay_strategies(env),
             )
         else:
-            records = schema.load_records(schema.default_source)
+            records = schema.load_records(inputs.source(schema))
         committed = schema.manifest_record_count(records)
+        if name in inputs.sources:
+            original = REGISTRY.resolve(name)
+            committed = original.manifest_record_count(
+                original.load_records(original.default_source))
         active = schema.active_manifest_record_count(records)
         rows.append({
             "table": name,
@@ -450,7 +466,7 @@ def active_manifest_rows(env=None):
     return rows
 
 
-def _active_domain_entries(env=None):
+def _active_domain_entries(env=None, inputs=None):
     """Per-domain ACTIVE cap/count model for THIS build -- census-free.
 
     Deliberately excludes the consumer census (the ~15 MB source walk): this
@@ -464,7 +480,7 @@ def _active_domain_entries(env=None):
     counts = {}
     for domain in DOMAINS:
         default_count = default_record_count(domain.key)
-        count = active_record_count(domain.key, env)
+        count = active_record_count(domain.key, env, inputs)
         counts[domain.key] = count
         entry = {
             "key": domain.key,
@@ -493,9 +509,9 @@ def _active_domain_entries(env=None):
     return domains, caps, counts
 
 
-def active_contract(env=None):
+def active_contract(env=None, inputs=None):
     """Full machine model of the ACTIVE (this build) cap/count contract."""
-    domains, caps, counts = _active_domain_entries(env)
+    domains, caps, counts = _active_domain_entries(env, inputs)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "contract": "active",
@@ -506,7 +522,7 @@ def active_contract(env=None):
         "item_cap_env": ITEM_CAP_ENV,
         "item_cap_env_value": (env if env is not None else os.environ).get(ITEM_CAP_ENV) or None,
         "domains": domains,
-        "manifest": active_manifest_rows(env),
+        "manifest": active_manifest_rows(env, inputs),
         "census": consumer_census.scan_scope(),
         "census_digest": consumer_census.census_digest(),
         "consumers": consumer_rows(caps=caps, counts=counts),
@@ -739,15 +755,15 @@ def render_audit_markdown():
     return "".join(lines)
 
 
-def render_active_json(env=None):
+def render_active_json(env=None, inputs=None):
     """Machine-readable ACTIVE audit for this configured build."""
-    payload = active_contract(env)
+    payload = active_contract(env, inputs)
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
-def render_active_markdown(env=None):
+def render_active_markdown(env=None, inputs=None):
     """Human ACTIVE audit -- same consumer rows, active cap/record counts."""
-    payload = active_contract(env)
+    payload = active_contract(env, inputs)
     lines = []
     lines.append("# Extensible ID space audit -- ACTIVE contract (Issue #10)\n\n")
     lines.append("_Auto-generated (build-local, never committed) by "
@@ -793,9 +809,9 @@ def render_active_markdown(env=None):
     return "".join(lines)
 
 
-def render_active_header(env=None):
+def render_active_header(env=None, inputs=None):
     """C89/agbcc-safe ACTIVE contract header consumed by the generated table."""
-    payload = active_contract(env)
+    payload = active_contract(env, inputs)
     out = []
     out.append("/* AUTO-GENERATED by scripts/generated_data/idspace.py -- DO NOT EDIT BY HAND.\n")
     out.append(" * Build-local ACTIVE id-space contract for THIS configured build.\n")
@@ -931,13 +947,13 @@ def _outputs():
     ]
 
 
-def _active_outputs(out_dir=None, env=None):
+def _active_outputs(out_dir=None, env=None, inputs=None):
     """The three build-local ACTIVE surfaces (machine, human, C header)."""
     out_dir = out_dir or ACTIVE_OUT_DIR
     return [
-        (os.path.join(out_dir, ACTIVE_HEADER_NAME), render_active_header(env)),
-        (os.path.join(out_dir, ACTIVE_JSON_NAME), render_active_json(env)),
-        (os.path.join(out_dir, ACTIVE_MD_NAME), render_active_markdown(env)),
+        (os.path.join(out_dir, ACTIVE_HEADER_NAME), render_active_header(env, inputs)),
+        (os.path.join(out_dir, ACTIVE_JSON_NAME), render_active_json(env, inputs)),
+        (os.path.join(out_dir, ACTIVE_MD_NAME), render_active_markdown(env, inputs)),
     ]
 
 
@@ -950,7 +966,7 @@ def cmd_generate(_args):
     return 0
 
 
-def _write_active_surfaces(out_dir, env=None):
+def _write_active_surfaces(out_dir, env=None, inputs=None):
     """Render (census included) + write-if-changed the three ACTIVE surfaces.
 
     Shared by `active-generate` and by the `active-heal` regen leg, so both
@@ -959,9 +975,9 @@ def _write_active_surfaces(out_dir, env=None):
     table loaders raise) instead of swallowing it.
     """
     validate_all_configured_caps()
-    payload = active_contract(env)
+    payload = active_contract(env, inputs)
     validate_active_contract(payload)
-    for path, content in _active_outputs(out_dir, env):
+    for path, content in _active_outputs(out_dir, env, inputs):
         changed = write_if_changed(path, content)
         rel = os.path.relpath(path, REPO_ROOT)
         print("{} {}".format("wrote" if changed else "up-to-date", rel))
@@ -975,7 +991,8 @@ def _write_active_surfaces(out_dir, env=None):
 
 def cmd_active_generate(args):
     """Write the build-local ACTIVE surfaces (never a committed file)."""
-    _write_active_surfaces(getattr(args, "out_dir", None))
+    _write_active_surfaces(
+        getattr(args, "out_dir", None), inputs=getattr(args, "inputs", None))
     return 0
 
 
@@ -1009,14 +1026,14 @@ def _parse_active_header_defines(text):
     return out
 
 
-def _expected_active_summary(env=None):
+def _expected_active_summary(env=None, inputs=None):
     """Cheap ({key: entry}, item_entry) census-free expectation for THIS build."""
-    domains, _caps, _counts = _active_domain_entries(env)
+    domains, _caps, _counts = _active_domain_entries(env, inputs)
     by_key = {d["key"]: d for d in domains}
     return by_key, by_key["item"]
 
 
-def active_heal_reasons(out_dir=None, env=None):
+def active_heal_reasons(out_dir=None, env=None, inputs=None):
     """Reasons the on-disk ACTIVE surfaces are stale for THIS resolved build.
 
     Returns an empty list when every surface already matches the census-free
@@ -1026,7 +1043,7 @@ def active_heal_reasons(out_dir=None, env=None):
     failure loading a record table) propagate loudly to the caller.
     """
     out_dir = out_dir or ACTIVE_OUT_DIR
-    expected, _item = _expected_active_summary(env)
+    expected, _item = _expected_active_summary(env, inputs)
     reasons = []
 
     header_path = os.path.join(out_dir, ACTIVE_HEADER_NAME)
@@ -1123,9 +1140,10 @@ def cmd_active_heal(args):
     swallowed: they raise straight out (no exit-1 mask, no `|| true`).
     """
     out_dir = getattr(args, "out_dir", None)
-    reasons = active_heal_reasons(out_dir)
+    inputs = getattr(args, "inputs", None)
+    reasons = active_heal_reasons(out_dir, inputs=inputs)
     if not reasons:
-        _by_key, item = _expected_active_summary()
+        _by_key, item = _expected_active_summary(inputs=inputs)
         print("active id-space contract current (cheap probe, no regen); "
               "item cap 0x{:02X}, {} record(s)".format(
                   item["active_configured_cap"], item["active_record_count"]))
@@ -1134,7 +1152,7 @@ def cmd_active_heal(args):
         len(reasons)))
     for reason in reasons:
         print("  - {}".format(reason))
-    _write_active_surfaces(out_dir)
+    _write_active_surfaces(out_dir, inputs=inputs)
     return 0
 
 
@@ -1147,10 +1165,11 @@ def cmd_active_check(args):
     re-reads them to prove what is on disk is exactly what the model renders.
     """
     validate_all_configured_caps()
-    payload = active_contract()
+    inputs = getattr(args, "inputs", None)
+    payload = active_contract(inputs=inputs)
     validate_active_contract(payload)
     out_dir = getattr(args, "out_dir", None)
-    outputs = _active_outputs(out_dir)
+    outputs = _active_outputs(out_dir, inputs=inputs)
     for path, content in outputs:
         write_if_changed(path, content)
     stale = []
@@ -1192,6 +1211,9 @@ def cmd_check(_args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python3 -m scripts.generated_data.idspace")
+    parser.add_argument("--source-override", action="append", default=[], metavar="TABLE=PATH")
+    parser.add_argument("--message-header")
+    parser.add_argument("--asset-manifest")
     sub = parser.add_subparsers(dest="command")
     gen = sub.add_parser("generate", help="write the committed C header + audit files")
     gen.set_defaults(func=cmd_generate)
@@ -1218,8 +1240,13 @@ def main(argv=None):
         parser.print_help()
         return 2
     try:
+        args.inputs = SchemaInputs(
+            parse_source_overrides(args.source_override), args.message_header,
+            asset_manifest=args.asset_manifest)
+        if (args.inputs.sources or args.message_header or args.asset_manifest) and args.command in ("generate", "check"):
+            raise CapError("selected inputs are supported only by the build-local ACTIVE commands")
         return args.func(args)
-    except CapError as exc:
+    except (CapError, GeneratedDataError) as exc:
         print("id-space cap error: {}".format(exc), file=sys.stderr)
         return 1
 

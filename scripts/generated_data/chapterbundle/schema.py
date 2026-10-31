@@ -643,7 +643,7 @@ def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
 def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CHAPTER_SETTINGS_JSON,
                                 asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
                                 asset_manifest_path=ASSET_MANIFEST_PATH,
-                                map_layout_dir=MAP_LAYOUT_DIR):
+                                map_layout_dir=MAP_LAYOUT_DIR, require_manifest=False):
     """Resolve one chapter's authored map width/height from its runtime map asset."""
     row = read_chapter_settings_row(chapter_settings_index, chapter_settings_path)
     if row is None or "map" not in row or "mainLayerId" not in row["map"]:
@@ -687,8 +687,15 @@ def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CH
                         )
                     )
                 return source_width, source_height
-    except OSError:
-        pass
+    except OSError as error:
+        if require_manifest:
+            raise GeneratedDataError(
+                "selected asset manifest '{}' is unavailable: {}".format(asset_manifest_path, error)
+            ) from error
+    except json.JSONDecodeError as error:
+        raise GeneratedDataError(
+            "could not parse asset manifest '{}': {}".format(asset_manifest_path, error)
+        ) from error
     layout_path = os.path.join(map_layout_dir, "{}.json".format(map_symbol))
     try:
         with open(layout_path, "r", encoding="utf-8") as handle:
@@ -1271,6 +1278,40 @@ class ChapterBundleTableSchema(TableSchema):
 
     def validate(self, records, diagnostics, dependency_records=None):
         validate(records, diagnostics, dependency_records)
+
+    def validate_source_bindings(self, records, diagnostics, inputs):
+        for record in records:
+            bindings = [
+                (table.name, table.source, table.source_loc) for table in record.tables
+            ]
+            bindings.append((
+                "supports", record.support_owners.source, record.support_owners.source_loc))
+            for name, reference in (
+                ("chapterobjectives", record.chapter_objectives),
+                ("autoplaystrategies", record.autoplay_strategies),
+            ):
+                if reference is not None:
+                    bindings.append((name, reference.source, reference.source_loc))
+            for name, source, location in bindings:
+                if name not in inputs.sources:
+                    continue
+                dependency = inputs.resolve(name)
+                selected = {
+                    _source_path(path, record.repository_root)
+                    for path in dependency.source_paths(inputs.sources[name])
+                }
+                declared = {
+                    _source_path(path, record.repository_root)
+                    for path in dependency.source_paths(
+                        _source_path(source, record.repository_root))
+                }
+                if not declared.issubset(selected):
+                    diagnostics.add(_err(
+                        "selected '{}' provider conflicts with bundle '{}' source '{}'; "
+                        "select matching table and bundle sources".format(
+                            name, record.chapter.id, source),
+                        location, "bundles[chapter={}].sources.{}".format(record.chapter.id, name),
+                    ))
 
     def build_inventory(self, records):
         from . import inventory as chapterbundle_inventory

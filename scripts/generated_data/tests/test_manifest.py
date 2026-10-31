@@ -6,7 +6,8 @@ from unittest import mock
 
 from scripts.generated_data import manifest as m
 from scripts.generated_data import registry  # noqa: F401  (registers schemas)
-from scripts.generated_data.schema import REGISTRY, TableSchema
+from scripts.generated_data.schema import REGISTRY, SchemaInputs, TableSchema
+from scripts.generated_data.tests._util import fixture_path
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -15,6 +16,20 @@ COMMITTED_MANIFEST = os.path.join(REPO_ROOT, "reports", "generated_data_manifest
 
 
 class CollectEntriesTests(unittest.TestCase):
+    def test_shared_source_context_preserves_selected_counts_and_explicit_precedence(self):
+        selected = fixture_path("supports", "valid.json")
+        inputs = SchemaInputs({"supports": selected})
+        rows = {entry.name: entry for entry in m.collect_entries(inputs=inputs)}
+        self.assertEqual(rows["supports"].record_count, 3)
+        legacy = {entry.name: entry for entry in m.collect_entries({"supports": selected})}
+        self.assertEqual(legacy["supports"].record_count, 3)
+        stock = REGISTRY.resolve("supports").default_source
+        explicit = {entry.name: entry for entry in m.collect_entries(
+            {"supports": stock}, inputs=inputs)}
+        self.assertEqual(explicit["supports"].record_count, 33)
+        default = {entry.name: entry for entry in m.collect_entries()}
+        self.assertEqual(default["supports"].record_count, 33)
+
     def test_count_support_selection_is_metadata_only(self):
         from scripts.generated_data.items.schema import ITEMS_HEADER, ItemsTableSchema
 

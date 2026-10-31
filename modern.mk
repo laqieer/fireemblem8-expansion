@@ -299,8 +299,31 @@ MODERN_CFLAGS := \
 # explicit, per-step cap define (or none) on top of this instead.
 MODERN_CFLAGS_NOCAP := $(filter-out -DFE8_ITEM_ID_CAP=%,$(MODERN_CFLAGS))
 
-MODERN_BUILD_ROOT := build/expansion-modern
-MODERN_OUTPUT_DIR := $(MODERN_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+MODERN_BUILD_ROOT ?= $(if $(filter-out default,$(FE8_PROJECT)),build,build/expansion-modern)
+fe8_project_build_root ?= $(1)
+fe8_project_output_dir ?= $(1)/$(2)/$(3)
+fe8_project_aux_root ?= $(2)
+fe8_project_aux_output_dir ?= $(1)
+MODERN_SELECTED_BUILD_ROOT := $(call fe8_project_build_root,$(MODERN_BUILD_ROOT))
+MODERN_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_BUILD_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
+
+ifneq ($(filter game-text,$(FE8_PROJECT_REPLACE)),)
+MODERN_PROJECT_TEXT_DIR := $(MODERN_OUTPUT_DIR)/generated/text
+MODERN_PROJECT_TEXT_C := $(MODERN_PROJECT_TEXT_DIR)/msg_data.c
+MODERN_PROJECT_MSG_HEADER := $(MODERN_PROJECT_TEXT_DIR)/include/constants/msg.h
+MODERN_CFLAGS += -I$(MODERN_PROJECT_TEXT_DIR)/include -include $(MODERN_PROJECT_MSG_HEADER)
+
+# The content-stable writer follows actual includes without a second scanner.
+.PHONY: FORCE_MODERN_PROJECT_TEXT
+FORCE_MODERN_PROJECT_TEXT:
+
+$(MODERN_PROJECT_TEXT_C) $(MODERN_PROJECT_MSG_HEADER) &: FORCE_MODERN_PROJECT_TEXT \
+	$(FE8_PROJECT_TEXT_MAIN) $(FE8_PROJECT_TEXT_DEFS) \
+	$(FE8_PROJECT_DECLARATION) scripts/texttools/textprocess.py scripts/texttools/huffman.py
+	@mkdir -p "$(MODERN_PROJECT_TEXT_DIR)/include/constants"
+	$(PYTHON) scripts/texttools/textprocess.py "$(FE8_PROJECT_TEXT_MAIN)" \
+		"$(FE8_PROJECT_TEXT_DEFS)" "$(MODERN_PROJECT_TEXT_C)" "$(MODERN_PROJECT_MSG_HEADER)" utf8
+endif
 
 MODERN_COHORT_SOURCES ?= \
 	src/fe3_dummy.c \
@@ -379,6 +402,12 @@ endif
 
 MODERN_ALL_DATA_C_SOURCES ?= $(wildcard src/data/*.c src/data/mapanim/*.c src/data/menu/*.c src/data/ending/*.c src/data/worldmap/*.c src/data/ui/*.c)
 
+ifneq ($(filter-out $(MODERN_ALL_C_SOURCES) $(MODERN_ALL_DATA_C_SOURCES),$(FE8_PROJECT_C_SLOTS)),)
+$(error project replacement has no ordinary C object slot: $(filter-out $(MODERN_ALL_C_SOURCES) $(MODERN_ALL_DATA_C_SOURCES),$(FE8_PROJECT_C_SLOTS)))
+endif
+MODERN_ALL_C_SOURCES += $(FE8_PROJECT_C_SOURCES)
+modern_c_source = $(if $(and $(filter src/msg_data.c,$(1)),$(MODERN_PROJECT_TEXT_C)),$(MODERN_PROJECT_TEXT_C),$(or $(call fe8_project_c_source,$(1)),$(1)))
+
 # A separate default list from MODERN_COHORT_ASM_SOURCES (not derived from
 # it), so a caller overriding one does not silently blank out the other.
 MODERN_ALL_ASM_SOURCES ?= \
@@ -453,9 +482,9 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 # localization output, instead of silently leaving it behind under a
 # sibling path clean never touched.
 MODERN_LOCALIZATION_CLI := scripts/localization/cli.py
-MODERN_LOCALIZATION_REGISTRY := texts/expansion/registry.json
+MODERN_LOCALIZATION_REGISTRY := $(or $(FE8_PROJECT_UI_REGISTRY),texts/expansion/registry.json)
 MODERN_LOCALIZATION_AVAILABLE := $(and $(wildcard $(MODERN_LOCALIZATION_CLI)),$(wildcard $(MODERN_LOCALIZATION_REGISTRY)))
-MODERN_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG)
+MODERN_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/expansion-localization,$(MODERN_BUILD_ROOT)/expansion-localization/$(MODERN_CONFIG))
 MODERN_LOCALIZATION_GENERATED_DIR := $(MODERN_LOCALIZATION_ROOT)/generated
 MODERN_LOCALIZATION_CATALOG_C := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_locale_catalog.c
 MODERN_LOCALIZATION_MSG_IDS_H := $(MODERN_LOCALIZATION_GENERATED_DIR)/expansion_msg_ids.h
@@ -465,7 +494,7 @@ MODERN_LOCALIZATION_EMISSION_PROFILE := $(if $(filter debug,$(MODERN_CONFIG)),de
 # files written before catalog payloads became profile-specific. New objects
 # depend on MODERN_LOCALIZATION_MSG_IDS_H above; the stable-ID header here is
 # safe because it never filters debug-only IDs.
-MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(MODERN_BUILD_ROOT)/expansion-localization/generated
+MODERN_LOCALIZATION_LEGACY_GENERATED_DIR := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/expansion-localization/compat,$(MODERN_BUILD_ROOT)/expansion-localization/generated)
 MODERN_LOCALIZATION_LEGACY_MSG_IDS_H := $(MODERN_LOCALIZATION_LEGACY_GENERATED_DIR)/expansion_msg_ids.h
 
 # --- Full-game CJK catalog (issue #18 game-catalog slice) -------------------
@@ -523,7 +552,7 @@ MODERN_GAME_LOCALIZATION_AVAILABLE := $(and \
 	$(wildcard texts/locales/fixed_width_display_aliases.json),\
 	$(wildcard texts/locales/mapping/fe8u_target_map.json),\
 	$(wildcard texts/locales/mapping/fe8eu_to_fe8u.json))
-MODERN_GAME_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/game-localization
+MODERN_GAME_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/game-localization,$(MODERN_BUILD_ROOT)/game-localization)
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated
 MODERN_GAME_LOCALIZATION_CONFIG_H := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/localized_game_text_data.h
 MODERN_GAME_LOCALIZATION_HEADER := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_catalog.h
@@ -799,6 +828,36 @@ MODERN_ALL_DATA_ASSET_DEPS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DAT
 # (there is no .pre.c stage for these sources).
 MODERN_ALL_C_HEADER_DEPS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.headers.d))
 
+MODERN_PROJECT_DATA_TARGETS := \
+	$(GENERATED_DATA_LINKED_C) $(GENERATED_DATA_CH2_UNITS_C) $(GENERATED_DATA_CH2_TRAPS_C) \
+	$(GENERATED_DATA_CH2_SHOPS_C) $(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP) \
+	$(GENERATED_DATA_TERRAINSTATS_C) $(GENERATED_DATA_MOVECOST_C) \
+	$(GENERATED_DATA_WEAPONTRIANGLE_C) $(GENERATED_DATA_CHAPTEROBJECTIVES_C) \
+	$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C) $(GENERATED_DATA_ITEM_CAP_STAMP) \
+	$(GENERATED_DATA_ACTIVE_OUTPUTS) $(GENERATED_DATA_CONTENT_TEXT_HEADER) \
+	$(MODERN_UI_PRESENTATION_MANIFEST_C)
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+$(MODERN_ALL_OBJECTS) $(MODERN_COHORT_C_OBJECTS) $(MODERN_ALL_DATA_PRE) \
+$(MODERN_ALL_C_HEADER_DEPS) $(MODERN_ALL_DATA_ASSET_DEPS) \
+$(MODERN_PROJECT_DATA_TARGETS): $(FE8_PROJECT_DECLARATION)
+$(MODERN_PROJECT_DATA_TARGETS): $(FE8_PROJECT_DATA_INPUTS) $(FE8_PROJECT_UI_INPUTS)
+endif
+
+ifneq ($(strip $(MODERN_PROJECT_MSG_HEADER)),)
+$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS) $(MODERN_COHORT_C_OBJECTS) \
+$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_PROJECT_MSG_HEADER)
+$(MODERN_PROJECT_DATA_TARGETS): $(MODERN_PROJECT_MSG_HEADER)
+generated-data-validate generated-data-generate generated-data-manifest \
+generated-data-manifest-check generated-data-idspace-active \
+generated-data-idspace-active-check: $(MODERN_PROJECT_MSG_HEADER)
+ifeq ($(EXPANSION_STARTER_CONTENT),1)
+generated-data-content-text: $(MODERN_PROJECT_MSG_HEADER)
+endif
+game-localization-validate game-localization-generate game-localization-budget \
+game-localization-width-check game-localization-leakage-audit \
+game-localization-leakage-check: $(MODERN_PROJECT_MSG_HEADER)
+endif
+
 # Only these goals ever touch the full data/normal C source lists;
 # expansion-modern-cohort, expansion-modern-toolchain-check, and
 # expansion-modern-clean must stay untouched by (and not pay the cost of)
@@ -834,7 +893,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-shifted-check \
 	expansion-modern-linker-check
 
-CLEAN_DIRS += $(MODERN_BUILD_ROOT)
+CLEAN_DIRS += $(MODERN_SELECTED_BUILD_ROOT)
 
 .PHONY: $(MODERN_GOALS)
 
@@ -910,7 +969,8 @@ expansion-modern-all: expansion-modern-toolchain-check \
 
 $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 
-$(MODERN_OUTPUT_DIR)/%.o: %.c
+.SECONDEXPANSION:
+$(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -919,11 +979,11 @@ $(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o: $(MODERN_UI_PRESE
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
-$(MODERN_UI_PRESENTATION_MANIFEST_C): src/data/ui_presentation.json \
+$(MODERN_UI_PRESENTATION_MANIFEST_C): $(or $(call generated_data_source,ui_presentation,src/data/ui_presentation.json),src/data/ui_presentation.json) \
 	scripts/generated_data/ui_presentation/schema.py \
 	scripts/generated_data/registry.py \
 	texts/expansion/registry.json $(wildcard texts/expansion/catalog.*.json)
-	$(PYTHON) -m scripts.generated_data generate --table ui_presentation --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(or $(GENERATED_DATA_CLI),$(PYTHON) -m scripts.generated_data) generate --table ui_presentation --out-dir $(GENERATED_DATA_OUT_DIR)
 endif
 
 ifneq ($(strip $(MODERN_BGM_REGISTRY_AVAILABLE)),)
@@ -932,8 +992,8 @@ $(MODERN_BGM_REGISTRY_C): $(MODERN_BGM_REGISTRY_JSON) \
 	include/constants/songs.h include/id_space.h src/eventinfo.c
 	$(PYTHON) $(MODERN_BGM_REGISTRY_SCRIPT) generate
 
-$(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(MODERN_BGM_REGISTRY_C) \
-	expansion-modern-bgm-registry-check
+$(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(call modern_c_source,$(MODERN_BGM_REGISTRY_C)) \
+	$(if $(filter $(MODERN_BGM_REGISTRY_C),$(call modern_c_source,$(MODERN_BGM_REGISTRY_C))),expansion-modern-bgm-registry-check)
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
@@ -1054,24 +1114,26 @@ expansion-modern-autoplay-strategies-objects: \
 	@printf 'Modern autoplay strategy objects built (config=%s abi=%s profiles=%s)\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_STRATEGIES)'
 
-MODERN_AUTOPLAY_PLANNER_ROOT := build/expansion-modern-autoplay-planner
-MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT := build/expansion-modern-autoplay-planner-disabled
+MODERN_AUTOPLAY_PLANNER_ROOT := $(call fe8_project_aux_root,autoplay-planner,build/expansion-modern-autoplay-planner)
+MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT := $(call fe8_project_aux_root,autoplay-planner-disabled,build/expansion-modern-autoplay-planner-disabled)
+MODERN_AUTOPLAY_PLANNER_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_AUTOPLAY_PLANNER_ROOT),debug,aapcs)
+MODERN_AUTOPLAY_PLANNER_DISABLED_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT),debug,aapcs)
 MODERN_AUTOPLAY_PLANNER_ROM := \
-	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.gba
+	$(MODERN_AUTOPLAY_PLANNER_OUTPUT_DIR)/fireemblem8.gba
 MODERN_AUTOPLAY_PLANNER_ELF := \
-	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.elf
+	$(MODERN_AUTOPLAY_PLANNER_OUTPUT_DIR)/fireemblem8.elf
 MODERN_AUTOPLAY_PLANNER_MAP := \
-	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/fireemblem8.map
+	$(MODERN_AUTOPLAY_PLANNER_OUTPUT_DIR)/fireemblem8.map
 MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET := \
-	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/linker-budget.json
+	$(MODERN_AUTOPLAY_PLANNER_OUTPUT_DIR)/linker-budget.json
 MODERN_AUTOPLAY_PLANNER_DISABLED_ELF := \
-	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/fireemblem8.elf
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_OUTPUT_DIR)/fireemblem8.elf
 MODERN_AUTOPLAY_PLANNER_DISABLED_MAP := \
-	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/fireemblem8.map
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_OUTPUT_DIR)/fireemblem8.map
 MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET := \
-	$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)/debug/aapcs/linker-budget.json
+	$(MODERN_AUTOPLAY_PLANNER_DISABLED_OUTPUT_DIR)/linker-budget.json
 MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET := \
-	$(MODERN_AUTOPLAY_PLANNER_ROOT)/debug/aapcs/planner-linked-budget.json
+	$(MODERN_AUTOPLAY_PLANNER_OUTPUT_DIR)/planner-linked-budget.json
 CLEAN_DIRS += $(MODERN_AUTOPLAY_PLANNER_ROOT) $(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT)
 
 .PHONY: expansion-modern-autoplay-planner-objects \
@@ -1203,7 +1265,7 @@ $(MODERN_OUTPUT_DIR)/%.o: %.s
 # top-level Makefile's own generation rules (e.g. %.4bpp: %.png) before
 # preproc is ever invoked, on the very first invocation -- rather than
 # preproc failing hard on the first unresolved INCBIN it hits.
-$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: %.c $(MODERN_PREPROC)
+$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $(MODERN_PREPROC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_PREPROC)" ]; then \
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
@@ -1392,7 +1454,7 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 	' _
   FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
 endif
-$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCANINC)
+$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $(MODERN_SCANINC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_SCANINC)" ]; then \
 		printf '%s\n' "error: modern scaninc not found or not executable: $(MODERN_SCANINC)" >&2; \
@@ -1455,8 +1517,12 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCA
 	} > "$@.tmp"
 	@mv -f "$@.tmp" "$@"
 
+# Included makefiles are otherwise remade even under GNU Make's -n.
+MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
 ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
+ifeq ($(MODERN_DRY_RUN),)
 include $(MODERN_ALL_DATA_ASSET_DEPS)
+endif
 endif
 
 # Generated-header bootstrap for ordinary (non-data) C sources: see the
@@ -1544,7 +1610,7 @@ MODERN_GENERATED_HEADER_BASENAME_RE := $(subst .,\.,$(MODERN_LOCALIZATION_MSG_ID
 # invocations that *is* command-line identical on GNU and BSD/macOS sed
 # (both accept `-E` for extended regexes), so no $(SED)/uname branch is
 # needed here at all. No backup file is ever created either way.
-$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c
+$(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
 	@"$(MODERN_CC)" $(MODERN_CFLAGS) -MM -MG -MT "$(MODERN_OUTPUT_DIR)/$*.o" "$<" > "$@.tmp" || { \
 		rm -f "$@.tmp"; \
@@ -1559,12 +1625,14 @@ $(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c
 	@rm -f "$@.tmp"
 	@mv -f "$@.tmp2" "$@"
 
+ifeq ($(MODERN_DRY_RUN),)
 ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
 include $(MODERN_ALL_C_HEADER_DEPS)
 endif
+endif
 
 expansion-modern-clean:
-	$(RM) -r "$(MODERN_BUILD_ROOT)"
+	$(RM) -r "$(MODERN_SELECTED_BUILD_ROOT)"
 
 # ---------------------------------------------------------------------------
 # Transitional modern ELF target (issue #3)
@@ -1748,6 +1816,8 @@ $(MODERN_BUILD_METADATA_JSON): FORCE_MODERN_BUILD_METADATA
 	@mkdir -p "$(MODERN_GENERATED_DIR)"
 ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 	@$(MODERN_EXPANSION_CONFIG_RUNNER) generate \
+		--project "$(or $(FE8_PROJECT),default)" \
+		--project-profile "$(or $(FE8_PROJECT_PROFILE),default)" \
 		--config-mk config.mk \
 		--config "$(MODERN_CONFIG)" \
 		--abi "$(MODERN_ABI)" \
@@ -1797,6 +1867,7 @@ endif
 # has to keep working precisely so a bad config's build tree can be
 # recovered from without hand-deleting it.
 MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOALS))
+MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out clean clean_fast clean_tools distclean expansion-modern-clean assets-clean,$(MAKECMDGOALS)),default))
 
 # Whether this invocation's MODERN_CFLAGS actually receives the
 # FE8_EXPANSION_* -D defines below (both gates below hold). Used again
@@ -1805,7 +1876,8 @@ MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOAL
 # include/expansion_config.h -- a single source of truth with the defines
 # it is stamping, instead of re-deriving the same two gates a second time.
 MODERN_EXPANSION_DEFINES_ACTIVE :=
-ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
+# Selected standalone producers share the compiled configuration's validation.
+ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT_CONFIG_REQUESTED))
  ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
   MODERN_EXPANSION_DEFINES_ACTIVE := 1
   # Every version/ROM-identity value is passed explicitly here as the
@@ -1818,6 +1890,8 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   # from config.mk alone (which would silently ignore a command-line
   # override and desync the compiled ROM from the generated metadata).
   MODERN_EXPANSION_CONFIG_RESOLVE := $(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve \
+	--project "$(or $(FE8_PROJECT),default)" \
+	--project-profile "$(or $(FE8_PROJECT_PROFILE),default)" \
 	--config-mk config.mk \
 	--config "$(MODERN_CONFIG)" \
 	--abi "$(MODERN_ABI)" \
@@ -1960,38 +2034,38 @@ expansion-modern-game-localization-config-check: $(MODERN_BUILD_METADATA_JSON)
 # build/compare profiles without cleaning or cross-contaminating generated
 # catalogs, metadata, fonts, or objects. MODERN_CONFIG remains caller-selectable
 # (debug by default); all profiles keep English as the mandatory fallback.
-MODERN_LOCALE_PROFILE_EN_JA_ROOT := $(MODERN_BUILD_ROOT)-locale-en-ja
-MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT := $(MODERN_BUILD_ROOT)-locale-en-zh-hans
-MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT := $(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans
+MODERN_LOCALE_PROFILE_EN_JA_ROOT := $(call fe8_project_aux_root,locale-en-ja,$(MODERN_BUILD_ROOT)-locale-en-ja)
+MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT := $(call fe8_project_aux_root,locale-en-zh-hans,$(MODERN_BUILD_ROOT)-locale-en-zh-hans)
+MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT := $(call fe8_project_aux_root,locale-en-ja-zh-hans,$(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans)
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT := \
-	$(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans-qps
-MODERN_LOCALE_PROFILE_EN_EU_ROOT := $(MODERN_BUILD_ROOT)-locale-en-fr-de-es-it
-MODERN_LOCALE_PROFILE_ALL_ROOT := $(MODERN_BUILD_ROOT)-locale-all
+	$(call fe8_project_aux_root,locale-en-ja-zh-hans-qps,$(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans-qps)
+MODERN_LOCALE_PROFILE_EN_EU_ROOT := $(call fe8_project_aux_root,locale-en-fr-de-es-it,$(MODERN_BUILD_ROOT)-locale-en-fr-de-es-it)
+MODERN_LOCALE_PROFILE_ALL_ROOT := $(call fe8_project_aux_root,locale-all,$(MODERN_BUILD_ROOT)-locale-all)
 MODERN_LOCALE_PROFILE_EN_JA_OUTPUT_DIR := \
-	$(MODERN_LOCALE_PROFILE_EN_JA_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_LOCALE_PROFILE_EN_JA_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_LOCALE_PROFILE_EN_ZH_HANS_OUTPUT_DIR := \
-	$(MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_OUTPUT_DIR := \
-	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_OUTPUT_DIR := \
-	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_LOCALE_PROFILE_EN_EU_OUTPUT_DIR := \
-	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_LOCALE_PROFILE_EN_EU_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_LOCALE_PROFILE_ALL_OUTPUT_DIR := \
-	$(MODERN_LOCALE_PROFILE_ALL_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_LOCALE_PROFILE_ALL_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 
 # Issue #49's production patch profile is intentionally a distinct root,
 # including generated data, so it cannot reuse or contaminate a default or
 # localization-only build. It is a named composition of existing validated
 # switches, not another user-configurable feature surface.
-MODERN_PATCH_RELEASE_ROOT := build/expansion-modern-all-locales-all-features
-MODERN_PATCH_RELEASE_GENERATED_DATA_DIR := $(MODERN_PATCH_RELEASE_ROOT)/generated-data
+MODERN_PATCH_RELEASE_ROOT := $(call fe8_project_aux_root,all-locales-all-features,build/expansion-modern-all-locales-all-features)
+MODERN_PATCH_RELEASE_GENERATED_DATA_DIR := $(if $(filter-out default,$(FE8_PROJECT)),$(call fe8_project_output_dir,$(MODERN_PATCH_RELEASE_ROOT),release,aapcs)/generated/data,$(MODERN_PATCH_RELEASE_ROOT)/generated-data)
 MODERN_PATCH_RELEASE_OUTPUT_DIR := \
-	$(MODERN_PATCH_RELEASE_ROOT)/release/aapcs
+	$(call fe8_project_output_dir,$(MODERN_PATCH_RELEASE_ROOT),release,aapcs)
 MODERN_PATCH_RELEASE_METADATA := \
 	$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/generated/expansion_build_metadata.json
 MODERN_PATCH_RELEASE_ROM := $(MODERN_PATCH_RELEASE_OUTPUT_DIR)/fireemblem8.gba
-MODERN_PATCH_RELEASE_ARTIFACT_DIR := $(MODERN_PATCH_RELEASE_ROOT)/patch-artifact
+MODERN_PATCH_RELEASE_ARTIFACT_DIR := $(call fe8_project_aux_output_dir,$(MODERN_PATCH_RELEASE_ROOT),release,aapcs)/patch-artifact
 MODERN_PATCH_RELEASE_BUDGET := $(MODERN_PATCH_RELEASE_OUTPUT_DIR)/linker-budget.json
 MODERN_PATCH_RELEASE_LOCALIZATION_BUDGET := \
 	$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/localization-budget.json
@@ -2000,7 +2074,7 @@ MODERN_PATCH_RELEASE_FLAGS := \
 	MODERN_ABI=aapcs \
 	MODERN_ROM_SIZE=32M \
 	MODERN_BUILD_ROOT=$(MODERN_PATCH_RELEASE_ROOT) \
-	GENERATED_DATA_OUT_DIR=$(MODERN_PATCH_RELEASE_GENERATED_DATA_DIR) \
+	$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_PATCH_RELEASE_GENERATED_DATA_DIR)) \
 	EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,fr,de,es,it \
 	EXPANSION_DEFAULT_LOCALE=en \
 	EXPANSION_PSEUDO_LOCALE=0 \
@@ -2065,11 +2139,11 @@ MODERN_MAP_MENU_PRESENTATION_SCRIPT := \
 	tools/gba-playtest/run_map_menu_presentation_checks.py
 MODERN_MAP_MENU_PRESENTATION_OUTDIR := \
 	$(MODERN_PATCH_RELEASE_OUTPUT_DIR)/map-menu-presentation-check
-MODERN_MAP_MENU_NINE_ROW_ROOT := build/expansion-modern-map-menu-nine-row
+MODERN_MAP_MENU_NINE_ROW_ROOT := $(call fe8_project_aux_root,map-menu-nine-row,build/expansion-modern-map-menu-nine-row)
 MODERN_MAP_MENU_NINE_ROW_GENERATED_DATA_DIR := \
-	$(MODERN_MAP_MENU_NINE_ROW_ROOT)/generated-data
+	$(if $(filter-out default,$(FE8_PROJECT)),$(call fe8_project_output_dir,$(MODERN_MAP_MENU_NINE_ROW_ROOT),debug,aapcs)/generated/data,$(MODERN_MAP_MENU_NINE_ROW_ROOT)/generated-data)
 MODERN_MAP_MENU_NINE_ROW_OUTPUT_DIR := \
-	$(MODERN_MAP_MENU_NINE_ROW_ROOT)/debug/aapcs
+	$(call fe8_project_output_dir,$(MODERN_MAP_MENU_NINE_ROW_ROOT),debug,aapcs)
 MODERN_MAP_MENU_NINE_ROW_ROM := \
 	$(MODERN_MAP_MENU_NINE_ROW_OUTPUT_DIR)/fireemblem8.gba
 MODERN_MAP_MENU_NINE_ROW_ELF := \
@@ -2084,7 +2158,7 @@ expansion-modern-map-menu-presentation-check: \
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT=$(MODERN_MAP_MENU_NINE_ROW_ROOT) \
-		GENERATED_DATA_OUT_DIR=$(MODERN_MAP_MENU_NINE_ROW_GENERATED_DATA_DIR) \
+		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_MAP_MENU_NINE_ROW_GENERATED_DATA_DIR)) \
 		EXPANSION_DANGER_OVERLAY_MENU=1 \
 		EXPANSION_BLUE_PHASE_DELEGATE=1 \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_MAP_MENU_GEOMETRY_RUNTIME_TEST=1
@@ -2329,9 +2403,10 @@ $(MODERN_OUTPUT_DIR)/src/m4a_1.o $(MODERN_OUTPUT_DIR)/src/m4a_hq_mixer.o: \
 .PHONY: FORCE_MODERN_LOCALIZATION
 FORCE_MODERN_LOCALIZATION:
 
-$(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION
+$(MODERN_LOCALIZATION_CATALOG_C) $(MODERN_LOCALIZATION_MSG_IDS_H) $(MODERN_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_LOCALIZATION $(FE8_PROJECT_UI_INPUTS) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_LOCALIZATION_GENERATED_DIR)"
 	@python3 -m scripts.localization.cli generate \
+		$(FE8_PROJECT_UI_ARGS) \
 		--out-dir "$(MODERN_LOCALIZATION_GENERATED_DIR)" \
 		--emission-profile "$(MODERN_LOCALIZATION_EMISSION_PROFILE)"
 
@@ -2394,9 +2469,11 @@ FORCE_MODERN_GAME_LOCALIZATION:
 
 $(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER) \
 $(MODERN_GAME_LOCALIZATION_C) $(MODERN_GAME_LOCALIZATION_REPORT_JSON) \
-$(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION
+$(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION \
+	$(FE8_PROJECT_GAME_INPUTS) $(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)"
 	@python3 -m scripts.localization.game_catalog generate \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 
@@ -2728,7 +2805,7 @@ expansion-modern-rom: expansion-modern-elf $(MODERN_ROM)
 	@printf 'Modern ROM ready: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
-MODERN_GDB_SMOKE_OUTPUT_DIR := $(MODERN_BUILD_ROOT)/debug/aapcs
+MODERN_GDB_SMOKE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_BUILD_ROOT),debug,aapcs)
 MODERN_GDB_SMOKE := scripts/modernize/gdb_smoke.py
 
 expansion-modern-gdb-smoke:
@@ -2738,7 +2815,7 @@ expansion-modern-gdb-smoke:
 		--elf "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.elf" \
 		--rom "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.gba"
 
-MODERN_BANIM_PRESENTATION_RUNTIME_ROOT := $(MODERN_BUILD_ROOT)-banim-presentation-runtime
+MODERN_BANIM_PRESENTATION_RUNTIME_ROOT := $(call fe8_project_aux_root,banim-presentation-runtime,$(MODERN_BUILD_ROOT)-banim-presentation-runtime)
 MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT := \
 	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/standard
 MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT := \
@@ -2746,7 +2823,7 @@ MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT := \
 MODERN_BANIM_PRESENTATION_RUNTIME_CHECK := \
 	tools/gba-playtest/run_banim_presentation_checks.py
 MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT := \
-	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/captures
+	$(call fe8_project_aux_output_dir,$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT),debug,aapcs)/captures
 
 .PHONY: expansion-modern-banim-presentation-check
 expansion-modern-banim-presentation-check: expansion-modern-boot-preflight
@@ -2759,10 +2836,10 @@ expansion-modern-banim-presentation-check: expansion-modern-boot-preflight
 		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)" \
 		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=3
 	"$(PYTHON)" "$(MODERN_BANIM_PRESENTATION_RUNTIME_CHECK)" \
-		--standard-rom "$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)/debug/aapcs/fireemblem8.gba" \
-		--standard-elf "$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)/debug/aapcs/fireemblem8.elf" \
-		--off-rom "$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)/debug/aapcs/fireemblem8.gba" \
-		--off-elf "$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)/debug/aapcs/fireemblem8.elf" \
+		--standard-rom "$(call fe8_project_output_dir,$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT),debug,aapcs)/fireemblem8.gba" \
+		--standard-elf "$(call fe8_project_output_dir,$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT),debug,aapcs)/fireemblem8.elf" \
+		--off-rom "$(call fe8_project_output_dir,$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT),debug,aapcs)/fireemblem8.gba" \
+		--off-elf "$(call fe8_project_output_dir,$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT),debug,aapcs)/fireemblem8.elf" \
 		--out-dir "$(MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT)"
 	@printf 'Modern ROM battle-presentation runtime check passed (real Ch4 hit, standard + off): %s\n' \
 		"$(MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT)"
@@ -2995,11 +3072,11 @@ MODERN_DEBUGTOOLS_DIAGNOSTICS_RUNNER := \
 MODERN_DEBUGTOOLS_DIAGNOSTICS_OUT := \
 	$(MODERN_OUTPUT_DIR)/debugtools-diagnostics-runtime
 MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT := \
-	build/expansion-modern-debugtools-diagnostics-runtime
+	$(call fe8_project_aux_root,debugtools-diagnostics-runtime,build/expansion-modern-debugtools-diagnostics-runtime)
 MODERN_DEBUGTOOLS_DIAGNOSTICS_ROM := \
-	$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT)/debug/aapcs/fireemblem8.gba
+	$(call fe8_project_output_dir,$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT),debug,aapcs)/fireemblem8.gba
 MODERN_DEBUGTOOLS_DIAGNOSTICS_ELF := \
-	$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT)/debug/aapcs/fireemblem8.elf
+	$(call fe8_project_output_dir,$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT),debug,aapcs)/fireemblem8.elf
 
 .PHONY: expansion-modern-debugtools-diagnostics-check
 ifeq ($(MODERN_CONFIG),debug)
@@ -3034,7 +3111,7 @@ expansion-modern-debugtools-diagnostics-check: expansion-modern-boot-preflight \
 endif
 
 MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
-	build/expansion-modern-portrait-package-runtime
+	$(call fe8_project_aux_root,portrait-package-runtime,build/expansion-modern-portrait-package-runtime)
 
 .PHONY: expansion-modern-portrait-package-runtime-check
 expansion-modern-portrait-package-runtime-check:
@@ -3042,7 +3119,7 @@ expansion-modern-portrait-package-runtime-check:
 		MODERN_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_INTERNAL_TEST_DEFINES="-DFE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1"
-	FE8_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
+	FE8_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT="$(call fe8_project_build_root,$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT))" \
 		PYTHONPATH="tools/gba-playtest:tools/gba-playtest/tests" "$(PYTHON)" -c \
 		'import unittest; from test_portrait_package_runtime import PortraitPackageRuntimeTests; unittest.main(defaultTest="PortraitPackageRuntimeTests.test_debug_unit_inspect_renders_eirika_minimug")'
 
@@ -3377,16 +3454,15 @@ expansion-modern-combat-check:
 endif
 
 .PHONY: expansion-modern-banim-package-runtime-check
+MODERN_BANIM_PACKAGE_RUNTIME_ROOT := $(call fe8_project_aux_root,banim-package-runtime,build/banim-package-runtime)
+MODERN_BANIM_PACKAGE_RUNTIME_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_BANIM_PACKAGE_RUNTIME_ROOT),debug,aapcs)
 expansion-modern-banim-package-runtime-check:
-	@set -eu; \
-	out="build/banim-package-runtime"; \
-	rm -rf "$$out"; \
-	$(MAKE) expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs \
-		MODERN_BUILD_ROOT="$$out" FE8_BANIM_PACKAGE_RUNTIME_TEST=1; \
+	+$(MAKE) expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT="$(MODERN_BANIM_PACKAGE_RUNTIME_ROOT)" FE8_BANIM_PACKAGE_RUNTIME_TEST=1
 	"$(PYTHON)" tools/gba-playtest/run_banim_package_runtime_check.py \
-		--rom "$$out/debug/aapcs/fireemblem8.gba" \
-		--elf "$$out/debug/aapcs/fireemblem8.elf" \
-		--out-dir "$$out"
+		--rom "$(MODERN_BANIM_PACKAGE_RUNTIME_OUTPUT_DIR)/fireemblem8.gba" \
+		--elf "$(MODERN_BANIM_PACKAGE_RUNTIME_OUTPUT_DIR)/fireemblem8.elf" \
+		--out-dir "$(call fe8_project_aux_output_dir,$(MODERN_BANIM_PACKAGE_RUNTIME_ROOT),debug,aapcs)"
 
 # Issue #6 starter-foundation runtime gate. The positive scenarios need a ROM
 # built with the starter features ON, so this gate builds ONE dedicated
@@ -3397,8 +3473,9 @@ expansion-modern-banim-package-runtime-check:
 # while each default-disabled negative control runs against the ordinary
 # MODERN_ROM: same route, opposite semantic probe outcomes. Reuses the issue
 # #13 gba-playtest harness (no new framework).
-MODERN_STARTER_PROFILE_ROOT := build/expansion-modern-starter
-MODERN_STARTER_PROFILE_ROM := $(MODERN_STARTER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_STARTER_PROFILE_ROOT := $(call fe8_project_aux_root,starter,build/expansion-modern-starter)
+MODERN_STARTER_PROFILE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_STARTER_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
+MODERN_STARTER_PROFILE_ROM := $(MODERN_STARTER_PROFILE_OUTPUT_DIR)/fireemblem8.gba
 
 # Mechanics-hook scenarios. The debug pair navigates Chapter 4 through the
 # debug-only Fast Boot launcher (issue #13's proven combat route), so it is
@@ -3430,7 +3507,7 @@ expansion-modern-starter-profile-rom:
 		EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1 \
 		EXPANSION_DANGER_OVERLAY_MENU=1
 
-MODERN_STARTER_PROFILE_ELF := $(MODERN_STARTER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_STARTER_PROFILE_ELF := $(MODERN_STARTER_PROFILE_OUTPUT_DIR)/fireemblem8.elf
 
 # sizeof(struct ItemData) (include/bmitem.h). Used only to turn the linked
 # gItemData symbol size into a record count for the negative below; a future
@@ -3589,21 +3666,23 @@ expansion-modern-starter-runtime-check: expansion-modern-starter-hook-check \
 # into separate roots so an ambient feature override cannot contaminate the
 # negative control. The runner binds every target probe through each exact ELF
 # and reads PCM/interrupt-buffer state from real libmGBA execution.
-MODERN_HQ_MIXER_PROFILE_ROOT := build/expansion-modern-hq-mixer
-MODERN_HQ_MIXER_PROFILE_ROM := $(MODERN_HQ_MIXER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
-MODERN_HQ_MIXER_PROFILE_ELF := $(MODERN_HQ_MIXER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
-MODERN_HQ_MIXER_PROFILE_MAP := $(MODERN_HQ_MIXER_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.map
-MODERN_HQ_MIXER_DISABLED_ROOT := build/expansion-modern-hq-mixer-disabled
-MODERN_HQ_MIXER_DISABLED_ROM := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
-MODERN_HQ_MIXER_DISABLED_ELF := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
-MODERN_HQ_MIXER_DISABLED_MAP := $(MODERN_HQ_MIXER_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.map
+MODERN_HQ_MIXER_PROFILE_ROOT := $(call fe8_project_aux_root,hq-mixer,build/expansion-modern-hq-mixer)
+MODERN_HQ_MIXER_PROFILE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_HQ_MIXER_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
+MODERN_HQ_MIXER_PROFILE_ROM := $(MODERN_HQ_MIXER_PROFILE_OUTPUT_DIR)/fireemblem8.gba
+MODERN_HQ_MIXER_PROFILE_ELF := $(MODERN_HQ_MIXER_PROFILE_OUTPUT_DIR)/fireemblem8.elf
+MODERN_HQ_MIXER_PROFILE_MAP := $(MODERN_HQ_MIXER_PROFILE_OUTPUT_DIR)/fireemblem8.map
+MODERN_HQ_MIXER_DISABLED_ROOT := $(call fe8_project_aux_root,hq-mixer-disabled,build/expansion-modern-hq-mixer-disabled)
+MODERN_HQ_MIXER_DISABLED_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_HQ_MIXER_DISABLED_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
+MODERN_HQ_MIXER_DISABLED_ROM := $(MODERN_HQ_MIXER_DISABLED_OUTPUT_DIR)/fireemblem8.gba
+MODERN_HQ_MIXER_DISABLED_ELF := $(MODERN_HQ_MIXER_DISABLED_OUTPUT_DIR)/fireemblem8.elf
+MODERN_HQ_MIXER_DISABLED_MAP := $(MODERN_HQ_MIXER_DISABLED_OUTPUT_DIR)/fireemblem8.map
 MODERN_HQ_MIXER_RUNTIME_DIR := $(MODERN_OUTPUT_DIR)/hq-mixer-runtime
 MODERN_HQ_MIXER_RUNTIME_SCRIPT := tools/gba-playtest/run_hq_mixer_checks.py
-MODERN_HQ_MIXER_LISTENING_ROOT := build/expansion-modern-hq-mixer-listening
+MODERN_HQ_MIXER_LISTENING_ROOT := $(call fe8_project_aux_root,hq-mixer-listening,build/expansion-modern-hq-mixer-listening)
 MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT := $(MODERN_HQ_MIXER_LISTENING_ROOT)/enabled
 MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT := $(MODERN_HQ_MIXER_LISTENING_ROOT)/stock-control
-MODERN_HQ_MIXER_LISTENING_ENABLED_ROM := $(MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
-MODERN_HQ_MIXER_LISTENING_CONTROL_ROM := $(MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_HQ_MIXER_LISTENING_ENABLED_ROM := $(call fe8_project_output_dir,$(MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.gba
+MODERN_HQ_MIXER_LISTENING_CONTROL_ROM := $(call fe8_project_output_dir,$(MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.gba
 
 CLEAN_DIRS += $(MODERN_HQ_MIXER_PROFILE_ROOT)
 CLEAN_DIRS += $(MODERN_HQ_MIXER_DISABLED_ROOT)
@@ -3664,12 +3743,14 @@ expansion-modern-hq-mixer-check: expansion-modern-boot-preflight \
 # EXPANSION_AOE_REFERENCE=1 from contaminating both sides. Both use the same
 # established real-map input route, while the runner resolves semantic probe
 # addresses from each ELF independently.
-MODERN_AOE_PROFILE_ROOT := build/expansion-modern-aoe
-MODERN_AOE_PROFILE_ROM := $(MODERN_AOE_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
-MODERN_AOE_PROFILE_ELF := $(MODERN_AOE_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
-MODERN_AOE_DISABLED_PROFILE_ROOT := build/expansion-modern-aoe-disabled
-MODERN_AOE_DISABLED_PROFILE_ROM := $(MODERN_AOE_DISABLED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
-MODERN_AOE_DISABLED_PROFILE_ELF := $(MODERN_AOE_DISABLED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AOE_PROFILE_ROOT := $(call fe8_project_aux_root,aoe,build/expansion-modern-aoe)
+MODERN_AOE_PROFILE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_AOE_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
+MODERN_AOE_PROFILE_ROM := $(MODERN_AOE_PROFILE_OUTPUT_DIR)/fireemblem8.gba
+MODERN_AOE_PROFILE_ELF := $(MODERN_AOE_PROFILE_OUTPUT_DIR)/fireemblem8.elf
+MODERN_AOE_DISABLED_PROFILE_ROOT := $(call fe8_project_aux_root,aoe-disabled,build/expansion-modern-aoe-disabled)
+MODERN_AOE_DISABLED_PROFILE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_AOE_DISABLED_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
+MODERN_AOE_DISABLED_PROFILE_ROM := $(MODERN_AOE_DISABLED_PROFILE_OUTPUT_DIR)/fireemblem8.gba
+MODERN_AOE_DISABLED_PROFILE_ELF := $(MODERN_AOE_DISABLED_PROFILE_OUTPUT_DIR)/fireemblem8.elf
 MODERN_AOE_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/aoe-runtime-check
 MODERN_AOE_RUNTIME_SCRIPT := tools/gba-playtest/run_aoe_checks.py
 
@@ -3706,50 +3787,52 @@ expansion-modern-aoe-check: expansion-modern-boot-preflight \
 # then observes pointer-free ELF symbols.
 MODERN_AUTOPLAY_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_checks.py
 MODERN_AUTOPLAY_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-runtime-check
-MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT := build/expansion-modern-autoplay-strategy
+MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT := $(call fe8_project_aux_root,autoplay-strategy,build/expansion-modern-autoplay-strategy)
+MODERN_AUTOPLAY_STRATEGY_PROFILE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR := \
-	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated-data
+	$(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OUTPUT_DIR)/generated/data,$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated-data)
 MODERN_AUTOPLAY_STRATEGY_PROFILE_OBJECTIVES_INVENTORY := \
-	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated_data_chapterobjectives_inventory.md
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/generated_data_chapterobjectives_inventory.md
 MODERN_AUTOPLAY_STRATEGY_PROFILE_STRATEGIES_INVENTORY := \
-	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/generated_data_autoplaystrategies_inventory.md
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/generated_data_autoplaystrategies_inventory.md
 MODERN_AUTOPLAY_STRATEGY_PROFILE_ROM := \
-	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OUTPUT_DIR)/fireemblem8.gba
 MODERN_AUTOPLAY_STRATEGY_PROFILE_ELF := \
-	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OUTPUT_DIR)/fireemblem8.elf
 MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT := \
-	build/expansion-modern-autoplay-strategy-disabled
+	$(call fe8_project_aux_root,autoplay-strategy-disabled,build/expansion-modern-autoplay-strategy-disabled)
+MODERN_AUTOPLAY_STRATEGY_DISABLED_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR := \
-	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated-data
+	$(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_AUTOPLAY_STRATEGY_DISABLED_OUTPUT_DIR)/generated/data,$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated-data)
 MODERN_AUTOPLAY_STRATEGY_DISABLED_OBJECTIVES_INVENTORY := \
-	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated_data_chapterobjectives_inventory.md
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/generated_data_chapterobjectives_inventory.md
 MODERN_AUTOPLAY_STRATEGY_DISABLED_STRATEGIES_INVENTORY := \
-	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/generated_data_autoplaystrategies_inventory.md
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/generated_data_autoplaystrategies_inventory.md
 MODERN_AUTOPLAY_STRATEGY_DISABLED_ROM := \
-	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_OUTPUT_DIR)/fireemblem8.gba
 MODERN_AUTOPLAY_STRATEGY_DISABLED_ELF := \
-	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+	$(MODERN_AUTOPLAY_STRATEGY_DISABLED_OUTPUT_DIR)/fireemblem8.elf
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_OUTDIR := \
-	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/runtime-check
+	$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OUTPUT_DIR)/runtime-check
 MODERN_AUTOPLAY_STRATEGY_RUNTIME_SCRIPT := \
 	tools/gba-playtest/run_autoplay_strategy_checks.py
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT := \
-	build/expansion-modern-autoplay-strategy-budget
+	$(call fe8_project_aux_root,autoplay-strategy-budget,build/expansion-modern-autoplay-strategy-budget)
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT = \
 	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-build
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR = \
-	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-generated
+	$(if $(filter-out default,$(FE8_PROJECT)),$(call fe8_project_output_dir,$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/generated/data,$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-generated)
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY = \
-	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG)-inventory.md
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/enabled-$(MODERN_CONFIG)-inventory.md
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT = \
-	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/enabled-$(MODERN_CONFIG).json
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/enabled-$(MODERN_CONFIG).json
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT = \
 	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-$(MODERN_CONFIG)-build
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT = \
-	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)/absent-$(MODERN_CONFIG).json
+	$(call fe8_project_aux_output_dir,$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/absent-$(MODERN_CONFIG).json
 MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_ELF = \
-	$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
-MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT := reports/autoplay_strategy_budget.json
+	$(call fe8_project_output_dir,$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.elf
+MODERN_AUTOPLAY_STRATEGY_BUDGET_REPORT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/reports/autoplay_strategy_budget.json,reports/autoplay_strategy_budget.json)
 MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT := \
 	scripts/linker_report/autoplay_strategy_budget.py
 MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE := \
@@ -3776,7 +3859,7 @@ expansion-modern-autoplay-strategy-enabled-budget:
 	+$(MAKE) expansion-modern-budget \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT) \
-		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR) \
+		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR)) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_INVENTORY) \
 		EXPANSION_AUTOPLAY_STRATEGIES=1 \
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT)
@@ -3824,7 +3907,7 @@ expansion-modern-autoplay-strategy-profile-rom:
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT) \
-		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR) \
+		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR)) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_OBJECTIVES_SOURCE) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_AUTOPLAY_STRATEGY_BUNDLE_SOURCE) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_OBJECTIVES_INVENTORY) \
@@ -3839,7 +3922,7 @@ expansion-modern-autoplay-strategy-disabled-profile-rom:
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT) \
-		GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR) \
+		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR)) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_OBJECTIVES_INVENTORY) \
 		GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_STRATEGIES_INVENTORY) \
 		EXPANSION_AUTOPLAY_STRATEGIES=0 \
@@ -3868,9 +3951,9 @@ endif
 
 # Issue #87 optional one-phase Charge command. The enabled build has its own
 # root; the matching ordinary build is the disabled PLAYER/menu negative.
-MODERN_BLUE_PHASE_DELEGATE_ROOT := build/expansion-modern-blue-phase-delegate
+MODERN_BLUE_PHASE_DELEGATE_ROOT := $(call fe8_project_aux_root,blue-phase-delegate,build/expansion-modern-blue-phase-delegate)
 MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR := \
-	$(MODERN_BLUE_PHASE_DELEGATE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_BLUE_PHASE_DELEGATE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_BLUE_PHASE_DELEGATE_ROM := \
 	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/fireemblem8.gba
 MODERN_BLUE_PHASE_DELEGATE_ELF := \
@@ -3906,9 +3989,9 @@ expansion-modern-blue-phase-delegate-check: expansion-modern-boot-preflight \
 # only for the debug positive path; release replays the same inputs against
 # the normal release ROM and proves the established debugtools probe is zero.
 MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT := \
-	build/expansion-modern-debugtools-phase-control
+	$(call fe8_project_aux_root,debugtools-phase-control,build/expansion-modern-debugtools-phase-control)
 MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR := \
-	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT)/debug/$(MODERN_ABI)
+	$(call fe8_project_output_dir,$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT),debug,$(MODERN_ABI))
 MODERN_DEBUGTOOLS_PHASE_CONTROL_ROM := \
 	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/fireemblem8.gba
 MODERN_DEBUGTOOLS_PHASE_CONTROL_ELF := \
@@ -3955,15 +4038,16 @@ MODERN_AUTOPLAY_BOUNDS_RUNTIME_SCRIPT := tools/gba-playtest/run_autoplay_bounds_
 MODERN_AUTOPLAY_BOUNDS_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/autoplay-bounds-runtime-check
 MODERN_CHAPTER_OBJECTIVES_RUNTIME_SCRIPT := tools/gba-playtest/run_chapter_objective_checks.py
 MODERN_CHAPTER_OBJECTIVES_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/chapter-objectives-runtime-check
-MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT := build/expansion-modern-chapter-objectives
+MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT := $(call fe8_project_aux_root,chapter-objectives,build/expansion-modern-chapter-objectives)
+MODERN_CHAPTER_OBJECTIVES_PROFILE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))
 MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR := \
-	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated-data
+	$(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_CHAPTER_OBJECTIVES_PROFILE_OUTPUT_DIR)/generated/data,$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated-data)
 MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY := \
-	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/generated_data_chapterobjectives_inventory.md
+	$(call fe8_project_aux_output_dir,$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/generated_data_chapterobjectives_inventory.md
 MODERN_CHAPTER_OBJECTIVES_PROFILE_ROM := \
-	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_OUTPUT_DIR)/fireemblem8.gba
 MODERN_CHAPTER_OBJECTIVES_PROFILE_ELF := \
-	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+	$(MODERN_CHAPTER_OBJECTIVES_PROFILE_OUTPUT_DIR)/fireemblem8.elf
 MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE := \
 	scripts/generated_data/tests/fixtures/chapterobjectives/valid.json
 MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE := \
@@ -3987,11 +4071,11 @@ expansion-modern-autoplay-bounds-check: expansion-modern-boot-preflight expansio
 MODERN_AUTOPLAY_ACCELERATED_RUNTIME_SCRIPT := \
 	tools/gba-playtest/run_accelerated_fidelity_checks.py
 MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT := \
-	build/expansion-modern-autoplay-accelerated-fidelity
+	$(call fe8_project_aux_root,autoplay-accelerated-fidelity,build/expansion-modern-autoplay-accelerated-fidelity)
 MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROM := \
-	$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+	$(call fe8_project_output_dir,$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.gba
 MODERN_AUTOPLAY_ACCELERATED_PROFILE_ELF := \
-	$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+	$(call fe8_project_output_dir,$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.elf
 MODERN_AUTOPLAY_ACCELERATED_RUNTIME_OUTDIR := \
 	$(MODERN_OUTPUT_DIR)/autoplay-accelerated-fidelity-check
 
@@ -4027,7 +4111,7 @@ expansion-modern-chapter-objectives-profile-rom:
 	+$(MAKE) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
-		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR)) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE) \
@@ -4037,7 +4121,7 @@ expansion-modern-chapter-objectives-profile-boot-check:
 	+$(MAKE) expansion-modern-boot-check \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
-		GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR) \
+		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR)) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_INVENTORY) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_FIXTURE) \
 		GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE=$(MODERN_CHAPTER_OBJECTIVES_RUNTIME_CHAPTERBUNDLE_FIXTURE) \
@@ -4388,9 +4472,9 @@ endif
 #    "build/expansion-modern") still resolves to exactly
 #    "build/expansion-modern-multi" as before, so no real invocation's
 #    on-disk output path actually changes.
-MODERN_LOCALE_MULTI_BUILD_ROOT := $(MODERN_BUILD_ROOT)-multi
-MODERN_LOCALE_MULTI_ROM := $(MODERN_LOCALE_MULTI_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
-MODERN_LOCALE_MULTI_ELF := $(MODERN_LOCALE_MULTI_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_LOCALE_MULTI_BUILD_ROOT := $(call fe8_project_aux_root,multi,$(MODERN_BUILD_ROOT)-multi)
+MODERN_LOCALE_MULTI_ROM := $(call fe8_project_output_dir,$(MODERN_LOCALE_MULTI_BUILD_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.gba
+MODERN_LOCALE_MULTI_ELF := $(call fe8_project_output_dir,$(MODERN_LOCALE_MULTI_BUILD_ROOT),$(MODERN_CONFIG),$(MODERN_ABI))/fireemblem8.elf
 
 expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflight \
 		$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav \
@@ -4748,6 +4832,15 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-localization-runtime-shifted-check
 	MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
 		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
+ifeq ($(MODERN_CONFIG),debug)
+	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
+		"$(PYTHON)" -m unittest \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
+endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \
 		--ldscript "$(MODERN_CLEAN_LDSCRIPT)" \

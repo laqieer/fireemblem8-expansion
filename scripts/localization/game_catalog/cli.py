@@ -19,6 +19,7 @@ from .build import (
     DEFAULT_AUTHORED_PATHS,
     DEFAULT_ENGLISH_DEFINITIONS_PATH,
     DEFAULT_ENGLISH_TEXTS_PATH,
+    DEFAULT_EU_MAPPING_PATH,
     DEFAULT_JA_INDEXED_PATH,
     DEFAULT_JA_RAW_PATH,
     DEFAULT_MAPPING_PATH,
@@ -75,6 +76,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
+    parser.add_argument("--eu-mapping", type=Path, default=DEFAULT_EU_MAPPING_PATH)
+    parser.add_argument("--eu-indexed", action="append", metavar="LOCALE=PATH")
+    parser.add_argument("--eu-authored", action="append", metavar="LOCALE=PATH")
+    parser.add_argument("--fixed-width-aliases", type=Path, default=ALIASES_PATH)
     parser.add_argument(
         "--width-registry",
         type=Path,
@@ -118,6 +123,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=Path("texts/expansion"),
     )
+    parser.add_argument("--expansion-catalog", action="append", metavar="LOCALE=PATH")
 
 
 def _suffix_share(args: argparse.Namespace) -> bool:
@@ -152,8 +158,15 @@ def _build_summary(build) -> str:
 
 
 def _build_from_args(args: argparse.Namespace):
-    if args.authored is None:
-        check_authored_catalogs(Path("."))
+    authored_paths = _locale_path_map(args.authored)
+    inherited = tuple(
+        locale for locale in CJK_LOCALE_IDS
+        if authored_paths is None
+        or authored_paths.get(locale, DEFAULT_AUTHORED_PATHS[locale]).resolve()
+        == DEFAULT_AUTHORED_PATHS[locale].resolve()
+    )
+    if inherited:
+        check_authored_catalogs(Path("."), locales=inherited)
     return build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
@@ -162,9 +175,13 @@ def _build_from_args(args: argparse.Namespace):
         zh_indexed_path=args.zh_indexed,
         zh_raw_path=args.zh_raw,
         mapping_path=args.mapping,
+        eu_mapping_path=args.eu_mapping,
+        eu_indexed_paths=_locale_path_map(args.eu_indexed),
+        eu_authored_paths=_locale_path_map(args.eu_authored),
         target_header_path=args.target_header,
         width_registry_path=args.width_registry,
-        authored_paths=_locale_path_map(args.authored),
+        fixed_width_aliases_path=args.fixed_width_aliases,
+        authored_paths=authored_paths,
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),
     )
@@ -183,7 +200,7 @@ def _leakage_input_records(args: argparse.Namespace):
     paths = {
         "english_definitions": args.english_definitions,
         "english_texts": args.english_texts,
-        "fixed_width_display_aliases": ALIASES_PATH,
+        "fixed_width_display_aliases": args.fixed_width_aliases,
         "mapping": args.mapping,
         "raw_closure": args.raw_closure,
         "target_header": args.target_header,
@@ -201,14 +218,17 @@ def _leakage_input_records(args: argparse.Namespace):
         if args.authored is not None
         else DEFAULT_AUTHORED_PATHS
     )
+    expansion_paths = _locale_path_map(args.expansion_catalog)
     for locale in enabled_locales:
         if locale not in CJK_LOCALE_IDS:
             continue
         paths[f"{locale}_authored"] = authored_paths[locale]
         paths[f"{locale}_expansion"] = (
-            args.expansion_catalog_root / f"catalog.{locale}.json"
-        )
-    paths["en_expansion"] = args.expansion_catalog_root / "catalog.en.json"
+            expansion_paths[locale] if expansion_paths is not None
+            else args.expansion_catalog_root / f"catalog.{locale}.json")
+    paths["en_expansion"] = (
+        expansion_paths["en"] if expansion_paths is not None
+        else args.expansion_catalog_root / "catalog.en.json")
     return {
         name: input_record(path)
         for name, path in sorted(paths.items())
@@ -224,6 +244,10 @@ def _audit_from_args(args: argparse.Namespace, build):
         return {
             "summary": {
                 "unapproved_span_count": 0,
+                "game_payload_count": 0,
+                "raw_surface_payload_count": 0,
+                "approved_span_count": 0,
+                "localized_span_decision_count": 0,
             }
         }
     review = load_review(args.latin_span_review)
@@ -232,6 +256,7 @@ def _audit_from_args(args: argparse.Namespace, build):
     expansion_catalogs = load_expansion_catalogs(
         args.expansion_catalog_root,
         cjk_locales,
+        catalog_paths=_locale_path_map(args.expansion_catalog),
     )
     audit_build = replace(
         build,

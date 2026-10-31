@@ -32,6 +32,22 @@ DEFAULT_CATALOG_PATHS = {
 }
 
 
+def parse_catalog_paths(values):
+    if values is None:
+        return None
+    result = {}
+    for value in values:
+        locale, separator, path = value.partition("=")
+        if not separator or not locale or not path:
+            raise schema.SchemaError(
+                f"invalid --catalog {value!r}; expected a stable LOCALE=PATH mapping"
+            )
+        if locale in result:
+            raise schema.SchemaError(f"duplicate --catalog mapping for locale {locale!r}")
+        result[locale] = Path(path)
+    return result
+
+
 @dataclass(frozen=True)
 class RegistryEntry:
     id: int

@@ -1,4 +1,6 @@
+import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -20,6 +22,33 @@ def run_cli(args, cwd=REPO_ROOT):
 
 
 class CliValidateTests(unittest.TestCase):
+    def test_nested_bundle_consumers_reject_a_conflicting_selected_provider(self):
+        for table in ("chapterbundle", "chapterobjectives", "autoplaystrategies"):
+            with self.subTest(table=table):
+                code, out, err = run_cli([
+                    "--source-override",
+                    "units=" + fixture_path("chapterbundle", "deps_units_orphan.json"),
+                    "validate", "--table", table,
+                ])
+                self.assertNotEqual(code, 0, out + err)
+
+    def test_nested_bundle_consumers_accept_matching_selected_sources(self):
+        with scratch_dir() as directory:
+            units = os.path.join(directory, "selected_units.json")
+            bundle = os.path.join(directory, "selected_bundle.json")
+            shutil.copyfile(os.path.join(REPO_ROOT, "src/data/ch2_units.json"), units)
+            with open(os.path.join(REPO_ROOT, "src/data/ch2_bundle.json")) as handle:
+                data = json.load(handle)
+            data["tables"]["units"]["source"] = units
+            with open(bundle, "w") as handle:
+                json.dump(data, handle)
+            code, out, err = run_cli([
+                "--source-override", "chapterbundle=" + bundle,
+                "--source-override", "units=" + units,
+                "validate", "--table", "chapterbundle",
+            ])
+        self.assertEqual(code, 0, out + err)
+
     def test_valid_fixture_passes(self):
         code, out, err = run_cli([
             "validate", "--table", "supports",
@@ -120,6 +149,24 @@ class CliGenerateTests(unittest.TestCase):
 
 
 class CliCheckDriftTests(unittest.TestCase):
+    def test_replacement_check_self_heals_build_local_reports_without_changing_stock_inventory(self):
+        inventory = os.path.join(REPO_ROOT, "reports", "generated_data_supports_inventory.md")
+        with open(inventory, "rb") as handle:
+            original = handle.read()
+        with scratch_dir() as tmp:
+            args = [
+                "--source-override", "supports=" + fixture_path("supports", "valid.json"),
+                "--inventory-dir", os.path.join(tmp, "reports"),
+                "check", "--table", "supports", "--out-dir", tmp,
+            ]
+            code, out, err = run_cli(args)
+            self.assertEqual(code, 0, out + err)
+            self.assertTrue(os.path.isfile(os.path.join(tmp, "data_supports.c")))
+            self.assertTrue(os.path.isfile(os.path.join(
+                tmp, "reports", "generated_data_supports_inventory.md")))
+        with open(inventory, "rb") as handle:
+            self.assertEqual(handle.read(), original)
+
     def test_check_passes_immediately_after_generate(self):
         with scratch_dir() as tmp:
             out_dir = os.path.join(tmp, "out")

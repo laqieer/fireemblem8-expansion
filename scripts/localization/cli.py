@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from . import schema
-from .catalog import DEFAULT_REGISTRY_PATH, load_catalog
+from .catalog import DEFAULT_REGISTRY_PATH, load_catalog, parse_catalog_paths
 from .generate import generate as generate_impl
 from .schema import SchemaError
 
@@ -40,22 +40,6 @@ def _add_source_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _catalog_paths(values):
-    if values is None:
-        return None
-    result = {}
-    for value in values:
-        locale, separator, path = value.partition("=")
-        if not separator or not locale or not path:
-            raise SchemaError(
-                f"invalid --catalog {value!r}; expected a stable LOCALE=PATH mapping"
-            )
-        if locale in result:
-            raise SchemaError(f"duplicate --catalog mapping for locale {locale!r}")
-        result[locale] = Path(path)
-    return result
-
-
 def _add_output_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--budget-json", type=Path, default=None)
@@ -68,7 +52,7 @@ def _add_output_args(parser: argparse.ArgumentParser) -> None:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    load_catalog(registry_path=args.registry, catalog_paths=_catalog_paths(args.catalog))
+    load_catalog(registry_path=args.registry, catalog_paths=parse_catalog_paths(args.catalog))
     return 0
 
 
@@ -77,7 +61,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         output_dir=args.out_dir,
         budget_json_path=args.budget_json,
         registry_path=args.registry,
-        catalog_paths=_catalog_paths(args.catalog),
+        catalog_paths=parse_catalog_paths(args.catalog),
         emission_profile=args.emission_profile,
     )
     return 0
@@ -92,7 +76,7 @@ def cmd_budget(args: argparse.Namespace) -> int:
         output_dir=args.out_dir,
         budget_json_path=args.budget_json,
         registry_path=args.registry,
-        catalog_paths=_catalog_paths(args.catalog),
+        catalog_paths=parse_catalog_paths(args.catalog),
         emission_profile=args.emission_profile,
     )
     print(written["budget_json"].read_text(encoding="utf-8"), end="")

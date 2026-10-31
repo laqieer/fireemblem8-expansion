@@ -295,6 +295,7 @@ SECTIONS
         EXCLUDE_FILE (
             *banim_data.o
             banim/data_banim.o
+            *banim/project_data_banim.o
             *banim_terrain_data.o
             *data_banim_terrain.o
             *banim_pal_chara.o
@@ -314,7 +315,9 @@ SECTIONS
 
         FILL(0x00);
         . = 0xC02000;
-        banim/data_banim.o(.data)
+        /* A glob does not open the absent stock object in a selected build. */
+        [b]anim/data_banim.o(.data)
+        *banim/project_data_banim.o(.data)
 
         FILL(0xFF);
         . = 0xEE0000;

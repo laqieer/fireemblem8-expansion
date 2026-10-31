@@ -50,6 +50,9 @@ AUTOTOOLS_CONFIG_MK ?= config.autotools.mk
 AUTOTOOLS_BUILD_DIR ?= .
 -include $(wildcard $(AUTOTOOLS_CONFIG_MK))
 
+.DEFAULT_GOAL := all
+include project_selection.mk
+
 # Keep the archival guard default-disabled before modern.mk has included the
 # committed config.mk. Command-line and configured values still override this.
 EXPANSION_HQ_MIXER ?= 0
@@ -99,8 +102,6 @@ ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 # default goal explicitly, before the include, so this include-order
 # requirement can never regress bare `make`'s behavior regardless of
 # what any included makefile defines first.
-.DEFAULT_GOAL := all
-
 include generated_data.mk
 
 # Issue #18 sprint 1: fast, Python-only localization catalog targets
@@ -110,7 +111,6 @@ include localization.mk
 # Issue #18 full-game catalog slice: opt-in Python-only generator targets.
 # The fragment does not add prerequisites to `all`; bare/default builds stay
 # English-only and never generate or link CJK game-message payloads.
-include game_localization.mk
 
 #### Files ####
 
@@ -161,7 +161,8 @@ C_OBJECTS    := $(CFILES:.c=.o)
 LEGACY_MSG_OBJECT := $(C_SUBDIR)/msg_data.o
 LEGACY_C_OBJECTS := $(filter-out $(LEGACY_MSG_OBJECT),$(C_OBJECTS))
 ASM_OBJECTS  := $(SFILES:.s=.o)
-BANIM_OBJECT := banim/data_banim.o
+BANIM_OBJECT := $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/banim/project_data_banim.o,banim/data_banim.o)
+FE8_PROJECT_BANIM_LOCK = $(if $(filter-out default,$(FE8_PROJECT)),$(PYTHON) scripts/arm_compressing_linker.py --lock-output banim/data_banim.o --)
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # Issue #5 Batch 3a: unlike GENERATED_DATA_LINKED_OBJECTS (whole-file
@@ -475,6 +476,16 @@ CLEAN_SONGS := $(MID_SUBDIR)/*.s
 
 # Isolated, opt-in modern GCC object rules (no modern ELF/ROM target).
 include modern.mk
+# Standalone catalog targets consume the resolved modern project locale set.
+include game_localization.mk
+
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+FE8_PROJECT_ARCHIVAL_OBJECTS := $(filter-out $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI) $(BANIM_OBJECT),$(ALL_OBJECTS))
+ifneq ($(filter $(FE8_PROJECT_ARCHIVAL_OBJECTS),$(MAKECMDGOALS)),)
+$(error FE8_PROJECT=$(FE8_PROJECT) is unsupported by the archival lane, including mixed requests)
+endif
+$(FE8_PROJECT_ARCHIVAL_OBJECTS): | project-selection-archival-guard
+endif
 
 # Issue #60: one versioned manifest owns asset-to-existing-seam dependencies.
 # Include this after modern.mk so its generated fragment can name the active
@@ -653,7 +664,11 @@ sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
 # Battle Animation Recipes
 
 $(BANIM_OBJECT): $(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
-	$(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
+	$(FE8_PROJECT_BANIM_LOCK) $(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
+
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+$(BANIM_OBJECT): $$(if $$(MODERN_DRY_RUN),,$$(patsubst $(abspath $(ASSET_OUTPUT_DIR))/%,$(ASSET_OUTPUT_DIR)/%,$$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m))) $(MODERN_COMPILE_SETTINGS)
+endif
 
 %_modes.bin: %_motion.o
 	$(OBJCOPY) -O binary -j .data.modes $< $@

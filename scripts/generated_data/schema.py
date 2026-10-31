@@ -16,6 +16,7 @@ committed inventory/summary report so drift in dependencies is visible.
 from __future__ import annotations
 
 import hashlib
+import copy
 
 from .diagnostics import GeneratedDataError
 
@@ -121,6 +122,51 @@ class SchemaRegistry:
 REGISTRY = SchemaRegistry()
 
 
+def parse_source_overrides(raw_pairs):
+    from . import registry  # noqa: F401
+
+    overrides = {}
+    for pair in raw_pairs or ():
+        if "=" not in pair:
+            raise GeneratedDataError("table source expects NAME=PATH, got '{}'".format(pair))
+        name, path = pair.split("=", 1)
+        if not name or not path or name not in REGISTRY.all_names():
+            raise GeneratedDataError("unknown or empty table source '{}'".format(pair))
+        if name in overrides:
+            raise GeneratedDataError("duplicate table source '{}'".format(name))
+        overrides[name] = path
+    return overrides
+
+
+class SchemaInputs:
+    """Invocation-local inputs; the registry's cached schemas stay unchanged."""
+
+    def __init__(
+        self, sources=None, message_header=None,
+        localization_registry=None, localization_catalogs=None,
+        asset_manifest=None,
+    ):
+        self.sources = dict(sources or {})
+        self.message_header = message_header
+        self.localization_registry = localization_registry
+        self.localization_catalogs = localization_catalogs
+        self.asset_manifest = asset_manifest
+
+    def resolve(self, name):
+        from . import registry  # noqa: F401
+
+        schema = copy.copy(REGISTRY.resolve(name))
+        schema.message_header = self.message_header
+        schema.localization_registry = self.localization_registry
+        schema.localization_catalogs = self.localization_catalogs
+        schema.asset_manifest = self.asset_manifest
+        schema.replacement_source = name in self.sources
+        return schema
+
+    def source(self, schema):
+        return self.sources.get(schema.name) or schema.default_source
+
+
 class TableSchema:
     """Base class every generated-data table schema derives from.
 
@@ -146,6 +192,10 @@ class TableSchema:
     default_hand_source = None
     default_output_name = None
     default_inventory_path = None
+    message_header = None
+    localization_registry = None
+    localization_catalogs = None
+    replacement_source = False
 
     # Optional record-budget diagnostic input. When a table maps onto a
     # fixed-size C array (a hard slot/memory bound), set ``record_budget``
@@ -198,6 +248,9 @@ class TableSchema:
 
     def validate(self, records, diagnostics, dependency_records=None):
         raise NotImplementedError
+
+    def validate_source_bindings(self, records, diagnostics, inputs):
+        """Check selected providers against embedded owners before validation."""
 
     def generate_c(self, records, source_path):
         """Return generated C89 source text, or ``None`` to skip generation

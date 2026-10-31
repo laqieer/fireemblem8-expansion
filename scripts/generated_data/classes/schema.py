@@ -845,7 +845,10 @@ class ClassesTableSchema(TableSchema):
         return load_records(source_path)
 
     def validate(self, records, diagnostics, dependency_records=None):
-        validate(records, diagnostics, dependency_records)
+        validate(
+            records, diagnostics, dependency_records,
+            msg_header=self.message_header or MSG_HEADER,
+        )
 
     def generate_c(self, records, source_path):
         from . import generate as classes_generate

@@ -26,9 +26,13 @@
 #                            means.
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
-GENERATED_DATA_OUT_DIR  := build/generated/data
+GENERATED_DATA_CLI       = $(GENERATED_DATA_PY) $(FE8_PROJECT_DATA_ARGS)
+GENERATED_DATA_IDSPACE_CLI = $(GENERATED_DATA_PY).idspace $(FE8_PROJECT_SCHEMA_ARGS)
+GENERATED_DATA_OUT_DIR  := $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/generated/data,build/generated/data)
 GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle chapterobjectives autoplaystrategies terrainstats movecost weapontriangle ui_presentation
 GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterobjectives autoplaystrategies chapterbundle
+generated_data_source = $(or $(call fe8_project_source,$(1),$(2)),$(2))
+generated_data_quote = '$(subst ','"'"',$(1))'
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
         generated-data-ch2-check generated-data-bundle-validate generated-data-bundle-check \
@@ -36,25 +40,27 @@ GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterob
 
 generated-data-validate:
 	@for table in $(GENERATED_DATA_TABLES); do \
-		$(GENERATED_DATA_PY) validate --table $$table || exit 1; \
+		$(GENERATED_DATA_CLI) validate --table $$table || exit 1; \
 	done
 
 generated-data-generate:
 	@for table in $(GENERATED_DATA_TABLES); do \
-		$(GENERATED_DATA_PY) generate --table $$table --out-dir $(GENERATED_DATA_OUT_DIR) || exit 1; \
+		$(GENERATED_DATA_CLI) generate --table $$table --out-dir $(GENERATED_DATA_OUT_DIR) || exit 1; \
 	done
-	@$(GENERATED_DATA_PY) manifest --out-dir $(GENERATED_DATA_OUT_DIR)
+	@$(GENERATED_DATA_CLI) manifest --out-dir $(GENERATED_DATA_OUT_DIR)
+ifeq ($(filter-out default,$(FE8_PROJECT)),)
 	@$(GENERATED_DATA_PY).idspace generate
-	@$(GENERATED_DATA_PY).idspace active-generate --out-dir $(GENERATED_DATA_OUT_DIR)
+endif
+	@$(GENERATED_DATA_IDSPACE_CLI) active-generate --out-dir $(GENERATED_DATA_OUT_DIR)
 
 generated-data-check:
 	@for table in $(GENERATED_DATA_TABLES); do \
-		$(GENERATED_DATA_PY) check --table $$table --out-dir $(GENERATED_DATA_OUT_DIR) || exit 1; \
+		$(GENERATED_DATA_CLI) check --table $$table --out-dir $(GENERATED_DATA_OUT_DIR) || exit 1; \
 	done
-	@$(GENERATED_DATA_PY) manifest --check --out-dir $(GENERATED_DATA_OUT_DIR)
+	@$(GENERATED_DATA_CLI) manifest --check --out-dir $(GENERATED_DATA_OUT_DIR)
 	@$(GENERATED_DATA_PY).consumer_census check
 	@$(GENERATED_DATA_PY).idspace check
-	@$(GENERATED_DATA_PY).idspace active-check --out-dir $(GENERATED_DATA_OUT_DIR)
+	@$(GENERATED_DATA_IDSPACE_CLI) active-check --out-dir $(GENERATED_DATA_OUT_DIR)
 
 generated-data-test:
 	$(PYTHON) -m unittest discover -s scripts/generated_data/tests -v
@@ -66,25 +72,25 @@ generated-data-test:
 # overflow. `generated-data-manifest-check` is the drift/budget gate folded
 # into generated-data-check above for CI.
 generated-data-manifest:
-	$(GENERATED_DATA_PY) manifest --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) manifest --out-dir $(GENERATED_DATA_OUT_DIR)
 
 generated-data-manifest-check:
-	$(GENERATED_DATA_PY) manifest --check --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) manifest --check --out-dir $(GENERATED_DATA_OUT_DIR)
 
 # Batch C: validate/check just the chapterbundle table on its own (fast
 # path for iterating on src/data/ch2_bundle.json without re-running the
 # supports table's 33-record round trip too).
 generated-data-bundle-validate:
-	$(GENERATED_DATA_PY) validate --table chapterbundle
+	$(GENERATED_DATA_CLI) validate --table chapterbundle
 
 generated-data-bundle-check:
-	$(GENERATED_DATA_PY) check --table chapterbundle --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) check --table chapterbundle --out-dir $(GENERATED_DATA_OUT_DIR)
 
 # Batch C: the Chapter 2 whole-bundle gate -- every table the bundle
 # composes plus the bundle itself.
 generated-data-ch2-check:
 	@for table in $(GENERATED_DATA_CH2_TABLES); do \
-		$(GENERATED_DATA_PY) check --table $$table --out-dir $(GENERATED_DATA_OUT_DIR) || exit 1; \
+		$(GENERATED_DATA_CLI) check --table $$table --out-dir $(GENERATED_DATA_OUT_DIR) || exit 1; \
 	done
 
 # ---------------------------------------------------------------------------
@@ -305,7 +311,7 @@ $(GENERATED_DATA_ITEM_CAP_STAMP): FORCE_GENERATED_DATA_ITEM_CAP
 	@# here, not silently defer to a later gate. The grouped rule below (stamp
 	@# -> header) still owns the ordinary cap-flip path and source/classification
 	@# drift; this closes only the out-of-band stamp/header desync, cheaply.
-	@$(GENERATED_DATA_PY).idspace active-heal --out-dir $(GENERATED_DATA_OUT_DIR) >/dev/null
+	@$(GENERATED_DATA_IDSPACE_CLI) active-heal --out-dir $(GENERATED_DATA_OUT_DIR) >/dev/null
 	@# issue #10 self-heal: FE8_ITEM_ID_CAP is an env/config input, so an
 	@# out-of-band write of build/generated/data/data_items.c at a different
 	@# cap (newer mtime than every tracked input) would otherwise be treated
@@ -315,7 +321,11 @@ $(GENERATED_DATA_ITEM_CAP_STAMP): FORCE_GENERATED_DATA_ITEM_CAP
 	@# already correct, a single rewrite (recompiling exactly the affected
 	@# object) when it was stale. generated-data-check stays the authoritative
 	@# validation/drift gate, so real drift is reported there, not here.
+ifneq ($(filter-out default,$(FE8_PROJECT)),)
+	@$(GENERATED_DATA_CLI) generate --table items --out-dir $(GENERATED_DATA_OUT_DIR) >/dev/null
+else
 	@$(GENERATED_DATA_PY) check --table items --out-dir $(GENERATED_DATA_OUT_DIR) >/dev/null || true
+endif
 
 # --- Issue #18: close the literal Make-DAG/state gap for the gate itself ---
 # `generated-data-check` (the CI gate above) never referenced this stamp: its
@@ -384,7 +394,7 @@ $(GENERATED_DATA_ACTIVE_OUTPUTS) &: \
 		include/constants/items.h \
 		include/constants/items_expansion.h
 	@mkdir -p $(GENERATED_DATA_OUT_DIR)
-	$(GENERATED_DATA_PY).idspace active-generate --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_IDSPACE_CLI) active-generate --out-dir $(GENERATED_DATA_OUT_DIR)
 
 GENERATED_DATA_CONFIG_INPUTS_items += $(GENERATED_DATA_ACTIVE_HEADER)
 
@@ -430,8 +440,8 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # Typed chapter objectives are a modern-only generated table.  The archival
 # lane retains its historical source/object set, while modern builds link this
 # additive generated record table and the pointer-free evaluator.
-GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= src/data/chapter_objectives.json
-GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?= src/data
+GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE ?= $(call generated_data_source,chapterobjectives,src/data/chapter_objectives.json)
+GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE ?= $(call generated_data_source,chapterbundle,src/data)
 GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY ?= \
 	reports/generated_data_chapterobjectives_inventory.md
 GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_DISCOVERY := \
@@ -469,6 +479,7 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE): FORCE_CHAPTEROBJECTIVES_DEPFILE \
 	@$(GENERATED_DATA_CHAPTEROBJECTIVES_DEP_DISCOVERY) \
 		--source "$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)" \
 		--bundle-source "$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE)" \
+		$(if $(filter-out default,$(FE8_PROJECT)),--asset-manifest "$(ASSET_MANIFEST)") \
 		--make-target "$(GENERATED_DATA_CHAPTEROBJECTIVES_C)" \
 		--depfile "$@"
 
@@ -483,7 +494,7 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE
 	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_chapterobjectives)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table chapterobjectives \
+	$(GENERATED_DATA_CLI) generate --table chapterobjectives \
 		--source $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE) \
 		--dep-source chapterbundle=$(GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE) \
 		--out-dir $(GENERATED_DATA_OUT_DIR) \
@@ -494,7 +505,7 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_C): $(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE
 # source contains the two reusable references; Make selects their generated
 # descriptors and assignments per profile while retaining non-reference
 # downstream records in every modern build.
-GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE ?= src/data/autoplay_strategies.json
+GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE ?= $(call generated_data_source,autoplaystrategies,src/data/autoplay_strategies.json)
 GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE ?= \
 	$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)
 GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE ?= \
@@ -556,7 +567,7 @@ $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C): $(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOUR
 	$(wildcard scripts/generated_data/chapterobjectives/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_autoplaystrategies)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table autoplaystrategies \
+	$(GENERATED_DATA_CLI) generate --table autoplaystrategies \
 		--source $(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE) \
 		--dep-source chapterobjectives=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE) \
 		--dep-source chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE) \
@@ -606,7 +617,7 @@ $(GENERATED_DATA_CONTENT_TEXT_HEADER): \
 		include/constants/items_expansion.h
 	@mkdir -p $(GENERATED_DATA_OUT_DIR)
 	EXPANSION_STARTER_CONTENT='$(EXPANSION_STARTER_CONTENT)' \
-		$(GENERATED_DATA_PY) content-text --out-dir $(GENERATED_DATA_OUT_DIR)
+		$(GENERATED_DATA_CLI) content-text --out-dir $(GENERATED_DATA_OUT_DIR)
 
 # The audit catalog is written by that same one recipe.
 $(GENERATED_DATA_CONTENT_TEXT_CATALOG): $(GENERATED_DATA_CONTENT_TEXT_HEADER)
@@ -616,7 +627,7 @@ $(GENERATED_DATA_CONTENT_TEXT_CATALOG): $(GENERATED_DATA_CONTENT_TEXT_HEADER)
 .PHONY: generated-data-content-text
 generated-data-content-text:
 	EXPANSION_STARTER_CONTENT='$(EXPANSION_STARTER_CONTENT)' \
-		$(GENERATED_DATA_PY) content-text --out-dir $(GENERATED_DATA_OUT_DIR)
+		$(GENERATED_DATA_CLI) content-text --out-dir $(GENERATED_DATA_OUT_DIR)
 
 # Each linked table's top-level generated C symbol name(s) -- used by
 # generated-data-link-check to prove exactly one definition of each links
@@ -641,7 +652,8 @@ GENERATED_DATA_LINKED_SYMBOL_characters := gCharacterData
 # authors -- see `GENERATED_DATA_LINKED_SYMBOL_PREFIX_supports` below for
 # the accompanying "no extra/unexpected symbol" check.
 GENERATED_DATA_LINKED_SYMBOL_supports := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/supports.json')); print(' '.join(sorted(r['symbol'] for r in d['records'])))")
+	"import json,sys; d = json.load(open(sys.argv[1])); print(' '.join(sorted(r['symbol'] for r in d['records'])))" \
+	$(call generated_data_quote,$(call generated_data_source,supports,src/data/supports.json)))
 
 # Optional, per-table: a `SupportData_`-style symbol-family prefix used
 # to additionally prove the generated object defines *no more and no
@@ -675,9 +687,9 @@ GENERATED_DATA_LINKED_SYMBOL_PREFIX_supports := SupportData_
 # rule would never regenerate the missing file. Depending on the real
 # inputs directly avoids that failure mode entirely.
 define GENERATED_DATA_LINK_TABLE_RULES
-$(GENERATED_DATA_OUT_DIR)/data_$(1).c: src/data/$(1).json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/$(1)/*.py) $(GENERATED_DATA_CONFIG_INPUTS_$(1))
+$(GENERATED_DATA_OUT_DIR)/data_$(1).c: $(call generated_data_source,$(1),src/data/$(1).json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/$(1)/*.py) $(GENERATED_DATA_CONFIG_INPUTS_$(1)) $(FE8_PROJECT_DATA_INPUTS) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p $$(@D)
-	$(GENERATED_DATA_PY) generate --table $(1) --out-dir $(GENERATED_DATA_OUT_DIR)
+	$$(GENERATED_DATA_CLI) generate --table $(1) --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $$@ || { echo "error: generated-data table '$(1)' did not produce $$@ (schema default_output_name mismatch?)" >&2; exit 1; }
 endef
 
@@ -1075,11 +1087,12 @@ GENERATED_DATA_CONFIG_INPUTS_units := \
 # all reference by name from other translation units -- they are not
 # tracked here.
 GENERATED_DATA_CH2_UNITS_SYMBOLS := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/ch2_units.json')); print(' '.join(g['symbol'] for g in d['groups']))")
+	"import json,sys; d = json.load(open(sys.argv[1])); print(' '.join(g['symbol'] for g in d['groups']))" \
+	$(call generated_data_quote,$(call generated_data_source,units,src/data/ch2_units.json)))
 
-$(GENERATED_DATA_CH2_UNITS_C): src/data/ch2_units.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/units/*.py) $(GENERATED_DATA_CONFIG_INPUTS_units)
+$(GENERATED_DATA_CH2_UNITS_C): $(call generated_data_source,units,src/data/ch2_units.json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/units/*.py) $(GENERATED_DATA_CONFIG_INPUTS_units)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table units --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) generate --table units --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'units' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_LINKED_OBJECTS
@@ -1312,11 +1325,12 @@ GENERATED_DATA_CONFIG_INPUTS_traps := \
 # list can never silently drift from what the table actually authors
 # (same technique as GENERATED_DATA_CH2_UNITS_SYMBOLS above).
 GENERATED_DATA_CH2_TRAPS_SYMBOLS := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/ch2_traps.json')); print(' '.join(t['symbol'] for t in d['traps']))")
+	"import json,sys; d = json.load(open(sys.argv[1])); print(' '.join(t['symbol'] for t in d['traps']))" \
+	$(call generated_data_quote,$(call generated_data_source,traps,src/data/ch2_traps.json)))
 
-$(GENERATED_DATA_CH2_TRAPS_C): src/data/ch2_traps.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/traps/*.py) $(GENERATED_DATA_CONFIG_INPUTS_traps)
+$(GENERATED_DATA_CH2_TRAPS_C): $(call generated_data_source,traps,src/data/ch2_traps.json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/traps/*.py) $(GENERATED_DATA_CONFIG_INPUTS_traps)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table traps --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) generate --table traps --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'traps' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_UNITS_OBJECT
@@ -1568,11 +1582,12 @@ GENERATED_DATA_CONFIG_INPUTS_shops := \
 # silently drift from what the table actually authors (same technique as
 # GENERATED_DATA_CH2_UNITS_SYMBOLS above).
 GENERATED_DATA_CH2_SHOPS_SYMBOLS := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/ch2_shops.json')); print(' '.join(s['symbol'] for s in d['shops']))")
+	"import json,sys; d = json.load(open(sys.argv[1])); print(' '.join(s['symbol'] for s in d['shops']))" \
+	$(call generated_data_quote,$(call generated_data_source,shops,src/data/ch2_shops.json)))
 
-$(GENERATED_DATA_CH2_SHOPS_C): src/data/ch2_shops.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/shops/*.py) $(GENERATED_DATA_CONFIG_INPUTS_shops)
+$(GENERATED_DATA_CH2_SHOPS_C): $(call generated_data_source,shops,src/data/ch2_shops.json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/shops/*.py) $(GENERATED_DATA_CONFIG_INPUTS_shops)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table shops --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) generate --table shops --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'shops' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_UNITS_OBJECT
@@ -1871,17 +1886,18 @@ $(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE): FORCE_CH2_EVENTLISTS_DEPFILE \
 # list can never silently drift from what the table actually authors
 # (same technique as GENERATED_DATA_CH2_UNITS_SYMBOLS above).
 GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/ch2_eventlists.json')); print(' '.join([l['symbol'] for l in d['lists']] + [d['tutorial']['symbol'], d['manifest']['symbol']]))")
+	"import json,sys; d = json.load(open(sys.argv[1])); print(' '.join([l['symbol'] for l in d['lists']] + [d['tutorial']['symbol'], d['manifest']['symbol']]))" \
+	$(call generated_data_quote,$(call generated_data_source,eventlists,src/data/ch2_eventlists.json)))
 
-$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP): src/data/ch2_eventlists.json \
+$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP): $(call generated_data_source,eventlists,src/data/ch2_eventlists.json) \
 	$(GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP) \
 	$(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE) \
 	$(GENERATED_DATA_SHARED_PY_SOURCES) \
 	$(wildcard scripts/generated_data/eventlists/*.py) \
 	$(GENERATED_DATA_CONFIG_INPUTS_eventlists)
 	@mkdir -p $(GENERATED_DATA_OUT_DIR)
-	$(GENERATED_DATA_PY) generate --table eventlists \
-		--source "src/data/ch2_eventlists.json" \
+	$(GENERATED_DATA_CLI) generate --table eventlists \
+		--source "$(call generated_data_source,eventlists,src/data/ch2_eventlists.json)" \
 		--dep-source "autoplaystrategies=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE)" \
 		--dep-source "chapterbundle=$(GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE)" \
 		--reference-profiles "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES)" \
@@ -2136,11 +2152,12 @@ GENERATED_DATA_CONFIG_INPUTS_terrainstats := \
 # list can never silently drift from what the table actually authors
 # (same technique as GENERATED_DATA_CH2_TRAPS_SYMBOLS above).
 GENERATED_DATA_TERRAINSTATS_SYMBOLS := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/terrainstats.json')); print(' '.join(t['symbol'] for t in d['tables']))")
+	"import json,sys; d = json.load(open(sys.argv[1])); print(' '.join(t['symbol'] for t in d['tables']))" \
+	$(call generated_data_quote,$(call generated_data_source,terrainstats,src/data/terrainstats.json)))
 
-$(GENERATED_DATA_TERRAINSTATS_C): src/data/terrainstats.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/terrainstats/*.py) $(GENERATED_DATA_CONFIG_INPUTS_terrainstats)
+$(GENERATED_DATA_TERRAINSTATS_C): $(call generated_data_source,terrainstats,src/data/terrainstats.json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/terrainstats/*.py) $(GENERATED_DATA_CONFIG_INPUTS_terrainstats)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table terrainstats --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) generate --table terrainstats --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'terrainstats' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_TRAPS_OBJECT
@@ -2389,12 +2406,13 @@ GENERATED_DATA_CONFIG_INPUTS_movecost := \
 # this list can never silently drift from what the table actually
 # authors (same technique as GENERATED_DATA_TERRAINSTATS_SYMBOLS above).
 GENERATED_DATA_MOVECOST_SYMBOLS := $(shell $(PYTHON) -c \
-	"import json; d = json.load(open('src/data/movecost.json')); \
-	print(' '.join(p[slot]['symbol'] for p in d['profiles'] for slot in ('normal', 'rain', 'snow') if p.get(slot)))")
+	"import json,sys; d = json.load(open(sys.argv[1])); \
+	print(' '.join(p[slot]['symbol'] for p in d['profiles'] for slot in ('normal', 'rain', 'snow') if p.get(slot)))" \
+	$(call generated_data_quote,$(call generated_data_source,movecost,src/data/movecost.json)))
 
-$(GENERATED_DATA_MOVECOST_C): src/data/movecost.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/movecost/*.py) $(GENERATED_DATA_CONFIG_INPUTS_movecost)
+$(GENERATED_DATA_MOVECOST_C): $(call generated_data_source,movecost,src/data/movecost.json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/movecost/*.py) $(GENERATED_DATA_CONFIG_INPUTS_movecost)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table movecost --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) generate --table movecost --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'movecost' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_TERRAINSTATS_OBJECT
@@ -2637,9 +2655,9 @@ GENERATED_DATA_CONFIG_INPUTS_weapontriangle := \
 # simply the table's one fixed symbol name.
 GENERATED_DATA_WEAPONTRIANGLE_SYMBOL := sWeaponTriangleRules
 
-$(GENERATED_DATA_WEAPONTRIANGLE_C): src/data/weapontriangle.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/weapontriangle/*.py) $(GENERATED_DATA_CONFIG_INPUTS_weapontriangle)
+$(GENERATED_DATA_WEAPONTRIANGLE_C): $(call generated_data_source,weapontriangle,src/data/weapontriangle.json) $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/weapontriangle/*.py) $(GENERATED_DATA_CONFIG_INPUTS_weapontriangle)
 	@mkdir -p $(@D)
-	$(GENERATED_DATA_PY) generate --table weapontriangle --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_CLI) generate --table weapontriangle --out-dir $(GENERATED_DATA_OUT_DIR)
 	@test -e $@ || { echo "error: generated-data table 'weapontriangle' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
 
 # Same legacy compile/assemble pipeline as GENERATED_DATA_MOVECOST_OBJECT
@@ -2810,10 +2828,10 @@ generated-data-idspace-check:
 # touches a committed file, so `FE8_ITEM_ID_CAP=0xCE make generated-data-check`
 # reports 0xCE/207 without making reports/id_space_audit.* env-dependent.
 generated-data-idspace-active:
-	$(GENERATED_DATA_PY).idspace active-generate --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_IDSPACE_CLI) active-generate --out-dir $(GENERATED_DATA_OUT_DIR)
 
 generated-data-idspace-active-check:
-	$(GENERATED_DATA_PY).idspace active-check --out-dir $(GENERATED_DATA_OUT_DIR)
+	$(GENERATED_DATA_IDSPACE_CLI) active-check --out-dir $(GENERATED_DATA_OUT_DIR)
 
 # Source-driven consumer census: every declaration in include/, src/, asm/ and
 # tools/ that names an extensible ID must be classified (or explicitly
