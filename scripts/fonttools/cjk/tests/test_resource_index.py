@@ -12,6 +12,7 @@ import unittest
 from scripts.fonttools.cjk.inventory import CjkFontError, check_generated_files
 from scripts.fonttools.cjk.package import FEHRR_SOURCES, _read_fehrr_lock, check_compact_assets
 from scripts.fonttools.cjk.resource_index import (
+    ENVELOPE_KIND,
     MAX_INDEX_BYTES,
     ResourceIndexError,
     decode_index,
@@ -26,13 +27,17 @@ ROOT = Path(__file__).resolve().parents[4]
 class ResourceIndexTests(unittest.TestCase):
     def test_existing_index_is_plain_byte_stable_and_losslessly_packable(self):
         original = (ROOT / "fonts/cjk/fehrr-sources.json").read_bytes()
-        value = json.loads(original)
-        self.assertEqual(encode_index(value), original)
+        value = decode_index(original)
+        plain = encode_index(value)
+        self.assertEqual(decode_index(plain), value)
+        self.assertEqual(encode_index(decode_index(plain)), plain)
         packed = encode_index(value, packed=True)
-        self.assertLess(len(packed), len(original))
+        self.assertLess(len(packed), len(plain))
         self.assertEqual(decode_index(packed), value)
         self.assertEqual(encode_index(value, packed=True), packed)
         self.assertEqual(decode_index(original), value)
+        originally_packed = json.loads(original).get("kind") == ENVELOPE_KIND
+        self.assertEqual(original, packed if originally_packed else plain)
 
     def test_invalid_or_unbounded_envelopes_fail_explicitly(self):
         envelope = json.loads(encode_index({"source": "glyphs"}, packed=True))
@@ -83,7 +88,7 @@ class ResourceIndexTests(unittest.TestCase):
 
     def test_actual_priority_reader_keeps_physical_checksum_boundary(self):
         original = (ROOT / FEHRR_SOURCES).read_bytes()
-        value = json.loads(original)
+        value = decode_index(original)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             path = root / FEHRR_SOURCES
@@ -127,7 +132,9 @@ class ResourceIndexTests(unittest.TestCase):
                 ("fehrr", FEHRR_SOURCES),
                 ("runtime-usage", "fonts/cjk/runtime_usage.json"),
             ):
-                for representation in ("packed", "plain"):
+                originally_packed = json.loads(originals[relative]).get("kind") == ENVELOPE_KIND
+                formats = ("plain", "packed") if originally_packed else ("packed", "plain")
+                for representation in formats:
                     with self.subTest(index=index, format=representation):
                         result = subprocess.run(
                             [
@@ -140,7 +147,7 @@ class ResourceIndexTests(unittest.TestCase):
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                         self.assertEqual(
                             decode_index((root / relative).read_bytes()),
-                            json.loads(originals[relative]),
+                            decode_index(originals[relative]),
                         )
                         after_assets = check_compact_assets(root)
                         for path, data in before_assets.items():
