@@ -3676,9 +3676,11 @@ No-edit state is explicit. The first body edit changes `totalCount` from 0 to
 2 by materializing the original snapshot with the first real edit; every
 subsequent edit increases it by exactly one. The original node must bind the
 same PR's creation time and author, the intent's canonical pre-body digest,
-and a distinct ID. Original and latest `createdAt` / `updatedAt` share the
-materialization time, while original authorship strictly precedes latest
-`editedAt`. The latest editor and body remain owner/target-bound.
+and a distinct ID. Original and latest `createdAt` share the materialization
+time, as does the original snapshot's `updatedAt`. The current row's exact
+`updatedAt` may be later and remains confirmation/replay-bound; it is not
+normalized to creation. Original authorship strictly precedes latest `editedAt`.
+The latest editor and body remain owner/target-bound.
 `body_original` retains the typed original proof in the count-2 metadata
 version, so changing it invalidates a stored confirmation. A lone revision,
 missing/permission-omitted connections, count rollback/jump, two real edits,
