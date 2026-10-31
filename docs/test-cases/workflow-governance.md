@@ -3387,9 +3387,14 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    one at each native body instant; require ambiguity without choosing one
    or rerunning. Changed fields still advance logically and must have a common
    native instant; no clock window or current-PR reconstruction is permitted.
-   Replay a stored confirmation while changing only the current row's
-   `updatedAt`, first back to creation and then later. Both must reject as
-   stale or forged authority without PATCH or workflow rerun.
+   For a combined edit, set body `editedAt=05`, body `updatedAt=06` and the
+   title event to `06` in the same fixture minute. Only an attested event at
+   `06` may complete; `05` must defer despite matching the body's logical edit.
+   Replay a stored first-edit confirmation from a zero-history intent with
+   its two-node original/current snapshot, current `createdAt=05` and
+   `updatedAt=06`. Change only current `updatedAt`, back to `05` and ahead to
+   `07`. Both must reject as stale or forged authority without PATCH or workflow
+   rerun; a subsequent-edit count-3 fixture alone is not this first-edit control.
    Confirm and reconcile this 0-to-2 transition through the real helper and
    isolated CLI, including applied-target recovery without a second PATCH.
    Repeat a subsequent 2-to-3 edit. Return a real second intervening edit

@@ -6272,11 +6272,27 @@ class PullRequestMetadataTests(unittest.TestCase):
                     )
 
     def test_only_current_body_updated_at_changes_invalidate_confirmation(self):
-        receipt = _receipt()
-        confirmed = replace(
-            _confirmation(receipt).metadata_version,
-            body_edit_updated_at="2026-09-04T00:00:06Z",
+        pre = _metadata_version(body_last_edited_at=None)
+        edit, posts = _mutation_client(pre_state=_pr(), pre_version=pre)
+        pull = edit.routes[("POST", "graphql")][-1].payload[
+            "data"
+        ]["repository"]["pullRequest"]
+        pull["userContentEdits"]["nodes"][0]["updatedAt"] = "2026-09-04T00:00:06Z"
+        decision = pr_metadata.edit_metadata(
+            edit, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+            essential_reason=None,
         )
+        self.assertEqual(decision.action, "updated")
+        receipt = pr_metadata._parse_intent_comment_body(posts[0]["body"])
+        confirmation = pr_metadata._parse_confirmation_comment_body(posts[1]["body"])
+        confirmed = confirmation.metadata_version
+        self.assertEqual(receipt.pre_version.body_edit_total_count, 0)
+        self.assertEqual(confirmed.body_edit_total_count, 2)
+        self.assertIsNotNone(confirmed.body_original)
+        self.assertEqual(confirmed.body_edit_created_at, "2026-09-04T00:00:05Z")
+        self.assertEqual(confirmed.body_edit_updated_at, "2026-09-04T00:00:06Z")
+        target = _pr(body="new body", updated_at="2026-09-04T00:00:06Z")
         for updated in ("2026-09-04T00:00:05Z", "2026-09-04T00:00:07Z"):
             with self.subTest(current_updated_at=updated):
                 current = replace(confirmed, body_edit_updated_at=updated)
@@ -6288,15 +6304,15 @@ class PullRequestMetadataTests(unittest.TestCase):
                     {"body_edit_updated_at"},
                 )
                 client = ScriptedClient()
-                _add_pr_states(client, _pr())
+                _add_pr_states(client, target)
                 with self.assertRaisesRegex(
                     pr_metadata.MetadataEditError,
                     "edit confirmation authority is stale or forged",
                 ):
                     _reconcile(
                         client, receipt=receipt,
-                        confirmation=_confirmation(receipt, version=confirmed),
-                        version=current,
+                        confirmation=confirmation, comments=posts,
+                        version=current, state=target, original_body="Stable body",
                     )
                 self.assertFalse(any(
                     method == "PATCH" or endpoint.endswith("/rerun")
@@ -9285,6 +9301,39 @@ class MetadataEventAttributionTests(unittest.TestCase):
                     result, client = self.decide(pair, runs)
                     self.assertEqual(result.action, "deferred")
                     self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+
+    def test_combined_edit_matches_only_the_shared_later_body_native_instant(self):
+        receipt, confirmation, posts, state = self.pair(title="New title", body="new body")
+        confirmation = replace(
+            confirmation,
+            metadata_version=replace(
+                confirmation.metadata_version,
+                title_event_created_at="2026-09-04T00:00:06Z",
+                body_edit_updated_at="2026-09-04T00:00:06Z",
+            ),
+        )
+        self.assertEqual(
+            confirmation.metadata_version.body_edit_edited_at,
+            "2026-09-04T00:00:05Z",
+        )
+        state = {**state, "updated_at": "2026-09-04T00:00:06Z"}
+        pair = (
+            receipt, confirmation,
+            [posts[0], _confirmation_comment(
+                confirmation, created_at="2026-09-04T00:00:06Z"
+            )], state,
+        )
+        for second in (5, 6):
+            with self.subTest(event_second=second):
+                event = _metadata_event_payload(
+                    _pr(), {**state, "updated_at": f"2026-09-04T00:00:0{second}Z"}
+                )
+                result, client = self.decide(pair, [
+                    _run(303, 12, mode="metadata-only", metadata_event_payload=event),
+                    _run(101, 10, mode="full"),
+                ])
+                self.assertEqual(result.action, "complete" if second == 6 else "deferred")
+                self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
 
     def test_refreshed_event_proof_cannot_rebind_or_authorize_a_rerun(self):
         pair = self.pair()
