@@ -681,6 +681,7 @@
       "title": "Localized FE8U full-game message catalog",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/272",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/344",
         "https://github.com/laqieer/fireemblem8-expansion/issues/18",
         "https://github.com/laqieer/fireemblem8-expansion/issues/56"
       ],
@@ -688,6 +689,7 @@
       "status": "current",
       "required_cases": [
         "TC-LOCALIZATION-003",
+        "TC-LOCALIZATION-AUTHORED-SCOPE-001",
         "TC-CJK-INVENTORY-ORDER-001"
       ]
     },
@@ -3635,6 +3637,34 @@
         {
           "command": "make expansion-modern-localization-runtime-eu-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/locale-eu-first-start-fr-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-LOCALIZATION-AUTHORED-SCOPE-001",
+      "title": "Scope deterministic authored validation",
+      "feature_id": "full-game-localization",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/344"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-localization-authored-scope-001-scope-deterministic-authored-validation",
+      "profiles": [
+        "Host Python; explicit JA, explicit ZH-Hans, and default both-locale scope"
+      ],
+      "purpose": "Validate only the requested deterministic authored catalogs without weakening default full-scope validation.",
+      "prerequisites": "Repository root with Python, Git and committed manifest/source inputs; never edit stock catalogs or the real index.",
+      "actions": "Run the authored-catalog unittest module and call the public checker with JA-only, ZH-only and omitted scope; observe staged requested/unrequested catalog drift and invalid scope controls.",
+      "expected_result": "Valid scoped generated content equals its committed counterpart; stale requested catalogs and invalid scopes reject, while stale unrequested catalogs are ignored.",
+      "negative_control": "Default scope still checks both JA/ZH outputs and retains key parity.",
+      "interactions": "Existing manifest, mapping, terminology, shard and generated-catalog contracts remain; no additional feature conflicts.",
+      "save_compatibility": "Host-only validation adds no runtime field, save structure, epoch or migration.",
+      "cleanup": "The regression removes only its owned temporary source fixture and alternate Git index.",
+      "limitations": "No target-ROM, linguistic, production glyph or resource qualification is claimed; default writer and CLI are unchanged.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.localization.tests.test_authored_catalogs -v",
+          "evidence": "scripts/localization/tests/test_authored_catalogs.py"
         }
       ]
     },

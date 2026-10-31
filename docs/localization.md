@@ -340,6 +340,16 @@ catalogs while preserving their source IDs and translations.
      --require-no-fallback --require-live-origin
    ```
 
+   Host callers may pass keyword-only `locales=("ja",)` or
+   `locales=("zh-Hans",)` to `build_authored_catalogs` and
+   `check_authored_catalogs`. The scope must be nonempty, unique and limited
+   to JA/ZH. Only those catalogs are built/checked; omitted scope retains
+   both locales and their key-parity check. The writer/default CLI are
+   unchanged. See
+   [TC-LOCALIZATION-AUTHORED-SCOPE-001](test-cases/localization.md#tc-localization-authored-scope-001-scope-deterministic-authored-validation).
+   This host interface adds no runtime flag, ROM/RAM cost, save field,
+   migration, archival compiler change or new feature conflict.
+
    The production compressed catalog is 3,414/3,414 present for every real
    locale, with zero English fallback and zero unresolved rows. European rows
    use the authoritative `fe8eu_to_fe8u.json` ledger, official indexed text,

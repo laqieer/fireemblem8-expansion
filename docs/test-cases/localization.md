@@ -12,6 +12,57 @@ selection and rendering evidence is automated; linguistic quality and
 comparison of rendered CJK artwork to authorized regional artwork remain
 separate human judgments.
 
+## TC-LOCALIZATION-AUTHORED-SCOPE-001: Scope deterministic authored validation
+
+**Issue:** [#344](https://github.com/laqieer/fireemblem8-expansion/issues/344).
+**Profiles:** host Python, explicit JA-only, ZH-only, and unchanged default
+both-locale scope. This is not a target-ROM or linguistic qualification.
+
+**Prerequisites and reset:** run from the repository root with Python and Git
+available. Use the existing committed manifest/source inputs. Do not edit
+stock catalogs or the real Git index. The regression creates and removes its
+own ignored source fixture and alternate index.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.localization.tests.test_authored_catalogs -v`.
+2. Exercise the public read-only interface:
+
+   ```python
+   from pathlib import Path
+   from scripts.localization.game_locales.authored import check_authored_catalogs
+
+   check_authored_catalogs(Path.cwd(), locales=("ja",))
+   check_authored_catalogs(Path.cwd(), locales=("zh-Hans",))
+   check_authored_catalogs(Path.cwd())
+   ```
+
+3. In the isolated regression, observe each staged catalog's visible payload
+   changed in turn. Checking only the other locale succeeds; requesting the
+   changed locale, or using the default full scope, raises
+   `AuthoredCatalogError`. Empty, repeated, unknown and invalid scope values
+   reject before any missing source is read.
+
+### Expected result and controls
+
+Scoped generated catalog content equals its committed default counterpart.
+The default still checks both JA/ZH catalogs and retains cross-locale key
+parity. A stale unrequested catalog is not a prerequisite for the selected
+scope; a stale requested catalog cannot silently pass. The complete default
+scope remains the negative control against accidentally suppressing checks.
+
+**Interactions and save compatibility:** existing manifest, mapping,
+terminology, shard and generated-catalog contracts remain authoritative.
+There are no additional feature conflicts, runtime fields or save migrations.
+Default CLI/writer behavior is unchanged.
+
+**Automation and cleanup:** the named unittest module exercises the real
+builder/checker, parsed generated content and adversarial staged files. It
+does not infer behavior from comments or helper spelling. Only its owned
+temporary fixture/index are removed. No emulator, linguistic judgment or
+production glyph/resource acceptance is established by this host case.
+
 ## Issue #104 semantic evidence mapping
 
 Issue [#104](https://github.com/laqieer/fireemblem8-expansion/issues/104)
