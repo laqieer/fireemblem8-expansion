@@ -76,8 +76,10 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
 2. Require complete decoded equality, repeated deterministic encoding,
    unchanged plain bytes and every glyph/width/bitmap byte, valid physical
    checksums, and complete reverse-conversion data in the original format.
-   Same-build streams reproduce the original bytes; cross-build unchanged
-   packed inputs retain their original streams without recompression.
+   Fresh encoding is deterministic within one encoder build. Unchanged packed
+   inputs retain their original streams without recompression, including valid
+   alternate streams. Explicit format round trips preserve complete logical
+   data, not necessarily the historical compressed bytes.
    Explicit format changes update only the actual physical checksum chain.
    The
    pre-interface FEHRR reader rejects the packed fixture. An explicit plain
@@ -95,6 +97,15 @@ consumers, not a raw-source assertion. It removes only its owned temporary
 files and never converts stock inputs. All existing source/schema/provenance
 checks remain required. This is storage evidence, not font-art, selected-game,
 rendered-text or supported ROM-profile qualification.
+
+The existing review-family `cjk-resource-index` binding exercises direct
+wire, generated-owner/output/consumer/drift and plain/packed resource
+predicates. Run
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_cjk_subjects -v`
+for its complete-source, real numeric/stream mutation and
+semantics-preserving-refactor controls. It does not wrap a whole-suite pass
+as member evidence or replace the font CLI, candidate/master Build or final
+delivery gates.
 
 #### Default FEHRR migration variant
 
