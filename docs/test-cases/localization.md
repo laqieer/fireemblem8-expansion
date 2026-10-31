@@ -107,6 +107,11 @@ The same workflow subject's wire roles execute captured fixture production,
 consumption, unknown-selector validation, replay and stale-program controls.
 Equivalent formatting, local names and operand order are reviewed-program
 inputs, not candidate-supplied test code or arbitrary pass labels.
+Literal positional, keyword and mixed subject constructors, including a direct
+constructor alias, bind the same finite declaration. Only the actual `BINDINGS`
+table owns it; an unrelated matching call elsewhere cannot supply ownership.
+The stale-binding probe compares real owned Git trees through captured
+production member expansion, not a synthetic source identity.
 
 ### Cleanup and limitations
 

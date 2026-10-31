@@ -283,6 +283,40 @@ def schema_declaration(source: bytes, *, dependencies=True) -> tuple[dict, tuple
     return defaults, tuple(table_dependencies)
 
 
+def subject_declaration_nodes(raw):
+    source = ast.parse(raw)
+    declarations = [
+        item.value for item in source.body if isinstance(item, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "BINDINGS"
+                for target in item.targets)
+    ]
+    review.require(len(declarations) == 1
+                   and isinstance(declarations[0], (ast.Tuple, ast.List)),
+                   "unknown subject declaration needs a reviewed finite model")
+    aliases = {"SubjectSpec"}
+    for item in source.body:
+        if (isinstance(item, ast.Assign) and isinstance(item.value, ast.Name)
+                and item.value.id in aliases):
+            aliases.update(target.id for target in item.targets if isinstance(target, ast.Name))
+    fields = ("case_id", "name", "model")
+    result = []
+    for node in declarations[0].elts:
+        review.require(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                       and node.func.id in aliases and len(node.args) <= len(fields),
+                       "unknown subject constructor needs a reviewed finite model")
+        values = dict(zip(fields, node.args))
+        for keyword in node.keywords:
+            review.require(keyword.arg in fields and keyword.arg not in values,
+                           "unknown or duplicate subject field")
+            values[keyword.arg] = keyword.value
+        review.require(set(values) == set(fields)
+                       and all(isinstance(value, ast.Constant) and isinstance(value.value, str)
+                               for value in values.values()),
+                       "nonliteral subject fields need a reviewed finite model")
+        result.append((node, {key: value.value for key, value in values.items()}))
+    return source, result
+
+
 def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
     result = []
 
@@ -389,12 +423,12 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         ))
         result = [replace(member, execution_inputs=closure) for member in result]
     elif spec.model == "authored-binding":
+        _, bindings = subject_declaration_nodes(tree.read(BINDING_SOURCE))
         declarations = [
-            item for item in ast.walk(ast.parse(tree.read(BINDING_SOURCE)))
-            if isinstance(item, ast.Call) and len(item.args) == 3
-            and all(isinstance(value, ast.Constant) for value in item.args)
-            and tuple(value.value for value in item.args) == (
-                AUTHORED_CASE_ID, "authored-scope-case", "authored-case")
+            fields for _, fields in bindings if fields == {
+                "case_id": AUTHORED_CASE_ID, "name": "authored-scope-case",
+                "model": "authored-case",
+            }
         ]
         review.require(len(declarations) == 1,
                        "unknown authored-case source selector needs a reviewed finite model")
@@ -479,6 +513,14 @@ def command(argv, *, stdin=None):
     if result.returncode:
         raise RuntimeError("tool execution unavailable: " + result.stderr.decode(errors="replace")[-2000:])
     return result.stdout
+
+
+def fixture_git(root, *arguments):
+    return command([
+        "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+        "-c", "gc.auto=0", "-c", "maintenance.auto=0", "-c", "user.name=Review fixture",
+        "-c", "user.email=review@example.invalid", "-C", str(root), *arguments,
+    ]).decode().strip()
 
 
 def probe_result(kind):
@@ -884,21 +926,15 @@ def _authored_binding(probe):
             checks += 1
             from scripts.workflow_pilot.trusted_review_gate import GitTree
 
-            git = [
-                "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
-                "-c", "gc.auto=0",
-                "-c", "maintenance.auto=0", "-c", "user.name=Review fixture",
-                "-c", "user.email=review@example.invalid",
-            ]
             if not Path(".git").exists():
-                command([*git, "init", "-q"])
-            command([*git, "add", "."])
-            command([*git, "commit", "-qm", "wrong procedure anchor"])
-            before = command([*git, "rev-parse", "HEAD"]).decode().strip()
+                fixture_git(fixture, "init", "-q")
+            fixture_git(fixture, "add", ".")
+            fixture_git(fixture, "commit", "-qm", "wrong procedure anchor")
+            before = fixture_git(fixture, "rev-parse", "HEAD")
             Path(CASE_REGISTRY).write_bytes(saved[CASE_REGISTRY])
-            command([*git, "add", CASE_REGISTRY])
-            command([*git, "commit", "-qm", "correct procedure anchor"])
-            after = command([*git, "rev-parse", "HEAD"]).decode().strip()
+            fixture_git(fixture, "add", CASE_REGISTRY)
+            fixture_git(fixture, "commit", "-qm", "correct procedure anchor")
+            after = fixture_git(fixture, "rev-parse", "HEAD")
             before_tree, after_tree = GitTree(fixture, before), GitTree(fixture, after)
             spec = next(item for item in module.BINDINGS if item.name == "authored-scope-case")
             module.expand_members(spec, after_tree, after_tree)
@@ -924,12 +960,15 @@ def _authored_fixture(probe):
     module = types.ModuleType("captured_authored_fixture_producer")
     module.__file__ = str(Path(BINDING_CAPTURE).resolve())
     sys.modules[module.__name__] = module
-    exec(compile(Path(BINDING_CAPTURE).read_bytes(), BINDING_CAPTURE, "exec"), module.__dict__)
+    captured = Path(BINDING_CAPTURE).read_bytes()
+    exec(compile(captured, BINDING_CAPTURE, "exec"), module.__dict__)
     fixture = Path(BINDING_FIXTURE).resolve()
     module.BINDING_CAPTURE = str(Path(BINDING_SOURCE).resolve())
     module.BINDING_FIXTURE = str(fixture)
     program = fixture / LOCALE_CASE_PROGRAM
     original = program.read_bytes()
+    binding_path = fixture / BINDING_SOURCE
+    binding_original = binding_path.read_bytes() if binding_path.exists() else None
     root = Path.cwd()
     role = probe.partition(":")[2]
     variant = {
@@ -970,10 +1009,46 @@ def _authored_fixture(probe):
             check(replay["verdict"] == "satisfied" and replay["checks"] > 0,
                   "fixture replay retained a stale reviewed-program binding")
             checks += 1
+        if role == "stale-bindings":
+            from scripts.workflow_pilot.trusted_review_gate import GitTree
+            spec = module.resolve_subject(
+                "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+                json.loads((fixture / CASE_REGISTRY).read_bytes()),
+            )
+            binding_path.parent.mkdir(parents=True, exist_ok=True)
+            binding_path.write_bytes(captured)
+            if not (fixture / ".git").exists():
+                fixture_git(fixture, "init", "-q")
+            fixture_git(fixture, "add", BINDING_SOURCE)
+            fixture_git(fixture, "commit", "-qm", "captured subject declarations")
+            baseline_tree = GitTree(fixture, fixture_git(fixture, "rev-parse", "HEAD"))
+            baseline = module.expand_members(spec, baseline_tree, baseline_tree)
+            review.require(bool(baseline), "captured declaration backend has no members")
+            source, bindings = subject_declaration_nodes(captured)
+            for node, fields in bindings:
+                node.args = []
+                node.keywords = [ast.keyword(arg=key, value=ast.Constant(value=fields[key]))
+                                 for key in ("model", "name", "case_id")]
+            equivalent = ast.unparse(ast.fix_missing_locations(source)).encode()
+            if equivalent != captured:
+                binding_path.write_bytes(equivalent)
+                fixture_git(fixture, "add", BINDING_SOURCE)
+                fixture_git(fixture, "commit", "-qm", "equivalent keyword subject declarations")
+            equivalent_tree = GitTree(fixture, fixture_git(fixture, "rev-parse", "HEAD"))
+            try:
+                observed = module.expand_members(spec, baseline_tree, equivalent_tree)
+            except module.review.ReviewError as error:
+                raise ContractViolation("equivalent keyword bindings were rejected") from error
+            check(observed == baseline, "equivalent bindings changed captured production members")
+            checks += 2
         return {"kind": "host", "checks": checks,
                 "detail": "captured fixture producer executed on equivalent reviewed programs"}
     finally:
         program.write_bytes(original)
+        if binding_original is not None:
+            binding_path.write_bytes(binding_original)
+        elif binding_path.exists():
+            binding_path.unlink()
         os.chdir(root)
 
 
