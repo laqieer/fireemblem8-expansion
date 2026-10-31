@@ -14,11 +14,14 @@ combinations before any file is written).
 
 import json
 import os
+import select
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
@@ -174,6 +177,57 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             enabled_locales="en,ja", default_locale="ja", save_compat_epoch="0x100",
         )
         self.assertEqual(identity.config_fingerprint, equivalent.config_fingerprint)
+
+    def test_unsupported_profile_settings_fail_in_the_declaration_frontend(self):
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REQUIRED_SETTINGS += FE8_ITEM_ID_CAP\n"
+                "FE8_PROJECT_primary_FE8_ITEM_ID_CAP := 0xCE\n"
+            )
+        rejected = subprocess.run(
+            [
+                "make", "--no-print-directory", "-s", "-f", "project_selection.mk",
+                f"FE8_PROJECT={self.project.name}", "project-selection-config",
+            ],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("unsupported project setting", rejected.stderr)
+
+    def test_standalone_producers_enforce_normalized_profile_requirements(self):
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REQUIRED_SETTINGS += EXPANSION_ENABLED_LOCALES "
+                "EXPANSION_DEFAULT_LOCALE EXPANSION_SAVE_COMPAT_EPOCH\n"
+                "FE8_PROJECT_primary_EXPANSION_ENABLED_LOCALES := en,fr\n"
+                "FE8_PROJECT_primary_EXPANSION_DEFAULT_LOCALE := en\n"
+                "FE8_PROJECT_primary_EXPANSION_SAVE_COMPAT_EPOCH := 256\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        base = [
+            "make", "--no-print-directory", "-s", "NODEP=1",
+            f"FE8_PROJECT={self.project.name}",
+        ]
+        for goal in (
+            "generated-data-manifest", "localization-generate",
+            "assets-validate", "game-localization-generate",
+        ):
+            with self.subTest(goal=goal):
+                rejected = subprocess.run(
+                    [*base, "EXPANSION_ENABLED_LOCALES=en,de", goal],
+                    cwd=ROOT, text=True, capture_output=True,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("requires EXPANSION_ENABLED_LOCALES", rejected.stderr)
+        equivalent = subprocess.run(
+            [
+                *base, "EXPANSION_ENABLED_LOCALES=fr,en",
+                "EXPANSION_SAVE_COMPAT_EPOCH=0x100", "localization-generate",
+            ],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(equivalent.returncode, 0, equivalent.stderr)
 
     def test_selected_project_is_recorded_by_the_real_metadata_cli(self):
         output = self.project / "metadata"
@@ -484,6 +538,17 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             ("MODERN_OUTPUT_DIR", "build/outside"),
             ("GENERATED_DATA_OUT_DIR", "build/outside"),
             ("ASSET_OUTPUT_DIR", "build/outside"),
+            ("ASSET_PROFILE_ROOT", "build/outside"),
+            ("ASSET_DISCOVERY_ROOT", "build/outside"),
+            ("MODERN_LOCALIZATION_ROOT", "build/outside"),
+            ("MODERN_LOCALIZATION_GENERATED_DIR", "build/outside"),
+            ("MODERN_LOCALIZATION_LEGACY_GENERATED_DIR", "build/outside"),
+            ("MODERN_GAME_LOCALIZATION_ROOT", "build/outside"),
+            ("MODERN_GAME_LOCALIZATION_GENERATED_DIR", "build/outside"),
+            ("MODERN_PROJECT_TEXT_DIR", "build/outside"),
+            ("MODERN_GDB_SMOKE_OUTPUT_DIR", "build/outside"),
+            ("MODERN_AUTOPLAY_PLANNER_ROOT", "build/outside"),
+            ("MODERN_PATCH_RELEASE_ARTIFACT_DIR", "build/outside"),
             ("MODERN_BUILD_ROOT", ""),
         ):
             with self.subTest(override=variable):
@@ -496,6 +561,195 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                     cwd=ROOT, text=True, capture_output=True, check=False,
                 )
                 self.assertNotEqual(rejected.returncode, 0)
+
+        for variable in (
+            "MODERN_TOOLCHAIN_ROOT", "MODERN_BINUTILS_DIR",
+            "MODERN_LIBGCC_DIR", "MODERN_LIBC_DIR",
+        ):
+            accepted = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-s", "-f", "project_selection.mk",
+                    f"FE8_PROJECT={self.project.name}", f"{variable}=build/tool-input",
+                    "project-selection-config",
+                ],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+    def test_recursive_runtime_consumers_use_the_selected_producer_namespace(self):
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-s", "-n", "NODEP=1", "MAKE=echo",
+                "-o", "expansion-modern-rom", "-o", "expansion-modern-all",
+                f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
+                "expansion-modern-gdb-smoke",
+                "expansion-modern-banim-presentation-check",
+                "expansion-modern-localization-runtime-multi-check",
+                "expansion-modern-autoplay-planner-check",
+                "expansion-modern-aoe-check",
+                "expansion-modern-hq-mixer-check",
+                "expansion-modern-autoplay-strategy-runtime-check",
+                "expansion-modern-blue-phase-delegate-check",
+                "expansion-modern-debugtools-phase-control-check",
+                "expansion-modern-chapter-objectives-check",
+                "expansion-modern-autoplay-accelerated-fidelity-check",
+                "expansion-modern-debugtools-diagnostics-check",
+                "expansion-modern-map-menu-presentation-check",
+                "expansion-modern-portrait-package-runtime-check",
+                "expansion-modern-banim-package-runtime-check",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        artifacts = []
+        portrait_roots = []
+        for line in result.stdout.replace("\\\n", " ").splitlines():
+            for argument in shlex.split(line):
+                if argument.startswith("FE8_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT="):
+                    portrait_roots.append(argument.split("=", 1)[1])
+                path = argument.split("=", 1)[-1]
+                if not any(char.isspace() for char in path) and Path(path).name in (
+                    "fireemblem8.elf", "fireemblem8.gba", "fireemblem8.map",
+                    "linker-budget.json", "planner-linked-budget.json",
+                ):
+                    artifacts.append(path)
+        self.assertGreater(len(artifacts), 4, result.stdout)
+        namespace = f"/projects/{self.project.name}/primary/"
+        invalid = [
+            path for path in artifacts
+            if not path.startswith("build/")
+            or not any(namespace + config + "/aapcs/" in path for config in ("debug", "release"))
+        ]
+        self.assertEqual(invalid, [])
+        self.assertTrue(portrait_roots, result.stdout)
+        self.assertTrue(all(path.endswith(namespace.rstrip("/")) for path in portrait_roots))
+
+    def test_packed_animation_selectors_retain_the_real_base_pin_mismatch_gate(self):
+        makefile = self.project / "pin.mk"
+        script = self.project / "pin.ld"
+        empty = self.project / "empty.txt"
+        empty.write_text("", encoding="utf-8")
+        command = [
+            sys.executable, str(ROOT / "scripts/shiftcheck/scan_build_addrs.py"),
+            "--makefile", str(makefile), "--ldscript", str(script),
+            "--banim-ldscript", str(empty),
+        ]
+        for selectors in (
+            ("banim/data_banim.o",),
+            ("[b]anim/data_banim.o",),
+            ("*banim/project_data_banim.o",),
+            ("[b]anim/data_banim.o", "*banim/project_data_banim.o"),
+        ):
+            script.write_text(
+                "ROM __text_start : {\n. = 0xC02000;\n"
+                + "".join(f"{selector}(.data)\n" for selector in selectors)
+                + "}\n",
+                encoding="utf-8",
+            )
+            for base in (0x08C02000, 0x08C02004):
+                with self.subTest(selectors=selectors, base=base):
+                    makefile.write_text(f"packed:\n\tpacker -b {base:#x}\n", encoding="utf-8")
+                    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0 if base == 0x08C02000 else 1, result.stdout)
+        makefile.write_text("packed:\n\tpacker -b 0x08c02000\n", encoding="utf-8")
+        script.write_text(
+            "ROM __text_start : {\n. = 0xC02000;\n[b]anim/data_banim.o(.data)\n"
+            ". = 0xC03000;\n*banim/project_data_banim.o(.data)\n}\n",
+            encoding="utf-8",
+        )
+        mismatch = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(mismatch.returncode, 1, mismatch.stdout)
+
+    @unittest.skipUnless(
+        shutil.which("arm-none-eabi-ld") and shutil.which("arm-none-eabi-objcopy"),
+        "ARM binutils required",
+    )
+    def test_private_packed_output_creates_its_own_parent_and_preserves_input_bytes(self):
+        source = self.project / "packed.bin"
+        source.write_bytes(bytes(range(16)))
+        script = self.project / "packed.txt"
+        script.write_text(str(source) + "\n", encoding="utf-8")
+        output = self.project / "owned/nested/project_data_banim.o"
+        self.assertFalse(output.parent.exists())
+        result = subprocess.run(
+            [
+                sys.executable, str(ROOT / "scripts/arm_compressing_linker.py"),
+                "-o", str(output), "-t", str(script), "-b", "0x8c02000",
+                "-l", "arm-none-eabi-ld", "--objcopy", "arm-none-eabi-objcopy",
+            ],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = self.project / "observed.bin"
+        subprocess.run(
+            [
+                "arm-none-eabi-objcopy", "-O", "binary", "-j", ".data",
+                str(output), str(observed),
+            ],
+            check=True, capture_output=True,
+        )
+        self.assertEqual(observed.read_bytes(), source.read_bytes())
+        self.assertTrue(Path(str(output) + ".sym.o").is_file())
+
+    @unittest.skipUnless(
+        shutil.which("arm-none-eabi-ld") and shutil.which("arm-none-eabi-objcopy"),
+        "ARM binutils required",
+    )
+    def test_actual_selected_packing_command_waits_on_the_common_stock_input_lock(self):
+        from scripts import arm_compressing_linker as linker
+
+        source = self.project / "packed.bin"
+        source.write_bytes(bytes(range(16)))
+        script = self.project / "packed.txt"
+        script.write_text(str(source) + "\n", encoding="utf-8")
+        root = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(root) if root.exists() else None)
+        output = root / "primary/debug/aapcs/banim/project_data_banim.o"
+        resolved = subprocess.run(
+            [
+                "make", "--no-print-directory", "-sn", "NODEP=1", "MAKE=echo",
+                f"FE8_PROJECT={self.project.name}",
+                f"ASSET_BANIM_COMBINED_LINKER_SCRIPT={script}",
+                str(output.relative_to(ROOT)),
+            ],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(resolved.returncode, 0, resolved.stderr)
+        commands = [
+            shlex.split(line)
+            for line in resolved.stdout.replace("\\\n", " ").splitlines()
+            if " -o " + str(output.relative_to(ROOT)) + " " in line
+        ]
+        self.assertEqual(len(commands), 1, resolved.stdout)
+        command = commands[0]
+        self.assertEqual(command[command.index("--lock-output") + 1], "banim/data_banim.o")
+        control = command[command.index("--") + 1:]
+        command.insert(command.index("--lock-output"), "-d")
+        with linker.output_lock(ROOT / "banim/data_banim.o"):
+            bypass = subprocess.run(control, cwd=ROOT, text=True, capture_output=True, timeout=10)
+            self.assertEqual(bypass.returncode, 0, bypass.stderr)
+            self.assertTrue(output.is_file())
+            output.unlink()
+            Path(str(output) + ".sym.o").unlink()
+            child = subprocess.Popen(
+                command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            self.addCleanup(lambda: child.kill() if child.poll() is None else None)
+            self.assertTrue(select.select([child.stdout], [], [], 10)[0])
+            self.assertTrue(child.stdout.readline().startswith("Waiting for output lock:"))
+            self.assertFalse(select.select([child.stdout], [], [], 0.1)[0])
+            self.assertIsNone(child.poll())
+            self.assertFalse(output.exists())
+        stdout, stderr = child.communicate(timeout=10)
+        self.assertEqual(child.returncode, 0, stdout + stderr)
+        observed = self.project / "locked.bin"
+        subprocess.run(
+            ["arm-none-eabi-objcopy", "-O", "binary", "-j", ".data", str(output), str(observed)],
+            capture_output=True, check=True,
+        )
+        self.assertEqual(observed.read_bytes(), source.read_bytes())
 
     def test_selected_ui_catalog_reaches_the_linked_catalog_descriptor(self):
         catalog = self.project / "catalog.en.json"
@@ -622,6 +876,53 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(len(payload), 450)
         self.assertEqual(int.from_bytes(payload[:2], "little"), 8)
 
+    def test_selected_map_resize_revalidates_objective_bounds_before_publishing(self):
+        tmx = self.project / "map.tmx"
+        shutil.copyfile(ROOT / "assets/tmx/Ch2Map.tmx", tmx)
+        manifest = self.project / "assets.json"
+        data = json.loads((ROOT / "assets/manifest.json").read_text(encoding="utf-8"))
+        data["assets"] = [data["assets"][0]]
+        data["assets"][0]["sources"] = [str(tmx.relative_to(ROOT))]
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := assets chapterobjectives chapterbundle\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_SOURCE_assets := {manifest.relative_to(ROOT)}\n"
+                "FE8_PROJECT_SOURCE_chapterobjectives := scripts/generated_data/tests/fixtures/chapterobjectives/valid.json\n"
+                "FE8_PROJECT_SOURCE_chapterbundle := scripts/generated_data/tests/fixtures/chapterobjectives/ch2_bundle.json\n"
+            )
+        environment = {**os.environ, "GIT_INDEX_FILE": str(self.project / "asset.index")}
+        subprocess.run(["git", "read-tree", "HEAD"], cwd=ROOT, env=environment, check=True)
+        subprocess.run(
+            ["git", "add", "--", str(tmx.relative_to(ROOT))],
+            cwd=ROOT, env=environment, check=True,
+        )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        generated = output / "primary/debug/aapcs/generated/data/data_chapter_objectives.c"
+        command = [
+            "make", "--no-print-directory", "-s", "NODEP=1",
+            f"FE8_PROJECT={self.project.name}", str(generated.relative_to(ROOT)),
+        ]
+        valid = subprocess.run(command, cwd=ROOT, env=environment, text=True, capture_output=True)
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        previous = generated.read_bytes()
+        tree = ET.parse(tmx)
+        tree.getroot().set("width", "1")
+        tree.getroot().set("height", "1")
+        layer = tree.find("layer")
+        layer.set("width", "1")
+        layer.set("height", "1")
+        layer.find("data").text = "521"
+        tree.write(tmx, encoding="utf-8", xml_declaration=True)
+        data["assets"][0]["resources"].update(mapWidth=1, mapHeight=1)
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        rejected = subprocess.run(command, cwd=ROOT, env=environment, text=True, capture_output=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("area", rejected.stderr)
+        self.assertEqual(generated.read_bytes(), previous)
+
     def test_incomplete_duplicate_unknown_and_inherited_replacement_inputs_fail(self):
         declaration = self.project / "project.mk"
         original = declaration.read_text(encoding="utf-8")
@@ -667,7 +968,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         )
         for goals in (
             ["legacy"], ["all", "fireemblem8.gba"], ["src/time.o"],
-            [legacy_generated], ["asm/fe6sio.o"],
+            [legacy_generated], ["generated-data-link-check"], ["asm/fe6sio.o"],
         ):
             with self.subTest(goals=goals):
                 result = subprocess.run(
@@ -770,6 +1071,47 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertEqual(generated.read_bytes(), previous)
 
+    def test_transitive_non_txt_text_changes_refresh_the_actual_message_outputs(self):
+        source = self.project / "texts.txt"
+        included = self.project / "story.inc"
+        source.write_text('#0000\nBase.[X]\n#include "story.inc"\n', encoding="utf-8")
+        included.write_text("## MSG_PROJECT_INCLUDE\nFirst.[X]\n", encoding="utf-8")
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := game-text\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_TEXT_MAIN := {source.relative_to(ROOT)}\n"
+                "FE8_PROJECT_TEXT_DEFS := texts/textdefs.txt\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        generated = output / "primary/release/aapcs/generated/text"
+        header = generated / "include/constants/msg.h"
+        command = [
+            "make", "--no-print-directory", "-s", "NODEP=1",
+            f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=release",
+            str(header.relative_to(ROOT)),
+        ]
+        from scripts.generated_data.validators import extract_define_constants
+
+        first = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(extract_define_constants(header)["MSG_COUNT"][0], 2)
+        with included.open("a", encoding="utf-8") as stream:
+            stream.write("## MSG_PROJECT_INCLUDE_NEW\nSecond.[X]\n")
+        updated = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(updated.returncode, 0, updated.stderr)
+        constants = extract_define_constants(header)
+        self.assertEqual(constants["MSG_COUNT"][0], 3)
+        self.assertEqual(constants["MSG_PROJECT_INCLUDE_NEW"][0], 2)
+        paths = (header, generated / "msg_data.c")
+        previous = tuple((path.read_bytes(), path.stat().st_mtime_ns) for path in paths)
+        unchanged = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(unchanged.returncode, 0, unchanged.stderr)
+        self.assertEqual(
+            tuple((path.read_bytes(), path.stat().st_mtime_ns) for path in paths), previous
+        )
+
     def test_standalone_data_goals_build_and_refresh_the_selected_header(self):
         text = self.project / "texts.txt"
         text.write_text(
@@ -847,6 +1189,126 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             text=True, capture_output=True, check=True,
         )
         self.assertRegex(elf.stdout, r"Machine:\s+ARM\b")
+
+    def test_eu_override_does_not_disable_real_inherited_cjk_catalog_drift_validation(self):
+        stage = self.project / "catalog-root"
+        stage.mkdir()
+        for directory in ("texts", "scripts", "src", "include"):
+            shutil.copytree(
+                ROOT / directory, stage / directory,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+        for directory in ("graphics", "assets", "data"):
+            (stage / directory).symlink_to(ROOT / directory, target_is_directory=True)
+        command = [
+            sys.executable, "-m", "scripts.localization.game_catalog", "validate",
+            "--enabled-locales", "ja,fr",
+        ]
+        for locale in ("fr", "de", "es", "it"):
+            command.extend(
+                ["--eu-authored", f"{locale}={stage / f'texts/locales/eu/authored.{locale}.json'}"]
+            )
+        environment = {
+            "PATH": os.environ.get("PATH", os.defpath),
+            "PYTHONPATH": str(stage), "PYTHONDONTWRITEBYTECODE": "1",
+            "GIT_WORK_TREE": str(stage), "GIT_INDEX_FILE": str(self.project / "catalog.index"),
+            "GIT_DIR": subprocess.check_output(
+                ["git", "rev-parse", "--absolute-git-dir"], cwd=ROOT, text=True,
+            ).strip(),
+        }
+        subprocess.run(["git", "read-tree", "HEAD"], cwd=stage, env=environment, check=True)
+        valid = subprocess.run(
+            command, cwd=stage, env=environment, text=True, capture_output=True, timeout=120,
+        )
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        catalog = stage / "texts/locales/authored/catalog.ja.json"
+        data = json.loads(catalog.read_text(encoding="utf-8"))
+        original = data["strings"]["game.chapter_event.msg_6a5"]
+        data["strings"]["game.chapter_event.msg_6a5"] = original.replace("\uff12", "\uff13")
+        self.assertNotEqual(data["strings"]["game.chapter_event.msg_6a5"], original)
+        catalog.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        rejected = subprocess.run(
+            command, cwd=stage, env=environment, text=True, capture_output=True, timeout=120,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("authored catalogs differ from deterministic shard merge", rejected.stderr)
+        custom_ja = stage / "selected-ja.json"
+        shutil.copyfile(ROOT / "texts/locales/authored/catalog.ja.json", custom_ja)
+        selected = [
+            *command, "--authored", f"ja={custom_ja}",
+            "--authored", f"zh-Hans={stage / 'texts/locales/authored/catalog.zh-Hans.json'}",
+        ]
+        replacement = subprocess.run(
+            selected, cwd=stage, env=environment, text=True, capture_output=True, timeout=120,
+        )
+        self.assertEqual(replacement.returncode, 0, replacement.stderr)
+        inherited_zh = stage / "texts/locales/authored/catalog.zh-Hans.json"
+        zh = json.loads(inherited_zh.read_text(encoding="utf-8"))
+        zh["strings"]["game.chapter_event.msg_6a5"] = (
+            "\u4e2d" + zh["strings"]["game.chapter_event.msg_6a5"]
+        )
+        inherited_zh.write_text(
+            json.dumps(zh, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        rejected_zh = subprocess.run(
+            selected, cwd=stage, env=environment, text=True, capture_output=True, timeout=120,
+        )
+        self.assertNotEqual(rejected_zh.returncode, 0)
+        self.assertIn("authored catalogs differ from deterministic shard merge", rejected_zh.stderr)
+
+    def test_default_leakage_checks_keep_the_full_committed_locale_set(self):
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-sn", "NODEP=1",
+                "FE8_PROJECT=default", "GAME_LOCALIZATION_ENABLED_LOCALES=ja",
+                "game-localization-check", "game-localization-leakage-audit",
+                "game-localization-leakage-check",
+            ],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        routes = {}
+        for line in result.stdout.replace("\\\n", " ").splitlines():
+            arguments = shlex.split(line)
+            if "scripts.localization.game_catalog" not in arguments:
+                continue
+            action = arguments[arguments.index("scripts.localization.game_catalog") + 1]
+            locales = arguments[arguments.index("--enabled-locales") + 1]
+            routes.setdefault(action, set()).add(locales)
+        self.assertEqual(routes["generate"], {"ja"})
+        self.assertEqual(routes["check-width"], {"ja"})
+        self.assertEqual(routes["check-leakage"], {"ja,zh-Hans"})
+        self.assertEqual(routes["audit-leakage"], {"ja,zh-Hans"})
+
+    def test_selected_leakage_check_validates_and_creates_its_build_local_report(self):
+        from scripts.localization.game_catalog.leakage import DEFAULT_REPORT_PATH
+
+        stock = ROOT / DEFAULT_REPORT_PATH
+        previous = stock.read_bytes(), stock.stat().st_mtime_ns
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        report = output / (
+            "primary/debug/aapcs/generated/game-localization/"
+            "game_localization_latin_span_audit.json"
+        )
+        self.assertFalse(report.exists())
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-s", "NODEP=1",
+                f"FE8_PROJECT={self.project.name}", "EXPANSION_ENABLED_LOCALES=en,ja",
+                "game-localization-leakage-check",
+            ],
+            cwd=ROOT, text=True, capture_output=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        audit = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual(audit["summary"]["unapproved_span_count"], 0)
+        self.assertGreater(audit["summary"]["game_payload_count"], 0)
+        self.assertEqual((stock.read_bytes(), stock.stat().st_mtime_ns), previous)
 
     def test_selected_translation_and_mapping_use_the_real_engine_root(self):
         authored = self.project / "authored.fr.json"

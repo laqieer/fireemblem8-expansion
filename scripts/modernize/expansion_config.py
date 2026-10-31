@@ -802,8 +802,10 @@ class ExpansionIdentity:
     item_id_cap: int = ITEM_ID_DEFAULT_CAP
     config_fingerprint: str = field(default="")
     autoplay_planner: int = 0
-    project: str = "default"
-    project_profile: str = "default"
+    def __post_init__(self) -> None:
+        """Selection is invocation context, not part of the positional constructor."""
+        self.project: str = "default"
+        self.project_profile: str = "default"
 
     @property
     def version_string(self) -> str:
@@ -877,14 +879,14 @@ class ExpansionIdentity:
 
     def to_dict(self) -> dict:
         data = asdict(self)
+        if self.project != "default":
+            data["project"] = self.project
+            data["project_profile"] = self.project_profile
         data["enabled_locales"] = list(self.enabled_locales)
         data["version_string"] = self.version_string
         data["version_packed"] = self.version_packed
         data["enabled_locale_mask"] = self.enabled_locale_mask
         data["default_locale_id"] = self.default_locale_id
-        if self.project == "default":
-            del data["project"]
-            del data["project_profile"]
         return data
 
 
@@ -1156,9 +1158,9 @@ def load_identity(
         autoplay_planner=resolved_autoplay_planner,
         bgm_continuation_policy=resolved_bgm_continuation_policy,
         item_id_cap=resolved_item_id_cap,
-        project=selection["project"],
-        project_profile=selection["profile"],
     )
+    identity.project = selection["project"]
+    identity.project_profile = selection["profile"]
     validate_project_requirements(identity, project_settings)
     identity.config_fingerprint = compute_fingerprint(identity.fingerprint_fields())
     return identity

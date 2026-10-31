@@ -69,6 +69,9 @@ The supported required settings are `MODERN_ROM_SIZE`, `EXPANSION_ROM_TITLE`,
 numeric epoch spelling are normalized before comparison. Unknown settings and
 contradictory overrides fail. Unspecified settings use the existing framework
 configuration and its existing dependency/conflict checks.
+The same normalized requirements apply to standalone data, UI, asset and
+game-catalog producers. Clean-only requests do not need a valid content
+configuration.
 
 ## Input providers
 
@@ -112,6 +115,14 @@ The selected gameplay header is used both by C compilation and by item,
 character and class validation. Item symbols resolve against that same
 header, including during loading. UI presentation IDs resolve against the
 selected UI registry, not a separate stock catalog.
+Selected text production follows the actual parser's transitive includes,
+including non-`.txt` files. Its content-stable writer preserves C/header
+modification times on an unchanged run; no second include scanner is used.
+Objective bounds and their dependency discovery use the effective selected
+asset manifest and its TMX sources rather than stock map dimensions.
+The existing generated-data and ACTIVE CLI interfaces accept
+`--asset-manifest PATH`; `SchemaInputs.asset_manifest` keeps that binding
+invocation-local and does not change cached default schemas.
 
 ### Full-game localization inputs
 
@@ -142,6 +153,9 @@ actual catalog paths to the leakage audit. Selected file paths do not waive
 any existing validation. Generalizing semantic message-set qualification is
 the separate contract in [issue #314](https://github.com/laqieer/fireemblem8-expansion/issues/314);
 these input bindings are not a non-stock message-set or game qualification.
+An EU override does not disable inherited CJK shard/catalog validation.
+Explicit CJK replacements are independent: each retained JA/ZH catalog still
+receives its existing deterministic-merge check.
 
 ## Outputs, identity and compatibility
 
@@ -159,13 +173,26 @@ so changing asset selections cannot reuse another selection's object.
 Its `banim/project_data_banim.o` basename distinguishes packed data from the
 unrelated floating `src/data/banim/data_banim.o`. Packing retains the existing
 common lock for shared stock intermediates as well as the private output lock.
-A custom
-`MODERN_BUILD_ROOT=build/custom` changes the outer root to
+The producer creates its own output parent. The existing base/pin audit checks
+both default and selected selectors, including a mismatch in either selector.
+A custom `MODERN_BUILD_ROOT=build/custom` changes the outer root to
 `build/custom/projects/PROJECT/PROFILE/CONFIG/ABI/`; it does not remove any
 selection dimension. Do not override derived output-directory variables.
 Custom project rules must likewise use `FE8_PROJECT_OUTPUT_DIR` for
 project-sensitive generated output. `expansion-modern-clean` removes only the
 selected project/profile root. Switching projects does not require cleaning.
+Recursive runtime/budget profiles use the same path calculation for producer
+and readback. Their selected auxiliary roots stay under
+`MODERN_BUILD_ROOT/profiles/VARIANT/` with project/profile/config/ABI-qualified
+artifacts, instead of escaping to sibling directories or shared default trees.
+Compiler/binutils/library input directories remain supported inputs; derived
+modern/asset output directories are not override surfaces.
+
+Default leakage checks retain the full committed JA/ZH audit locale set even
+when catalog generation requests a subset. Selected leakage checks run the
+existing fail-closed audit once and write their current build-local report;
+they do not compare a generated report with itself or rewrite the committed
+framework report.
 
 Nondefault project/profile selection participates in the existing diagnostic
 configuration fingerprint and metadata JSON. The default JSON shape and
@@ -173,6 +200,10 @@ fingerprint inputs omit those extra fields and remain unchanged. The selector
 adds no runtime branch, persistent field or save envelope. Runtime ROM/RAM
 cost comes from the chosen content; existing typed and linker budgets remain
 required.
+
+The public resolver carries project/profile as invocation context. The core
+`ExpansionIdentity` positional constructor remains unchanged; only selected
+metadata and fingerprint inputs include that context.
 
 Project names and fingerprints are not save-compatibility authorities.
 Projects must explicitly select an appropriate compatibility epoch when their
@@ -190,7 +221,8 @@ forward or reverted through the normal candidate/master gates.
 
 **Issue:** [#313](https://github.com/laqieer/fireemblem8-expansion/issues/313).
 **Profiles:** unconfigured `default/default`, temporary primary/alternate
-projects, modern debug/release/AAPCS, English and en/fr source-generation probes.
+projects, modern debug/release/AAPCS, English/en-fr source generation and
+inherited JA/ZH with an explicit EU input.
 
 **Prerequisites and reset:** use a checkout with the modern quickstart tools,
 Python 3, GNU Make, host `cc`, ARM GCC/binutils and Git. Preserve existing
@@ -233,11 +265,26 @@ project outputs and fixtures. They do not modify the contributor's index.
    selected header. Numeric-only item loading needs no message-header file.
    Nested bundle/objective/strategy validation rejects conflicting providers
    and accepts coherent bindings.
+   Editing only a transitive `story.inc` grows the actual selected message
+   count from **2 to 3**; a later no-op preserves both C/header bytes and
+   modification times. Unsupported required settings reject in the declaration
+   frontend, and all four standalone producer families reject contradictory
+   effective locales.
 
 5. Confirm selected data/UI/game/asset outputs retain all four namespace
    dimensions with a custom outer root, committed framework source/report
    content is unchanged, and selected ACTIVE counts do not leak into a later
    default invocation. Keep the tests' actual results with candidate evidence.
+   Recursive runtime/budget consumers must name the same private namespace as
+   their producers; derived directory overrides reject while tool inputs remain
+   allowed. Resizing the selected map from **15x15 to 1x1** rejects out-of-map
+   objective areas and preserves previous generated C. Corrupting an inherited
+   JA or ZH catalog rejects even with another locale replaced; a stale unused
+   default JA catalog does not block its valid explicit replacement.
+   A fresh selected leakage check creates its own zero-unapproved report
+   without changing the stock report. Every supported packed-animation selector
+   rejects a mismatched Make base; the real ROM map separately keeps unrelated
+   animation data floating and packed data pinned.
 
 The first command covers actual configure/Make/generated/compiled/native
 behavior; the second covers generated-data validation, report isolation and

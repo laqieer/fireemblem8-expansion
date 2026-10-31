@@ -44,6 +44,12 @@ ifeq ($(filter $(FE8_PROJECT_PROFILE),$(FE8_PROJECT_PROFILES)),)
 $(error unsupported FE8_PROJECT_PROFILE '$(FE8_PROJECT_PROFILE)' for project '$(FE8_PROJECT)')
 endif
 
+FE8_PROJECT_SUPPORTED_SETTINGS := MODERN_ROM_SIZE EXPANSION_ROM_TITLE \
+	EXPANSION_ENABLED_LOCALES EXPANSION_DEFAULT_LOCALE EXPANSION_SAVE_COMPAT_EPOCH
+ifneq ($(filter-out $(FE8_PROJECT_SUPPORTED_SETTINGS),$(FE8_PROJECT_REQUIRED_SETTINGS)),)
+$(error unsupported project setting: $(filter-out $(FE8_PROJECT_SUPPORTED_SETTINGS),$(FE8_PROJECT_REQUIRED_SETTINGS)))
+endif
+
 define fe8_apply_project_default
 ifeq ($$(strip $$(FE8_PROJECT_$$(FE8_PROJECT_PROFILE)_$(1))),)
 $$(error missing $(1) in project '$$(FE8_PROJECT)' profile '$$(FE8_PROJECT_PROFILE)')
@@ -210,7 +216,7 @@ FE8_PROJECT_DATA_INPUTS := $(foreach module,$(FE8_PROJECT_REPLACED_DATA),$(FE8_P
 FE8_PROJECT_GAME_INPUTS := $(FE8_PROJECT_TEXT_MAIN) $(FE8_PROJECT_TEXT_DEFS) \
 	$(foreach module,$(filter $(FE8_PROJECT_GAME_MODULES),$(FE8_PROJECT_REPLACE)),$(FE8_PROJECT_SOURCE_$(module))) \
 	$(FE8_PROJECT_UI_INPUTS)
-FE8_PROJECT_SCHEMA_ARGS = $(foreach module,$(FE8_PROJECT_REPLACED_DATA),--source-override $(call fe8_project_quote,$(module)=$(FE8_PROJECT_SOURCE_$(module)))) $(if $(MODERN_PROJECT_MSG_HEADER),--message-header $(call fe8_project_quote,$(MODERN_PROJECT_MSG_HEADER)))
+FE8_PROJECT_SCHEMA_ARGS = $(foreach module,$(FE8_PROJECT_REPLACED_DATA),--source-override $(call fe8_project_quote,$(module)=$(FE8_PROJECT_SOURCE_$(module)))) $(if $(MODERN_PROJECT_MSG_HEADER),--message-header $(call fe8_project_quote,$(MODERN_PROJECT_MSG_HEADER))) $(if $(filter-out default,$(FE8_PROJECT)),--asset-manifest $(call fe8_project_quote,$(or $(ASSET_MANIFEST),assets/manifest.json)))
 FE8_PROJECT_DATA_ARGS = $(FE8_PROJECT_SCHEMA_ARGS) $(if $(filter-out default,$(FE8_PROJECT)),--inventory-dir $(call fe8_project_quote,$(GENERATED_DATA_OUT_DIR)/reports)) $(FE8_PROJECT_UI_DATA_ARGS)
 FE8_PROJECT_GAME_ARGS = \
 	$(foreach option,$(FE8_PROJECT_GAME_OPTIONS),$(if $(filter game-$(option),$(FE8_PROJECT_REPLACE)),--$(option) $(call fe8_project_quote,$(FE8_PROJECT_SOURCE_game-$(option))))) \
@@ -238,10 +244,17 @@ ifneq ($$(origin $(1)),undefined)
 $$(error $(1) is derived for selected projects; set MODERN_BUILD_ROOT instead)
 endif
 endef
-$(foreach variable,FE8_PROJECT_OUTPUT_DIR MODERN_SELECTED_BUILD_ROOT MODERN_OUTPUT_DIR GENERATED_DATA_OUT_DIR LOCALIZATION_OUT_DIR GAME_LOCALIZATION_OUT_DIR ASSET_OUTPUT_DIR BANIM_OBJECT,$(eval $(call fe8_reject_project_output_override,$(variable))))
+FE8_PROJECT_PATH_INPUTS := MODERN_BUILD_ROOT MODERN_TOOLCHAIN_ROOT \
+	MODERN_BINUTILS_DIR MODERN_LIBGCC_DIR MODERN_LIBC_DIR
+FE8_PROJECT_DERIVED_DIRS := $(filter-out $(FE8_PROJECT_PATH_INPUTS),$(filter MODERN_%_ROOT MODERN_%_DIR ASSET_%_ROOT ASSET_%_DIR,$(.VARIABLES)))
+$(foreach variable,$(sort FE8_PROJECT_OUTPUT_DIR MODERN_SELECTED_BUILD_ROOT MODERN_OUTPUT_DIR GENERATED_DATA_OUT_DIR LOCALIZATION_OUT_DIR GAME_LOCALIZATION_OUT_DIR ASSET_OUTPUT_DIR BANIM_OBJECT $(FE8_PROJECT_DERIVED_DIRS)),$(eval $(call fe8_reject_project_output_override,$(variable))))
 endif
 
-FE8_PROJECT_OUTPUT_DIR = $(or $(MODERN_BUILD_ROOT),build)/projects/$(FE8_PROJECT)/$(FE8_PROJECT_PROFILE)/$(or $(MODERN_CONFIG),debug)/$(or $(MODERN_ABI),aapcs)
+fe8_project_build_root = $(if $(filter-out default,$(FE8_PROJECT)),$(1)/projects/$(FE8_PROJECT)/$(FE8_PROJECT_PROFILE),$(1))
+fe8_project_output_dir = $(call fe8_project_build_root,$(1))/$(or $(2),debug)/$(or $(3),aapcs)
+fe8_project_aux_root = $(if $(filter-out default,$(FE8_PROJECT)),$(or $(MODERN_BUILD_ROOT),build)/profiles/$(1),$(2))
+fe8_project_aux_output_dir = $(if $(filter-out default,$(FE8_PROJECT)),$(call fe8_project_output_dir,$(1),$(2),$(3)),$(1))
+FE8_PROJECT_OUTPUT_DIR = $(call fe8_project_output_dir,$(or $(MODERN_BUILD_ROOT),build),$(MODERN_CONFIG),$(MODERN_ABI))
 
 fe8_project_settings_env = $(foreach setting,$(FE8_PROJECT_REQUIRED_SETTINGS),FE8_PROJECT_SETTING_$(setting)=$(call fe8_project_quote,$(FE8_PROJECT_$(FE8_PROJECT_PROFILE)_$(setting))))
 

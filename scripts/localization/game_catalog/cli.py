@@ -158,8 +158,15 @@ def _build_summary(build) -> str:
 
 
 def _build_from_args(args: argparse.Namespace):
-    if args.authored is None and args.eu_authored is None:
-        check_authored_catalogs(Path("."))
+    authored_paths = _locale_path_map(args.authored)
+    inherited = tuple(
+        locale for locale in CJK_LOCALE_IDS
+        if authored_paths is None
+        or authored_paths.get(locale, DEFAULT_AUTHORED_PATHS[locale]).resolve()
+        == DEFAULT_AUTHORED_PATHS[locale].resolve()
+    )
+    if inherited:
+        check_authored_catalogs(Path("."), locales=inherited)
     return build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
@@ -174,7 +181,7 @@ def _build_from_args(args: argparse.Namespace):
         target_header_path=args.target_header,
         width_registry_path=args.width_registry,
         fixed_width_aliases_path=args.fixed_width_aliases,
-        authored_paths=_locale_path_map(args.authored),
+        authored_paths=authored_paths,
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),
     )
