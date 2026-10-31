@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -30,6 +30,7 @@ BINDINGS = (
     SubjectSpec("TC-GAMEPLAY-006", "aoe-item-dispatch", "aoe"),
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
+    SubjectSpec("TC-CJK-RESOURCE-STORAGE-001", "cjk-resource-index", "cjk-resource"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -41,6 +42,8 @@ EVENT_SCHEMA = "scripts/generated_data/eventlists/schema.py"
 EVENT_SOURCE = "src/data/ch2_eventlists.json"
 PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
+CJK_CODEC = "scripts/fonttools/cjk/resource_index.py"
+CJK_INDEXES = ("fonts/cjk/fehrr-sources.json", "fonts/cjk/runtime_usage.json")
 
 
 def event_validation_inputs(tree):
@@ -194,6 +197,24 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         add("generated", "drift-checks", "eventlists", EVENT_SCHEMA + ":build_inventory",
             inventory, "committed generated inventory", "regenerate and compare",
             "generated-drift", inputs | {inventory}, kind="parsed", evidence=("positive", "generated"))
+    elif spec.model == "cjk-resource":
+        paths = {
+            CJK_CODEC, *CJK_INDEXES, "scripts/fonttools/cjk/package.py",
+            "scripts/fonttools/cjk/inventory.py",
+        }
+        closure = tuple(sorted(
+            path for path in tree.entries if path.startswith("scripts/") and path.endswith(".py")
+            and "/tests/" not in path and not path.startswith("scripts/workflow_pilot/")
+        ))
+        for family in ("generated", "wire", "resource"):
+            for role in review.FAMILIES[family]:
+                add(family, role, "resource-index", CJK_CODEC,
+                    "scripts/fonttools/cjk/package.py:_read_fehrr_lock",
+                    "plain JSON or version1 xz-base64 resource envelope",
+                    "complete values, physical checksums, stream reuse and bounded rejection",
+                    "cjk-resource:" + family + ":" + role, paths)
+        result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths)))
+                  for member in result]
     elif spec.model == "review-session":
         predicates = {
             "entries": "ReviewSession.begin", "preservation": "RoundState.observe",
@@ -407,6 +428,205 @@ def _generated(probe: str) -> dict:
 
 
 @probe_result("host")
+def _cjk_resource(probe):
+    import base64
+    import hashlib
+    import lzma
+    import struct
+    import zlib
+    from scripts.fonttools.cjk import package, resource_index as codec
+
+    _, family, role = probe.split(":")
+    checks = 0
+
+    def verify(condition, detail):
+        nonlocal checks
+        check(condition, detail)
+        checks += 1
+
+    def canonical(value):
+        return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2,
+                           allow_nan=False) + "\n").encode()
+
+    def envelope(data, stream=None):
+        return {
+            "kind": "cjk-resource-index", "version": 1, "encoding": "xz-base64",
+            "decoded_bytes": len(data),
+            "payload": base64.b64encode(lzma.compress(data) if stream is None else stream).decode(),
+        }
+
+    def reject(call, error=codec.ResourceIndexError):
+        nonlocal checks
+        try:
+            call()
+        except error:
+            checks += 1
+            return
+        except (ValueError, RecursionError) as failure:
+            raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
+        raise ContractViolation("invalid resource input was accepted")
+
+    def decoded(data, expected):
+        try:
+            value = codec.decode_index(data)
+        except codec.ResourceIndexError as failure:
+            raise ContractViolation("valid resource input was rejected") from failure
+        verify(canonical(value) == canonical(expected), "complete typed resource values differ")
+        return value
+
+    originals = [Path(path).read_bytes() for path in CJK_INDEXES]
+    stocks = []
+    for data in originals:
+        value = json.loads(data)
+        if value.get("kind") == "cjk-resource-index":
+            value = json.loads(lzma.decompress(base64.b64decode(value["payload"])))
+        stocks.append(value)
+    seed = {"id": 1, "values": [True, 1.0, "\u4e00"]}
+    plain = canonical(seed)
+    wrapped = canonical(envelope(plain))
+    path = Path("build/review-resource-index.json")
+
+    if family == "generated":
+        if role == "owners":
+            for data, value in zip(originals, stocks):
+                decoded(data, value)
+            for invalid in (b"[]", b"\xff", b'{"a":1,"a":2}'):
+                reject(lambda invalid=invalid: codec.decode_index(invalid))
+        elif role == "outputs":
+            for value in stocks:
+                verify(codec.encode_index(value) == canonical(value),
+                       "existing canonical plain output changed")
+                stored = codec.encode_index(value, packed=True)
+                independent = json.loads(lzma.decompress(
+                    base64.b64decode(json.loads(stored)["payload"])))
+                verify(canonical(independent) == canonical(value), "packed output lost fields/types")
+                verify(codec.encode_index(value, packed=True) == stored,
+                       "fresh same-encoder compression is not deterministic")
+        elif role == "consumers":
+            root = Path("build/review-resource-consumer")
+            source = root / CJK_INDEXES[0]
+            source.parent.mkdir(parents=True, exist_ok=True)
+            for packed in (False, True):
+                stored = codec.encode_index(stocks[0], packed=packed)
+                source.write_bytes(stored)
+                priority = {
+                    "path": CJK_INDEXES[0], "sha256": hashlib.sha256(stored).hexdigest(),
+                    "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+                }
+                value = package._read_fehrr_lock(root, {"fehrr_priority": priority})
+                verify(canonical(value) == canonical(stocks[0]), "real priority reader changed values")
+                priority["sha256"] = "0" * 64
+                reject(lambda: package._read_fehrr_lock(root, {"fehrr_priority": priority}),
+                       package.CjkFontError)
+        elif role == "drift-checks":
+            alternate = canonical(envelope(plain, lzma.compress(plain, preset=0)))
+            path.write_bytes(alternate)
+            verify(codec.encode_like_index(seed, path) == alternate,
+                   "unchanged valid alternate stream was recompressed")
+            verify(codec.encode_like_index(seed, path, packed=True) == alternate,
+                   "explicit unchanged packed stream was recompressed")
+            path.write_bytes(b"invalid index")
+            reject(lambda: codec.encode_like_index(seed, path))
+            verify(path.read_bytes() == b"invalid index", "failed writer changed input")
+        else:
+            raise review.ReviewError("unknown resource generation role")
+    elif family == "wire":
+        if role == "producers":
+            stored = json.loads(codec.encode_index(seed, packed=True))
+            verify(set(stored) == {"kind", "version", "encoding", "decoded_bytes", "payload"}
+                   and stored["kind"] == "cjk-resource-index"
+                   and type(stored["version"]) is int and stored["version"] == 1
+                   and stored["encoding"] == "xz-base64"
+                   and type(stored["decoded_bytes"]) is int
+                   and stored["decoded_bytes"] == len(plain),
+                   "public envelope fields/version/types differ")
+            verify(lzma.decompress(base64.b64decode(stored["payload"], validate=True)) == plain,
+                   "producer payload differs from canonical complete input")
+            reject(lambda: codec.encode_index({"value": float("nan")}))
+        elif role == "consumers":
+            for number in (1e308, -1e308):
+                value = {"value": number}
+                decoded(canonical(value), value)
+                decoded(canonical(envelope(canonical(value))), value)
+            for token in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
+                data = ('{"value":' + token + "}").encode()
+                for stored in (data, canonical(envelope(data))):
+                    reject(lambda stored=stored: codec.decode_index(stored))
+            for data in (
+                b'{"value":' + b"[" * 16000 + b"0" + b"]" * 16000 + b"}",
+                b'{"value":' + b"1" * 5000 + b"}",
+            ):
+                for stored in (data, canonical(envelope(data))):
+                    reject(lambda stored=stored: codec.decode_index(stored))
+        elif role == "validators":
+            base = envelope(plain)
+            stream = base64.b64decode(base["payload"])
+            cases = [
+                {**base, "version": 2}, {**base, "version": True},
+                {**base, "encoding": "unknown"}, {**base, "extra": 0},
+                {**base, "decoded_bytes": True}, {**base, "decoded_bytes": len(plain) + 1},
+                *({**base, "payload": item} for item in (None, False, 1, [], {}, "%%%")),
+                envelope(canonical(base)), envelope(plain, stream[:-4]),
+                envelope(plain, stream + b"x"), envelope(plain, stream * 2),
+                envelope(plain, stream[:-8] + bytes(8)),
+            ]
+            for value in cases:
+                reject(lambda value=value: codec.decode_index(canonical(value)))
+        elif role == "replay":
+            for packed in (False, True):
+                path.write_bytes(codec.encode_index(seed, packed=packed))
+                changed = {"id": 2, "values": [False, 2.0]}
+                actual = codec.encode_like_index(changed, path)
+                decoded(actual, changed)
+                verify((json.loads(actual).get("kind") == "cjk-resource-index") == packed,
+                       "updated writer changed stored representation")
+        elif role == "stale-bindings":
+            for value in (seed, {"id": 2}, seed):
+                path.write_bytes(codec.encode_index(value, packed=True))
+                verify(canonical(codec.load_index(path)) == canonical(value),
+                       "reopened index retained stale file contents")
+            path.write_bytes(b"invalid index")
+            reject(lambda: codec.load_index(path))
+        else:
+            raise review.ReviewError("unknown resource wire role")
+    elif family == "resource":
+        packed = role == "enabled"
+        stored = codec.encode_index(seed, packed=packed)
+        decoded(stored, seed)
+        if not packed:
+            verify(stored == plain, "plain representation changed")
+        limit = 4 * 1024 * 1024
+        prefix, suffix = b'{"x":"', b'"}'
+        oversized = prefix + b"x" * (limit + 1 - len(prefix) - len(suffix)) + suffix
+        if packed:
+            candidate = envelope(oversized)
+            candidate["decoded_bytes"] = limit
+            reject(lambda: codec.decode_index(canonical(candidate)))
+            for property_value in (27, 28):
+                stream = bytearray(lzma.compress(plain))
+                header_end = 12 + (stream[12] + 1) * 4
+                verify(bytes(stream[14:16]) == b"\x21\x01", "unsupported XZ fixture header")
+                stream[16] = property_value
+                stream[header_end - 4:header_end] = struct.pack(
+                    "<I", zlib.crc32(stream[12:header_end - 4]))
+                verify(lzma.decompress(stream, memlimit=80 * 1024 * 1024) == plain,
+                       "independent large-dictionary control is invalid")
+                bounded = canonical(envelope(plain, stream))
+                if property_value == 27:
+                    decoded(bounded, seed)
+                else:
+                    reject(lambda: codec.decode_index(bounded))
+        else:
+            reject(lambda: codec.decode_index(oversized))
+        path.write_bytes(oversized)
+        reject(lambda: codec.read_index_bytes(path))
+    else:
+        raise review.ReviewError("unknown resource family")
+    return {"kind": "host", "checks": checks,
+            "detail": "real codec/priority-reader values, format, stream and resource observations"}
+
+
+@probe_result("host")
 def _session_probe(probe: str) -> dict:
     # This is a registered production subject, not an import-name trust test.
     source = Path("build/review-subject.py").read_bytes()
@@ -504,6 +724,8 @@ def run_probe(probe: str) -> dict:
         "aoe-items", "aoe-targets", "aoe-slots", "aoe-execution",
         "aoe-reference:enabled", "aoe-reference:disabled", "aoe-arm:enabled", "aoe-arm:disabled",
         "generated-output", "generated-consumer", "generated-drift",
+        *("cjk-resource:" + family + ":" + role for family in ("generated", "wire", "resource")
+          for role in review.FAMILIES[family]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -518,6 +740,8 @@ def run_probe(probe: str) -> dict:
         return _native(probe)
     if probe.startswith("generated-"):
         return _generated(probe)
+    if probe.startswith("cjk-resource:"):
+        return _cjk_resource(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")
