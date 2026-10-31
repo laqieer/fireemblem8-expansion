@@ -933,8 +933,14 @@ def _is_external(target):
     return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", target)) or target.startswith("mailto:")
 
 
-def internal_link_destination(source_rel_path, target):
-    """Return the normalized repository path and optional fragment of an internal URI."""
+def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
+    """Resolve one non-external link target found in ``source_rel_path``.
+
+    Returns (ok: bool, message: str-or-None). ``heading_slug_cache`` maps a
+    repo-relative Markdown path to its ordered slug list (lazily filled in
+    by the caller) so cross-file anchor checks don't re-parse a file for
+    every incoming link.
+    """
     if target.startswith("#"):
         path_part, anchor = "", target[1:]
         target_path = source_rel_path
@@ -946,18 +952,6 @@ def internal_link_destination(source_rel_path, target):
         path_part = urllib.parse.unquote(path_part)
         source_dir = os.path.dirname(source_rel_path)
         target_path = os.path.normpath(os.path.join(source_dir, path_part))
-    return target_path, anchor
-
-
-def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
-    """Resolve one non-external link target found in ``source_rel_path``.
-
-    Returns (ok: bool, message: str-or-None). ``heading_slug_cache`` maps a
-    repo-relative Markdown path to its ordered slug list (lazily filled in
-    by the caller) so cross-file anchor checks don't re-parse a file for
-    every incoming link.
-    """
-    target_path, anchor = internal_link_destination(source_rel_path, target)
 
     # Path-escape guard: never allow a resolved link to leave the repo root.
     abs_root = os.path.abspath(root)
@@ -1024,8 +1018,8 @@ def parse_reference_definition_destination(rest):
 
 
 def blank_inline_code_spans(line):
-    """Blank equal-backtick-delimited code while preserving length and newlines,
-    so reference-style link/definition
+    """Blank the contents of single-backtick inline code spans on one
+    line (length-preserving), so reference-style link/definition
     scanning never mistakes code-only bracket syntax (e.g. a shell regex
     character class like ``[0-9A-Fa-f]`` inside a `` `grep -E '...'` ``
     inline code span) for real Markdown link syntax. This mirrors every
@@ -1035,16 +1029,7 @@ def blank_inline_code_spans(line):
     code font is still a real, checkable URL -- so this helper is used
     only for reference-style link/definition scanning, not URL scanning.)
     """
-    return re.sub(
-        r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)",
-        lambda match: (
-            match.group(1)
-            + "".join("\n" if char == "\n" else " " for char in match.group(2))
-            + match.group(1)
-        ),
-        line,
-        flags=re.S,
-    )
+    return INLINE_CODE_RE.sub(lambda m: "`" + (" " * len(m.group(1))) + "`", line)
 
 
 def extract_reference_definitions(lines):
@@ -1095,28 +1080,6 @@ def extract_reference_definitions(lines):
             continue
         definitions[norm] = (target, lineno, raw_label)
     return definitions, issues, def_line_numbers
-
-
-def extract_markdown_link_uses(stripped_text, errors=None):
-    """Yield supported inline/full/collapsed uses, excluding code and definitions."""
-    lines = blank_inline_code_spans(stripped_text).split("\n")
-    definitions, issues, definition_lines = extract_reference_definitions(lines)
-    invalid_definition_lines = {number for number, _ in issues}
-    if errors is not None:
-        errors.extend(issues)
-    uses = "\n".join("" if number in definition_lines else line
-                     for number, line in enumerate(lines, start=1))
-    yield from extract_internal_link_targets(uses, errors)
-    for number, line in enumerate(lines, start=1):
-        if number in definition_lines:
-            continue
-        for match in REF_USE_RE.finditer(line):
-            text, label = match.groups()
-            name = normalize_reference_label(label if label.strip() else text)
-            if name in definitions and definitions[name][1] not in invalid_definition_lines:
-                yield number, definitions[name][0]
-            elif errors is not None:
-                errors.append((number, "undefined reference-style link label '%s'" % name))
 
 
 def check_reference_style_links(markdown_files, root):

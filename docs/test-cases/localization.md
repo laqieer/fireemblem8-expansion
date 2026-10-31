@@ -76,9 +76,9 @@ There is no subjective manual criterion in this host case.
 
 The procedure-source command checks the canonical case owner, retained nonempty template
 sections, the localization consumer's declared case-set equality and the
-authoritative guide link. The existing `ReviewTools` subject
+exact indexed procedure anchor. The existing `ReviewTools` subject
 `authored-scope-case` is limited to those parsed public-format predicates.
-Its reviewed Markdown parser and real locale-case consumer function are fixed
+Its existing heading reader and real locale-case consumer function are fixed
 by the selected tool revision. The consumer receives only the captured literal
 candidate case-map data; candidate programs are never executed or interpreted
 as an assertion/dataflow language. Role-specific semantic
@@ -97,9 +97,12 @@ The four remaining canonical metadata roles retain their actual source
 inputs and original failing-catalog controls. A backend failure still has zero
 semantic credit; no passing current source manufactures a failing origin.
 
-Internal guide destinations use the documentation checker's shared path and
-fragment resolver. Equivalent `./`, parent-segment and percent-encoded paths
-still bind the same procedure; another document or anchor does not.
+Guide navigation remains ordinary documentation, checked by the existing
+repository-wide documentation/link checks, not a second rendering predicate
+inside source-family admission. The case registry still binds the canonical
+feature, document and procedure anchor. Removing the task-only guide parser
+does not remove that indexed contract, the actual guide link or any final
+documentation gate; no Markdown package or block interpreter is introduced.
 The anchor is checked as catalog content, not baked into member identity:
 a stale anchor rejects but can produce real repaired-origin evidence through
 the actual catalog's before/after Git trees.
