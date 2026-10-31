@@ -44,6 +44,8 @@ PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
 CASE_REGISTRY = "docs/test-cases/registry.json"
 CASE_TEMPLATE = "docs/test-cases/template.md"
+CASE_DOCUMENT = "docs/test-cases/localization.md"
+CASE_REFERENCE = "docs/game_localization_catalog.md"
 LOCALE_CASE_CONSUMER = "tools/gba-playtest/tests/test_locale_tester_cases.py"
 AUTHORED_CASE_ID = "TC-LOCALIZATION-AUTHORED-SCOPE-001"
 AUTHORED_FEATURE = "full-game-localization"
@@ -62,8 +64,12 @@ def authored_case_declaration(raw):
     cases = [item for item in catalog["cases"] if item["id"] == AUTHORED_CASE_ID]
     review.require(len(features) == len(cases) == 1, "ambiguous authored case ownership")
     feature, case = features[0], cases[0]
-    review.require(set(feature["required_cases"]) == AUTHORED_FEATURE_CASES,
+    review.require(set(feature["required_cases"]) == AUTHORED_FEATURE_CASES
+                   and len(feature["required_cases"]) == len(AUTHORED_FEATURE_CASES),
                    "changed authored feature case members need a reviewed finite model")
+    review.require(case["document"] == CASE_DOCUMENT
+                   and feature["reference"] == CASE_REFERENCE,
+                   "remapped canonical procedure paths need a reviewed finite model")
     return catalog, feature, case
 
 
@@ -374,9 +380,87 @@ def _authored_case(probe):
             and all(isinstance(item, ast.Name) for item in node.target.elts)
         ]
         review.require(len(loops) == 1, "unknown locale case consumer iteration")
+        loop = loops[0]
+        parents = {child: node for node in ast.walk(source)
+                   for child in ast.iter_child_nodes(node)}
+        function = parents.get(loop)
+        owner = parents.get(function)
+        imports = {alias.asname or alias.name: alias.name for item in source.body
+                   if isinstance(item, ast.Import) for alias in item.names}
+        path_names = {alias.asname or alias.name for item in source.body
+                      if isinstance(item, ast.ImportFrom) and item.module == "pathlib"
+                      for alias in item.names if alias.name == "Path"}
+        review.require(
+            isinstance(function, ast.FunctionDef) and function.name.startswith("test_")
+            and not function.decorator_list and isinstance(owner, ast.ClassDef)
+            and not owner.decorator_list
+            and any(isinstance(base, ast.Attribute) and base.attr == "TestCase"
+                    and isinstance(base.value, ast.Name)
+                    and imports.get(base.value.id) == "unittest" for base in owner.bases),
+            "locale consumer is not a supported active unittest predicate")
+
+        def subscript(node, key):
+            return (node.value if isinstance(node, ast.Subscript)
+                    and isinstance(node.slice, ast.Constant) and node.slice.value == key
+                    else None)
+
+        assignments = {item.targets[0].id: item.value for item in source.body
+                       if isinstance(item, ast.Assign) and len(item.targets) == 1
+                       and isinstance(item.targets[0], ast.Name)}
+        roots = {name for name, value in assignments.items()
+                 if any(ast.dump(value) == ast.dump(ast.parse(
+                            alias + "(__file__).resolve().parents[3]", mode="eval").body)
+                        for alias in path_names)}
+
+        def registry_path(node):
+            parts = []
+            while isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                if not isinstance(node.right, ast.Constant) or not isinstance(node.right.value, str):
+                    return False
+                parts.insert(0, node.right.value)
+                node = node.left
+            return (isinstance(node, ast.Name) and node.id in roots
+                    and "/".join(parts) == CASE_REGISTRY)
+
+        paths = {name for name, value in assignments.items() if registry_path(value)}
+        prior = function.body[:function.body.index(loop)]
+        review.require(all(isinstance(item, (ast.Assign, ast.Expr)) for item in prior),
+                       "unknown control flow before the locale consumer predicate")
+        local = {item.targets[0].id: item.value for item in prior
+                 if isinstance(item, ast.Assign) and len(item.targets) == 1
+                 and isinstance(item.targets[0], ast.Name)}
+        review.require(loop.iter.func.value.id not in local,
+                       "locale consumer declaration is shadowed")
+        registries = set()
+        for name, value in local.items():
+            if not (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+                    and value.func.attr == "loads" and isinstance(value.func.value, ast.Name)
+                    and imports.get(value.func.value.id) == "json" and len(value.args) == 1
+                    and not value.keywords):
+                continue
+            read = value.args[0]
+            if (isinstance(read, ast.Call) and isinstance(read.func, ast.Attribute)
+                    and read.func.attr == "read_text" and isinstance(read.func.value, ast.Name)
+                    and read.func.value.id in paths):
+                registries.add(name)
+        feature_maps = set()
+        for name, value in local.items():
+            if not isinstance(value, ast.DictComp) or len(value.generators) != 1:
+                continue
+            generator = value.generators[0]
+            origin = subscript(generator.iter, "features")
+            key = subscript(value.key, "id")
+            if (isinstance(origin, ast.Name) and origin.id in registries
+                    and isinstance(generator.target, ast.Name) and not generator.ifs
+                    and not generator.is_async and isinstance(value.value, ast.Name)
+                    and isinstance(key, ast.Name)
+                    and key.id == value.value.id == generator.target.id):
+                feature_maps.add(name)
         expected_name = loops[0].target.elts[1].id
         equality = [
-            node for node in ast.walk(loops[0])
+            statement.value for statement in loop.body
+            if isinstance(statement, ast.Expr)
+            for node in (statement.value,)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             and node.func.attr == "assertEqual" and len(node.args) == 2
             and isinstance(node.args[1], ast.Name) and node.args[1].id == expected_name
@@ -385,6 +469,11 @@ def _authored_case(probe):
             and isinstance(node.args[0].args[0], ast.Subscript)
             and isinstance(node.args[0].args[0].slice, ast.Constant)
             and node.args[0].args[0].slice.value == "required_cases"
+            and isinstance(node.args[0].args[0].value, ast.Subscript)
+            and isinstance(node.args[0].args[0].value.value, ast.Name)
+            and node.args[0].args[0].value.value.id in feature_maps
+            and isinstance(node.args[0].args[0].value.slice, ast.Name)
+            and node.args[0].args[0].value.slice.id == loop.target.elts[0].id
         ]
         review.require(len(equality) == 1, "unknown locale case equality predicate")
         features = {item["id"]: item for item in catalog["features"]}
@@ -426,7 +515,10 @@ def _authored_case(probe):
                 if check_docs.github_heading_slug(heading[1]) in required_slugs),
                 "every required tester section needs observable procedure content")
         elif role == "drift-checks":
-            check(case["anchor"] in check_docs.compute_heading_slugs(stripped),
+            anchors = dict(zip(
+                (index for index, heading in headings if heading),
+                check_docs.compute_heading_slugs(stripped)))
+            check(case["anchor"] == anchors[start[0]],
                   "authored procedure anchor differs from canonical registry")
             reference = check_docs.strip_fenced_blocks(Path(feature["reference"]).read_text())
             destination = os.path.relpath(case["document"], Path(feature["reference"]).parent)

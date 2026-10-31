@@ -155,6 +155,44 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         with self.assertRaisesRegex(ValueError, "reviewed finite model"):
             self.tools.members(self.case_scope(head))
 
+    def test_disconnected_consumer_assertion_cannot_receive_satisfied_coverage(self):
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        original = (self.repo.root / path).read_text()
+        disconnected = original.replace(
+            'set(features[feature_id]["required_cases"])',
+            'set({"required_cases": expected_cases}["required_cases"])', 1)
+        self.assertNotEqual(original, disconnected)
+        head = self.repo.commit({path: disconnected})
+        observed = self.run_members(self.tools.members(self.case_scope(head)), head)
+        consumer = next(item for item in observed if item.obligation.role == "consumers")
+        self.assertEqual((consumer.verdict, consumer.checks), ("unavailable", 0))
+
+    def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
+        path = "docs/test-cases/registry.json"
+        catalog = json.loads((self.repo.root / path).read_text())
+        case = next(item for item in catalog["cases"]
+                    if item["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
+        case["anchor"] = (
+            "tc-localization-003-production-expansion-and-full-game-locale-catalogs")
+        head = self.repo.commit({path: json.dumps(catalog)})
+        observed = self.run_members(self.tools.members(self.case_scope(head)), head)
+        drift = next(item for item in observed if item.obligation.role == "drift-checks")
+        self.assertEqual(drift.verdict, "contract-violation")
+
+    def test_remapped_document_and_reference_paths_require_a_reviewed_model(self):
+        path = "docs/test-cases/registry.json"
+        original = json.loads((self.repo.root / path).read_text())
+        for owner, field in (("cases", "document"), ("features", "reference")):
+            with self.subTest(field=field):
+                catalog = copy.deepcopy(original)
+                identifier = ("TC-LOCALIZATION-AUTHORED-SCOPE-001"
+                              if owner == "cases" else "full-game-localization")
+                record = next(item for item in catalog[owner] if item["id"] == identifier)
+                record[field] = "docs/test-cases/template.md"
+                head = self.repo.commit({path: json.dumps(catalog)})
+                with self.assertRaisesRegex(ValueError, "reviewed finite model"):
+                    self.tools.members(self.case_scope(head))
+
 
 class SubjectTests(SubjectTestCase):
     @staticmethod
