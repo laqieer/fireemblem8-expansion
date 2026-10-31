@@ -24,6 +24,10 @@ from scripts.fonttools.cjk.resource_index import (
 
 
 ROOT = Path(__file__).resolve().parents[4]
+SOURCE_FIXTURE_PATHS = (
+    "fonts", "graphics/fonts/cjk", "src", "include", "texts",
+    "assets", "reports", "scripts/generated_data",
+)
 
 
 class ResourceIndexTests(unittest.TestCase):
@@ -296,11 +300,8 @@ class ResourceIndexTests(unittest.TestCase):
 
     def test_actual_cli_round_trips_both_indexes_with_existing_consumers(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            for relative in (
-                "fonts", "graphics/fonts/cjk", "src", "include", "texts",
-                "assets", "reports", "scripts/generated_data",
-            ):
+            root = Path(temporary) / "first"
+            for relative in SOURCE_FIXTURE_PATHS:
                 shutil.copytree(
                     ROOT / relative, root / relative,
                     ignore=shutil.ignore_patterns("*.o", "*.d", "__pycache__"),
@@ -321,6 +322,21 @@ class ResourceIndexTests(unittest.TestCase):
                 formats = ("plain", "packed") if originally_packed else ("packed", "plain")
                 for representation in formats:
                     with self.subTest(index=index, format=representation):
+                        fresh_root = None
+                        if index == "runtime-usage" and representation == "packed":
+                            self.assertNotEqual(
+                                json.loads((root / relative).read_bytes()).get("kind"),
+                                ENVELOPE_KIND,
+                            )
+                            plain_record = json.loads(
+                                (root / "fonts/cjk/inventory.json").read_bytes()
+                            )["outputs"][relative]
+                            fresh_root = Path(temporary) / "second"
+                            for path in SOURCE_FIXTURE_PATHS:
+                                shutil.copytree(
+                                    root / path, fresh_root / path,
+                                    ignore=shutil.ignore_patterns("*.o", "*.d", "__pycache__"),
+                                )
                         result = subprocess.run(
                             [
                                 sys.executable, "-B", "-m", "scripts.fonttools.cjk",
@@ -336,9 +352,45 @@ class ResourceIndexTests(unittest.TestCase):
                             representation == "packed",
                         )
                         self.assertEqual(
-                            decode_index(stored),
-                            decode_index(originals[relative]),
+                            encode_index(decode_index(stored)),
+                            encode_index(decode_index(originals[relative])),
                         )
+                        if fresh_root is not None:
+                            result = subprocess.run(
+                                [
+                                    sys.executable, "-B", "-m", "scripts.fonttools.cjk",
+                                    "--root", str(fresh_root), "repack-index",
+                                    "--index", index, "--format", "packed",
+                                ],
+                                cwd=ROOT, capture_output=True, text=True, timeout=180,
+                            )
+                            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                            for path in (
+                                relative, "fonts/cjk/inventory.json",
+                                "graphics/fonts/cjk/manifest.json",
+                            ):
+                                self.assertEqual(
+                                    (fresh_root / path).read_bytes(), (root / path).read_bytes()
+                                )
+                            inventory_path = root / "fonts/cjk/inventory.json"
+                            valid_inventory = inventory_path.read_bytes()
+                            stale_inventory = json.loads(valid_inventory)
+                            stale_inventory["outputs"][relative] = plain_record
+                            inventory_path.write_bytes(encode_index(stale_inventory))
+                            owned_outputs = set(stale_inventory["outputs"]) | {
+                                "fonts/cjk/inventory.json",
+                                "graphics/fonts/cjk/manifest.json", FEHRR_SOURCES,
+                            }
+                            unchanged = {
+                                path: (root / path).read_bytes() for path in owned_outputs
+                            }
+                            with self.assertRaises(CjkFontError):
+                                check_generated_files(root)
+                            self.assertEqual(
+                                {path: (root / path).read_bytes() for path in owned_outputs},
+                                unchanged,
+                            )
+                            inventory_path.write_bytes(valid_inventory)
                         after_assets = check_compact_assets(root)
                         for path, data in before_assets.items():
                             if path not in (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json"):
@@ -361,14 +413,18 @@ class ResourceIndexTests(unittest.TestCase):
             expected_inventory["outputs"][usage_path] = {
                 "byte_count": len(usage), "sha256": hashlib.sha256(usage).hexdigest(),
             }
-            self.assertEqual(json.loads((root / inventory_path).read_bytes()), expected_inventory)
+            self.assertEqual(
+                encode_index(json.loads((root / inventory_path).read_bytes())),
+                encode_index(expected_inventory),
+            )
             expected_manifest = json.loads(originals["graphics/fonts/cjk/manifest.json"])
             for key, relative in (("inventory", inventory_path), ("fehrr_priority", FEHRR_SOURCES)):
                 expected_manifest["sources"][key]["sha256"] = hashlib.sha256(
                     (root / relative).read_bytes()
                 ).hexdigest()
             self.assertEqual(
-                json.loads((root / "graphics/fonts/cjk/manifest.json").read_bytes()), expected_manifest
+                encode_index(json.loads((root / "graphics/fonts/cjk/manifest.json").read_bytes())),
+                encode_index(expected_manifest),
             )
             broken = root / FEHRR_SOURCES
             broken.write_bytes(b"invalid index")
