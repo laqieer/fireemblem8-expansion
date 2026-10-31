@@ -6585,23 +6585,30 @@ class PullRequestMetadataTests(unittest.TestCase):
 
     def test_real_first_and_subsequent_body_edits_confirm_and_reconcile(self):
         cases = (
-            (None, True, False), ("", True, False),
-            ("Original body 雪\n", True, True), ("Stable body", False, False),
+            (None, True, "unchanged"), ("", True, "unchanged"),
+            ("Original body 雪\n", True, "materialized-later"),
+            ("Original body with a later version\n", True, "updated-later"),
+            ("Stable body", False, "unchanged"),
         )
-        for initial_body, first, delayed in cases:
-            with self.subTest(body=initial_body, first=first, delayed=delayed):
+        for initial_body, first, timing in cases:
+            with self.subTest(body=initial_body, first=first, timing=timing):
                 pre = _metadata_version(
                     body_last_edited_at=None if first else "2026-09-04T00:00:00Z"
                 )
                 client, posts = _mutation_client(
                     pre_state=_pr(body=initial_body), pre_version=pre
                 )
-                if delayed:
+                if timing == "materialized-later":
                     pull = client.routes[("POST", "graphql")][-1].payload[
                         "data"
                     ]["repository"]["pullRequest"]
                     for node in pull["userContentEdits"]["nodes"]:
                         node["createdAt"] = node["updatedAt"] = "2026-09-04T00:00:06Z"
+                elif timing == "updated-later":
+                    pull = client.routes[("POST", "graphql")][-1].payload[
+                        "data"
+                    ]["repository"]["pullRequest"]
+                    pull["userContentEdits"]["nodes"][0]["updatedAt"] = "2026-09-04T00:00:06Z"
                 decision = pr_metadata.edit_metadata(
                     client, repository=REPOSITORY, pr_number=PR_NUMBER,
                     head_sha=HEAD, base_sha=BASE, title=None, body="new body",
@@ -6615,6 +6622,10 @@ class PullRequestMetadataTests(unittest.TestCase):
                 version = confirmation.metadata_version
                 self.assertEqual(version.body_edit_total_count, 2 if first else 3)
                 self.assertEqual(receipt.pre_version, pre)
+                if timing == "updated-later":
+                    self.assertEqual(
+                        version.body_edit_updated_at, "2026-09-04T00:00:06Z"
+                    )
                 if first:
                     self.assertEqual(
                         version.body_original.body_sha256,
@@ -9765,13 +9776,29 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         body_path = self.sandbox.root / "body.txt"
         body_path.write_text("new body", encoding="utf-8")
         arguments = [*self.common_arguments(), "--body-file", str(body_path)]
-        for initial_body, first in ((None, True), ("Original body 雪\n", True), ("Stable body", False)):
-            with self.subTest(body=initial_body, first=first):
+
+        def versioned_calls(calls):
+            for call in calls:
+                if call["endpoint"] != "graphql":
+                    continue
+                history = call["payload"]["data"]["repository"]["pullRequest"]["userContentEdits"]
+                if history["totalCount"] == 2:
+                    history["nodes"][0]["updatedAt"] = "2026-09-04T00:00:06Z"
+            return calls
+
+        cases = (
+            (None, True, False), ("Original body 雪\n", True, False),
+            ("Original versioned body\n", True, True), ("Stable body", False, False),
+        )
+        for initial_body, first, versioned in cases:
+            with self.subTest(body=initial_body, first=first, versioned=versioned):
                 state = _pr(body=initial_body)
                 pre = _metadata_version(
                     body_last_edited_at=None if first else "2026-09-04T00:00:00Z"
                 )
                 calls = _cli_rejection_calls("new body", pre_state=state, pre_version=pre)
+                if versioned:
+                    calls = versioned_calls(calls)
                 completed, records = self.sandbox.run("edit", arguments, calls)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(json.loads(completed.stdout)["action"], "updated")
@@ -9780,6 +9807,11 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 self.assertEqual(len(history), 2)
                 confirmation = pr_metadata._parse_confirmation_comment_body(history[1]["body"])
                 self.assertEqual(confirmation.metadata_version.body_edit_total_count, 2 if first else 3)
+                if versioned:
+                    self.assertEqual(
+                        confirmation.metadata_version.body_edit_updated_at,
+                        "2026-09-04T00:00:06Z",
+                    )
                 self.assertEqual(
                     [json.loads(r["input"]) for r in records if r["method"] == "PATCH"],
                     [{"body": "new body"}],
@@ -9788,6 +9820,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     "new body", pre_state=state, pre_version=pre,
                     history=history[:1], recovery=True,
                 )
+                if versioned:
+                    calls = versioned_calls(calls)
                 completed, records = self.sandbox.run("edit", arguments, calls)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(json.loads(completed.stdout)["action"], "recovered")

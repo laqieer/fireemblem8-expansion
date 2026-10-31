@@ -539,7 +539,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/258",
         "https://github.com/laqieer/fireemblem8-expansion/issues/260",
         "https://github.com/laqieer/fireemblem8-expansion/issues/279",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/309"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/309",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/346"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -3067,7 +3068,8 @@
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/277",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/283"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/283",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/346"
       ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-metadata-edit-race-001-defer-metadata-edits-and-reconcile-continuity",

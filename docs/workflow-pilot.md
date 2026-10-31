@@ -1815,8 +1815,11 @@ materializes both the original snapshot and the first edited revision.
 This is not permission for two intervening edits. The older node's `editedAt`
 must equal the same PR's `createdAt` and strictly precede the latest edit; its
 editor must match the PR's original `User` author by numeric ID and login.
-Both nodes must have distinct IDs and share their immutable `createdAt` /
-`updatedAt` materialization time. The original `diff` must have the same
+Both nodes must have distinct IDs and share their immutable `createdAt`
+materialization time; the original snapshot's `updatedAt` remains that same
+time. The current edit's `updatedAt` may advance after creation and remains
+an exact, unnormalized part of the confirmation/replay version. Its ordinary
+`editedAt <= createdAt <= updatedAt` chronology still applies. The original `diff` must have the same
 canonical body digest as the intent's `pre_fields.body`, including an empty
 original body. The latest revision still requires the repository-owner editor
 and exact current body. A subsequent body PATCH must increase the count by

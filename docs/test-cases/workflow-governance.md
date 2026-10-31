@@ -3284,7 +3284,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   queued-run chronology regression
   [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277);
   pre-full preparation regression
-  [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283).
+  [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283);
+  first-edit row-version regression
+  [issue #346](https://github.com/laqieer/fireemblem8-expansion/issues/346).
 - **Supported configuration or artifact:** clean source checkout with Python
   3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
   token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
@@ -3373,6 +3375,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    the new body plus the original, whose `editedAt` equals PR creation and
    whose author matches the PR author. Bind their distinct IDs, shared
    materialization time, and the original's canonical pre-body digest.
+   Give only the current row an `updatedAt` later than its `createdAt`.
+   Require edit, confirmation and reconciliation to complete while retaining
+   that exact later version, not normalizing it to materialization. The pre-fix
+   negative applies the body but rejects before confirmation with
+   `original body snapshot authority is inconsistent`. Original author,
+   authorship/materialization, digest, count and replay controls stay required.
    Confirm and reconcile this 0-to-2 transition through the real helper and
    isolated CLI, including applied-target recovery without a second PATCH.
    Repeat a subsequent 2-to-3 edit. Return a real second intervening edit

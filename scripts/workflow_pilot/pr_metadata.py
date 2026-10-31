@@ -901,7 +901,6 @@ def _parse_metadata_version_payload(
             or not (
                 body_original.materialized_at
                 == body_edit_created_at
-                == body_edit_updated_at
             )
         ):
             raise MetadataEditError(f"{label} original body materialization is invalid")
@@ -1863,7 +1862,7 @@ def _body_edit_version(
             original[2] != authored_at
             or (original[4], original[5]) != (author_id, author_login)
             or not (
-                original[1] == original[3] == latest[1] == latest[3]
+                original[1] == original[3] == latest[1]
             )
         ):
             raise MetadataEditError("original body snapshot authority is inconsistent")
