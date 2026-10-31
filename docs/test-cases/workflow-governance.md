@@ -3803,8 +3803,12 @@ A read-only ambiguous pre-state hold carries only its intent ID/URL,
 no terminal, and `mutated: false`; it is not a confirmed pair. Updated/recovered
 and authoritative no-op results still require their original pair contracts.
 Job/run timestamps use exact UTC-second GitHub RFC3339 syntax and enforce
-status-dependent nullability and chronology, with only the captured
-one-second unassigned-skip timestamp exception.
+status-dependent nullability and chronology. For pending jobs only, the
+coherent strict integer-zero runner/group IDs and empty runner/group names
+normalize to unknown runner identity; a null or creation-equal start
+normalizes to unknown start, without execution or successful-Build credit.
+Other pending starts still reject. The captured one-second unassigned-skip
+quirk remains the only completed-job timing exception.
 The centralized header policy combines only explicitly permitted RFC fields,
 requires exact parameterized `application/json`, and rejects unsupported
 repeats. The centralized job state model admits skipped completion deltas only
