@@ -556,6 +556,13 @@ def _authored_case(probe):
             "detail": "parsed canonical tester format/member contract; not locale or ROM behavior"}
 
 
+def available_probe(module, selector):
+    observed = module.run_probe(selector)
+    review.require(observed["verdict"] != "unavailable",
+                   "captured production backend unavailable: " + repr(observed)[:1000])
+    return observed
+
+
 @probe_result("host")
 def _authored_binding(probe):
     module = types.ModuleType("captured_authored_case_binding")
@@ -572,15 +579,13 @@ def _authored_binding(probe):
     checks = 0
     os.chdir(fixture)
     try:
-        baseline = module.run_probe("authored-case:" + production_role)
-        review.require(baseline["verdict"] != "unavailable",
-                       "captured production predicate backend unavailable")
+        baseline = available_probe(module, "authored-case:" + production_role)
         check(baseline["verdict"] == "satisfied" and baseline["checks"] > 0,
               "captured production predicate rejects the valid reviewed fixture")
         checks += 1
 
         def rejected():
-            observed = module.run_probe("authored-case:" + production_role)
+            observed = available_probe(module, "authored-case:" + production_role)
             check(observed["verdict"] == "contract-violation" and observed["checks"] > 0,
                   "captured production predicate misclassifies its actual counterexample: "
                   + repr(observed)[:1000])
@@ -637,15 +642,13 @@ def _authored_binding(probe):
                 target.replace("localization.md", "%6Cocalization.md"),
             ):
                 Path(CASE_REFERENCE).write_text(reference.replace(target, equivalent))
-                observed = module.run_probe("authored-case:drift-checks")
-                review.require(observed["verdict"] != "unavailable",
-                               "equivalent guide URI backend unavailable")
+                observed = available_probe(module, "authored-case:drift-checks")
                 check(observed["verdict"] == "satisfied",
                       "captured production rejected an equivalent guide URI")
                 checks += 1
             Path(CASE_REFERENCE).write_text(reference.replace(
                 target, "https://example.com/../../" + target))
-            observed = module.run_probe("authored-case:drift-checks")
+            observed = available_probe(module, "authored-case:drift-checks")
             check(observed["verdict"] == "contract-violation" and observed["checks"] > 0,
                   "external guide URI aliased the internal procedure")
             checks += 1
@@ -711,9 +714,7 @@ def _authored_fixture(probe):
     }.get(role)
     review.require(variant is not None, "unknown reviewed fixture wire selector")
     try:
-        baseline = module.run_probe("authored-binding:consumers")
-        review.require(baseline["verdict"] != "unavailable",
-                       "captured fixture producer backend unavailable")
+        baseline = available_probe(module, "authored-binding:consumers")
         check(baseline["verdict"] == "satisfied" and baseline["checks"] > 0,
               "captured fixture producer rejects its valid reviewed program")
         if role == "validators":
@@ -730,7 +731,7 @@ def _authored_fixture(probe):
                     "detail": "captured producer validated known and unknown reviewed selectors"}
         changed = locale_case_program_fixture(original, variant)
         program.write_bytes(changed)
-        observed = module.run_probe("authored-binding:consumers")
+        observed = available_probe(module, "authored-binding:consumers")
         check(observed["verdict"] == "satisfied" and observed["checks"] > 0,
               "equivalent reviewed program breaks captured fixture producer: "
               + repr(observed)[:1000])
@@ -739,7 +740,7 @@ def _authored_fixture(probe):
         checks = 3
         if role == "replay":
             program.write_bytes(original)
-            replay = module.run_probe("authored-binding:consumers")
+            replay = available_probe(module, "authored-binding:consumers")
             check(replay["verdict"] == "satisfied" and replay["checks"] > 0,
                   "fixture replay retained a stale reviewed-program binding")
             checks += 1
