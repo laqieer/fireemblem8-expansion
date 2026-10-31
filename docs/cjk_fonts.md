@@ -11,8 +11,8 @@ invoke FEHRR, FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
 The host tools accept the existing plain JSON representation and the version-1
 `cjk-resource-index` envelope for `fonts/cjk/fehrr-sources.json` and
-`fonts/cjk/runtime_usage.json`. The default FEHRR index is packed; runtime usage
-remains plain. Generation preserves the representation already present. Both
+`fonts/cjk/runtime_usage.json`. Both default indexes are packed.
+Generation preserves the representation already present. Both
 formats decode to the same complete JSON object.
 The shared `scripts.fonttools.cjk.resource_index` API provides `decode_index`,
 `encode_index(value, packed=False)`, `load_index` and `encode_like_index`.
@@ -68,8 +68,10 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
 2. Require complete decoded equality, repeated deterministic encoding,
    unchanged plain bytes and every glyph/width/bitmap byte, valid physical
    checksums, and exact original files after reverse conversion. The
-   pre-interface FEHRR reader rejects the packed fixture; the existing plain
-   index remains the default negative control.
+   pre-interface FEHRR reader rejects the packed fixture. An explicit plain
+   fixture remains the representation control even after default migrations;
+   obtain pre-migration plain data from the exact parent Git blob, not by
+   assuming the current checkout still stores that index in plain form.
 3. Exercise malformed encoding, unknown fields/version, boolean size/version,
    wrong size, damaged/truncated/trailing streams and oversized expansion.
    Require explicit errors; a corrupt owned CLI input must leave every
@@ -137,6 +139,78 @@ Report the complete generated-data deletion/replacement in review-size
 evidence. The index is indivisible: partial JSON conversion is invalid. The
 generated-line review exception does not exempt any blob from the existing
 4 MiB old-plus-new raw gate or replace exact candidate/master delivery gates.
+
+#### Default runtime-usage migration variant
+
+Issue [#350](https://github.com/laqieer/fireemblem8-expansion/issues/350)
+uses the same indexed case after the interface and FEHRR conversion. From
+the exact clean parent, run `repack-index --index runtime-usage --format packed`,
+the focused resource-index suite and `python3 -m scripts.fonttools.cjk check`.
+Both packed starting representations must retain exact round-trip restoration.
+No classification, message, corpus, source-priority or atlas change is allowed.
+
+The physical chain is usage bytes -> inventory output byte-count/hash ->
+asset-manifest inventory checksum. The FEHRR index has no inventory-hash field
+and remains byte-identical. With `BASE` set to the exact parent, verify the
+complete committed conversion from the source root:
+
+```bash
+python3 - "$BASE" <<'PY'
+import hashlib
+import json
+import subprocess
+import sys
+from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index
+
+def at(revision, path):
+    return subprocess.check_output(["git", "show", f"{revision}:{path}"])
+
+if not sys.argv[1].strip():
+    raise SystemExit("BASE must identify the exact plain parent commit")
+base = subprocess.check_output(
+    ["git", "rev-parse", "--verify", "--end-of-options", sys.argv[1] + "^{commit}"],
+    text=True,
+).strip()
+head = subprocess.check_output(["git", "rev-parse", "HEAD^{commit}"], text=True).strip()
+if base == head:
+    raise SystemExit("BASE must differ from the packed candidate")
+subprocess.run(["git", "merge-base", "--is-ancestor", base, head], check=True)
+usage = "fonts/cjk/runtime_usage.json"
+inventory = "fonts/cjk/inventory.json"
+manifest = "graphics/fonts/cjk/manifest.json"
+stored = at("HEAD", usage)
+prior = at(base, usage)
+if json.loads(prior).get("kind") == ENVELOPE_KIND:
+    raise SystemExit("BASE must contain the plain runtime-usage index")
+if json.loads(stored).get("kind") != ENVELOPE_KIND:
+    raise SystemExit("HEAD must contain the packed runtime-usage index")
+assert decode_index(prior) == decode_index(stored)
+expected = json.loads(at(base, inventory))
+expected["outputs"][usage] = {
+    "byte_count": len(stored), "sha256": hashlib.sha256(stored).hexdigest(),
+}
+assert json.loads(at("HEAD", inventory)) == expected
+expected = json.loads(at(base, manifest))
+for asset in expected["assets"].values():
+    for kind in ("bitmap", "codepoints", "widths"):
+        path = asset[kind]["path"]
+        assert at(base, path) == at("HEAD", path)
+expected["sources"]["inventory"]["sha256"] = hashlib.sha256(at("HEAD", inventory)).hexdigest()
+assert json.loads(at("HEAD", manifest)) == expected
+fehrr = "fonts/cjk/fehrr-sources.json"
+assert at(base, fehrr) == at("HEAD", fehrr)
+print("all usage records/policies, twelve atlas files and checksum-only metadata match")
+PY
+```
+
+Repeat conversion and require identical outputs. The actual generated-file
+consumer must reject an owned fixture carrying the old usage output record,
+without rewriting it, and accept it again after restoring current metadata.
+Existing corrupt/truncated/trailing/bounded-input controls remain mandatory.
+This is another indivisible generated-index conversion: report every deleted
+line and alternative complete-data proof, retain the unchanged 4 MiB raw
+boundary and all parent-first candidate/master completion gates. No manual
+judgment, font art or production-game qualification is supplied.
 
 ## Inventory contract
 
