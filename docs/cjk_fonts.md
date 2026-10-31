@@ -11,8 +11,9 @@ invoke FEHRR, FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
 The host tools accept the existing plain JSON representation and the version-1
 `cjk-resource-index` envelope for `fonts/cjk/fehrr-sources.json` and
-`fonts/cjk/runtime_usage.json`. Defaults remain plain; generation preserves the
-representation already present. Both decode to the same complete JSON object.
+`fonts/cjk/runtime_usage.json`. The default FEHRR index is packed; runtime usage
+remains plain. Generation preserves the representation already present. Both
+formats decode to the same complete JSON object.
 The shared `scripts.fonttools.cjk.resource_index` API provides `decode_index`,
 `encode_index(value, packed=False)`, `load_index` and `encode_like_index`.
 
@@ -79,6 +80,63 @@ consumers, not a raw-source assertion. It removes only its owned temporary
 files and never converts stock inputs. All existing source/schema/provenance
 checks remain required. This is storage evidence, not font-art, selected-game,
 rendered-text or supported ROM-profile qualification.
+
+#### Default FEHRR migration variant
+
+Issue [#349](https://github.com/laqieer/fireemblem8-expansion/issues/349)
+uses the same case after the storage interface lands. From the exact clean
+parent, run `repack-index --index fehrr --format packed` and the existing
+`python3 -m scripts.fonttools.cjk check`. Preserve original plain bytes in Git,
+not in a second committed snapshot.
+
+Compare the complete decoded before/after objects from the immutable parent
+and candidate Git blobs using `decode_index`, including every source,
+selection and glyph record. Compare all twelve bitmap/codepoint/width files
+named by the four original manifest assets byte-for-byte; only the FEHRR index
+and its physical checksum in the asset manifest change among generated files.
+With `BASE` set to the exact parent revision, run from the source root:
+
+```bash
+python3 - "$BASE" <<'PY'
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from scripts.fonttools.cjk.resource_index import decode_index
+
+def at(revision, path):
+    return subprocess.check_output(["git", "show", f"{revision}:{path}"])
+
+base = sys.argv[1]
+index = "fonts/cjk/fehrr-sources.json"
+manifest = "graphics/fonts/cjk/manifest.json"
+stored = at("HEAD", index)
+assert decode_index(at(base, index)) == decode_index(stored)
+expected = json.loads(at(base, manifest))
+for asset in expected["assets"].values():
+    for kind in ("bitmap", "codepoints", "widths"):
+        path = asset[kind]["path"]
+        assert at(base, path) == at("HEAD", path)
+expected["sources"]["fehrr_priority"]["sha256"] = hashlib.sha256(stored).hexdigest()
+assert json.loads(at("HEAD", manifest)) == expected
+usage = "fonts/cjk/runtime_usage.json"
+assert at(base, usage) == at("HEAD", usage)
+print("complete decoded index, all twelve atlas files and checksum-only metadata match")
+PY
+```
+
+This compares immutable committed candidates; before committing, inspect the
+generated working-tree files with the same decoder and run the focused suite.
+Repeat the pack operation and require identical bytes, then run the focused
+resource-index suite from the now-packed starting state. Its stale-checksum
+and malformed-input controls must still reject. No default runtime-usage,
+font, atlas, locale or game-data conversion is part of this variant.
+
+Report the complete generated-data deletion/replacement in review-size
+evidence. The index is indivisible: partial JSON conversion is invalid. The
+generated-line review exception does not exempt any blob from the existing
+4 MiB old-plus-new raw gate or replace exact candidate/master delivery gates.
 
 ## Inventory contract
 
