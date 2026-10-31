@@ -3286,7 +3286,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   pre-full preparation regression
   [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283);
   first-edit row-version regression
-  [issue #346](https://github.com/laqieer/fireemblem8-expansion/issues/346).
+  [issue #346](https://github.com/laqieer/fireemblem8-expansion/issues/346);
+  native unassigned-job regression
+  [issue #354](https://github.com/laqieer/fireemblem8-expansion/issues/354).
 - **Supported configuration or artifact:** clean source checkout with Python
   3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
   token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
@@ -3301,6 +3303,18 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   required.
 
 ### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_native_unassigned_pending_jobs_remain_pending_and_defer_edits scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_native_unassigned_job_normalization_does_not_authorize_inconsistent_facts -v`.
+   Return a pending native job with empty runner/group names and strict integer
+   zero IDs. Test both a null start and a start exactly equal to creation.
+   Require unknown runner/start, pending status and no conclusion: these
+   placeholders do not prove execution or successful full Build. A default
+   metadata correction must defer with only GET calls and no mutation.
+   Before the fix, the same native shape rejects with a positive-runner-ID
+   error. Boolean IDs, conflicting assigned/group identity, another start
+   instant, in-progress and successful zero-runner claims must still reject.
+   Existing assigned-runner and complete exact-head success controls remain.
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests -v`.

@@ -540,7 +540,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/260",
         "https://github.com/laqieer/fireemblem8-expansion/issues/279",
         "https://github.com/laqieer/fireemblem8-expansion/issues/309",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/346"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/346",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/354"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -3071,7 +3072,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/277",
         "https://github.com/laqieer/fireemblem8-expansion/issues/283",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/346"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/346",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/354"
       ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-metadata-edit-race-001-defer-metadata-edits-and-reconcile-continuity",
@@ -3088,6 +3090,10 @@
       "cleanup": "No cleanup is required because the tests use only synthetic API responses and make no remote mutation.",
       "limitations": "GitHub cannot atomically combine intent creation, PATCH, metadata-version observation, confirmation creation, and workflow materialization. The immutable GitHub comment protocol recovers exact applied targets and proven rejected mutations without cross-subsystem timestamp ordering. Reconciliation/no-op additionally require the run/attempt-bound fingerprint of the original webhook's complete pre/target transition and one stable attested run whose native instant belongs to every changed field's exact native set: title event, body editedAt or body updatedAt. Earlier delayed unrelated runs cannot authorize this edit; absent proof, legacy bases/runs, unprovable same-second revision order, empty native-set intersection, distinct matching run identities, or an unproven competitor hold explicitly. No current-PR query can reconstruct a missing original trigger. A crash or failed abort write with no terminal cannot retrospectively prove rejection; an ambiguous pre-state remains held rather than duplicating PATCH. Title history and the newest-first body edit connection are bounded; incomplete or ambiguous history fails closed. No manual-only criterion or ARM runtime test applies.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_native_unassigned_pending_jobs_remain_pending_and_defer_edits scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_native_unassigned_job_normalization_does_not_authorize_inconsistent_facts -v",
+          "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
+        },
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_essential_pre_full_preparation_cannot_switch_to_refreshed_full_authority scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_essential_pre_full_preparation_rejects_active_jobs_at_every_snapshot scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_initially_active_review_first_never_grants_essential_full_permission -v",
           "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"

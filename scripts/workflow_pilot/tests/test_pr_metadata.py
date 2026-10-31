@@ -7647,6 +7647,71 @@ class PullRequestMetadataTests(unittest.TestCase):
         ):
             pr_metadata.list_candidate_runs(client, state)
 
+    def test_native_unassigned_pending_jobs_remain_pending_and_defer_edits(self):
+        for pending_status, placeholder in (
+            (status, value) for status in ("queued", "waiting", "pending", "requested")
+            for value in (False, True)
+        ):
+            for operation in ("list", "edit"):
+                with self.subTest(status=pending_status, placeholder=placeholder, operation=operation):
+                    client = ScriptedClient()
+                    record, jobs = _run(101, 10, mode="full", active=True)
+                    job = next(item for item in jobs if item["name"] == "build")
+                    job.update(
+                        status=pending_status,
+                        runner_id=0, runner_name="", runner_group_id=0, runner_group_name="",
+                        started_at=job["created_at"] if placeholder else None,
+                    )
+                    _add_pr_states(client, _pr())
+                    _add_snapshot(client, [(record, jobs)])
+                    if operation == "list":
+                        state = pr_metadata.fetch_pull_request(client, REPOSITORY, PR_NUMBER)
+                        runs = pr_metadata.list_candidate_runs(client, state)
+                        pending = next(item for item in runs[0].jobs if item.name == "build")
+                        self.assertEqual(pending.status, pending_status)
+                        self.assertIsNone(pending.runner_name)
+                        self.assertIsNone(pending.started_at)
+                        self.assertIsNone(pending.conclusion)
+                    else:
+                        decision = pr_metadata.edit_metadata(
+                            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                            head_sha=HEAD, base_sha=BASE,
+                            title=None, body="Deferred native placeholder correction",
+                            essential_reason=None,
+                        )
+                        self.assertEqual(decision.action, "deferred")
+                        self.assertFalse(decision.mutated)
+                    self.assertTrue(all(method == "GET" for method, _, _ in client.calls))
+
+    def test_native_unassigned_job_normalization_does_not_authorize_inconsistent_facts(self):
+        variants = {
+            "boolean-runner": {"runner_id": False},
+            "boolean-group": {"runner_group_id": False},
+            "assigned-zero": {"runner_name": "GitHub Actions 1"},
+            "different-group": {"runner_group_id": 1},
+            "started-later": {"started_at": "2026-09-04T00:00:30Z"},
+            "in-progress": {"status": "in_progress"},
+            "successful": {
+                "status": "completed", "conclusion": "success",
+                "completed_at": "2026-09-04T00:00:30Z",
+            },
+        }
+        for name, changes in variants.items():
+            with self.subTest(name=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full", active=True)
+                job = next(item for item in jobs if item["name"] == "build")
+                job.update(
+                    runner_id=0, runner_name="", runner_group_id=0, runner_group_name="",
+                    started_at=job["created_at"],
+                )
+                job.update(changes)
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata.fetch_pull_request(client, REPOSITORY, PR_NUMBER)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
     def test_queued_and_in_progress_job_timing_matches_live_shapes(self):
         client = ScriptedClient()
         record, jobs = _run(101, 10, mode="full", active=True)
