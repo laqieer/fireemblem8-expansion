@@ -365,6 +365,14 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                 PROJECT_SCHEMA_INPUTS, declaration,
                 "actual serialized Make arguments and invocation-local schema consumption",
                 "project-wire:" + role, inputs)
+        for role in review.FAMILIES["generated"]:
+            add("generated", role, "selected-schemas", PROJECT_SCHEMA_INPUTS,
+                "scripts/generated_data/cli.py", declaration,
+                "all declared selected sources, actual output namespace and artifact consumers",
+                "project-generated:" + role,
+                (PROJECT_DECLARATION, PROJECT_REGISTRY, PROJECT_SCHEMA_INPUTS,
+                 "scripts/generated_data/cli.py"),
+                evidence=("positive", "adversarial", "generated"))
         tool_paths = {
             REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py", AOE_DRIVER, AOE_DISABLED,
             "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
@@ -380,7 +388,18 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
             and path not in tool_paths and "/tests/" not in "/" + path
             and (path in static_inputs or path.startswith("scripts/") and path.endswith(".py"))
         ))
-        result = [replace(member, execution_inputs=closure) for member in result]
+        generated_inputs = event_validation_inputs(tree) | set(tree.under("texts/expansion"))
+        generated_inputs.update(tree.under("assets"))
+        generated_inputs.update({
+            "src/face.c", "src/portrait_data.c", "src/unit_icon_wait_data.c",
+        })
+        for asset in json.loads(tree.read("assets/manifest.json"))["assets"]:
+            generated_inputs.update(asset["sources"])
+        result = [replace(
+            member, execution_inputs=tuple(sorted(
+                set(closure) | (generated_inputs if member.family == "generated" else set())
+            )),
+        ) for member in result]
     elif spec.model == "authored-case":
         _, feature, case = authored_case_declaration(tree.read(CASE_REGISTRY))
         mapping = json.dumps({
@@ -644,6 +663,8 @@ def _project(probe):
     review.require(baseline["project"] == project.name, "project frontend backend unavailable")
     checks = 1
     family, _, role = probe.partition(":")
+    if family == "project-generated":
+        return _project_generated(role, root, project, modules, declare)
     if family == "project-wire":
         fields = {
             "message_header": relative + "/selected-msg.h",
@@ -881,6 +902,188 @@ def _project(probe):
             "detail": "real project declaration/identity functions executed; no compiler/ROM claim"}
 
 
+@probe_result("host")
+def _project_generated(role, root, project, modules, declare):
+    import shutil
+    from scripts.generated_data import cli, idspace, registry
+    from scripts.generated_data.schema import SchemaInputs
+
+    sources = {}
+    for name in sorted(PROJECT_SCHEMAS):
+        schema = registry.REGISTRY.resolve(name)
+        original = Path(schema.default_source)
+        selected = project / "providers" / name / original.name
+        selected.parent.mkdir(parents=True, exist_ok=True)
+        if original.is_dir():
+            selected.mkdir(exist_ok=True)
+            for path in schema.source_paths(str(original)):
+                shutil.copyfile(path, selected / Path(path).name)
+        else:
+            shutil.copyfile(original, selected)
+        sources[name] = selected.relative_to(root).as_posix()
+    bundle_schema = registry.REGISTRY.resolve("chapterbundle")
+    for path in bundle_schema.source_paths(sources["chapterbundle"]):
+        path = Path(path)
+        document = json.loads(path.read_bytes())
+        for name, table in document.get("tables", {}).items():
+            if name in sources:
+                table["source"] = sources[name]
+        for name, field in (
+            ("supports", "supportOwners"), ("chapterobjectives", "chapterObjectives"),
+            ("autoplaystrategies", "autoplayStrategies"),
+        ):
+            if field in document:
+                document[field]["source"] = sources[name]
+        path.write_text(json.dumps(document, indent=2) + "\n")
+    declare(
+        inherit=modules - set(sources), replacement=set(sources),
+        extra="".join(f"FE8_PROJECT_SOURCE_{name} := {path}\n"
+                      for name, path in sorted(sources.items())),
+    )
+    serialized = command([
+        "make", "--no-print-directory", "-s", "-f", PROJECT_DECLARATION, "-f", "-",
+        "review-project-generation", f"FE8_PROJECT={project.name}",
+        "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+        "MODERN_BUILD_ROOT=build/review-project-generation",
+        "MODERN_PROJECT_MSG_HEADER=include/constants/msg.h", "PYTHON=" + sys.executable,
+    ], stdin=(
+        b"review-project-generation:\n"
+        b"\t@printf '%s\\n' $(FE8_PROJECT_OUTPUT_DIR) $(FE8_PROJECT_SCHEMA_ARGS)\n"
+    )).decode().splitlines()
+    output_root = Path(serialized[0])
+    check(output_root == Path("build/review-project-generation/projects") / project.name
+          / "probe/debug/aapcs", "producer lost a selected namespace dimension")
+    arguments = serialized[1:]
+    outputs = output_root / "data"
+    inventories = output_root / "inventories"
+    inputs = SchemaInputs(sources=sources, message_header="include/constants/msg.h")
+    committed = {
+        path: Path(path).read_bytes()
+        for path in (registry.REGISTRY.resolve(name).default_inventory_path
+                     for name in sorted(PROJECT_SCHEMAS))
+    }
+    checks = 1
+
+    def invoke(action, name):
+        errors = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(errors):
+            try:
+                status = cli.main([
+                    *arguments, "--inventory-dir", str(inventories),
+                    action, "--table", name,
+                    *([] if action == "validate" else ["--out-dir", str(outputs)]),
+                ])
+            except SystemExit as error:
+                raise RuntimeError("generated CLI arguments rejected: " + errors.getvalue()) from error
+        return status, errors.getvalue()
+
+    def corrupt_source(name, action, consumer=None):
+        schema = inputs.resolve(name)
+        path = Path(schema.source_paths(sources[name])[0])
+        review.require(path.resolve().is_relative_to(project.resolve()),
+                       "selected loader escaped the owned fixture")
+        previous = path.read_bytes()
+        try:
+            path.write_text("{ invalid selected JSON }\n")
+            try:
+                status, diagnostic = invoke(action, consumer or name)
+            except json.JSONDecodeError:
+                return
+            check(status != 0 and bool(diagnostic.strip()),
+                  "invalid selected owner was ignored or silently accepted")
+        finally:
+            path.write_bytes(previous)
+
+    def object_symbols(schema, path, directory, selected_inputs):
+        directory.mkdir(parents=True, exist_ok=True)
+        if schema.name == "items":
+            (directory / "id_space_active.h").write_text(
+                idspace.render_active_header(env={}, inputs=selected_inputs))
+        output = directory / path.with_suffix(".o").name
+        command([
+            os.environ["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb",
+            "-mthumb-interwork", "-mabi=aapcs", "-std=gnu89",
+            "-ffreestanding", "-fno-builtin", "-DFE8_EXPANSION_MODERN_BUILD=1",
+            "-Iinclude", "-Iinclude/generated", "-I" + str(directory),
+            "-c", str(path), "-o", str(output),
+        ])
+        symbols = command([os.environ["MODERN_NM"], "-S", "--defined-only", str(output)])
+        check(bool(symbols.strip()), "generated ARM object lost every defined symbol")
+        return symbols
+
+    for name in sorted(PROJECT_SCHEMAS):
+        schema = inputs.resolve(name)
+        if role == "owners":
+            status, diagnostic = invoke("validate", name)
+            check(status == 0, "valid selected owner rejected: " + diagnostic[-1000:])
+            corrupt_source(name, "validate")
+            checks += 2
+            continue
+        status, diagnostic = invoke("generate", name)
+        check(status == 0, "valid selected producer rejected: " + diagnostic[-1000:])
+        inventory = inventories / Path(schema.default_inventory_path).name
+        targets = [inventory]
+        if schema.default_output_name:
+            targets.append(outputs / schema.default_output_name)
+        check(all(path.is_file() and path.stat().st_size for path in targets),
+              "selected producer did not materialize its complete output set")
+        if role == "outputs":
+            saved = {str(path): (path.read_bytes(), path.stat().st_mtime_ns) for path in targets}
+            status, diagnostic = invoke("generate", name)
+            check(status == 0 and saved == {
+                str(path): (path.read_bytes(), path.stat().st_mtime_ns) for path in targets
+            }, "unchanged producer rewrote or lost selected output")
+            checks += 2
+        elif role == "consumers":
+            if schema.default_output_name:
+                records, diagnostics = cli._load_and_validate(
+                    schema, sources[name], dep_source_overrides=sources, inputs=inputs)
+                review.require(not diagnostics.errors, "selected consumer prerequisite failed")
+                default_inputs = SchemaInputs()
+                default = default_inputs.resolve(name)
+                original, diagnostics = cli._load_and_validate(
+                    default, default.default_source, inputs=default_inputs)
+                review.require(not diagnostics.errors, "default consumer prerequisite failed")
+                baseline_directory = output_root / "objects" / name / "default"
+                baseline_directory.mkdir(parents=True, exist_ok=True)
+                baseline_source = baseline_directory / default.default_output_name
+                baseline_source.write_text(default.generate_c(original, default.default_source))
+                baseline = object_symbols(default, baseline_source, baseline_directory, default_inputs)
+                observed = object_symbols(
+                    schema, outputs / schema.default_output_name,
+                    output_root / "objects" / name / "selected", inputs)
+                check(observed == baseline,
+                      "equal selected records changed actual ARM symbol layout")
+                checks += 3
+            else:
+                consumer = {"chapterbundle": "chapterobjectives", "eventscripts": "eventlists"}[name]
+                status, diagnostic = invoke("generate", consumer)
+                check(status == 0, "selected metadata consumer rejected: " + diagnostic[-1000:])
+                corrupt_source(name, "generate", consumer)
+                checks += 2
+        elif role == "drift-checks":
+            status, diagnostic = invoke("check", name)
+            check(status == 0, "valid selected artifact reported drift: " + diagnostic[-1000:])
+            path = targets[-1]
+            previous = path.read_bytes()
+            try:
+                path.write_bytes(b"")
+                status, diagnostic = invoke("check", name)
+                check(status == 0 and path.read_bytes() == previous,
+                      name + ": selected build-local artifact did not heal from current source")
+            finally:
+                path.write_bytes(previous)
+            checks += 2
+        else:
+            raise review.ReviewError("unknown direct project generated probe")
+    check(all(Path(path).read_bytes() == content for path, content in committed.items()),
+          "selected generation changed a committed framework inventory")
+    return {
+        "kind": "host", "checks": checks,
+        "detail": "all16 actual selected schema/CLI paths; consumer ARM objects are not ROM evidence",
+    }
+
+
 @probe_result("arm-object")
 def _arm(enabled: bool) -> dict:
     common = [os.environ["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb",
@@ -1096,6 +1299,7 @@ def run_probe(probe: str) -> dict:
         *("project:" + role for role in review.FAMILIES["action"]),
         *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
         *("project-wire:" + role for role in review.FAMILIES["wire"]),
+        *("project-generated:" + role for role in review.FAMILIES["generated"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -1112,7 +1316,7 @@ def run_probe(probe: str) -> dict:
         return _generated(probe)
     if probe.startswith("authored-case:"):
         return _authored_case(probe)
-    if probe.startswith(("project:", "project-life:", "project-wire:")):
+    if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:")):
         return _project(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)

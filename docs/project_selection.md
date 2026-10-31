@@ -210,7 +210,7 @@ The public resolver carries project/profile as invocation context. The core
 `ExpansionIdentity` positional constructor remains unchanged; only selected
 metadata and fingerprint inputs include that context.
 
-The current review-family `project-selection` action, lifecycle and wire slices
+The current review-family `project-selection` action, lifecycle, wire and generated slices
 exercise the real declaration, identity and metadata CLI against the parsed
 schema-owner, setting and provider domain. They cover default/selected entry,
 default preservation, fresh profile resets and failed/recovered publication.
@@ -219,10 +219,19 @@ contexts, malformed source selectors and replayed independent invocations.
 The item loader reads a real selected message header twice after its contents
 change, detecting stale or ignored bindings rather than checking only an
 attribute.
+Generated checks consume the actual Make-serialized providers and private
+four-dimensional namespace for all sixteen schemas. They exercise selected
+owner rejection, complete generation and no-op publication, all fourteen
+generated-C ARM object symbol layouts against equivalent inherited inputs,
+both metadata-only downstream consumers, and the existing build-local healing
+policy without modifying committed inventories. Actual ACTIVE headers are
+produced for item compilation; no decoder, compiler or source stub is used.
 Their execution-only closure contains production Python plus the declared
-configuration/font slots, not the whole asset/source tree or candidate tests.
-Remaining generated and resource bindings are not yet complete; these
-development slices do not claim compiler/ROM evidence or authorize the whole
+configuration/font slots; generated roles additionally stage the parsed
+event/schema/header/asset owners and three real capacity-source files, not
+candidate tests or an indiscriminate engine snapshot.
+Resource bindings remain incomplete; generated object observations are not
+target-ROM or supported-profile qualification and do not authorize the whole
 selector handoff or replace any final gate.
 
 Project names and fingerprints are not save-compatibility authorities.

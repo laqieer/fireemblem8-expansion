@@ -9,6 +9,8 @@ from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
 
 
 class ProjectSubjectTests(unittest.TestCase):
+    maxDiff = None
+
     @classmethod
     def setUpClass(cls):
         cls.workspace = snapshot()
@@ -49,6 +51,52 @@ class ProjectSubjectTests(unittest.TestCase):
             [],
         )
         self.assertTrue(all(item.kind == "host" and item.checks > 0 for item in observed))
+
+    def test_project_generated_family_consumes_all_selected_schema_artifacts(self):
+        members = tuple(item for item in self.tools.members(self.scope())
+                        if item.family == "generated")
+        self.assertEqual({item.role for item in members},
+                         {"owners", "outputs", "consumers", "drift-checks"})
+        observed = self.tools.run_obligations(members, self.repo.base)
+        self.assertEqual(
+            [(item.obligation.member, item.verdict, item.detail)
+             for item in observed if item.verdict != "satisfied" or item.checks <= 0],
+            [],
+        )
+        path = "scripts/generated_data/cli.py"
+        original = (self.repo.root / path).read_text()
+        ignored = original.replace("args.source = replacement", "args.source = None", 1)
+        self.assertNotEqual(original, ignored)
+        before = self.repo.commit({path: ignored})
+        after = self.repo.commit({path: original}, parent=before)
+        family = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                       if item.family == "generated")
+        broken = self.tools.run_obligations(family, before)
+        self.assertEqual([(item.verdict, item.checks) for item in broken
+                          if item.obligation.role == "owners"],
+                         [("contract-violation", 1)])
+        repaired = self.tools.run_obligations(family, after)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0 for item in repaired))
+
+    def test_project_generated_consumer_compiles_the_cli_published_artifact(self):
+        path = "scripts/generated_data/cli.py"
+        original = (self.repo.root / path).read_text()
+        damaged_publication = original.replace(
+            "content = schema.generate_c(records, source_path)",
+            'content = ("int wrong_selected_publication;\\n" if schema.replacement_source '
+            'else schema.generate_c(records, source_path))', 1)
+        self.assertNotEqual(original, damaged_publication)
+        before_publication = self.repo.commit({path: damaged_publication})
+        after_publication = self.repo.commit({path: original}, parent=before_publication)
+        family = tuple(item for item in self.tools.members(
+            self.scope(after_publication), (before_publication,))
+                       if item.family == "generated")
+        broken = self.tools.run_obligations(family, before_publication)
+        self.assertEqual([(item.verdict, item.checks) for item in broken
+                          if item.obligation.role == "consumers"],
+                         [("contract-violation", 1)])
+        repaired = self.tools.run_obligations(family, after_publication)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0 for item in repaired))
 
     def test_unknown_project_provider_declaration_requires_a_reviewed_model(self):
         path = "project_selection.mk"
