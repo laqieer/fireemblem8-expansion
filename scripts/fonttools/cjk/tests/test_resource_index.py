@@ -48,11 +48,31 @@ class ResourceIndexTests(unittest.TestCase):
                         cwd=ROOT, capture_output=True, text=True, timeout=180,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if representation == "plain":
+                        plain_checksum = hashlib.sha256((root / FEHRR_SOURCES).read_bytes()).hexdigest()
+                manifest_path = root / "graphics/fonts/cjk/manifest.json"
+                valid_manifest = manifest_path.read_bytes()
+                stale = json.loads(valid_manifest)
+                stale["sources"]["fehrr_priority"]["sha256"] = plain_checksum
+                manifest_path.write_bytes(encode_index(stale))
+                paths = {
+                    FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json",
+                    *(asset[kind]["path"] for asset in stale["assets"].values()
+                      for kind in ("bitmap", "codepoints", "widths")),
+                }
+                before = {path: (root / path).read_bytes() for path in paths}
+                with self.assertRaisesRegex(CjkFontError, "FEHRR priority provenance drifted"):
+                    check_compact_assets(root)
+                for path, data in before.items():
+                    self.assertTrue((root / path).read_bytes() == data, path + " changed on refusal")
+                manifest_path.write_bytes(valid_manifest)
+                check_compact_assets(root)
                 outputs.append({
                     path: (root / path).read_bytes()
                     for path in (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json")
                 })
-        self.assertEqual(outputs[0], outputs[1])
+        for path in outputs[0]:
+            self.assertTrue(outputs[0][path] == outputs[1][path], path + " packed outputs differ")
 
     def test_decoder_memory_bound_rejects_a_valid_large_dictionary_stream(self):
         value = {"glyphs": [0x4E00]}

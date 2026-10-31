@@ -166,6 +166,9 @@ It creates two independent owned roots, explicitly converts each to plain
 before fresh packed encoding with the same encoder build, and compares both
 the stored index and physical asset manifest. Repeating packed on an already
 packed input separately proves idempotence, not fresh-compression determinism.
+Each owned root also pairs the packed index with its actual earlier plain
+checksum, requires the real schema-2 default reader to reject without changing
+the index/manifest/atlas files, restores the correct manifest and rechecks.
 Run the focused resource-index suite from the now-packed starting state. Its stale-checksum
 and malformed-input controls must still reject. No default runtime-usage,
 font, atlas, locale or game-data conversion is part of this variant.
