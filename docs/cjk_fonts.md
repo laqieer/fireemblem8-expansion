@@ -187,10 +187,14 @@ import hashlib
 import json
 import subprocess
 import sys
-from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index
+from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index, encode_index
 
 def at(revision, path):
     return subprocess.check_output(["git", "show", f"{revision}:{path}"])
+
+def same(actual, expected, label):
+    if actual != expected:
+        raise SystemExit(label + " differs")
 
 if not sys.argv[1].strip():
     raise SystemExit("BASE must identify the exact plain parent commit")
@@ -211,28 +215,34 @@ if json.loads(prior).get("kind") == ENVELOPE_KIND:
     raise SystemExit("BASE must contain the plain runtime-usage index")
 if json.loads(stored).get("kind") != ENVELOPE_KIND:
     raise SystemExit("HEAD must contain the packed runtime-usage index")
-assert decode_index(prior) == decode_index(stored)
+same(encode_index(decode_index(prior)), encode_index(decode_index(stored)), "decoded usage")
 expected = json.loads(at(base, inventory))
 expected["outputs"][usage] = {
     "byte_count": len(stored), "sha256": hashlib.sha256(stored).hexdigest(),
 }
-assert json.loads(at("HEAD", inventory)) == expected
+same(encode_index(json.loads(at("HEAD", inventory))), encode_index(expected), inventory)
 expected = json.loads(at(base, manifest))
 for asset in expected["assets"].values():
     for kind in ("bitmap", "codepoints", "widths"):
         path = asset[kind]["path"]
-        assert at(base, path) == at("HEAD", path)
+        same(at(base, path), at("HEAD", path), path)
 expected["sources"]["inventory"]["sha256"] = hashlib.sha256(at("HEAD", inventory)).hexdigest()
-assert json.loads(at("HEAD", manifest)) == expected
+same(encode_index(json.loads(at("HEAD", manifest))), encode_index(expected), manifest)
 fehrr = "fonts/cjk/fehrr-sources.json"
-assert at(base, fehrr) == at("HEAD", fehrr)
+same(at(base, fehrr), at("HEAD", fehrr), fehrr)
 print("all usage records/policies, twelve atlas files and checksum-only metadata match")
 PY
 ```
 
-Repeat conversion and require identical outputs. The actual generated-file
-consumer must reject an owned fixture carrying the old usage output record,
-without rewriting it, and accept it again after restoring current metadata.
+Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index.ResourceIndexTests.test_actual_cli_round_trips_both_indexes_with_existing_consumers -v`.
+Its owned complete source/font fixture captures an actual plain usage output
+record, packs the input, reinserts that stale byte-count/hash and requires the
+real generated-file consumer to reject without changing any named output.
+Restoring current metadata must succeed. Before packing, it also copies the
+plain state to a second independent owned root; both actual CLI fresh encodes
+must produce identical usage, inventory and manifest bytes with the same
+encoder build. Repeating packed on an already-packed input is separately
+idempotence, not proof of fresh compression.
 Existing corrupt/truncated/trailing/bounded-input controls remain mandatory.
 This is another indivisible generated-index conversion: report every deleted
 line and alternative complete-data proof, retain the unchanged 4 MiB raw
@@ -287,6 +297,36 @@ Python 3. No optional profile, emulator, ROM or manual judgment is required.
    Explanations and their dependent inventory checksums may change, but
    corpora, glyph counts, raster payloads and widths must not. The existing
    provenance-refresh regression rejects a changed font oracle.
+
+Packed storage makes the raw Git diff intentionally opaque. To inspect actual
+changed `reason`/`styles` records after a refresh, set `BASE` to `HEAD` or an
+exact pre-refresh commit and compare its decoded index with the working tree:
+
+```bash
+python3 - "$BASE" <<'PY'
+import difflib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from scripts.fonttools.cjk.resource_index import decode_index
+
+if not sys.argv[1].strip():
+    raise SystemExit("BASE must identify the pre-refresh commit")
+base = subprocess.check_output(
+    ["git", "rev-parse", "--verify", "--end-of-options", sys.argv[1] + "^{commit}"],
+    text=True,
+).strip()
+path = "fonts/cjk/runtime_usage.json"
+before = decode_index(subprocess.check_output(["git", "show", f"{base}:{path}"]))
+after = decode_index(Path(path).read_bytes())
+def lines(value):
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").splitlines(True)
+sys.stdout.writelines(difflib.unified_diff(
+    lines(before), lines(after), fromfile=f"{base}:{path}", tofile=f"working-tree:{path}",
+))
+PY
+```
 
 The temporary fixture cleans its own files; generation only writes the
 existing named inventory outputs. Dependencies are the existing CJK
