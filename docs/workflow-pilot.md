@@ -2267,8 +2267,8 @@ At job scope, router and mode-classifier have separate closed setup mappings.
 Every combined worker has a closed direct mapping: classifier dependency and
 fail-closed condition,
 `runs-on: ubuntu-latest`, its reviewed environment, and `steps`. The
-comprehensive `build` worker has `timeout-minutes: 90`; `host-tests`,
-`extended-host-tests`, and `legacy` remain 60 minutes, while all setup jobs and
+comprehensive `build`, `host-tests`, and `extended-host-tests` workers have
+`timeout-minutes: 90`; `legacy` remains 60 minutes, while all setup jobs and
 summary remain 5. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
 other dependencies, conditions/advisory mode, deployment environments, concurrency,

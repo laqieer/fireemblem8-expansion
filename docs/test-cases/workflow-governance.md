@@ -3936,6 +3936,8 @@ is host-only delivery orchestration.
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
+  The bounded host-runtime repair is
+  [issue #356](https://github.com/laqieer/fireemblem8-expansion/issues/356).
 - **Supported configuration or artifact:** clean source checkout with Python
   3, Git, the immutable issue #176 fixture, and the versioned decision record;
   no GitHub token, live workflow, ROM, emulator, or game build is required.
@@ -4141,8 +4143,9 @@ outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
 five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
-allowlisted env, and steps, including master-only packaging; host,
-extended-host and legacy remain 60 minutes, while identity/router/classifier and summary remain 5;
+allowlisted env, and steps, including master-only packaging; both comprehensive
+host jobs also retain 90-minute ceilings and legacy remains 60 minutes,
+while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch packaging and summary remain parsed structures: successful authenticated
