@@ -70,6 +70,36 @@ class ResourceIndexTests(unittest.TestCase):
         for path in outputs[0]:
             self.assertTrue(outputs[0][path] == outputs[1][path], path + " packed outputs differ")
 
+    def test_unpaired_surrogate_keys_and_values_fail_through_the_typed_boundary(self):
+        cases = (b'{"value":"\\ud800"}', b'{"\\udfff":"value"}', b'{"value":["\\ud800"]}')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "index.json"
+            previous = encode_index({"value": "unchanged"}, packed=True)
+            for plain in cases:
+                wrapped = json.dumps({
+                    "kind": ENVELOPE_KIND, "version": 1, "encoding": "xz-base64",
+                    "decoded_bytes": len(plain),
+                    "payload": base64.b64encode(lzma.compress(plain)).decode(),
+                }).encode()
+                for stored in (plain, wrapped):
+                    with self.subTest(operation="decode", plain=plain, packed=stored is wrapped):
+                        with self.assertRaises(ResourceIndexError):
+                            decode_index(stored)
+                value = json.loads(plain)
+                for packed in (False, True):
+                    with self.subTest(operation="encode", plain=plain, packed=packed):
+                        with self.assertRaises(ResourceIndexError):
+                            encode_index(value, packed=packed)
+                        path.write_bytes(previous)
+                        with self.assertRaises(ResourceIndexError):
+                            encode_like_index(value, path, packed=packed)
+                        self.assertEqual(path.read_bytes(), previous)
+            valid = b'{"value":"\\ud83d\\ude00"}'
+            value = {"value": "\U0001F600"}
+            self.assertEqual(decode_index(valid), value)
+            for packed in (False, True):
+                self.assertEqual(decode_index(encode_index(value, packed=packed)), value)
+
     def test_parser_limits_are_reported_as_resource_errors_in_both_formats(self):
         envelope = json.loads(encode_index({"value": 0}, packed=True))
         cases = (
