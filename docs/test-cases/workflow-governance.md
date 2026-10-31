@@ -3284,7 +3284,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   queued-run chronology regression
   [issue #277](https://github.com/laqieer/fireemblem8-expansion/issues/277);
   pre-full preparation regression
-  [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283).
+  [issue #283](https://github.com/laqieer/fireemblem8-expansion/issues/283);
+  first-edit row-version regression
+  [issue #346](https://github.com/laqieer/fireemblem8-expansion/issues/346).
 - **Supported configuration or artifact:** clean source checkout with Python
   3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
   token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
@@ -3373,6 +3375,26 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    the new body plus the original, whose `editedAt` equals PR creation and
    whose author matches the PR author. Bind their distinct IDs, shared
    materialization time, and the original's canonical pre-body digest.
+   Give only the current row an `updatedAt` later than its `createdAt`.
+   Require edit, confirmation and reconciliation to complete while retaining
+   that exact later version, not normalizing it to materialization. The pre-fix
+   negative applies the body but rejects before confirmation with
+   `original body snapshot authority is inconsistent`. Original author,
+   authorship/materialization, digest, count and replay controls stay required.
+   Bind the original webhook to that exact later native row version. Also
+   retain an event at the row's logical edit instant when history materializes
+   later. No unrelated instant may match. Return two distinct attested runs,
+   one at each native body instant; require ambiguity without choosing one
+   or rerunning. Changed fields still advance logically and must have a common
+   native instant; no clock window or current-PR reconstruction is permitted.
+   For a combined edit, set body `editedAt=05`, body `updatedAt=06` and the
+   title event to `06` in the same fixture minute. Only an attested event at
+   `06` may complete; `05` must defer despite matching the body's logical edit.
+   Replay a stored first-edit confirmation from a zero-history intent with
+   its two-node original/current snapshot, current `createdAt=05` and
+   `updatedAt=06`. Change only current `updatedAt`, back to `05` and ahead to
+   `07`. Both must reject as stale or forged authority without PATCH or workflow
+   rerun; a subsequent-edit count-3 fixture alone is not this first-edit control.
    Confirm and reconcile this 0-to-2 transition through the real helper and
    isolated CLI, including applied-target recovery without a second PATCH.
    Repeat a subsequent 2-to-3 edit. Return a real second intervening edit
@@ -3668,9 +3690,15 @@ No-edit state is explicit. The first body edit changes `totalCount` from 0 to
 2 by materializing the original snapshot with the first real edit; every
 subsequent edit increases it by exactly one. The original node must bind the
 same PR's creation time and author, the intent's canonical pre-body digest,
-and a distinct ID. Original and latest `createdAt` / `updatedAt` share the
-materialization time, while original authorship strictly precedes latest
-`editedAt`. The latest editor and body remain owner/target-bound.
+and a distinct ID. Original and latest `createdAt` share the materialization
+time, as does the original snapshot's `updatedAt`. The current row's exact
+`updatedAt` may be later and remains confirmation/replay-bound; it is not
+normalized to creation. Original authorship strictly precedes latest `editedAt`.
+The latest editor and body remain owner/target-bound.
+For raw-event attribution, the body row's exact confirmed `editedAt` and
+`updatedAt` are the finite admissible instants, intersected with any changed
+title's native instant. Only one stable event-attested run may match; an
+unrelated instant or two matching run identities cannot authorize continuity.
 `body_original` retains the typed original proof in the count-2 metadata
 version, so changing it invalidates a stored confirmation. A lone revision,
 missing/permission-omitted connections, count rollback/jump, two real edits,
@@ -3727,9 +3755,12 @@ newest exact full run must be canonical success, but the transaction metadata
 run additionally needs an immutable run-emitted webhook transition attestation.
 Explicit-same shape and a number above the watermark are only filters.
 The attested pre/target metadata and changed set must match the authenticated
-pair. The event metadata instant must match every changed native field's edit
-instant, with strictly earlier pre-versions; same-second repetition or
-disagreeing field instants remain unprovable. This is not a comparison with
+pair. Each changed field's logical edit must strictly advance its pre-version.
+The event metadata instant must belong to the intersection of exact native
+instants: a changed title's own event, and a changed body's confirmed
+`editedAt` or `updatedAt`. Different logical edit instants are permitted when
+those native sets intersect. Unprovable same-second order or an empty
+intersection still holds. This is not a comparison with
 Actions run or issue-comment clocks. The uniquely matching run need not be
 newer than a later full run. Its stable ID/number survives attempts; multiple
 distinct edit-attested metadata IDs are ambiguous and fail closed.
