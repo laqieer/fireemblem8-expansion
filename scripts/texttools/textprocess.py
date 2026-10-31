@@ -326,6 +326,15 @@ def main(args):
 
     control_chars = load_control_chars(input_parse_ref)
     messages = process_file(input_fpath, control_chars, encoding_method)
+    allocated_ids = set()
+    allocated_names = set()
+    for message in messages:
+        if message.idx in allocated_ids:
+            sys.exit(f"{input_fpath}: duplicate message allocation 0x{message.idx:04X}")
+        if message.definiation in allocated_names:
+            sys.exit(f"{input_fpath}: duplicate message symbol {message.definiation}")
+        allocated_ids.add(message.idx)
+        allocated_names.add(message.definiation)
 
     # generate huffman
     freq_table = GenerateFreqTable(all_data)

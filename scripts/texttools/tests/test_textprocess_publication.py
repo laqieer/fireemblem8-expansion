@@ -217,6 +217,28 @@ class TextPublicationTests(unittest.TestCase):
     def test_data_reader_never_observes_natural_buffered_partial_output(self):
         self.observe_buffered_output("data")
 
+    def test_duplicate_message_allocation_rejects_without_publishing_either_output(self):
+        previous = self.seed()
+        self.source.write_text("#0000\nA[X]\n#0000\nB[X]\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), *self.arguments()],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.pair(), previous)
+        self.assert_no_staging()
+
+    def test_implicit_and_symbolic_allocations_cannot_own_the_same_message_name(self):
+        previous = self.seed()
+        self.source.write_text("#0000\nA[X]\n## MSG_000\nB[X]\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), *self.arguments()],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.pair(), previous)
+        self.assert_no_staging()
+
     def test_direct_writer_control_exposes_partial_header_and_data_to_real_readers(self):
         self.seed()
         self.inputs(5000)
