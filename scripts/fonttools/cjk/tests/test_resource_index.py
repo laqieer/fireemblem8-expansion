@@ -25,6 +25,29 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class ResourceIndexTests(unittest.TestCase):
+    def test_fehrr_fresh_plain_roots_produce_identical_packed_outputs(self):
+        outputs = []
+        with tempfile.TemporaryDirectory() as temporary:
+            for name in ("first", "second"):
+                root = Path(temporary) / name
+                for relative in ("fonts/cjk", "graphics/fonts/cjk"):
+                    shutil.copytree(ROOT / relative, root / relative)
+                for representation in ("plain", "packed"):
+                    result = subprocess.run(
+                        [
+                            sys.executable, "-B", "-m", "scripts.fonttools.cjk",
+                            "--root", str(root), "repack-index",
+                            "--index", "fehrr", "--format", representation,
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=180,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                outputs.append({
+                    path: (root / path).read_bytes()
+                    for path in (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json")
+                })
+        self.assertEqual(outputs[0], outputs[1])
+
     def test_non_finite_numbers_are_rejected_in_both_formats_and_encoding(self):
         envelope = json.loads(encode_index({"value": 0}, packed=True))
         for token in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):

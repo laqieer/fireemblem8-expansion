@@ -118,10 +118,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index
+from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index, encode_index
 
 def at(revision, path):
     return subprocess.check_output(["git", "show", f"{revision}:{path}"])
+
+def same(actual, expected, label):
+    if actual != expected:
+        raise SystemExit(label + " differs")
 
 if not sys.argv[1].strip():
     raise SystemExit("BASE must identify the exact plain parent commit")
@@ -141,24 +145,28 @@ if json.loads(prior).get("kind") == ENVELOPE_KIND:
     raise SystemExit("BASE must contain the plain FEHRR index")
 if json.loads(stored).get("kind") != ENVELOPE_KIND:
     raise SystemExit("HEAD must contain the packed FEHRR index")
-assert decode_index(prior) == decode_index(stored)
+same(encode_index(decode_index(prior)), encode_index(decode_index(stored)), "decoded index")
 expected = json.loads(at(base, manifest))
 for asset in expected["assets"].values():
     for kind in ("bitmap", "codepoints", "widths"):
         path = asset[kind]["path"]
-        assert at(base, path) == at("HEAD", path)
+        same(at(base, path), at("HEAD", path), path)
 expected["sources"]["fehrr_priority"]["sha256"] = hashlib.sha256(stored).hexdigest()
-assert json.loads(at("HEAD", manifest)) == expected
+same(encode_index(json.loads(at("HEAD", manifest))), encode_index(expected), manifest)
 usage = "fonts/cjk/runtime_usage.json"
-assert at(base, usage) == at("HEAD", usage)
+same(at(base, usage), at("HEAD", usage), usage)
 print("complete decoded index, all twelve atlas files and checksum-only metadata match")
 PY
 ```
 
 This compares immutable committed candidates; before committing, inspect the
 generated working-tree files with the same decoder and run the focused suite.
-Repeat the pack operation and require identical bytes, then run the focused
-resource-index suite from the now-packed starting state. Its stale-checksum
+Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index.ResourceIndexTests.test_fehrr_fresh_plain_roots_produce_identical_packed_outputs -v`.
+It creates two independent owned roots, explicitly converts each to plain
+before fresh packed encoding with the same encoder build, and compares both
+the stored index and physical asset manifest. Repeating packed on an already
+packed input separately proves idempotence, not fresh-compression determinism.
+Run the focused resource-index suite from the now-packed starting state. Its stale-checksum
 and malformed-input controls must still reject. No default runtime-usage,
 font, atlas, locale or game-data conversion is part of this variant.
 
