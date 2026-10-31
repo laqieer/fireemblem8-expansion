@@ -7,7 +7,7 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Tuple, Union
 
 from scripts.localization.game_catalog.english_source import (
     load_english_source_entries,
@@ -351,14 +351,16 @@ def build_authored_catalogs(
     repo_root: Path,
     *,
     manifest_path: Path = DEFAULT_MANIFEST_PATH,
-    locales: Tuple[str, ...] = LOCALES,
+    locales: Union[Tuple[str, ...], List[str]] = LOCALES,
 ) -> Dict[str, Dict[str, Any]]:
     if (
         not isinstance(locales, (tuple, list)) or not locales
         or any(not isinstance(locale, str) or locale not in LOCALES for locale in locales)
         or len(set(locales)) != len(locales)
     ):
-        raise AuthoredCatalogError("authored locales must be a nonempty unique JA/ZH subset")
+        raise AuthoredCatalogError(
+            "authored locales must be a nonempty tuple/list of unique 'ja'/'zh-Hans' values"
+        )
     repo_root = Path(repo_root)
     manifest_file = repo_root / manifest_path
     _, manifest = _load_json(manifest_file)
@@ -628,7 +630,7 @@ def check_authored_catalogs(
     repo_root: Path,
     *,
     manifest_path: Path = DEFAULT_MANIFEST_PATH,
-    locales: Tuple[str, ...] = LOCALES,
+    locales: Union[Tuple[str, ...], List[str]] = LOCALES,
 ) -> Dict[str, Path]:
     repo_root = Path(repo_root)
     catalogs = build_authored_catalogs(repo_root, manifest_path=manifest_path, locales=locales)
