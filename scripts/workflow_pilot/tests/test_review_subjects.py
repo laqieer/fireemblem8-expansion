@@ -144,12 +144,29 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 head = self.repo.commit({path: changed})
                 self.assert_satisfied(self.run_members(self.tools.members(self.case_scope(head)), head))
 
+    def test_external_guide_uri_cannot_alias_the_internal_procedure(self):
+        catalog = json.loads((self.repo.root / "docs/test-cases/registry.json").read_text())
+        feature = next(row for row in catalog["features"] if row["id"] == "full-game-localization")
+        case = next(row for row in catalog["cases"]
+                    if row["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
+        path = feature["reference"]
+        original = (self.repo.root / path).read_text()
+        target = "test-cases/localization.md#" + case["anchor"]
+        changed = original.replace(target, "https://example.com/../../" + target)
+        self.assertNotEqual(original, changed)
+        head = self.repo.commit({path: changed})
+        observed = self.run_members(self.tools.members(self.case_scope(head)), head)
+        self.assertEqual([(item.obligation.member, item.verdict) for item in observed
+                          if item.verdict != "satisfied"],
+                         [("drift-checks:full-game-localization", "contract-violation")])
+
     def test_captured_guide_resolution_has_its_own_source_failure_and_repair(self):
         path = "scripts/workflow_pilot/review_subjects.py"
         original = (self.repo.root / path).read_text()
         correct = '''            check((case["document"], case["anchor"]) in {
                 check_docs.internal_link_destination(feature["reference"], link)
                 for _, link in check_docs.extract_internal_link_targets(reference)
+                if not check_docs._is_external(link)
             },'''
         raw = '''            destination = os.path.relpath(
                 case["document"], Path(feature["reference"]).parent)

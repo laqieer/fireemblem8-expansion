@@ -685,6 +685,7 @@ def _authored_case(probe):
             check((case["document"], case["anchor"]) in {
                 check_docs.internal_link_destination(feature["reference"], link)
                 for _, link in check_docs.extract_internal_link_targets(reference)
+                if not check_docs._is_external(link)
             },
                   "authoritative feature guide does not link to the authored procedure")
         else:
@@ -1079,6 +1080,12 @@ def _authored_binding(probe):
                 check(observed["verdict"] == "satisfied",
                       "captured production rejected an equivalent guide URI")
                 checks += 1
+            Path(CASE_REFERENCE).write_text(reference.replace(
+                target, "https://example.com/../../" + target))
+            observed = module.run_probe("authored-case:drift-checks")
+            check(observed["verdict"] == "contract-violation" and observed["checks"] > 0,
+                  "external guide URI aliased the internal procedure")
+            checks += 1
             Path(CASE_REFERENCE).write_bytes(saved[CASE_REFERENCE])
         elif role == "drift-checks":
             catalog = json.loads(saved[CASE_REGISTRY])
