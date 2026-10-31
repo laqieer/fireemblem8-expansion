@@ -483,9 +483,10 @@ def apply_width_contract(
     *,
     repo_root: Path,
     locale: str,
-    target_payloads: Sequence[bytes],
+    target_payloads: Sequence[bytes | None],
     registry: WidthRegistry,
-) -> Tuple[Tuple[bytes, ...], Dict[str, Any]]:
+    fallback_payloads: Sequence[bytes] | None = None,
+) -> Tuple[Tuple[bytes | None, ...], Dict[str, Any]]:
     """Wrap then validate a complete locale payload table against all contexts."""
 
     assignments, counts = classify_targets(
@@ -504,6 +505,11 @@ def apply_width_contract(
     records = []
     observed_counts: Dict[str, int] = {name: 0 for name in registry.contexts}
     for target_id, payload in enumerate(target_payloads):
+        fallback = payload is None
+        if payload is None:
+            if fallback_payloads is None or len(fallback_payloads) != len(target_payloads):
+                raise TextWidthContractError("missing effective English fallback payloads")
+            payload = fallback_payloads[target_id]
         context_name, usage = assignments[target_id]
         tokens = _tokenize_payload(
             payload,
@@ -522,7 +528,7 @@ def apply_width_contract(
         source_name = f"{locale} target 0x{target_id:04X} ({context_name})"
         rewritten = payload
         inserted = 0
-        if context.allow_generated_wrap:
+        if context.allow_generated_wrap and not fallback:
             rewritten, inserted = insert_safe_line_breaks(
                 payload,
                 metrics=metrics_by_style[context.style],
@@ -544,7 +550,7 @@ def apply_width_contract(
         inserted_total += inserted
         max_width = max(max_width, stats["max_line_width"])
         line_total += stats["line_count"]
-        output.append(rewritten)
+        output.append(None if fallback else rewritten)
         records.append(
             {
                 "context": context_name,

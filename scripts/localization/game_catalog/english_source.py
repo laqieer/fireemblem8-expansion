@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from scripts.generated_data.validators import extract_define_constants
+
 from .model import EnglishSourceEntry, GameCatalogError
 
 
@@ -262,3 +264,28 @@ def load_english_source_entries(
         )
 
     return tuple(by_id[target_id] for target_id in range(target_count))
+
+
+def validate_english_source_header(
+    entries: Sequence[EnglishSourceEntry],
+    header_path: Path,
+) -> None:
+    constants = extract_define_constants(header_path)
+    source_names = set()
+    for entry in entries:
+        name = entry.definition or f"MSG_{entry.target_id:03X}"
+        source_names.add(name)
+        binding = constants.get(name)
+        if binding is None:
+            raise GameCatalogError(f"{header_path}: missing gameplay message allocation {name}")
+        if binding[0] != entry.target_id:
+            raise GameCatalogError(
+                f"{header_path}:{binding[1]}: {name} allocates 0x{binding[0]:04X}, "
+                f"but the selected English source owns 0x{entry.target_id:04X}"
+            )
+    unowned = sorted(set(constants) - source_names - {"MSG_COUNT"})
+    if unowned:
+        name = unowned[0]
+        raise GameCatalogError(
+            f"{header_path}:{constants[name][1]}: {name} has no active English source owner"
+        )

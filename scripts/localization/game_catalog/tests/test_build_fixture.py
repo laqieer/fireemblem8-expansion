@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_catalog.build import build_game_catalog
+from scripts.localization.game_catalog.model import GameCatalogError
 
 
 class FixtureBuildTests(unittest.TestCase):
@@ -265,13 +266,79 @@ class FixtureBuildTests(unittest.TestCase):
             encoding="utf-8",
         )
         (self.fixture_dir / "msg.h").write_text(
-            "#ifndef MSG_H\n#define MSG_H\n#define MSG_COUNT 0x0003\n#endif\n",
+            "#ifndef MSG_H\n#define MSG_H\n"
+            "#define MSG_000 0x0000\n"
+            "#define MSG_FIXTURE_ONE 0x0001\n"
+            "#define MSG_FIXTURE_TWO 0x0002\n"
+            "#define MSG_COUNT 0x0003\n#endif\n",
             encoding="utf-8",
         )
 
     def tearDown(self):
         if self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir)
+
+    def test_selected_header_cannot_bind_a_message_symbol_to_another_entry(self):
+        header = self.fixture_dir / "msg.h"
+        header.write_text(
+            header.read_text(encoding="utf-8").replace(
+                "#define MSG_FIXTURE_ONE 0x0001", "#define MSG_FIXTURE_ONE 0x0002"
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(GameCatalogError):
+            build_game_catalog(
+                english_texts_path=self.fixture_dir / "texts.txt",
+                english_definitions_path=self.fixture_dir / "textdefs.txt",
+                ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=header,
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
+
+    def test_selected_header_cannot_retain_an_allocation_absent_from_the_active_source(self):
+        header = self.fixture_dir / "msg.h"
+        with header.open("a", encoding="utf-8") as stream:
+            stream.write("#define MSG_RETIRED 0xFFFF\n")
+        with self.assertRaises(GameCatalogError):
+            build_game_catalog(
+                english_texts_path=self.fixture_dir / "texts.txt",
+                english_definitions_path=self.fixture_dir / "textdefs.txt",
+                ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=header,
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
+
+    def test_non_stock_catalog_rejects_an_overwide_unbreakable_system_label(self):
+        source = self.fixture_dir / "ja_indexed.txt"
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(
+                "日[CTRL:0080][CTRL:0020]", "A" * 80 + "[CTRL:0080][CTRL:0020]", 1
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(GameCatalogError):
+            build_game_catalog(
+                english_texts_path=self.fixture_dir / "texts.txt",
+                english_definitions_path=self.fixture_dir / "textdefs.txt",
+                ja_indexed_path=source,
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=self.fixture_dir / "msg.h",
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
 
     def test_fixture_build_materializes_raw_providers_and_preserves_explicit_fallback(self):
         build = build_game_catalog(

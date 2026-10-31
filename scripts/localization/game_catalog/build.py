@@ -73,6 +73,7 @@ from .english_source import (
     encode_english_source_text,
     load_english_definitions,
     load_english_source_entries,
+    validate_english_source_header,
 )
 from .model import (
     EnglishCatalogBundle,
@@ -1134,6 +1135,7 @@ def build_game_catalog(
         english_definitions_path,
         target_count=target_count,
     )
+    validate_english_source_header(english_entries, target_header_path)
     english_definitions = load_english_definitions(english_definitions_path)
     english_bundle = EnglishCatalogBundle(
         locale="en",
@@ -1220,7 +1222,7 @@ def build_game_catalog(
     unwrapped_locale_entries = {
         bundle.locale: bundle.entries for bundle in locale_bundles
     }
-    if target_count == 3414:
+    if locale_bundles:
         repo_root = Path(__file__).resolve().parents[3]
         registry_path = Path(width_registry_path)
         if not registry_path.is_absolute():
@@ -1240,6 +1242,7 @@ def build_game_catalog(
                         entry.encoded_bytes for entry in bundle.entries
                     ),
                     registry=width_registry,
+                    fallback_payloads=tuple(entry.encoded_bytes for entry in english_entries),
                 )
                 entries = tuple(
                     replace(entry, encoded_bytes=payload)
