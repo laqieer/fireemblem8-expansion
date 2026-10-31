@@ -4,10 +4,12 @@ import json
 import lzma
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
 from scripts.fonttools.cjk.inventory import CjkFontError, check_generated_files
 from scripts.fonttools.cjk.package import FEHRR_SOURCES, _read_fehrr_lock, check_compact_assets
@@ -51,6 +53,43 @@ class ResourceIndexTests(unittest.TestCase):
                     for path in (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json")
                 })
         self.assertEqual(outputs[0], outputs[1])
+
+    def test_decoder_memory_bound_rejects_a_valid_large_dictionary_stream(self):
+        value = {"glyphs": [0x4E00]}
+        plain = encode_index(value)
+        stream = bytearray(lzma.compress(plain))
+        header_end = 12 + (stream[12] + 1) * 4
+        self.assertEqual(bytes(stream[14:16]), b"\x21\x01")
+        # A valid 64 MiB dictionary header avoids allocating a huge encoder fixture.
+        stream[16] = 28
+        stream[header_end - 4:header_end] = struct.pack(
+            "<I", zlib.crc32(stream[12:header_end - 4])
+        )
+        self.assertEqual(lzma.decompress(stream, memlimit=80 * 1024 * 1024), plain)
+        envelope = json.loads(encode_index(value, packed=True))
+        envelope["payload"] = base64.b64encode(stream).decode()
+        with self.assertRaises(ResourceIndexError):
+            decode_index(json.dumps(envelope).encode())
+
+    def test_cli_rejection_retains_the_original_codec_failure(self):
+        broken = b"invalid index"
+        with self.assertRaises(ResourceIndexError) as failure:
+            decode_index(broken)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative in ("fonts/cjk", "graphics/fonts/cjk"):
+                shutil.copytree(ROOT / relative, root / relative)
+            (root / FEHRR_SOURCES).write_bytes(broken)
+            result = subprocess.run(
+                [
+                    sys.executable, "-B", "-m", "scripts.fonttools.cjk",
+                    "--root", str(root), "repack-index",
+                    "--index", "fehrr", "--format", "packed",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=180,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(failure.exception), result.stderr)
 
     def test_non_finite_numbers_are_rejected_in_both_formats_and_encoding(self):
         envelope = json.loads(encode_index({"value": 0}, packed=True))

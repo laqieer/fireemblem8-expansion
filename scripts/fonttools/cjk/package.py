@@ -1775,7 +1775,7 @@ def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]
         lock_data = read_index_bytes(root / FEHRR_SOURCES)
         lock = decode_index(lock_data)
     except (UnicodeDecodeError, json.JSONDecodeError, ResourceIndexError) as error:
-        raise CjkFontError("runtime split provenance JSON is invalid") from error
+        raise CjkFontError(f"runtime split provenance JSON is invalid: {error}") from error
     expected_sources = {
         "inventory": {
             "path": "fonts/cjk/inventory.json",
