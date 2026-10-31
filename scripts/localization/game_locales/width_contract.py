@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,12 +44,12 @@ def _tokenize_payload(payload: bytes, *, source_name: str):
     return tokenize_payload(payload, source_name=source_name)
 
 
-def _event_models(event_root: Path):
+def _event_models(event_root: Path, message_ids: Mapping[str, int] | None = None):
     from scripts.localization.game_catalog.control_streams import (
         build_event_continuation_models,
     )
 
-    return build_event_continuation_models(event_root)
+    return build_event_continuation_models(event_root, message_ids=message_ids)
 
 
 @dataclass(frozen=True)
@@ -435,6 +436,8 @@ def classify_targets(
     *,
     target_count: int,
     registry: WidthRegistry,
+    event_root: Path | None = None,
+    message_ids: Mapping[str, int] | None = None,
 ) -> Tuple[Mapping[int, Tuple[str, str]], Dict[str, int]]:
     """Assign each target one audited scene/usage context without exemptions."""
 
@@ -457,7 +460,8 @@ def classify_targets(
                 "by fixed_width_label_metrics",
             )
     for target_id, models in _event_models(
-        repo_root / "src/events"
+        repo_root / "src/events" if event_root is None else event_root,
+        message_ids,
     ).items():
         if target_id < target_count:
             assigned[target_id] = (
@@ -465,7 +469,7 @@ def classify_targets(
                 "event dialogue: "
                 + ", ".join(
                     f"{model.start_kind}@"
-                    f"{Path(model.source_path).relative_to(repo_root).as_posix()}"
+                    f"{Path(os.path.relpath(model.source_path, repo_root)).as_posix()}"
                     for model in models
                 ),
             )
@@ -483,15 +487,20 @@ def apply_width_contract(
     *,
     repo_root: Path,
     locale: str,
-    target_payloads: Sequence[bytes],
+    target_payloads: Sequence[bytes | None],
     registry: WidthRegistry,
-) -> Tuple[Tuple[bytes, ...], Dict[str, Any]]:
+    fallback_payloads: Sequence[bytes] | None = None,
+    event_root: Path | None = None,
+    message_ids: Mapping[str, int] | None = None,
+) -> Tuple[Tuple[bytes | None, ...], Dict[str, Any]]:
     """Wrap then validate a complete locale payload table against all contexts."""
 
     assignments, counts = classify_targets(
         repo_root,
         target_count=len(target_payloads),
         registry=registry,
+        event_root=event_root,
+        message_ids=message_ids,
     )
     metrics_by_style = {
         style: load_width_metrics(repo_root, locale=locale, style=style)
@@ -504,6 +513,11 @@ def apply_width_contract(
     records = []
     observed_counts: Dict[str, int] = {name: 0 for name in registry.contexts}
     for target_id, payload in enumerate(target_payloads):
+        fallback = payload is None
+        if payload is None:
+            if fallback_payloads is None or len(fallback_payloads) != len(target_payloads):
+                raise TextWidthContractError("missing effective English fallback payloads")
+            payload = fallback_payloads[target_id]
         context_name, usage = assignments[target_id]
         tokens = _tokenize_payload(
             payload,
@@ -522,7 +536,7 @@ def apply_width_contract(
         source_name = f"{locale} target 0x{target_id:04X} ({context_name})"
         rewritten = payload
         inserted = 0
-        if context.allow_generated_wrap:
+        if context.allow_generated_wrap and not fallback:
             rewritten, inserted = insert_safe_line_breaks(
                 payload,
                 metrics=metrics_by_style[context.style],
@@ -544,7 +558,7 @@ def apply_width_contract(
         inserted_total += inserted
         max_width = max(max_width, stats["max_line_width"])
         line_total += stats["line_count"]
-        output.append(rewritten)
+        output.append(None if fallback else rewritten)
         records.append(
             {
                 "context": context_name,

@@ -94,9 +94,67 @@ unresolved mapping decisions, and codec round-trip mismatches. A bounded final
 stream tokenizer also rejects truncated extended controls and FIDs, FIDs that
 do not match the FE8U English target context, unmatched consecutive newlines,
 and localized `BreakTalk` counts incompatible with the statically modeled
-event `TEXTCONT` sequence.
+event `TEXTCONT` sequence. Continuation validation requires exactly one locale
+entry for every active English target, even when an event does not reference
+that target. An explicit absent entry still selects English fallback; a missing
+or extra entry is not an implicit fallback.
+When a selected locale entry is absent, the same final control and portrait
+validation checks its effective English bytes without materializing a localized
+descriptor. Reports include those effective payloads in `validated_payload_count`
+and expose a nonzero `validated_fallback_payload_count` separately. Catalogs
+without fallbacks retain their existing report shape and counts.
+
+`build_game_catalog(event_root_path=...)`, `generate(event_root_path=...)`
+and CLI `--event-root` select the same existing event source directory for
+width classification and continuation validation; the default is `src/events`.
+Numeric and active source/header message symbols are resolved before checking
+the actual English allocation. Unknown symbols, missing roots and ordinary
+retired IDs reject rather than disappear from coverage. C comments are not
+event commands, and the world-map command's remaining operand is not a message ID.
+Shared C-array/delimiter parsing preserves multiline and inline formatting.
+Public engine macro aliases are read from the existing `EAstdlib.h`; implicit
+`MSG_NNN` symbols from numeric source entries retain their validated bindings.
+Both text subcommands preserve the signed dynamic-operand range outside
+direct-ID coverage.
+Non-stock fixture catalogs must supply their owned event directory instead
+of borrowing unrelated stock events. This is not a competing event language
+or a qualification of arbitrary runtime-indirect message IDs.
+
+Source composition is shared with font inventory through
+`compose_game_catalog`, which returns typed source bundles, not a render-ready
+build/report. Font inventory can derive required glyphs before the atlas exists;
+the strict builder still requires valid actual fonts, widths, controls and
+continuations. There is no skip-validation mode.
+Removal flushes the current message and advances to subsequent commands.
+The source model distinguishes the explicit dialogue-skip guard from ordinary
+branches without skipping later ID validation. Correct traversal now covers
+567 direct stock targets in 581 models; the prior 275/286 coverage stopped
+prematurely at removal. All 6,828 final payloads retain the existing FID,
+mouth-topology and line-width contracts.
 
 ## Runtime and build gating
+
+The focused selected-text native check is:
+
+```bash
+python3 -m unittest scripts.localization.game_catalog.tests.runtime.selected_text_native -v
+```
+
+It uses the supported ARM GCC/AAPCS toolchain and existing headless libmGBA
+backend. The debug linker-check gate runs it explicitly; the host-only
+localization discovery suite does not require an ARM toolchain. It freshly
+validates a three-message English/JA fixture through the real width-check CLI,
+generates it with the existing library writer, and compiles the unchanged whole
+`asm/arm.s` and real message, item-name, locale and tokenizer consumers, and
+checks actual target RAM records. Controls, English fallback, locale switching,
+the retained `ItemData.nameTextId`, localized invalid IDs and a guarded
+four-byte decode destination are asserted. English-only output uses the real
+historical ARM decoder, not a stub. Temporary ROMs and objects are removed.
+This module-native check is not a supported full-game ROM profile, rendered
+page/glyph/portrait evidence, or production-content qualification; it does not
+call the historical English-only decoder with invalid IDs.
+Its deliberately absent JA entry is not a production catalog: the production
+generation/leakage gate still rejects unmaterialized entries.
 
 English-only modern and archival builds do not generate or link this catalog.
 They retain the historical 4 KiB `MsgBuffer`, English `gMsgTable`, and ARM

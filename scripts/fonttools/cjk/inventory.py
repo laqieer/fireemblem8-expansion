@@ -298,20 +298,22 @@ def _runtime_catalog_usage(
     of system, talk, or both and no target is silently omitted.
     """
 
-    from scripts.localization.game_catalog.build import build_game_catalog
+    from scripts.localization.game_catalog.build import compose_game_catalog
     from scripts.localization.game_catalog.control_streams import tokenize_payload
 
-    build = build_game_catalog(enabled_locales=(locale,))
+    build = compose_game_catalog(enabled_locales=(locale,))
     registry = load_width_registry(root / WIDTH_REGISTRY_PATH)
     classifications, _ = classify_targets(
-        root, target_count=build.target_count, registry=registry
+        root, target_count=build.target_count, registry=registry,
+        message_ids=build.message_ids,
     )
     description_ids = _description_target_ids(root, build.target_count)
     direct_talk_ids = _direct_talk_target_ids(root, build.target_count)
     strings = {style: [] for style in STYLES}
     records: List[Dict[str, object]] = []
     counts = {"system": 0, "talk": 0, "both": 0}
-    for entry in build.locale_bundle(locale).entries:
+    bundle = next(item for item in build.locales if item.locale == locale)
+    for entry in bundle.entries:
         if entry.source_text is None or entry.encoded_bytes is None:
             raise CjkFontError(
                 f"{locale} 0x{entry.target_id:04X}: runtime catalog payload is absent"

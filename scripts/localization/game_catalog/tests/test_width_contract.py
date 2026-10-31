@@ -8,6 +8,7 @@ from pathlib import Path
 from scripts.localization.game_locales.width_contract import (
     TextWidthContractError,
     WidthMetrics,
+    apply_width_contract,
     classify_targets,
     insert_safe_line_breaks,
     load_width_registry,
@@ -46,6 +47,19 @@ class WidthContractTests(unittest.TestCase):
             ),
             {"line_count": 2, "max_line_width": 16},
         )
+
+    def test_explicit_english_fallback_is_validated_without_reflow_or_materialization(self):
+        registry = load_width_registry(ROOT / "texts/locales/mapping/text_width_contexts.json")
+        payloads, _report = apply_width_contract(
+            repo_root=ROOT, locale="ja", target_payloads=(None,),
+            fallback_payloads=(b"English\0",), registry=registry,
+        )
+        self.assertEqual(payloads, (None,))
+        with self.assertRaises(TextWidthContractError):
+            apply_width_contract(
+                repo_root=ROOT, locale="ja", target_payloads=(None,),
+                fallback_payloads=(b"Word " * 80 + b"\0",), registry=registry,
+            )
 
     def test_preserves_existing_breaks_and_rejects_unbreakable_word(self):
         explicit = b"AA\x01AA\0"

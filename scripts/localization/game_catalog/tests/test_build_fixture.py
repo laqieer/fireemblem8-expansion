@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_catalog.build import build_game_catalog
+from scripts.localization.game_catalog.model import GameCatalogError
+from scripts.localization.game_locales.width_contract import (
+    DEFAULT_WIDTH_REGISTRY_PATH,
+    load_width_registry,
+)
 
 
 class FixtureBuildTests(unittest.TestCase):
@@ -265,13 +270,137 @@ class FixtureBuildTests(unittest.TestCase):
             encoding="utf-8",
         )
         (self.fixture_dir / "msg.h").write_text(
-            "#ifndef MSG_H\n#define MSG_H\n#define MSG_COUNT 0x0003\n#endif\n",
+            "#ifndef MSG_H\n#define MSG_H\n"
+            "#define MSG_000 0x0000\n"
+            "#define MSG_FIXTURE_ONE 0x0001\n"
+            "#define MSG_FIXTURE_TWO 0x0002\n"
+            "#define MSG_COUNT 0x0003\n#endif\n",
             encoding="utf-8",
         )
 
     def tearDown(self):
         if self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir)
+
+    def selected_inputs(self):
+        return {
+            "english_texts_path": self.fixture_dir / "texts.txt",
+            "english_definitions_path": self.fixture_dir / "textdefs.txt",
+            "ja_indexed_path": self.fixture_dir / "ja_indexed.txt",
+            "ja_raw_path": self.fixture_dir / "ja_raw.json",
+            "zh_indexed_path": self.fixture_dir / "zh_indexed.txt",
+            "zh_raw_path": self.fixture_dir / "zh_raw.json",
+            "mapping_path": self.fixture_dir / "mapping.json",
+            "target_header_path": self.fixture_dir / "msg.h",
+            "ja_raw_expected_repository": None,
+            "ja_raw_expected_revision": None,
+        }
+
+    def test_composition_derives_required_glyphs_before_render_validation(self):
+        from scripts.localization.game_catalog.build import compose_game_catalog
+
+        source = self.fixture_dir / "ja_indexed.txt"
+        source.write_text(source.read_text().replace("日[CTRL:", "試[CTRL:"))
+        inputs = self.selected_inputs()
+        composition = compose_game_catalog(**inputs)
+        japanese = next(bundle for bundle in composition.locales if bundle.locale == "ja")
+        self.assertEqual(
+            japanese.catalog.decode_entry(0), "試".encode() + b"\x80\x20\0"
+        )
+        with self.assertRaisesRegex(GameCatalogError, "U\\+8A66"):
+            build_game_catalog(**inputs, event_root_path=self.fixture_dir)
+
+    def test_selected_header_cannot_bind_a_message_symbol_to_another_entry(self):
+        header = self.fixture_dir / "msg.h"
+        header.write_text(
+            header.read_text(encoding="utf-8").replace(
+                "#define MSG_FIXTURE_ONE 0x0001", "#define MSG_FIXTURE_ONE 0x0002"
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(GameCatalogError):
+            build_game_catalog(
+                english_texts_path=self.fixture_dir / "texts.txt",
+                english_definitions_path=self.fixture_dir / "textdefs.txt",
+                ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=header,
+                event_root_path=self.fixture_dir,
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
+
+    def test_selected_header_cannot_retain_an_allocation_absent_from_the_active_source(self):
+        header = self.fixture_dir / "msg.h"
+        with header.open("a", encoding="utf-8") as stream:
+            stream.write("#define MSG_RETIRED 0xFFFF\n")
+        with self.assertRaises(GameCatalogError):
+            build_game_catalog(
+                english_texts_path=self.fixture_dir / "texts.txt",
+                english_definitions_path=self.fixture_dir / "textdefs.txt",
+                ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=header,
+                event_root_path=self.fixture_dir,
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
+
+    def test_non_stock_catalog_rejects_an_overwide_unbreakable_system_label(self):
+        source = self.fixture_dir / "ja_indexed.txt"
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(
+                "日[CTRL:0080][CTRL:0020]", "A" * 80 + "[CTRL:0080][CTRL:0020]", 1
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(GameCatalogError):
+            build_game_catalog(
+                english_texts_path=self.fixture_dir / "texts.txt",
+                english_definitions_path=self.fixture_dir / "textdefs.txt",
+                ja_indexed_path=source,
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=self.fixture_dir / "msg.h",
+                event_root_path=self.fixture_dir,
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
+
+    def test_effective_english_fallback_cannot_hide_an_invalid_portrait_operand(self):
+        definitions = self.fixture_dir / "textdefs.txt"
+        with definitions.open("a", encoding="utf-8") as stream:
+            stream.write("[LoadFace] = 0x10\n[FID_REVIEW_INVALID] = 0xFE, 0xFF\n")
+        source = self.fixture_dir / "texts.txt"
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(
+                "English[TAB]two[AccentedE][X]",
+                "[LoadFace][FID_REVIEW_INVALID]Fallback[X]",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(GameCatalogError, "invalid FE8U FID"):
+            build_game_catalog(
+                english_texts_path=source,
+                english_definitions_path=definitions,
+                ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=self.fixture_dir / "msg.h",
+                event_root_path=self.fixture_dir,
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
 
     def test_fixture_build_materializes_raw_providers_and_preserves_explicit_fallback(self):
         build = build_game_catalog(
@@ -283,6 +412,7 @@ class FixtureBuildTests(unittest.TestCase):
             zh_raw_path=self.fixture_dir / "zh_raw.json",
             mapping_path=self.fixture_dir / "mapping.json",
             target_header_path=self.fixture_dir / "msg.h",
+            event_root_path=self.fixture_dir,
             ja_raw_expected_repository=None,
             ja_raw_expected_revision=None,
         )
@@ -301,6 +431,9 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(ja.catalog.decode_entry(1), "生".encode("utf-8") + b"\x00")
         self.assertEqual(zh.catalog.decode_entry(1), "原始".encode("utf-8") + b"\x00")
         self.assertIsNone(zh.catalog.decode_entry(2))
+        validation = build.report["control_stream_validation"]
+        self.assertEqual(validation["validated_fallback_payload_count"], 2)
+        self.assertEqual(validation["validated_payload_count"], 6)
 
         report = build.report
         self.assertEqual(report["mapping_source_counts"]["indexed"], 1)
@@ -311,6 +444,53 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["locales"]["ja"]["explicit_fallback_count"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["provider_counts"]["raw"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
+
+    def test_selected_events_drive_both_width_context_and_active_id_validation(self):
+        inputs = self.selected_inputs()
+        inputs["event_root_path"] = self.fixture_dir
+        source = self.fixture_dir / "selected.c"
+        source.write_text(
+            "EventScr Selected[] = {\n"
+            "    /* TEXTSHOW(MSG_RETIRED) */\n"
+            "    // TEXTSHOW(MSG_UNRESOLVED)\n"
+            "    TEXTSHOW(MSG_FIXTURE_ONE)\n    ENDA\n};\n"
+        )
+        build = build_game_catalog(**inputs)
+        self.assertEqual(build.report["control_stream_validation"]["modeled_target_count"], 1)
+        policy = load_width_registry(ROOT / DEFAULT_WIDTH_REGISTRY_PATH)
+        for locale in ("ja", "zh-Hans"):
+            record = next(
+                row for row in build.report["width_validation"][locale]["records"]
+                if row["target_id"] == "0x0001"
+            )
+            self.assertEqual(record["context"], policy.talk_context)
+        texts = self.fixture_dir / "texts.txt"
+        original_texts = texts.read_text()
+        numeric_texts = original_texts.replace("## MSG_FIXTURE_ONE", "#0x1")
+        self.assertNotEqual(original_texts, numeric_texts)
+        texts.write_text(numeric_texts)
+        header = self.fixture_dir / "msg.h"
+        header.write_text(header.read_text().replace("MSG_FIXTURE_ONE", "MSG_001"))
+        source.write_text(
+            "EventScr Selected[] = {\n    TEXTSHOW(MSG_001)\n    ENDA\n};\n"
+        )
+        numeric_build = build_game_catalog(**inputs)
+        self.assertEqual(
+            numeric_build.report["control_stream_validation"]["modeled_target_count"], 1
+        )
+        source.write_text(
+            "EventScr Selected[] = {\n    TEXTSHOW(0x0003)\n    ENDA\n};\n"
+        )
+        with self.assertRaisesRegex(GameCatalogError, "active English"):
+            build_game_catalog(**inputs)
+        source.write_text(
+            "EventScr Selected[] = {\n    TEXTSHOW(MSG_UNRESOLVED)\n    ENDA\n};\n"
+        )
+        with self.assertRaisesRegex(GameCatalogError, "unresolved event message"):
+            build_game_catalog(**inputs)
+        inputs["event_root_path"] = self.fixture_dir / "missing"
+        with self.assertRaisesRegex(GameCatalogError, "event source directory"):
+            build_game_catalog(**inputs)
 
     def test_committed_build_emits_verified_japanese_raw_literal(self):
         build = build_game_catalog()

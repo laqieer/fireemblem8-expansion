@@ -137,7 +137,7 @@ including their existing `NODEP=1` bootstrap behavior.
 The existing full-game CLI remains the consumer. Its file options can be
 selected independently as `game-OPTION` modules:
 
-`mapping`, `width-registry`, `fixed-width-aliases`, `eu-mapping`, `ja-indexed`,
+`mapping`, `width-registry`, `fixed-width-aliases`, `event-root`, `eu-mapping`, `ja-indexed`,
 `ja-raw`, `zh-indexed`, `zh-raw`, `latin-span-review`,
 `unicode-script-review`, and `raw-closure`.
 
@@ -169,6 +169,19 @@ standalone generate/check/validate, width/leakage and budget targets perform
 no translation work. Explicit nonempty locale requests still use the real
 validator, and an empty override cannot bypass a profile requiring translated
 locales. Default-framework and final full-catalog gates are unchanged.
+
+`game-event-root` selects an existing directory of C/header event scripts;
+the inherited default is `src/events`. The same `--event-root` input drives
+dialogue-width classification and continuation validation. Message operands
+resolve through the already validated active source/header definitions, not
+stock allocations, including generated symbols for numeric source entries.
+Macro aliases use the existing engine header, and formatting does not change
+the modeled commands. A missing directory, unresolved symbol or ordinary
+out-of-range message rejects; reserved dynamic/current-text operands remain
+unmodeled, not certified as direct message IDs. The existing forced catalog
+generation observes edits below the directory without a new scan or ledger.
+This does not qualify indirect runtime IDs or replacement code/data/fonts/
+portraits; those remain separate semantic and target-runtime obligations.
 
 ## Outputs, identity and compatibility
 

@@ -2,35 +2,35 @@
   "assets": {
     "ja.system": {
       "bitmap": {
-        "byte_count": 75328,
+        "byte_count": 75008,
         "format": "16x16 row-major 2bpp, four pixels per byte, low-bit-first",
         "path": "graphics/fonts/cjk/ja.system.glyphs.2bpp",
-        "sha256": "78c20670cea5e09b25a3f5a3119e97f77cc46d763a428e555f329fb2afafb189",
+        "sha256": "4bcc004afeb4c8617d7747f959eb77e3a994bc4539723dd985deb4f832b958b9",
         "stride_bytes": 64
       },
       "codepoints": {
-        "byte_count": 4708,
+        "byte_count": 4688,
         "format": "sorted unique little-endian uint32 Unicode scalars",
         "path": "graphics/fonts/cjk/ja.system.codepoints.u32le",
-        "sha256": "473bbd9bf18e70bd8c3bd732f83e6bbe35769dc2c7b846a2c7df0d6d2d35b9a3"
+        "sha256": "ac3f24a6ff58944c652fe053863577a737384951b18e56f117093da094b992c3"
       },
       "febuilder_job": "ja-system",
       "febuilder_style": "item",
-      "glyph_count": 1177,
+      "glyph_count": 1172,
       "locale": "ja",
       "runtime_style": "system",
       "source_priority": {
         "febuilder_fallback": 0,
         "fehrr_supplemental": 3,
         "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
-        "same_game_cross_style": 74,
-        "same_game_same_style": 1100
+        "same_game_cross_style": 72,
+        "same_game_same_style": 1097
       },
       "widths": {
-        "byte_count": 1177,
+        "byte_count": 1172,
         "format": "one unsigned byte per glyph; valid range 1..16",
         "path": "graphics/fonts/cjk/ja.system.widths.u8",
-        "sha256": "a928715e8634099cf61100411414e4ab6d016229054c78872f155b2a69ebc9c2"
+        "sha256": "f3ebdeab6c734b041322f2c56141bb671e45a6563fe8f29c3a1a2e6119bcc184"
       }
     },
     "ja.talk": {
@@ -68,54 +68,54 @@
     },
     "zh-Hans.system": {
       "bitmap": {
-        "byte_count": 93440,
+        "byte_count": 92608,
         "format": "16x16 row-major 2bpp, four pixels per byte, low-bit-first",
         "path": "graphics/fonts/cjk/zh-Hans.system.glyphs.2bpp",
-        "sha256": "4a282eb4fd5e2eb4c656d6b74d0060518634864059aabdc7338a72cc90a33c11",
+        "sha256": "70827c501a104547ede77dc81204bd866f9c6f8d01f36b28cfd1c4f43a649c73",
         "stride_bytes": 64
       },
       "codepoints": {
-        "byte_count": 5840,
+        "byte_count": 5788,
         "format": "sorted unique little-endian uint32 Unicode scalars",
         "path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-        "sha256": "132f7f7e6f947e9c21e808d5b1aae21f259c5c938397571bfd06ea963e04454c"
+        "sha256": "740697baa45210a6fa48e555db25f8755b5ccb75b3af8ddcfa75d9c999029d79"
       },
       "febuilder_job": "zh-hans-system",
       "febuilder_style": "item",
-      "glyph_count": 1460,
+      "glyph_count": 1447,
       "locale": "zh-Hans",
       "runtime_style": "system",
       "source_priority": {
         "febuilder_fallback": 0,
         "fehrr_supplemental": 36,
         "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
-        "same_game_cross_style": 107,
-        "same_game_same_style": 1317
+        "same_game_cross_style": 101,
+        "same_game_same_style": 1310
       },
       "widths": {
-        "byte_count": 1460,
+        "byte_count": 1447,
         "format": "one unsigned byte per glyph; valid range 1..16",
         "path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-        "sha256": "379cead8e454b06562b0fcb2b14aca4f58e67d89ead32bd41594af27ad4167a9"
+        "sha256": "2dfce12be6b62e4b6277b647772a20844afdbd3f35430225b5428d75200f118d"
       }
     },
     "zh-Hans.talk": {
       "bitmap": {
-        "byte_count": 152448,
+        "byte_count": 152512,
         "format": "16x16 row-major 2bpp, four pixels per byte, low-bit-first",
         "path": "graphics/fonts/cjk/zh-Hans.talk.glyphs.2bpp",
-        "sha256": "01e57671e76fc87afc99d64b7bf095571494362414009724f8e8afbb20147075",
+        "sha256": "d2ce0155faea8cd1040532bde9e6a85be62bc59b1905f7fc847c695567988edf",
         "stride_bytes": 64
       },
       "codepoints": {
-        "byte_count": 9528,
+        "byte_count": 9532,
         "format": "sorted unique little-endian uint32 Unicode scalars",
         "path": "graphics/fonts/cjk/zh-Hans.talk.codepoints.u32le",
-        "sha256": "5b19cf04571779ea40d852a307f2417b06e79fbd6e3d05ec181982cb75ce2f09"
+        "sha256": "e587b49ff890cfda7e2127c0797929fc42ed35615740b393c1749476d5295d23"
       },
       "febuilder_job": "zh-hans-talk",
       "febuilder_style": "text",
-      "glyph_count": 2382,
+      "glyph_count": 2383,
       "locale": "zh-Hans",
       "runtime_style": "talk",
       "source_priority": {
@@ -123,13 +123,13 @@
         "fehrr_supplemental": 27,
         "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
         "same_game_cross_style": 0,
-        "same_game_same_style": 2354
+        "same_game_same_style": 2355
       },
       "widths": {
-        "byte_count": 2382,
+        "byte_count": 2383,
         "format": "one unsigned byte per glyph; valid range 1..16",
         "path": "graphics/fonts/cjk/zh-Hans.talk.widths.u8",
-        "sha256": "6879ce9652acd27be562b04a75a8c186c7681b2998ece7582b40c79961e688c0"
+        "sha256": "14c949eb50f0f70fee265333bffde15d19aa48203d3ce4d6539d9c90e5632c3c"
       }
     }
   },
@@ -140,9 +140,9 @@
   },
   "rom_budget": {
     "bytes_per_glyph": 69,
-    "four_byte_aligned_blob_bytes": 465756,
+    "four_byte_aligned_blob_bytes": 464580,
     "includes": "64-byte bitmap + 1-byte width + 4-byte Unicode scalar",
-    "payload_bytes": 465750
+    "payload_bytes": 464577
   },
   "schema_version": 2,
   "sources": {
@@ -162,16 +162,16 @@
     },
     "febuilder_manifest": {
       "path": "fonts/cjk/febuilder-manifest.json",
-      "sha256": "91fa5356844a5c302442e367fae0d450f06d53ccebc29ef01508b29a2a981e8a"
+      "sha256": "3586f3997d5770f90b4095285e4f1c0cfda0ef8f98c5101109ad193cefefbb51"
     },
     "fehrr_priority": {
       "path": "fonts/cjk/fehrr-sources.json",
       "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
-      "sha256": "1313084dfc88742efe07793dc7ef8677b4f1192df8751972e68c37354104bc8e"
+      "sha256": "d5dec3884aa5ae438ccb772ff2bdefcc4357917f2f571f7df71306245f713f75"
     },
     "inventory": {
       "path": "fonts/cjk/inventory.json",
-      "sha256": "c19115bb5c2dacc6f87d0c32d269d160690f0014227f514fe87021c179fe74b2"
+      "sha256": "e486fd3de389632f2ad87d715ec55d338a385988de2b8b2f395ced5320373a6d"
     }
   },
   "spacing_scalars": [

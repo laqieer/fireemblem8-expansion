@@ -7,7 +7,7 @@
         "path": "glyph/fe8j/font.fontall.txt",
         "sha256": "91e41c51f1e010be9a9c2426513487252e8b789e63e2d95d06c44093d7710bc9"
       },
-      "glyph_count": 1177,
+      "glyph_count": 1172,
       "glyphs": [
         {
           "filename": "glyph/fe8j/FontText_C397.png",
@@ -1946,17 +1946,6 @@
           "width": 8
         },
         {
-          "filename": "glyph/fe8j/FontItem_E4B8A1.png",
-          "packed_sha256": "9a92b10d1d7b14d99ed1af2a9f5868e456f693a7b1fc7d8681a206af44707e99",
-          "png_sha256": "15fc3aca0273d67f4af58bbd4f23b65b35a396db2a1f76c6f23a4c5cdb521c2e",
-          "scalar": "U+4E21",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8j/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 8
-        },
-        {
           "filename": "glyph/fe8j/FontItem_E4B8A6.png",
           "packed_sha256": "0f9964d753136264d49b232b9567312d9e0e8d7d23a16d07630b4e0775258186",
           "png_sha256": "691e844f70a133e3e588c273be5768cdfbbaf5381a298317b17c8603448ae01a",
@@ -3231,17 +3220,6 @@
           "source_style": "item",
           "source_tier": "same-game",
           "width": 9
-        },
-        {
-          "filename": "glyph/fe8j/FontText_E58BA7.png",
-          "packed_sha256": "50431c5126fc7098847dc199a7cf7d229de2cf9ec23e3a1b4d53f5619a823712",
-          "png_sha256": "7b6a11056d45be5da2e19f1627cb80ecc23e32a525613ae1c544db79d180c874",
-          "scalar": "U+52E7",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8j/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 11
         },
         {
           "filename": "glyph/fe8j/FontItem_E58BB2.png",
@@ -5554,17 +5532,6 @@
           "width": 8
         },
         {
-          "filename": "glyph/fe8j/FontItem_E5BE93.png",
-          "packed_sha256": "fbeb6aca23d0014bdea1fba0450a476cf8ffbef36371db0bd4dd17e5f975e46d",
-          "png_sha256": "002be9d67cf08520ec7c508da179bb8d83e74babff20671c43579f941a076917",
-          "scalar": "U+5F93",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8j/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 8
-        },
-        {
           "filename": "glyph/fe8j/FontItem_E5BE97.png",
           "packed_sha256": "595d00e642213ea8bfef04344aeeaabf9a9353db28aa6f5d2c32c48b1b2a8f25",
           "png_sha256": "812128865d0ecfa6e5103494541ef6b3e066972e027760f60d161cd322c6c7ba",
@@ -6410,17 +6377,6 @@
           "source_style": "item",
           "source_tier": "same-game",
           "width": 10
-        },
-        {
-          "filename": "glyph/fe8j/FontItem_E68EA2.png",
-          "packed_sha256": "0480ebebd4f993ed383e6e32713bbaa42d214f4411f3daee6395a046aecbb386",
-          "png_sha256": "b0ee5cfc9cd84a3726c98d720ba85fffe68d8d4d734fecba6390825075bf083f",
-          "scalar": "U+63A2",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8j/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
         },
         {
           "filename": "glyph/fe8j/FontItem_E68EA5.png",
@@ -9402,17 +9358,6 @@
           "source_style": "item",
           "source_tier": "same-game",
           "width": 8
-        },
-        {
-          "filename": "glyph/fe8j/FontText_E7B289.png",
-          "packed_sha256": "0b9a27cdf8f42a1564e13e9e79f433c081e8f1fa515f1c517ec7ae49b04a0354",
-          "png_sha256": "8a8e8c0ca20bed0c59ae4454da33b744ea2687777170f9352bdb24f8902bf952",
-          "scalar": "U+7C89",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8j/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 11
         },
         {
           "filename": "glyph/fe8j/FontItem_E7B28B.png",
@@ -12961,8 +12906,8 @@
       "selection_counts": {
         "febuilder_fallback": 0,
         "fehrr_supplemental": 3,
-        "same_game_cross_style": 74,
-        "same_game_same_style": 1100
+        "same_game_cross_style": 72,
+        "same_game_same_style": 1097
       },
       "source_locale": "fe8j",
       "supplemental_maps": [
@@ -32097,7 +32042,7 @@
         "path": "glyph/fe8cn/font.fontall.txt",
         "sha256": "9c8f59c5a330c42283212665ab9fec0b8eee1bc73a7bf9329bc694d958ea6ceb"
       },
-      "glyph_count": 1460,
+      "glyph_count": 1447,
       "glyphs": [
         {
           "filename": "glyph/标点符号/道具标点/FontItem·.png",
@@ -34399,17 +34344,6 @@
           "width": 9
         },
         {
-          "filename": "glyph/fe8cn/FontItem_E58A9E.png",
-          "packed_sha256": "d0d2ecce5bb175e2449b7f53f983e5e17eb2d34e88cf3760cf0c2084c8c6df28",
-          "png_sha256": "dc17009b48e4afa90687a5edf049ad0fba930075356b39c13877be39e4541705",
-          "scalar": "U+529E",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
           "filename": "glyph/fe8cn/FontItem_E58A9F.png",
           "packed_sha256": "09ae616313fb26f3ab3b026dd208e253996f450e5237562523c63abd600b7244",
           "png_sha256": "145cac6c3e26239211df9b4ad74f56eb8205c968f15cdf45ae46b46c8f8f3899",
@@ -34905,17 +34839,6 @@
           "width": 9
         },
         {
-          "filename": "glyph/fe8cn/FontItem_E58F88.png",
-          "packed_sha256": "36b9de72c998eb9e8aca9d810cda29ab5757eadaeb0267403da56002b86b5cb3",
-          "png_sha256": "4480f3a2f9555ec526882ae8892071ac21df60e18dff37967316c652bc0adff7",
-          "scalar": "U+53C8",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
           "filename": "glyph/fe8cn/FontItem_E58F8A.png",
           "packed_sha256": "b68b7190d47eb6f1c3320676103392848f7ebc5adb36e2c2f57022506ef3243e",
           "png_sha256": "b0d3d85c17ba65115dc9998a467a2d3bc503039bcd5768ac818670337c1c8744",
@@ -35367,17 +35290,6 @@
           "width": 9
         },
         {
-          "filename": "glyph/fe8cn/FontText_E590BE.png",
-          "packed_sha256": "e611380c25ad3ba3ee1e82b8ac091f301bc33d44edb89e6021eb37d5bb9711ab",
-          "png_sha256": "b94f85c362e03cda966b61805ab719777c998e0f0c4cb1445a1404416b2df86a",
-          "scalar": "U+543E",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 13
-        },
-        {
           "filename": "glyph/fe8cn/FontItem_E59186.png",
           "packed_sha256": "e2fe90b42c228f9ed3c1ad072bdda45d8c12fb440d4e9cd7c52bcc1837b9b470",
           "png_sha256": "b9b0046eab57e3475a226ba84f319219af2622fffcfe5e2dcd960f38052f3886",
@@ -35497,17 +35409,6 @@
           "source_style": "item",
           "source_tier": "same-game",
           "width": 9
-        },
-        {
-          "filename": "glyph/fe8cn/FontText_E59387.png",
-          "packed_sha256": "402165f9283c8568178db8a735940780b39e53d18b0e7104eb0f49bd0b12f130",
-          "png_sha256": "ab96678a37857fe058ca96c0e8b6a23d1d0bb07c48900e70a4b328a75dda5921",
-          "scalar": "U+54C7",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 13
         },
         {
           "filename": "glyph/fe8cn/FontItem_E59388.png",
@@ -37193,17 +37094,6 @@
           "width": 8
         },
         {
-          "filename": "glyph/fe8cn/FontItem_E5B281.png",
-          "packed_sha256": "698c9915a22c489dcc417d1e1ee3a69f2cb5c470776cbf312c6b834897ba2807",
-          "png_sha256": "3891343e73c0750e5cb51f0bdbfd30857f286d50c275c9949c51e376ab80ef5d",
-          "scalar": "U+5C81",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
           "filename": "glyph/fe8cn/FontItem_E5B2A9.png",
           "packed_sha256": "27f29c2f648e7c5edcb07de06202ff87733ee7d676adc97a064e1c66ca332e25",
           "png_sha256": "60cd0bf0a52afcce6a47db88cb32346c12be4cecbed9c5604af033840f4e11c3",
@@ -37362,17 +37252,6 @@
           "packed_sha256": "728e15414ff876991900f9e3165666d2accd29796334fed1e469fa90de5d44ad",
           "png_sha256": "bf7410df519261e230777b8f27a99d6287c1e2dd60b2ff218ecd5c8fb11b6682",
           "scalar": "U+5DEB",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
-          "filename": "glyph/fe8cn/FontItem_E5B7AE.png",
-          "packed_sha256": "139e684bd3b3d01bc1bf9ebf4aae30d881bdd7bf799d3670673765e7aad8070a",
-          "png_sha256": "111bacc547cbd97ae7014ea7254b990413f35ea26c955b7206c221d15058d9d2",
-          "scalar": "U+5DEE",
           "selection_kind": "same_game_same_style",
           "source_map": "glyph/fe8cn/font.fontall.txt",
           "source_style": "item",
@@ -37626,17 +37505,6 @@
           "packed_sha256": "b865dff9ff804a856048a0d47bb40277647a60dbab761f94bf40aaea7e64def7",
           "png_sha256": "0af6eb69c237a36c92bed96f590934220277e39e843c2b919760717acc8eb275",
           "scalar": "U+5E7D",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
-          "filename": "glyph/fe8cn/FontItem_E5B9BF.png",
-          "packed_sha256": "a5519a9558332b713351334a320859be12f7b198c44460d1c020e007847194de",
-          "png_sha256": "31a5be7800083dbf5f48be262716197bb027c3cb80b8b9d1bb0b6264a8295431",
-          "scalar": "U+5E7F",
           "selection_kind": "same_game_same_style",
           "source_map": "glyph/fe8cn/font.fontall.txt",
           "source_style": "item",
@@ -40735,17 +40603,6 @@
           "width": 9
         },
         {
-          "filename": "glyph/fe8cn/FontItem_E6A59A.png",
-          "packed_sha256": "8c743df0a8989c0c9608ceaf199dcb515474ad6dc2714848a3040fb1a137f3a5",
-          "png_sha256": "6831fa621ee57c007352680ce8319f5ad553eb74008894f23a77c42560f5fe7a",
-          "scalar": "U+695A",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
           "filename": "glyph/fe8cn/FontItem_E6A5BC.png",
           "packed_sha256": "6559b5de81c441a8d63c477d9c1a5e86cb1cb098d8ce6549a88d4e605694aaaf",
           "png_sha256": "94bef8911b988cf9709b70e5caef97cc3da135a5622743d92ae96d55dfc49efb",
@@ -43419,17 +43276,6 @@
           "width": 9
         },
         {
-          "filename": "glyph/fe8cn/FontText_E7B289.png",
-          "packed_sha256": "2fca81f75809da22ed103e86290ef3ad6dbcbabd864ae3381a812a002cd1c16b",
-          "png_sha256": "5aa49f519395f349552e041a614d3394e10c3845e3abdbfcc8515085b970d29d",
-          "scalar": "U+7C89",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 13
-        },
-        {
           "filename": "glyph/fe8cn/FontText_E7B297.png",
           "packed_sha256": "9ec6be1aa18ef825e28e1f338bcc52723c8fcd2256dc14d4f83b8abc019756ad",
           "png_sha256": "dec1aa4c68482e82eecb4c247b5cad5dc8bb1d1512977d679f6b1fffc09df3b7",
@@ -43874,17 +43720,6 @@
           "packed_sha256": "e6844fd83a26e943700ee5c01155175c0c237e92988350814c93845f42912bd9",
           "png_sha256": "d6d1eaeaec26405940fe72157ca19296e2a36fd5f3b72bf34abf2f7c3f8c7edf",
           "scalar": "U+7F1A",
-          "selection_kind": "same_game_same_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "item",
-          "source_tier": "same-game",
-          "width": 9
-        },
-        {
-          "filename": "glyph/fe8cn/FontItem_E7BC9D.png",
-          "packed_sha256": "3c978999a9a5791353e314665f31ad19239b7ccbcac66cd30d4008b1e647fcc0",
-          "png_sha256": "9e3db3da787dd00eb7a3509dafed22ebdaed9ffa0ab36c263504f8398b768ec1",
-          "scalar": "U+7F1D",
           "selection_kind": "same_game_same_style",
           "source_map": "glyph/fe8cn/font.fontall.txt",
           "source_style": "item",
@@ -44475,17 +44310,6 @@
           "width": 9
         },
         {
-          "filename": "glyph/fe8cn/FontText_E88BA5.png",
-          "packed_sha256": "b397deaaf8e341339925b8a99ab62d56ba5497d5273ffa2d410202d429f57f99",
-          "png_sha256": "c8d0efef9750f4aafebe6dfb77c6ae328aa256c41e6d0c34105263ba82080871",
-          "scalar": "U+82E5",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 13
-        },
-        {
           "filename": "glyph/fe8cn/FontItem_E88BA6.png",
           "packed_sha256": "c72d4c51c4e0e7daf0439132899c856cba17a5e96109c3e6209ceccae68848aa",
           "png_sha256": "2790e37e0dfd9e4c8c550317b98d1ea95139ae358fb46af88647c57902d02617",
@@ -44761,17 +44585,6 @@
           "width": 8
         },
         {
-          "filename": "glyph/fe8cn/FontText_E89A81.png",
-          "packed_sha256": "9786810d76de1b2df9f18371b3079856279bbbf8f5c889a031d63aa91cde95ce",
-          "png_sha256": "27f95baf65c7999199b3f65903118a3113bb7f049e51b8ca90786ab0b07270fb",
-          "scalar": "U+8681",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 13
-        },
-        {
           "filename": "glyph/fe8cn/FontText_E89B87.png",
           "packed_sha256": "7fc62a9b32d9d15362d19ba38f90387ff4db3541b01cf875bd5ea79dcf3c9879",
           "png_sha256": "12cd33cde6ce904e9f928ad60100bca548c280bcfe6a85457a84f50969e87a8d",
@@ -44814,17 +44627,6 @@
           "source_style": "item",
           "source_tier": "same-game",
           "width": 9
-        },
-        {
-          "filename": "glyph/fe8cn/FontText_E89DBC.png",
-          "packed_sha256": "149e1c7ef8e494b26518551aba5666f8d593ed6d805ee52235f50a7600d32fc8",
-          "png_sha256": "25f27c807ae5ca1cac7ddf9c2dba21da0896e27df0d069e9b1eb8b1d54eabc86",
-          "scalar": "U+877C",
-          "selection_kind": "same_game_cross_style",
-          "source_map": "glyph/fe8cn/font.fontall.txt",
-          "source_style": "text",
-          "source_tier": "same-game",
-          "width": 13
         },
         {
           "filename": "glyph/fe8cn/FontItem_E8A180.png",
@@ -48164,8 +47966,8 @@
       "selection_counts": {
         "febuilder_fallback": 0,
         "fehrr_supplemental": 36,
-        "same_game_cross_style": 107,
-        "same_game_same_style": 1317
+        "same_game_cross_style": 101,
+        "same_game_same_style": 1310
       },
       "source_locale": "fe8cn",
       "supplemental_maps": [
@@ -48237,7 +48039,7 @@
         "path": "glyph/fe8cn/font.fontall.txt",
         "sha256": "9c8f59c5a330c42283212665ab9fec0b8eee1bc73a7bf9329bc694d958ea6ceb"
       },
-      "glyph_count": 2381,
+      "glyph_count": 2382,
       "glyphs": [
         {
           "filename": "glyph/标点符号/对话标点/FontText·.png",
@@ -70548,6 +70350,17 @@
           "width": 13
         },
         {
+          "filename": "glyph/fe8cn/FontText_E8B4AD.png",
+          "packed_sha256": "f8f5dcab01824b89fac9c47b3bae9a51b740486c27c9e84593b207d7eb8b7358",
+          "png_sha256": "304881ddf0bc8d288c9e58802b3bdb5e1226376e9b085aafa0a87fa465fd62c8",
+          "scalar": "U+8D2D",
+          "selection_kind": "same_game_same_style",
+          "source_map": "glyph/fe8cn/font.fontall.txt",
+          "source_style": "text",
+          "source_tier": "same-game",
+          "width": 13
+        },
+        {
           "filename": "glyph/fe8cn/FontText_E8B4AF.png",
           "packed_sha256": "fd12815abddecb6367e3663eb557607031d9f60c40d9946a66786240bd1f5c30",
           "png_sha256": "e9d4db36415e998632b0b42fe6b77a8c1e6af7403bf4394a5a8b8978090049aa",
@@ -74436,7 +74249,7 @@
         "febuilder_fallback": 1,
         "fehrr_supplemental": 27,
         "same_game_cross_style": 0,
-        "same_game_same_style": 2354
+        "same_game_same_style": 2355
       },
       "source_locale": "fe8cn",
       "supplemental_maps": [
@@ -74537,6 +74350,6 @@
   "source": {
     "commit": "0ac6a2b8df20a3861f657fcf1afd9d443b3ed98b",
     "repository": "https://github.com/laqieer/FEHRR.git",
-    "tree_sha256": "359f7bbecedfab465535a68055f4bcedff1f820e17d89f2bdadfae296c3cfd7c"
+    "tree_sha256": "7a22fa163e2cf489cde0af7ad866aa9cd17be0cbec826a4b924ebab983b635cb"
   }
 }

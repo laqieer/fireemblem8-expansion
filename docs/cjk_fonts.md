@@ -88,8 +88,8 @@ Current deterministic counts:
 
 | Locale | Source non-ASCII | System glyphs | Talk glyphs |
 | --- | ---: | ---: | --- |
-| `ja` | 1,786 | 1,174 | 1,731 |
-| `zh-Hans` | 2,442 | 1,459 | 2,382 |
+| `ja` | 1,786 | 1,172 | 1,731 |
+| `zh-Hans` | 2,442 | 1,447 | 2,383 |
 | union | 3,256 | 3,255 | U+3000 is the one spacing scalar |
 
 The sorted corpora are in `fonts/cjk/corpora/`; human-readable scalar maps are
@@ -104,6 +104,15 @@ glyph, so a successful width check also proves every rendered scalar was in
 the atlas corpus; `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
 remains the independent atlas/provenance gate.
 
+Inventory uses the canonical typed source composition, not the render-ready
+catalog builder. This breaks the generation cycle: a missing runtime glyph
+must not prevent deriving the corpus needed to generate that glyph. The full
+catalog builder still requires the resulting actual glyph/width assets and
+every control/continuation check; composition alone is not qualification.
+Advancing past text-removal commands now includes the previously omitted
+post-removal consumers. Their corrected style split preserves the full union
+and adds required Simplified-Chinese talk glyph U+8D2D.
+
 ## FEHRR source-priority import
 
 The committed source lock `fonts/cjk/fehrr-sources.json` records the exact
@@ -112,13 +121,13 @@ hash, and its source-game width. It covers the current corpora as follows:
 
 | Runtime asset | FEHRR source | Original glyphs | FEBuilder fallback |
 | --- | --- | ---: | ---: |
-| `ja.system` | `fe8j` item, then text | 1,098 same-style + 73 cross-style + 3 supplemental | 0 |
+| `ja.system` | `fe8j` item, then text | 1,097 same-style + 72 cross-style + 3 supplemental | 0 |
 | `ja.talk` | `fe8j` text, then item | 1,729 same-style + 2 cross-style | 0 |
-| `zh-Hans.system` | `fe8cn` item, then text | 1,317 same-style + 106 cross-style + 36 supplemental | 0 |
-| `zh-Hans.talk` | `fe8cn` text, then item | 2,354 same-style + 27 supplemental | 1 (`％`, absent from configured tiers) |
+| `zh-Hans.system` | `fe8cn` item, then text | 1,310 same-style + 101 cross-style + 36 supplemental | 0 |
+| `zh-Hans.talk` | `fe8cn` text, then item | 2,355 same-style + 27 supplemental | 1 (`％`, absent from configured tiers) |
 
 The corpora are derived from checked runtime usage, not copied wholesale:
-system has 1,174 JA / 1,459 ZH glyphs; talk has 1,731 JA / 2,382 ZH glyphs.
+system has 1,172 JA / 1,447 ZH glyphs; talk has 1,731 JA / 2,383 ZH glyphs.
 Descriptions are deliberately in both styles. The lock records every runtime
 string's system/talk/both classification and rejects an unclassified string or
 accidental corpus re-union. FEHRR priority is same-game same-style, then

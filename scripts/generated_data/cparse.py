@@ -1,4 +1,4 @@
-"""Small brace-depth-aware C source parsing helpers shared by the
+"""Small delimiter-depth-aware C source parsing helpers shared by the
 hand-written round-trip parsers.
 
 Regexes with non-greedy ``.*?`` capture groups (as used by
@@ -7,8 +7,8 @@ initializers, but ``UnitDefinition``/``TrapData``-style tables need genuine
 brace-matching: a top-level array of struct literals, where each struct
 literal itself contains nested ``{ ... }`` initializers (``items``, ``ai``).
 This module is still not a general C parser -- it only understands plain
-``{``/``}`` nesting (no string/char literals containing braces, which none
-of this project's designated-initializer data files use).
+``{``/``}`` and ``(``/``)`` nesting (no string/char literals containing those
+delimiters, which none of the supported data initializers use).
 """
 
 from __future__ import annotations
@@ -18,20 +18,30 @@ import re
 from .diagnostics import GeneratedDataError, SourceLocation
 
 
-def find_matching_brace(text, open_index):
-    """Given the index of an opening ``{`` in ``text``, return the index of
-    its matching closing ``}`` (brace-depth aware)."""
-    assert text[open_index] == "{"
+def _find_matching(text, open_index, opening, closing, description):
+    assert text[open_index] == opening
     depth = 0
     for i in range(open_index, len(text)):
         ch = text[i]
-        if ch == "{":
+        if ch == opening:
             depth += 1
-        elif ch == "}":
+        elif ch == closing:
             depth -= 1
             if depth == 0:
                 return i
-    raise GeneratedDataError("unbalanced braces starting at index {}".format(open_index))
+    raise GeneratedDataError(
+        "unbalanced {} starting at index {}".format(description, open_index)
+    )
+
+
+def find_matching_brace(text, open_index):
+    """Return the matching closing brace in the supported C initializer subset."""
+    return _find_matching(text, open_index, "{", "}", "braces")
+
+
+def find_matching_paren(text, open_index):
+    """Return the matching closing parenthesis in a C macro invocation."""
+    return _find_matching(text, open_index, "(", ")", "parentheses")
 
 
 def find_c_array_blocks(text, decl_pattern):
