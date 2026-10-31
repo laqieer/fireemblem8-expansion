@@ -105,16 +105,30 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from scripts.fonttools.cjk.resource_index import decode_index
+from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index
 
 def at(revision, path):
     return subprocess.check_output(["git", "show", f"{revision}:{path}"])
 
-base = sys.argv[1]
+if not sys.argv[1].strip():
+    raise SystemExit("BASE must identify the exact plain parent commit")
+base = subprocess.check_output(
+    ["git", "rev-parse", "--verify", "--end-of-options", sys.argv[1] + "^{commit}"],
+    text=True,
+).strip()
+head = subprocess.check_output(["git", "rev-parse", "HEAD^{commit}"], text=True).strip()
+if base == head:
+    raise SystemExit("BASE must differ from the packed candidate")
+subprocess.run(["git", "merge-base", "--is-ancestor", base, head], check=True)
 index = "fonts/cjk/fehrr-sources.json"
 manifest = "graphics/fonts/cjk/manifest.json"
 stored = at("HEAD", index)
-assert decode_index(at(base, index)) == decode_index(stored)
+prior = at(base, index)
+if json.loads(prior).get("kind") == ENVELOPE_KIND:
+    raise SystemExit("BASE must contain the plain FEHRR index")
+if json.loads(stored).get("kind") != ENVELOPE_KIND:
+    raise SystemExit("HEAD must contain the packed FEHRR index")
+assert decode_index(prior) == decode_index(stored)
 expected = json.loads(at(base, manifest))
 for asset in expected["assets"].values():
     for kind in ("bitmap", "codepoints", "widths"):
