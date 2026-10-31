@@ -101,6 +101,8 @@ a stale anchor rejects but can produce real repaired-origin evidence. The
 captured production model also exercises that repair through real Git trees.
 Equivalent consumer `read_text`/`read_bytes` calls and equality operand order
 do not change the captured literal case-map contract.
+The rejecting reviewed-tool fixture instruments the selected test function's
+parsed assertions, so harmless local-variable renames remain valid as well.
 
 ### Cleanup and limitations
 
