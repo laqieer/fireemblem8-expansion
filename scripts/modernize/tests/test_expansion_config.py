@@ -954,15 +954,23 @@ class ProjectSelectionRomTests(unittest.TestCase):
             self.assertEqual(metadata["project"], project.name)
             self.assertEqual(metadata["project_profile"], "probe")
             pinned = []
+            floating_banim_data = []
             for line in (profile / "fireemblem8.map").read_text(encoding="utf-8").splitlines():
                 fields = line.split()
                 if (
                     len(fields) == 4 and fields[0] == ".data"
                     and fields[1].startswith("0x") and fields[2].startswith("0x")
-                    and int(fields[1], 16) == 0x08C02000 and int(fields[2], 16) > 0
                 ):
-                    pinned.append((ROOT / fields[3]).resolve())
-            self.assertEqual(pinned, [(profile / "banim/data_banim.o").resolve()])
+                    address, size = int(fields[1], 16), int(fields[2], 16)
+                    if address == 0x08C02000 and size > 0:
+                        pinned.append((ROOT / fields[3]).resolve())
+                    if fields[3] == "src/data/banim/data_banim.o":
+                        floating_banim_data.append((address, size))
+            self.assertEqual(pinned, [(profile / "banim/project_data_banim.o").resolve()])
+            self.assertEqual(len(floating_banim_data), 1)
+            address, size = floating_banim_data[0]
+            self.assertGreater(size, 0)
+            self.assertLessEqual(address + size, 0x08C00000)
 
 
 class ValidateTitleTests(unittest.TestCase):

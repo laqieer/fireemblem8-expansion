@@ -155,7 +155,11 @@ This includes data, text/header, UI/game catalogs, asset generation/discovery,
 battle-animation objects/sidecars, objects, metadata, ELF, map and ROM outputs.
 The selected battle-animation object retains its pinned ROM address and
 depends on the actual selected script and existing compile-settings stamp,
-so changing asset selections cannot reuse another selection's object. A custom
+so changing asset selections cannot reuse another selection's object.
+Its `banim/project_data_banim.o` basename distinguishes packed data from the
+unrelated floating `src/data/banim/data_banim.o`. Packing retains the existing
+common lock for shared stock intermediates as well as the private output lock.
+A custom
 `MODERN_BUILD_ROOT=build/custom` changes the outer root to
 `build/custom/projects/PROJECT/PROFILE/CONFIG/ABI/`; it does not remove any
 selection dimension. Do not override derived output-directory variables.

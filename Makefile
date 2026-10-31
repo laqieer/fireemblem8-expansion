@@ -162,7 +162,8 @@ C_OBJECTS    := $(CFILES:.c=.o)
 LEGACY_MSG_OBJECT := $(C_SUBDIR)/msg_data.o
 LEGACY_C_OBJECTS := $(filter-out $(LEGACY_MSG_OBJECT),$(C_OBJECTS))
 ASM_OBJECTS  := $(SFILES:.s=.o)
-BANIM_OBJECT := $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/banim/data_banim.o,banim/data_banim.o)
+BANIM_OBJECT := $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/banim/project_data_banim.o,banim/data_banim.o)
+FE8_PROJECT_BANIM_LOCK = $(if $(filter-out default,$(FE8_PROJECT)),$(PYTHON) scripts/arm_compressing_linker.py --lock-output banim/data_banim.o --)
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # Issue #5 Batch 3a: unlike GENERATED_DATA_LINKED_OBJECTS (whole-file
@@ -663,12 +664,12 @@ sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
 # Battle Animation Recipes
 
 ifneq ($(filter-out default,$(FE8_PROJECT)),)
-$(BANIM_OBJECT): $$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
+$(BANIM_OBJECT): $$(patsubst $(abspath $(ASSET_OUTPUT_DIR))/%,$(ASSET_OUTPUT_DIR)/%,$$(shell $(PYTHON) scripts/arm_compressing_linker.py -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -m)) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
 else
 $(BANIM_OBJECT): $(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
 endif
 	@mkdir -p "$(@D)"
-	$(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
+	$(FE8_PROJECT_BANIM_LOCK) $(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
 
 %_modes.bin: %_motion.o
 	$(OBJCOPY) -O binary -j .data.modes $< $@
