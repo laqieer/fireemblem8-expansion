@@ -11,8 +11,9 @@ invoke FEHRR, FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
 The host tools accept the existing plain JSON representation and the version-1
 `cjk-resource-index` envelope for `fonts/cjk/fehrr-sources.json` and
-`fonts/cjk/runtime_usage.json`. Defaults remain plain; generation preserves the
-representation already present. Both decode to the same complete JSON object.
+`fonts/cjk/runtime_usage.json`. The default FEHRR index is packed; runtime usage
+remains plain. Generation preserves the representation already present. Both
+formats decode to the same complete JSON object.
 The shared `scripts.fonttools.cjk.resource_index` API provides `decode_index`,
 `encode_index(value, packed=False)`, `load_index` and `encode_like_index`.
 The last preserves the existing format unless the maintainer operation
@@ -118,6 +119,88 @@ to the semantic predicate set; missing origin paths still refuse explicitly.
 This binding does not wrap a whole-suite pass
 as member evidence or replace the font CLI, candidate/master Build or final
 delivery gates.
+
+#### Default FEHRR migration variant
+
+Issue [#349](https://github.com/laqieer/fireemblem8-expansion/issues/349)
+uses the same case after the storage interface lands. From the exact clean
+parent, run `repack-index --index fehrr --format packed` and the existing
+`python3 -m scripts.fonttools.cjk check`. Preserve original plain bytes in Git,
+not in a second committed snapshot.
+
+Compare the complete decoded before/after objects from the immutable parent
+and candidate Git blobs using `decode_index`, including every source,
+selection and glyph record. Compare all twelve bitmap/codepoint/width files
+named by the four original manifest assets byte-for-byte; only the FEHRR index
+and its physical checksum in the asset manifest change among generated files.
+With `BASE` set to the exact parent revision, run from the source root:
+
+```bash
+python3 - "$BASE" <<'PY'
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from scripts.fonttools.cjk.resource_index import ENVELOPE_KIND, decode_index, encode_index
+
+def at(revision, path):
+    return subprocess.check_output(["git", "show", f"{revision}:{path}"])
+
+def same(actual, expected, label):
+    if actual != expected:
+        raise SystemExit(label + " differs")
+
+if not sys.argv[1].strip():
+    raise SystemExit("BASE must identify the exact plain parent commit")
+base = subprocess.check_output(
+    ["git", "rev-parse", "--verify", "--end-of-options", sys.argv[1] + "^{commit}"],
+    text=True,
+).strip()
+head = subprocess.check_output(["git", "rev-parse", "HEAD^{commit}"], text=True).strip()
+if base == head:
+    raise SystemExit("BASE must differ from the packed candidate")
+subprocess.run(["git", "merge-base", "--is-ancestor", base, head], check=True)
+index = "fonts/cjk/fehrr-sources.json"
+manifest = "graphics/fonts/cjk/manifest.json"
+stored = at("HEAD", index)
+prior = at(base, index)
+if json.loads(prior).get("kind") == ENVELOPE_KIND:
+    raise SystemExit("BASE must contain the plain FEHRR index")
+if json.loads(stored).get("kind") != ENVELOPE_KIND:
+    raise SystemExit("HEAD must contain the packed FEHRR index")
+same(encode_index(decode_index(prior)), encode_index(decode_index(stored)), "decoded index")
+expected = json.loads(at(base, manifest))
+for asset in expected["assets"].values():
+    for kind in ("bitmap", "codepoints", "widths"):
+        path = asset[kind]["path"]
+        same(at(base, path), at("HEAD", path), path)
+expected["sources"]["fehrr_priority"]["sha256"] = hashlib.sha256(stored).hexdigest()
+same(encode_index(json.loads(at("HEAD", manifest))), encode_index(expected), manifest)
+usage = "fonts/cjk/runtime_usage.json"
+same(at(base, usage), at("HEAD", usage), usage)
+print("complete decoded index, all twelve atlas files and checksum-only metadata match")
+PY
+```
+
+This compares immutable committed candidates; before committing, inspect the
+generated working-tree files with the same decoder and run the focused suite.
+Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index.ResourceIndexTests.test_fehrr_fresh_plain_roots_produce_identical_packed_outputs -v`.
+It creates two independent owned roots, explicitly converts each to plain
+before fresh packed encoding with the same encoder build, and compares both
+the stored index and physical asset manifest. Repeating packed on an already
+packed input separately proves idempotence, not fresh-compression determinism.
+Each owned root also pairs the packed index with its actual earlier plain
+checksum, requires the real schema-2 default reader to reject without changing
+the index/manifest/atlas files, restores the correct manifest and rechecks.
+Run the focused resource-index suite from the now-packed starting state. Its stale-checksum
+and malformed-input controls must still reject. No default runtime-usage,
+font, atlas, locale or game-data conversion is part of this variant.
+
+Report the complete generated-data deletion/replacement in review-size
+evidence. The index is indivisible: partial JSON conversion is invalid. The
+generated-line review exception does not exempt any blob from the existing
+4 MiB old-plus-new raw gate or replace exact candidate/master delivery gates.
 
 ## Inventory contract
 

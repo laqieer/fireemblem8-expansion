@@ -27,6 +27,49 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class ResourceIndexTests(unittest.TestCase):
+    def test_fehrr_fresh_plain_roots_produce_identical_packed_outputs(self):
+        outputs = []
+        with tempfile.TemporaryDirectory() as temporary:
+            for name in ("first", "second"):
+                root = Path(temporary) / name
+                for relative in ("fonts/cjk", "graphics/fonts/cjk"):
+                    shutil.copytree(ROOT / relative, root / relative)
+                for representation in ("plain", "packed"):
+                    result = subprocess.run(
+                        [
+                            sys.executable, "-B", "-m", "scripts.fonttools.cjk",
+                            "--root", str(root), "repack-index",
+                            "--index", "fehrr", "--format", representation,
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=180,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if representation == "plain":
+                        plain_checksum = hashlib.sha256((root / FEHRR_SOURCES).read_bytes()).hexdigest()
+                manifest_path = root / "graphics/fonts/cjk/manifest.json"
+                valid_manifest = manifest_path.read_bytes()
+                stale = json.loads(valid_manifest)
+                stale["sources"]["fehrr_priority"]["sha256"] = plain_checksum
+                manifest_path.write_bytes(encode_index(stale))
+                paths = {
+                    FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json",
+                    *(asset[kind]["path"] for asset in stale["assets"].values()
+                      for kind in ("bitmap", "codepoints", "widths")),
+                }
+                before = {path: (root / path).read_bytes() for path in paths}
+                with self.assertRaisesRegex(CjkFontError, "FEHRR priority provenance drifted"):
+                    check_compact_assets(root)
+                for path, data in before.items():
+                    self.assertTrue((root / path).read_bytes() == data, path + " changed on refusal")
+                manifest_path.write_bytes(valid_manifest)
+                check_compact_assets(root)
+                outputs.append({
+                    path: (root / path).read_bytes()
+                    for path in (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json")
+                })
+        for path in outputs[0]:
+            self.assertTrue(outputs[0][path] == outputs[1][path], path + " packed outputs differ")
+
     def test_unpaired_surrogate_keys_and_values_fail_through_the_typed_boundary(self):
         cases = (b'{"value":"\\ud800"}', b'{"\\udfff":"value"}', b'{"value":["\\ud800"]}')
         with tempfile.TemporaryDirectory() as temporary:
