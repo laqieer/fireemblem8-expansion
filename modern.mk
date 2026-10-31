@@ -1517,8 +1517,12 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c
 	} > "$@.tmp"
 	@mv -f "$@.tmp" "$@"
 
+# Included makefiles are otherwise remade even under GNU Make's -n.
+MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
 ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
+ifeq ($(MODERN_DRY_RUN),)
 include $(MODERN_ALL_DATA_ASSET_DEPS)
+endif
 endif
 
 # Generated-header bootstrap for ordinary (non-data) C sources: see the
@@ -1621,8 +1625,6 @@ $(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: $$(call modern_c_
 	@rm -f "$@.tmp"
 	@mv -f "$@.tmp2" "$@"
 
-# Included makefiles are otherwise remade even under GNU Make's -n.
-MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
 ifeq ($(MODERN_DRY_RUN),)
 ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
 include $(MODERN_ALL_C_HEADER_DEPS)

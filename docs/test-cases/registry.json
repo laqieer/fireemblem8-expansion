@@ -839,8 +839,12 @@
           "evidence": "scripts/modernize/tests/test_expansion_config.py"
         },
         {
-          "command": "python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_idspace_active.ActiveContractModelTests -v",
+          "command": "python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_idspace_active.ActiveContractModelTests scripts.generated_data.tests.test_manifest.CollectEntriesTests -v",
           "evidence": "scripts/generated_data/tests/test_cli.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_project_subjects -v",
+          "evidence": "scripts/workflow_pilot/tests/test_project_subjects.py"
         },
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v",

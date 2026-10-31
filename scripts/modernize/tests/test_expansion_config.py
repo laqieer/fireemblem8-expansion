@@ -136,6 +136,40 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(identity.rom_size_bytes, 32 * 1024 * 1024)
         self.assertEqual(identity.project_profile, "primary")
 
+    def test_english_only_standalone_translation_targets_do_not_forward_empty_locales(self):
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        command = [
+            "make", "--no-print-directory", "-s", "NODEP=1",
+            f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=release", "MODERN_ABI=aapcs",
+            "PYTHON=" + sys.executable, "PYTHON3=" + sys.executable,
+        ]
+        goals = [
+            "game-localization-validate", "game-localization-generate", "game-localization-check",
+            "game-localization-width-check", "game-localization-leakage-audit",
+            "game-localization-leakage-check", "game-localization-budget",
+        ]
+        result = subprocess.run(
+            [*command, *goals], cwd=ROOT, capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((output / "primary/release/aapcs/generated/game-localization").exists())
+        for locale, expected in (("ja", 0), ("unknown", 2)):
+            with self.subTest(explicit_locale=locale):
+                result = subprocess.run(
+                    [*command, "GAME_LOCALIZATION_ENABLED_LOCALES=" + locale,
+                     "game-localization-validate"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=120)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REQUIRED_SETTINGS += EXPANSION_ENABLED_LOCALES\n"
+                "FE8_PROJECT_primary_EXPANSION_ENABLED_LOCALES := en,ja\n"
+            )
+        result = subprocess.run(
+            [*command, "GAME_LOCALIZATION_ENABLED_LOCALES=", "game-localization-validate"],
+            cwd=ROOT, capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
     def test_explicit_overrides_cannot_contradict_the_selected_profile(self):
         for overrides in ({"rom_title": "OTHER"}, {"rom_size": "16M"}):
             with self.subTest(overrides=overrides):
@@ -583,6 +617,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             [
                 "make", "--no-print-directory", "-s", "-n", "NODEP=1", "MAKE=echo",
                 "MODERN_CC=/missing-arm-compiler",
+                "MODERN_SCANINC=" + str(self.project / "uninstalled-scaninc"),
                 "-o", "expansion-modern-rom", "-o", "expansion-modern-all",
                 f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
                 "expansion-modern-gdb-smoke",
@@ -605,6 +640,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(list(output.rglob("*.headers.d")), [])
+        self.assertEqual(list(output.rglob("*.assets.d")), [])
         artifacts = []
         portrait_roots = []
         for line in result.stdout.replace("\\\n", " ").splitlines():
