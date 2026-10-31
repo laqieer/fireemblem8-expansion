@@ -174,7 +174,7 @@ def schema_declaration(source: bytes, *, dependencies=True) -> tuple[dict, tuple
     return defaults, tuple(table_dependencies)
 
 
-def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
+def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
     result = []
 
     def add(family, role, name, producer, consumer, representation, revalidation,
@@ -254,22 +254,26 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
             "scripts/fonttools/cjk/inventory.py", "scripts/fonttools/cjk/cli.py",
         }
         closure = tuple(sorted(
-            path for path in tree.entries if path.startswith("scripts/") and path.endswith(".py")
+            path for path in head.entries if path.startswith("scripts/") and path.endswith(".py")
             and "/tests/" not in path and not path.startswith("scripts/workflow_pilot/")
         ))
         for family in ("generated", "wire", "resource"):
             for role in review.FAMILIES[family]:
-                producer = ("scripts/fonttools/cjk/package.py:write_resource_index"
-                            if family == "generated" and role == "outputs" else CJK_CODEC)
-                consumer = ("scripts/fonttools/cjk/cli.py:main"
+                producer = (CJK_CODEC + ":encode_index"
+                            if family == "generated" and role == "outputs"
+                            else "scripts/fonttools/cjk/package.py:write_resource_index"
+                            if family == "generated" and role == "drift-checks" else CJK_CODEC)
+                consumer = ("scripts/fonttools/cjk/package.py:check_compact_assets"
                             if family == "generated" and role == "consumers"
-                            else "scripts/fonttools/cjk/package.py:_read_fehrr_lock")
+                            else "scripts/fonttools/cjk/inventory.py:check_generated_files"
+                            if family == "generated" and role == "drift-checks" else CJK_CODEC)
                 add(family, role, "resource-index", producer, consumer,
                     "plain JSON or version1 xz-base64 resource envelope",
                     "complete values, physical checksums, stream reuse and bounded rejection",
                     "cjk-resource:" + family + ":" + role, paths)
-        fixtures = {path for prefix in ("fonts/cjk", "graphics/fonts/cjk")
-                    for path in tree.under(prefix)}
+        fixtures = {path for prefix in (
+            "fonts/cjk", "graphics/fonts/cjk", "src", "include", "texts", "assets", "reports",
+        ) for path in head.under(prefix)}
         result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths | fixtures)))
                   for member in result]
     elif spec.model == "authored-case":
@@ -318,8 +322,8 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
 
 
 def expand_members(spec: SubjectSpec, origin_tree, candidate_tree):
-    before = _members(spec, origin_tree)
-    after = _members(spec, candidate_tree)
+    before = _members(spec, origin_tree, candidate_tree)
+    after = _members(spec, candidate_tree, candidate_tree)
     # Deletion is not an exemption from a previously accepted obligation.
     review.require({item.identity for item in before} == {item.identity for item in after},
                    "added/deleted members require a reviewed finite model and removal evidence")
@@ -591,6 +595,7 @@ def _cjk_resource(probe):
     import base64
     import hashlib
     import lzma
+    import math
     import shutil
     import struct
     import zlib
@@ -598,6 +603,7 @@ def _cjk_resource(probe):
 
     _, family, role = probe.split(":")
     checks = 0
+    limit = 4 * 1024 * 1024
 
     def verify(condition, detail):
         nonlocal checks
@@ -607,6 +613,52 @@ def _cjk_resource(probe):
     def canonical(value):
         return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2,
                            allow_nan=False) + "\n").encode()
+
+    def reference_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate reference resource key")
+            value[key] = item
+        return value
+
+    def reference_number(token):
+        value = float(token)
+        if not math.isfinite(value):
+            raise ValueError("nonfinite reference resource number")
+        return value
+
+    def reference_json(data):
+        value = json.loads(
+            data.decode("utf-8"), object_pairs_hook=reference_object,
+            parse_float=reference_number, parse_constant=reference_number,
+        )
+        if not isinstance(value, dict):
+            raise ValueError("reference resource must be an object")
+        return value
+
+    def reference(data):
+        if len(data) > limit:
+            raise ValueError("reference resource index exceeds 4 MiB")
+        value = reference_json(data)
+        if value.get("kind") != "cjk-resource-index":
+            return data
+        if (set(value) != {"kind", "version", "encoding", "decoded_bytes", "payload"}
+                or type(value["version"]) is not int or value["version"] != 1
+                or value["encoding"] != "xz-base64" or not isinstance(value["payload"], str)):
+            raise ValueError("unsupported reference resource envelope")
+        expected = value["decoded_bytes"]
+        if type(expected) is not int or not 0 <= expected <= limit:
+            raise ValueError("reference resource size exceeds its bound")
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=64 * 1024 * 1024)
+        decoded = decoder.decompress(
+            base64.b64decode(value["payload"], validate=True), max_length=limit + 1,
+        )
+        if len(decoded) > limit or len(decoded) != expected or not decoder.eof or decoder.unused_data:
+            raise ValueError("reference resource size or single-stream boundary differs")
+        if reference_json(decoded).get("kind") == "cjk-resource-index":
+            raise ValueError("nested reference resource envelope")
+        return decoded
 
     def envelope(data, stream=None):
         return {
@@ -634,19 +686,22 @@ def _cjk_resource(probe):
         verify(canonical(value) == canonical(expected), "complete typed resource values differ")
         return value
 
-    def owned_fonts(name):
+    def owned_fonts(name, *, inventory=False):
         root = Path("build") / name
-        for prefix in ("fonts/cjk", "graphics/fonts/cjk"):
+        prefixes = ("fonts/cjk", "graphics/fonts/cjk")
+        if inventory:
+            prefixes += ("src", "include", "texts", "assets", "reports")
+        for prefix in prefixes:
             shutil.copytree(prefix, root / prefix, dirs_exist_ok=True)
         return root
 
-    originals = [Path(path).read_bytes() for path in CJK_INDEXES]
+    originals = []
+    for relative in CJK_INDEXES:
+        with Path(relative).open("rb") as stream:
+            originals.append(stream.read(limit + 1))
     stocks = []
     for data in originals:
-        value = json.loads(data)
-        if value.get("kind") == "cjk-resource-index":
-            value = json.loads(lzma.decompress(base64.b64decode(value["payload"])))
-        stocks.append(value)
+        stocks.append(json.loads(reference(data)))
     seed = {"id": 1, "values": [True, 1.0, "\u4e00"]}
     plain = canonical(seed)
     wrapped = canonical(envelope(plain))
@@ -663,11 +718,26 @@ def _cjk_resource(probe):
                 verify(codec.encode_index(value) == canonical(value),
                        "existing canonical plain output changed")
                 stored = codec.encode_index(value, packed=True)
-                independent = json.loads(lzma.decompress(
-                    base64.b64decode(json.loads(stored)["payload"])))
+                independent = json.loads(reference(stored))
                 verify(canonical(independent) == canonical(value), "packed output lost fields/types")
                 verify(codec.encode_index(value, packed=True) == stored,
                        "fresh same-encoder compression is not deterministic")
+        elif role == "consumers":
+            root = Path("build/review-resource-consumer")
+            source = root / CJK_INDEXES[0]
+            source.parent.mkdir(parents=True, exist_ok=True)
+            for packed in (False, True):
+                stored = codec.encode_index(stocks[0], packed=packed)
+                source.write_bytes(stored)
+                priority = {
+                    "path": CJK_INDEXES[0], "sha256": hashlib.sha256(stored).hexdigest(),
+                    "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+                }
+                value = package._read_fehrr_lock(root, {"fehrr_priority": priority})
+                verify(canonical(value) == canonical(stocks[0]), "real priority reader changed values")
+                priority["sha256"] = "0" * 64
+                reject(lambda: package._read_fehrr_lock(root, {"fehrr_priority": priority}),
+                       package.CjkFontError)
             root = owned_fonts("review-resource-maintainer")
             manifest = "graphics/fonts/cjk/manifest.json"
             original_assets = {
@@ -690,22 +760,6 @@ def _cjk_resource(probe):
                        and all((root / path).read_bytes() == value
                                for path, value in original_assets.items()),
                        "actual conversion changed its output ownership or atlas bytes")
-        elif role == "consumers":
-            root = Path("build/review-resource-consumer")
-            source = root / CJK_INDEXES[0]
-            source.parent.mkdir(parents=True, exist_ok=True)
-            for packed in (False, True):
-                stored = codec.encode_index(stocks[0], packed=packed)
-                source.write_bytes(stored)
-                priority = {
-                    "path": CJK_INDEXES[0], "sha256": hashlib.sha256(stored).hexdigest(),
-                    "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
-                }
-                value = package._read_fehrr_lock(root, {"fehrr_priority": priority})
-                verify(canonical(value) == canonical(stocks[0]), "real priority reader changed values")
-                priority["sha256"] = "0" * 64
-                reject(lambda: package._read_fehrr_lock(root, {"fehrr_priority": priority}),
-                       package.CjkFontError)
             root = owned_fonts("review-resource-cli")
             package.check_compact_assets(root)
             broken = b"invalid index"
@@ -736,6 +790,42 @@ def _cjk_resource(probe):
             path.write_bytes(b"invalid index")
             reject(lambda: codec.encode_like_index(seed, path))
             verify(path.read_bytes() == b"invalid index", "failed writer changed input")
+            # Literal provenance queries the index; the captured tree needs no new commit.
+            for command in (["git", "init", "--quiet"], ["git", "add", "--", "src", "include"]):
+                result = run_process(command, cwd=Path.cwd(), env=os.environ.copy(),
+                                     timeout=20, new_session=False)
+                if result.returncode:
+                    raise OSError("native tracked-source fixture unavailable: "
+                                  + result.stderr.decode(errors="replace")[-1000:])
+            root = owned_fonts("review-resource-inventory", inventory=True)
+            inventory_path = "fonts/cjk/inventory.json"
+            manifest_path = "graphics/fonts/cjk/manifest.json"
+            original_inventory = (root / inventory_path).read_bytes()
+            original_manifest = (root / manifest_path).read_bytes()
+            initially_packed = json.loads(originals[1]).get("kind") == "cjk-resource-index"
+            for packed in (not initially_packed, initially_packed):
+                try:
+                    outputs = package.write_resource_index(root, "runtime-usage", packed=packed)
+                except (package.CjkFontError, codec.ResourceIndexError) as failure:
+                    raise ContractViolation("valid inventory generation/check was rejected") from failure
+                stored = (root / CJK_INDEXES[1]).read_bytes()
+                decoded(stored, stocks[1])
+                verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
+                       "runtime-usage maintainer changed the requested format")
+                expected_inventory = json.loads(original_inventory)
+                expected_inventory["outputs"][CJK_INDEXES[1]] = {
+                    "byte_count": len(stored), "sha256": hashlib.sha256(stored).hexdigest(),
+                }
+                inventory_data = canonical(expected_inventory)
+                expected_manifest = json.loads(original_manifest)
+                expected_manifest["sources"]["inventory"]["sha256"] = hashlib.sha256(
+                    inventory_data).hexdigest()
+                verify(set(outputs) == {CJK_INDEXES[1], inventory_path, manifest_path}
+                       and all((root / name).read_bytes() == value
+                               for name, value in outputs.items())
+                       and (root / inventory_path).read_bytes() == inventory_data
+                       and (root / manifest_path).read_bytes() == canonical(expected_manifest),
+                       "inventory writer changed its ownership or physical checksum chain")
         else:
             raise review.ReviewError("unknown resource generation role")
     elif family == "wire":
@@ -748,7 +838,7 @@ def _cjk_resource(probe):
                    and type(stored["decoded_bytes"]) is int
                    and stored["decoded_bytes"] == len(plain),
                    "public envelope fields/version/types differ")
-            verify(lzma.decompress(base64.b64decode(stored["payload"], validate=True)) == plain,
+            verify(reference(canonical(stored)) == plain,
                    "producer payload differs from canonical complete input")
             reject(lambda: codec.encode_index({"value": float("nan")}))
         elif role == "consumers":
@@ -803,7 +893,6 @@ def _cjk_resource(probe):
         decoded(stored, seed)
         if not packed:
             verify(stored == plain, "plain representation changed")
-        limit = 4 * 1024 * 1024
         prefix, suffix = b'{"x":"', b'"}'
         oversized = prefix + b"x" * (limit + 1 - len(prefix) - len(suffix)) + suffix
         if packed:
@@ -817,7 +906,10 @@ def _cjk_resource(probe):
                 stream[16] = property_value
                 stream[header_end - 4:header_end] = struct.pack(
                     "<I", zlib.crc32(stream[12:header_end - 4]))
-                verify(lzma.decompress(stream, memlimit=80 * 1024 * 1024) == plain,
+                independent = lzma.LZMADecompressor(
+                    format=lzma.FORMAT_XZ, memlimit=80 * 1024 * 1024)
+                verify(independent.decompress(stream, max_length=len(plain) + 1) == plain
+                       and independent.eof and not independent.unused_data,
                        "independent large-dictionary control is invalid")
                 bounded = canonical(envelope(plain, stream))
                 if property_value == 27:
@@ -831,7 +923,7 @@ def _cjk_resource(probe):
     else:
         raise review.ReviewError("unknown resource family")
     return {"kind": "host", "checks": checks,
-            "detail": "real codec/priority-reader values, format, stream and resource observations"}
+            "detail": "real codec, legacy/schema2 consumer, inventory format/drift and resource observations"}
 
 
 @probe_result("host")

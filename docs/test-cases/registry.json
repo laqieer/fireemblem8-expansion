@@ -891,17 +891,21 @@
       "profiles": ["Linux CPython 3.12 host tools with committed CJK inputs"],
       "purpose": "Preserve complete index data and existing physical provenance while supporting bounded deterministic plain/packed storage.",
       "prerequisites": "Clean source checkout with committed indexes and atlas inputs. Tests own their temporary source/font root; no ROM, emulator, external font checkout or manual criterion.",
-      "actions": "Run the focused resource-index module. Round-trip both real indexes through the actual CLI, run existing generation/asset consumers, compare complete decoded data and atlas bytes, reverse to exact originals, and exercise each malformed/bounded input.",
+      "actions": "Run the focused resource-index and direct source-predicate modules. Round-trip both real indexes through the actual CLI, run existing legacy/schema2 asset consumers and inventory generation/check against both formats, compare complete typed data and atlas bytes, reverse to the original representations with complete logical equality, and exercise every malformed/bounded input.",
       "expected_result": "Both requested representations are verified in actual CLI output before real consumers; plain output stays byte-identical, repeated packed encoding is deterministic within one encoder build, unchanged valid packed JSON reuses original stored bytes across builds, all physical checksums stay valid, and reverse conversion preserves complete data and format.",
-      "negative_control": "The original FEHRR reader rejects the packed fixture. An explicit plain representation remains valid; default-migration variants obtain original plain data from their exact parent Git blobs rather than assuming the current checkout is plain. Corrupt, truncated, trailing or oversized inputs fail explicitly and leave existing files intact.",
+      "negative_control": "The original FEHRR reader rejects the packed fixture. An explicit plain representation remains valid; default-migration variants obtain original plain data from their exact parent Git blobs rather than assuming the current checkout is plain. Corrupt, truncated, trailing or oversized inputs fail explicitly and leave existing files intact. Invalid independent reference bounds remain unavailable with zero checks, not semantic regression credit; actual schema2 packed-reader and inventory-format mutations must violate their own source predicates.",
       "interactions": "Existing CJK inventory, FEHRR priority and immutable FEBuilder baseline checks remain mandatory. No new dependency or feature conflict. Default migrations are separate dependent issues349/350.",
       "save_compatibility": "Host-only storage; no atlas, ROM/RAM, locale, save/epoch, config identity, modern debug/release or archival change.",
-      "cleanup": "TemporaryDirectory removes only the owned fixture. The suite does not migrate stock files; explicit maintainer conversion updates existing checksum-chain files.",
+      "cleanup": "TemporaryDirectory removes only the owned fixture, including its local tracked-source index without any new commit or credentials. The suite does not migrate stock files; explicit maintainer conversion updates existing checksum-chain files.",
       "limitations": "Conversion is not a multi-file transaction or source/content approval. Use an owned idle root. This is not font art, rendered text, production-game or ROM-profile qualification.",
       "automation": [
         {
           "command": "python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index -v",
           "evidence": "scripts/fonttools/cjk/tests/test_resource_index.py"
+        },
+        {
+          "command": "python3 -B -m unittest scripts.workflow_pilot.tests.test_cjk_subjects -v",
+          "evidence": "scripts/workflow_pilot/tests/test_cjk_subjects.py"
         }
       ]
     },

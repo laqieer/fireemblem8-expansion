@@ -102,7 +102,17 @@ wire, generated-owner/output/consumer/drift and plain/packed resource
 predicates. Run
 `python3 -B -m unittest scripts.workflow_pilot.tests.test_cjk_subjects -v`
 for its complete-source, real numeric/stream mutation and
-semantics-preserving-refactor controls. It does not wrap a whole-suite pass
+semantics-preserving-refactor controls. Independent reference reads and XZ
+decoding enforce the same 4 MiB physical/decoded and 64 MiB decoder-memory
+bound before parsing expected values; invalid references yield unavailable,
+zero-check observations, not codec regression credit. Both stored formats
+reach the real legacy/schema-2 compact consumers and the inventory
+generator/check through the public maintainer operation. The owned source
+fixture gives the existing literal-provenance checker a local Git index of
+captured C/header inputs, without creating a commit or borrowing credentials.
+The execution-only closure is fixed from the candidate tree, not promoted
+to the semantic predicate set; missing origin paths still refuse explicitly.
+This binding does not wrap a whole-suite pass
 as member evidence or replace the font CLI, candidate/master Build or final
 delivery gates.
 
