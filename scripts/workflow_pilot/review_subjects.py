@@ -67,6 +67,10 @@ CASE_SECTIONS = frozenset({
 PROJECT_DECLARATION = "project_selection.mk"
 PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
 PROJECT_REGISTRY = "scripts/generated_data/registry.py"
+PROJECT_SCHEMA_INPUTS = "scripts/generated_data/schema.py"
+PROJECT_CONTEXT_FIELDS = frozenset({
+    "sources", "message_header", "localization_registry", "localization_catalogs", "asset_manifest",
+})
 PROJECT_SCHEMAS = frozenset({
     "supports", "units", "shops", "traps", "items", "eventscripts", "eventlists",
     "chapterbundle", "classes", "characters", "terrainstats", "movecost",
@@ -134,8 +138,23 @@ def project_declaration_model(tree):
         "FONT_SLOTS": ("src/data/localized_font_data.c", "src/fontgrp-data.c"),
     }
     review.require(declarations == expected, "project provider declarations need a reviewed finite model")
+    contexts = [
+        item for declaration in ast.parse(tree.read(PROJECT_SCHEMA_INPUTS)).body
+        if isinstance(declaration, ast.ClassDef) and declaration.name == "SchemaInputs"
+        for item in declaration.body
+        if isinstance(item, ast.FunctionDef) and item.name == "__init__"
+    ]
+    review.require(len(contexts) == 1, "unknown project input constructor")
+    parameters = {argument.arg for argument in (
+        *contexts[0].args.posonlyargs, *contexts[0].args.args, *contexts[0].args.kwonlyargs,
+    )} - {"self"}
+    review.require(contexts[0].args.vararg is None and contexts[0].args.kwarg is None
+                   and parameters in (PROJECT_CONTEXT_FIELDS,
+                                      PROJECT_CONTEXT_FIELDS - {"asset_manifest"}),
+                   "project context fields need a reviewed finite model")
     return json.dumps({"schemas": schemas, "settings": sorted(PROJECT_SETTINGS),
-                       "declarations": declarations}, sort_keys=True)
+                       "declarations": declarations,
+                       "context_fields": sorted(PROJECT_CONTEXT_FIELDS)}, sort_keys=True)
 
 
 def authored_case_declaration(raw):
@@ -406,13 +425,26 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                 PROJECT_DECLARATION, declaration,
                 "public selection and metadata CLI preserve, reset and terminate invocation state",
                 "project-life:" + role, (PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"))
+        for role in review.FAMILIES["wire"]:
+            inputs = {PROJECT_SCHEMA_INPUTS, PROJECT_REGISTRY}
+            if role == "producers":
+                inputs = {PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"}
+            elif role == "stale-bindings":
+                inputs.update({
+                    "scripts/generated_data/items/schema.py",
+                    "scripts/generated_data/json_loader.py", "scripts/generated_data/validators.py",
+                })
+            add("wire", role, "selected-inputs", PROJECT_DECLARATION,
+                PROJECT_SCHEMA_INPUTS, declaration,
+                "actual serialized Make arguments and invocation-local schema consumption",
+                "project-wire:" + role, inputs)
         tool_paths = {
             REVIEW_SOURCE, BINDING_SOURCE, AOE_DRIVER, AOE_DISABLED,
             "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
             "scripts/workflow_pilot/trusted_review_gate.py", "scripts/workflow_pilot/reporter.py",
         }
         static_inputs = {
-            PROJECT_DECLARATION, "config.mk",
+            PROJECT_DECLARATION, "config.mk", "include/constants/msg.h",
             *json.loads(declaration)["declarations"]["FONT_SLOTS"],
         }
         closure = tuple(sorted(
@@ -661,6 +693,8 @@ def _authored_case(probe):
 def _project(probe):
     from scripts.modernize import expansion_config as config
     from scripts.generated_data import registry
+    from scripts.generated_data.diagnostics import GeneratedDataError
+    from scripts.generated_data.schema import SchemaInputs, parse_source_overrides
 
     root = Path.cwd()
     project = root / "examples/review-project-source"
@@ -717,7 +751,110 @@ def _project(probe):
     review.require(baseline["project"] == project.name, "project frontend backend unavailable")
     checks = 1
     family, _, role = probe.partition(":")
-    if family == "project-life":
+    if family == "project-wire":
+        fields = {
+            "message_header": relative + "/selected-msg.h",
+            "asset_manifest": relative + "/selected-assets.json",
+            "localization_registry": relative + "/selected-ui.json",
+            "localization_catalogs": {"en": relative + "/selected-en.json"},
+        }
+        sources = {name: relative + "/input.json" for name in sorted(PROJECT_SCHEMAS)}
+        baseline = SchemaInputs()
+        review.require(baseline.resolve("items").name == "items",
+                       "schema input backend unavailable")
+        try:
+            selected = SchemaInputs(sources=sources, **fields)
+        except TypeError as error:
+            raise ContractViolation("accepted schema input fields were rejected") from error
+        if role == "producers":
+            declare(inherit=modules - {"items"}, replacement={"items"},
+                    extra=f"FE8_PROJECT_SOURCE_items := {relative}/input.json\n")
+            recipe = b"review-project-arguments:\n\t@printf '%s\\n' $(FE8_PROJECT_SCHEMA_ARGS)\n"
+            values = command([
+                "make", "--no-print-directory", "-s", "-f", PROJECT_DECLARATION, "-f", "-",
+                "review-project-arguments", f"FE8_PROJECT={project.name}",
+                "MODERN_PROJECT_MSG_HEADER=" + fields["message_header"],
+                "PYTHON=" + sys.executable,
+            ], stdin=recipe).decode().splitlines()
+            check(values == [
+                "--source-override", "items=" + relative + "/input.json",
+                "--message-header", fields["message_header"],
+                "--asset-manifest", "assets/manifest.json",
+            ], "Make serialized a different selected owner/header/manifest")
+            check(parse_source_overrides(values[1:2]) == {"items": relative + "/input.json"},
+                  "serialized provider did not bind the actual schema parser")
+            checks += 2
+        elif role == "consumers":
+            for name in sorted(PROJECT_SCHEMAS):
+                schema = selected.resolve(name)
+                check(schema.name == name and schema.replacement_source
+                      and selected.source(schema) == sources[name],
+                      "selected schema lost its concrete source owner")
+                check(all(getattr(schema, key, None) == value for key, value in fields.items()),
+                      "selected schema lost invocation-local payload fields")
+                default = baseline.resolve(name)
+                check(not default.replacement_source
+                      and baseline.source(default) == default.default_source
+                      and all(getattr(default, key, None) is None for key in fields),
+                      "selected invocation mutated cached default schema fields")
+                checks += 3
+        elif role == "validators":
+            valid = [name + "=" + sources[name] for name in sorted(PROJECT_SCHEMAS)]
+            check(parse_source_overrides(valid) == sources,
+                  "valid serialized source owners were rejected")
+            for invalid in (
+                ["unknown=input.json"], ["items="], ["=input.json"], ["items"],
+                ["items=one.json", "items=two.json"],
+            ):
+                try:
+                    parse_source_overrides(invalid)
+                except GeneratedDataError:
+                    checks += 1
+                else:
+                    raise ContractViolation("invalid serialized provider was accepted")
+        elif role == "replay":
+            other = SchemaInputs(
+                sources={name: relative + "/other.json" for name in sources},
+                message_header=relative + "/other-msg.h", asset_manifest=relative + "/other-assets.json",
+            )
+            for name in sorted(PROJECT_SCHEMAS):
+                first = selected.resolve(name)
+                second = other.resolve(name)
+                fresh = baseline.resolve(name)
+                check(first.message_header == fields["message_header"]
+                      and second.message_header == relative + "/other-msg.h"
+                      and fresh.message_header is None,
+                      "replayed schema resolution rebound another invocation")
+                check(selected.source(first) == sources[name]
+                      and other.source(second) == relative + "/other.json"
+                      and all(getattr(first, key, None) == value for key, value in fields.items()),
+                      "replay retained stale source or mutated an earlier schema")
+                checks += 2
+        elif role == "stale-bindings":
+            source = project / "symbolic-items.json"
+            source.write_text(json.dumps({
+                "$schema": "fe8.items.v1", "items": [{
+                    "item": "ITEM_NONE", "weaponType": "ITYPE_SWORD", "iconId": 0,
+                    "nameTextId": "MSG_REVIEW_CONTEXT",
+                }],
+            }))
+            header = root / fields["message_header"]
+            header.write_text("#define MSG_REVIEW_CONTEXT 256\n#define MSG_COUNT 1024\n")
+            schema = selected.resolve("items")
+            check(schema.message_header == str(header.relative_to(root)),
+                  "item consumer lost the selected message header binding")
+            try:
+                first = schema.load_records(str(source))[0].name_text_id
+                header.write_text("#define MSG_REVIEW_CONTEXT 257\n#define MSG_COUNT 1024\n")
+                second = schema.load_records(str(source))[0].name_text_id
+            except GeneratedDataError as error:
+                raise ContractViolation("valid selected message symbol was rejected") from error
+            check((first, second) == (256, 257),
+                  "item loader ignored or cached a stale selected header")
+            checks += 2
+        else:
+            raise review.ReviewError("unknown direct project wire probe")
+    elif family == "project-life":
         def default_identity():
             return config.load_identity(
                 root / "config.mk", config_preset="debug", abi="aapcs", rom_size=None,
@@ -1267,6 +1404,7 @@ def run_probe(probe: str) -> dict:
         *("authored-binding:" + role for role in review.FAMILIES["generated"]),
         *("project:" + role for role in review.FAMILIES["action"]),
         *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
+        *("project-wire:" + role for role in review.FAMILIES["wire"]),
         *("authored-fixture:" + role for role in review.FAMILIES["wire"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
@@ -1286,7 +1424,7 @@ def run_probe(probe: str) -> dict:
         return _authored_case(probe)
     if probe.startswith("authored-binding:"):
         return _authored_binding(probe)
-    if probe.startswith(("project:", "project-life:")):
+    if probe.startswith(("project:", "project-life:", "project-wire:")):
         return _project(probe)
     if probe.startswith("authored-fixture:"):
         return _authored_fixture(probe)
