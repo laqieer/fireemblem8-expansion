@@ -11,6 +11,7 @@ from dataclasses import replace
 import json
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -56,6 +57,103 @@ class SubjectTestCase(unittest.TestCase):
                if item.verdict != "satisfied"]
         self.assertEqual(bad, [])
         self.assertTrue(all(item.checks > 0 for item in observations))
+
+
+class AuthoredCaseFamilyTests(SubjectTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        for name in (
+            "docs/test-cases/template.md", "docs/test-cases/localization.md",
+            "docs/game_localization_catalog.md",
+            "scripts/check_docs.py",
+            "tools/gba-playtest/tests/test_locale_tester_cases.py",
+        ):
+            target = cls.repo.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, target)
+        git(cls.repo.root, "add", ".")
+        git(cls.repo.root, "commit", "-qm", "source-backed authored case procedure")
+        cls.repo.base = git(cls.repo.root, "rev-parse", "HEAD")
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+
+    def case_scope(self, head=None):
+        return request(
+            "TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case",
+            self.repo.base, head or self.repo.base)
+
+    def test_actual_case_consumer_rejects_missing_member_and_recovers(self):
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        original = (self.repo.root / path).read_text()
+        broken = original.replace(
+            '        "TC-LOCALIZATION-AUTHORED-SCOPE-001",\n', "", 1)
+        self.assertNotEqual(broken, original)
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: original}, parent=before)
+        members = self.tools.members(self.case_scope(after), (before,))
+        self.assertEqual({item.role for item in members},
+                         {"owners", "outputs", "consumers", "drift-checks"})
+        self.assert_satisfied(self.run_members(members, after))
+        observed = self.run_members(members, before)
+        rejected = [item for item in observed if item.verdict != "satisfied"]
+        self.assertEqual([(item.obligation.member, item.verdict) for item in rejected],
+                         [("consumers:full-game-localization", "contract-violation")])
+        self.assertGreater(rejected[0].checks, 0)
+        consumer = next(item for item in members if item.role == "consumers")
+        self.assertNotIn("docs/test-cases/localization.md", consumer.inputs)
+        self.assertIn("docs/test-cases/localization.md", consumer.execution_inputs)
+
+    def test_retained_headings_cannot_hide_an_empty_expected_result(self):
+        path = "docs/test-cases/localization.md"
+        original = (self.repo.root / path).read_text()
+        prefix, procedure = original.split(
+            "## TC-LOCALIZATION-AUTHORED-SCOPE-001:", 1)
+        broken = re.sub(
+            r"(?<=### Expected result\n).*?(?=### Negative control)",
+            "\n", procedure, count=1, flags=re.S)
+        self.assertNotEqual(procedure, broken)
+        before = self.repo.commit({
+            path: prefix + "## TC-LOCALIZATION-AUTHORED-SCOPE-001:" + broken,
+        })
+        after = self.repo.commit({path: original}, parent=before)
+        members = self.tools.members(self.case_scope(after), (before,))
+        self.assert_satisfied(self.run_members(members, after))
+        observed = self.run_members(members, before)
+        self.assertEqual(
+            [(item.obligation.member, item.verdict) for item in observed
+             if item.verdict != "satisfied"],
+            [("outputs:full-game-localization", "contract-violation")])
+
+    def test_refactors_preserve_members_and_syntax_failure_is_not_semantic_evidence(self):
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        original = (self.repo.root / path).read_text()
+        renamed = original.replace("FEATURE_CASES", "LOCALE_CONTRACTS")
+        self.assertNotEqual(original, renamed)
+        head = self.repo.commit({path: renamed})
+        members = self.tools.members(self.case_scope(head))
+        self.assert_satisfied(self.run_members(members, head))
+
+        malformed = self.repo.commit({
+            path: renamed + "\n(\n",
+            "scripts/check_docs.py": b"",
+        })
+        observed = self.run_members(
+            self.tools.members(self.case_scope(malformed)), malformed)
+        consumer = next(item for item in observed if item.obligation.role == "consumers")
+        self.assertEqual((consumer.verdict, consumer.checks), ("unavailable", 0))
+        self.assert_satisfied(tuple(item for item in observed
+                                    if item.obligation.role != "consumers"))
+
+    def test_unknown_canonical_case_members_block_the_finite_model(self):
+        path = "docs/test-cases/registry.json"
+        catalog = json.loads((self.repo.root / path).read_text())
+        feature = next(item for item in catalog["features"]
+                       if item["id"] == "full-game-localization")
+        feature["required_cases"].append("TC-LOCALIZATION-UNREVIEWED-001")
+        head = self.repo.commit({path: json.dumps(catalog)})
+        with self.assertRaisesRegex(ValueError, "reviewed finite model"):
+            self.tools.members(self.case_scope(head))
 
 
 class SubjectTests(SubjectTestCase):

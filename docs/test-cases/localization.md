@@ -43,6 +43,8 @@ separate human judgments.
    changed locale, or using the default full scope, raises
    `AuthoredCatalogError`. Empty, repeated, unknown and invalid scope values
    reject before any missing source is read.
+4. Run `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.AuthoredCaseFamilyTests -v`
+   for the separate indexed-procedure source contract.
 
 ### Expected result
 
@@ -70,6 +72,16 @@ Default CLI/writer behavior is unchanged.
 exercises the real builder/checker, parsed generated content and adversarial
 staged files. It does not infer behavior from comments or helper spelling.
 There is no subjective manual criterion in this host case.
+
+The procedure-source command checks the canonical case owner, retained nonempty template
+sections, the localization consumer's declared case-set equality and the
+authoritative guide link. The existing `ReviewTools` subject
+`authored-scope-case` is limited to those parsed public-format predicates.
+Its reviewed Markdown parser is fixed by the selected tool revision; candidate
+test programs are parsed as data, never executed. Role-specific semantic
+inputs remain distinct from the existing worker staging union. These checks
+are not translated-content or native/ROM evidence; Git records source and
+history, not behavior. The real builder/checker controls above remain separate.
 
 ### Cleanup and limitations
 

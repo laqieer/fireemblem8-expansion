@@ -3665,6 +3665,10 @@
         {
           "command": "python3 -m unittest scripts.localization.tests.test_authored_catalogs -v",
           "evidence": "scripts/localization/tests/test_authored_catalogs.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.AuthoredCaseFamilyTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
         }
       ]
     },

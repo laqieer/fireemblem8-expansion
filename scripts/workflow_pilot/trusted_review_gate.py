@@ -410,6 +410,8 @@ class ReviewTools:
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
         self.tool_tree.materialize(root, tool_paths)
+        if any(probe.startswith("authored-case:") for probe in probes):
+            self.tool_tree.materialize(root, ("scripts/check_docs.py",))
         (root / "build").mkdir(exist_ok=True)
         if any(probe.startswith(("lifecycle:", "wire:")) for probe in probes):
             (root / "build/review-subject.py").write_bytes(tree.read(self.subjects.REVIEW_SOURCE))
