@@ -155,17 +155,40 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         with self.assertRaisesRegex(ValueError, "reviewed finite model"):
             self.tools.members(self.case_scope(head))
 
-    def test_disconnected_consumer_assertion_cannot_receive_satisfied_coverage(self):
+    def test_candidate_predicate_or_path_cannot_hide_captured_metadata_drift(self):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
         original = (self.repo.root / path).read_text()
-        disconnected = original.replace(
-            'set(features[feature_id]["required_cases"])',
-            'set({"required_cases": expected_cases}["required_cases"])', 1)
-        self.assertNotEqual(original, disconnected)
-        head = self.repo.commit({path: disconnected})
-        observed = self.run_members(self.tools.members(self.case_scope(head)), head)
+        stale = original.replace(
+            '        "TC-LOCALIZATION-AUTHORED-SCOPE-001",\n', "", 1)
+        mutants = (
+            stale.replace('set(features[feature_id]["required_cases"])',
+                          'set({"required_cases": expected_cases}["required_cases"])', 1),
+            stale.replace("        registry = json.loads(",
+                          '        REGISTRY_PATH = ROOT / "missing.json"\n'
+                          "        registry = json.loads(", 1),
+        )
+        for source in mutants:
+            with self.subTest(disconnected=source == mutants[0]):
+                self.assertNotEqual(source, stale)
+                head = self.repo.commit({path: source})
+                observed = self.run_members(self.tools.members(self.case_scope(head)), head)
+                consumer = next(item for item in observed
+                                if item.obligation.role == "consumers")
+                self.assertEqual((consumer.verdict, consumer.checks),
+                                 ("contract-violation", 1))
+
+    def test_consumer_executes_the_selected_reviewed_predicate_not_an_ast_imitation(self):
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        original = (self.repo.root / path).read_text()
+        different_predicate = original.replace(
+            'set(features[feature_id]["required_cases"])', "set()", 1)
+        self.assertNotEqual(original, different_predicate)
+        tool_revision = self.repo.commit({path: different_predicate})
+        tools = ReviewTools(GitTree(self.repo.root, tool_revision), self.repo.root)
+        observed = tools.run_obligations(
+            tools.members(self.case_scope()), self.repo.base)
         consumer = next(item for item in observed if item.obligation.role == "consumers")
-        self.assertEqual((consumer.verdict, consumer.checks), ("unavailable", 0))
+        self.assertEqual((consumer.verdict, consumer.checks), ("contract-violation", 1))
 
     def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
         path = "docs/test-cases/registry.json"

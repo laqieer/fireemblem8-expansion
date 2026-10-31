@@ -77,8 +77,10 @@ The procedure-source command checks the canonical case owner, retained nonempty 
 sections, the localization consumer's declared case-set equality and the
 authoritative guide link. The existing `ReviewTools` subject
 `authored-scope-case` is limited to those parsed public-format predicates.
-Its reviewed Markdown parser is fixed by the selected tool revision; candidate
-test programs are parsed as data, never executed. Role-specific semantic
+Its reviewed Markdown parser and real locale-case consumer function are fixed
+by the selected tool revision. The consumer receives only the captured literal
+candidate case-map data; candidate programs are never executed or interpreted
+as an assertion/dataflow language. Role-specific semantic
 inputs remain distinct from the existing worker staging union. These checks
 are not translated-content or native/ROM evidence; Git records source and
 history, not behavior. The real builder/checker controls above remain separate.
