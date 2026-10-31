@@ -111,7 +111,6 @@ include localization.mk
 # Issue #18 full-game catalog slice: opt-in Python-only generator targets.
 # The fragment does not add prerequisites to `all`; bare/default builds stay
 # English-only and never generate or link CJK game-message payloads.
-include game_localization.mk
 
 #### Files ####
 
@@ -477,6 +476,8 @@ CLEAN_SONGS := $(MID_SUBDIR)/*.s
 
 # Isolated, opt-in modern GCC object rules (no modern ELF/ROM target).
 include modern.mk
+# Standalone catalog targets consume the resolved modern project locale set.
+include game_localization.mk
 
 ifneq ($(filter-out default,$(FE8_PROJECT)),)
 FE8_PROJECT_ARCHIVAL_OBJECTS := $(filter-out $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI) $(BANIM_OBJECT),$(ALL_OBJECTS))

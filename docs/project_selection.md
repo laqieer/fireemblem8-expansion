@@ -123,6 +123,9 @@ asset manifest and its TMX sources rather than stock map dimensions.
 The existing generated-data and ACTIVE CLI interfaces accept
 `--asset-manifest PATH`; `SchemaInputs.asset_manifest` keeps that binding
 invocation-local and does not change cached default schemas.
+Aggregate manifest counts consume that same source context; an explicit
+legacy source override still takes precedence, and later default counts do
+not retain the selected source.
 
 ### Full-game localization inputs
 
@@ -161,6 +164,11 @@ these input bindings are not a non-stock message-set or game qualification.
 An EU override does not disable inherited CJK shard/catalog validation.
 Explicit CJK replacements are independent: each retained JA/ZH catalog still
 receives its existing deterministic-merge check.
+For a selected English-only profile with no requested translated locales,
+standalone generate/check/validate, width/leakage and budget targets perform
+no translation work. Explicit nonempty locale requests still use the real
+validator, and an empty override cannot bypass a profile requiring translated
+locales. Default-framework and final full-catalog gates are unchanged.
 
 `game-event-root` selects an existing directory of C/header event scripts;
 the inherited default is `src/events`. The same `--event-root` input drives
@@ -252,6 +260,15 @@ not an extra backend, extracts the object bytes. These bounded object
 observations are not full linked-ROM, overall ROM/RAM or supported-profile
 runtime qualification and do not authorize the whole selector handoff or
 replace any final gate.
+The executor kind is selected before shared frontend setup, so unavailable
+resource work remains `arm-object` evidence with zero semantic checks.
+Host-only source checks skip the four ARM-positive methods when their
+configured `MODERN_CC`, `MODERN_NM` or `MODERN_SIZE` executable is unavailable.
+The existing mandatory modern linker check collects the same project tests
+through `arm_review_subjects`, after its toolchain prerequisites; a host skip
+is not ARM evidence. Recursive `make -n` namespace inspection requires neither
+the compiler nor scaninc and creates no header or asset dependency files.
+Ordinary builds retain both dependency bootstraps, including with `NODEP=1`.
 
 Project names and fingerprints are not save-compatibility authorities.
 Projects must explicitly select an appropriate compatibility epoch when their
@@ -283,7 +300,8 @@ project outputs and fixtures. They do not modify the contributor's index.
 
    ```sh
    python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests -v
-   python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_idspace_active.ActiveContractModelTests -v
+   python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_idspace_active.ActiveContractModelTests scripts.generated_data.tests.test_manifest.CollectEntriesTests -v
+   python3 -m unittest scripts.workflow_pilot.tests.test_project_subjects -v
    python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
    ```
 
@@ -292,6 +310,10 @@ project outputs and fixtures. They do not modify the contributor's index.
    table returns byte-identically. The configured alternate profile selects
    16 MiB; changing back to default does not retain its profile name.
    The primary profile selects 32 MiB and its own title.
+   The shared selected manifest reports three supports instead of the default
+   33; explicit legacy overrides and a subsequent default remain correct.
+   English-only standalone translation work creates no translated outputs;
+   explicit JA works, while unsupported or required-but-empty scopes reject.
 
 3. Observe real output consumption: ARM-compiled and relocatably linked code
    occupies its original logical slot; selected font bytes reach its ARM data

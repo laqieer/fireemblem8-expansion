@@ -10,6 +10,7 @@ import sys
 from unittest.mock import patch
 
 from scripts.workflow_pilot.tests.test_review_subjects import SubjectTestCase
+from scripts.workflow_pilot.tests.test_project_subjects import ProjectSubjectTests
 from scripts.workflow_pilot.tests.review_support import ENV, ROOT
 
 

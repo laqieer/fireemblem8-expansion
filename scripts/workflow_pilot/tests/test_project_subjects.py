@@ -1,11 +1,19 @@
 """Actual project declaration predicates through captured production sources."""
 
+import ast
+import os
 import shutil
 import subprocess
 import unittest
 
 from scripts.workflow_pilot.tests.review_support import ENV, ROOT, git, request, snapshot
 from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
+
+
+ARM_TOOLS_AVAILABLE = all(
+    shutil.which(os.environ.get(key, "arm-none-eabi-" + tool))
+    for key, tool in (("MODERN_CC", "gcc"), ("MODERN_NM", "nm"), ("MODERN_SIZE", "size"))
+)
 
 
 class ProjectSubjectTests(unittest.TestCase):
@@ -52,6 +60,7 @@ class ProjectSubjectTests(unittest.TestCase):
         )
         self.assertTrue(all(item.kind == "host" and item.checks > 0 for item in observed))
 
+    @unittest.skipUnless(ARM_TOOLS_AVAILABLE, "mandatory positives run in the modern ARM lane")
     def test_project_resources_compile_actual_enabled_and_default_identity(self):
         path = "src/expansion_metadata.c"
         original = (self.repo.root / path).read_text()
@@ -88,6 +97,57 @@ class ProjectSubjectTests(unittest.TestCase):
         self.assertTrue(all(item.verdict == "satisfied" and item.kind == "arm-object"
                             and item.checks > 0 for item in repaired))
 
+    def test_resource_shared_setup_failure_retains_the_arm_evidence_kind(self):
+        path = "scripts/modernize/expansion_config.py"
+        original = (self.repo.root / path).read_text()
+        function = next(node for node in ast.parse(original).body
+                        if isinstance(node, ast.FunctionDef)
+                        and node.name == "load_project_selection")
+        lines = original.splitlines(True)
+        lines.insert(function.body[0].lineno - 1,
+                     '    raise FileNotFoundError("controlled unavailable shared frontend")\n')
+        head = self.repo.commit({path: "".join(lines)})
+        members = tuple(item for item in self.tools.members(self.scope(head))
+                        if item.family == "resource")
+        observed = self.tools.run_obligations(members, head)
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(item.kind == "arm-object" and item.verdict == "unavailable"
+                            and item.checks == 0 for item in observed))
+
+    def test_missing_arm_project_backend_records_unavailable_not_positive_evidence(self):
+        missing = self.repo.root / "build/uninstalled-arm-compiler"
+        tools = ReviewTools(GitTree(self.repo.root, self.repo.base), self.repo.root,
+                            arm_tools={"MODERN_CC": str(missing)})
+        members = tuple(item for item in tools.members(self.scope()) if item.family == "resource")
+        observed = tools.run_obligations(members, self.repo.base)
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(item.kind == "arm-object" and item.verdict == "unavailable"
+                            and item.checks == 0 for item in observed))
+
+    @unittest.skipUnless(ARM_TOOLS_AVAILABLE, "mandatory positives run in the modern ARM lane")
+    def test_selected_manifest_and_empty_locale_paths_use_their_real_predicates(self):
+        for path, family, role, fixed, faulty in (
+            ("scripts/generated_data/manifest.py", "generated", "outputs",
+             "or inputs.source(schema)", "or schema.default_source"),
+            ("game_localization.mk", "lifecycle", "terminals",
+             "ifeq ($(strip $(GAME_LOCALIZATION_NO_TRANSLATION_PROJECT)),1)", "ifeq (0,1)"),
+        ):
+            with self.subTest(path=path):
+                current = (self.repo.root / path).read_bytes()
+                old = current.replace(fixed.encode(), faulty.encode())
+                self.assertNotEqual(current, old)
+                before = self.repo.commit({path: old})
+                after = self.repo.commit({path: current}, parent=before)
+                members = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                                if item.family == family)
+                broken = self.tools.run_obligations(members, before)
+                self.assertEqual([(item.verdict, item.checks) for item in broken
+                                  if item.obligation.role == role], [("contract-violation", 1)])
+                repaired = self.tools.run_obligations(members, after)
+                self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
+                                    for item in repaired))
+
+    @unittest.skipUnless(ARM_TOOLS_AVAILABLE, "mandatory positives run in the modern ARM lane")
     def test_project_generated_family_consumes_all_selected_schema_artifacts(self):
         members = tuple(item for item in self.tools.members(self.scope())
                         if item.family == "generated")
@@ -114,6 +174,7 @@ class ProjectSubjectTests(unittest.TestCase):
         repaired = self.tools.run_obligations(family, after)
         self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0 for item in repaired))
 
+    @unittest.skipUnless(ARM_TOOLS_AVAILABLE, "mandatory positives run in the modern ARM lane")
     def test_project_generated_consumer_compiles_the_cli_published_artifact(self):
         path = "scripts/generated_data/cli.py"
         original = (self.repo.root / path).read_text()

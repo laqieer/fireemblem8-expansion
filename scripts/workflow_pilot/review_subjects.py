@@ -619,7 +619,6 @@ def _authored_case(probe):
             "detail": "parsed canonical tester format/member contract; not locale or ROM behavior"}
 
 
-@probe_result("host")
 def _project(probe):
     from scripts.modernize import expansion_config as config
     from scripts.generated_data import registry
@@ -867,6 +866,22 @@ def _project(probe):
                    for path in output.iterdir()} == saved,
                   "unchanged recovery rewrote valid metadata")
             checks += 6
+            result = run_process([
+                "make", "--no-print-directory", "-s", "NODEP=1",
+                "FE8_PROJECT=" + project.name, "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                "PYTHON=" + sys.executable, "PYTHON3=" + sys.executable,
+                "game-localization-validate", "game-localization-generate",
+                "game-localization-check", "game-localization-width-check",
+                "game-localization-leakage-audit", "game-localization-leakage-check",
+                "game-localization-budget",
+            ], cwd=root, env=os.environ.copy(), timeout=60, new_session=False)
+            check(result.returncode == 0,
+                  "valid English-only standalone locale work failed: "
+                  + result.stderr.decode(errors="replace")[-1500:])
+            check(not (root / "build/projects" / project.name
+                       / "probe/debug/aapcs/generated/game-localization").exists(),
+                  "English-only standalone work generated translated payloads")
+            checks += 2
         else:
             raise review.ReviewError("unknown direct project lifecycle probe")
     elif role == "actions":
@@ -922,8 +937,6 @@ def _project(probe):
             "detail": "real project declaration/identity functions executed; no compiler/ROM claim"}
 
 
-@probe_result("host")
-@probe_result("arm-object")
 def _project_resources(role, root, project):
     from scripts.modernize import expansion_config as config
     from scripts.modernize.verify_rom_header import (
@@ -1159,6 +1172,22 @@ def _project_generated(role, root, project, modules, declare):
             checks += 2
         else:
             raise review.ReviewError("unknown direct project generated probe")
+    if role == "outputs":
+        from scripts.generated_data import manifest
+        schema = registry.REGISTRY.resolve("supports")
+        payload = json.loads(Path(schema.default_source).read_bytes())
+        review.require(len(payload["records"]) > 3, "manifest source control needs distinct counts")
+        payload["records"] = payload["records"][:3]
+        source = project / "manifest-supports.json"
+        source.write_text(json.dumps(payload))
+        shared = SchemaInputs({"supports": str(source.relative_to(root))})
+        rows = {entry.name: entry for entry in manifest.collect_entries(inputs=shared)}
+        check(rows["supports"].record_count == 3,
+              "public manifest ignored the shared selected source context")
+        defaults = {entry.name: entry for entry in manifest.collect_entries()}
+        check(defaults["supports"].record_count > 3,
+              "selected manifest source leaked into a later default call")
+        checks += 2
     check(all(Path(path).read_bytes() == content for path, content in committed.items()),
           "selected generation changed a committed framework inventory")
     return {
@@ -1402,7 +1431,8 @@ def run_probe(probe: str) -> dict:
         return _authored_case(probe)
     if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:",
                          "project-resource:")):
-        return _project(probe)
+        kind = "arm-object" if probe.startswith("project-resource:") else "host"
+        return probe_result(kind)(_project)(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")

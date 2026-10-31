@@ -68,7 +68,7 @@ def collect_entries(source_overrides=None, inputs=None):
     entries = []
     for name in REGISTRY.all_names():
         schema = inputs.resolve(name)
-        source_path = source_overrides.get(name) or schema.default_source
+        source_path = source_overrides.get(name) or inputs.source(schema)
         if not source_path:
             raise GeneratedDataError(
                 "table '{}' has no default_source; cannot build manifest".format(name)
