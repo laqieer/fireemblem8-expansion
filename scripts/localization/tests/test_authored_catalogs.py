@@ -1,14 +1,21 @@
 import hashlib
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.localization.game_locales.authored import (
     AUTHORED_CATALOG_KIND,
     AUTHORED_SHARD_KIND,
+    AuthoredCatalogError,
     build_authored_catalogs,
     canonical_json_bytes,
+    check_authored_catalogs,
     normalize_authored_shard,
 )
 
@@ -159,6 +166,68 @@ class AuthoredCatalogMergeTests(unittest.TestCase):
             normalized["translations"][0]["key"],
             queue_row["suggested_key"],
         )
+
+
+class AuthoredCatalogScopeTests(unittest.TestCase):
+    def test_scoped_builds_match_committed_catalogs_and_default_scope_is_unchanged(self):
+        complete = build_authored_catalogs(ROOT)
+        self.assertEqual(set(complete), set(LOCALES))
+        for locale in LOCALES:
+            with self.subTest(locale=locale):
+                selected = build_authored_catalogs(ROOT, locales=(locale,))
+                self.assertEqual(set(selected), {locale})
+                self.assertEqual(selected[locale], complete[locale])
+                self.assertEqual(
+                    canonical_json_bytes(selected[locale]),
+                    (AUTHORED_DIR / f"catalog.{locale}.json").read_bytes(),
+                )
+                checked = check_authored_catalogs(ROOT, locales=(locale,))
+                self.assertEqual(checked, {locale: AUTHORED_DIR / f"catalog.{locale}.json"})
+
+    def test_stale_requested_catalog_rejects_without_requiring_the_unrequested_catalog(self):
+        parent = ROOT / "build/test-artifacts"
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="authored-scope-", dir=parent) as directory:
+            stage = Path(directory) / "source"
+            stage.mkdir()
+            for name in ("texts", "src", "include"):
+                shutil.copytree(ROOT / name, stage / name)
+            environment = {
+                "PATH": os.environ.get("PATH", os.defpath),
+                "GIT_WORK_TREE": str(stage),
+                "GIT_INDEX_FILE": str(Path(directory) / "fixture.index"),
+                "GIT_DIR": subprocess.check_output(
+                    ["git", "rev-parse", "--absolute-git-dir"], cwd=ROOT, text=True,
+                ).strip(),
+            }
+            subprocess.run(["git", "read-tree", "HEAD"], cwd=stage, env=environment, check=True)
+            with mock.patch.dict(os.environ, environment, clear=True):
+                for stale_locale in LOCALES:
+                    other = next(locale for locale in LOCALES if locale != stale_locale)
+                    catalog = stage / f"texts/locales/authored/catalog.{stale_locale}.json"
+                    previous = catalog.read_bytes()
+                    data = json.loads(previous)
+                    data["strings"]["game.chapter_event.msg_6a5"] = (
+                        "\u4e2d" + data["strings"]["game.chapter_event.msg_6a5"]
+                    )
+                    catalog.write_bytes(canonical_json_bytes(data))
+                    self.assertNotEqual(catalog.read_bytes(), previous)
+                    self.assertEqual(
+                        set(check_authored_catalogs(stage, locales=(other,))), {other}
+                    )
+                    with self.assertRaises(AuthoredCatalogError):
+                        check_authored_catalogs(stage, locales=(stale_locale,))
+                    with self.assertRaises(AuthoredCatalogError):
+                        check_authored_catalogs(stage)
+                    catalog.write_bytes(previous)
+
+    def test_invalid_scope_rejects_before_reading_catalog_inputs(self):
+        for locales in ((), ("ja", "ja"), ("en",), ("ja", "en"), "ja", None):
+            with self.subTest(locales=locales):
+                with self.assertRaises(AuthoredCatalogError):
+                    build_authored_catalogs(ROOT / "missing-inputs", locales=locales)
+                with self.assertRaises(AuthoredCatalogError):
+                    check_authored_catalogs(ROOT / "missing-inputs", locales=locales)
 
 
 if __name__ == "__main__":

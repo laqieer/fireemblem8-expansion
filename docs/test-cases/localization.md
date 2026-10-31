@@ -12,6 +12,102 @@ selection and rendering evidence is automated; linguistic quality and
 comparison of rendered CJK artwork to authorized regional artwork remain
 separate human judgments.
 
+## TC-LOCALIZATION-AUTHORED-SCOPE-001: Scope deterministic authored validation
+
+- **Feature / originating issue:** `full-game-localization` /
+  [#344](https://github.com/laqieer/fireemblem8-expansion/issues/344).
+- **Supported configuration or artifact:** host Python, explicit JA-only,
+  ZH-only, and unchanged default both-locale scope.
+- **Prerequisites and clean starting state:** run from the repository root
+  with Python and Git available and the existing committed manifest/source
+  inputs. Do not edit stock catalogs or the real Git index. The regression
+  creates its own ignored source fixture and alternate index.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.localization.tests.test_authored_catalogs -v`.
+2. Exercise the public read-only interface:
+
+   ```python
+   from pathlib import Path
+   from scripts.localization.game_locales.authored import check_authored_catalogs
+
+   check_authored_catalogs(Path.cwd(), locales=("ja",))
+   check_authored_catalogs(Path.cwd(), locales=("zh-Hans",))
+   check_authored_catalogs(Path.cwd())
+   ```
+
+3. In the isolated regression, observe each staged catalog's visible payload
+   changed in turn. Checking only the other locale succeeds; requesting the
+   changed locale, or using the default full scope, raises
+   `AuthoredCatalogError`. Empty, repeated, unknown and invalid scope values
+   reject before any missing source is read.
+4. Run `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.AuthoredCaseFamilyTests -v`
+   for the separate indexed-procedure source contract.
+
+### Expected result
+
+Scoped generated catalog content equals its committed default counterpart.
+The default still checks both JA/ZH catalogs and retains cross-locale key
+parity. Only the requested catalogs are returned or checked.
+
+### Negative control
+
+A stale unrequested catalog does not block the selected scope, but a stale
+requested catalog and the complete default scope both reject that drift.
+Invalid scopes reject before missing inputs are read. The default control
+therefore cannot silently suppress either locale's check.
+
+### Interactions and save compatibility
+
+Existing manifest, mapping, terminology, shard and generated-catalog contracts
+remain authoritative.
+There are no additional feature conflicts, runtime fields or save migrations.
+Default CLI/writer behavior is unchanged.
+
+### Automation
+
+`python3 -m unittest scripts.localization.tests.test_authored_catalogs -v`
+exercises the real builder/checker, parsed generated content and adversarial
+staged files. It does not infer behavior from comments or helper spelling.
+There is no subjective manual criterion in this host case.
+
+The procedure-source command checks the canonical case owner, retained nonempty template
+sections, the localization consumer's declared case-set equality and the
+authoritative guide link. The existing `ReviewTools` subject
+`authored-scope-case` is limited to those parsed public-format predicates.
+Its reviewed Markdown parser and real locale-case consumer function are fixed
+by the selected tool revision. The consumer receives only the captured literal
+candidate case-map data; candidate programs are never executed or interpreted
+as an assertion/dataflow language. Role-specific semantic
+inputs remain distinct from the existing worker staging union. These checks
+are not translated-content or native/ROM evidence; Git records source and
+history, not behavior. The real builder/checker controls above remain separate.
+
+Source-tool findings use the existing
+[`TC-WORKFLOW-REVIEW-FAMILY-001`](workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families)
+`authored-case-binding` subject, not unrelated catalog-data inputs. Its four
+generated-family roles execute the captured production `run_probe` against
+reviewed finite fixtures in a separate worker directory. Owner classification,
+the real selected consumer, every required section and the exact procedure
+anchor have actual source-origin/candidate controls. The tool-owned fixture
+closure never overwrites captured candidate catalog inputs, and a backend
+failure cannot become semantic repair evidence. This remains host evidence,
+not ROM or linguistic qualification.
+
+The anchor is checked as catalog content, not baked into member identity:
+a stale anchor rejects but can produce real repaired-origin evidence. The
+captured production model also exercises that repair through real Git trees.
+Equivalent consumer `read_text`/`read_bytes` calls and equality operand order
+do not change the captured literal case-map contract.
+
+### Cleanup and limitations
+
+Only the regression's owned temporary fixture/index are removed; stock files
+and the real index remain unchanged. No emulator, linguistic judgment or
+production glyph/resource acceptance is established by this host case.
+
 ## Issue #104 semantic evidence mapping
 
 Issue [#104](https://github.com/laqieer/fireemblem8-expansion/issues/104)
