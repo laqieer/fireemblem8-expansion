@@ -256,6 +256,34 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
             self.repo.base, self.repo.base)
         self.assert_satisfied(tools.run_obligations(tools.members(scope), self.repo.base))
 
+    def test_captured_fixture_producer_has_real_refactor_failure_and_repair(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        original = (self.repo.root / path).read_text()
+        broken = original + (
+            "\n_original_fixture = locale_case_program_fixture\n"
+            "def locale_case_program_fixture(raw, variant):\n"
+            "    if variant == 'reject':\n"
+            "        text = raw.decode()\n"
+            "        changed = text.replace("
+            "'set(features[feature_id][\"required_cases\"])', 'set()', 1)\n"
+            "        review.require(changed != text, 'unsupported fixture spelling')\n"
+            "        return changed.encode()\n"
+            "    return _original_fixture(raw, variant)\n"
+        )
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: original}, parent=before)
+        scope = request(
+            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+            self.repo.base, after)
+        members = self.tools.members(scope, (before,))
+        self.assert_satisfied(self.run_members(members, after))
+        observed = self.run_members(members, before)
+        consumer = next(item for item in observed
+                        if item.obligation.family == "wire"
+                        and item.obligation.role == "consumers")
+        self.assertEqual((consumer.verdict, consumer.checks), ("contract-violation", 1))
+        self.assertIn(path, consumer.obligation.inputs)
+
     def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
         path = "docs/test-cases/registry.json"
         original = (self.repo.root / path).read_text()
