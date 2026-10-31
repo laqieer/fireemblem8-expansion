@@ -901,7 +901,6 @@ def _parse_metadata_version_payload(
             or not (
                 body_original.materialized_at
                 == body_edit_created_at
-                == body_edit_updated_at
             )
         ):
             raise MetadataEditError(f"{label} original body materialization is invalid")
@@ -1863,7 +1862,7 @@ def _body_edit_version(
             original[2] != authored_at
             or (original[4], original[5]) != (author_id, author_login)
             or not (
-                original[1] == original[3] == latest[1] == latest[3]
+                original[1] == original[3] == latest[1]
             )
         ):
             raise MetadataEditError("original body snapshot authority is inconsistent")
@@ -4151,7 +4150,7 @@ def _transaction_metadata_run(
     state: PullRequestState,
     confirmation: EditConfirmation,
 ) -> RunState | None:
-    event_times = set()
+    event_times: set[str] | None = None
     for field in receipt.changed_fields:
         name = (
             "body_edit_edited_at" if field.field == "body"
@@ -4161,10 +4160,15 @@ def _transaction_metadata_run(
         edited = getattr(confirmation.metadata_version, name)
         if edited is None or (previous is not None and previous >= edited):
             return None
-        event_times.add(edited)
-    if len(event_times) != 1:
+        field_times = {edited}
+        if field.field == "body":
+            updated = confirmation.metadata_version.body_edit_updated_at
+            if updated is None:
+                return None
+            field_times.add(updated)
+        event_times = field_times if event_times is None else event_times & field_times
+    if not event_times:
         return None
-    event_updated_at = event_times.pop()
     candidates = [
         run
         for run in runs
@@ -4184,14 +4188,17 @@ def _transaction_metadata_run(
         if classifier.metadata_event_sha256 is None:
             unproven = True
             continue
-        expected = metadata_event.transition_digest(
-            state,
-            run_id=run.run_id, run_number=run.run_number, run_attempt=run.run_attempt,
-            updated_at=event_updated_at,
-            pre_fields=_receipt_pre_fields(receipt),
-            changed_fields=_changed_fields(receipt),
-        )
-        if classifier.metadata_event_sha256 == expected:
+        expected = {
+            metadata_event.transition_digest(
+                state,
+                run_id=run.run_id, run_number=run.run_number, run_attempt=run.run_attempt,
+                updated_at=instant,
+                pre_fields=_receipt_pre_fields(receipt),
+                changed_fields=_changed_fields(receipt),
+            )
+            for instant in event_times
+        }
+        if classifier.metadata_event_sha256 in expected:
             matching.append(run)
     if unproven:
         return None
