@@ -126,6 +126,11 @@ invocation-local and does not change cached default schemas.
 
 ### Full-game localization inputs
 
+GNU Make dry-run namespace inspection does not require the ARM compiler:
+`-n` avoids remaking compiler-generated header prescans or reading an
+unproduced packed-animation script. Real builds still perform both steps,
+including their existing `NODEP=1` bootstrap behavior.
+
 The existing full-game CLI remains the consumer. Its file options can be
 selected independently as `game-OPTION` modules:
 
