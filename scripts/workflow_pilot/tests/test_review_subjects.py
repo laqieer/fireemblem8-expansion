@@ -256,6 +256,39 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
             self.repo.base, self.repo.base)
         self.assert_satisfied(tools.run_obligations(tools.members(scope), self.repo.base))
 
+    def test_equivalent_keyword_binding_preserves_members_and_real_probes(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        original = (self.repo.root / path).read_text()
+        base_scope = request(
+            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+            self.repo.base, self.repo.base)
+        declaration = (
+            'SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case")'
+        )
+        for replacement in (
+            'SubjectSpec(model="authored-case", name="authored-scope-case", '
+            'case_id="TC-LOCALIZATION-AUTHORED-SCOPE-001")',
+            'SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", model="authored-case", '
+            'name="authored-scope-case")',
+        ):
+            with self.subTest(declaration=replacement):
+                changed = original.replace(declaration, replacement, 1)
+                self.assertNotEqual(original, changed)
+                head = self.repo.commit({path: changed})
+                members = self.tools.members({**base_scope, "candidate_sha": head})
+                self.assertEqual(members, self.tools.members(base_scope))
+                self.assert_satisfied(self.tools.run_obligations(members, head))
+        aliased = original.replace("BINDINGS = (", "ReviewSpec = SubjectSpec\nBINDINGS = (", 1)
+        aliased = aliased.replace(declaration, declaration.replace("SubjectSpec(", "ReviewSpec("), 1)
+        head = self.repo.commit({path: aliased})
+        members = self.tools.members({**base_scope, "candidate_sha": head})
+        self.assertEqual(members, self.tools.members(base_scope))
+        self.assert_satisfied(self.tools.run_obligations(members, head))
+        removed = original.replace("BINDINGS = (", "RETIRED_BINDINGS = (", 1)
+        head = self.repo.commit({path: removed})
+        with self.assertRaisesRegex(ValueError, "reviewed finite model"):
+            self.tools.members({**base_scope, "candidate_sha": head})
+
     def test_captured_fixture_producer_has_real_refactor_failure_and_repair(self):
         path = "scripts/workflow_pilot/review_subjects.py"
         original = (self.repo.root / path).read_text()
