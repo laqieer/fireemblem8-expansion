@@ -103,6 +103,25 @@ without fallbacks retain their existing report shape and counts.
 
 ## Runtime and build gating
 
+The focused selected-text native check is:
+
+```bash
+python3 -m unittest scripts.localization.game_catalog.tests.runtime.selected_text_native -v
+```
+
+It uses the supported ARM GCC/AAPCS toolchain and existing headless libmGBA
+backend. The debug linker-check gate runs it explicitly; the host-only
+localization discovery suite does not require an ARM toolchain. It freshly
+generates a three-message English/JA fixture, compiles the unchanged whole
+`asm/arm.s` and real message, item-name, locale and tokenizer consumers, and
+checks actual target RAM records. Controls, English fallback, locale switching,
+the retained `ItemData.nameTextId`, localized invalid IDs and a guarded
+four-byte decode destination are asserted. English-only output uses the real
+historical ARM decoder, not a stub. Temporary ROMs and objects are removed.
+This module-native check is not a supported full-game ROM profile, rendered
+page/glyph/portrait evidence, or production-content qualification; it does not
+call the historical English-only decoder with invalid IDs.
+
 English-only modern and archival builds do not generate or link this catalog.
 They retain the historical 4 KiB `MsgBuffer`, English `gMsgTable`, and ARM
 decoder path with zero modern English/CJK payload.

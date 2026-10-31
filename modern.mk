@@ -4834,6 +4834,10 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
+	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
+		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+		"$(PYTHON)" -m unittest \
+		scripts.localization.game_catalog.tests.runtime.selected_text_native -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \
