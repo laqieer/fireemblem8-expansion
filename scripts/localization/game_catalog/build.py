@@ -777,22 +777,27 @@ def _validate_final_catalog_payloads(
 ) -> Dict[str, int]:
     totals = Counter()
     max_talk_line_width = 0
+    validated_fallback_payload_count = 0
     for bundle in locale_bundles:
         try:
             talk_metrics = load_talk_font_metrics(bundle.locale)
         except ControlStreamError as error:
             raise GameCatalogError(str(error)) from error
         for entry in bundle.entries:
-            if entry.encoded_bytes is None:
-                continue
-            assert entry.control_domain is not None
+            payload = entry.encoded_bytes
+            control_domain = entry.control_domain
+            if payload is None:
+                payload = english_entries[entry.target_id].encoded_bytes
+                control_domain = CONTROL_DOMAIN_FE8U
+                validated_fallback_payload_count += 1
+            assert control_domain is not None
             try:
                 stats = validate_final_payload(
-                    entry.encoded_bytes,
+                    payload,
                     english_payload=english_entries[entry.target_id].encoded_bytes,
                     target_id=entry.target_id,
                     locale=bundle.locale,
-                    control_domain=entry.control_domain,
+                    control_domain=control_domain,
                     portrait_map=portrait_map,
                     talk_metrics=talk_metrics,
                 )
@@ -803,7 +808,7 @@ def _validate_final_catalog_payloads(
                 max_talk_line_width,
                 stats["max_talk_line_width"],
             )
-    return {
+    result = {
         "fe8u_mouth_topology_validated_payload_count": totals[
             "fe8u_mouth_topology_validated_payload_count"
         ],
@@ -814,6 +819,9 @@ def _validate_final_catalog_payloads(
         "talk_line_count": totals["talk_line_count"],
         "talk_payload_count": totals["talk_payload_count"],
     }
+    if validated_fallback_payload_count:
+        result["validated_fallback_payload_count"] = validated_fallback_payload_count
+    return result
 
 
 def _entry_report(meta: EntryPayloadMeta, entry) -> Dict[str, Any]:
@@ -1361,7 +1369,7 @@ def build_game_catalog(
             entry.encoded_bytes is not None
             for bundle in locale_bundles
             for entry in bundle.entries
-        ),
+        ) + final_payload_validation.get("validated_fallback_payload_count", 0),
     }
     if fixed_width_metrics is not None:
         report["fixed_width_labels"] = fixed_width_metrics

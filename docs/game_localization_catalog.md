@@ -95,6 +95,11 @@ stream tokenizer also rejects truncated extended controls and FIDs, FIDs that
 do not match the FE8U English target context, unmatched consecutive newlines,
 and localized `BreakTalk` counts incompatible with the statically modeled
 event `TEXTCONT` sequence.
+When a selected locale entry is absent, the same final control and portrait
+validation checks its effective English bytes without materializing a localized
+descriptor. Reports include those effective payloads in `validated_payload_count`
+and expose a nonzero `validated_fallback_payload_count` separately. Catalogs
+without fallbacks retain their existing report shape and counts.
 
 ## Runtime and build gating
 

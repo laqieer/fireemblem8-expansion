@@ -340,6 +340,32 @@ class FixtureBuildTests(unittest.TestCase):
                 ja_raw_expected_revision=None,
             )
 
+    def test_effective_english_fallback_cannot_hide_an_invalid_portrait_operand(self):
+        definitions = self.fixture_dir / "textdefs.txt"
+        with definitions.open("a", encoding="utf-8") as stream:
+            stream.write("[LoadFace] = 0x10\n[FID_REVIEW_INVALID] = 0xFE, 0xFF\n")
+        source = self.fixture_dir / "texts.txt"
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(
+                "English[TAB]two[AccentedE][X]",
+                "[LoadFace][FID_REVIEW_INVALID]Fallback[X]",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(GameCatalogError, "invalid FE8U FID"):
+            build_game_catalog(
+                english_texts_path=source,
+                english_definitions_path=definitions,
+                ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+                ja_raw_path=self.fixture_dir / "ja_raw.json",
+                zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
+                zh_raw_path=self.fixture_dir / "zh_raw.json",
+                mapping_path=self.fixture_dir / "mapping.json",
+                target_header_path=self.fixture_dir / "msg.h",
+                ja_raw_expected_repository=None,
+                ja_raw_expected_revision=None,
+            )
+
     def test_fixture_build_materializes_raw_providers_and_preserves_explicit_fallback(self):
         build = build_game_catalog(
             english_texts_path=self.fixture_dir / "texts.txt",
@@ -368,6 +394,9 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(ja.catalog.decode_entry(1), "生".encode("utf-8") + b"\x00")
         self.assertEqual(zh.catalog.decode_entry(1), "原始".encode("utf-8") + b"\x00")
         self.assertIsNone(zh.catalog.decode_entry(2))
+        validation = build.report["control_stream_validation"]
+        self.assertEqual(validation["validated_fallback_payload_count"], 2)
+        self.assertEqual(validation["validated_payload_count"], 6)
 
         report = build.report
         self.assertEqual(report["mapping_source_counts"]["indexed"], 1)
