@@ -94,7 +94,10 @@ unresolved mapping decisions, and codec round-trip mismatches. A bounded final
 stream tokenizer also rejects truncated extended controls and FIDs, FIDs that
 do not match the FE8U English target context, unmatched consecutive newlines,
 and localized `BreakTalk` counts incompatible with the statically modeled
-event `TEXTCONT` sequence.
+event `TEXTCONT` sequence. Continuation validation requires exactly one locale
+entry for every active English target, even when an event does not reference
+that target. An explicit absent entry still selects English fallback; a missing
+or extra entry is not an implicit fallback.
 When a selected locale entry is absent, the same final control and portrait
 validation checks its effective English bytes without materializing a localized
 descriptor. Reports include those effective payloads in `validated_payload_count`

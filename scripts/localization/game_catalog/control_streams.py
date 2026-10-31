@@ -857,6 +857,12 @@ def validate_event_continuations(
     localized_payloads: Mapping[str, Sequence[Optional[bytes]]],
     event_root: Path = DEFAULT_EVENT_ROOT,
 ) -> Dict[str, int]:
+    for locale, payloads in localized_payloads.items():
+        if len(payloads) != len(english_payloads):
+            raise ControlStreamError(
+                f"{locale}: final payload count {len(payloads)} != "
+                f"active English count {len(english_payloads)}"
+            )
     models = build_event_continuation_models(event_root)
     checked = 0
     for target_id, target_models in sorted(models.items()):

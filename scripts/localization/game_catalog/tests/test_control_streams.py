@@ -21,6 +21,7 @@ from scripts.localization.game_catalog.control_streams import (
     load_portrait_operand_map,
     tokenize_payload,
     validate_final_payload,
+    validate_event_continuations,
     validate_mouth_toggle_balance,
     validate_talk_line_widths,
 )
@@ -44,6 +45,35 @@ def break_talk_count(payload):
 
 def structural_sequence(text):
     return re.findall(r"\[[^\]\n]+\]|\n", text)
+
+
+class SelectedEventContinuationTests(unittest.TestCase):
+    def test_locale_payloads_cover_exactly_the_active_english_set(self):
+        english = (b"Zero\0", b"One\0", b"Two\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            (event_root / "selected.c").write_text(
+                "EventScr Selected[] = {\n"
+                "    TEXTSHOW(0x0001)\n"
+                "    ENDA\n"
+                "};\n"
+            )
+            for payloads in (english[:2], (*english, b"Extra\0")):
+                with self.subTest(payload_count=len(payloads)):
+                    with self.assertRaisesRegex(ControlStreamError, "active English"):
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": payloads},
+                            event_root=event_root,
+                        )
+            self.assertEqual(
+                validate_event_continuations(
+                    english_payloads=english,
+                    localized_payloads={"ja": (None, b"One\0", None)},
+                    event_root=event_root,
+                ),
+                {"modeled_target_count": 1, "model_count": 1},
+            )
 
 
 class FinalControlStreamTests(unittest.TestCase):
