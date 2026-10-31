@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata, reporter
@@ -7688,12 +7688,13 @@ class PullRequestMetadataTests(unittest.TestCase):
             "boolean-runner": {"runner_id": False},
             "boolean-group": {"runner_group_id": False},
             "assigned-zero": {"runner_name": "GitHub Actions 1"},
+            "nonzero-runner": {"runner_id": 1},
             "different-group": {"runner_group_id": 1},
+            "named-group": {"runner_group_name": "GitHub Actions"},
             "started-later": {"started_at": "2026-09-04T00:00:30Z"},
             "in-progress": {"status": "in_progress"},
             "successful": {
                 "status": "completed", "conclusion": "success",
-                "completed_at": "2026-09-04T00:00:30Z",
             },
         }
         for name, changes in variants.items():
@@ -7706,6 +7707,13 @@ class PullRequestMetadataTests(unittest.TestCase):
                     started_at=job["created_at"],
                 )
                 job.update(changes)
+                if name in ("in-progress", "successful"):
+                    start = datetime.fromisoformat(
+                        job["created_at"].replace("Z", "+00:00")) + timedelta(seconds=1)
+                    job["started_at"] = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if name == "successful":
+                        job["completed_at"] = (start + timedelta(seconds=1)).strftime(
+                            "%Y-%m-%dT%H:%M:%SZ")
                 _add_pr_states(client, _pr())
                 _add_snapshot(client, [(record, jobs)])
                 state = pr_metadata.fetch_pull_request(client, REPOSITORY, PR_NUMBER)

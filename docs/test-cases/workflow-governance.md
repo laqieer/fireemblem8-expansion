@@ -3314,6 +3314,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Before the fix, the same native shape rejects with a positive-runner-ID
    error. Boolean IDs, conflicting assigned/group identity, another start
    instant, in-progress and successful zero-runner claims must still reject.
+   Give those last two states valid later starts rather than creation-equal
+   placeholders, and vary positive runner IDs and nonempty group names.
    Existing assigned-runner and complete exact-head success controls remain.
 
 1. Run
