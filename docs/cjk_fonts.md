@@ -312,6 +312,9 @@ Python 3. No optional profile, emulator, ROM or manual judgment is required.
 Packed storage makes the raw Git diff intentionally opaque. To inspect actual
 changed `reason`/`styles` records after a refresh, set `BASE` to `HEAD` or an
 exact pre-refresh commit and compare its decoded index with the working tree:
+Each record is displayed on one line with its locale and ID, so any changed
+field remains identifiable without depending on diff context or JSON key order.
+Root and locale metadata are displayed separately without omitting fields.
 
 ```bash
 python3 - "$BASE" <<'PY'
@@ -332,7 +335,14 @@ path = "fonts/cjk/runtime_usage.json"
 before = decode_index(subprocess.check_output(["git", "show", f"{base}:{path}"]))
 after = decode_index(Path(path).read_bytes())
 def lines(value):
-    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").splitlines(True)
+    rows = [{key: item for key, item in value.items() if key != "locales"}]
+    for locale, usage in sorted(value["locales"].items()):
+        rows.append({
+            "locale": locale,
+            "metadata": {key: item for key, item in usage.items() if key != "records"},
+        })
+        rows.extend({"locale": locale, "record": record} for record in usage["records"])
+    return [json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows]
 sys.stdout.writelines(difflib.unified_diff(
     lines(before), lines(after), fromfile=f"{base}:{path}", tofile=f"working-tree:{path}",
 ))
