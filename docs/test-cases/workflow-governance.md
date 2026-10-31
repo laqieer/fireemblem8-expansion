@@ -3916,6 +3916,8 @@ is host-only delivery orchestration.
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
+  The bounded host-runtime repair is
+  [issue #356](https://github.com/laqieer/fireemblem8-expansion/issues/356).
 - **Supported configuration or artifact:** clean source checkout with Python
   3, Git, the immutable issue #176 fixture, and the versioned decision record;
   no GitHub token, live workflow, ROM, emulator, or game build is required.
@@ -4121,10 +4123,17 @@ outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
 five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
-allowlisted env, and steps, including master-only packaging; host,
-extended-host and legacy remain 60 minutes, while identity/router/classifier and summary remain 5;
+allowlisted env, and steps, including master-only packaging; both comprehensive
+host jobs also retain 90-minute ceilings and legacy remains 60 minutes,
+while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
+For the host-runtime regression, inspect the exact candidate and automatic
+master Build job annotations and require all eight jobs to complete. The
+pre-fix control is a one-hour deadline cancellation, not successful host
+evidence. The 90-minute job ceilings retain every command and all existing
+subprocess, memory and input bounds; parsed topology checks alone do not
+prove end-to-end runtime completion.
 Patch packaging and summary remain parsed structures: successful authenticated
 master-push-only steps, existing checked release output, expected commit/profile,
 the existing producer/verifier, private-input cleanup and pinned patch-only

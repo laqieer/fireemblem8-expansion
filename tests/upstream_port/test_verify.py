@@ -1769,7 +1769,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
-                timeout = "90" if job_name == "build" else "60"
+                timeout = "60" if job_name == "legacy" else "90"
                 job_mutations = {
                     "self-hosted": self.replace_in_job(
                         original,
