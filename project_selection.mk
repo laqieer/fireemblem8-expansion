@@ -8,7 +8,7 @@ FE8_PROJECT_DATA_MODULES := $(shell $(PYTHON) -c 'from scripts.generated_data im
 ifeq ($(strip $(FE8_PROJECT_DATA_MODULES)),)
 $(error cannot load the generated-data module registry)
 endif
-FE8_PROJECT_GAME_OPTIONS := mapping width-registry fixed-width-aliases eu-mapping ja-indexed ja-raw zh-indexed zh-raw latin-span-review unicode-script-review raw-closure
+FE8_PROJECT_GAME_OPTIONS := mapping width-registry fixed-width-aliases event-root eu-mapping ja-indexed ja-raw zh-indexed zh-raw latin-span-review unicode-script-review raw-closure
 FE8_PROJECT_GAME_CJK_LOCALES := ja zh-Hans
 FE8_PROJECT_GAME_EU_LOCALES := fr de es it
 FE8_PROJECT_GAME_MODULES := $(addprefix game-,$(FE8_PROJECT_GAME_OPTIONS)) \

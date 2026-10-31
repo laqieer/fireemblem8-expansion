@@ -48,6 +48,56 @@ def structural_sequence(text):
 
 
 class SelectedEventContinuationTests(unittest.TestCase):
+    def test_retained_event_ids_must_belong_to_the_active_set(self):
+        english = (b"Zero\0", b"One\0", b"Two\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind in ("TEXTSHOW", "WM_TEXT", "EvtTextShow2"):
+                with self.subTest(kind=kind):
+                    operands = "0x0003, 0" if kind == "WM_TEXT" else "0x0003"
+                    source.write_text(
+                        f"EventScr Selected[] = {{\n    {kind}({operands})\n    ENDA\n}};\n"
+                    )
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        )
+            for kind, operand in (
+                ("TEXTSHOW", "0xFFFF"), ("TEXTSHOW", "0x8000"),
+                ("EvtTextShow2", "0xFFFF"),
+            ):
+                with self.subTest(dynamic=(kind, operand)):
+                    source.write_text(
+                        f"EventScr Selected[] = {{\n    {kind}({operand})\n    ENDA\n}};\n"
+                    )
+                    self.assertEqual(
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        ),
+                        {"modeled_target_count": 0, "model_count": 1},
+                    )
+
+    def test_world_map_text_keeps_its_non_message_operand(self):
+        english = (b"Zero\0", b"One\0", b"Two\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            (event_root / "selected.c").write_text(
+                "EventScr Selected[] = {\n    WM_TEXT(0x0001, 0)\n    ENDA\n};\n"
+            )
+            self.assertEqual(
+                validate_event_continuations(
+                    english_payloads=english,
+                    localized_payloads={"ja": english},
+                    event_root=event_root,
+                ),
+                {"modeled_target_count": 1, "model_count": 1},
+            )
+
     def test_locale_payloads_cover_exactly_the_active_english_set(self):
         english = (b"Zero\0", b"One\0", b"Two\0")
         with tempfile.TemporaryDirectory() as directory:

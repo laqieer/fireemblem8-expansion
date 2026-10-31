@@ -31,6 +31,7 @@ from .build import (
     write_build,
 )
 from .constants import CJK_LOCALE_IDS, LOCALE_IDS
+from .control_streams import DEFAULT_EVENT_ROOT
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
     DEFAULT_REVIEW_PATH,
@@ -76,6 +77,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
+    parser.add_argument("--event-root", type=Path, default=DEFAULT_EVENT_ROOT)
     parser.add_argument("--eu-mapping", type=Path, default=DEFAULT_EU_MAPPING_PATH)
     parser.add_argument("--eu-indexed", action="append", metavar="LOCALE=PATH")
     parser.add_argument("--eu-authored", action="append", metavar="LOCALE=PATH")
@@ -179,6 +181,7 @@ def _build_from_args(args: argparse.Namespace):
         eu_indexed_paths=_locale_path_map(args.eu_indexed),
         eu_authored_paths=_locale_path_map(args.eu_authored),
         target_header_path=args.target_header,
+        event_root_path=args.event_root,
         width_registry_path=args.width_registry,
         fixed_width_aliases_path=args.fixed_width_aliases,
         authored_paths=authored_paths,

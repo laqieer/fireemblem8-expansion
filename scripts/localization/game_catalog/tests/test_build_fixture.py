@@ -10,6 +10,10 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_catalog.build import build_game_catalog
 from scripts.localization.game_catalog.model import GameCatalogError
+from scripts.localization.game_locales.width_contract import (
+    DEFAULT_WIDTH_REGISTRY_PATH,
+    load_width_registry,
+)
 
 
 class FixtureBuildTests(unittest.TestCase):
@@ -296,6 +300,7 @@ class FixtureBuildTests(unittest.TestCase):
                 zh_raw_path=self.fixture_dir / "zh_raw.json",
                 mapping_path=self.fixture_dir / "mapping.json",
                 target_header_path=header,
+                event_root_path=self.fixture_dir,
                 ja_raw_expected_repository=None,
                 ja_raw_expected_revision=None,
             )
@@ -314,6 +319,7 @@ class FixtureBuildTests(unittest.TestCase):
                 zh_raw_path=self.fixture_dir / "zh_raw.json",
                 mapping_path=self.fixture_dir / "mapping.json",
                 target_header_path=header,
+                event_root_path=self.fixture_dir,
                 ja_raw_expected_repository=None,
                 ja_raw_expected_revision=None,
             )
@@ -336,6 +342,7 @@ class FixtureBuildTests(unittest.TestCase):
                 zh_raw_path=self.fixture_dir / "zh_raw.json",
                 mapping_path=self.fixture_dir / "mapping.json",
                 target_header_path=self.fixture_dir / "msg.h",
+                event_root_path=self.fixture_dir,
                 ja_raw_expected_repository=None,
                 ja_raw_expected_revision=None,
             )
@@ -362,6 +369,7 @@ class FixtureBuildTests(unittest.TestCase):
                 zh_raw_path=self.fixture_dir / "zh_raw.json",
                 mapping_path=self.fixture_dir / "mapping.json",
                 target_header_path=self.fixture_dir / "msg.h",
+                event_root_path=self.fixture_dir,
                 ja_raw_expected_repository=None,
                 ja_raw_expected_revision=None,
             )
@@ -376,6 +384,7 @@ class FixtureBuildTests(unittest.TestCase):
             zh_raw_path=self.fixture_dir / "zh_raw.json",
             mapping_path=self.fixture_dir / "mapping.json",
             target_header_path=self.fixture_dir / "msg.h",
+            event_root_path=self.fixture_dir,
             ja_raw_expected_repository=None,
             ja_raw_expected_revision=None,
         )
@@ -407,6 +416,50 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["locales"]["ja"]["explicit_fallback_count"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["provider_counts"]["raw"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
+
+    def test_selected_events_drive_both_width_context_and_active_id_validation(self):
+        inputs = {
+            "english_texts_path": self.fixture_dir / "texts.txt",
+            "english_definitions_path": self.fixture_dir / "textdefs.txt",
+            "ja_indexed_path": self.fixture_dir / "ja_indexed.txt",
+            "ja_raw_path": self.fixture_dir / "ja_raw.json",
+            "zh_indexed_path": self.fixture_dir / "zh_indexed.txt",
+            "zh_raw_path": self.fixture_dir / "zh_raw.json",
+            "mapping_path": self.fixture_dir / "mapping.json",
+            "target_header_path": self.fixture_dir / "msg.h",
+            "event_root_path": self.fixture_dir,
+            "ja_raw_expected_repository": None,
+            "ja_raw_expected_revision": None,
+        }
+        source = self.fixture_dir / "selected.c"
+        source.write_text(
+            "EventScr Selected[] = {\n"
+            "    /* TEXTSHOW(MSG_RETIRED) */\n"
+            "    // TEXTSHOW(MSG_UNRESOLVED)\n"
+            "    TEXTSHOW(MSG_FIXTURE_ONE)\n    ENDA\n};\n"
+        )
+        build = build_game_catalog(**inputs)
+        self.assertEqual(build.report["control_stream_validation"]["modeled_target_count"], 1)
+        policy = load_width_registry(ROOT / DEFAULT_WIDTH_REGISTRY_PATH)
+        for locale in ("ja", "zh-Hans"):
+            record = next(
+                row for row in build.report["width_validation"][locale]["records"]
+                if row["target_id"] == "0x0001"
+            )
+            self.assertEqual(record["context"], policy.talk_context)
+        source.write_text(
+            "EventScr Selected[] = {\n    TEXTSHOW(0x0003)\n    ENDA\n};\n"
+        )
+        with self.assertRaisesRegex(GameCatalogError, "active English"):
+            build_game_catalog(**inputs)
+        source.write_text(
+            "EventScr Selected[] = {\n    TEXTSHOW(MSG_UNRESOLVED)\n    ENDA\n};\n"
+        )
+        with self.assertRaisesRegex(GameCatalogError, "unresolved event message"):
+            build_game_catalog(**inputs)
+        inputs["event_root_path"] = self.fixture_dir / "missing"
+        with self.assertRaisesRegex(GameCatalogError, "event source directory"):
+            build_game_catalog(**inputs)
 
     def test_committed_build_emits_verified_japanese_raw_literal(self):
         build = build_game_catalog()

@@ -77,7 +77,7 @@ PROJECT_SETTINGS = frozenset({
     "EXPANSION_DEFAULT_LOCALE", "EXPANSION_SAVE_COMPAT_EPOCH",
 })
 PROJECT_GAME_OPTIONS = frozenset({
-    "mapping", "width-registry", "fixed-width-aliases", "eu-mapping",
+    "mapping", "width-registry", "fixed-width-aliases", "event-root", "eu-mapping",
     "ja-indexed", "ja-raw", "zh-indexed", "zh-raw", "latin-span-review",
     "unicode-script-review", "raw-closure",
 })

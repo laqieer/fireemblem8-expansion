@@ -85,6 +85,7 @@ from .model import (
 from .control_streams import (
     CONTROL_DOMAIN_FE8J,
     CONTROL_DOMAIN_FE8U,
+    DEFAULT_EVENT_ROOT,
     ControlStreamError,
     load_talk_font_metrics,
     load_portrait_operand_map,
@@ -1131,6 +1132,7 @@ def build_game_catalog(
     authored_paths: Optional[Mapping[str, Path]] = None,
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
+    event_root_path: Path = DEFAULT_EVENT_ROOT,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
@@ -1144,6 +1146,10 @@ def build_game_catalog(
         target_count=target_count,
     )
     validate_english_source_header(english_entries, target_header_path)
+    message_ids = {
+        entry.definition: entry.target_id
+        for entry in english_entries if entry.definition is not None
+    }
     english_definitions = load_english_definitions(english_definitions_path)
     english_bundle = EnglishCatalogBundle(
         locale="en",
@@ -1251,6 +1257,8 @@ def build_game_catalog(
                     ),
                     registry=width_registry,
                     fallback_payloads=tuple(entry.encoded_bytes for entry in english_entries),
+                    event_root=event_root_path,
+                    message_ids=message_ids,
                 )
                 entries = tuple(
                     replace(entry, encoded_bytes=payload)
@@ -1265,7 +1273,7 @@ def build_game_catalog(
                 )
                 width_validation[bundle.locale] = validation
             locale_bundles = tuple(rewritten_bundles)
-        except TextWidthContractError as error:
+        except (TextWidthContractError, ControlStreamError) as error:
             raise GameCatalogError(str(error)) from error
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
     fixed_width_metrics = None
@@ -1321,6 +1329,8 @@ def build_game_catalog(
                 )
                 for bundle in locale_bundles
             },
+            event_root=event_root_path,
+            message_ids=message_ids,
         )
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error
@@ -1463,6 +1473,7 @@ def generate(
     eu_indexed_paths: Optional[Mapping[str, Path]] = None,
     eu_authored_paths: Optional[Mapping[str, Path]] = None,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
+    event_root_path: Path = DEFAULT_EVENT_ROOT,
     authored_paths: Optional[Mapping[str, Path]] = None,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
@@ -1479,6 +1490,7 @@ def generate(
         eu_indexed_paths=eu_indexed_paths,
         eu_authored_paths=eu_authored_paths,
         target_header_path=target_header_path,
+        event_root_path=event_root_path,
         authored_paths=authored_paths,
         enabled_locales=enabled_locales,
         suffix_share=suffix_share,

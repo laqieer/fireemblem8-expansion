@@ -105,12 +105,24 @@ class SelectedTextNativeTests(unittest.TestCase):
             "note": "Original native fixture; not a production translation claim.",
             "rows": rows,
         }), encoding="utf-8")
+        self.run_command([
+            sys.executable, "-B", "-m", "scripts.localization.game_catalog", "check-width",
+            "--english-texts", source / "texts.txt",
+            "--english-definitions", source / "textdefs.txt",
+            "--ja-indexed", source / "ja_indexed.txt",
+            "--mapping", source / "mapping.json",
+            "--target-header", generated / "selected_msg.h",
+            "--event-root", source,
+            "--authored", "ja=" + str(source / "authored.ja.json"),
+            "--enabled-locales", "ja",
+        ], cwd=ROOT)
         catalog = build_game_catalog(
             english_texts_path=source / "texts.txt",
             english_definitions_path=source / "textdefs.txt",
             ja_indexed_path=source / "ja_indexed.txt",
             mapping_path=source / "mapping.json",
             target_header_path=generated / "selected_msg.h",
+            event_root_path=source,
             authored_paths={"ja": source / "authored.ja.json"},
             enabled_locales=("ja",),
         )

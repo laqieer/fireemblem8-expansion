@@ -129,7 +129,7 @@ invocation-local and does not change cached default schemas.
 The existing full-game CLI remains the consumer. Its file options can be
 selected independently as `game-OPTION` modules:
 
-`mapping`, `width-registry`, `fixed-width-aliases`, `eu-mapping`, `ja-indexed`,
+`mapping`, `width-registry`, `fixed-width-aliases`, `event-root`, `eu-mapping`, `ja-indexed`,
 `ja-raw`, `zh-indexed`, `zh-raw`, `latin-span-review`,
 `unicode-script-review`, and `raw-closure`.
 
@@ -156,6 +156,17 @@ these input bindings are not a non-stock message-set or game qualification.
 An EU override does not disable inherited CJK shard/catalog validation.
 Explicit CJK replacements are independent: each retained JA/ZH catalog still
 receives its existing deterministic-merge check.
+
+`game-event-root` selects an existing directory of C/header event scripts;
+the inherited default is `src/events`. The same `--event-root` input drives
+dialogue-width classification and continuation validation. Message operands
+resolve through the already validated active source/header definitions, not
+stock allocations. A missing directory, unresolved symbol or ordinary
+out-of-range message rejects; reserved dynamic/current-text operands remain
+unmodeled, not certified as direct message IDs. The existing forced catalog
+generation observes edits below the directory without a new scan or ledger.
+This does not qualify indirect runtime IDs or replacement code/data/fonts/
+portraits; those remain separate semantic and target-runtime obligations.
 
 ## Outputs, identity and compatibility
 

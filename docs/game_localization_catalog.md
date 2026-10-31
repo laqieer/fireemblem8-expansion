@@ -104,6 +104,18 @@ descriptor. Reports include those effective payloads in `validated_payload_count
 and expose a nonzero `validated_fallback_payload_count` separately. Catalogs
 without fallbacks retain their existing report shape and counts.
 
+`build_game_catalog(event_root_path=...)`, `generate(event_root_path=...)`
+and CLI `--event-root` select the same existing event source directory for
+width classification and continuation validation; the default is `src/events`.
+Numeric and active source/header message symbols are resolved before checking
+the actual English allocation. Unknown symbols, missing roots and ordinary
+retired IDs reject rather than disappear from coverage. C comments are not
+event commands, and the world-map command's remaining operand is not a message ID.
+Reserved dynamic/current-text operands remain outside direct-ID coverage.
+Non-stock fixture catalogs must supply their owned event directory instead
+of borrowing unrelated stock events. This is not a competing event language
+or a qualification of arbitrary runtime-indirect message IDs.
+
 ## Runtime and build gating
 
 The focused selected-text native check is:
@@ -115,7 +127,8 @@ python3 -m unittest scripts.localization.game_catalog.tests.runtime.selected_tex
 It uses the supported ARM GCC/AAPCS toolchain and existing headless libmGBA
 backend. The debug linker-check gate runs it explicitly; the host-only
 localization discovery suite does not require an ARM toolchain. It freshly
-generates a three-message English/JA fixture, compiles the unchanged whole
+validates a three-message English/JA fixture through the real width-check CLI,
+generates it with the existing library writer, and compiles the unchanged whole
 `asm/arm.s` and real message, item-name, locale and tokenizer consumers, and
 checks actual target RAM records. Controls, English fallback, locale switching,
 the retained `ItemData.nameTextId`, localized invalid IDs and a guarded
@@ -124,6 +137,8 @@ historical ARM decoder, not a stub. Temporary ROMs and objects are removed.
 This module-native check is not a supported full-game ROM profile, rendered
 page/glyph/portrait evidence, or production-content qualification; it does not
 call the historical English-only decoder with invalid IDs.
+Its deliberately absent JA entry is not a production catalog: the production
+generation/leakage gate still rejects unmaterialized entries.
 
 English-only modern and archival builds do not generate or link this catalog.
 They retain the historical 4 KiB `MsgBuffer`, English `gMsgTable`, and ARM

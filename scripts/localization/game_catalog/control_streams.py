@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from scripts.generated_data.consumer_census import _strip_comments
 from scripts.localization.game_locales.ending_metrics import (
     EndingLayoutError,
     _ascii_widths,
@@ -45,7 +46,7 @@ _MOUTH_TOPOLOGY_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
 
 _MESSAGE_START_RE = re.compile(
     r"\b(?P<kind>TEXTSHOW|WM_TEXT|EvtTextShow2)\s*\(\s*"
-    r"(?P<target>0x[0-9A-Fa-f]+)"
+    r"(?P<target>[^,)\r\n]*)(?:,[^)\r\n]*)?\)"
 )
 _LABEL_RE = re.compile(r"^\s*LABEL\s*\(\s*(0x[0-9A-Fa-f]+|\d+)\s*\)")
 _GOTO_RE = re.compile(r"^\s*GOTO\s*\(\s*(0x[0-9A-Fa-f]+|\d+)\s*\)")
@@ -745,10 +746,12 @@ def validate_final_payload(
 
 
 def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[str]]]:
+    if not Path(event_root).is_dir():
+        raise ControlStreamError(f"{event_root}: event source directory is unavailable")
     for path in sorted(Path(event_root).rglob("*")):
         if path.suffix not in (".c", ".h") or not path.is_file():
             continue
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = _strip_comments(path.read_text(encoding="utf-8")).splitlines()
         current: Optional[List[str]] = None
         for line in lines:
             if current is None:
@@ -762,7 +765,11 @@ def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[str]]]:
             current.append(line)
 
 
-def _array_continuations(path: Path, lines: Sequence[str]) -> Iterable[EventContinuationModel]:
+def _array_continuations(
+    path: Path,
+    lines: Sequence[str],
+    message_ids: Mapping[str, int],
+) -> Iterable[EventContinuationModel]:
     labels = {}
     for index, line in enumerate(lines):
         match = _LABEL_RE.search(line)
@@ -793,7 +800,28 @@ def _array_continuations(path: Path, lines: Sequence[str]) -> Iterable[EventCont
         if message:
             if target_id is not None and start_kind is not None:
                 results.add((target_id, start_kind, continuations))
-            target_id = int(message.group("target"), 0)
+            operand = message.group("target").strip()
+            try:
+                target_id = int(operand, 0)
+            except ValueError:
+                if operand not in message_ids:
+                    raise ControlStreamError(
+                        f"{path}: unresolved event message {operand!r}"
+                    ) from None
+                target_id = message_ids[operand]
+            if (
+                message.group("kind") == "TEXTSHOW"
+                and isinstance(target_id, int)
+                and not isinstance(target_id, bool)
+                and -0x8000 <= target_id < 0
+            ):
+                target_id &= 0xFFFF
+            if (
+                not isinstance(target_id, int)
+                or isinstance(target_id, bool)
+                or not 0 <= target_id <= 0xFFFF
+            ):
+                raise ControlStreamError(f"{path}: invalid event message operand {operand!r}")
             start_kind = message.group("kind")
             continuations = 0
         elif re.search(r"\bTEXTCONT\b", line) and target_id is not None:
@@ -828,10 +856,14 @@ def _array_continuations(path: Path, lines: Sequence[str]) -> Iterable[EventCont
 
 def build_event_continuation_models(
     event_root: Path = DEFAULT_EVENT_ROOT,
+    *,
+    message_ids: Optional[Mapping[str, int]] = None,
 ) -> Mapping[int, Tuple[EventContinuationModel, ...]]:
     by_target: Dict[int, List[EventContinuationModel]] = {}
     for path, lines in _event_arrays(event_root):
-        for model in _array_continuations(path, lines):
+        for model in _array_continuations(
+            path, lines, {} if message_ids is None else message_ids
+        ):
             by_target.setdefault(model.target_id, []).append(model)
     return {
         target_id: tuple(
@@ -856,6 +888,7 @@ def validate_event_continuations(
     english_payloads: Sequence[bytes],
     localized_payloads: Mapping[str, Sequence[Optional[bytes]]],
     event_root: Path = DEFAULT_EVENT_ROOT,
+    message_ids: Optional[Mapping[str, int]] = None,
 ) -> Dict[str, int]:
     for locale, payloads in localized_payloads.items():
         if len(payloads) != len(english_payloads):
@@ -863,11 +896,20 @@ def validate_event_continuations(
                 f"{locale}: final payload count {len(payloads)} != "
                 f"active English count {len(english_payloads)}"
             )
-    models = build_event_continuation_models(event_root)
+    models = build_event_continuation_models(event_root, message_ids=message_ids)
     checked = 0
     for target_id, target_models in sorted(models.items()):
         if target_id >= len(english_payloads):
-            continue
+            if all(
+                (model.start_kind == "TEXTSHOW" and 0x8000 <= target_id <= 0xFFFF)
+                or (model.start_kind == "EvtTextShow2" and target_id == 0xFFFF)
+                for model in target_models
+            ):
+                continue
+            raise ControlStreamError(
+                f"event message 0x{target_id:04X} is outside the active English "
+                f"set of {len(english_payloads)} targets"
+            )
         english_tokens = tokenize_payload(
             english_payloads[target_id],
             source_name=f"English target 0x{target_id:04X}",
