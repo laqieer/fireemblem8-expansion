@@ -66,7 +66,6 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         super().setUpClass()
         for name in (
             "docs/test-cases/template.md", "docs/test-cases/localization.md",
-            "docs/game_localization_catalog.md",
             "scripts/check_docs.py",
             "tools/gba-playtest/tests/test_locale_tester_cases.py",
         ):
@@ -159,74 +158,16 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
              if item.verdict != "satisfied"],
             [("outputs:full-game-localization", "contract-violation")])
 
-    def test_equivalent_guide_uri_does_not_reject_the_correct_procedure(self):
+    def test_indexed_procedure_drift_is_independent_of_guide_rendering(self):
         catalog = json.loads((self.repo.root / "docs/test-cases/registry.json").read_text())
         feature = next(row for row in catalog["features"] if row["id"] == "full-game-localization")
-        path = feature["reference"]
-        original = (self.repo.root / path).read_text()
-        case = next(row for row in catalog["cases"]
-                    if row["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
-        target = "test-cases/localization.md#" + case["anchor"]
-        for equivalent in (
-            "./" + target,
-            "test-cases/../" + target,
-            target.replace("localization.md", "%6Cocalization.md"),
-        ):
-            with self.subTest(destination=equivalent):
-                changed = original.replace(target, equivalent)
-                self.assertNotEqual(original, changed)
-                head = self.repo.commit({path: changed})
-                self.assert_satisfied(self.run_members(self.tools.members(self.case_scope(head)), head))
-
-    def test_external_guide_uri_cannot_alias_the_internal_procedure(self):
-        catalog = json.loads((self.repo.root / "docs/test-cases/registry.json").read_text())
-        feature = next(row for row in catalog["features"] if row["id"] == "full-game-localization")
-        case = next(row for row in catalog["cases"]
-                    if row["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
-        path = feature["reference"]
-        original = (self.repo.root / path).read_text()
-        target = "test-cases/localization.md#" + case["anchor"]
-        changed = original.replace(target, "https://example.com/../../" + target)
-        self.assertNotEqual(original, changed)
-        head = self.repo.commit({path: changed})
-        observed = self.run_members(self.tools.members(self.case_scope(head)), head)
-        self.assertEqual([(item.obligation.member, item.verdict) for item in observed
-                          if item.verdict != "satisfied"],
-                         [("drift-checks:full-game-localization", "contract-violation")])
-
-    def test_reference_guide_links_resolve_only_actual_noncode_uses(self):
-        catalog = json.loads((self.repo.root / "docs/test-cases/registry.json").read_text())
-        feature = next(row for row in catalog["features"] if row["id"] == "full-game-localization")
-        case = next(row for row in catalog["cases"]
-                    if row["id"] == "TC-LOCALIZATION-AUTHORED-SCOPE-001")
-        path = feature["reference"]
-        target = "test-cases/localization.md#" + case["anchor"]
-        inline = f"[Procedure]({target})"
-        variants = [
-            (f"[Procedure][case]\n\n[case]: {target}\n", True),
-            (f"[Procedure][]\n\n[Procedure]: {target}\n", True),
-            (f"[Procedure][CASE]\n\n[case]: {target}\n", True),
-            (f'[Procedure][case]\n\n[case]: {target} "valid title"\n', True),
-            (f"[Procedure][]\n\n[Procedure]: {target} 'valid title'\n", True),
-            (f"[Procedure][case]\n\n[case]: {target} unquoted trailing junk\n", False),
-            (f"[Procedure][]\n\n[Procedure]: {target} unquoted trailing junk\n", False),
-            (f"[unused]: {target}\n", False),
-            (f"`{inline}`\n", False),
-            (f"``{inline}``\n", False),
-            (f"``a ` literal {inline}``\n", False),
-            (f"`\n{inline}\n`\n", False),
-            (f"`[Procedure][case]`\n\n[case]: {target}\n", False),
-        ]
-        for guide, navigable in variants:
+        for guide in ("", "`\n\n# unrelated block `\n", "[unused]: other.md\n"):
             with self.subTest(guide=guide):
-                head = self.repo.commit({path: guide})
-                observations = self.run_members(self.tools.members(self.case_scope(head)), head)
-                drift = next(item for item in observations
-                             if item.obligation.role == "drift-checks")
-                self.assertEqual(
-                    (drift.verdict, drift.checks),
-                    ("satisfied" if navigable else "contract-violation", 1),
-                )
+                head = self.repo.commit({feature["reference"]: guide})
+                members = self.tools.members(self.case_scope(head))
+                self.assert_satisfied(self.run_members(members, head))
+                drift = next(item for item in members if item.role == "drift-checks")
+                self.assertNotIn(feature["reference"], drift.inputs)
 
     def test_annotated_literal_metadata_preserves_both_consumer_call_sites(self):
         path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
