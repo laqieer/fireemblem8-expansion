@@ -77,12 +77,17 @@ def authored_case_declaration(raw):
 def locale_case_metadata(raw):
     declarations = []
     for item in ast.parse(raw).body:
-        if (isinstance(item, ast.Assign) and len(item.targets) == 1
-                and isinstance(item.targets[0], ast.Name)
+        if isinstance(item, ast.Assign) and len(item.targets) == 1:
+            target = item.targets[0]
+        elif isinstance(item, ast.AnnAssign):
+            target = item.target
+        else:
+            continue
+        if (isinstance(target, ast.Name)
                 and isinstance(item.value, ast.Dict)
                 and any(isinstance(key, ast.Constant) and key.value == AUTHORED_FEATURE
                         for key in item.value.keys)):
-            declarations.append((item.targets[0].id, ast.literal_eval(item.value)))
+            declarations.append((target.id, ast.literal_eval(item.value)))
     review.require(len(declarations) == 1, "unknown locale case metadata declaration")
     return declarations[0]
 
@@ -436,7 +441,7 @@ def _authored_case(probe):
             reference = check_docs.strip_fenced_blocks(Path(feature["reference"]).read_text())
             check((case["document"], case["anchor"]) in {
                 check_docs.internal_link_destination(feature["reference"], link)
-                for _, link in check_docs.extract_internal_link_targets(reference)
+                for _, link in check_docs.extract_markdown_link_uses(reference)
                 if not check_docs._is_external(link)
             },
                   "authoritative feature guide does not link to the authored procedure")
