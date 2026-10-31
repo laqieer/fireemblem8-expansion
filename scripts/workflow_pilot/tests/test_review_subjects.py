@@ -353,7 +353,7 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         with self.assertRaisesRegex(ValueError, "reviewed finite model"):
             self.tools.members({**base_scope, "candidate_sha": head})
 
-    def test_captured_fixture_producer_has_real_refactor_failure_and_repair(self):
+    def test_captured_fixture_model_rejection_keeps_unavailable_zero_credit(self):
         path = "scripts/workflow_pilot/review_subjects.py"
         original = (self.repo.root / path).read_text()
         broken = original + (
@@ -378,7 +378,7 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         consumer = next(item for item in observed
                         if item.obligation.family == "wire"
                         and item.obligation.role == "consumers")
-        self.assertEqual((consumer.verdict, consumer.checks), ("contract-violation", 1))
+        self.assertEqual((consumer.verdict, consumer.checks), ("unavailable", 0))
         self.assertIn(path, consumer.obligation.inputs)
 
     def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
@@ -411,23 +411,23 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 with self.assertRaisesRegex(ValueError, "reviewed finite model"):
                     self.tools.members(self.case_scope(head))
 
-    def test_tool_findings_have_real_captured_source_origin_and_candidate_evidence(self):
+    def test_captured_source_separates_contract_failures_from_unavailable_origins(self):
         path = "scripts/workflow_pilot/review_subjects.py"
         original = (self.repo.root / path).read_text()
         mutants = (
             (original.replace('indexed[name].get("automation")',
-                              'indexed[name]["automation"]', 1), "owners"),
+                              'indexed[name]["automation"]', 1), "owners", ("unavailable", 0)),
             (original.replace(
                 "consumer.test_registry_owns_the_eight_stable_localization_cases()",
-                "None", 1), "consumers"),
+                "None", 1), "consumers", ("contract-violation", 1)),
             (original.replace('case["anchor"] == anchors[start[0]]',
                               'case["anchor"] in check_docs.compute_heading_slugs(stripped)',
-                              1), "drift-checks"),
+                              1), "drift-checks", ("contract-violation", 1)),
             (original.replace('"reference": feature["reference"],',
                               '"anchor": case["anchor"], "reference": feature["reference"],',
-                              1), "drift-checks"),
+                              1), "drift-checks", ("contract-violation", 1)),
         )
-        for broken, role in mutants:
+        for broken, role, expected in mutants:
             with self.subTest(role=role):
                 self.assertNotEqual(broken, original)
                 before = self.repo.commit({path: broken})
@@ -440,7 +440,7 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 observed = self.run_members(members, before)
                 selected = next(item for item in observed if item.obligation.role == role)
                 self.assertEqual((selected.verdict, selected.checks),
-                                 ("contract-violation", 1), selected.detail)
+                                 expected, selected.detail)
                 self.assertIn(path, selected.obligation.inputs)
                 self.assertEqual(selected.source_objects[0][0], path)
 
@@ -461,6 +461,41 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
              for item in observed if item.verdict != "satisfied"],
             [("TC-LOCALIZATION-AUTHORED-SCOPE-001/authored-scope-case",
               "consumers:full-game-localization", "contract-violation")])
+
+    def test_each_counterexample_backend_failure_has_zero_semantic_credit(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        original = (self.repo.root / path).read_text()
+        cases = (
+            (
+                "owner-counterexample", "generated", "owners:authored-case-binding",
+                '    indexed = {item["id"]: item for item in catalog["cases"]}',
+                '\n    if role == "owners" and not AUTHORED_FEATURE_CASES <= set(indexed):'
+                '\n        raise RuntimeError("controlled owner backend failure")',
+            ),
+            (
+                "external-counterexample", "generated", "drift-checks:guide-destinations",
+                '            reference = check_docs.strip_fenced_blocks(Path(feature["reference"]).read_text())',
+                '\n            if "https://example.com/" in reference:'
+                '\n                raise RuntimeError("controlled external backend failure")',
+            ),
+            (
+                "equivalent-program", "wire", "consumers:fixture-program",
+                'def _authored_binding(probe):',
+                '\n    if "fixture_features" in (Path(BINDING_FIXTURE) / LOCALE_CASE_PROGRAM).read_text():'
+                '\n        raise RuntimeError("controlled equivalent-program backend failure")',
+            ),
+        )
+        for label, family, member, selector, injection in cases:
+            with self.subTest(case=label):
+                broken = original.replace(selector, selector + injection, 1)
+                self.assertNotEqual(original, broken)
+                head = self.repo.commit({path: broken})
+                scope = request("TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+                                self.repo.base, head)
+                members = tuple(item for item in self.tools.members(scope) if item.family == family)
+                observed = self.run_members(members, head)
+                failed = next(item for item in observed if item.obligation.member == member)
+                self.assertEqual((failed.verdict, failed.checks), ("unavailable", 0))
 
     def test_captured_tool_import_failure_cannot_receive_semantic_credit(self):
         path = "scripts/workflow_pilot/review_subjects.py"

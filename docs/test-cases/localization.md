@@ -96,6 +96,11 @@ anchor have actual source-origin/candidate controls. The tool-owned fixture
 closure never overwrites captured candidate catalog inputs, and a backend
 failure cannot become semantic repair evidence. This remains host evidence,
 not ROM or linguistic qualification.
+Availability is checked separately for every changed input, not inferred from
+the initial positive. A historical source that returns unavailable with zero
+checks remains unavailable; a later passing source does not turn it into
+affected/fixed evidence. Such an origin keeps the handoff blocked until the
+required real production evidence is available.
 
 Internal guide destinations use the documentation checker's shared path and
 fragment resolver. Equivalent `./`, parent-segment and percent-encoded paths
