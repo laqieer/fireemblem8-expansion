@@ -210,7 +210,7 @@ The public resolver carries project/profile as invocation context. The core
 `ExpansionIdentity` positional constructor remains unchanged; only selected
 metadata and fingerprint inputs include that context.
 
-The current review-family `project-selection` action, lifecycle, wire and generated slices
+The current review-family `project-selection` action, lifecycle, wire, generated and resource slices
 exercise the real declaration, identity and metadata CLI against the parsed
 schema-owner, setting and provider domain. They cover default/selected entry,
 default preservation, fresh profile resets and failed/recovered publication.
@@ -230,9 +230,15 @@ Their execution-only closure contains production Python plus the declared
 configuration/font slots; generated roles additionally stage the parsed
 event/schema/header/asset owners and three real capacity-source files, not
 candidate tests or an indiscriminate engine snapshot.
-Resource bindings remain incomplete; generated object observations are not
-target-ROM or supported-profile qualification and do not authorize the whole
-selector handoff or replace any final gate.
+Resource roles compile the existing embedded metadata translation unit with
+actual Make-resolved flags for default and selected debug/release AAPCS
+contexts. The normal ROM metadata verifier consumes the real record bytes;
+sized public symbols and allocated sections retain the fixed readonly
+record with no mutable-memory contribution. Compiler-resolved binutils,
+not an extra backend, extracts the object bytes. These bounded object
+observations are not full linked-ROM, overall ROM/RAM or supported-profile
+runtime qualification and do not authorize the whole selector handoff or
+replace any final gate.
 
 Project names and fingerprints are not save-compatibility authorities.
 Projects must explicitly select an appropriate compatibility epoch when their

@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import sys
 import types
 
@@ -373,6 +374,16 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                 (PROJECT_DECLARATION, PROJECT_REGISTRY, PROJECT_SCHEMA_INPUTS,
                  "scripts/generated_data/cli.py"),
                 evidence=("positive", "adversarial", "generated"))
+        for role in review.FAMILIES["resource"]:
+            add("resource", role, "compiled-context", "modern.mk:MODERN_CFLAGS",
+                "src/expansion_metadata.c:gExpansionMetadata",
+                "FE8_PROJECT profile and embedded ExpansionMetadata",
+                "real default/selected debug/release records and readonly/RAM contribution",
+                "project-resource:" + role,
+                (PROJECT_DECLARATION, "modern.mk", "src/expansion_metadata.c",
+                 "include/expansion_metadata.h"),
+                kind="arm-object", profile="debug-release-aapcs-" + role,
+                evidence=("compile", "default") if role == "disabled" else ("compile",))
         tool_paths = {
             REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py", AOE_DRIVER, AOE_DISABLED,
             "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
@@ -395,9 +406,16 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         })
         for asset in json.loads(tree.read("assets/manifest.json"))["assets"]:
             generated_inputs.update(asset["sources"])
+        resource_inputs = generated_inputs | {
+            "src/expansion_metadata.c", "Makefile",
+            "src/banim_data.c", "linker_script_banim.txt",
+            "graphics/banim/assets/img/banim_img_rules.mk",
+            *(path for path in tree.entries if "/" not in path and path.endswith(".mk")),
+        }
         result = [replace(
             member, execution_inputs=tuple(sorted(
-                set(closure) | (generated_inputs if member.family == "generated" else set())
+                set(closure) | (generated_inputs if member.family == "generated"
+                               else resource_inputs if member.family == "resource" else set())
             )),
         ) for member in result]
     elif spec.model == "authored-case":
@@ -665,6 +683,8 @@ def _project(probe):
     family, _, role = probe.partition(":")
     if family == "project-generated":
         return _project_generated(role, root, project, modules, declare)
+    if family == "project-resource":
+        return _project_resources(role, root, project)
     if family == "project-wire":
         fields = {
             "message_header": relative + "/selected-msg.h",
@@ -903,6 +923,69 @@ def _project(probe):
 
 
 @probe_result("host")
+@probe_result("arm-object")
+def _project_resources(role, root, project):
+    from scripts.modernize import expansion_config as config
+    from scripts.modernize.verify_rom_header import (
+        EXPANSION_METADATA_STRUCT, ExpansionMetadataError, verify_expansion_metadata,
+    )
+
+    selected = project.name if role == "enabled" else "default"
+    expected_size = (32 if role == "enabled" else 16) * 1024 * 1024
+    objcopy = command([os.environ["MODERN_CC"], "-print-prog-name=objcopy"]).decode().strip()
+    review.require(bool(objcopy), "selected ARM compiler did not resolve objcopy")
+    checks = 0
+    for preset in ("debug", "release"):
+        directory = root / "build/project-resources" / role / preset
+        directory.mkdir(parents=True, exist_ok=True)
+        recipe = "review-resource-flags:;@echo REVIEW_RESOURCE_FLAGS $(MODERN_CFLAGS)"
+        output = command([
+            "make", "--no-print-directory", "-n", "-s", "--eval=" + recipe,
+            "review-resource-flags", "expansion-modern-toolchain-check",
+            "FE8_PROJECT=" + selected, "MODERN_CONFIG=" + preset, "MODERN_ABI=aapcs",
+            "EXPANSION_BUILD_ID=abcdef12", "PYTHON=" + sys.executable,
+            "MODERN_CC=" + os.environ["MODERN_CC"],
+        ]).decode()
+        flags = [line for line in output.splitlines()
+                 if line.startswith("echo REVIEW_RESOURCE_FLAGS ")]
+        review.require(len(flags) == 1, "actual Make compiler flags are missing or ambiguous")
+        object_path, binary = directory / "metadata.o", directory / "metadata.bin"
+        command([
+            os.environ["MODERN_CC"], *shlex.split(flags[0])[2:],
+            "-c", "src/expansion_metadata.c", "-o", str(object_path),
+        ])
+        command([
+            objcopy, "-O", "binary", "--only-section=.rodata",
+            str(object_path), str(binary),
+        ])
+        expected = config.load_identity(
+            root / "config.mk", config_preset=preset, abi="aapcs", rom_size=None,
+            repo_root=root, build_id_override="abcdef12", project=selected,
+        )
+        try:
+            metadata = verify_expansion_metadata(binary.read_bytes(), expected.to_dict())
+        except ExpansionMetadataError as error:
+            raise ContractViolation("compiled project identity differs: " + str(error)) from error
+        check(metadata["rom_size_bytes"] == expected_size
+              and metadata["config_preset"] == preset and metadata["abi"] == "aapcs",
+              "compiled default/selected resource profile differs")
+        symbols = command([
+            os.environ["MODERN_NM"], "-S", "--defined-only", "--extern-only", str(object_path),
+        ]).decode().splitlines()
+        check(len(symbols) == 1 and symbols[0].split()[-1] == "gExpansionMetadata"
+              and int(symbols[0].split()[1], 16) == EXPANSION_METADATA_STRUCT.size,
+              "embedded metadata lost its public sized symbol")
+        sizes = command([os.environ["MODERN_SIZE"], "-B", str(object_path)]).decode().splitlines()
+        allocated = tuple(int(value) for value in sizes[-1].split()[:3])
+        check(allocated == (EXPANSION_METADATA_STRUCT.size, 0, 0),
+              "project identity changed its fixed readonly or mutable-memory contribution")
+        checks += 4
+    return {
+        "kind": "arm-object", "checks": checks,
+        "detail": "real Make/AAPCS debug/release embedded records and sections; not full ROM/RAM",
+    }
+
+
 def _project_generated(role, root, project, modules, declare):
     import shutil
     from scripts.generated_data import cli, idspace, registry
@@ -1300,6 +1383,7 @@ def run_probe(probe: str) -> dict:
         *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
         *("project-wire:" + role for role in review.FAMILIES["wire"]),
         *("project-generated:" + role for role in review.FAMILIES["generated"]),
+        *("project-resource:" + role for role in review.FAMILIES["resource"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -1316,7 +1400,8 @@ def run_probe(probe: str) -> dict:
         return _generated(probe)
     if probe.startswith("authored-case:"):
         return _authored_case(probe)
-    if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:")):
+    if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:",
+                         "project-resource:")):
         return _project(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
