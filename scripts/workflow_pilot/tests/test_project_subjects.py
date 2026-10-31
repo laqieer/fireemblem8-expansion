@@ -98,3 +98,27 @@ class ProjectSubjectTests(unittest.TestCase):
         head = self.repo.commit({path: wrong})
         with self.assertRaisesRegex(ValueError, "reviewed finite model"):
             self.tools.members(self.scope(head))
+
+    def test_project_wire_binds_and_replays_real_schema_invocations(self):
+        members = tuple(item for item in self.tools.members(self.scope())
+                        if item.family == "wire")
+        self.assertEqual({item.role for item in members},
+                         {"producers", "consumers", "validators", "replay", "stale-bindings"})
+        observed = self.tools.run_obligations(members, self.repo.base)
+        self.assertEqual([(item.obligation.member, item.verdict, item.detail)
+                          for item in observed if item.verdict != "satisfied"], [])
+        path = "scripts/generated_data/schema.py"
+        original = (self.repo.root / path).read_text()
+        changed = original.replace(
+            "schema.message_header = self.message_header", "schema.message_header = None", 1)
+        self.assertNotEqual(original, changed)
+        before = self.repo.commit({path: changed})
+        after = self.repo.commit({path: original}, parent=before)
+        members = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                        if item.family == "wire")
+        broken = self.tools.run_obligations(members, before)
+        consumer = next(item for item in broken if item.obligation.role == "consumers")
+        self.assertEqual((consumer.verdict, consumer.checks), ("contract-violation", 1))
+        repaired = self.tools.run_obligations(members, after)
+        self.assertEqual([(item.obligation.member, item.verdict, item.detail)
+                          for item in repaired if item.verdict != "satisfied"], [])

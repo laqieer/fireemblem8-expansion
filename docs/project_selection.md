@@ -205,13 +205,18 @@ The public resolver carries project/profile as invocation context. The core
 `ExpansionIdentity` positional constructor remains unchanged; only selected
 metadata and fingerprint inputs include that context.
 
-The current review-family `project-selection` action and lifecycle slices
+The current review-family `project-selection` action, lifecycle and wire slices
 exercise the real declaration, identity and metadata CLI against the parsed
 schema-owner, setting and provider domain. They cover default/selected entry,
 default preservation, fresh profile resets and failed/recovered publication.
+Wire checks consume actual serialized Make arguments, all registered schema
+contexts, malformed source selectors and replayed independent invocations.
+The item loader reads a real selected message header twice after its contents
+change, detecting stale or ignored bindings rather than checking only an
+attribute.
 Their execution-only closure contains production Python plus the declared
 configuration/font slots, not the whole asset/source tree or candidate tests.
-Remaining wire, generated and resource bindings are not yet complete; these
+Remaining generated and resource bindings are not yet complete; these
 development slices do not claim compiler/ROM evidence or authorize the whole
 selector handoff or replace any final gate.
 
