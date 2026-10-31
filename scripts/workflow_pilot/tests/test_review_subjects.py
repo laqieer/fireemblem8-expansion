@@ -257,6 +257,66 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 with self.assertRaisesRegex(ValueError, "reviewed finite model"):
                     self.tools.members(self.case_scope(head))
 
+    def test_tool_findings_have_real_captured_source_origin_and_candidate_evidence(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        original = (self.repo.root / path).read_text()
+        mutants = (
+            (original.replace('indexed[name].get("automation")',
+                              'indexed[name]["automation"]', 1), "owners"),
+            (original.replace(
+                "consumer.test_registry_owns_the_eight_stable_localization_cases()",
+                "None", 1), "consumers"),
+            (original.replace('case["anchor"] == anchors[start[0]]',
+                              'case["anchor"] in check_docs.compute_heading_slugs(stripped)',
+                              1), "drift-checks"),
+        )
+        for broken, role in mutants:
+            with self.subTest(role=role):
+                self.assertNotEqual(broken, original)
+                before = self.repo.commit({path: broken})
+                after = self.repo.commit({path: original}, parent=before)
+                scope = request(
+                    "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+                    self.repo.base, after)
+                members = self.tools.members(scope, (before,))
+                self.assert_satisfied(self.run_members(members, after))
+                observed = self.run_members(members, before)
+                selected = next(item for item in observed if item.obligation.role == role)
+                self.assertEqual((selected.verdict, selected.checks),
+                                 ("contract-violation", 1), selected.detail)
+                self.assertIn(path, selected.obligation.inputs)
+                self.assertEqual(selected.source_objects[0][0], path)
+
+    def test_tool_owned_fixtures_do_not_overwrite_mixed_candidate_inputs(self):
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        original = (self.repo.root / path).read_text()
+        stale = original.replace(
+            '        "TC-LOCALIZATION-AUTHORED-SCOPE-001",\n', "", 1)
+        head = self.repo.commit({path: stale})
+        scope = self.case_scope(head)
+        scope["subjects"].append({
+            "case_id": "TC-WORKFLOW-REVIEW-FAMILY-001",
+            "subject": "authored-case-binding",
+        })
+        observed = self.run_members(self.tools.members(scope), head)
+        self.assertEqual(
+            [(item.obligation.subject, item.obligation.member, item.verdict)
+             for item in observed if item.verdict != "satisfied"],
+            [("TC-LOCALIZATION-AUTHORED-SCOPE-001/authored-scope-case",
+              "consumers:full-game-localization", "contract-violation")])
+
+    def test_captured_tool_import_failure_cannot_receive_semantic_credit(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        original = (self.repo.root / path).read_text()
+        head = self.repo.commit({path: original + "\nraise ImportError\n"})
+        scope = request(
+            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+            self.repo.base, head)
+        observed = self.run_members(self.tools.members(scope), head)
+        self.assertTrue(observed)
+        self.assertEqual({(item.verdict, item.checks) for item in observed},
+                         {("unavailable", 0)})
+
 
 class SubjectTests(SubjectTestCase):
     @staticmethod

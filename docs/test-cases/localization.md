@@ -85,6 +85,17 @@ inputs remain distinct from the existing worker staging union. These checks
 are not translated-content or native/ROM evidence; Git records source and
 history, not behavior. The real builder/checker controls above remain separate.
 
+Source-tool findings use the existing
+[`TC-WORKFLOW-REVIEW-FAMILY-001`](workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families)
+`authored-case-binding` subject, not unrelated catalog-data inputs. Its four
+generated-family roles execute the captured production `run_probe` against
+reviewed finite fixtures in a separate worker directory. Owner classification,
+the real selected consumer, every required section and the exact procedure
+anchor have actual source-origin/candidate controls. The tool-owned fixture
+closure never overwrites captured candidate catalog inputs, and a backend
+failure cannot become semantic repair evidence. This remains host evidence,
+not ROM or linguistic qualification.
+
 ### Cleanup and limitations
 
 Only the regression's owned temporary fixture/index are removed; stock files

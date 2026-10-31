@@ -31,6 +31,7 @@ BINDINGS = (
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
+    SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding", "authored-binding"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -48,6 +49,9 @@ CASE_DOCUMENT = "docs/test-cases/localization.md"
 CASE_REFERENCE = "docs/game_localization_catalog.md"
 LOCALE_CASE_CONSUMER = "tools/gba-playtest/tests/test_locale_tester_cases.py"
 LOCALE_CASE_PROGRAM = "build/review-locale-case-consumer.py"
+BINDING_SOURCE = "scripts/workflow_pilot/review_subjects.py"
+BINDING_CAPTURE = "build/review-subject-binding.py"
+BINDING_FIXTURE = "build/authored-binding-fixture"
 AUTHORED_CASE_ID = "TC-LOCALIZATION-AUTHORED-SCOPE-001"
 AUTHORED_FEATURE = "full-game-localization"
 AUTHORED_FEATURE_CASES = frozenset({
@@ -238,6 +242,21 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         add("generated", "drift-checks", "eventlists", EVENT_SCHEMA + ":build_inventory",
             inventory, "committed generated inventory", "regenerate and compare",
             "generated-drift", inputs | {inventory}, kind="parsed", evidence=("positive", "generated"))
+    elif spec.model == "authored-binding":
+        declarations = [
+            item for item in ast.walk(ast.parse(tree.read(BINDING_SOURCE)))
+            if isinstance(item, ast.Call) and len(item.args) == 3
+            and all(isinstance(value, ast.Constant) for value in item.args)
+            and tuple(value.value for value in item.args) == (
+                AUTHORED_CASE_ID, "authored-scope-case", "authored-case")
+        ]
+        review.require(len(declarations) == 1,
+                       "unknown authored-case source selector needs a reviewed finite model")
+        for role in review.FAMILIES["generated"]:
+            add("generated", role, "authored-case-binding", BINDING_SOURCE + ":run_probe",
+                "reviewed closed fixture driver", "authored-case:" + role,
+                "real production verdicts for valid and adversarial captured inputs",
+                "authored-binding:" + role, (BINDING_SOURCE,), kind="host")
     elif spec.model == "authored-case":
         _, feature, case = authored_case_declaration(tree.read(CASE_REGISTRY))
         mapping = json.dumps({
@@ -443,6 +462,92 @@ def _authored_case(probe):
             raise review.ReviewError("unknown authored case probe")
     return {"kind": "parsed", "checks": 1,
             "detail": "parsed canonical tester format/member contract; not locale or ROM behavior"}
+
+
+@probe_result("host")
+def _authored_binding(probe):
+    module = types.ModuleType("captured_authored_case_binding")
+    module.__file__ = str(Path(BINDING_CAPTURE).resolve())
+    sys.modules[module.__name__] = module
+    exec(compile(Path(BINDING_CAPTURE).read_bytes(), BINDING_CAPTURE, "exec"), module.__dict__)
+    role = probe.partition(":")[2]
+    saved_root = Path.cwd()
+    fixture = Path(BINDING_FIXTURE).resolve()
+    paths = (CASE_REGISTRY, CASE_DOCUMENT, LOCALE_CASE_CONSUMER, LOCALE_CASE_PROGRAM)
+    saved = {path: (fixture / path).read_bytes() for path in paths}
+    checks = 0
+    os.chdir(fixture)
+    try:
+        baseline = module.run_probe("authored-case:" + role)
+        review.require(baseline["verdict"] != "unavailable",
+                       "captured production predicate backend unavailable")
+        check(baseline["verdict"] == "satisfied" and baseline["checks"] > 0,
+              "captured production predicate rejects the valid reviewed fixture")
+        checks += 1
+
+        def rejected():
+            observed = module.run_probe("authored-case:" + role)
+            check(observed["verdict"] == "contract-violation" and observed["checks"] > 0,
+                  "captured production predicate misclassifies its actual counterexample: "
+                  + repr(observed)[:1000])
+
+        if role == "owners":
+            for missing in ("record", "automation"):
+                catalog = json.loads(saved[CASE_REGISTRY])
+                sibling = next(item for item in catalog["cases"]
+                               if item["id"] == "TC-LOCALIZATION-003")
+                if missing == "record":
+                    catalog["cases"].remove(sibling)
+                else:
+                    sibling.pop("automation")
+                Path(CASE_REGISTRY).write_text(json.dumps(catalog))
+                rejected()
+                checks += 1
+        elif role == "consumers":
+            program = saved[LOCALE_CASE_PROGRAM].decode()
+            different = program.replace(
+                'set(features[feature_id]["required_cases"])', "set()", 1)
+            review.require(program != different, "reviewed consumer fixture model changed")
+            Path(LOCALE_CASE_PROGRAM).write_text(different)
+            rejected()
+            checks += 1
+            Path(LOCALE_CASE_PROGRAM).write_bytes(saved[LOCALE_CASE_PROGRAM])
+            source = ast.parse(saved[LOCALE_CASE_CONSUMER])
+            name, expected = locale_case_metadata(saved[LOCALE_CASE_CONSUMER])
+            expected["unknown-feature"] = set()
+            for item in source.body:
+                if (isinstance(item, ast.Assign) and len(item.targets) == 1
+                        and isinstance(item.targets[0], ast.Name)
+                        and item.targets[0].id == name):
+                    item.value = ast.parse(repr(expected), mode="eval").body
+            Path(LOCALE_CASE_CONSUMER).write_text(ast.unparse(source))
+            rejected()
+            checks += 1
+        elif role == "outputs":
+            document = saved[CASE_DOCUMENT].decode()
+            prefix, procedure = document.split("## " + AUTHORED_CASE_ID + ":", 1)
+            for heading in sorted(CASE_SECTIONS):
+                changed = procedure.replace("### " + heading, "**" + heading + "**", 1)
+                review.require(changed != procedure, "reviewed section fixture model changed")
+                Path(CASE_DOCUMENT).write_text(prefix + "## " + AUTHORED_CASE_ID + ":" + changed)
+                rejected()
+                checks += 1
+        elif role == "drift-checks":
+            catalog = json.loads(saved[CASE_REGISTRY])
+            case = next(item for item in catalog["cases"] if item["id"] == AUTHORED_CASE_ID)
+            case["anchor"] = (
+                "tc-localization-003-production-expansion-and-full-game-locale-catalogs")
+            Path(CASE_REGISTRY).write_text(json.dumps(catalog))
+            rejected()
+            checks += 1
+        else:
+            raise review.ReviewError("unknown captured binding probe")
+        return {"kind": "host", "checks": checks,
+                "detail": "captured production run_probe executed against reviewed finite fixtures"}
+    finally:
+        for path, raw in saved.items():
+            Path(path).write_bytes(raw)
+        os.chdir(saved_root)
 
 
 @probe_result("arm-object")
@@ -657,6 +762,7 @@ def run_probe(probe: str) -> dict:
         "aoe-reference:enabled", "aoe-reference:disabled", "aoe-arm:enabled", "aoe-arm:disabled",
         "generated-output", "generated-consumer", "generated-drift",
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
+        *("authored-binding:" + role for role in review.FAMILIES["generated"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -673,6 +779,8 @@ def run_probe(probe: str) -> dict:
         return _generated(probe)
     if probe.startswith("authored-case:"):
         return _authored_case(probe)
+    if probe.startswith("authored-binding:"):
+        return _authored_binding(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")
