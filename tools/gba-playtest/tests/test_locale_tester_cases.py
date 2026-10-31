@@ -37,6 +37,7 @@ FEATURE_CASES = {
     "full-game-localization": {
         "TC-LOCALIZATION-003",
         "TC-CJK-INVENTORY-ORDER-001",
+        "TC-LOCALIZATION-AUTHORED-SCOPE-001",
     },
     "locale-preference-persistence": {"TC-LOCALIZATION-004"},
     "localized-text-input-ui": {
