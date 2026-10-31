@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, replace
+import io
 import json
 import os
 from pathlib import Path
@@ -249,7 +251,7 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
     elif spec.model == "cjk-resource":
         paths = {
             CJK_CODEC, *CJK_INDEXES, "scripts/fonttools/cjk/package.py",
-            "scripts/fonttools/cjk/inventory.py",
+            "scripts/fonttools/cjk/inventory.py", "scripts/fonttools/cjk/cli.py",
         }
         closure = tuple(sorted(
             path for path in tree.entries if path.startswith("scripts/") and path.endswith(".py")
@@ -257,12 +259,18 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         ))
         for family in ("generated", "wire", "resource"):
             for role in review.FAMILIES[family]:
-                add(family, role, "resource-index", CJK_CODEC,
-                    "scripts/fonttools/cjk/package.py:_read_fehrr_lock",
+                producer = ("scripts/fonttools/cjk/package.py:write_resource_index"
+                            if family == "generated" and role == "outputs" else CJK_CODEC)
+                consumer = ("scripts/fonttools/cjk/cli.py:main"
+                            if family == "generated" and role == "consumers"
+                            else "scripts/fonttools/cjk/package.py:_read_fehrr_lock")
+                add(family, role, "resource-index", producer, consumer,
                     "plain JSON or version1 xz-base64 resource envelope",
                     "complete values, physical checksums, stream reuse and bounded rejection",
                     "cjk-resource:" + family + ":" + role, paths)
-        result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths)))
+        fixtures = {path for prefix in ("fonts/cjk", "graphics/fonts/cjk")
+                    for path in tree.under(prefix)}
+        result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths | fixtures)))
                   for member in result]
     elif spec.model == "authored-case":
         _, feature, case = authored_case_declaration(tree.read(CASE_REGISTRY))
@@ -583,9 +591,10 @@ def _cjk_resource(probe):
     import base64
     import hashlib
     import lzma
+    import shutil
     import struct
     import zlib
-    from scripts.fonttools.cjk import package, resource_index as codec
+    from scripts.fonttools.cjk import cli, package, resource_index as codec
 
     _, family, role = probe.split(":")
     checks = 0
@@ -625,6 +634,12 @@ def _cjk_resource(probe):
         verify(canonical(value) == canonical(expected), "complete typed resource values differ")
         return value
 
+    def owned_fonts(name):
+        root = Path("build") / name
+        for prefix in ("fonts/cjk", "graphics/fonts/cjk"):
+            shutil.copytree(prefix, root / prefix, dirs_exist_ok=True)
+        return root
+
     originals = [Path(path).read_bytes() for path in CJK_INDEXES]
     stocks = []
     for data in originals:
@@ -653,6 +668,28 @@ def _cjk_resource(probe):
                 verify(canonical(independent) == canonical(value), "packed output lost fields/types")
                 verify(codec.encode_index(value, packed=True) == stored,
                        "fresh same-encoder compression is not deterministic")
+            root = owned_fonts("review-resource-maintainer")
+            manifest = "graphics/fonts/cjk/manifest.json"
+            original_assets = {
+                asset[kind]["path"]: (root / asset[kind]["path"]).read_bytes()
+                for asset in json.loads((root / manifest).read_bytes())["assets"].values()
+                for kind in ("bitmap", "codepoints", "widths")
+            }
+            for packed in (False, True):
+                try:
+                    outputs = package.write_resource_index(root, "fehrr", packed=packed)
+                    package.check_compact_assets(root)
+                except (package.CjkFontError, codec.ResourceIndexError) as failure:
+                    raise ContractViolation("valid maintainer conversion was rejected") from failure
+                stored = (root / CJK_INDEXES[0]).read_bytes()
+                decoded(stored, stocks[0])
+                verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
+                       "actual maintainer ignored the requested representation")
+                verify(set(outputs) == {CJK_INDEXES[0], manifest}
+                       and all((root / path).read_bytes() == value for path, value in outputs.items())
+                       and all((root / path).read_bytes() == value
+                               for path, value in original_assets.items()),
+                       "actual conversion changed its output ownership or atlas bytes")
         elif role == "consumers":
             root = Path("build/review-resource-consumer")
             source = root / CJK_INDEXES[0]
@@ -669,6 +706,26 @@ def _cjk_resource(probe):
                 priority["sha256"] = "0" * 64
                 reject(lambda: package._read_fehrr_lock(root, {"fehrr_priority": priority}),
                        package.CjkFontError)
+            root = owned_fonts("review-resource-cli")
+            package.check_compact_assets(root)
+            broken = b"invalid index"
+            try:
+                codec.decode_index(broken)
+            except codec.ResourceIndexError as failure:
+                cause = str(failure)
+            else:
+                raise ContractViolation("codec accepted malformed diagnostic control")
+            (root / CJK_INDEXES[0]).write_bytes(broken)
+            before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+            errors = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                status = cli.main([
+                    "--root", str(root), "repack-index", "--index", "fehrr", "--format", "packed",
+                ])
+            verify(status == 1 and cause in errors.getvalue(),
+                   "actual schema2 CLI hid the codec diagnostic")
+            verify(all(path.read_bytes() == value for path, value in before.items()),
+                   "actual failed schema2 CLI changed an existing output")
         elif role == "drift-checks":
             alternate = canonical(envelope(plain, lzma.compress(plain, preset=0)))
             path.write_bytes(alternate)
