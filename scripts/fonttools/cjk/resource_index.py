@@ -6,8 +6,8 @@ import base64
 import binascii
 import json
 import lzma
+import math
 from pathlib import Path
-from typing import NoReturn
 
 
 MAX_INDEX_BYTES = 4 * 1024 * 1024
@@ -34,8 +34,11 @@ def _object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return value
 
 
-def _invalid_constant(value: str) -> NoReturn:
-    raise ResourceIndexError(f"non-JSON numeric constant: {value}")
+def _finite_number(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ResourceIndexError(f"non-finite resource index number: {value}")
+    return number
 
 
 def _json(data: bytes) -> dict[str, object]:
@@ -44,7 +47,7 @@ def _json(data: bytes) -> dict[str, object]:
     try:
         value = json.loads(
             data.decode("utf-8"), object_pairs_hook=_object,
-            parse_constant=_invalid_constant,
+            parse_float=_finite_number, parse_constant=_finite_number,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ResourceIndexError(f"invalid resource index JSON: {error}") from error
