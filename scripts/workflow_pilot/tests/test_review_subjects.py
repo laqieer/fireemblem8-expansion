@@ -236,6 +236,26 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
         consumer = next(item for item in observed if item.obligation.role == "consumers")
         self.assertEqual((consumer.verdict, consumer.checks), ("contract-violation", 1))
 
+    def test_selected_consumer_local_variable_rename_preserves_binding(self):
+        import ast
+
+        path = "tools/gba-playtest/tests/test_locale_tester_cases.py"
+        source = ast.parse((self.repo.root / path).read_text())
+
+        class RenameLocal(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id == "features":
+                    node.id = "registry_features"
+                return node
+
+        renamed = ast.unparse(RenameLocal().visit(source))
+        tool_revision = self.repo.commit({path: renamed})
+        tools = ReviewTools(GitTree(self.repo.root, tool_revision), self.repo.root)
+        scope = request(
+            "TC-WORKFLOW-REVIEW-FAMILY-001", "authored-case-binding",
+            self.repo.base, self.repo.base)
+        self.assert_satisfied(tools.run_obligations(tools.members(scope), self.repo.base))
+
     def test_existing_unrelated_anchor_does_not_bind_the_authored_procedure(self):
         path = "docs/test-cases/registry.json"
         original = (self.repo.root / path).read_text()
