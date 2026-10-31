@@ -52,6 +52,42 @@ class ProjectSubjectTests(unittest.TestCase):
         )
         self.assertTrue(all(item.kind == "host" and item.checks > 0 for item in observed))
 
+    def test_project_resources_compile_actual_enabled_and_default_identity(self):
+        path = "src/expansion_metadata.c"
+        original = (self.repo.root / path).read_text()
+        ignored = original.replace("FE8_EXPANSION_ROM_SIZE_BYTES,", "0x01000000,", 1)
+        self.assertNotEqual(original, ignored)
+        before = self.repo.commit({path: ignored})
+        after = self.repo.commit({path: original}, parent=before)
+        family = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                       if item.family == "resource")
+        self.assertEqual({item.role for item in family}, {"enabled", "disabled"})
+        broken = self.tools.run_obligations(family, before)
+        self.assertEqual([(item.verdict, item.checks) for item in broken
+                          if item.obligation.role == "enabled"],
+                         [("contract-violation", 1)],
+                         [(item.obligation.role, item.detail) for item in broken])
+        self.assertTrue(all(item.verdict == "satisfied" and item.kind == "arm-object"
+                            and item.checks > 0 for item in broken
+                            if item.obligation.role == "disabled"))
+        repaired = self.tools.run_obligations(family, after)
+        self.assertTrue(all(item.verdict == "satisfied" and item.kind == "arm-object"
+                            and item.checks > 0 for item in repaired))
+        allocated = original + (
+            '\nstatic int sReviewResourceState __attribute__((used, section("review_ram")));\n'
+        )
+        before = self.repo.commit({path: allocated})
+        after = self.repo.commit({path: original}, parent=before)
+        family = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                       if item.family == "resource")
+        broken = self.tools.run_obligations(family, before)
+        self.assertTrue(all(item.verdict == "contract-violation" and item.checks == 1
+                            for item in broken), [(item.obligation.role, item.detail)
+                                                 for item in broken])
+        repaired = self.tools.run_obligations(family, after)
+        self.assertTrue(all(item.verdict == "satisfied" and item.kind == "arm-object"
+                            and item.checks > 0 for item in repaired))
+
     def test_project_generated_family_consumes_all_selected_schema_artifacts(self):
         members = tuple(item for item in self.tools.members(self.scope())
                         if item.family == "generated")
