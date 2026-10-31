@@ -933,14 +933,8 @@ def _is_external(target):
     return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", target)) or target.startswith("mailto:")
 
 
-def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
-    """Resolve one non-external link target found in ``source_rel_path``.
-
-    Returns (ok: bool, message: str-or-None). ``heading_slug_cache`` maps a
-    repo-relative Markdown path to its ordered slug list (lazily filled in
-    by the caller) so cross-file anchor checks don't re-parse a file for
-    every incoming link.
-    """
+def internal_link_destination(source_rel_path, target):
+    """Return the normalized repository path and optional fragment of an internal URI."""
     if target.startswith("#"):
         path_part, anchor = "", target[1:]
         target_path = source_rel_path
@@ -952,6 +946,18 @@ def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
         path_part = urllib.parse.unquote(path_part)
         source_dir = os.path.dirname(source_rel_path)
         target_path = os.path.normpath(os.path.join(source_dir, path_part))
+    return target_path, anchor
+
+
+def resolve_internal_link(root, source_rel_path, target, heading_slug_cache):
+    """Resolve one non-external link target found in ``source_rel_path``.
+
+    Returns (ok: bool, message: str-or-None). ``heading_slug_cache`` maps a
+    repo-relative Markdown path to its ordered slug list (lazily filled in
+    by the caller) so cross-file anchor checks don't re-parse a file for
+    every incoming link.
+    """
+    target_path, anchor = internal_link_destination(source_rel_path, target)
 
     # Path-escape guard: never allow a resolved link to leave the repo root.
     abs_root = os.path.abspath(root)

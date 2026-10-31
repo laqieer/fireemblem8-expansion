@@ -469,6 +469,10 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                 "reviewed closed fixture driver", "authored-case:" + role,
                 "real production verdicts for valid and adversarial captured inputs",
                 "authored-binding:" + role, (BINDING_SOURCE,), kind="host")
+        add("generated", "drift-checks", "guide-destinations", BINDING_SOURCE + ":run_probe",
+            "reviewed guide destinations", "normalized internal document/fragment",
+            "equivalent URI forms resolve to the same actual procedure",
+            "authored-binding:guide-destinations", (BINDING_SOURCE,), kind="host")
         for role in review.FAMILIES["wire"]:
             add("wire", role, "fixture-program", BINDING_SOURCE + ":run_probe",
                 "reviewed fixture producer and consumer", "authored-binding:consumers",
@@ -678,10 +682,10 @@ def _authored_case(probe):
             check(case["anchor"] == anchors[start[0]],
                   "authored procedure anchor differs from canonical registry")
             reference = check_docs.strip_fenced_blocks(Path(feature["reference"]).read_text())
-            destination = os.path.relpath(case["document"], Path(feature["reference"]).parent)
-            target = destination + "#" + case["anchor"]
-            check(target in {link for _, link in
-                             check_docs.extract_internal_link_targets(reference)},
+            check((case["document"], case["anchor"]) in {
+                check_docs.internal_link_destination(feature["reference"], link)
+                for _, link in check_docs.extract_internal_link_targets(reference)
+            },
                   "authoritative feature guide does not link to the authored procedure")
         else:
             raise review.ReviewError("unknown authored case probe")
@@ -995,14 +999,16 @@ def _authored_binding(probe):
     sys.modules[module.__name__] = module
     exec(compile(Path(BINDING_CAPTURE).read_bytes(), BINDING_CAPTURE, "exec"), module.__dict__)
     role = probe.partition(":")[2]
+    production_role = "drift-checks" if role == "guide-destinations" else role
     saved_root = Path.cwd()
     fixture = Path(BINDING_FIXTURE).resolve()
-    paths = (CASE_REGISTRY, CASE_DOCUMENT, LOCALE_CASE_CONSUMER, LOCALE_CASE_PROGRAM)
+    paths = (CASE_REGISTRY, CASE_DOCUMENT, CASE_REFERENCE,
+             LOCALE_CASE_CONSUMER, LOCALE_CASE_PROGRAM)
     saved = {path: (fixture / path).read_bytes() for path in paths}
     checks = 0
     os.chdir(fixture)
     try:
-        baseline = module.run_probe("authored-case:" + role)
+        baseline = module.run_probe("authored-case:" + production_role)
         review.require(baseline["verdict"] != "unavailable",
                        "captured production predicate backend unavailable")
         check(baseline["verdict"] == "satisfied" and baseline["checks"] > 0,
@@ -1010,7 +1016,7 @@ def _authored_binding(probe):
         checks += 1
 
         def rejected():
-            observed = module.run_probe("authored-case:" + role)
+            observed = module.run_probe("authored-case:" + production_role)
             check(observed["verdict"] == "contract-violation" and observed["checks"] > 0,
                   "captured production predicate misclassifies its actual counterexample: "
                   + repr(observed)[:1000])
@@ -1053,6 +1059,27 @@ def _authored_binding(probe):
                 Path(CASE_DOCUMENT).write_text(prefix + "## " + AUTHORED_CASE_ID + ":" + changed)
                 rejected()
                 checks += 1
+        elif role == "guide-destinations":
+            catalog = json.loads(saved[CASE_REGISTRY])
+            case = next(item for item in catalog["cases"] if item["id"] == AUTHORED_CASE_ID)
+            feature = next(item for item in catalog["features"] if item["id"] == AUTHORED_FEATURE)
+            target = os.path.relpath(
+                case["document"], Path(feature["reference"]).parent) + "#" + case["anchor"]
+            reference = saved[CASE_REFERENCE].decode()
+            review.require(target in reference, "reviewed guide fixture lacks selected destination")
+            for equivalent in (
+                "./" + target,
+                str(Path(target.partition("#")[0]).parent) + "/../" + target,
+                target.replace("localization.md", "%6Cocalization.md"),
+            ):
+                Path(CASE_REFERENCE).write_text(reference.replace(target, equivalent))
+                observed = module.run_probe("authored-case:drift-checks")
+                review.require(observed["verdict"] != "unavailable",
+                               "equivalent guide URI backend unavailable")
+                check(observed["verdict"] == "satisfied",
+                      "captured production rejected an equivalent guide URI")
+                checks += 1
+            Path(CASE_REFERENCE).write_bytes(saved[CASE_REFERENCE])
         elif role == "drift-checks":
             catalog = json.loads(saved[CASE_REGISTRY])
             case = next(item for item in catalog["cases"] if item["id"] == AUTHORED_CASE_ID)
@@ -1405,6 +1432,7 @@ def run_probe(probe: str) -> dict:
         *("project:" + role for role in review.FAMILIES["action"]),
         *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
         *("project-wire:" + role for role in review.FAMILIES["wire"]),
+        "authored-binding:guide-destinations",
         *("authored-fixture:" + role for role in review.FAMILIES["wire"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
