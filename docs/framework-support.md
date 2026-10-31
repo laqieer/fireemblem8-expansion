@@ -113,6 +113,11 @@ host jobs retain 90-minute ceilings. The archival job retains 60 minutes;
 identity/router/classifier and summary retain 5 minutes.
 The same validation jobs run on candidates and master; only packaging/upload
 steps are master-only.
+The host-runtime repair's candidate and automatic-master job annotations are
+separate remote delivery evidence, outside the source-only pilot baseline
+procedure. Require all eight jobs to succeed: a one-hour deadline cancellation
+is not completed host evidence. Local parsed topology checks do not prove
+end-to-end CI completion.
 Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions
 there as community-reported, not CI-caught.

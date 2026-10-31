@@ -4749,7 +4749,6 @@ printf '%s\t%s\t%s\n' "$result" \
             "SP-only value separation",
             "exact owner numeric user ID",
             "24:00",
-            "one-second unassigned-skip timestamp exception",
             "Architecture disposition",
             "accepted in place",
             "Vary",

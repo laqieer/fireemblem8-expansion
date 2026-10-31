@@ -2535,6 +2535,17 @@ def _parse_job(
     runner_id = raw.get("runner_id")
     runner_group_id = raw.get("runner_group_id")
     runner_group_name = raw.get("runner_group_name")
+    # GitHub initializes these pending fields before assigning an actual runner.
+    if (
+        status in ACTIVE_RUN_STATUSES - {"in_progress"}
+        and runner_name == ""
+        and type(runner_id) is int and runner_id == 0
+        and type(runner_group_id) is int and runner_group_id == 0
+        and runner_group_name == ""
+    ):
+        runner_name = runner_id = runner_group_id = runner_group_name = None
+        if started_at == created_at:
+            started_at = None
     if runner_name is None:
         if (
             runner_id is not None
