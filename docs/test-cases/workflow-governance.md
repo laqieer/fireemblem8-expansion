@@ -3750,9 +3750,12 @@ newest exact full run must be canonical success, but the transaction metadata
 run additionally needs an immutable run-emitted webhook transition attestation.
 Explicit-same shape and a number above the watermark are only filters.
 The attested pre/target metadata and changed set must match the authenticated
-pair. The event metadata instant must match every changed native field's edit
-instant, with strictly earlier pre-versions; same-second repetition or
-disagreeing field instants remain unprovable. This is not a comparison with
+pair. Each changed field's logical edit must strictly advance its pre-version.
+The event metadata instant must belong to the intersection of exact native
+instants: a changed title's own event, and a changed body's confirmed
+`editedAt` or `updatedAt`. Different logical edit instants are permitted when
+those native sets intersect. Unprovable same-second order or an empty
+intersection still holds. This is not a comparison with
 Actions run or issue-comment clocks. The uniquely matching run need not be
 newer than a later full run. Its stable ID/number survives attempts; multiple
 distinct edit-attested metadata IDs are ambiguous and fail closed.
