@@ -164,6 +164,29 @@ def locale_case_metadata(raw):
     return declarations[0]
 
 
+def rejecting_locale_case_program(raw):
+    source = ast.parse(raw)
+    functions = [
+        function for owner in source.body
+        if isinstance(owner, ast.ClassDef) and owner.name == "LocaleTesterCaseSemanticTests"
+        for function in owner.body
+        if isinstance(function, ast.FunctionDef)
+        and function.name == "test_registry_owns_the_eight_stable_localization_cases"
+    ]
+    review.require(len(functions) == 1, "reviewed consumer selector changed")
+    predicates = [
+        node for node in ast.walk(functions[0])
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "assertEqual" and len(node.args) == 2
+    ]
+    review.require(bool(predicates), "reviewed consumer assertion model changed")
+    for node in predicates:
+        node.args[0] = ast.Call(
+            func=ast.Name(id="set", ctx=ast.Load()), args=[], keywords=[],
+        )
+    return ast.unparse(ast.fix_missing_locations(source)).encode()
+
+
 def event_validation_inputs(tree):
     shared = {path for prefix in ("include", "src/data", "scripts/generated_data")
               for path in tree.under(prefix)}
@@ -712,11 +735,8 @@ def _authored_binding(probe):
                 rejected()
                 checks += 1
         elif role == "consumers":
-            program = saved[LOCALE_CASE_PROGRAM].decode()
-            different = program.replace(
-                'set(features[feature_id]["required_cases"])', "set()", 1)
-            review.require(program != different, "reviewed consumer fixture model changed")
-            Path(LOCALE_CASE_PROGRAM).write_text(different)
+            Path(LOCALE_CASE_PROGRAM).write_bytes(
+                rejecting_locale_case_program(saved[LOCALE_CASE_PROGRAM]))
             rejected()
             checks += 1
             Path(LOCALE_CASE_PROGRAM).write_bytes(saved[LOCALE_CASE_PROGRAM])
