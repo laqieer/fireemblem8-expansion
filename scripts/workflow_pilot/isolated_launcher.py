@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import hashlib
 import multiprocessing
-from multiprocessing.connection import Connection
+from multiprocessing.connection import Connection, wait
 import re
 import subprocess
 import sys
@@ -66,6 +66,74 @@ def reporter_test_cases(suite: unittest.TestSuite):
             yield test
 
 
+class ReporterOutput:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+        self.pending = ""
+
+    def write(self, text: str) -> int:
+        self.pending += text
+        while "\n" in self.pending:
+            line, self.pending = self.pending.split("\n", 1)
+            self.connection.send(line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self.pending:
+            self.connection.send(self.pending)
+            self.pending = ""
+
+
+class ReporterResult(unittest.TextTestResult):
+    def __init__(self, *arguments, cases):
+        super().__init__(*arguments)
+        self.completed: set[str] = set()
+        self.fixture_skipped: set[str] = set()
+        self.cases = cases
+        self.active_index: int | None = None
+
+    def stopTest(self, test):
+        self.completed.add(test.id())
+        super().stopTest(test)
+
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        # unittest reports setup fixture skips as holders, without starting their cases.
+        if self.active_index is None:
+            return
+        cls = type(self.cases[self.active_index])
+        class_setup = test.id() == f"setUpClass ({cls.__module__}.{cls.__qualname__})"
+        module_setup = test.id() == f"setUpModule ({cls.__module__})"
+        if not class_setup and not module_setup:
+            return
+        # A later load_tests re-entry is a separate fixture invocation.
+        for case in self.cases[self.active_index:]:
+            if class_setup and type(case) is not cls:
+                break
+            if module_setup and type(case).__module__ != cls.__module__:
+                break
+            self.fixture_skipped.add(case.id())
+
+
+class ReporterSuite(unittest.TestSuite):
+    def __init__(self, cases):
+        self.active_result: ReporterResult | None = None
+        super().__init__(cases)
+
+    def run(self, result, debug=False):
+        self.active_result = result
+        try:
+            return super().run(result, debug)
+        finally:
+            self.active_result = None
+
+    def __iter__(self):
+        for index, case in enumerate(super().__iter__()):
+            if self.active_result is not None:
+                self.active_result.active_index = index
+            yield case
+
+
 def run_reporter_shard(
     test_ids: list[str], discovered_ids: list[str], completion: Connection,
 ) -> None:
@@ -85,11 +153,29 @@ def run_reporter_shard(
     if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != set(discovered_ids):
         raise ValueError("reporter child discovery differs from the assigned complete test set")
     by_id = {case.id(): case for case in cases}
-    suite = unittest.TestSuite(by_id[name] for name in test_ids)
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
-    completion.send((len(test_ids), result.wasSuccessful(), result.shouldStop))
+    assigned = [by_id[name] for name in test_ids]
+    suite = ReporterSuite(assigned)
+    output = ReporterOutput(completion)
+    result = unittest.TextTestRunner(
+        stream=output, verbosity=2,
+        resultclass=lambda *arguments: ReporterResult(*arguments, cases=assigned),
+    ).run(suite)
+    accounted = result.completed | result.fixture_skipped
+    complete = (
+        accounted == set(test_ids)
+        and not result.completed & result.fixture_skipped
+        and result.testsRun == len(result.completed)
+    )
+    if not complete:
+        output.write(
+            "incomplete reporter execution: "
+            f"ran={result.testsRun}, completed={len(result.completed)}, "
+            f"fixture-skipped={len(result.fixture_skipped)}, assigned={len(test_ids)}\n"
+        )
+    success = result.wasSuccessful() and complete
+    completion.send((len(accounted), success, result.shouldStop))
     completion.close()
-    raise SystemExit(0 if result.wasSuccessful() else 1)
+    raise SystemExit(0 if success else 1)
 
 
 def run_reporter_tests(arguments: list[str]) -> int:
@@ -123,14 +209,28 @@ def run_reporter_tests(arguments: list[str]) -> int:
                 workers.append((worker, receiving, sending, len(shard)))
                 worker.start()
                 sending.close()
+        pending = {receiving: worker for worker, receiving, _, _ in workers}
+        completions = {}
+        while pending:
+            for receiving in wait(pending):
+                try:
+                    message = receiving.recv()
+                except EOFError:
+                    del pending[receiving]
+                    continue
+                if isinstance(message, str):
+                    print(
+                        f"[reporter {pending[receiving].pid}] {message}",
+                        file=sys.stderr, flush=True,
+                    )
+                else:
+                    completions[receiving] = message
+                    del pending[receiving]
         for worker, _, _, _ in workers:
             worker.join()
         failed = False
         for worker, receiving, _, count in workers:
-            try:
-                completed = receiving.recv() if receiving.poll() else None
-            except EOFError:
-                completed = None
+            completed = completions.get(receiving)
             if worker.exitcode != 0 or completed != (count, True, False):
                 failed = True
                 print(

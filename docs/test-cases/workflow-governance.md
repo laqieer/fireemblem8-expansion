@@ -482,11 +482,17 @@ the consumers' independent protected-principal/deployment requirements.
    variables are absent. A singleton still runs. Workers rediscover and select
    the actual assigned instances, preserving `load_tests` configuration;
    changed child discovery fails instead of running an accepted subset.
+   Live unittest progress and tracebacks have worker-PID labels; the parent
+   drains the existing process pipes and emits intact, attributable lines.
 4. Observe refusals: an assertion failure makes the parent fail while other
    cases still execute. Actual child exits 7 or an early 0 make the parent
    fail. A small local completion pipe is sent only after the unittest runner
-   returns; a stopped suite is not accepted. Normal fixture skips remain
-   unittest skips, not completed native positives. Empty,
+   returns; a stopped suite or a no-op `TestCase.run()` is not accepted.
+   Completion accounts for actual finished case IDs, not copied assignment
+   counts. Normal class/module setup skips cover only the contiguous cases in
+   that actual fixture invocation; re-entry cannot excuse an earlier unrun
+   case or reject an earlier valid run. These remain unittest
+   skips, not completed native positives. Empty,
    duplicate and syntactically broken discovery and extra CLI arguments
    cannot report success or execute an accepted partial suite.
 5. Exercise the unchanged full entrypoint when collecting complete evidence:

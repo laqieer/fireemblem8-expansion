@@ -340,6 +340,18 @@ class ReporterExecutionTests(unittest.TestCase):
             )
         self.assertTrue(all(record["isolated"] == 1 and not record["git"]
                             for record in records.values()))
+        progress = [
+            line for line in completed.stderr.splitlines()
+            if "test_" in line or line.endswith(" ok") or "Ran " in line
+        ]
+        self.assertTrue(progress, completed.stderr)
+        self.assertTrue(
+            all(re.match(r"\[reporter \d+\] ", line) for line in progress),
+            completed.stderr,
+        )
+        self.assertEqual(
+            {int(re.match(r"\[reporter (\d+)\]", line).group(1)) for line in progress}, pids,
+        )
 
     def test_one_assertion_fails_the_parent_without_omitting_other_tests(self):
         (self.tests / "test_failure.py").write_text(
@@ -431,29 +443,107 @@ class ReporterExecutionTests(unittest.TestCase):
         self.assertEqual(list((self.root / "records").iterdir()), [])
 
     def test_normal_fixture_skip_is_preserved(self):
-        (self.tests / "test_fixture_skip.py").write_text(
-            'import unittest\n'
-            'class Cases(unittest.TestCase):\n'
-            '    @classmethod\n'
-            '    def setUpClass(cls): raise unittest.SkipTest("legitimate fixture skip")\n'
-            '    def test_a(self): self.fail("skipped fixture must not run")\n'
-            '    def test_b(self): self.fail("skipped fixture must not run")\n',
-            encoding="ascii",
-        )
-        completed = self.run_launcher()
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertIn("legitimate fixture skip", completed.stderr)
+        for fixture in ("class", "module"):
+            with self.subTest(fixture=fixture):
+                source = (
+                    'import unittest\n'
+                    'class Cases(unittest.TestCase):\n'
+                    '    def test_a(self): self.fail("skipped fixture must not run")\n'
+                    '    def test_b(self): self.fail("skipped fixture must not run")\n'
+                )
+                if fixture == "class":
+                    source += (
+                        '    @classmethod\n'
+                        '    def setUpClass(cls): raise unittest.SkipTest("legitimate fixture skip")\n'
+                    )
+                else:
+                    source += (
+                        'def setUpModule(): raise unittest.SkipTest("legitimate fixture skip")\n'
+                    )
+                (self.tests / "test_fixture_skip.py").write_text(source, encoding="ascii")
+                completed = self.run_launcher()
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                self.assertIn("legitimate fixture skip", completed.stderr)
 
     def test_stopped_suite_is_not_partial_success(self):
-        (self.tests / "test_stopped.py").write_text(
+        for action in ("result.stop(); return result", "return result"):
+            for fixture_skip in (False, True):
+                with self.subTest(action=action, fixture_skip=fixture_skip):
+                    source = (
+                        'import unittest\n'
+                        'class Stopped(unittest.TestCase):\n'
+                        '    def test_only(self): self.fail("unrun case must not pass")\n'
+                        f'    def run(self, result): {action}\n'
+                    )
+                    if fixture_skip:
+                        source += (
+                            'class A_Skipped(unittest.TestCase):\n'
+                            '    @classmethod\n'
+                            '    def setUpClass(cls): raise unittest.SkipTest("fixture control")\n'
+                            '    def test_a(self): self.fail("must stay skipped")\n'
+                            '    def test_b(self): self.fail("must stay skipped")\n'
+                        )
+                    (self.tests / "test_stopped.py").write_text(source, encoding="ascii")
+                    completed = self.run_launcher()
+                    self.assertNotEqual(completed.returncode, 0)
+
+    def test_fixture_reentry_is_scoped_to_its_actual_invocation(self):
+        (self.tests / "reentry_other.py").write_text(
             'import unittest\n'
-            'class Stopped(unittest.TestCase):\n'
-            '    def test_only(self): self.fail("stopped case must not run")\n'
-            '    def run(self, result): result.stop(); return result\n',
+            'class B(unittest.TestCase):\n'
+            '    def test_ok(self): pass\n'
+            'class Fillers(unittest.TestCase):\n'
+            '    def test_a(self): pass\n'
+            '    def test_b(self): pass\n'
+            '    def test_c(self): pass\n',
             encoding="ascii",
         )
-        completed = self.run_launcher()
-        self.assertNotEqual(completed.returncode, 0)
+        for fixture in ("class", "module"):
+            for noop in (False, True):
+                with self.subTest(fixture=fixture, noop=noop):
+                    source = (
+                        'import unittest\nfrom pathlib import Path\n'
+                        'from .reentry_other import Fillers\n'
+                        f'NOOP = {noop!r}\n'
+                        'class A(unittest.TestCase):\n'
+                        '    visits = 0\n'
+                        '    def test_first(self):\n'
+                        '        (Path(__file__).resolve().parents[3] / "records/first").touch()\n'
+                        '    def test_last(self): self.fail("later invocation must be skipped")\n'
+                        '    def run(self, result):\n'
+                        '        if NOOP and self._testMethodName == "test_first": return result\n'
+                        '        return super().run(result)\n'
+                    )
+                    if fixture == "class":
+                        source += (
+                            '    @classmethod\n'
+                            '    def setUpClass(cls):\n'
+                            '        cls.visits += 1\n'
+                            '        if cls.visits == 2: raise unittest.SkipTest("later class invocation")\n'
+                            'class B(unittest.TestCase):\n'
+                            '    def test_ok(self): pass\n'
+                        )
+                    else:
+                        source += (
+                            'from .reentry_other import B\n'
+                            'visits = 0\n'
+                            'def setUpModule():\n'
+                            '    global visits\n'
+                            '    visits += 1\n'
+                            '    if visits == 2: raise unittest.SkipTest("later module invocation")\n'
+                        )
+                    source += (
+                        'def load_tests(loader, tests, pattern):\n'
+                        '    return unittest.TestSuite([\n'
+                        '        A("test_first"), Fillers("test_a"), B("test_ok"),\n'
+                        '        Fillers("test_b"), A("test_last"), Fillers("test_c")])\n'
+                    )
+                    (self.tests / "test_reentry.py").write_text(source, encoding="ascii")
+                    marker = self.root / "records/first"
+                    marker.unlink(missing_ok=True)
+                    completed = self.run_launcher()
+                    self.assertEqual(completed.returncode, int(noop), completed.stderr)
+                    self.assertEqual(marker.exists(), not noop)
 
     def test_single_discovered_case_is_not_dropped(self):
         (self.tests / "test_single.py").write_text(
