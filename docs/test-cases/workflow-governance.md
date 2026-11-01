@@ -454,7 +454,8 @@ the consumers' independent protected-principal/deployment requirements.
 ## TC-WORKFLOW-REPORTER-RUNTIME-001: Bound complete isolated reporter execution
 
 - **Feature / issue:** `workflow-governance` /
-  [#359](https://github.com/laqieer/fireemblem8-expansion/issues/359).
+  [#359](https://github.com/laqieer/fireemblem8-expansion/issues/359) and
+  [#361](https://github.com/laqieer/fireemblem8-expansion/issues/361).
 - **Profile / prerequisites:** Linux source checkout with the existing locked
   CPython 3.12 host environment, Git and ordinary process controls. The focused
   fixtures need no ARM compiler, ROM, credentials or new package.
@@ -507,6 +508,22 @@ the consumers' independent protected-principal/deployment requirements.
    rendezvous or selected workload is not complete-suite or full-CI evidence.
    Required candidate and automatic exact-master Build still contain all
    eight jobs and retain both 90-minute host bounds.
+6. Check the complete scheduling contract:
+
+   ```bash
+   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_bootstrap_and_reporter_interpreter_agree -v
+   ```
+
+   The unchanged four full-game width/catalog/crosswalk/raw-closure commands
+   execute exactly once on an existing independent worker, with the original
+   host-only bootstrap before any archival package/toolchain setup. Reporter
+   and baseline keep their original required host worker and scrubbed
+   environment. All eight jobs, full-mode conditions, exact checkout and
+   summary dependencies remain; worker bounds are still90/90/60minutes.
+   The local upstream verifier mirrors the same complete31commands in their
+   current workflow order. Parsed ownership/order is scheduling evidence;
+   collect actual candidate and automatic exact-master job durations and
+   complete native successes before claiming the end-to-end fix.
 
 ### Expected result
 
@@ -514,6 +531,9 @@ All discovered cases execute exactly once, with normal unittest fixtures in
 each owned process, isolated startup and explicit failure propagation.
 Bounded concurrent execution reduces the serial reporter critical path;
 only successful complete native CI establishes the end-to-end outcome.
+The independent width worker uses existing headroom rather than appending
+the expensive tail to the reporter's worker. It needs no new job, service,
+process scheduler or deadline increase.
 
 ### Negative control
 
@@ -523,6 +543,11 @@ second reporter process exists. The original host traces reach their native
 usage candidate. dropping cases, losing a configured discovered instance, ignoring a child
 completion result, or accepting empty
 discovery fails the focused controls; increasing deadlines is not the fix.
+After the reporter improvement, exact7b automatic master and exact41d
+candidate both still reached90minutes twice during the final full-game
+step. Preserve those actual failures. The old parsed graph puts all four
+commands on the reporter's serial worker; altered/missing bootstrap,
+success masking or omitted raw closure also fails the contract controls.
 
 ### Interactions and save compatibility
 
@@ -533,6 +558,10 @@ must not depend on cross-process shared mutation. No workflow job, trigger,
 runner, permission, command authority, native subprocess limit, summary or
 final delivery gate changes. No game/save/config/epoch, ROM/RAM, locale,
 generated-content, modern profile or archival compiler change.
+The full-game command group moves between existing workers, before archival
+setup, without gaining an archival prerequisite or changing its commands.
+The extra VM repeats only the already required host bootstrap; its owned
+environment is created fresh rather than reused or modified.
 
 ### Automation
 

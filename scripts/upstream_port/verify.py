@@ -1045,7 +1045,8 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
-    ("host-tests", "Run full-game localization width contract (issue #18)"),
+    ("legacy", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+    ("legacy", "Run full-game localization width contract (issue #18)"),
     ("build", "Verify checked-out revision"),
     ("build", "Check tracked artifacts"),
     ("build", _DOCS_GOVERNANCE_STEP_NAME),
@@ -1112,7 +1113,6 @@ _EXPECTED_STEP_ROLES = {
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
-        ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "build": (
         ("setup", _PREFLIGHT_STEP_NAME),
@@ -1153,6 +1153,8 @@ _EXPECTED_STEP_ROLES = {
     "legacy": (
         ("setup", None),
         ("setup", "Verify checked-out revision"),
+        ("setup", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+        ("gate", "Run full-game localization width contract (issue #18)"),
         ("setup", "Install archival build dependencies"),
         ("setup", "Preflight archival toolchain executables"),
         ("setup", "Install pinned archival agbcc compilers"),
@@ -2415,41 +2417,6 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
-            name="game-localization-width-contract",
-            command=["make", "game-localization-test"],
-            applicable_note=(
-                "issue #18 full-game host lane addition: validates the 3,414 "
-                "entry JA/ZH catalog, typed UI/scene width coverage, "
-                "metrics-aware generated line breaks, and native text "
-                "consumer behavior before the target-ROM gates"
-            ),
-        ),
-        Gate(
-            name="game-localization-catalog-check",
-            command=["python3", "-m", "scripts.localization.game_locales", "check"],
-            applicable_note="Build host lane closure check for the committed full-game locale catalog",
-        ),
-        Gate(
-            name="game-localization-crosswalk-check",
-            command=[
-                "python3",
-                "-m",
-                "scripts.localization.game_locales",
-                "check-crosswalk",
-            ],
-            applicable_note="Build host lane closure check for full-game source/catalog crosswalk coverage",
-        ),
-        Gate(
-            name="game-localization-raw-closure-check",
-            command=[
-                "python3",
-                "-m",
-                "scripts.localization.game_locales",
-                "check-raw-closure",
-            ],
-            applicable_note="Build host lane closure check for unresolved raw full-game locale content",
-        ),
-        Gate(
             name="artifact-guard-tests",
             command=[
                 "python3",
@@ -2715,6 +2682,35 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "-v",
             ],
             applicable_note="combined-gate unique linker-budget coverage",
+        ),
+        Gate(
+            name="game-localization-width-contract",
+            command=["make", "game-localization-test"],
+            applicable_note=(
+                "issue #18 full-game host checks use the existing legacy worker "
+                "before archival setup: validates the JA/ZH catalog, typed widths, "
+                "generated breaks and native text consumers independently of "
+                "the reporter critical path, without an ARM toolchain"
+            ),
+        ),
+        Gate(
+            name="game-localization-catalog-check",
+            command=["python3", "-m", "scripts.localization.game_locales", "check"],
+            applicable_note="full-game host closure check before archival setup",
+        ),
+        Gate(
+            name="game-localization-crosswalk-check",
+            command=[
+                "python3", "-m", "scripts.localization.game_locales", "check-crosswalk",
+            ],
+            applicable_note="full-game source/catalog crosswalk coverage before archival setup",
+        ),
+        Gate(
+            name="game-localization-raw-closure-check",
+            command=[
+                "python3", "-m", "scripts.localization.game_locales", "check-raw-closure",
+            ],
+            applicable_note="unresolved raw full-game locale closure before archival setup",
         ),
         Gate(
             name="legacy-build",
