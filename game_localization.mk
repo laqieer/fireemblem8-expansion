@@ -6,8 +6,15 @@
 # targets is a prerequisite of `all`, so default English builds never generate
 # full-game locale payloads unless a caller opts in explicitly.
 
-GAME_LOCALIZATION_OUT_DIR ?= build/game-localization/generated
-GAME_LOCALIZATION_ENABLED_LOCALES ?= ja,zh-Hans
+GAME_LOCALIZATION_OUT_DIR ?= $(if $(filter-out default,$(FE8_PROJECT)),$(FE8_PROJECT_OUTPUT_DIR)/generated/game-localization,build/game-localization/generated)
+GAME_LOCALIZATION_DEFAULT_LOCALES := ja,zh-Hans
+GAME_LOCALIZATION_ENABLED_LOCALES ?= $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES),$(GAME_LOCALIZATION_DEFAULT_LOCALES))
+GAME_LOCALIZATION_AUDIT_ARGS = $(if $(filter-out default,$(FE8_PROJECT)),--report "$(GAME_LOCALIZATION_OUT_DIR)/game_localization_latin_span_audit.json")
+GAME_LOCALIZATION_AUDIT_LOCALES = $(if $(filter-out default,$(FE8_PROJECT)),$(GAME_LOCALIZATION_ENABLED_LOCALES),$(GAME_LOCALIZATION_DEFAULT_LOCALES))
+GAME_LOCALIZATION_LEAKAGE_CHECK_COMMAND = $(if $(filter-out default,$(FE8_PROJECT)),audit-leakage,check-leakage)
+GAME_LOCALIZATION_NO_TRANSLATION_PROJECT := $(if $(and \
+	$(filter-out default,$(FE8_PROJECT)),$(strip $(FE8_PROJECT_OUTPUT_DIR))),\
+	$(if $(strip $(GAME_LOCALIZATION_ENABLED_LOCALES) $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),,1))
 PYTHON3 ?= python3
 PYTEST_ENV := PYTHONDONTWRITEBYTECODE=1
 
@@ -25,24 +32,35 @@ PYTEST_ENV := PYTHONDONTWRITEBYTECODE=1
 	game-localization-eu-check \
 	game-localization-final-check
 
+ifeq ($(strip $(GAME_LOCALIZATION_NO_TRANSLATION_PROJECT)),1)
+game-localization-validate game-localization-generate game-localization-check game-localization-width-check:
+	@printf '%s\n' "No translated locales selected for project $(FE8_PROJECT)"
+else
 game-localization-validate:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog validate \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
 
 game-localization-generate:
 	@mkdir -p $(GAME_LOCALIZATION_OUT_DIR)
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog generate \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--out-dir $(GAME_LOCALIZATION_OUT_DIR) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
 
 game-localization-check: game-localization-generate
-	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-leakage
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog $(GAME_LOCALIZATION_LEAKAGE_CHECK_COMMAND) \
+		$(FE8_PROJECT_GAME_ARGS) $(GAME_LOCALIZATION_AUDIT_ARGS) \
+		--enabled-locales "$(GAME_LOCALIZATION_AUDIT_LOCALES)"
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-width \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
 
 game-localization-width-check:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-width \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
+endif
 
 game-localization-text-edits-generate:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales.text_edit_ledger generate
@@ -50,11 +68,20 @@ game-localization-text-edits-generate:
 game-localization-text-edits-check:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales.text_edit_ledger check
 
+ifeq ($(strip $(GAME_LOCALIZATION_NO_TRANSLATION_PROJECT)),1)
+game-localization-leakage-audit game-localization-leakage-check:
+	@printf '%s\n' "No translated locales selected for project $(FE8_PROJECT)"
+else
 game-localization-leakage-audit:
-	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog audit-leakage
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog audit-leakage \
+		$(FE8_PROJECT_GAME_ARGS) $(GAME_LOCALIZATION_AUDIT_ARGS) \
+		--enabled-locales "$(GAME_LOCALIZATION_AUDIT_LOCALES)"
 
 game-localization-leakage-check:
-	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-leakage
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog $(GAME_LOCALIZATION_LEAKAGE_CHECK_COMMAND) \
+		$(FE8_PROJECT_GAME_ARGS) $(GAME_LOCALIZATION_AUDIT_ARGS) \
+		--enabled-locales "$(GAME_LOCALIZATION_AUDIT_LOCALES)"
+endif
 
 game-localization-test:
 	$(PYTEST_ENV) $(PYTHON3) -m unittest discover \
@@ -67,11 +94,17 @@ game-localization-test:
 	$(MAKE) --no-print-directory game-localization-width-check
 	$(MAKE) --no-print-directory game-localization-text-edits-check
 
+ifeq ($(strip $(GAME_LOCALIZATION_NO_TRANSLATION_PROJECT)),1)
+game-localization-budget:
+	@printf '%s\n' "No translated locales selected for project $(FE8_PROJECT)"
+else
 game-localization-budget:
 	@mkdir -p $(GAME_LOCALIZATION_OUT_DIR)
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog budget \
+		$(FE8_PROJECT_GAME_ARGS) \
 		--out-dir $(GAME_LOCALIZATION_OUT_DIR) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
+endif
 
 game-localization-eu-check:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog validate \

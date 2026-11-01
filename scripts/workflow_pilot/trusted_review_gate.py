@@ -396,7 +396,7 @@ class ReviewTools:
                     previous = members.setdefault(member.identity, member)
                     model.require(previous == member, "member mapping changed across finding origins")
         result = tuple(members[key] for key in sorted(members))
-        inputs = tuple(sorted({path for member in result for path in member.inputs}))
+        inputs = tuple(sorted({path for member in result for path in member.source_inputs}))
         result = tuple(replace(member, execution_inputs=inputs) for member in result)
         model.validate_members(result)
         return result

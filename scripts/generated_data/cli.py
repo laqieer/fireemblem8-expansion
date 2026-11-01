@@ -39,29 +39,30 @@ from . import registry  # noqa: F401  (import registers table schemas)
 from . import manifest as manifest_mod
 from .cgen import write_if_changed
 from .diagnostics import GeneratedDataError, DiagnosticCollector
-from .schema import REGISTRY
+from .schema import REGISTRY, SchemaInputs, parse_source_overrides
 
 DEFAULT_OUT_DIR = os.path.join("build", "generated", "data")
 DEFAULT_MANIFEST_REPORT = os.path.join("reports", "generated_data_manifest.md")
 MANIFEST_HEADER_NAME = "generated_data_manifest.h"
 
 
-def _resolve_schema(table):
-    return REGISTRY.resolve(table)
+def _resolve_schema(table, inputs=None):
+    return (inputs or SchemaInputs()).resolve(table)
 
 
-def _parse_dep_source_overrides(raw_pairs):
-    """Parse repeated ``--dep-source NAME=PATH`` options into a ``dict``."""
-    overrides = {}
-    for pair in raw_pairs or ():
-        if "=" not in pair:
-            raise GeneratedDataError("--dep-source expects NAME=PATH, got '{}'".format(pair))
-        name, path = pair.split("=", 1)
-        overrides[name] = path
-    return overrides
+def _selected_ui_catalog_paths(values):
+    if values is None:
+        return None
+    from scripts.localization.catalog import parse_catalog_paths
+    from scripts.localization.schema import SchemaError
+
+    try:
+        return parse_catalog_paths(values)
+    except SchemaError as exc:
+        raise GeneratedDataError(str(exc)) from exc
 
 
-def _load_dependency_records(schema, dep_source_overrides, reference_profiles=None):
+def _load_dependency_records(schema, dep_source_overrides, reference_profiles=None, inputs=None):
     """Load this schema's declared ``dependency_tables()`` deterministically
     (in declaration order) through the schema registry, returning ``None``
     when the table has no table-level dependencies (so callers can fall
@@ -73,7 +74,7 @@ def _load_dependency_records(schema, dep_source_overrides, reference_profiles=No
         return None
     dependency_records = {}
     for dep_name in dep_tables:
-        dep_schema = REGISTRY.resolve(dep_name)
+        dep_schema = _resolve_schema(dep_name, inputs)
         dep_source = dep_source_overrides.get(dep_name) or dep_schema.default_source
         dependency_records[dep_name] = dep_schema.configure_records(
             dep_schema.load_records(dep_source),
@@ -87,6 +88,7 @@ def _load_and_validate(
     source_path,
     dep_source_overrides=None,
     reference_profiles=None,
+    inputs=None,
 ):
     records = schema.configure_records(
         schema.load_records(source_path),
@@ -97,7 +99,18 @@ def _load_and_validate(
         schema,
         dep_source_overrides or {},
         reference_profiles,
+        inputs,
     )
+    inputs = inputs or SchemaInputs()
+    bindings = [(schema, records)] + [
+        (inputs.resolve(name), dependency) for name, dependency in (dependency_records or {}).items()
+    ]
+    for selected_schema, selected_records in bindings:
+        validate_bindings = getattr(selected_schema, "validate_source_bindings", None)
+        if validate_bindings is not None:
+            validate_bindings(selected_records, diagnostics, inputs)
+    if diagnostics.errors:
+        return records, diagnostics
     if dependency_records is not None:
         schema.validate(records, diagnostics, dependency_records)
     else:
@@ -123,19 +136,20 @@ def _roundtrip_errors(schema, records, hand_source, no_roundtrip):
 def cmd_validate(args):
     table = args.table
     try:
-        schema = _resolve_schema(table)
+        schema = _resolve_schema(table, args.inputs)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     source_path = args.source or schema.default_source
     try:
-        dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
+        dep_source_overrides = parse_source_overrides(args.dep_source)
         records, diagnostics = _load_and_validate(
             schema,
             source_path,
             dep_source_overrides,
             args.reference_profiles,
+            args.inputs,
         )
         records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
@@ -163,7 +177,7 @@ def cmd_validate(args):
 def cmd_generate(args):
     table = args.table
     try:
-        schema = _resolve_schema(table)
+        schema = _resolve_schema(table, args.inputs)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -174,12 +188,13 @@ def cmd_generate(args):
     hand_source = args.hand_source or schema.default_hand_source
 
     try:
-        dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
+        dep_source_overrides = parse_source_overrides(args.dep_source)
         records, diagnostics = _load_and_validate(
             schema,
             source_path,
             dep_source_overrides,
             args.reference_profiles,
+            args.inputs,
         )
         records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
@@ -225,7 +240,7 @@ def cmd_check(args):
     """
     table = args.table
     try:
-        schema = _resolve_schema(table)
+        schema = _resolve_schema(table, args.inputs)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -236,12 +251,13 @@ def cmd_check(args):
     hand_source = args.hand_source or schema.default_hand_source
 
     try:
-        dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
+        dep_source_overrides = parse_source_overrides(args.dep_source)
         records, diagnostics = _load_and_validate(
             schema,
             source_path,
             dep_source_overrides,
             args.reference_profiles,
+            args.inputs,
         )
         records = _configure_records(schema, records, args)
     except GeneratedDataError as exc:
@@ -276,6 +292,10 @@ def cmd_check(args):
 
     if inventory_path:
         generated_inventory = schema.build_inventory(records)
+        if args.inventory_dir:
+            write_if_changed(inventory_path, generated_inventory)
+            print("OK: build-local inventory {}".format(inventory_path))
+            return 0
         existing_inventory = None
         if os.path.exists(inventory_path):
             with open(inventory_path, "r", encoding="utf-8") as handle:
@@ -307,7 +327,7 @@ def cmd_manifest(args):
     report_path = args.report or DEFAULT_MANIFEST_REPORT
 
     try:
-        entries = manifest_mod.collect_entries()
+        entries = manifest_mod.collect_entries(args.source_overrides, inputs=args.inputs)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -326,6 +346,11 @@ def cmd_manifest(args):
     # The bulky/ephemeral C header always lives under build/ and is never
     # committed, so self-heal it write-if-changed under both modes.
     write_if_changed(header_path, header_content)
+
+    if args.inventory_dir:
+        write_if_changed(report_path, report_content)
+        print("OK: build-local manifest ({} table(s))".format(len(entries)))
+        return 0
 
     if args.check:
         existing = None
@@ -378,16 +403,25 @@ def cmd_content_text(args):
         cap = idspace.resolve_item_id_cap()
         items_content_text.require_cap(cap)
 
-        source_path = args.source or items_schema.ITEMS_EXPANSION_SOURCE
+        selected_base = args.inputs.sources.get("items")
+        if selected_base and args.source:
+            raise GeneratedDataError(
+                "a complete items replacement cannot also select a content overlay")
+        source_path = args.source or selected_base or items_schema.ITEMS_EXPANSION_SOURCE
         # Render the repo-relative path (never an absolute workspace path):
         # the generated artifacts must be byte-identical wherever the tree
         # is checked out.
         display_source = os.path.relpath(source_path, items_schema.REPO_ROOT)
-        base_source = os.path.join(items_schema.REPO_ROOT, "src", "data", "items.json")
+        base_source = selected_base or os.path.join(
+            items_schema.REPO_ROOT, "src", "data", "items.json")
         records = items_schema.load_records(
-            base_source, item_cap=cap, overlay_source=source_path)
+            base_source, item_cap=cap, overlay_source=source_path,
+            include_overlay=selected_base is None,
+            msg_header=args.inputs.message_header or items_schema.MSG_HEADER,
+        )
         diagnostics = DiagnosticCollector()
         items_schema.validate(records, diagnostics, item_cap=cap,
+                              msg_header=args.inputs.message_header or items_schema.MSG_HEADER,
                               expansion_header=items_schema.ITEMS_EXPANSION_HEADER)
         if diagnostics.errors:
             for error in diagnostics.errors:
@@ -420,6 +454,19 @@ def cmd_content_text(args):
 
 def build_arg_parser():
     parser = argparse.ArgumentParser(prog="python3 -m scripts.generated_data")
+    parser.add_argument(
+        "--source-override", action="append", default=[],
+        metavar="TABLE=PATH",
+        help="intentional replacement source, also used for dependency tables",
+    )
+    parser.add_argument(
+        "--inventory-dir",
+        help="keep inventories and the manifest in this build-local directory",
+    )
+    parser.add_argument("--message-header", help="selected generated gameplay message header")
+    parser.add_argument("--asset-manifest", help="selected runtime asset manifest")
+    parser.add_argument("--ui-registry", help="selected expansion UI message registry")
+    parser.add_argument("--ui-catalog", action="append", metavar="LOCALE=PATH")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     def add_common_args(sub):
@@ -487,6 +534,37 @@ def build_arg_parser():
 def main(argv=None):
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    try:
+        args.source_overrides = parse_source_overrides(args.source_override)
+        args.inputs = SchemaInputs(
+            sources=args.source_overrides, message_header=args.message_header,
+            localization_registry=args.ui_registry,
+            localization_catalogs=_selected_ui_catalog_paths(args.ui_catalog),
+            asset_manifest=args.asset_manifest,
+        )
+        if hasattr(args, "table"):
+            explicit_dependencies = parse_source_overrides(args.dep_source)
+            for name, path in explicit_dependencies.items():
+                if name in args.source_overrides and args.source_overrides[name] != path:
+                    raise GeneratedDataError("conflicting table source '{}'".format(name))
+            sources = {**args.source_overrides, **explicit_dependencies}
+            args.dep_source = ["{}={}".format(name, path) for name, path in sources.items()]
+            if args.table in args.source_overrides:
+                replacement = args.source_overrides[args.table]
+                if args.source is not None and args.source != replacement:
+                    raise GeneratedDataError("conflicting primary source '{}'".format(args.table))
+                args.source = replacement
+                args.no_roundtrip = True
+            if args.inventory_dir and hasattr(args, "inventory"):
+                inventory = args.inventory or _resolve_schema(args.table).default_inventory_path
+                if inventory:
+                    args.inventory = os.path.join(args.inventory_dir, os.path.basename(inventory))
+        if args.command == "manifest" and args.inventory_dir:
+            args.report = os.path.join(
+                args.inventory_dir, os.path.basename(args.report or DEFAULT_MANIFEST_REPORT))
+    except GeneratedDataError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     return args.func(args)
 
 

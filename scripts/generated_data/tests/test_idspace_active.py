@@ -17,6 +17,8 @@ import unittest
 from unittest import mock
 
 from scripts.generated_data import idspace
+from scripts.generated_data.schema import SchemaInputs
+from scripts.generated_data.tests._util import fixture_path
 
 
 EXPANDED_ENV = {idspace.ITEM_CAP_ENV: '0xCE'}
@@ -28,6 +30,17 @@ def _args(out_dir):
 
 
 class ActiveContractModelTests(unittest.TestCase):
+    def test_selected_sources_change_only_the_active_count_and_do_not_leak_between_calls(self):
+        inputs = SchemaInputs({"supports": fixture_path("supports", "valid.json")})
+        selected = {
+            row["table"]: row for row in idspace.active_manifest_rows(env={}, inputs=inputs)
+        }
+        self.assertEqual(selected["supports"]["active_record_count"], 3)
+        self.assertEqual(selected["supports"]["committed_record_count"], 33)
+        self.assertTrue(selected["supports"]["differs_from_committed"])
+        default = {row["table"]: row for row in idspace.active_manifest_rows(env={})}
+        self.assertEqual(default["supports"]["active_record_count"], 33)
+
     def test_default_contract_is_vanilla_206_at_0xCD(self):
         payload = idspace.active_contract(env={})
         item = [d for d in payload['domains'] if d['key'] == 'item'][0]

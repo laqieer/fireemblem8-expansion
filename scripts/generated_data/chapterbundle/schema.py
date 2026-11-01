@@ -640,10 +640,35 @@ def read_asset_table_entries(asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
     )
 
 
+def _read_map_layout_dimensions(layout_path):
+    try:
+        with open(layout_path, "r", encoding="utf-8") as handle:
+            layout = json.load(handle)
+    except (json.JSONDecodeError, TypeError) as error:
+        raise GeneratedDataError(
+            "could not parse map layout '{}': {}".format(layout_path, error)
+        )
+    try:
+        width = layout["width"]
+        height = layout["height"]
+    except (KeyError, TypeError) as error:
+        raise GeneratedDataError(
+            "map layout '{}' has no usable width/height: {}".format(layout_path, error)
+        )
+    if (
+        isinstance(width, bool) or not isinstance(width, int) or width <= 0
+        or isinstance(height, bool) or not isinstance(height, int) or height <= 0
+    ):
+        raise GeneratedDataError(
+            "map layout '{}' width/height must be positive integers".format(layout_path)
+        )
+    return width, height
+
+
 def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CHAPTER_SETTINGS_JSON,
                                 asset_table_path=CHAPTER_DATA_ASSET_TABLE_SOURCE,
                                 asset_manifest_path=ASSET_MANIFEST_PATH,
-                                map_layout_dir=MAP_LAYOUT_DIR):
+                                map_layout_dir=MAP_LAYOUT_DIR, require_manifest=False):
     """Resolve one chapter's authored map width/height from its runtime map asset."""
     row = read_chapter_settings_row(chapter_settings_index, chapter_settings_path)
     if row is None or "map" not in row or "mainLayerId" not in row["map"]:
@@ -663,57 +688,72 @@ def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CH
                 "mapWidth", "mapHeight"
             } <= set(resources):
                 sources = asset.get("sources", ())
-                if not sources:
-                    raise GeneratedDataError(
-                        "map asset '{}' has no TMX source".format(asset.get("id", map_symbol))
-                    )
-                source_path = _source_path(sources[0])
-                from scripts.assets import tmx
+                kind = asset.get("kind")
+                if kind == "chapter-map-layout":
+                    if (
+                        len(sources) != 2 or not sources[0].endswith(".mar")
+                        or not sources[1].endswith(".json")
+                    ):
+                        raise GeneratedDataError(
+                            "map asset '{}' requires ordered .mar and .json sources".format(
+                                asset.get("id", map_symbol)
+                            )
+                        )
+                    source_path = _source_path(sources[1])
+                    try:
+                        source_width, source_height = _read_map_layout_dimensions(source_path)
+                    except OSError as error:
+                        raise GeneratedDataError(
+                            "could not read map layout '{}': {}".format(source_path, error)
+                        ) from error
+                    dimension_source = "layout metadata"
+                elif kind == "tiled-tmx-map-layout":
+                    if not sources:
+                        raise GeneratedDataError(
+                            "map asset '{}' has no TMX source".format(asset.get("id", map_symbol))
+                        )
+                    source_path = _source_path(sources[0])
+                    from scripts.assets import tmx
 
-                try:
-                    source_width, source_height, _values = tmx.parse_tmx(source_path)
-                except (OSError, tmx.TmxError) as error:
+                    try:
+                        source_width, source_height, _values = tmx.parse_tmx(source_path)
+                    except (OSError, tmx.TmxError) as error:
+                        raise GeneratedDataError(
+                            "could not parse TMX source '{}': {}".format(source_path, error)
+                        )
+                    dimension_source = "TMX"
+                else:
                     raise GeneratedDataError(
-                        "could not parse TMX source '{}': {}".format(source_path, error)
+                        "map asset '{}' has unsupported layout kind '{}'".format(
+                            asset.get("id", map_symbol), kind
+                        )
                     )
                 if (resources["mapWidth"], resources["mapHeight"]) != (source_width, source_height):
                     raise GeneratedDataError(
-                        "map asset '{}' manifest dimensions {}x{} do not match TMX {}x{}".format(
+                        "map asset '{}' manifest dimensions {}x{} do not match {} {}x{}".format(
                             asset.get("id", map_symbol),
                             resources["mapWidth"],
                             resources["mapHeight"],
+                            dimension_source,
                             source_width,
                             source_height,
                         )
                     )
                 return source_width, source_height
-    except OSError:
-        pass
+    except OSError as error:
+        if require_manifest:
+            raise GeneratedDataError(
+                "selected asset manifest '{}' is unavailable: {}".format(asset_manifest_path, error)
+            ) from error
+    except json.JSONDecodeError as error:
+        raise GeneratedDataError(
+            "could not parse asset manifest '{}': {}".format(asset_manifest_path, error)
+        ) from error
     layout_path = os.path.join(map_layout_dir, "{}.json".format(map_symbol))
     try:
-        with open(layout_path, "r", encoding="utf-8") as handle:
-            layout = json.load(handle)
+        return _read_map_layout_dimensions(layout_path)
     except OSError:
         return None
-    except (json.JSONDecodeError, TypeError) as error:
-        raise GeneratedDataError(
-            "could not parse fallback map layout '{}': {}".format(layout_path, error)
-        )
-    try:
-        width = layout["width"]
-        height = layout["height"]
-    except (KeyError, TypeError) as error:
-        raise GeneratedDataError(
-            "fallback map layout '{}' has no usable width/height: {}".format(layout_path, error)
-        )
-    if (
-        isinstance(width, bool) or not isinstance(width, int) or width <= 0
-        or isinstance(height, bool) or not isinstance(height, int) or height <= 0
-    ):
-        raise GeneratedDataError(
-            "fallback map layout '{}' width/height must be positive integers".format(layout_path)
-        )
-    return width, height
 
 
 def _validate_record(records, diagnostics, dependency_records=None,
@@ -1271,6 +1311,40 @@ class ChapterBundleTableSchema(TableSchema):
 
     def validate(self, records, diagnostics, dependency_records=None):
         validate(records, diagnostics, dependency_records)
+
+    def validate_source_bindings(self, records, diagnostics, inputs):
+        for record in records:
+            bindings = [
+                (table.name, table.source, table.source_loc) for table in record.tables
+            ]
+            bindings.append((
+                "supports", record.support_owners.source, record.support_owners.source_loc))
+            for name, reference in (
+                ("chapterobjectives", record.chapter_objectives),
+                ("autoplaystrategies", record.autoplay_strategies),
+            ):
+                if reference is not None:
+                    bindings.append((name, reference.source, reference.source_loc))
+            for name, source, location in bindings:
+                if name not in inputs.sources:
+                    continue
+                dependency = inputs.resolve(name)
+                selected = {
+                    _source_path(path, record.repository_root)
+                    for path in dependency.source_paths(inputs.sources[name])
+                }
+                declared = {
+                    _source_path(path, record.repository_root)
+                    for path in dependency.source_paths(
+                        _source_path(source, record.repository_root))
+                }
+                if not declared.issubset(selected):
+                    diagnostics.add(_err(
+                        "selected '{}' provider conflicts with bundle '{}' source '{}'; "
+                        "select matching table and bundle sources".format(
+                            name, record.chapter.id, source),
+                        location, "bundles[chapter={}].sources.{}".format(record.chapter.id, name),
+                    ))
 
     def build_inventory(self, records):
         from . import inventory as chapterbundle_inventory

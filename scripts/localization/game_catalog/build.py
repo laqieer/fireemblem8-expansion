@@ -1221,8 +1221,7 @@ def build_game_catalog(
         bundle.locale: bundle.entries for bundle in locale_bundles
     }
     if target_count == 3414:
-        mapping_absolute = Path(mapping_path).resolve()
-        repo_root = mapping_absolute.parents[3]
+        repo_root = Path(__file__).resolve().parents[3]
         registry_path = Path(width_registry_path)
         if not registry_path.is_absolute():
             registry_path = repo_root / registry_path
@@ -1260,8 +1259,7 @@ def build_game_catalog(
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
     fixed_width_metrics = None
     if target_count == 3414:
-        mapping_absolute = Path(mapping_path).resolve()
-        repo_root = mapping_absolute.parents[3]
+        repo_root = Path(__file__).resolve().parents[3]
         alias_path = Path(fixed_width_aliases_path)
         if not alias_path.is_absolute():
             alias_path = repo_root / alias_path

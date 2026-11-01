@@ -53,6 +53,8 @@ def output_lock(outputfile, is_debug=False):
 def staging_output_path(outputfile):
     output = os.path.abspath(outputfile)
     output_dir = os.path.dirname(output)
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
     prefix = '.%s.' % os.path.basename(output)
     descriptor, staging = tempfile.mkstemp(
         prefix=prefix, suffix='.tmp', dir=output_dir)

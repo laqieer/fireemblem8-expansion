@@ -1629,10 +1629,15 @@ def input_record(path: Path, *, repo_root: Path = Path(".")) -> Dict[str, Any]:
 def load_expansion_catalogs(
     catalog_root: Path,
     locales: Sequence[str],
+    catalog_paths: Mapping[str, Path] | None = None,
 ) -> Dict[str, Dict[str, str]]:
     catalogs = {}
     for locale in ("en", *locales):
-        path = Path(catalog_root) / f"catalog.{locale}.json"
+        if catalog_paths is not None and locale not in catalog_paths:
+            raise GameCatalogError(f"missing expansion catalog for locale {locale}")
+        path = (
+            Path(catalog_paths[locale]) if catalog_paths is not None
+            else Path(catalog_root) / f"catalog.{locale}.json")
         data, _ = _load_json(path)
         strings = data.get("strings") if isinstance(data, dict) else None
         if not isinstance(strings, dict) or any(
