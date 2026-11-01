@@ -49,8 +49,11 @@ enum GradoAllocationResult GradoState_ValidateAllocation(
         switch (field->kind)
         {
         case GRADO_STATE_BOOLEAN:
+        case GRADO_STATE_MONOTONIC:
             if (field->bitCount != 1 || field->maxValue != 1)
                 return GRADO_ALLOCATION_VALUE;
+            if (field->kind == GRADO_STATE_MONOTONIC && field->scope != GRADO_STATE_PERMANENT)
+                return GRADO_ALLOCATION_SCOPE;
             break;
 
         case GRADO_STATE_ONE_HOT:

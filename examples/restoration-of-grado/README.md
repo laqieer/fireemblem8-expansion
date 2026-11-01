@@ -20,7 +20,9 @@ guide policy, value domain and explicit current project-chapter ordinal.
 It distinguishes unset one-hot fields and corrupt stored values without
 changing output or backing on refusal. Writes are explicit requests, not
 automatic load recovery. Generic Boolean writes do not implement retirement
-monotonicity, which remains a separate required lifecycle contract.
+monotonicity. The explicit permanent-only `GRADO_STATE_MONOTONIC` kind refuses
+clearing a set fact and allows idempotent writes; full retirement producers,
+load/recovery and selected-profile lifecycles remain separate requirements.
 
 An unselected static-guide adapter is also available for the existing
 `src/bmguide.c` code slot: `src/static_guide.c` includes that native
@@ -157,6 +159,10 @@ No ROM, emulator, save file, credentials or manual judgment is needed.
    remains in bounds. A chapter-local access with the wrong project ordinal,
    an engine-reserved descriptor and an out-of-domain write refuse without
    changing backing. Invalid input preserves the output guard.
+   A monotonic permanent field accepts 0-to-0, 0-to-1 and 1-to-1 writes,
+   refuses 1-to-0 without changing any backing, and cannot be allocated in
+   chapter-local storage. This write primitive does not prove that the four
+   production retirement states or every save/load consumer are wired.
 3. Zero one-hot backing reports `UNSET`, not a default choice. Multiple set
    bits or an encoded counter above its bound report `CORRUPT`, preserving
    every byte and the output guard. A later explicit valid write can replace
@@ -168,6 +174,8 @@ target execution evidence. The actual host vectors supply the positive and
 adversarial value evidence; ARM compilation alone does not. As in the guide
 probe, an unrelated retained event-dispatch dependency is an abort-only
 adapter: executing it fails rather than simulating success.
+Removing the actual monotonic write guard still compiles, but the native
+probe aborts on the attempted clear; compiler failure is not that control.
 Alternative fixture descriptors are not a production physical assignment.
 The suites remove only their own temporary files. Default linking, the
 native buffers/envelope and framework epoch remain unchanged; complete

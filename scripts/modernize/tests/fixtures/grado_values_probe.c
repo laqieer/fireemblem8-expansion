@@ -41,6 +41,12 @@ int main(void)
     const struct GradoStateField reserved = {
         125, 1, GRADO_STATE_BOOLEAN, 1, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT
     };
+    const struct GradoStateField monotonic = {
+        147, 1, GRADO_STATE_MONOTONIC, 1, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT
+    };
+    const struct GradoStateField temporaryMonotonic = {
+        7, 1, GRADO_STATE_MONOTONIC, 1, 3, GRADO_STATE_CHAPTER
+    };
     u8 beforePermanent[25];
     u8 expectedPermanent[25];
     u8 beforeChapter[5];
@@ -161,5 +167,32 @@ int main(void)
     assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
     assert(GradoState_ReadValue(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &value)
         == GRADO_STATE_VALUE_VALID && value == 3);
+
+    ClearFlag(147);
+    memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+    assert(GradoState_WriteValue(&monotonic, GRADO_GUIDE_PROGRESSIVE, 3, 0)
+        == GRADO_STATE_VALUE_VALID);
+    assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+    SetFlag(147);
+    memcpy(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent));
+    memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
+    assert(GradoState_WriteValue(&monotonic, GRADO_GUIDE_PROGRESSIVE, 3, 1)
+        == GRADO_STATE_VALUE_VALID);
+    assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+    assert(GradoState_ReadValue(&monotonic, GRADO_GUIDE_PROGRESSIVE, 3, &value)
+        == GRADO_STATE_VALUE_VALID && value == 1);
+    assert(GradoState_WriteValue(&monotonic, GRADO_GUIDE_PROGRESSIVE, 3, 0)
+        == GRADO_STATE_VALUE_MONOTONIC);
+    assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    assert(GradoState_WriteValue(&monotonic, GRADO_GUIDE_PROGRESSIVE, 3, 1)
+        == GRADO_STATE_VALUE_VALID);
+    assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+    assert(GradoState_WriteValue(&monotonic, GRADO_GUIDE_PROGRESSIVE, 3, 2)
+        == GRADO_STATE_VALUE_RANGE);
+    assert(GradoState_WriteValue(&temporaryMonotonic, GRADO_GUIDE_PROGRESSIVE, 3, 1)
+        == GRADO_STATE_VALUE_LAYOUT);
+    assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
     return 0;
 }

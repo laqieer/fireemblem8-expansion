@@ -8,6 +8,7 @@ enum GradoStateFieldKind
     GRADO_STATE_BOOLEAN,
     GRADO_STATE_ONE_HOT,
     GRADO_STATE_COUNTER,
+    GRADO_STATE_MONOTONIC,
 };
 
 enum GradoStateScope
@@ -43,6 +44,7 @@ enum GradoStateValueResult
     GRADO_STATE_VALUE_CHAPTER,
     GRADO_STATE_VALUE_CORRUPT,
     GRADO_STATE_VALUE_RANGE,
+    GRADO_STATE_VALUE_MONOTONIC,
 };
 
 enum

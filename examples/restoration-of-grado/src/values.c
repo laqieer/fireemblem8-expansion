@@ -81,6 +81,9 @@ enum GradoStateValueResult GradoState_WriteValue(
     if (value > field->maxValue)
         return GRADO_STATE_VALUE_RANGE;
 
+    if (field->kind == GRADO_STATE_MONOTONIC && value == 0 && CheckFlag(field->firstFlag))
+        return GRADO_STATE_VALUE_MONOTONIC;
+
     raw = value;
     if (field->kind == GRADO_STATE_ONE_HOT)
         raw = value == 0 ? 0 : 1u << (value - 1);
