@@ -116,6 +116,17 @@ class GradoAllocationNativeTests(unittest.TestCase):
             self.assertEqual({row.symbol_name for row in raw_calls}, set(forwarders))
             for row in raw_calls:
                 self.assertEqual(row.section_name, forwarders[row.symbol_name])
+            storage_symbols = set(forwarders) | {
+                "CheckChapterFlag", "CheckPermanentFlag", "CheckPermanentFlagFrom",
+                "SetChapterFlag", "SetPermanentFlag", "ClearChapterFlag", "ClearPermanentFlag",
+                "ResetChapterFlags", "ResetPermanentFlags",
+                "GetChapterFlagBits", "GetPermanentFlagBits",
+                "gChapterFlagBits", "gPermanentFlagBits",
+            }
+            policy_sections = set(forwarders.values())
+            for row in records:
+                if row.symbol_name in storage_symbols:
+                    self.assertIn(row.section_name, policy_sections, row)
             self.assertTrue(all(
                 any(row.symbol_name == "GradoGuide_" + name for row in records)
                 for name in ("CheckFlag", "SetFlag", "ClearFlag")

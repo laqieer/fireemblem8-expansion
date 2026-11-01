@@ -93,13 +93,26 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
    changing any of the 25 permanent or 5 chapter bytes. Exercise every
    display/read flag through the real guide consumers and policy operations;
    all 112 bits remain byte-identical.
-3. Sort flag 179 and ordinary chapter flag 7 still pass through to the real
-   native flag backend, including clear-to-set writes from a known cleared
-   starting state. Check both raw backing and `GradoGuide_CheckFlag` in each
-   cleared, set and cleared state for both flags. The ARM object must route every guide flag call
+3. Check all 240 valid native flag IDs: chapter 1 through 40 and permanent
+   101 through 300. Guide ownership must match the actual native guide table,
+   not a second copy of the range predicate. The unused gap 236 through 239
+   and upper tail 296 through 300 remain ordinary flags, as do sort flag 179
+   and chapter flag 7. From both cleared and set starting states, reads must
+   preserve every backing byte; set/clear operations must either preserve
+   guide-owned storage or match the real backend's complete byte changes.
+   The ARM object must route every guide flag call
    through the three public `GradoGuide_*Flag` policy functions; only those
-   forwarders may call raw `CheckFlag`, `SetFlag` or `ClearFlag`. This is a
-   compiled-symbol/relocation contract, not a source-spelling check.
+   forwarders may reference the raw flag operations, chapter/permanent
+   operations, reset/read-through/storage-pointer interfaces or backing
+   arrays. Size-only queries are not storage access. This is the finite
+   native flag-interface compiled-symbol/relocation contract, not a
+   source-spelling check or arbitrary-C memory-isolation claim.
+
+The pre-fix probes accepted a guide predicate incorrectly extended through
+flag 299 and a rendered guide entry reading `CheckPermanentFlag` directly.
+The complete flag-domain probe now rejects the former through a native
+assertion; the ARM relocation check rejects the latter after successful
+compilation. A compiler failure is neither negative control.
 
 The host compiler removes only the unsupported ARM register annotation;
 native ARM compilation retains it. The unused event-dispatch dependency is
