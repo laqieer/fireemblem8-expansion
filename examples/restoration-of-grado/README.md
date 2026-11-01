@@ -95,7 +95,8 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
    all 112 bits remain byte-identical.
 3. Sort flag 179 and ordinary chapter flag 7 still pass through to the real
    native flag backend, including clear-to-set writes from a known cleared
-   starting state. The ARM object must route every guide flag call
+   starting state. Check both raw backing and `GradoGuide_CheckFlag` in each
+   cleared, set and cleared state for both flags. The ARM object must route every guide flag call
    through the three public `GradoGuide_*Flag` policy functions; only those
    forwarders may call raw `CheckFlag`, `SetFlag` or `ClearFlag`. This is a
    compiled-symbol/relocation contract, not a source-spelling check.
