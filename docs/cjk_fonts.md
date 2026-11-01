@@ -235,7 +235,8 @@ generated-line review exception does not exempt any blob from the existing
 
 Issue [#350](https://github.com/laqieer/fireemblem8-expansion/issues/350)
 uses the same indexed case after the interface and FEHRR conversion. From
-the exact clean parent, run `repack-index --index runtime-usage --format packed`,
+the exact clean parent, run
+`python3 -m scripts.fonttools.cjk repack-index --index runtime-usage --format packed`,
 the focused resource-index suite and `python3 -m scripts.fonttools.cjk check`.
 Both packed starting representations must retain exact round-trip restoration.
 No classification, message, corpus, source-priority or atlas change is allowed.
