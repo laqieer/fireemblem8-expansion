@@ -109,6 +109,16 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
    resolve against the requested root, including relative roots, without
    changing the caller's working directory. Missing or untracked literal
    provenance in that root must refuse instead of borrowing the tool checkout.
+5. In valid bound legacy/schema-2 roots with each stored representation,
+   replace selected scalars without changing their counts. Full-union legacy
+   corpora use representable paired-style changes per locale; schema-2 uses
+   actual corpus-exclusive scalars to isolate each of the four assets. The
+   preview must verify every changed and unchanged selection, including
+   Chinese fallback from Japanese sources. Both the priority builder and
+   writer must refuse before changing any atlas, index or manifest output. An
+   unchanged bound selection must still build and publish its complete valid
+   output. The source-backed generator controls below create these owned
+   fixtures and also reject count-only comparison and writer-bypass mutations.
 
 The priority refresh uses the existing canonical runtime-split producer and
 retains its source-coverage-change refusal. Legacy schema-1 assets remain
@@ -134,8 +144,9 @@ bound before parsing expected values; invalid references yield unavailable,
 zero-check observations, not codec regression credit. Both stored formats
 reach the real legacy/schema-2 compact consumers and the inventory
 generator/check through the public maintainer operation. Actual generator
-controls use owned, clean Git source fixtures with empty maps or one supplied
-glyph; they execute the public generators and emitted-output consumer, not a
+controls use owned, clean Git source fixtures with empty maps, one supplied
+glyph, or a representable same-count scalar replacement; they execute the
+public generators and emitted-output consumer, not a
 mock collector, and do not qualify upstream font provenance or font art.
 The owned literal-provenance source
 fixture gives the existing literal-provenance checker a local Git index of

@@ -1650,8 +1650,11 @@ def _cjk_resource(probe):
         accepted(package.check_compact_assets, root)
         return root
 
-    def source_checkout(scalar=None, *, blank=False):
-        root = Path("build/review-fehrr-generator-source-" + str(scalar) + "-" + str(blank))
+    def source_checkout(scalar=None, *, blank=False, glyphs=None):
+        selection = str(scalar) if glyphs is None else "-".join(
+            str(glyphs[prefix]) for prefix in sorted(glyphs)
+        )
+        root = Path("build/review-fehrr-generator-source-" + selection + "-" + str(blank))
         root.mkdir(parents=True)
         paths = {
             Path("glyph") / locale / "font.fontall.txt"
@@ -1668,7 +1671,7 @@ def _cjk_resource(probe):
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"")
-        if scalar is not None:
+        if scalar is not None or glyphs is not None:
             def chunk(kind, data):
                 return (struct.pack(">I", len(data)) + kind + data
                         + struct.pack(">I", zlib.crc32(kind + data)))
@@ -1683,12 +1686,16 @@ def _cjk_resource(probe):
                 + chunk(b"IDAT", zlib.compress(scanlines))
                 + chunk(b"IEND", b"")
             )
-            for locale in package.FEHRR_LOCALES.values():
-                directory = root / "glyph" / locale
+            for locale, source_locale in package.FEHRR_LOCALES.items():
+                directory = root / "glyph" / source_locale
                 rows = []
-                for style, name in (("item", "FontItem_fixture.png"), ("text", "FontText_fixture.png")):
+                for runtime_style, style, name in (
+                    ("system", "item", "FontItem_fixture.png"),
+                    ("talk", "text", "FontText_fixture.png"),
+                ):
                     (directory / name).write_bytes(png)
-                    rows.append(f"{chr(scalar)}\t{style}\t9\t{name}\n")
+                    selected = scalar if glyphs is None else glyphs[locale + "." + runtime_style]
+                    rows.append(f"{chr(selected)}\t{style}\t9\t{name}\n")
                 (directory / "font.fontall.txt").write_text("".join(rows), encoding="utf-8")
         for arguments in (
             ["git", "init", "--quiet"],
@@ -1790,6 +1797,124 @@ def _cjk_resource(probe):
                     repeated = accepted(generator, root, source)
                     verify(repeated == outputs,
                            "actual generator rejected or changed its own schema-2 output")
+            prefixes = ("ja.system", "ja.talk", "zh-Hans.system", "zh-Hans.talk")
+
+            def selections(lock):
+                return {
+                    prefix: tuple(int(row["scalar"][2:], 16) for row in asset["glyphs"])
+                    for prefix, asset in lock["assets"].items()
+                }
+
+            for schema in (1, 2):
+                make_root = legacy_fonts if schema == 1 else owned_fonts
+                seed_root = make_root("review-bound-selection-seed-" + str(schema))
+                seed_metadata = json.loads((seed_root / manifest).read_bytes())
+                corpora = {}
+                for prefix, asset in seed_metadata["assets"].items():
+                    data = (seed_root / asset["codepoints"]["path"]).read_bytes()
+                    corpora[prefix] = set(struct.unpack("<" + "I" * (len(data) // 4), data))
+                review.require(set(corpora) == set(prefixes),
+                               "bound-selection fixture asset coverage drifted")
+                groups = (
+                    {"ja": ("ja.system", "ja.talk"),
+                     "zh-Hans": ("zh-Hans.system", "zh-Hans.talk")}
+                    if schema == 1 else {prefix: (prefix,) for prefix in prefixes}
+                )
+                pairs = {}
+                for group, targets in groups.items():
+                    shared = set.intersection(*(corpora[prefix] for prefix in targets))
+                    elsewhere = set.union(*(values for prefix, values in corpora.items()
+                                            if prefix not in targets))
+                    exclusive = sorted(value for value in shared - elsewhere
+                                       if value > 0xFF and value != 0x3000)
+                    review.require(len(exclusive) >= 2,
+                                   "bound-selection fixture needs two isolated corpus scalars")
+                    pairs[group] = tuple(exclusive[:2])
+                owners = {prefix: group for group, targets in groups.items() for prefix in targets}
+                stable_glyphs = {prefix: pairs[owners[prefix]][0] for prefix in prefixes}
+                stable_source = source_checkout(glyphs=stable_glyphs)
+                changed_sources = {
+                    group: source_checkout(glyphs={
+                        prefix: pairs[owners[prefix]][1] if prefix in targets
+                        else stable_glyphs[prefix]
+                        for prefix in prefixes
+                    })
+                    for group, targets in groups.items()
+                }
+                expected_selection = {prefix: (scalar,) for prefix, scalar in stable_glyphs.items()}
+                base_outputs = accepted(package.build_runtime_split_assets, seed_root, stable_source)
+                verify(selections(produced(base_outputs[CJK_INDEXES[0]])) == expected_selection,
+                       "bound-selection fixture did not select one scalar per asset")
+                for packed in (False, True):
+                    seeded = dict(base_outputs)
+                    seeded[CJK_INDEXES[0]] = accepted(
+                        codec.encode_index, produced(base_outputs[CJK_INDEXES[0]]), packed=packed)
+                    metadata = produced(base_outputs[manifest])
+                    metadata["sources"]["fehrr_priority"]["sha256"] = hashlib.sha256(
+                        seeded[CJK_INDEXES[0]]).hexdigest()
+                    seeded[manifest] = canonical(metadata)
+                    root = make_root("review-bound-selection-" + str(packed) + "-" + str(schema))
+                    bound_metadata = json.loads((root / manifest).read_bytes())
+                    for relative, data in seeded.items():
+                        if relative != manifest:
+                            (root / relative).write_bytes(data)
+                    if schema == 2:
+                        bound_metadata = metadata
+                    else:
+                        bound_lock = produced(seeded[CJK_INDEXES[0]])
+                        for asset in bound_lock["assets"].values():
+                            asset["source_style"] = asset["preferred_source_style"]
+                        stored = accepted(codec.encode_index, bound_lock, packed=packed)
+                        (root / CJK_INDEXES[0]).write_bytes(stored)
+                        bound_metadata["assets"] = {
+                            prefix: {
+                                **asset,
+                                "source_priority": {
+                                    "fehrr_glyph_count": bound_lock["assets"][prefix]["glyph_count"],
+                                    "febuilder_fallback_glyph_count":
+                                        bound_lock["assets"][prefix]["febuilder_fallback_glyph_count"],
+                                    "source_locale": bound_lock["assets"][prefix]["source_locale"],
+                                    "source_style": bound_lock["assets"][prefix]["source_style"],
+                                },
+                            }
+                            for prefix, asset in metadata["assets"].items()
+                        }
+                        bound_metadata["rom_budget"] = metadata["rom_budget"]
+                        bound_metadata["sources"]["fehrr_priority"] = {
+                            "path": CJK_INDEXES[0],
+                            "sha256": hashlib.sha256(stored).hexdigest(),
+                            "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+                        }
+                    (root / manifest).write_bytes(canonical(bound_metadata))
+                    accepted(package.check_compact_assets, root)
+                    unchanged = accepted(package.build_fehrr_priority_assets, root, stable_source)
+                    verify(selections(produced(unchanged[CJK_INDEXES[0]])) == expected_selection,
+                           "unchanged bound source selection was rejected or changed")
+                    before = {relative: (root / relative).read_bytes() for relative in seeded}
+                    for group, changed_source in changed_sources.items():
+                        preview = accepted(package.build_runtime_split_assets, root, changed_source)
+                        changed_selection = {
+                            prefix: (pairs[group][1],) if prefix in groups[group]
+                            else expected_selection[prefix]
+                            for prefix in prefixes
+                        }
+                        verify(selections(produced(preview[CJK_INDEXES[0]])) == changed_selection,
+                               "source fixture changed a count or an unrelated asset selection")
+                        for operation in (
+                            package.build_fehrr_priority_assets,
+                            package.write_fehrr_priority_assets,
+                        ):
+                            reject(lambda operation=operation: operation(root, changed_source),
+                                   package.CjkFontError)
+                            verify(all((root / relative).read_bytes() == data
+                                       for relative, data in before.items()),
+                                   "changed bound selection published an output before refusing")
+                    written = accepted(package.write_fehrr_priority_assets, root, stable_source)
+                    verify(written == unchanged
+                           and all((root / relative).read_bytes() == data
+                                   for relative, data in written.items()),
+                           "unchanged bound selection did not publish its complete valid output")
+                    accepted(package.check_compact_assets, root)
             root = legacy_fonts("review-generator-blank-fallback")
             corpora = package._job_corpora(root, package._expected_jobs(root))
             common = set.intersection(*(set(value[2]) for value in corpora.values()))
