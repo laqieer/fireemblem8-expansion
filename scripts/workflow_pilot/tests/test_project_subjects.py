@@ -267,3 +267,31 @@ class ProjectSubjectTests(unittest.TestCase):
         repaired = self.tools.run_obligations(members, after)
         self.assertEqual([(item.obligation.member, item.verdict, item.detail)
                           for item in repaired if item.verdict != "satisfied"], [])
+
+    def test_selected_map_kind_rejection_is_detected_by_the_real_wire_family(self):
+        path = "scripts/generated_data/chapterbundle/schema.py"
+        original = (self.repo.root / path).read_text()
+        tree = ast.parse(original)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "read_chapter_map_dimensions"
+        )
+        function.body[:0] = ast.parse(
+            f"if {function.args.args[0].arg} == 1:\n    return None\n"
+        ).body
+        before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+        after = self.repo.commit({path: original}, parent=before)
+        members = tuple(
+            item for item in self.tools.members(self.scope(after), (before,))
+            if item.family == "wire"
+        )
+        broken = self.tools.run_obligations(members, before)
+        self.assertEqual(
+            {item.obligation.role: (item.verdict, item.checks) for item in broken
+             if item.obligation.role != "producers"},
+            {role: ("contract-violation", 1)
+             for role in ("consumers", "validators", "replay", "stale-bindings")},
+        )
+        repaired = self.tools.run_obligations(members, after)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
+                            for item in repaired))
