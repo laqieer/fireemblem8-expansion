@@ -80,7 +80,7 @@ class ResourceIndexTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for prefix in ("src", "include", "texts", "fonts/cjk", "graphics/fonts"):
+            for prefix in ("src", "include", "texts", "fonts/cjk", "graphics/fonts", "assets"):
                 shutil.copytree(
                     ROOT / prefix, root / prefix,
                     ignore=shutil.ignore_patterns("*.o", "__pycache__"),
@@ -100,6 +100,17 @@ class ResourceIndexTests(unittest.TestCase):
             self.assertEqual(Path.cwd(), cwd)
             self.assertEqual(strings["system"][0], "一一")
             self.assertEqual(len(records), sum(counts.values()))
+            registry = root / "assets/portrait_registry.json"
+            original = registry.read_bytes()
+            try:
+                registry.unlink()
+                with self.assertRaises(ValueError):
+                    _runtime_catalog_usage(root, "ja")
+                registry.write_text("{}", encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    _runtime_catalog_usage(root, "ja")
+            finally:
+                registry.write_bytes(original)
 
     def test_repack_without_a_legacy_priority_binding_refuses_without_mutation(self):
         with tempfile.TemporaryDirectory() as temporary:

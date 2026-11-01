@@ -103,7 +103,9 @@ def _require_hex_u16(value: object, *, field: str) -> int:
     return int(value, 16)
 
 
-def load_portrait_operand_map(path: Path = DEFAULT_PORTRAIT_MAP_PATH) -> PortraitOperandMap:
+def load_portrait_operand_map(
+    path: Path = DEFAULT_PORTRAIT_MAP_PATH, *, repo_root: Path = Path(".")
+) -> PortraitOperandMap:
     path = Path(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -139,14 +141,15 @@ def load_portrait_operand_map(path: Path = DEFAULT_PORTRAIT_MAP_PATH) -> Portrai
             or not re.fullmatch(r"[0-9a-f]{64}", source["sha256"])
         ):
             raise ControlStreamError(f"{path}: {region} portrait source pin is invalid")
-    fe8u_source = Path(derivation["sources"]["fe8u"]["path"])
+    fe8u_relative = Path(derivation["sources"]["fe8u"]["path"])
+    fe8u_source = repo_root / fe8u_relative
     fe8u_registry = None
     if fe8u_source.is_file() and (
         hashlib.sha256(fe8u_source.read_bytes()).hexdigest()
         != derivation["sources"]["fe8u"]["sha256"]
     ):
         raise ControlStreamError(f"{path}: pinned FE8U portrait table changed")
-    if fe8u_source == Path("assets/portrait_registry.json"):
+    if fe8u_relative == Path("assets/portrait_registry.json"):
         try:
             document = json.loads(fe8u_source.read_text(encoding="utf-8"))
             rows = document["entries"]

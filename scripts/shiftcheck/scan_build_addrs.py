@@ -27,6 +27,10 @@ EWRAM_LO, EWRAM_HI = 0x02000000, 0x02040000
 IWRAM_LO, IWRAM_HI = 0x03000000, 0x03008000
 
 HEX_RE = re.compile(r"0x[0-9a-fA-F]{6,8}")
+BANIM_SELECTOR_RE = re.compile(
+    r"(?:^|[\s;])(?P<selector>banim/data_banim\.o|\[b\]anim/data_banim\.o|"
+    r"\*banim/project_data_banim\.o)\s*\(\s*\.data\s*\)"
+)
 
 
 def classify(val):
@@ -70,30 +74,30 @@ def first_match(path, pattern):
     return None
 
 
-def find_banim_pin(path):
-    """Find a banim output-section pin even when assignment and input span lines."""
+def find_banim_pins(path):
+    """Find the numeric pin for each supported packed-animation selector."""
     assignment = None
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
-            for lineno, line in enumerate(fh, 1):
-                match = re.search(r"\.\s*=\s*(0x[0-9a-fA-F]+)\s*;", line)
-                if match:
-                    assignment = (lineno, match.group(1), line.rstrip())
-                    if "banim/data_banim.o(.data)" in line:
-                        return assignment
-                    continue
-
-                if assignment and "banim/data_banim.o(.data)" in line:
-                    return assignment
-
-                if line.strip() and not line.lstrip().startswith(
-                    ("#", "@", "//", "/*", "*")
-                ):
-                    assignment = None
+            text = fh.read()
     except FileNotFoundError:
-        pass
-
-    return None
+        return []
+    text = re.sub(
+        r"/\*.*?\*/", lambda match: "\n" * match.group(0).count("\n"),
+        text, flags=re.DOTALL,
+    )
+    pins = []
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = re.split(r"//|#", raw, maxsplit=1)[0]
+        match = re.search(r"\.\s*=\s*(0x[0-9a-fA-F]+)\s*;", line)
+        if match:
+            assignment = (lineno, match.group(1), line.rstrip())
+        selector = BANIM_SELECTOR_RE.search(line)
+        if selector:
+            pins.append((selector.group("selector"), assignment))
+        elif line.strip() and not match:
+            assignment = None
+    return pins
 
 
 def main():
@@ -132,22 +136,29 @@ def main():
 
     # banim base (Makefile `-b 0xXXXX`) vs ldscript banim pin.
     mk_base = first_match(args.makefile, r"-b\s+(0x[0-9a-fA-F]+)")
-    ld_pin = find_banim_pin(args.ldscript)
-    if mk_base and ld_pin:
+    ld_pins = find_banim_pins(args.ldscript)
+    if mk_base and ld_pins:
         base_val = int(mk_base[1].group(1), 16)
-        pin_val = int(ld_pin[1], 16)
-        expect = ROM_BASE + pin_val
-        ok = base_val == expect
-        status = "PASS" if ok else "FAIL"
-        print(
-            f"  [{status}] banim base  Makefile:{mk_base[0]} -b {base_val:#08x}"
-            f"  ==  ROM_BASE + ldscript:{ld_pin[0]} pin {pin_val:#x} ({expect:#08x})"
-        )
-        if not ok:
-            failures.append(
-                f"banim base {base_val:#x} != {expect:#x} "
-                f"(Makefile -b vs ldscript pin desynced)"
+        for selector, ld_pin in ld_pins:
+            if ld_pin is None:
+                failures.append(f"{selector}: packed-animation selector has no numeric pin")
+                continue
+            pin_val = int(ld_pin[1], 16)
+            expect = ROM_BASE + pin_val
+            ok = base_val == expect
+            status = "PASS" if ok else "FAIL"
+            print(
+                f"  [{status}] banim base  Makefile:{mk_base[0]} -b {base_val:#08x}"
+                f"  ==  ROM_BASE + ldscript:{ld_pin[0]} pin {pin_val:#x}"
+                f" ({expect:#08x}; {selector})"
             )
+            if not ok:
+                failures.append(
+                    f"banim base {base_val:#x} != {expect:#x} "
+                    f"(Makefile -b vs {selector} pin desynced)"
+                )
+    elif mk_base:
+        failures.append("Makefile declares a banim base but no packed-animation pin was found")
     else:
         print(
             "  [WARN] could not locate both banim base (Makefile -b) and "

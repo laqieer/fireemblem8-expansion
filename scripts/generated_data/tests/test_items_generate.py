@@ -2,10 +2,19 @@ import unittest
 
 from scripts.generated_data.items.generate import generate_c_source
 from scripts.generated_data.items.schema import load_records
-from scripts.generated_data.tests._util import fixture_path
+from scripts.generated_data.tests._util import fixture_path, scratch_dir
 
 
 class GenerateDeterminismTests(unittest.TestCase):
+    def test_numeric_records_do_not_read_a_message_header(self):
+        with scratch_dir() as directory:
+            records = load_records(
+                fixture_path("items", "valid.json"),
+                msg_header=directory + "/absent-msg.h",
+            )
+        self.assertEqual(records[0].item, "ITEM_FIXTURE_NONE")
+        self.assertEqual(records[1].name_text_id, 1)
+
     def test_generation_is_repeatable(self):
         records = load_records(fixture_path("items", "valid.json"))
         first = generate_c_source(records, "fixtures/items/valid.json")

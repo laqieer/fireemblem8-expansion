@@ -313,8 +313,10 @@ def _runtime_catalog_usage(
         },
         fixed_width_aliases_path=root / catalog.FIXED_WIDTH_ALIASES_PATH,
         width_registry_path=root / catalog.DEFAULT_WIDTH_REGISTRY_PATH,
+        engine_root_path=root,
         event_root_path=root / catalog.DEFAULT_EVENT_ROOT,
         portrait_map_path=root / catalog.DEFAULT_PORTRAIT_MAP_PATH,
+        portrait_root_path=root,
         font_root_path=root,
     )
     registry = load_width_registry(root / WIDTH_REGISTRY_PATH)
