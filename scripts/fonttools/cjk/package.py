@@ -1202,6 +1202,28 @@ def write_compact_assets(
     return outputs
 
 
+def _validate_fehrr_lock_provenance(lock: Mapping[str, object]) -> None:
+    source = lock.get("source", {})
+    if (
+        type(lock.get("schema_version")) is not int
+        or lock["schema_version"] != 1
+        or not isinstance(source, dict)
+        or source.get("repository") != FEHRR_REPOSITORY
+        or not isinstance(source.get("commit"), str)
+        or len(source["commit"]) != 40
+        or any(character not in "0123456789abcdef" for character in source["commit"])
+        or not isinstance(source.get("tree_sha256"), str)
+        or len(source["tree_sha256"]) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in source["tree_sha256"]
+        )
+    ):
+        raise CjkFontError("FEHRR source lock provenance is invalid")
+    if not isinstance(lock.get("assets"), dict):
+        raise CjkFontError("FEHRR source lock assets are invalid")
+
+
 def _read_fehrr_lock(root: Path, sources: Mapping[str, object]) -> Dict[str, object]:
     priority = sources.get("fehrr_priority")
     if priority is None:
@@ -1221,24 +1243,7 @@ def _read_fehrr_lock(root: Path, sources: Mapping[str, object]) -> Dict[str, obj
         lock = decode_index(lock_data)
     except ResourceIndexError as error:
         raise CjkFontError(f"FEHRR source index is invalid: {error}") from error
-    source = lock.get("source", {})
-    if (
-        lock.get("schema_version") != 1
-        or not isinstance(source, dict)
-        or source.get("repository") != FEHRR_REPOSITORY
-        or not isinstance(source.get("commit"), str)
-        or len(source["commit"]) != 40
-        or any(character not in "0123456789abcdef" for character in source["commit"])
-        or not isinstance(source.get("tree_sha256"), str)
-        or len(source["tree_sha256"]) != 64
-        or any(
-            character not in "0123456789abcdef"
-            for character in source["tree_sha256"]
-        )
-    ):
-        raise CjkFontError("FEHRR source lock provenance is invalid")
-    if not isinstance(lock.get("assets"), dict):
-        raise CjkFontError("FEHRR source lock assets are invalid")
+    _validate_fehrr_lock_provenance(lock)
     return lock
 
 
@@ -1736,6 +1741,7 @@ def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]
         lock = decode_index(lock_data)
     except (UnicodeDecodeError, json.JSONDecodeError, ResourceIndexError) as error:
         raise CjkFontError(f"runtime split provenance JSON is invalid: {error}") from error
+    _validate_fehrr_lock_provenance(lock)
     expected_sources = {
         "inventory": {
             "path": "fonts/cjk/inventory.json",
@@ -1859,8 +1865,10 @@ def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]
                 fallback = fallback_rows.get(scalar)
                 if (
                     fallback is None
-                    or fallback_lock.get(scalar, {}).get("reason")
-                    != "absent from configured FEHRR style tiers"
+                    or fallback_lock.get(scalar, {}).get("reason") not in (
+                        "absent from configured FEHRR style tiers",
+                        "configured FEHRR glyph is blank and no visible same-game fallback exists",
+                    )
                     or data["widths"][index] != fallback.get("width")
                     or sha256_bytes(bitmap) != fallback.get("packedSha256")
                 ):

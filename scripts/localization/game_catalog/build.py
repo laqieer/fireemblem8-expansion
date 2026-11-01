@@ -258,10 +258,10 @@ def _load_authored_catalogs(paths: Optional[Mapping[str, Path]]) -> Dict[str, Di
     return catalogs
 
 
-def _load_mapping(path: Path, *, target_count: int):
+def _load_mapping(path: Path, *, target_count: int, repo_root: Path | None = None):
     data = _load_json(path)
     try:
-        mapping = validate_mapping_document(data, target_count=target_count)
+        mapping = validate_mapping_document(data, target_count=target_count, repo_root=repo_root)
     except MappingError as error:
         raise GameCatalogError(str(error)) from error
     if not mapping.coverage_eligible:
@@ -1155,7 +1155,7 @@ def build_game_catalog(
             suffix_share=suffix_share,
         ),
     )
-    mapping = _load_mapping(mapping_path, target_count=target_count)
+    mapping = _load_mapping(mapping_path, target_count=target_count, repo_root=repo_root)
     eu_enabled_locales = tuple(
         locale for locale in enabled_locales if locale in EU_LOCALE_IDS
     )

@@ -49,6 +49,9 @@ PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
 CJK_CODEC = "scripts/fonttools/cjk/resource_index.py"
 CJK_INDEXES = ("fonts/cjk/fehrr-sources.json", "fonts/cjk/runtime_usage.json")
+CJK_FIXTURE_PREFIXES = (
+    "fonts/cjk", "graphics/fonts/cjk", "src", "include", "texts", "assets", "reports",
+)
 CASE_REGISTRY = "docs/test-cases/registry.json"
 CASE_TEMPLATE = "docs/test-cases/template.md"
 CASE_DOCUMENT = "docs/test-cases/localization.md"
@@ -259,6 +262,12 @@ def event_validation_inputs(tree):
     return shared
 
 
+def fixture_inputs(tree, probes):
+    if any(probe.startswith("cjk-resource:") for probe in probes):
+        return {path for prefix in CJK_FIXTURE_PREFIXES for path in tree.under(prefix)}
+    return set()
+
+
 def resolve_subject(case_id: str, subject: str, catalog: dict) -> SubjectSpec:
     matches = [item for item in BINDINGS if (item.case_id, item.name) == (case_id, subject)]
     review.require(len(matches) == 1, "unknown subject: a reviewed finite binding is required")
@@ -413,11 +422,12 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                 add(family, role, "resource-index", producer, consumer,
                     "plain JSON or version1 xz-base64 resource envelope",
                     "complete values, physical checksums, stream reuse and bounded rejection",
-                    "cjk-resource:" + family + ":" + role, paths)
-        fixtures = {path for prefix in (
-            "fonts/cjk", "graphics/fonts/cjk", "src", "include", "texts", "assets", "reports",
-        ) for path in head.under(prefix)}
-        result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths | fixtures)))
+                    "cjk-resource:" + family + ":" + role,
+                    paths | {
+                        "scripts/localization/game_catalog/build.py",
+                        "scripts/localization/game_catalog/control_streams.py",
+                    } if family == "generated" else paths)
+        result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths)))
                   for member in result]
     elif spec.model == "project-selection":
         declaration = project_declaration_model(tree)
@@ -1558,7 +1568,7 @@ def _cjk_resource(probe):
     def accepted(function, *args, **kwargs):
         try:
             return function(*args, **kwargs)
-        except (codec.ResourceIndexError, package.CjkFontError) as failure:
+        except (ValueError, TypeError, KeyError, RecursionError, lzma.LZMAError) as failure:
             raise ContractViolation("valid resource operation was rejected: " + str(failure)) from failure
 
     def produced(data):
@@ -1580,6 +1590,15 @@ def _cjk_resource(probe):
             prefixes += ("src", "include", "texts", "assets", "reports")
         for prefix in prefixes:
             shutil.copytree(prefix, root / prefix, dirs_exist_ok=True)
+        if inventory:
+            for command in (
+                ["git", "init", "--quiet"], ["git", "add", "--", "src", "include"],
+            ):
+                result = run_process(command, cwd=root, env=os.environ.copy(),
+                                     timeout=20, new_session=False)
+                if result.returncode:
+                    raise OSError("owned tracked-source fixture unavailable: "
+                                  + result.stderr.decode(errors="replace")[-1000:])
         return root
 
     def legacy_fonts(name):
@@ -1627,8 +1646,8 @@ def _cjk_resource(probe):
         accepted(package.check_compact_assets, root)
         return root
 
-    def source_checkout(scalar=None):
-        root = Path("build/review-fehrr-generator-source-" + str(scalar))
+    def source_checkout(scalar=None, *, blank=False):
+        root = Path("build/review-fehrr-generator-source-" + str(scalar) + "-" + str(blank))
         root.mkdir(parents=True)
         paths = {
             Path("glyph") / locale / "font.fontall.txt"
@@ -1651,7 +1670,7 @@ def _cjk_resource(probe):
                         + struct.pack(">I", zlib.crc32(kind + data)))
 
             scanlines = (
-                b"\0\0\0\0" + b"\xff\xff\xff" * 15
+                b"\0" + (b"\xff\xff\xff" if blank else b"\0\0\0") + b"\xff\xff\xff" * 15
                 + (b"\0" + b"\xff\xff\xff" * 16) * 15
             )
             png = (
@@ -1767,6 +1786,22 @@ def _cjk_resource(probe):
                     repeated = accepted(generator, root, source)
                     verify(repeated == outputs,
                            "actual generator rejected or changed its own schema-2 output")
+            root = legacy_fonts("review-generator-blank-fallback")
+            corpora = package._job_corpora(root, package._expected_jobs(root))
+            common = set.intersection(*(set(value[2]) for value in corpora.values()))
+            scalar = next(value for value in sorted(common) if value >= 0x4E00)
+            source = source_checkout(scalar, blank=True)
+            outputs = accepted(package.write_fehrr_priority_assets, root, source)
+            accepted(package.check_compact_assets, root)
+            lock = produced(outputs[CJK_INDEXES[0]])
+            verify(all(any(
+                row["scalar"] == package.scalar_text(scalar)
+                and row["reason"] == (
+                    "configured FEHRR glyph is blank and no visible same-game fallback exists"
+                )
+                for row in asset["febuilder_fallbacks"]
+            ) for asset in lock["assets"].values()),
+                   "actual blank-glyph fallback lost its supported source reason")
         elif role == "consumers":
             root = Path("build/review-resource-consumer")
             source = root / CJK_INDEXES[0]
@@ -1839,13 +1874,6 @@ def _cjk_resource(probe):
             path.write_bytes(b"invalid index")
             reject(lambda: codec.encode_like_index(seed, path))
             verify(path.read_bytes() == b"invalid index", "failed writer changed input")
-            # Literal provenance queries the index; the captured tree needs no new commit.
-            for command in (["git", "init", "--quiet"], ["git", "add", "--", "src", "include"]):
-                result = run_process(command, cwd=Path.cwd(), env=os.environ.copy(),
-                                     timeout=20, new_session=False)
-                if result.returncode:
-                    raise OSError("native tracked-source fixture unavailable: "
-                                  + result.stderr.decode(errors="replace")[-1000:])
             root = owned_fonts("review-resource-inventory", inventory=True)
             inventory_path = "fonts/cjk/inventory.json"
             manifest_path = "graphics/fonts/cjk/manifest.json"
@@ -1872,6 +1900,21 @@ def _cjk_resource(probe):
                        and (root / inventory_path).read_bytes() == inventory_data
                        and (root / manifest_path).read_bytes() == canonical(expected_manifest),
                        "inventory writer changed its ownership or physical checksum chain")
+            mapping = json.loads(
+                (root / "texts/locales/mapping/fe8u_target_map.json").read_bytes()
+            )
+            literal_source = next(
+                row["source"]["regional_sources"]["ja"]["provenance"]["source_path"]
+                for row in mapping["rows"]
+                if row["source"].get("regional_sources", {}).get("ja", {}).get("kind")
+                == "literal"
+            )
+            for relative in (literal_source, "assets/portrait_registry.json"):
+                selected_source = root / relative
+                saved = selected_source.read_bytes()
+                selected_source.unlink()
+                reject(lambda: package.check_generated_files(root), ValueError)
+                selected_source.write_bytes(saved)
         else:
             raise review.ReviewError("unknown resource generation role")
     elif family == "wire":
