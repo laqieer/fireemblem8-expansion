@@ -524,6 +524,14 @@ the consumers' independent protected-principal/deployment requirements.
    current workflow order. Parsed ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
    complete native successes before claiming the end-to-end fix.
+   Count exact gate argv across every parsed executable step, including
+   setup, not only gate-role records. Copying any declared gate command
+   into `Build tools` must refuse rather than hide a duplicate after
+   archival setup; all declared gate/standalone-gate signatures participate.
+   The same control applies inside the existing archival-install helper:
+   use its parsed semantic argv while preserving the original raw-token
+   record for exact helper equivalence. Inline and helper sources must not
+   disagree about which commands execute.
 
 ### Expected result
 

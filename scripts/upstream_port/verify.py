@@ -2173,6 +2173,14 @@ def _parse_job_steps(job_name, body, repository_root=None):
     return steps
 
 
+def _semantic_run_commands(fields):
+    """Read helper argv without discarding its raw-token equivalence record."""
+    for command in dict(fields).get("run", ()):
+        if command and isinstance(command[0], tuple):
+            command, _ = command
+        yield command
+
+
 def _parse_workflow_structure_text(text, repository_root=None):
     workflow_context = _parse_workflow_context(text)
     jobs = _workflow_job_entries(text)
@@ -2193,7 +2201,18 @@ def _parse_workflow_structure_text(text, repository_root=None):
         )
         for name in _EXPECTED_JOBS
     )
-    return workflow_context, names, structures
+    structure = workflow_context, names, structures
+    counts = dict.fromkeys(
+        (command for _, _, command in _workflow_gate_contract(structure)), 0,
+    )
+    for _, _, steps in structures:
+        for _, _, fields in steps:
+            for command in _semantic_run_commands(fields):
+                if command in counts:
+                    counts[command] += 1
+    if any(count != 1 for count in counts.values()):
+        raise ValueError("gate commands must execute exactly once across all executable steps")
+    return structure
 
 
 def _workflow_gate_contract(structure):
@@ -2203,8 +2222,7 @@ def _workflow_gate_contract(structure):
         for role, step_name, fields in steps:
             if role not in {"gate", "standalone-gate"}:
                 continue
-            values = dict(fields)
-            run_commands = values["run"]
+            run_commands = tuple(_semantic_run_commands(fields))
             if step_name == "Build archival lane without a copyrighted baserom":
                 run_commands = tuple(
                     command

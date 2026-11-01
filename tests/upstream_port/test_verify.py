@@ -78,7 +78,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_reporter_and_full_game_checks_have_independent_worker_owners(self):
         with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
-            contract = verify_mod._parse_workflow_gate_contract_text(stream.read())
+            _, _, jobs = verify_mod._parse_workflow_structure_text(stream.read())
+        contract = [
+            (job, name, command)
+            for job, _, steps in jobs
+            for _, name, fields in steps
+            for command in verify_mod._semantic_run_commands(fields)
+        ]
         gates = verify_mod.gates(jobs=2)
         reporter = next(gate for gate in gates if gate.name == "workflow-pilot-reporter-tests")
         reporter_owners = [job for job, _, argv in contract if list(argv) == reporter.command]
@@ -90,6 +96,38 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 owners = [job for job, _, argv in contract if list(argv) == gate.command]
                 self.assertEqual(len(owners), 1)
                 self.assertNotEqual(owners[0], reporter_owners[0])
+
+    def test_setup_cannot_duplicate_mirrored_gate_commands(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            original = stream.read()
+        prefix, legacy = original.split("  legacy:\n", 1)
+        for _, name, command in verify_mod._parse_workflow_gate_contract_text(original):
+            with self.subTest(gate=name, command=command):
+                changed = prefix + "  legacy:\n" + legacy.replace(
+                    "      run: ./build_tools.sh\n",
+                    "      run: |\n        ./build_tools.sh\n        "
+                    + " ".join(command) + "\n",
+                    1,
+                )
+                self.assertNotEqual(changed, original)
+                with self.assertRaisesRegex(ValueError, "exactly once"):
+                    verify_mod._parse_workflow_gate_contract_text(changed)
+
+    def test_setup_helper_cannot_duplicate_mirrored_gate_commands(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            workflow = stream.read()
+        relative = os.path.join("scripts", "ci", "install_archival_compilers.sh")
+        with open(os.path.join(REPO_ROOT, relative), encoding="utf-8") as stream:
+            original = stream.read()
+        with tempfile.TemporaryDirectory() as target:
+            helper = os.path.join(target, relative)
+            os.makedirs(os.path.dirname(helper))
+            for _, name, command in verify_mod._parse_workflow_gate_contract_text(workflow):
+                with self.subTest(gate=name, command=command):
+                    with open(helper, "w", encoding="utf-8") as stream:
+                        stream.write(original + "\n" + " ".join(command) + "\n")
+                    with self.assertRaisesRegex(ValueError, "exactly once"):
+                        verify_mod._parse_workflow_structure_text(workflow, target)
 
     def test_all_locales_gate_mirrors_required_presentation_target(self):
         gate = next(
