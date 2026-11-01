@@ -135,7 +135,15 @@ Parentheses, integer suffixes, octal/hex spelling, comments and definition
 ordering do not change ownership. Unsupported expressions, function-like
 message macros, `#undef` and redefinition reject explicitly instead of
 leaving an obsolete value active in the validator. `MSG_COUNT` retains its
-hexadecimal metadata format and must match the active source.
+hexadecimal metadata format, must be an actual active definition and must
+match the active source. The generated-header dialect permits unconditional
+literal bindings and an optional conventional `#ifndef` / empty `#define`
+include guard. Other conditionals are explicitly unsupported, not evaluated
+with guessed profile flags. Native `%:` directive spelling has the same
+meaning as `#`; unmodeled directives such as external-header inclusion are
+rejected rather than silently skipped. Native line splices are joined before comments
+are masked, so a continued comment or split directive cannot expose a ghost
+allocation/count; a split spelling of a valid definition remains valid.
 Shared C-array/delimiter parsing preserves multiline and inline formatting.
 Public engine macro aliases are read from the existing `EAstdlib.h`; implicit
 `MSG_NNN` symbols from numeric source entries retain their validated bindings.

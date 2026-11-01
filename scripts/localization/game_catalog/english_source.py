@@ -20,7 +20,10 @@ _MACRO_RE = re.compile(r"^##\s*(\w+)\s*$")
 _INCLUDE_RE = re.compile(r'^#include\s+"([^"]+)"\s*$')
 _TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
 _HEADER_DIRECTIVE_RE = re.compile(
-    r"^\s*#\s*(define|undef)\s+([A-Za-z_][A-Za-z0-9_]*)(.*)$"
+    r"^\s*(?:#|%:)\s*(define|undef)\s+([A-Za-z_][A-Za-z0-9_]*)(.*)$"
+)
+_HEADER_CONDITIONAL_RE = re.compile(
+    r"^\s*(?:#|%:)\s*(if(?:n?def)?|elif(?:n?def)?|else|endif)\b(.*)$"
 )
 _HEADER_INTEGER_RE = re.compile(
     r"(-?(?:0[xX][0-9A-Fa-f]+|[0-9]+))"
@@ -280,14 +283,43 @@ def _header_allocations(
     header_path: Path, source_names: set[str],
 ) -> Dict[str, Tuple[int, int]]:
     try:
-        text = _mask_c_comments_and_strings(_strict_utf8_text(header_path))
+        text = _mask_c_comments_and_strings(
+            _strict_utf8_text(header_path).replace("\\\n", "")
+        )
     except StructuralCompletionError as error:
         raise GameCatalogError(f"{header_path}: invalid allocation header: {error}") from error
+    lines = list(enumerate(text.splitlines(), 1))
+    nonempty = [(number, line) for number, line in lines if line.strip()]
+    guard_start = None
+    if len(nonempty) >= 2:
+        guard = re.fullmatch(r"\s*(?:#|%:)\s*ifndef\s+([A-Za-z_]\w*)\s*", nonempty[0][1])
+        definition = _HEADER_DIRECTIVE_RE.fullmatch(nonempty[1][1])
+        if (guard is not None and definition is not None
+                and definition.group(1) == "define"
+                and definition.group(2) == guard.group(1) and not definition.group(3).strip()):
+            guard_start = nonempty[0][0]
+    guard_open = False
     constants: Dict[str, Tuple[int, int]] = {}
     seen = set()
-    for line_number, line in enumerate(text.splitlines(), 1):
+    for line_number, line in lines:
+        conditional = _HEADER_CONDITIONAL_RE.fullmatch(line)
+        if conditional is not None:
+            action, tail = conditional.groups()
+            if line_number == guard_start:
+                guard_open = True
+            elif action == "endif" and guard_open and not tail.strip():
+                guard_open = False
+            else:
+                raise GameCatalogError(
+                    f"{header_path}:{line_number}: unsupported conditional allocation directive"
+                )
+            continue
         directive = _HEADER_DIRECTIVE_RE.fullmatch(line)
         if directive is None:
+            if line.strip():
+                raise GameCatalogError(
+                    f"{header_path}:{line_number}: unsupported allocation header syntax"
+                )
             continue
         action, name, tail = directive.groups()
         relevant = name in source_names or name.startswith("MSG_") or name in constants
@@ -328,6 +360,8 @@ def _header_allocations(
             ) from error
         seen.add(name)
         constants[name] = (number, line_number)
+    if guard_open:
+        raise GameCatalogError(f"{header_path}: unterminated allocation header guard")
     return constants
 
 
@@ -339,7 +373,9 @@ def validate_english_source_header(
         entry.definition or f"MSG_{entry.target_id:03X}" for entry in entries
     }
     constants = _header_allocations(header_path, source_names)
-    if "MSG_COUNT" in constants and constants["MSG_COUNT"][0] != len(entries):
+    if "MSG_COUNT" not in constants:
+        raise GameCatalogError(f"{header_path}: missing active MSG_COUNT allocation")
+    if constants["MSG_COUNT"][0] != len(entries):
         raise GameCatalogError(f"{header_path}: MSG_COUNT differs from the active source")
     for entry in entries:
         name = entry.definition or f"MSG_{entry.target_id:03X}"

@@ -1093,6 +1093,49 @@ class FixtureBuildTests(unittest.TestCase):
         build = build_game_catalog(**inputs)
         self.assertEqual(build.target_count, 3)
 
+    def test_selected_header_requires_unconditional_allocations_and_active_count(self):
+        header = self.fixture_dir / "msg.h"
+        original = header.read_text(encoding="utf-8")
+        inputs = self.selected_inputs()
+        inputs["event_root_path"] = self.fixture_dir
+        inactive = original.replace(
+            "#define MSG_FIXTURE_ONE 0x0001",
+            "#if 0\n#define MSG_FIXTURE_ONE 0x0001\n#endif",
+        )
+        conditional = original.replace(
+            "#define MSG_FIXTURE_ONE 0x0001",
+            "#ifdef SELECTED_ALLOCATION\n#define MSG_FIXTURE_ONE 0x0001\n#endif",
+        )
+        commented_count = "\n".join(
+            "/* " + line + " */" if line.startswith("#define MSG_COUNT ") else line
+            for line in original.splitlines()
+        ) + "\n"
+        spliced_inactive = inactive.replace("#if 0", "#i\\\nf 0")
+        spliced_comment_count = original.replace(
+            "#define MSG_COUNT ", "// continued comment\\\n#define MSG_COUNT ",
+        )
+        digraph_inactive = inactive.replace("#if 0", "%:if 0").replace(
+            "#endif\n#define MSG_FIXTURE_TWO", "%:endif\n#define MSG_FIXTURE_TWO", 1,
+        )
+        for value in (
+            inactive, conditional, commented_count, spliced_inactive, spliced_comment_count,
+            digraph_inactive, original + '#include "external-allocations.h"\n',
+        ):
+            with self.subTest(header=value):
+                self.assertNotEqual(value, original)
+                header.write_text(value, encoding="utf-8")
+                with self.assertRaises(GameCatalogError):
+                    build_game_catalog(**inputs)
+        header.write_text(
+            (
+                original + "/*\n#if 0\n#define MSG_COMMENTED_OUT 0xFFFF\n#endif\n*/\n"
+            ).replace(
+                "#define MSG_FIXTURE_ONE ", "#defi\\\nne MSG_FIXTURE_ONE ",
+            ).replace("#define MSG_FIXTURE_TWO ", "%:define MSG_FIXTURE_TWO "),
+            encoding="utf-8",
+        )
+        self.assertEqual(build_game_catalog(**inputs).target_count, 3)
+
     def test_non_stock_catalog_rejects_an_overwide_unbreakable_system_label(self):
         source = self.fixture_dir / "ja_indexed.txt"
         source.write_text(
