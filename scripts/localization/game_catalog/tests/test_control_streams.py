@@ -15,6 +15,7 @@ from scripts.localization.game_catalog.control_streams import (
     CONTROL_DOMAIN_FE8J,
     CONTROL_DOMAIN_FE8U,
     ControlStreamError,
+    EventTextMode,
     TalkFontMetrics,
     _continuation_speakers,
     build_event_continuation_models,
@@ -62,8 +63,8 @@ class SelectedEventContinuationTests(unittest.TestCase):
                 event_root, message_ids={"MSG_SELECTED": 1},
             )
             self.assertEqual(
-                {(model.text_mode.style, model.continuation_count) for model in models[1]},
-                {("talk", 0), ("system", 0)},
+                {(model.text_mode, model.continuation_count) for model in models[1]},
+                {(EventTextMode.TALK, 0), (EventTextMode.SOLO_BOX, 0)},
             )
 
     def test_popup_message_ids_are_checked_without_replacing_talk_models(self):

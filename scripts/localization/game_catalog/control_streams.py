@@ -21,7 +21,6 @@ from scripts.localization.game_locales.ending_metrics import (
 from scripts.localization.legacy_spacing import (
     LEGACY_SJIS_SPACE_BYTES,
     LEGACY_SJIS_SPACE_SCALAR,
-    LEGACY_SJIS_SPACE_WIDTH,
 )
 
 if TYPE_CHECKING:
@@ -42,9 +41,6 @@ _TALK_TRANSPARENT_EXTENDED_CONTROLS = (
     | frozenset(range(0x16, 0x1A))
     | frozenset(range(0x1B, 0x20))
     | frozenset((0x21, 0x25))
-)
-_TALK_LINE_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
-    (0x01, 0x02, 0x03, 0x14, 0x15)
 )
 _MOUTH_TOPOLOGY_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
     (0x03, 0x14, 0x15)
@@ -93,11 +89,6 @@ class EventTextMode(IntEnum):
     SOLO_BOX = 4
     BOX_TYPE5 = 5
 
-    @property
-    def style(self) -> str:
-        return "talk" if self.value <= 2 else "system"
-
-
 @dataclass(frozen=True)
 class StreamToken:
     kind: str
@@ -125,6 +116,12 @@ class EventContinuationModel:
     source_path: str
     dialogue_skipped: bool = False
     text_mode: EventTextMode = EventTextMode.TALK
+
+
+def is_dynamic_event_message(start_kind: str, target_id: int) -> bool:
+    """Signed TEXTSHOW operands select an event slot, not a catalog allocation."""
+
+    return start_kind in ("TEXTSHOW", "EvtTextShow2") and 0x8000 <= target_id <= 0xFFFF
 
 
 @dataclass(frozen=True)
@@ -580,28 +577,6 @@ def _is_talk_payload(tokens: Sequence[StreamToken]) -> bool:
     )
 
 
-def _scalar_width(scalar: int, *, metrics: TalkFontMetrics) -> int:
-    if scalar < 0x20:
-        return 0
-    if scalar == LEGACY_SJIS_SPACE_SCALAR:
-        return LEGACY_SJIS_SPACE_WIDTH
-    if scalar < 0x80:
-        try:
-            return metrics.ascii_widths[scalar]
-        except KeyError as error:
-            raise ControlStreamError(
-                f"{metrics.locale}: ASCII U+{scalar:04X} is absent from the system font"
-            ) from error
-    if scalar == 0x3000:
-        return 16
-    try:
-        return metrics.cjk_widths[scalar]
-    except KeyError as error:
-        raise ControlStreamError(
-            f"{metrics.locale}: U+{scalar:04X} is absent from committed system metrics"
-        ) from error
-
-
 def validate_talk_line_widths(
     tokens: Sequence[StreamToken],
     *,
@@ -615,45 +590,27 @@ def validate_talk_line_widths(
             "max_talk_line_width": 0,
         }
 
-    line_width = 0
-    line_scalars: List[int] = []
-    line_count = 0
-    max_line_width = 0
-    for token in tokens:
-        if token.kind == "scalar":
-            assert token.scalar is not None
-            line_width += _scalar_width(token.scalar, metrics=metrics)
-            line_scalars.append(token.scalar)
-            continue
-        boundary = (
-            token.kind == "end"
-            or (token.kind == "extended" and token.scalar == 0x04)
-            or (
-                token.kind == "control"
-                and token.control in _TALK_LINE_BOUNDARY_CONTROLS
-            )
+    from scripts.localization.game_locales.width_contract import (
+        TextRenderer, TextWidthContractError, WidthMetrics, validate_token_widths,
+    )
+
+    try:
+        stats = validate_token_widths(
+            tokens,
+            metrics=WidthMetrics(
+                locale=metrics.locale, style="talk",
+                ascii_widths=metrics.ascii_widths, cjk_widths=metrics.cjk_widths,
+            ),
+            max_pixels=metrics.allocation_pixels, source_name=source_name,
+            renderer=TextRenderer.TALK,
         )
-        if not boundary:
-            continue
-        if line_scalars:
-            line_count += 1
-            max_line_width = max(max_line_width, line_width)
-            if line_width > metrics.allocation_pixels:
-                preview = "".join(
-                    " " if scalar == LEGACY_SJIS_SPACE_SCALAR else chr(scalar)
-                    for scalar in line_scalars
-                )
-                raise ControlStreamError(
-                    f"{source_name}: talk line {preview!r} is {line_width}px, "
-                    f"exceeding the {metrics.allocation_pixels}px allocation"
-                )
-        line_width = 0
-        line_scalars = []
+    except TextWidthContractError as error:
+        raise ControlStreamError(str(error)) from error
 
     return {
-        "talk_line_count": line_count,
+        "talk_line_count": stats["line_count"],
         "talk_payload_count": 1,
-        "max_talk_line_width": max_line_width,
+        "max_talk_line_width": stats["max_line_width"],
     }
 
 
@@ -1102,8 +1059,7 @@ def validate_event_continuations(
     for target_id, target_models in sorted(models.items()):
         if target_id >= len(english_payloads):
             if all(
-                model.start_kind in ("TEXTSHOW", "EvtTextShow2")
-                and 0x8000 <= target_id <= 0xFFFF
+                is_dynamic_event_message(model.start_kind, target_id)
                 for model in target_models
             ):
                 continue

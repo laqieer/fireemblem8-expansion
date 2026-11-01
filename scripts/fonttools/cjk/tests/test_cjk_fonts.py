@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -16,9 +17,10 @@ from scripts.fonttools.cjk.inventory import (
     CjkFontError,
     FONT_SOURCES,
     build_generated_files,
-    _direct_talk_target_ids,
+    _runtime_catalog_usage,
     read_sfnt_identity,
 )
+from scripts.localization.game_locales.width_contract import _direct_talk_target_ids
 from scripts.fonttools.cjk.package import (
     ASSET_ROOT,
     FEHBUILDER_BASELINE_MANIFEST,
@@ -41,8 +43,14 @@ class CjkFontTests(unittest.TestCase):
             source.mkdir()
             (source / "uiarena.c").write_text("StartArenaDialogue(2);\n")
             (source / "bmshop.c").write_text("[SHOP_TYPE_ARMORY] = 0;\n")
-            (source / "a.c").write_text("StartTalkMsg(0, 15);\nStartTalkMsg(0, 3);\n")
-            (source / "z.c").write_text("StartTalkMsgExt(0, 15, 0);\nStartTalkMsg(0, 4);\n")
+            (source / "a.c").write_text(
+                "StartTalkMsg(1, 7, 15);\nStartTalkMsg(2, 8, 3);\n"
+            )
+            (source / "z.c").write_text(
+                "StartTalkMsgExt(3, 9, 15, 0);\nStartTalkMsg(4, 10, 4);\n"
+                "StartTalkMsg(Coordinate(7, 8), 11, 3);\n"
+                "// StartTalkMsg(0, 0, 14);\n"
+            )
             original = Path.glob
             results = []
             for reverse in (False, True):
@@ -53,6 +61,59 @@ class CjkFontTests(unittest.TestCase):
                     results.append(_direct_talk_target_ids(root, 16))
             self.assertEqual(results[0], results[1])
             self.assertEqual(set(results[0]), {2, 3, 4, 15})
+
+    def test_inventory_uses_all_native_requirements_and_rejects_missing_payloads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "src"
+            source.mkdir()
+            for name in ("data_characters.c", "data_classes.c"):
+                (source / name).write_text(".nameTextId = 0,\n")
+            (source / "uiarena.c").write_text("")
+            (source / "data_items.c").write_text(".nameTextId = 0,\n.useDescTextId = 2,\n")
+            (source / "bmshop.c").write_text("[SHOP_TYPE_ARMORY] = 0;\n")
+            (source / "sio_tactician.c").write_text(
+                f'static const char sTacticianGridJaA[] = "{"A" * 75}";\n'
+                f'static const char sTacticianGridJaB[] = "{"B" * 75}";\n'
+            )
+            events = source / "events"
+            events.mkdir()
+            (events / "box.c").write_text(
+                "EventScr Box[] = { SOLOTEXTBOXSTART TEXTSHOW(MSG_BOX) ENDA };\n"
+            )
+            registry = root / "texts/locales/mapping/text_width_contexts.json"
+            registry.parent.mkdir(parents=True)
+            registry.write_bytes(
+                (ROOT / "texts/locales/mapping/text_width_contexts.json").read_bytes()
+            )
+            expansion = root / "texts/expansion"
+            expansion.mkdir()
+            (expansion / "registry.json").write_text('{"messages": []}\n')
+            (expansion / "catalog.en.json").write_text('{"locale": "en", "strings": {}}\n')
+            entries = tuple(
+                SimpleNamespace(
+                    target_id=target, source_text=text, encoded_bytes=text.encode() + b"\0",
+                    mapping_source_kind="fixture",
+                )
+                for target, text in enumerate(("Zero", "日", "本"))
+            )
+            build = SimpleNamespace(
+                target_count=3, message_ids={"MSG_BOX": 1},
+                locales=(SimpleNamespace(locale="ja", entries=entries),),
+            )
+            with patch(
+                "scripts.localization.game_catalog.build.compose_game_catalog", return_value=build,
+            ):
+                strings, records, counts = _runtime_catalog_usage(root, "ja")
+                for target in (1, 2):
+                    self.assertEqual(records[target]["styles"], ["system", "talk"])
+                    for style in ("system", "talk"):
+                        self.assertIn(entries[target].source_text, strings[style])
+                self.assertEqual(counts["both"], 2)
+                self.assertIn("inherited-font premeasurement", records[1]["reason"])
+                entries[2].encoded_bytes = None
+                with self.assertRaisesRegex(CjkFontError, "0x0002.*payload is absent"):
+                    _runtime_catalog_usage(root, "ja")
 
     def test_expansion_catalog_inventory_provenance_matches_current_keys(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())

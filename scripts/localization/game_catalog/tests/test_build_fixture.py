@@ -450,6 +450,12 @@ class FixtureBuildTests(unittest.TestCase):
                     cwd=ROOT, capture_output=True, text=True, timeout=60,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                data[table][0]["nameTextId"] = 3
+                source.write_text(json.dumps(data), encoding="utf-8")
+                with self.assertRaises(GameCatalogError):
+                    build_game_catalog(
+                        **inputs, schema_inputs=context, fixed_width_aliases_path=aliases_path,
+                    )
 
     def test_selected_name_terminators_do_not_change_rendered_width(self):
         inputs = self.selected_inputs()
@@ -729,7 +735,11 @@ class FixtureBuildTests(unittest.TestCase):
                 row for row in build.report["width_validation"][locale]["records"]
                 if row["target_id"] == "0x0001"
             )
-            self.assertEqual(record["context"], policy.talk_context)
+            self.assertIn(policy.talk_context, record["contexts"])
+            self.assertTrue(any(
+                item["renderer"] == "talk" and item["style"] == "talk"
+                for item in record["requirements"]
+            ))
         texts = self.fixture_dir / "texts.txt"
         original_texts = texts.read_text()
         numeric_texts = original_texts.replace("## MSG_FIXTURE_ONE", "#0x1")
@@ -747,7 +757,7 @@ class FixtureBuildTests(unittest.TestCase):
         source.write_text(
             "EventScr Selected[] = {\n    TEXTSHOW(0x0003)\n    ENDA\n};\n"
         )
-        with self.assertRaisesRegex(GameCatalogError, "active English"):
+        with self.assertRaisesRegex(GameCatalogError, "active.*set"):
             build_game_catalog(**inputs)
         source.write_text(
             "EventScr Selected[] = {\n    TEXTSHOW(MSG_UNRESOLVED)\n    ENDA\n};\n"

@@ -1,5 +1,7 @@
 {
   "classification": {
+    "box_event_context": "box_dialogue_192",
+    "cg_event_context": "cg_dialogue_160",
     "default_context": "system_default_240",
     "ending_context": "ending_layout",
     "fixed_label_context": "fixed_width_label",
@@ -7,6 +9,18 @@
     "talk_event_context": "talk_dialogue_240"
   },
   "contexts": {
+    "box_dialogue_192": {
+      "allow_generated_wrap": true,
+      "max_pixels": 192,
+      "source": "src/helpbox.c DrawBoxDialogueText/BoxDialogueDrawTextProc_Init use Talk glyphs; ApplyBoxDialoguePosition caps the native inner frame at 192px",
+      "style": "talk"
+    },
+    "cg_dialogue_160": {
+      "allow_generated_wrap": true,
+      "max_pixels": 160,
+      "source": "src/eventscr.c EventText_StartCgTextMsg supplies the native 20-tile CG text viewport",
+      "style": "talk"
+    },
     "ending_layout": {
       "allow_generated_wrap": false,
       "max_pixels": 224,
@@ -45,5 +59,5 @@
     "explicit_controls_are_preserved": true,
     "unmapped_runtime_usage_is_not_silently_exempted": true
   },
-  "schema_version": 1
+  "schema_version": 2
 }

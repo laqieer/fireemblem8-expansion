@@ -202,21 +202,6 @@ def _scalar_sets(texts: Iterable[str], *, expansion: bool = False) -> Set[int]:
     return scalars
 
 
-def _description_target_ids(root: Path, target_count: int) -> Set[int]:
-    """Return all data-owned descriptions, which have both UI and talk users."""
-
-    ids: Set[int] = set()
-    pattern = re.compile(r"\.descTextId\s*=\s*(0x[0-9A-Fa-f]+|\d+)")
-    for relative in ("src/data_characters.c", "src/data_classes.c", "src/data_items.c"):
-        source = (root / relative).read_text(encoding="utf-8")
-        ids.update(
-            int(value, 0)
-            for value in pattern.findall(source)
-            if int(value, 0) < target_count
-        )
-    return ids
-
-
 def _tactician_grid_strings(root: Path, locale: str) -> Tuple[Tuple[str, str], ...]:
     """Static locale input grids are system-font UI, not catalog messages."""
 
@@ -234,68 +219,19 @@ def _tactician_grid_strings(root: Path, locale: str) -> Tuple[Tuple[str, str], .
     return tuple(grids)
 
 
-def _direct_talk_target_ids(root: Path, target_count: int) -> Dict[int, str]:
-    """Discover non-event talk-font message paths with literal/table IDs."""
-
-    result: Dict[int, str] = {}
-
-    def add(value: int, reason: str) -> None:
-        if value < target_count:
-            result[value] = reason
-
-    arena = (root / "src/uiarena.c").read_text(encoding="utf-8")
-    for value in re.findall(r"\bStartArenaDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", arena):
-        add(int(value, 0), "arena StartArenaDialogue talk-font consumer")
-
-    shop = (root / "src/bmshop.c").read_text(encoding="utf-8")
-    offsets = [
-        int(value, 0)
-        for value in re.findall(
-            r"\[SHOP_TYPE_[A-Z_]+\]\s*=\s*(0x[0-9A-Fa-f]+|\d+)",
-            shop,
-        )
-    ]
-    if not offsets:
-        raise CjkFontError("shop dialogue offset table is unavailable")
-    for value in re.findall(r"\bStartShopDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", shop):
-        base = int(value, 0)
-        for offset in offsets:
-            add(base + offset, "shop dialogue base plus type-offset talk consumer")
-
-    for path in sorted((root / "src").glob("*.c")):
-        source = path.read_text(encoding="utf-8")
-        for value in re.findall(
-            r"\bStartTalkMsg(?:Ext)?\s*\([^;{}]*?,\s*"
-            r"(0x[0-9A-Fa-f]+|\d+)\s*(?:,|\))",
-            source,
-        ):
-            add(int(value, 0), f"literal StartTalkMsg consumer in {path.name}")
-        for value in re.findall(
-            r"\bStartTalkExt\s*\([^;{}]*?GetStringFromIndex\s*\(\s*"
-            r"(0x[0-9A-Fa-f]+|\d+)\s*\)",
-            source,
-        ):
-            add(int(value, 0), f"literal StartTalkExt consumer in {path.name}")
-    return result
-
-
 def _runtime_catalog_usage(
     root: Path, locale: str
 ) -> Tuple[Dict[str, List[str]], List[Dict[str, object]], Dict[str, int]]:
     """Classify every emitted runtime string before deriving a font corpus.
 
     The game catalog is the authoritative FE8U target resolver.  The width
-    registry supplies source-visible dialogue geometry; descriptions are
-    explicitly ``both`` because they are consumed by both menu/help UI and
-    talk/text presentations.  The remaining target strings have only
-    system-font consumers in the supported runtime path.  This is
-    intentionally an allow-nothing-by-default contract: each target gets one
-    of system, talk, or both and no target is silently omitted.
+    Width checking and glyph inventory share the complete native requirement
+    set. A payload used by several renderers contributes to every required
+    font, including an inherited-font measurement before Talk-font drawing.
     """
 
     root = root.resolve()
     from scripts.localization.game_catalog import build as catalog
-    from scripts.localization.game_catalog.control_streams import tokenize_payload
 
     build = catalog.compose_game_catalog(
         enabled_locales=(locale,),
@@ -316,50 +252,29 @@ def _runtime_catalog_usage(
         portrait_root_path=root,
     )
     registry = load_width_registry(root / WIDTH_REGISTRY_PATH)
-    classifications, _ = classify_targets(
-        root, target_count=build.target_count, registry=registry,
-        message_ids=build.message_ids,
-    )
-    description_ids = _description_target_ids(root, build.target_count)
-    direct_talk_ids = _direct_talk_target_ids(root, build.target_count)
-    strings = {style: [] for style in STYLES}
-    records: List[Dict[str, object]] = []
-    counts = {"system": 0, "talk": 0, "both": 0}
     bundle = next(item for item in build.locales if item.locale == locale)
     for entry in bundle.entries:
         if entry.source_text is None or entry.encoded_bytes is None:
             raise CjkFontError(
                 f"{locale} 0x{entry.target_id:04X}: runtime catalog payload is absent"
             )
-        context, context_reason = classifications[entry.target_id]
-        has_talk_control = any(
-            token.kind == "control"
-            and token.control is not None
-            and 0x08 <= token.control <= 0x11
-            for token in tokenize_payload(
-                entry.encoded_bytes,
-                source_name=f"{locale} 0x{entry.target_id:04X}",
-            )
+    classifications, _ = classify_targets(
+        root, target_count=build.target_count, registry=registry,
+        message_ids=build.message_ids,
+        target_payloads=tuple(entry.encoded_bytes for entry in bundle.entries),
+    )
+    strings = {style: [] for style in STYLES}
+    records: List[Dict[str, object]] = []
+    counts = {"system": 0, "talk": 0, "both": 0}
+    for entry in bundle.entries:
+        requirements = classifications[entry.target_id]
+        styles = tuple(
+            style for style in STYLES if any(item.style == style for item in requirements)
         )
-        if entry.target_id in description_ids:
-            styles = STYLES
-            category = "both"
-            reason = "data description: UI/help and talk/text consumers"
-        elif (
-            context in (registry.talk_context, registry.subtitle_context)
-            or has_talk_control
-            or entry.target_id in direct_talk_ids
-        ):
-            styles = ("talk",)
-            category = "talk"
-            if entry.target_id in direct_talk_ids:
-                reason = direct_talk_ids[entry.target_id]
-            else:
-                reason = context_reason if not has_talk_control else "talk control stream"
-        else:
-            styles = ("system",)
-            category = "system"
-            reason = context_reason
+        category = "both" if len(styles) == 2 else styles[0]
+        reason = "; ".join(sorted({
+            source for requirement in requirements for source in requirement.sources
+        }))
         for style in styles:
             strings[style].append(entry.source_text)
         counts[category] += 1
@@ -462,7 +377,9 @@ def collect_inventory(root: Path) -> Dict[str, object]:
             ],
             "runtime_usage": {
                 "record_count": len(usage_records),
-                "game_target_count": 3414,
+                "game_target_count": sum(
+                    record["id"].startswith("game:") for record in usage_records
+                ),
                 "expansion_key_count": locale_metadata["expansion"][
                     "active_key_count"
                 ],

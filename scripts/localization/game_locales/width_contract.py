@@ -14,6 +14,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Sequence, Tuple
 
@@ -27,6 +28,7 @@ from .fixed_width_labels import SURFACES, _message_ids
 
 if TYPE_CHECKING:
     from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
+    from scripts.localization.game_catalog.control_streams import StreamToken
 
 
 DEFAULT_WIDTH_REGISTRY_PATH = Path("texts/locales/mapping/text_width_contexts.json")
@@ -73,7 +75,28 @@ class WidthRegistry:
     fixed_context: str
     subtitle_context: str
     talk_context: str
+    box_context: str
+    cg_context: str
     schema_sha256: str
+
+
+class TextRenderer(str, Enum):
+    TEXT = "text"
+    TALK = "talk"
+    BOX = "box"
+    BOX_MEASURE = "box_dimensions"
+    CG = "cg"
+    CG_MEASURE = "cg_box_dimensions"
+    SUBTITLE = "subtitle"
+
+
+@dataclass(frozen=True)
+class RendererRequirement:
+    context: str
+    renderer: TextRenderer
+    style: str
+    sources: Tuple[str, ...]
+    measure_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,7 +129,7 @@ def load_width_registry(path: Path = DEFAULT_WIDTH_REGISTRY_PATH) -> WidthRegist
     if (
         not isinstance(data, dict)
         or data.get("kind") != "fe8u-text-width-context-registry"
-        or data.get("schema_version") != 1
+        or data.get("schema_version") != 2
         or not isinstance(data.get("contexts"), dict)
         or not isinstance(data.get("classification"), dict)
     ):
@@ -146,6 +169,8 @@ def load_width_registry(path: Path = DEFAULT_WIDTH_REGISTRY_PATH) -> WidthRegist
         "fixed_label_context",
         "subtitle_help_context",
         "talk_event_context",
+        "box_event_context",
+        "cg_event_context",
     }
     if set(classification) != required:
         raise TextWidthContractError(f"{path}: classification keys drifted")
@@ -170,6 +195,8 @@ def load_width_registry(path: Path = DEFAULT_WIDTH_REGISTRY_PATH) -> WidthRegist
         fixed_context=classification["fixed_label_context"],
         subtitle_context=classification["subtitle_help_context"],
         talk_context=classification["talk_event_context"],
+        box_context=classification["box_event_context"],
+        cg_context=classification["cg_event_context"],
         schema_sha256=hashlib.sha256(raw).hexdigest(),
     )
 
@@ -236,14 +263,72 @@ def _visible_scalar(token) -> bool:
     return token.kind == "scalar" and token.scalar is not None
 
 
-def _hard_line_boundary(token, *, style: str) -> bool:
+def _hard_line_boundary(token, *, renderer: TextRenderer) -> bool:
     return (
         token.kind == "end"
         or (token.kind == "control" and (
-            token.control == 0x01 or (token.control == 0x02 and style == "talk")
+            token.control == 0x01
+            or (renderer != TextRenderer.TEXT and token.control == 0x02)
+            or (renderer in (TextRenderer.BOX_MEASURE, TextRenderer.CG_MEASURE)
+                and token.control == 0x03)
+            or (renderer == TextRenderer.TALK and token.control == 0x15)
+            or (renderer in (TextRenderer.BOX_MEASURE, TextRenderer.CG, TextRenderer.CG_MEASURE)
+                and token.control in (0x18, 0x19))
+            or (renderer in (TextRenderer.BOX, TextRenderer.BOX_MEASURE)
+                and token.control in (0x12, 0x13, 0x14))
         ))
-        or (token.kind == "extended" and token.scalar == 0x04)
+        or (renderer == TextRenderer.TALK and token.kind == "extended" and token.scalar == 0x04)
     )
+
+
+def _renderer_line_boundaries(
+    tokens: Sequence[StreamToken], renderer: TextRenderer,
+) -> frozenset[int]:
+    boundaries = set()
+    active_speaker = None
+    bubble_speaker = None
+    bubble_open = False
+    pending_selection = None
+    for token in tokens:
+        if _hard_line_boundary(token, renderer=renderer):
+            boundaries.add(token.offset)
+        if renderer != TextRenderer.TALK:
+            continue
+        if token.kind == "control" and token.control is not None:
+            if 0x08 <= token.control <= 0x0F:
+                active_speaker = token.control - 8
+                pending_selection = token.offset
+            elif (token.control == 0x11 and bubble_open
+                    and active_speaker == bubble_speaker):
+                boundaries.add(token.offset)
+                bubble_open = False
+            elif token.control == 0x15:
+                bubble_open = False
+        elif _visible_scalar(token):
+            if not bubble_open or active_speaker != bubble_speaker:
+                if pending_selection is not None:
+                    boundaries.add(pending_selection)
+                bubble_speaker = active_speaker
+                bubble_open = True
+            pending_selection = None
+    return frozenset(boundaries)
+
+
+def _ends_rendering(token, renderer: TextRenderer) -> bool:
+    return token.kind == "end" or (
+        renderer == TextRenderer.BOX_MEASURE
+        and token.kind == "control" and token.control in (0x12, 0x13, 0x14)
+    )
+
+
+def _caret_padding(token, renderer: TextRenderer) -> int:
+    return 8 if (
+        renderer in (
+            TextRenderer.BOX, TextRenderer.BOX_MEASURE,
+            TextRenderer.CG, TextRenderer.CG_MEASURE,
+        )
+        and token.kind == "control" and token.control == 0x03
+    ) else 0
 
 
 def _safe_break(left, right) -> bool:
@@ -280,7 +365,9 @@ def _wrap_one_line(
     metrics: WidthMetrics,
     max_pixels: int,
     source_name: str,
-) -> Tuple[bytes, int]:
+    renderer: TextRenderer,
+    line_boundaries: frozenset[int],
+) -> Tuple[bytes, int | None]:
     """Insert at most one safe NL, returning unchanged bytes when it fits."""
 
     tokens = _tokenize_payload(payload, source_name=source_name)
@@ -288,17 +375,15 @@ def _wrap_one_line(
     last_safe: Tuple[int, Any] | None = None
     previous_visible: Any | None = None
     for token in tokens:
-        if _hard_line_boundary(token, style=metrics.style):
-            return payload, 0
-        if not _visible_scalar(token):
-            continue
-        assert token.scalar is not None
-        scalar_width = _scalar_width(token.scalar, metrics)
-        if previous_visible is not None and _safe_break(previous_visible, token):
-            last_safe = (token.offset, token)
-        if width + scalar_width <= max_pixels:
-            width += scalar_width
+        if _visible_scalar(token):
+            assert token.scalar is not None
+            if previous_visible is not None and _safe_break(previous_visible, token):
+                last_safe = (token.offset, token)
+            width += _scalar_width(token.scalar, metrics)
             previous_visible = token
+        if width + _caret_padding(token, renderer) <= max_pixels:
+            if token.offset in line_boundaries:
+                return payload, None
             continue
         if last_safe is None:
             raise TextWidthContractError(
@@ -307,8 +392,8 @@ def _wrap_one_line(
         offset, _ = last_safe
         # The contract inserts an existing engine control and nothing else:
         # even a wrap-adjacent ASCII space is retained byte-for-byte.
-        return _encode_inserted_newline(payload, offset), 1
-    return payload, 0
+        return _encode_inserted_newline(payload, offset), offset
+    return payload, None
 
 
 def insert_safe_line_breaks(
@@ -317,6 +402,7 @@ def insert_safe_line_breaks(
     metrics: WidthMetrics,
     max_pixels: int,
     source_name: str,
+    renderer: TextRenderer = TextRenderer.TEXT,
 ) -> Tuple[bytes, int]:
     """Wrap every physical rendering line without modifying authored controls."""
 
@@ -325,23 +411,32 @@ def insert_safe_line_breaks(
     inserted = 0
     cursor = 0
     while cursor < len(payload) - 1:
+        boundaries = frozenset(
+            offset - cursor
+            for offset in _renderer_line_boundaries(
+                _tokenize_payload(payload, source_name=source_name), renderer,
+            )
+            if offset >= cursor
+        )
         suffix = payload[cursor:]
-        rewritten, count = _wrap_one_line(
+        rewritten, offset = _wrap_one_line(
             suffix,
             metrics=metrics,
             max_pixels=max_pixels,
             source_name=source_name,
+            renderer=renderer,
+            line_boundaries=boundaries,
         )
-        if count:
+        if offset is not None:
             payload = payload[:cursor] + rewritten
-            inserted += count
-            cursor += rewritten.index(b"\x01") + 1
+            inserted += 1
+            cursor += offset + 1
             continue
         tokens = _tokenize_payload(suffix, source_name=source_name)
         boundary = next(
-            (token for token in tokens if _hard_line_boundary(token, style=metrics.style)), None,
+            (token for token in tokens if token.offset in boundaries), None,
         )
-        if boundary is None or boundary.kind == "end":
+        if boundary is None or _ends_rendering(boundary, renderer):
             break
         cursor += boundary.offset + boundary.length
     return payload, inserted
@@ -351,12 +446,27 @@ def validate_payload_width(
     payload: bytes,
     *,
     metrics: WidthMetrics,
-    max_pixels: int,
+    max_pixels: int | None,
     source_name: str,
+    renderer: TextRenderer = TextRenderer.TEXT,
 ) -> Dict[str, int]:
     """Reject any control-delimited rendered line exceeding its VWF limit."""
 
-    tokens = _tokenize_payload(payload, source_name=source_name)
+    return validate_token_widths(
+        _tokenize_payload(payload, source_name=source_name),
+        metrics=metrics, max_pixels=max_pixels, source_name=source_name, renderer=renderer,
+    )
+
+
+def validate_token_widths(
+    tokens: Sequence[StreamToken],
+    *,
+    metrics: WidthMetrics,
+    max_pixels: int | None,
+    source_name: str,
+    renderer: TextRenderer,
+) -> Dict[str, int]:
+    boundaries = _renderer_line_boundaries(tokens, renderer)
     width = 0
     line_count = 0
     max_width = 0
@@ -367,18 +477,27 @@ def validate_payload_width(
             width += _scalar_width(token.scalar, metrics)
             saw_visible = True
             continue
-        if not _hard_line_boundary(token, style=metrics.style):
+        padding = _caret_padding(token, renderer)
+        if padding:
+            saw_visible = True
+        if not padding and token.offset not in boundaries:
+            continue
+        measured_width = width + padding
+        if saw_visible:
+            max_width = max(max_width, measured_width)
+            if max_pixels is not None and measured_width > max_pixels:
+                raise TextWidthContractError(
+                    f"{source_name}: rendered line is {measured_width}px, exceeding "
+                    f"{max_pixels}px"
+                )
+        if token.offset not in boundaries:
             continue
         if saw_visible:
             line_count += 1
-            max_width = max(max_width, width)
-            if width > max_pixels:
-                raise TextWidthContractError(
-                    f"{source_name}: rendered line is {width}px, exceeding "
-                    f"{max_pixels}px"
-                )
         width = 0
         saw_visible = False
+        if _ends_rendering(token, renderer):
+            break
     return {
         "line_count": line_count,
         "max_line_width": max_width,
@@ -399,39 +518,75 @@ def _fixed_label_target_ids(repo_root: Path) -> frozenset[int]:
     )
 
 
-def _direct_talk_target_ids(repo_root: Path, target_count: int) -> Mapping[int, str]:
+def _direct_talk_target_ids(
+    repo_root: Path, target_count: int, message_ids: Mapping[str, int] | None = None,
+) -> Mapping[int, Tuple[str, ...]]:
     """Resolve literal and table-driven non-event talk-text callers."""
 
-    found: Dict[int, str] = {}
+    from .structural_completion import _iter_named_calls, _mask_c_comments_and_strings
+
+    found: Dict[int, set[str]] = {}
+    message_ids = {} if message_ids is None else message_ids
 
     def add(value: int, reason: str) -> None:
         if value < target_count:
-            found[value] = reason
+            found.setdefault(value, set()).add(reason)
 
-    arena = (repo_root / "src/uiarena.c").read_text(encoding="utf-8")
+    arena = _mask_c_comments_and_strings(
+        (repo_root / "src/uiarena.c").read_text(encoding="utf-8"),
+    )
     for value in re.findall(
         r"\bStartArenaDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", arena
     ):
         add(int(value, 0), "arena direct talk consumer")
 
-    shop = (repo_root / "src/bmshop.c").read_text(encoding="utf-8")
+    shop = _mask_c_comments_and_strings(
+        (repo_root / "src/bmshop.c").read_text(encoding="utf-8"),
+    )
     offsets = [
         int(value, 0)
         for value in re.findall(
             r"\[SHOP_TYPE_[A-Z_]+\]\s*=\s*(0x[0-9A-Fa-f]+|\d+)", shop
         )
     ]
-    for value in re.findall(
-        r"\bStartShopDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", shop
-    ):
+    shop_starts = re.findall(
+        r"\bStartShopDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", shop,
+    )
+    if shop_starts and not offsets:
+        raise TextWidthContractError(f"{repo_root}/src/bmshop.c: shop offset table is absent")
+    for value in shop_starts:
         for offset in offsets:
             add(int(value, 0) + offset, "shop table-driven talk consumer")
-    return found
+    for path in sorted((repo_root / "src").glob("*.c")):
+        source = path.read_text(encoding="utf-8")
+        if not any(name in source for name in ("StartTalkMsg", "StartTalkExt")):
+            continue
+        source = _mask_c_comments_and_strings(source)
+        for kind, _, _, arguments in _iter_named_calls(
+            source, ("StartTalkMsg", "StartTalkMsgExt", "StartTalkExt"),
+        ):
+            if len(arguments) < 3:
+                continue
+            operands = (
+                [values[0] for _, _, _, values in _iter_named_calls(
+                    arguments[2], ("GetStringFromIndex",),
+                ) if len(values) == 1]
+                if kind == "StartTalkExt" else [arguments[2]]
+            )
+            for operand in operands:
+                if re.fullmatch(r"0x[0-9A-Fa-f]+|\d+", operand):
+                    target = int(operand, 0)
+                elif operand in message_ids:
+                    target = message_ids[operand]
+                else:
+                    continue
+                add(target, f"{kind} message consumer in {path.name}")
+    return {target: tuple(sorted(reasons)) for target, reasons in sorted(found.items())}
 
 
 def _subtitle_help_target_ids(repo_root: Path, target_count: int) -> Mapping[int, str]:
     found: Dict[int, str] = {}
-    for path in (repo_root / "src").glob("*.c"):
+    for path in sorted((repo_root / "src").glob("*.c")):
         source = path.read_text(encoding="utf-8")
         for value in re.findall(
             r"\bStartSubtitleHelp\s*\([^;{}]*?GetStringFromIndex\s*\(\s*"
@@ -444,6 +599,20 @@ def _subtitle_help_target_ids(repo_root: Path, target_count: int) -> Mapping[int
     return found
 
 
+def _description_target_ids(repo_root: Path, target_count: int) -> frozenset[int]:
+    found = set()
+    for relative in ("src/data_characters.c", "src/data_classes.c", "src/data_items.c"):
+        source = (repo_root / relative).read_text(encoding="utf-8")
+        found.update(
+            int(value, 0)
+            for value in re.findall(
+                r"\.(?:descTextId|useDescTextId)\s*=\s*(0x[0-9A-Fa-f]+|\d+)", source,
+            )
+            if int(value, 0) < target_count
+        )
+    return frozenset(found)
+
+
 def classify_targets(
     repo_root: Path,
     *,
@@ -452,50 +621,101 @@ def classify_targets(
     event_root: Path | None = None,
     message_ids: Mapping[str, int] | None = None,
     fixed_label_ids: Iterable[int] | None = None,
-) -> Tuple[Mapping[int, Tuple[str, str]], Dict[str, int]]:
-    """Assign each target one audited scene/usage context without exemptions."""
+    target_payloads: Sequence[bytes] | None = None,
+) -> Tuple[Mapping[int, Tuple[RendererRequirement, ...]], Dict[str, int]]:
+    """Retain every known native renderer/resource requirement for each target."""
 
-    assigned: Dict[int, Tuple[str, str]] = {
-        target_id: (registry.default_context, "default 30-tile system Text field")
-        for target_id in range(target_count)
+    from scripts.localization.game_catalog.control_streams import is_dynamic_event_message
+
+    if target_payloads is not None and len(target_payloads) != target_count:
+        raise TextWidthContractError("renderer payloads differ from the active target set")
+    uses: Dict[int, Dict[Tuple[str, TextRenderer, str, bool], set[str]]] = {
+        target: {} for target in range(target_count)
     }
-    for target_id in _ending_target_ids(repo_root):
-        if target_id < target_count:
-            assigned[target_id] = (
-                registry.ending_context,
-                "ending-details source allocation; exact line/page rules are "
-                "validated by ending_layout_metrics",
+
+    def add(
+        target: int, context: str, renderer: TextRenderer, source: str, *,
+        style: str | None = None, measure_only: bool = False,
+    ) -> None:
+        if target not in uses:
+            raise TextWidthContractError(
+                f"{source}: target 0x{target:04X} is outside the active target set"
             )
-    for target_id in (
-        _fixed_label_target_ids(repo_root) if fixed_label_ids is None else fixed_label_ids
-    ):
-        if target_id < target_count:
-            assigned[target_id] = (
-                registry.fixed_context,
-                "fixed-width label source allocation; aliases are validated "
-                "by fixed_width_label_metrics",
-            )
+        key = (context, renderer, registry.contexts[context].style if style is None else style,
+               measure_only)
+        uses[target].setdefault(key, set()).add(source)
+
+    for target_id in _ending_target_ids(repo_root) & uses.keys():
+        add(target_id, registry.ending_context, TextRenderer.TEXT,
+            "ending-details source allocation; exact geometry belongs to ending_layout_metrics")
+    label_ids = (
+        _fixed_label_target_ids(repo_root) & uses.keys()
+        if fixed_label_ids is None else fixed_label_ids
+    )
+    for target_id in label_ids:
+        add(target_id, registry.fixed_context, TextRenderer.TEXT,
+            "fixed-width label allocation; surface aliases belong to fixed_width_label_metrics")
+    for target_id in _description_target_ids(repo_root, target_count):
+        add(target_id, registry.default_context, TextRenderer.TEXT,
+            "data description UI/help consumer")
+        add(target_id, registry.talk_context, TextRenderer.TALK,
+            "data description talk/text consumer")
     for target_id, models in _event_models(
         repo_root / "src/events" if event_root is None else event_root,
         message_ids,
     ).items():
-        if target_id < target_count and any(model.text_mode.style == "talk" for model in models):
-            assigned[target_id] = (
-                registry.talk_context,
-                "event dialogue: "
-                + ", ".join(
-                    f"{model.start_kind}@"
-                    f"{Path(os.path.relpath(model.source_path, repo_root)).as_posix()}"
-                    for model in models
-                ),
+        for model in models:
+            if is_dynamic_event_message(model.start_kind, target_id):
+                continue
+            source = (
+                f"event mode {model.text_mode.value}: {model.start_kind}@"
+                f"{Path(os.path.relpath(model.source_path, repo_root)).as_posix()}"
             )
-    for target_id, reason in _direct_talk_target_ids(repo_root, target_count).items():
-        assigned[target_id] = (registry.talk_context, reason)
+            if model.text_mode.value >= 3:
+                add(target_id, registry.box_context, TextRenderer.BOX, source)
+                add(target_id, registry.box_context, TextRenderer.BOX_MEASURE,
+                    source + " Talk-font box measurement", measure_only=True)
+                add(target_id, registry.box_context, TextRenderer.BOX_MEASURE,
+                    source + " inherited-font premeasurement", style="system", measure_only=True)
+            elif model.text_mode.value == 2:
+                add(target_id, registry.cg_context, TextRenderer.CG, source)
+                add(target_id, registry.cg_context, TextRenderer.CG_MEASURE,
+                    source + " Talk-font box measurement", measure_only=True)
+            else:
+                add(target_id, registry.talk_context, TextRenderer.TALK, source)
+    for target_id, reasons in _direct_talk_target_ids(
+        repo_root, target_count, message_ids,
+    ).items():
+        for reason in reasons:
+            add(target_id, registry.talk_context, TextRenderer.TALK, reason)
     for target_id, reason in _subtitle_help_target_ids(repo_root, target_count).items():
-        assigned[target_id] = (registry.subtitle_context, reason)
+        add(target_id, registry.subtitle_context, TextRenderer.SUBTITLE, reason)
+    if target_payloads is not None:
+        for target_id, payload in enumerate(target_payloads):
+            if any(key[1] in (TextRenderer.BOX, TextRenderer.CG) for key in uses[target_id]):
+                continue
+            if any(
+                token.kind == "control" and token.control is not None
+                and 0x08 <= token.control <= 0x11
+                for token in _tokenize_payload(payload, source_name=f"target 0x{target_id:04X}")
+            ):
+                add(target_id, registry.talk_context, TextRenderer.TALK,
+                    "talk control stream (face/speaker geometry)")
+    for target_id, requirements in uses.items():
+        if not requirements:
+            add(target_id, registry.default_context, TextRenderer.TEXT,
+                "default 30-tile system Text field")
+    assigned = {
+        target_id: tuple(
+            RendererRequirement(context, renderer, style, tuple(sorted(sources)), measure_only)
+            for (context, renderer, style, measure_only), sources in sorted(requirements.items())
+        )
+        for target_id, requirements in uses.items()
+    }
     counts: Dict[str, int] = {name: 0 for name in registry.contexts}
-    for context, _ in assigned.values():
-        counts[context] += 1
+    for requirements in assigned.values():
+        for context in {requirement.context for requirement in requirements}:
+            counts[context] += 1
     return assigned, counts
 
 
@@ -513,6 +733,13 @@ def apply_width_contract(
 ) -> Tuple[Tuple[bytes | None, ...], Dict[str, Any]]:
     """Wrap then validate a complete locale payload table against all contexts."""
 
+    effective = []
+    for target_id, payload in enumerate(target_payloads):
+        if payload is None:
+            if fallback_payloads is None or len(fallback_payloads) != len(target_payloads):
+                raise TextWidthContractError("missing effective English fallback payloads")
+            payload = fallback_payloads[target_id]
+        effective.append(payload)
     assignments, counts = classify_targets(
         repo_root,
         target_count=len(target_payloads),
@@ -520,6 +747,7 @@ def apply_width_contract(
         event_root=event_root,
         message_ids=message_ids,
         fixed_label_ids=fixed_label_ids,
+        target_payloads=effective,
     )
     metrics_by_style = {
         style: load_width_metrics(
@@ -532,71 +760,70 @@ def apply_width_contract(
     max_width = 0
     line_total = 0
     records = []
-    observed_counts: Dict[str, int] = {name: 0 for name in registry.contexts}
     for target_id, payload in enumerate(target_payloads):
         fallback = payload is None
-        if payload is None:
-            if fallback_payloads is None or len(fallback_payloads) != len(target_payloads):
-                raise TextWidthContractError("missing effective English fallback payloads")
-            payload = fallback_payloads[target_id]
-        context_name, usage = assignments[target_id]
-        tokens = _tokenize_payload(
-            payload,
-            source_name=f"{locale} target 0x{target_id:04X}",
-        )
-        if any(
-            token.kind == "control"
-            and token.control is not None
-            and 0x08 <= token.control <= 0x11
-            for token in tokens
-        ):
-            context_name = registry.talk_context
-            usage = "talk control stream (face/speaker geometry)"
-        context = registry.contexts[context_name]
-        observed_counts[context_name] += 1
-        source_name = f"{locale} target 0x{target_id:04X} ({context_name})"
-        rewritten = payload
+        requirements = assignments[target_id]
+        rewritten = effective[target_id]
         inserted = 0
-        if context.allow_generated_wrap and not fallback:
-            rewritten, inserted = insert_safe_line_breaks(
-                payload,
-                metrics=metrics_by_style[context.style],
-                max_pixels=context.max_pixels,
-                source_name=source_name,
-            )
-        if context_name == registry.subtitle_context:
-            # SubtitleHelp has its own visual splitter in bb.c. A stream NL is
-            # a terminator for that loop, not a line break, so deliberately do
-            # not apply generic Text-line validation or generation here.
-            stats = {"line_count": 0, "max_line_width": 0}
-        else:
-            stats = validate_payload_width(
-                rewritten,
-                metrics=metrics_by_style[context.style],
-                max_pixels=context.max_pixels,
-                source_name=source_name,
-            )
+        may_wrap = not fallback and all(
+            registry.contexts[item.context].allow_generated_wrap
+            for item in requirements if not item.measure_only
+        )
+        if may_wrap:
+            for item in requirements:
+                if item.measure_only:
+                    continue
+                context = registry.contexts[item.context]
+                rewritten, added = insert_safe_line_breaks(
+                    rewritten, metrics=metrics_by_style[item.style],
+                    max_pixels=context.max_pixels,
+                    source_name=f"{locale} target 0x{target_id:04X} ({item.context})",
+                    renderer=item.renderer,
+                )
+                inserted += added
+        observations = []
+        target_width = 0
+        for item in requirements:
+            context = registry.contexts[item.context]
+            if item.renderer == TextRenderer.SUBTITLE:
+                stats = {"line_count": 0, "max_line_width": 0}
+            else:
+                stats = validate_payload_width(
+                    rewritten, metrics=metrics_by_style[item.style],
+                    max_pixels=None if item.measure_only else context.max_pixels,
+                    source_name=f"{locale} target 0x{target_id:04X} "
+                                f"({item.context}/{item.style}/{item.renderer.value})",
+                    renderer=item.renderer,
+                )
+            observations.append({
+                "context": item.context, "renderer": item.renderer.value,
+                "style": item.style, "measure_only": item.measure_only,
+                "sources": list(item.sources), **stats,
+            })
+            if not item.measure_only:
+                target_width = max(target_width, stats["max_line_width"])
+                line_total += stats["line_count"]
         inserted_total += inserted
-        max_width = max(max_width, stats["max_line_width"])
-        line_total += stats["line_count"]
+        max_width = max(max_width, target_width)
         output.append(None if fallback else rewritten)
         records.append(
             {
-                "context": context_name,
+                "contexts": sorted({item.context for item in requirements}),
                 "generated_line_break_count": inserted,
-                "max_line_width": stats["max_line_width"],
+                "max_line_width": target_width,
+                "requirements": observations,
                 "target_id": f"0x{target_id:04X}",
-                "usage": usage,
             }
         )
     return tuple(output), {
-        "context_counts": observed_counts,
+        "context_counts": counts,
         "generated_line_break_count": inserted_total,
         "line_count": line_total,
         "locale": locale,
         "max_line_width": max_width,
         "records": records,
         "registry_sha256": registry.schema_sha256,
+        "schema_version": 2,
         "target_count": len(target_payloads),
         "unclassified_target_count": 0,
         "unclassified_targets": [],

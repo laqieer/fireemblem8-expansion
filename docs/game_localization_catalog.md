@@ -160,6 +160,23 @@ branches without skipping later ID validation. Correct traversal now covers
 prematurely at removal. All 6,828 final payloads retain the existing FID,
 mouth-topology and line-width contracts.
 
+Width checking and CJK inventory share the schema-2 renderer requirements,
+not a single winning font classification. A message used by several native
+consumers retains every renderer, font, source and measurement-only use.
+Event modes 0/1 draw with Talk; mode 2 uses the 160px CG viewport; modes
+3/4/5 draw with Talk in the 192px box limit. Box premeasurement can inherit
+System glyphs before drawing selects Talk, so both fonts may be required.
+Static Text using Talk glyphs still ignores NL2; Talk/Box/CG page controls
+do not acquire their behavior from the selected font. Wait controls do not
+reset a drawing cursor, unlike the native box-dimension helpers.
+Re-selecting the same Talk speaker, or switching away and back before a
+visible glyph, does not clear an open bubble. The Talk validator and width
+wrapper share that cursor model; redundant selection cannot hide overflow.
+Width-report records expose `contexts` and `requirements` instead of one
+`context`/`usage` winner. Context counts can overlap across messages.
+Custom schema-1 width registries must be updated to include the explicit
+box and CG classification contexts; unsupported schemas reject explicitly.
+
 ## Runtime and build gating
 
 The focused selected-text native check is:
@@ -183,6 +200,15 @@ page/glyph/portrait evidence, or production-content qualification; it does not
 call the historical English-only decoder with invalid IDs.
 Its deliberately absent JA entry is not a production catalog: the production
 generation/leakage gate still rejects unmaterialized entries.
+The same native suite also links the real font, Box and CG measurement
+functions with deliberately distinct 3px System/7px Talk glyph advances.
+For `AA[NL2]AA`, inherited System box measurement is 6px, Talk box
+measurement is 14px, static Talk-font length is 28px and the dialogue
+glyph-length helper returns 30px including its padding. Native CG content
+length is 28px but its box-dimension helper returns 14px. A wait caret
+adds eight pixels to the measured 14px segment, and the box frame's
+native maximum is 192px. These are actual ARM RAM observations, not
+rendered page, layout, portrait or full-game qualification.
 
 ### TC-PROJECT-TEXT-001: Validate the selected gameplay message set
 
@@ -205,7 +231,7 @@ generation/leakage gate still rejects unmaterialized entries.
 
    ```sh
    python3 -m unittest scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests scripts.localization.game_catalog.tests.test_control_streams.SelectedEventContinuationTests scripts.texttools.tests.test_textprocess_publication -v
-   python3 -m unittest scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests.test_explicit_english_fallback_is_validated_without_reflow_or_materialization scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests.test_nl2_keeps_full_width_talk_lines_separate_without_reflow -v
+   python3 -m unittest scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_direct_talk_inventory_is_independent_of_directory_order scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_inventory_uses_all_native_requirements_and_rejects_missing_payloads -v
    ```
 
 2. Observe the owned three-message fixtures. An allocation/header symbol must
@@ -217,8 +243,14 @@ generation/leakage gate still rejects unmaterialized entries.
    operands. Literal and selected-header popup/notify IDs are range-checked
    without becoming Talk continuation models. Signed dynamic event operands
    retain their slot semantics; zero text-show leaves the active dialogue
-   unchanged. NL and NL2 delimit rendered lines without fallback reflow or
-   materializing an absent locale descriptor.
+   unchanged. Native renderer requirements are unioned, not overwritten.
+   NL2 resets Talk/Box/CG pages but not static Text, even with Talk glyphs;
+   wait controls retain the drawing cursor. Effective fallback validation
+   neither reflows nor materializes an absent locale descriptor.
+   Direct native `StartTalkMsg`/`StartTalkMsgExt` references use the third
+   argument (the message), not either coordinate; nested coordinates and
+   comments cannot invent glyph requirements. Missing production payloads
+   and live out-of-range event/name references reject explicitly.
 3. Execute the real target consumers, explicitly outside the host-only lane:
 
    ```sh
@@ -234,6 +266,10 @@ explicit; existing publication files stay unchanged.
 
 The native JSON records report three messages and masks 1 and 3. The real
 English ARM decoder and localized consumers return the fixture's exact bytes.
+The separate module-native geometry record matches the System/Talk, static
+Text, Box and CG measurements described above. Host font inventory retains
+both inherited measurement and drawing resources and all known overlapping
+native consumer requirements.
 Message 0 is the first lookup after a fresh boot and returns `Base zero`, not
 an empty cache buffer. The modern English cache has an explicit zero-initialized
 validity byte, so this also works with the native fixture's NOLOAD EWRAM.

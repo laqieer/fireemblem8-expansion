@@ -1374,6 +1374,7 @@ def build_game_catalog(
         int(target, 16)
         for contract in fixed_width_metrics["source_contract"].values()
         for target in contract["target_ids"]
+        if int(target, 16) < target_count
     )
     width_validation = None
     unwrapped_locale_entries = {

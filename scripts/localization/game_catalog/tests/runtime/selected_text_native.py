@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[5]
 FIXTURES = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "tools/gba-playtest"))
 
-from probe_bindings import resolve_elf_symbol  # noqa: E402
+from probe_bindings import resolve_elf_symbol, resolve_elf_symbol_address  # noqa: E402
 from scripts.localization.game_catalog.build import build_game_catalog, write_build  # noqa: E402
 from scripts.generated_data.schema import SchemaInputs  # noqa: E402
 
@@ -145,7 +145,7 @@ class SelectedTextNativeTests(unittest.TestCase):
         write_build(catalog, output_dir=generated / "localized")
         return generated
 
-    def compile_profile(self, generated, mask):
+    def compile_profile(self, generated, mask, *, source_paths=None):
         folder = self.work / str(mask)
         folder.mkdir()
         flags = [
@@ -162,16 +162,19 @@ class SelectedTextNativeTests(unittest.TestCase):
         ]
         if mask != 1:
             flags.append("-I" + str(generated / "localized"))
-        sources = [
-            ROOT / "src" / name for name in (
-                "msg.c", "ramfunc.c", "bmitem.c", "bmlib.c", "bmio.c", "bm.c",
-                "hardware.c", "bmmap.c", "expansion_locale.c",
-                "localized_game_text.c", "localized_text_codec.c", "text_utf8.c",
-            )
-        ]
-        sources += [generated / "msg_data.c", FIXTURES / "selected_text_native.c"]
-        if mask != 1:
-            sources.append(generated / "localized/game_localization_catalog.c")
+        if source_paths is None:
+            sources = [
+                ROOT / "src" / name for name in (
+                    "msg.c", "ramfunc.c", "bmitem.c", "bmlib.c", "bmio.c", "bm.c",
+                    "hardware.c", "bmmap.c", "expansion_locale.c",
+                    "localized_game_text.c", "localized_text_codec.c", "text_utf8.c",
+                )
+            ]
+            sources += [generated / "msg_data.c", FIXTURES / "selected_text_native.c"]
+            if mask != 1:
+                sources.append(generated / "localized/game_localization_catalog.c")
+        else:
+            sources = list(source_paths)
         objects = []
         for source in sources:
             target = folder / source.with_suffix(".o").name
@@ -236,14 +239,27 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
             "-Wl,-T," + str(linker), *objects, "-lc", "-lnosys", "-lgcc", "-o", elf,
         ])
         rom = folder / "native.gba"
+        empty_data = (
+            resolve_elf_symbol_address(elf, "__data_start", self.nm)
+            == resolve_elf_symbol_address(elf, "__data_end", self.nm)
+        )
+        # An empty .data retains a RAM LMA that would otherwise pad the binary from EWRAM.
         self.run_command([
-            self.objcopy, "-O", "binary", "--gap-fill=0xff", elf, rom,
+            self.objcopy, "-O", "binary", "--gap-fill=0xff",
+            *(["--remove-section=.data"] if empty_data else []), elf, rom,
         ])
+        self.assertLessEqual(rom.stat().st_size, 1024 * 1024)
         return elf, rom
 
     def capture_probe(self, elf, rom):
         _, size = resolve_elf_symbol(elf, "gNativeTextProbe", self.nm)
         self.assertEqual(size, 48 + 16 * 148)
+        return self.capture_memory(elf, rom, "gNativeTextProbe")
+
+    def capture_memory(self, elf, rom, symbol):
+        _, size = resolve_elf_symbol(elf, symbol, self.nm)
+        self.assertGreater(size, 0)
+        self.assertEqual(size % 4, 0)
         scenario = rom.parent / "scenario.json"
         scenario.write_text(json.dumps({
             "schema_version": 1,
@@ -254,7 +270,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
                 "frame": 60,
                 "framebuffer": False,
                 "probes": [
-                    {"address": f"gNativeTextProbe+0x{offset:x}", "size": 4}
+                    {"address": f"{symbol}+0x{offset:x}", "size": 4}
                     for offset in range(0, size, 4)
                 ],
             }],
@@ -271,9 +287,88 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
             for entry in result["checkpoints"][0]["probes"]
         }
         return b"".join(
-            probes[f"gNativeTextProbe+0x{offset:x}"].to_bytes(4, "little")
+            probes[f"{symbol}+0x{offset:x}"].to_bytes(4, "little")
             for offset in range(0, size, 4)
         )
+
+    def test_box_requirements_match_real_font_and_control_geometry(self):
+        self.run_command(
+            ["make", "--no-print-directory", "NODEP=1", "graphics/debug_font.4bpp.h"], cwd=ROOT,
+        )
+        generated = self.generate_inputs()
+        elf, rom = self.compile_profile(generated, 3, source_paths=[
+            ROOT / "src/fontgrp.c", ROOT / "src/helpbox.c",
+            ROOT / "src/cgtext.c",
+            ROOT / "src/localized_font.c", ROOT / "src/text_utf8.c",
+            FIXTURES / "selected_text_geometry.c",
+        ])
+        data = self.capture_memory(elf, rom, "gNativeGeometryProbe")
+        observed = struct.unpack("<18I", data)
+        self.assertEqual(
+            observed, (1, 3, 7, 6, 16, 14, 16, 28, 30, 22, 192, 1, 28, 0, 14, 16, 22, 1),
+        )
+        print(json.dumps({
+            "scope": "actual module-native geometry, not rendered UI/full-game",
+            "probe": observed,
+        }), flush=True)
+
+        from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
+        from scripts.localization.game_locales.width_contract import (
+            TextRenderer, WidthMetrics, apply_width_contract, load_width_registry,
+            validate_payload_width,
+        )
+        metrics: SelectedFontMetrics = {
+            "ascii": {
+                "system": {scalar: observed[1] for scalar in range(0x20, 0x7F)},
+                "talk": {scalar: observed[2] for scalar in range(0x20, 0x7F)},
+            },
+            "localized": {"ja": {"system": {0x4E00: 13}, "talk": {0x4E00: 7}}},
+            "inputs": {
+                "compiler_context": "module-native-geometry-not-a-Make-context",
+                "source_root": str(ROOT), "renderer_object": str(elf.parent / "fontgrp.o"),
+                "font_objects": (str(elf.parent / "selected_text_geometry.o"),) * 2,
+                "locale_mask": 3,
+            },
+        }
+        events = self.work / "box-events"
+        events.mkdir()
+        (events / "box.c").write_text(
+            "EventScr Box[] = { TUTORIALTEXTBOXSTART TEXTSHOW(MSG_NATIVE_PAGES) ENDA };\n",
+            encoding="ascii",
+        )
+        _, report = apply_width_contract(
+            repo_root=ROOT, locale="ja", target_payloads=(b"A\0", b"AA\x02AA\0", b"A\0"),
+            registry=load_width_registry(ROOT / "texts/locales/mapping/text_width_contexts.json"),
+            event_root=events, message_ids={"MSG_NATIVE_PAGES": 1},
+            fixed_label_ids=(), font_metrics=metrics,
+        )
+        self.assertEqual(report["records"][1]["max_line_width"], observed[5])
+        measurements = {
+            item["style"]: item["max_line_width"]
+            for item in report["records"][1]["requirements"] if item["measure_only"]
+        }
+        self.assertEqual(measurements, {"system": observed[3], "talk": observed[5]})
+        talk = WidthMetrics(
+            locale="ja", style="talk", ascii_widths=metrics["ascii"]["talk"], cjk_widths={},
+        )
+        self.assertEqual(
+            validate_payload_width(
+                b"AA\x02AA\0", metrics=talk, max_pixels=None, source_name="native CG sizing",
+                renderer=TextRenderer.CG_MEASURE,
+            )["max_line_width"],
+            observed[14],
+        )
+        for renderer, native_width in (
+            (TextRenderer.BOX_MEASURE, observed[9]),
+            (TextRenderer.CG_MEASURE, observed[16]),
+        ):
+            self.assertEqual(
+                validate_payload_width(
+                    b"AA\x03\0", metrics=talk, max_pixels=None,
+                    source_name="native wait caret", renderer=renderer,
+                )["max_line_width"],
+                native_width,
+            )
 
     def test_three_message_english_and_localized_real_consumers(self):
         generated = self.generate_inputs()
