@@ -479,9 +479,14 @@ the consumers' independent protected-principal/deployment requirements.
    The first case in each process verifies that the other PID is live before
    either can finish. Each process runs its module/class setup and teardown
    exactly once. Every recorded interpreter is isolated and ambient Git
-   variables are absent. A singleton still runs.
+   variables are absent. A singleton still runs. Workers rediscover and select
+   the actual assigned instances, preserving `load_tests` configuration;
+   changed child discovery fails instead of running an accepted subset.
 4. Observe refusals: an assertion failure makes the parent fail while other
-   cases still execute. An actual child exit 7 makes the parent fail. Empty,
+   cases still execute. Actual child exits 7 or an early 0 make the parent
+   fail. A small local completion pipe is sent only after the unittest runner
+   returns; a stopped suite is not accepted. Normal fixture skips remain
+   unittest skips, not completed native positives. Empty,
    duplicate and syntactically broken discovery and extra CLI arguments
    cannot report success or execute an accepted partial suite.
 5. Exercise the unchanged full entrypoint when collecting complete evidence:
@@ -509,7 +514,8 @@ only successful complete native CI establishes the end-to-end outcome.
 The pre-fix serial launcher fails the actual live-PID rendezvous because no
 second reporter process exists. The original host traces reach their native
 90-minute cap before all checks finish, including the repeated unchanged
-usage candidate. Dropping cases, ignoring a child result, or accepting empty
+usage candidate. dropping cases, losing a configured discovered instance, ignoring a child
+completion result, or accepting empty
 discovery fails the focused controls; increasing deadlines is not the fix.
 
 ### Interactions and save compatibility

@@ -377,6 +377,84 @@ class ReporterExecutionTests(unittest.TestCase):
         self.assertIn("exited 7", completed.stderr)
         self.assertTrue((self.root / "records/other").is_file())
 
+    def test_zero_exit_before_assigned_cases_complete_is_not_success(self):
+        (self.tests / "test_early_zero.py").write_text(
+            'import os, unittest\nfrom pathlib import Path\n'
+            'ROOT = Path(__file__).resolve().parents[3]\n'
+            'class Cases(unittest.TestCase):\n'
+            '    def record(self, number):\n'
+            '        (ROOT / "records" / str(number)).write_text(str(os.getpid()))\n'
+            '        os._exit(0)\n'
+            'def case(number): return lambda self: self.record(number)\n'
+            'for number in range(6):\n'
+            '    setattr(Cases, "test_" + str(number), case(number))\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertLess(len(list((self.root / "records").iterdir())), 6)
+
+    def test_load_tests_instance_configuration_is_preserved(self):
+        (self.tests / "test_configured.py").write_text(
+            'import unittest\n'
+            'class Configured(unittest.TestCase):\n'
+            '    value = 1\n'
+            '    def test_input(self):\n'
+            '        self.assertEqual(self.value, 1, "configured failing input")\n'
+            'def load_tests(loader, tests, pattern):\n'
+            '    case = Configured("test_input")\n'
+            '    case.value = 0\n'
+            '    return unittest.TestSuite([case])\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("configured failing input", completed.stderr)
+
+    def test_child_discovery_must_match_the_complete_assigned_set(self):
+        (self.tests / "test_drift.py").write_text(
+            'import multiprocessing, unittest\nfrom pathlib import Path\n'
+            'ROOT = Path(__file__).resolve().parents[3]\n'
+            'class Cases(unittest.TestCase):\n'
+            '    def test_a(self): (ROOT / "records/ran").touch()\n'
+            '    def test_b(self): (ROOT / "records/also-ran").touch()\n'
+            'def load_tests(loader, tests, pattern):\n'
+            '    names = ["test_a", "test_b"]\n'
+            '    if multiprocessing.current_process().name != "MainProcess":\n'
+            '        names = names[:1]\n'
+            '    return unittest.TestSuite(Cases(name) for name in names)\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("child discovery differs", completed.stderr)
+        self.assertEqual(list((self.root / "records").iterdir()), [])
+
+    def test_normal_fixture_skip_is_preserved(self):
+        (self.tests / "test_fixture_skip.py").write_text(
+            'import unittest\n'
+            'class Cases(unittest.TestCase):\n'
+            '    @classmethod\n'
+            '    def setUpClass(cls): raise unittest.SkipTest("legitimate fixture skip")\n'
+            '    def test_a(self): self.fail("skipped fixture must not run")\n'
+            '    def test_b(self): self.fail("skipped fixture must not run")\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("legitimate fixture skip", completed.stderr)
+
+    def test_stopped_suite_is_not_partial_success(self):
+        (self.tests / "test_stopped.py").write_text(
+            'import unittest\n'
+            'class Stopped(unittest.TestCase):\n'
+            '    def test_only(self): self.fail("stopped case must not run")\n'
+            '    def run(self, result): result.stop(); return result\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+
     def test_single_discovered_case_is_not_dropped(self):
         (self.tests / "test_single.py").write_text(
             'import os, sys, unittest\nfrom pathlib import Path\n'

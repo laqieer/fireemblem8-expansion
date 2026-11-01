@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import hashlib
 import multiprocessing
+from multiprocessing.connection import Connection
 import re
 import subprocess
 import sys
@@ -57,23 +58,37 @@ def controlled_repository_root(arguments: list[str], *, external: bool = False) 
     return root
 
 
-def reporter_test_ids(suite: unittest.TestSuite):
+def reporter_test_cases(suite: unittest.TestSuite):
     for test in suite:
         if isinstance(test, unittest.TestSuite):
-            yield from reporter_test_ids(test)
+            yield from reporter_test_cases(test)
         else:
-            yield test.id()
+            yield test
 
 
-def run_reporter_shard(test_ids: list[str]) -> None:
+def run_reporter_shard(
+    test_ids: list[str], discovered_ids: list[str], completion: Connection,
+) -> None:
     clear_ambient_git_environment()
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT))
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromNames(test_ids)
+    discovered = loader.discover(
+        str(ROOT / "scripts" / "workflow_pilot" / "tests"),
+        pattern="test_*.py",
+        top_level_dir=str(ROOT),
+    )
     if loader.errors:
         raise ValueError("\n".join(loader.errors))
+    cases = list(reporter_test_cases(discovered))
+    actual_ids = [case.id() for case in cases]
+    if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != set(discovered_ids):
+        raise ValueError("reporter child discovery differs from the assigned complete test set")
+    by_id = {case.id(): case for case in cases}
+    suite = unittest.TestSuite(by_id[name] for name in test_ids)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
+    completion.send((len(test_ids), result.wasSuccessful(), result.shouldStop))
+    completion.close()
     raise SystemExit(0 if result.wasSuccessful() else 1)
 
 
@@ -88,7 +103,7 @@ def run_reporter_tests(arguments: list[str]) -> int:
     )
     if loader.errors:
         raise ValueError("\n".join(loader.errors))
-    test_ids = list(reporter_test_ids(suite))
+    test_ids = [test.id() for test in reporter_test_cases(suite)]
     if not test_ids or len(test_ids) != len(set(test_ids)):
         raise ValueError("reporter discovery must contain nonempty unique test IDs")
     print(
@@ -101,25 +116,39 @@ def run_reporter_tests(arguments: list[str]) -> int:
     try:
         for shard in (test_ids[::2], test_ids[1::2]):
             if shard:
-                worker = context.Process(target=run_reporter_shard, args=(shard,))
+                receiving, sending = context.Pipe(duplex=False)
+                worker = context.Process(
+                    target=run_reporter_shard, args=(shard, test_ids, sending),
+                )
+                workers.append((worker, receiving, sending, len(shard)))
                 worker.start()
-                workers.append(worker)
-        for worker in workers:
+                sending.close()
+        for worker, _, _, _ in workers:
             worker.join()
-        failed = [worker for worker in workers if worker.exitcode != 0]
-        for worker in failed:
-            print(
-                f"workflow-pilot-launcher: reporter process {worker.pid} exited {worker.exitcode}",
-                file=sys.stderr,
-            )
-        return 1 if failed else 0
+        failed = False
+        for worker, receiving, _, count in workers:
+            try:
+                completed = receiving.recv() if receiving.poll() else None
+            except EOFError:
+                completed = None
+            if worker.exitcode != 0 or completed != (count, True, False):
+                failed = True
+                print(
+                    f"workflow-pilot-launcher: reporter process {worker.pid} exited "
+                    f"{worker.exitcode}; completion={completed!r}, assigned={count}",
+                    file=sys.stderr,
+                )
+        return int(failed)
     finally:
-        for worker in workers:
-            if worker.is_alive():
+        for worker, _, _, _ in workers:
+            if worker.pid is not None and worker.is_alive():
                 worker.terminate()
-        for worker in workers:
-            worker.join()
-            worker.close()
+        for worker, receiving, sending, _ in workers:
+            if worker.pid is not None:
+                worker.join()
+                worker.close()
+            receiving.close()
+            sending.close()
 
 
 def run_lifecycle_check(arguments: list[str]) -> int:
