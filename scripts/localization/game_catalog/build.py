@@ -90,6 +90,7 @@ from .control_streams import (
     CONTROL_DOMAIN_FE8J,
     CONTROL_DOMAIN_FE8U,
     DEFAULT_EVENT_ROOT,
+    DEFAULT_PORTRAIT_MAP_PATH,
     ControlStreamError,
     load_talk_font_metrics,
     load_portrait_operand_map,
@@ -263,10 +264,10 @@ def _load_authored_catalogs(paths: Optional[Mapping[str, Path]]) -> Dict[str, Di
     return catalogs
 
 
-def _load_mapping(path: Path, *, target_count: int):
+def _load_mapping(path: Path, *, target_count: int, repo_root: Path | None = None):
     data = _load_json(path)
     try:
-        mapping = validate_mapping_document(data, target_count=target_count)
+        mapping = validate_mapping_document(data, target_count=target_count, repo_root=repo_root)
     except MappingError as error:
         raise GameCatalogError(str(error)) from error
     if not mapping.coverage_eligible:
@@ -780,13 +781,14 @@ def _validate_final_catalog_payloads(
     locale_bundles: Sequence[LocaleCatalogBundle],
     english_entries,
     portrait_map,
+    font_root_path: Path = Path("."),
 ) -> Dict[str, int]:
     totals = Counter()
     max_talk_line_width = 0
     validated_fallback_payload_count = 0
     for bundle in locale_bundles:
         try:
-            talk_metrics = load_talk_font_metrics(bundle.locale)
+            talk_metrics = load_talk_font_metrics(bundle.locale, repo_root=font_root_path)
         except ControlStreamError as error:
             raise GameCatalogError(str(error)) from error
         for entry in bundle.entries:
@@ -1137,11 +1139,18 @@ def compose_game_catalog(
     eu_authored_paths: Optional[Mapping[str, Path]] = None,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
+    engine_root_path: Path | None = None,
+    portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
+    portrait_root_path: Path = Path("."),
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
     ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
 ) -> ComposedGameCatalog:
+    repo_root = (
+        Path(engine_root_path).resolve()
+        if engine_root_path is not None else Path(__file__).resolve().parents[3]
+    )
     enabled_locales = _normalize_enabled_locales(enabled_locales)
     target_count = len(load_fe8u_target_ids(target_header_path))
     english_entries = load_english_source_entries(
@@ -1163,7 +1172,7 @@ def compose_game_catalog(
             suffix_share=suffix_share,
         ),
     )
-    mapping = _load_mapping(mapping_path, target_count=target_count)
+    mapping = _load_mapping(mapping_path, target_count=target_count, repo_root=repo_root)
     eu_enabled_locales = tuple(
         locale for locale in enabled_locales if locale in EU_LOCALE_IDS
     )
@@ -1173,7 +1182,9 @@ def compose_game_catalog(
         else ()
     )
     try:
-        portrait_map = load_portrait_operand_map()
+        portrait_map = load_portrait_operand_map(
+            portrait_map_path, repo_root=portrait_root_path,
+        )
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error
     indexed_sources = {}
@@ -1262,13 +1273,21 @@ def build_game_catalog(
     authored_paths: Optional[Mapping[str, Path]] = None,
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
+    engine_root_path: Path | None = None,
     event_root_path: Path = DEFAULT_EVENT_ROOT,
+    portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
+    portrait_root_path: Path = Path("."),
+    font_root_path: Path = Path("."),
     schema_inputs: SchemaInputs | None = None,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
     ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
 ) -> GameCatalogBuild:
+    repo_root = (
+        Path(engine_root_path).resolve()
+        if engine_root_path is not None else Path(__file__).resolve().parents[3]
+    )
     composition = compose_game_catalog(
         english_texts_path=english_texts_path,
         english_definitions_path=english_definitions_path,
@@ -1282,6 +1301,9 @@ def build_game_catalog(
         eu_authored_paths=eu_authored_paths,
         target_header_path=target_header_path,
         authored_paths=authored_paths,
+        engine_root_path=repo_root,
+        portrait_map_path=portrait_map_path,
+        portrait_root_path=portrait_root_path,
         enabled_locales=enabled_locales,
         suffix_share=suffix_share,
         ja_raw_expected_repository=ja_raw_expected_repository,
@@ -1316,7 +1338,6 @@ def build_game_catalog(
                     )
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error
-    repo_root = Path(__file__).resolve().parents[3]
     alias_path = Path(fixed_width_aliases_path)
     if not alias_path.is_absolute():
         alias_path = repo_root / alias_path
@@ -1351,7 +1372,6 @@ def build_game_catalog(
         bundle.locale: bundle.entries for bundle in locale_bundles
     }
     if locale_bundles:
-        repo_root = Path(__file__).resolve().parents[3]
         registry_path = Path(width_registry_path)
         if not registry_path.is_absolute():
             registry_path = repo_root / registry_path
@@ -1410,6 +1430,7 @@ def build_game_catalog(
         locale_bundles=locale_bundles,
         english_entries=english_entries,
         portrait_map=portrait_map,
+        font_root_path=font_root_path,
     )
     try:
         control_validation = validate_event_continuations(

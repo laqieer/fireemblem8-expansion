@@ -922,12 +922,12 @@ bindings reject such changes rather than manufacture not-applicable results.
 The total bound is 250 obligations, not five arbitrarily selected siblings.
 
 An obligation's immutable `inputs` retain its semantic subject attachment.
-Its separate `execution_inputs` bind the complete shared worker staging
-closure; the adapter does not add undeclared candidate files. AoE inputs include the
+Its separate `execution_inputs` bind the complete declared shared worker staging
+closure. AoE inputs include the
 compiled core/reference sources and the complete staged header set. Generated
 inputs include all schemas imported by the existing registry, the staged
 generated-data code/data/headers/inventories and declared authored resources.
-Every observation's `source_objects` bind the complete execution union,
+Every observation's `source_objects` bind the complete declared execution union,
 including mixed-subject requests; narrowing that closure cannot borrow
 undeclared bytes staged for another member. Adding another subject does not
 expand a member's semantic `inputs`: an unrelated generated/workflow source
@@ -935,6 +935,15 @@ cannot attach to an AoE finding merely because it was staged or another
 subject failed. The fixed reviewed tool overlays remain
 bound by `tool_revision`, not a candidate-supplied program. This is the actual
 finite staging boundary, not a generic Python import/capability guarantee.
+
+The CJK resource binding additionally derives execution-only fixtures through
+its reviewed `fixture_inputs` adapter from each observed immutable Git tree.
+The stager captures those regular Git blobs, not working-copy or caller data.
+They are bound by the observation's `revision` and selected `tool_revision`,
+not individually repeated in member `execution_inputs` or `source_objects`.
+This does not replace required declared-source capture or promote fixture
+data into semantic `inputs`. Fixture-only commits retain distinct revision
+bindings; fixture additions/deletions cannot invent missing origin imports.
 
 The shipped unrelated subject uses are:
 

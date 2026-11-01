@@ -15,6 +15,7 @@ from scripts.localization.game_locales.width_contract import (
     classify_targets,
     load_width_registry,
 )
+from .resource_index import encode_like_index, json_bytes
 
 LOCALES = ("ja", "zh-Hans")
 STYLES = ("system", "talk")
@@ -69,12 +70,6 @@ class CjkFontError(ValueError):
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def json_bytes(value: object) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
 
 
 def scalar_text(value: int) -> str:
@@ -298,10 +293,28 @@ def _runtime_catalog_usage(
     of system, talk, or both and no target is silently omitted.
     """
 
-    from scripts.localization.game_catalog.build import compose_game_catalog
+    root = root.resolve()
+    from scripts.localization.game_catalog import build as catalog
     from scripts.localization.game_catalog.control_streams import tokenize_payload
 
-    build = compose_game_catalog(enabled_locales=(locale,))
+    build = catalog.compose_game_catalog(
+        enabled_locales=(locale,),
+        english_texts_path=root / catalog.DEFAULT_ENGLISH_TEXTS_PATH,
+        english_definitions_path=root / catalog.DEFAULT_ENGLISH_DEFINITIONS_PATH,
+        ja_indexed_path=root / catalog.DEFAULT_JA_INDEXED_PATH,
+        ja_raw_path=root / catalog.DEFAULT_JA_RAW_PATH,
+        zh_indexed_path=root / catalog.DEFAULT_ZH_INDEXED_PATH,
+        zh_raw_path=root / catalog.DEFAULT_ZH_RAW_PATH,
+        mapping_path=root / catalog.DEFAULT_MAPPING_PATH,
+        eu_mapping_path=root / catalog.DEFAULT_EU_MAPPING_PATH,
+        target_header_path=root / catalog.DEFAULT_TARGET_HEADER_PATH,
+        authored_paths={
+            name: root / path for name, path in catalog.DEFAULT_AUTHORED_PATHS.items()
+        },
+        engine_root_path=root,
+        portrait_map_path=root / catalog.DEFAULT_PORTRAIT_MAP_PATH,
+        portrait_root_path=root,
+    )
     registry = load_width_registry(root / WIDTH_REGISTRY_PATH)
     classifications, _ = classify_targets(
         root, target_count=build.target_count, registry=registry,
@@ -687,7 +700,7 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
     generated["fonts/cjk/maps/union.txt"] = _map_bytes(
         inventory["union_glyphs"]
     )
-    generated[RUNTIME_USAGE_PATH] = json_bytes(
+    generated[RUNTIME_USAGE_PATH] = encode_like_index(
         {
             "kind": "fe8u-cjk-runtime-font-usage",
             "schema_version": 1,
@@ -697,7 +710,8 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
                 "every_supported_runtime_string_is_classified": True,
                 "unclassified_strings_are_forbidden": True,
             },
-        }
+        },
+        root / RUNTIME_USAGE_PATH,
     )
 
     font_sources = _font_source_document(root)
