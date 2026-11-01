@@ -47,6 +47,12 @@ int main(void)
     const struct GradoStateField temporaryMonotonic = {
         7, 1, GRADO_STATE_MONOTONIC, 1, 3, GRADO_STATE_CHAPTER
     };
+    const struct GradoStateField * valueFields[] = {
+        &boolean, &permanent, &chapter, &choice, &monotonic
+    };
+    const enum GradoGuideStoragePolicy invalidPolicies[] = {
+        (enum GradoGuideStoragePolicy)-1, (enum GradoGuideStoragePolicy)2
+    };
     const struct
     {
         struct GradoStateField field;
@@ -65,6 +71,7 @@ int main(void)
     u16 value;
     unsigned int i;
     unsigned int bit;
+    unsigned int policy;
 
     for (i = 0; i < sizeof(gPermanentFlagBits); ++i)
         gPermanentFlagBits[i] = i * 13 + 7;
@@ -122,6 +129,17 @@ int main(void)
         == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
     assert(GradoState_ReadValue(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, NULL)
         == GRADO_STATE_VALUE_INPUT);
+    for (policy = 0; policy < sizeof(invalidPolicies) / sizeof(invalidPolicies[0]); ++policy)
+        for (i = 0; i < sizeof(valueFields) / sizeof(valueFields[0]); ++i)
+        {
+            value = 0xBEEF;
+            assert(GradoState_ReadValue(valueFields[i], invalidPolicies[policy], 3, &value)
+                == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+            assert(GradoState_WriteValue(valueFields[i], invalidPolicies[policy], 3, 0)
+                == GRADO_STATE_VALUE_INPUT);
+            assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+            assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+        }
     assert(GradoState_WriteValue(&reserved, GRADO_GUIDE_PROGRESSIVE, 3, 1)
         == GRADO_STATE_VALUE_LAYOUT);
     assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);

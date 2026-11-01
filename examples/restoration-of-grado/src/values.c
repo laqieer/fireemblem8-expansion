@@ -8,10 +8,12 @@ static enum GradoStateValueResult GradoState_CheckValueAccess(
     enum GradoGuideStoragePolicy guidePolicy,
     unsigned int chapter)
 {
-    if (field == NULL)
-        return GRADO_STATE_VALUE_INPUT;
+    enum GradoAllocationResult allocation;
 
-    if (GradoState_ValidateAllocation(field, 1, guidePolicy) != GRADO_ALLOCATION_VALID)
+    allocation = GradoState_ValidateAllocation(field, 1, guidePolicy);
+    if (allocation == GRADO_ALLOCATION_INPUT)
+        return GRADO_STATE_VALUE_INPUT;
+    if (allocation != GRADO_ALLOCATION_VALID)
         return GRADO_STATE_VALUE_LAYOUT;
 
     if (field->scope == GRADO_STATE_CHAPTER && field->chapter != chapter)

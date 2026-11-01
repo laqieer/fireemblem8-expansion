@@ -159,6 +159,8 @@ No ROM, emulator, save file, credentials or manual judgment is needed.
    remains in bounds. A chapter-local access with the wrong project ordinal,
    an engine-reserved descriptor and an out-of-domain write refuse without
    changing backing. Invalid input preserves the output guard.
+   Unknown guide-policy arguments report `INPUT`, not descriptor `LAYOUT`,
+   for reads and writes of every kind, without changing either backing array.
    A monotonic permanent field accepts 0-to-0, 0-to-1 and 1-to-1 writes,
    refuses 1-to-0 without changing any backing, and cannot be allocated in
    chapter-local storage. This write primitive does not prove that the four
