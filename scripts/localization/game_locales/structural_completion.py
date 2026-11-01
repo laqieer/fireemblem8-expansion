@@ -47,11 +47,12 @@ _INTEGER_RE = re.compile(
 )
 _MESSAGE_FIELD_RE = re.compile(
     r"\.(nameTextId|descTextId|useDescTextId|helpTextId|textId|msgId|messageId|itemName|"
-    r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*=\s*"
-    r"(MSG_[0-9A-Fa-f]{1,4}|(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*)\b"
+    r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*="
 )
 _MESSAGE_CALL_ARGUMENTS = {
     "GetStringFromIndex": (0,),
+    "StartTalkMsg": (2,),
+    "StartTalkMsgExt": (2,),
     "PutSioText": (0,),
     "StartCgText": (4,),
     "StartHelpBox": (2,),
@@ -386,6 +387,18 @@ def _split_arguments(arguments: str) -> List[str]:
             start = index + 1
     result.append(arguments[start:].strip())
     return result
+
+
+def _iter_message_fields(masked: str) -> Iterable[Tuple[str, int, int]]:
+    for match in _MESSAGE_FIELD_RE.finditer(masked):
+        start = end = match.end()
+        while end < len(masked) and masked[end] not in ",;)]}":
+            if masked[end] in "([{":
+                _, closing = _scan_balanced(masked, end)
+                end = closing + 1
+            else:
+                end += 1
+        yield match.group(1), start, end
 
 
 def _iter_named_calls(
@@ -730,14 +743,14 @@ def _site_index(root: Path, wanted: Set[int]) -> Dict[int, List[Dict[str, Any]]]
                 )
             )
 
-        for match in _MESSAGE_FIELD_RE.finditer(masked):
-            message_id = _parse_event_int(match.group(2))
+        for field, start, end in _iter_message_fields(masked):
+            message_id = _parse_event_int(masked[start:end])
             if message_id not in wanted or message_id == 0:
                 continue
-            line = masked.count("\n", 0, match.start()) + 1
+            line = masked.count("\n", 0, start) + 1
             context = lines[line - 1]
-            symbol = _symbol_for_offset(spans, match.start(), path.stem)
-            count_key = (str(path), symbol, "field", match.group(1))
+            symbol = _symbol_for_offset(spans, start, path.stem)
+            count_key = (str(path), symbol, "field", field)
             ordinal = slot_counts[count_key]
             slot_counts[count_key] += 1
             result[message_id].append(
@@ -748,11 +761,11 @@ def _site_index(root: Path, wanted: Set[int]) -> Dict[int, List[Dict[str, Any]]]
                     line=line,
                     kind="message-struct-field",
                     slot_key=(
-                        f"{symbol}/field={match.group(1)}/ordinal={ordinal + 1}"
+                        f"{symbol}/field={field}/ordinal={ordinal + 1}"
                     ),
                     context=context,
                     structure={
-                        "field": match.group(1),
+                        "field": field,
                         "ordinal": ordinal + 1,
                         "type": "designated-initializer-field",
                     },

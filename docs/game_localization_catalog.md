@@ -178,12 +178,26 @@ Custom schema-1 width registries must be updated to include the explicit
 box and CG classification contexts; unsupported schemas reject explicitly.
 
 `check-width --compile-context` also preprocesses the supplied selected C
-inputs with their actual compiler arguments before accepting direct literal
-message calls and designated message fields. Private conditional branches
-therefore select the checked references; raw disabled branches are not live
-references. The context loader is shared with font measurement. This is a
-first source-reference slice, not complete constant-expression/dataflow,
-event-helper, generated-owner or fresh full-project integration.
+inputs with their actual compiler arguments before accepting direct
+message calls and designated message fields. It collects complete balanced
+operands from the existing consumer/field registry, including the third
+argument of `StartTalkMsg` and `StartTalkMsgExt`. Numeric constant operands
+with parentheses, suffixes, arithmetic, character literals, `sizeof` and
+casts through selected typedefs, plus named enum constants, are evaluated by
+that ARM compiler in their original C scope, not interpreted with Python
+arithmetic or filtered by a C-type name whitelist. Call IDs come from that
+compiler's semantic `tree-original` output after actual argument conversion;
+signed-int, typedef and comma-list declarations are not message calls.
+Scalar/array initializer fields use their actual destination member type
+and compile-time range expressions in the original C scope. Evaluation
+compiles the frozen preprocessed token stream, without replaying operands
+under later macros or another include depth. The checked copy and compiler
+dump are temporary; they add no final ROM data or runtime code. Dynamic
+operands remain dynamic. Private conditional branches therefore select the
+checked references; raw disabled branches are not live references.
+The context loader is shared with font measurement. This is a first
+source-reference slice, not complete dataflow, nested-member initializer
+binding, event-helper, generated-owner or fresh full-project integration.
 
 ## Runtime and build gating
 
@@ -259,6 +273,17 @@ rendered page, layout, portrait or full-game qualification.
    argument (the message), not either coordinate; nested coordinates and
    comments cannot invent glyph requirements. Missing production payloads
    and live out-of-range event/name references reject explicitly.
+   The native constant-reference fixture separately admits `(1u)`,
+   `3u - 2u`, native `u16` casts/wraps, `sizeof(u16)` and character value 1;
+   it rejects `(1u + 2u)`, `-1`, `(u16)-1`, `sizeof(u32)` and character
+   `'3'` against three active messages. The same inputs cover the getter,
+   both direct Talk APIs and all three retained ItemData message fields.
+   Actual destination conversions also admit 65537 as ItemData ID 1, but
+   reject it as an `int` API ID; 4294967297 narrows to ID 1 in both.
+   Qualified casts, named enum constants and include-depth-selected `u8`/
+   `u16` inversion controls retain their original C semantics.
+   Named enum casts, compiler builtins, local attributed typedefs/initializers
+   and nested message calls are checked in their actual scope.
 3. Execute the real target consumers, explicitly outside the host-only lane:
 
    ```sh

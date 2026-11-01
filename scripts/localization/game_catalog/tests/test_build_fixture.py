@@ -524,6 +524,143 @@ class FixtureBuildTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn(f"inserted={inserted}", result.stdout)
 
+    def test_native_reference_constants_use_complete_operands(self):
+        from scripts.localization.game_catalog.compiled_inputs import (
+            CompiledInputError, validate_compiled_references,
+        )
+
+        compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
+        if shutil.which(compiler) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        source = self.fixture_dir / "constant-reference.c"
+        context = self.fixture_dir / "constant-context.json"
+        target = self.fixture_dir / "constant-reference.o"
+        context.write_text(json.dumps({
+            "schema_version": 1, "kind": "fe8-selected-text-inputs",
+            "source_root": str(ROOT), "linker": "arm-none-eabi-ld",
+            "units": [{
+                "logical_source": "src/constant-reference.c", "selected_source": str(source),
+                "compiler_input": str(source), "object": str(target),
+                "preprocessor_argv": [],
+                "compiler_argv": [
+                    compiler, "-mcpu=arm7tdmi", "-mthumb", "-std=gnu89", "-DMODERN=1",
+                    "-I" + str(ROOT / "include"), "-I" + str(ROOT),
+                    "-c", str(source), "-o", str(target),
+                ],
+            }],
+        }), encoding="utf-8")
+        forms = (
+            ("void Retained(void) {{ GetStringFromIndex({value}); }}", False),
+            ("void Retained(void) {{ StartTalkMsg(1, 1, {value}); }}", False),
+            ("void Retained(void) {{ StartTalkMsgExt(1, 1, {value}, 0); }}", False),
+            ("const struct ItemData Retained = {{.nameTextId = {value}}};", True),
+            ("const struct ItemData Retained = {{.descTextId = {value}}};", True),
+            ("const struct ItemData Retained = {{.useDescTextId = {value}}};", True),
+            ("const struct ItemData Retained[] = {{[0] = {{.nameTextId = {value}}}}};", True),
+        )
+        for form, narrow in forms:
+            for value, valid in (
+                ("(1u)", True), ("3u - 2u", True), ("(u16)65536u", True),
+                ("(u16)(65535u + 2u)", True), ("sizeof(u16)", True), (r"'\1'", True),
+                ("(const unsigned short)1u", True),
+                ("65537u", narrow), ("4294967297ULL", True),
+                ("(1u + 2u)", False), ("-1", False), ("(u16)-1", False),
+                ("sizeof(u32)", False), ("'3'", False),
+                ("(const unsigned short)3u", False),
+            ):
+                with self.subTest(form=form, value=value):
+                    source.write_text(
+                        '#include "global.h"\n#include "bmitem.h"\n#include "scene.h"\n'
+                        + form.format(value=value) + "\n", encoding="ascii",
+                    )
+                    if valid:
+                        validate_compiled_references(context, target_count=3)
+                    else:
+                        with self.assertRaisesRegex(
+                            CompiledInputError, "outside the active message set",
+                        ):
+                            validate_compiled_references(context, target_count=3)
+        for value, valid in (("1u", True), ("3u", False)):
+            for operand in (
+                    "SELECTED_MESSAGE", "(enum MessageId)SELECTED_MESSAGE",
+                    "(const enum MessageId)SELECTED_MESSAGE",
+                    "__builtin_bswap16(SELECTED_MESSAGE << 8)",
+            ):
+                    with self.subTest(enum_value=value, operand=operand):
+                        source.write_text(
+                            '#include "global.h"\n'
+                            f"enum MessageId {{ SELECTED_MESSAGE = {value} }};\n"
+                            f"void Retained(void) {{ GetStringFromIndex({operand}); }}\n",
+                            encoding="ascii",
+                        )
+                        if valid:
+                            validate_compiled_references(context, target_count=3)
+                        else:
+                            with self.assertRaisesRegex(
+                                CompiledInputError, "outside the active message set",
+                            ):
+                                validate_compiled_references(context, target_count=3)
+            for body in (
+                    "typedef unsigned short LocalId __attribute__((may_alias));"
+                    "struct ItemData item = {.nameTextId = (LocalId)SELECTED_MESSAGE};"
+                    "GetStringFromIndex(item.nameTextId);",
+                    "GetStringFromIndex((StartTalkMsg(1, 1, SELECTED_MESSAGE), 1));",
+            ):
+                    with self.subTest(local_or_nested=value, body=body):
+                        source.write_text(
+                            '#include "global.h"\n#include "bmitem.h"\n#include "scene.h"\n'
+                            f"void Retained(void) {{ enum {{ SELECTED_MESSAGE = {value} }};"
+                            + body + "}\n", encoding="ascii",
+                        )
+                        if valid:
+                            validate_compiled_references(context, target_count=3)
+                        else:
+                            with self.assertRaisesRegex(
+                                CompiledInputError, "outside the active message set",
+                            ):
+                                validate_compiled_references(context, target_count=3)
+        for selected, included, valid in (("u16", "u8", False), ("u8", "u16", True)):
+            with self.subTest(selected=selected, included=included):
+                source.write_text(
+                    '#include "global.h"\n'
+                    "#if __INCLUDE_LEVEL__ == 0\n"
+                    f"typedef {selected} SelectedMessageId;\n"
+                    "#else\n"
+                    f"typedef {included} SelectedMessageId;\n"
+                    "#endif\n"
+                    "void Retained(void) { GetStringFromIndex((SelectedMessageId)256u); }\n",
+                    encoding="ascii",
+                )
+                if valid:
+                    validate_compiled_references(context, target_count=3)
+                else:
+                    with self.assertRaisesRegex(
+                        CompiledInputError, "outside the active message set",
+                    ):
+                        validate_compiled_references(context, target_count=3)
+        for declaration in (
+            "extern char *GetStringFromIndex(signed int);",
+            "typedef signed int SelectedId; extern char *GetStringFromIndex(SelectedId);",
+            "extern char *Unused(int), *GetStringFromIndex(signed int);",
+        ):
+            for local in (False, True):
+                for value, valid in (("1u", True), ("3u", False)):
+                    with self.subTest(declaration=declaration, local=local, value=value):
+                        source.write_text(
+                            '#include "global.h"\n'
+                            + ("" if local else declaration)
+                            + "\nvoid Retained(void) {\n"
+                            + (declaration if local else "")
+                            + f"\nGetStringFromIndex({value});\n}}\n", encoding="ascii",
+                        )
+                        if valid:
+                            validate_compiled_references(context, target_count=3)
+                        else:
+                            with self.assertRaisesRegex(
+                                CompiledInputError, "outside the active message set",
+                            ):
+                                validate_compiled_references(context, target_count=3)
+
     def test_selected_name_keeps_legacy_space_distinct_from_ideographic_space(self):
         def measure(payload):
             return build_fixed_width_label_metrics(

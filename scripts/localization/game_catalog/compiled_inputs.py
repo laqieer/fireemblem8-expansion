@@ -11,9 +11,11 @@ from typing import TypedDict
 
 from scripts.localization.game_locales.structural_completion import (
     StructuralCompletionError,
-    _MESSAGE_FIELD_RE,
+    _MESSAGE_CALL_ARGUMENTS,
+    _iter_message_fields,
     _iter_named_calls,
     _mask_c_comments_and_strings,
+    _scan_balanced,
 )
 
 from .model import GameCatalogError
@@ -81,23 +83,91 @@ def load_compile_context(path: Path) -> CompileContext:
     }
 
 
+def _native_command(
+    unit: CompileUnit, output: Path, *, source: Path | None = None, preprocess: bool = False,
+) -> list[str]:
+    command = []
+    arguments = iter(unit["compiler_argv"])
+    for argument in arguments:
+        if argument in ("-MF", "-MQ", "-MT"):
+            next(arguments, None)
+        elif argument not in ("-MMD", "-MD", "-MP"):
+            command.append(argument)
+    if source is not None:
+        command[command.index("-c") + 1] = str(source)
+    if preprocess:
+        command[command.index("-c")] = "-E"
+    command[-1] = str(output)
+    return command
+
+
+def _checked_initializers(source: str, target_count: int) -> str:
+    masked = _mask_c_comments_and_strings(source)
+    references = []
+    owners = []
+    for match in re.finditer(
+        r"(?<![\w.])\b([A-Za-z_]\w*)\s*((?:\[[^\]]*\]\s*)*)"
+        r"(?:__attribute__\([^=;]*\)\s*)?=\s*\{", masked,
+    ):
+        opening = masked.index("{", match.start())
+        _, closing = _scan_balanced(masked, opening)
+        owners.append((
+            opening, closing, match.group(1) + "[0]" * match.group(2).count("["),
+        ))
+    for kind, start, end in _iter_message_fields(masked):
+        containing = [(closing - opening, owner) for opening, closing, owner in owners
+                      if opening < start < closing]
+        if not containing:
+            raise CompiledInputError(
+                f"cannot bind native initializer field {kind}({source[start:end].strip()})"
+            )
+        _, owner = min(containing)
+        references.append((start, end, f"__typeof__({owner}.{kind})"))
+    insertions = []
+    for start, end, destination in references:
+        # Classify and narrow in the original C scope; only the checked copy is compiled.
+        converted = f"({destination})({source[start:end]})"
+        condition = (
+            f"__builtin_choose_expr(__builtin_constant_p(({converted})), "
+            f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
+        )
+        insertions.append((start, f"__extension__ (({destination})("))
+        insertions.append((
+            end, ") + 0 * (int)sizeof(struct { char "
+            f"fe8_message_reference_outside_active_set[({condition}) ? 1 : -1]; }}))",
+        ))
+    for offset, text in sorted(insertions, reverse=True):
+        source = source[:offset] + text + source[offset:]
+    return source
+
+
+def _validate_native_calls(source: str, target_count: int, selected_source: str) -> None:
+    for kind, _, _, operands in _iter_named_calls(
+        _mask_c_comments_and_strings(source), _MESSAGE_CALL_ARGUMENTS,
+    ):
+        for argument in _MESSAGE_CALL_ARGUMENTS[kind]:
+            if argument >= len(operands):
+                continue
+            operand = operands[argument].strip()
+            if re.fullmatch(r"-?(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*", operand):
+                value = int(operand.rstrip("uUlL"), 16 if "x" in operand.lower() else 10)
+                if not 0 <= value < target_count:
+                    raise CompiledInputError(
+                        f"{selected_source}: native {kind}({operand}) is outside the active "
+                        f"message set of {target_count} targets"
+                    )
+
+
 def validate_compiled_references(context_path: Path, *, target_count: int) -> None:
     context = load_compile_context(context_path)
     root = Path(context["source_root"])
     with TemporaryDirectory(prefix="selected-text-cpp-") as directory:
         for index, unit in enumerate(context["units"]):
-            command = []
-            arguments = iter(unit["compiler_argv"])
-            for argument in arguments:
-                if argument in ("-MF", "-MQ", "-MT"):
-                    next(arguments, None)
-                elif argument not in ("-MMD", "-MD", "-MP"):
-                    command.append("-E" if argument == "-c" else argument)
             output = Path(directory) / f"{index}.i"
-            command[-1] = str(output)
             try:
                 result = subprocess.run(
-                    command, cwd=root, capture_output=True, text=True, timeout=90,
+                    _native_command(unit, output, preprocess=True),
+                    cwd=root, capture_output=True, text=True, timeout=90,
                     check=False,
                 )
             except (OSError, subprocess.TimeoutExpired) as error:
@@ -110,35 +180,33 @@ def validate_compiled_references(context_path: Path, *, target_count: int) -> No
                     + result.stdout + result.stderr
                 )
             try:
-                source = _mask_c_comments_and_strings(output.read_text(encoding="utf-8"))
-                references = [
-                    (kind, operands[0]) for kind, _, _, operands
-                    in _iter_named_calls(source, ("GetStringFromIndex",)) if len(operands) == 1
-                ]
-                references.extend(
-                    (match.group(1), match.group(2)) for match in _MESSAGE_FIELD_RE.finditer(source)
+                native_source = output.read_text(encoding="utf-8")
+                checked = _checked_initializers(native_source, target_count)
+                checked_path = Path(directory) / f"{index}.c"
+                checked_path.write_text(checked, encoding="utf-8")
+                calls_path = Path(directory) / f"{index}.calls"
+                command = _native_command(
+                    unit, Path(directory) / f"{index}.o", source=checked_path,
                 )
-            except (OSError, UnicodeDecodeError, StructuralCompletionError) as error:
+                command[command.index("-c"):command.index("-c")] = [
+                    "-fpreprocessed", "-fdump-tree-original=" + str(calls_path),
+                ]
+                compiled = subprocess.run(
+                    command, cwd=root, capture_output=True, text=True, timeout=90, check=False,
+                )
+                if compiled.returncode:
+                    raise CompiledInputError(
+                        f"{unit['selected_source']}: native message reference outside the active "
+                        f"message set of {target_count} targets or invalid checked input:\n"
+                        + compiled.stdout + compiled.stderr
+                    )
+                _validate_native_calls(
+                    calls_path.read_text(encoding="utf-8"), target_count, unit["selected_source"],
+                )
+            except (
+                OSError, UnicodeDecodeError, StructuralCompletionError,
+                subprocess.TimeoutExpired,
+            ) as error:
                 raise CompiledInputError(
                     f"{context_path}: {unit['selected_source']}: native source is invalid: {error}"
                 ) from error
-            for kind, value in references:
-                operand = value.strip()
-                if not re.fullmatch(r"-?(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*", operand):
-                    continue
-                literal = operand.rstrip("uUlL")
-                digits = literal.lstrip("-")
-                base = 16 if digits.lower().startswith("0x") else (
-                    8 if len(digits) > 1 and digits.startswith("0") else 10
-                )
-                try:
-                    target = int(literal, base)
-                except ValueError as error:
-                    raise CompiledInputError(
-                        f"{unit['selected_source']}: invalid native message literal {operand}"
-                    ) from error
-                if not 0 <= target < target_count:
-                    raise CompiledInputError(
-                        f"{unit['selected_source']}: live {kind}({operand}) is outside "
-                        f"the active message set of {target_count} targets"
-                    )
