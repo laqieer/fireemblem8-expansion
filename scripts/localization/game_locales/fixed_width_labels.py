@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Sequence, Tuple
 
 from scripts.generated_data.diagnostics import GeneratedDataError
 from scripts.generated_data.schema import SchemaInputs
@@ -17,6 +17,9 @@ from .ending_metrics import (
     _cjk_widths,
     _line_width,
 )
+
+if TYPE_CHECKING:
+    from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
 
 
 ALIASES_PATH = Path("texts/locales/fixed_width_display_aliases.json")
@@ -408,6 +411,7 @@ def build_fixed_width_label_metrics(
     aliases_path: Path | None = None,
     fallback_payloads: Mapping[int, bytes] | None = None,
     schema_inputs: SchemaInputs | None = None,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Dict[str, Any]:
     repo_root = Path(repo_root)
     aliases_path = (
@@ -445,7 +449,13 @@ def build_fixed_width_label_metrics(
             source_contract[surface]["data_source"] = {
                 "path": str(schema_inputs.source(schema)), "sha256": _sha256(source.read_bytes()),
             }
-    ascii_widths = _ascii_widths(repo_root)
+    if font_metrics is None:
+        ascii_widths = _ascii_widths(repo_root)
+    else:
+        try:
+            ascii_widths = font_metrics["ascii"]["system"]
+        except KeyError as error:
+            raise FixedWidthLabelError("selected native system-font metrics are unavailable") from error
     locales = {}
     font_inputs = {}
     total_aliases = 0
@@ -453,7 +463,21 @@ def build_fixed_width_label_metrics(
     for locale in ("ja", "zh-Hans"):
         if locale not in localized_payloads:
             continue
-        cjk_widths, font_input = _cjk_widths(repo_root, locale)
+        if font_metrics is None:
+            cjk_widths, font_input = _cjk_widths(repo_root, locale)
+        else:
+            try:
+                cjk_widths = font_metrics["localized"][locale]["system"]
+            except KeyError as error:
+                raise FixedWidthLabelError(
+                    f"{locale}: selected native system-font metrics are unavailable"
+                ) from error
+            font_input = {
+                "native": font_metrics["inputs"],
+                "locale": locale,
+                "style": "system",
+                "glyph_count": len(cjk_widths),
+            }
         font_inputs[locale] = font_input
         surfaces = {}
         for surface, specification in SURFACES.items():

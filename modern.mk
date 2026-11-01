@@ -1014,6 +1014,7 @@ $(MODERN_TEXT_COMPILE_CONTEXT): FORCE
 _expansion-modern-text-object-plan: $$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)
 	@: fe8-selected-text-objects "$(MODERN_OUTPUT_DIR)" $(foreach object,$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS),"$(object)")
 	@: fe8-selected-text-data $(foreach object,$(MODERN_ALL_DATA_OBJECTS),"$(object)")
+	@: fe8-selected-text-linker "$(MODERN_LD)"
 
 $(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"

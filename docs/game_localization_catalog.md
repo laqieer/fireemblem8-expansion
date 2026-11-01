@@ -213,6 +213,10 @@ explicit; existing publication files stay unchanged.
 
 The native JSON records report three messages and masks 1 and 3. The real
 English ARM decoder and localized consumers return the fixture's exact bytes.
+Message 0 is the first lookup after a fresh boot and returns `Base zero`, not
+an empty cache buffer. The modern English cache has an explicit zero-initialized
+validity byte, so this also works with the native fixture's NOLOAD EWRAM.
+The archival cache path is unchanged.
 The multi-page message retains control sequence `[1, 3, 2, 31]`; the absent JA
 entry falls back to English without becoming a translated entry. The retained
 `ItemData.nameTextId = 2` returns the correct item name through the real
@@ -233,6 +237,26 @@ positions cannot publish a success-shaped header/table pair. A second 248px
 line still rejects even when separated by NL2. Missing locale entries may
 exercise the documented fallback fixture but do not qualify production
 generation or leakage gates.
+Before the cache fix, the real English-only ROM returns zero bytes for its
+first message-0 lookup instead of the expected nine bytes; the localized ROM
+still returns the expected payload. A compile failure is not this negative
+control.
+
+The selected-font tracers can be run separately:
+
+```sh
+python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compiled_font_metrics_use_real_private_include_and_macro_context scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_cjk_metrics_use_compiled_counts_widths_and_enabled_locale scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_metrics_resolve_glyphs_across_both_native_font_slots scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_default_english_resolver_compiles_with_source_only_declarations scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_pseudo_locale_metrics_keep_the_native_latin_path_without_an_atlas -v
+```
+
+These compile real selected ARM font data, use the selected native linker for
+cross-object glyph references, and pass the measured widths to the width,
+Talk and fixed-name interfaces. Private System/Talk widths 9/11 accept 234px
+and 231px examples but reject the next character. A selected Japanese
+System width of 13 accepts a 39px name and rejects 52px on the 40px surface.
+English source-only declarations and the pseudo locale's Latin-font path
+need no measured catalog or locale atlas. These are bounded compiler and
+consumer tracers, not completed production catalog/context integration,
+rendered pages, full-game profiles or release qualification.
 
 #### Interactions and save compatibility
 

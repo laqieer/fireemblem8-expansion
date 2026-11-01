@@ -278,11 +278,11 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
     def test_three_message_english_and_localized_real_consumers(self):
         generated = self.generate_inputs()
         english = [
-            b"Native\x01One\x03\x02Second\x1fTail", b"Base zero",
+            b"Base zero", b"Native\x01One\x03\x02Second\x1fTail",
             b"Practice Blade", b"Native\x01One\x03\x02Second\x1fTail",
         ]
         japanese = [
-            "剣\x01一\x03\x02二\x1f剣".encode(), b"Base zero", ("剣" * 10).encode(),
+            b"Base zero", "剣\x01一\x03\x02二\x1f剣".encode(), ("剣" * 10).encode(),
             "剣\x01一\x03\x02二\x1f剣".encode(),
         ]
         for mask in (1, 3):
@@ -297,18 +297,18 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
                 self.assertTrue(0x03000000 <= header[8] < 0x03007800)
                 self.assertGreater(header[9], 0)
                 expected = [(0, index, consumer, payload, 0) for index, consumer, payload in zip(
-                    (1, 0, 2, 1), (0, 0, 1, 2), english
+                    (0, 1, 2, 1), (0, 0, 1, 2), english
                 )]
                 if mask == 3:
                     self.assertEqual(header[11], 3)
                     expected += [
                         (1, index, consumer, payload, 2 if index == 0 else 1)
                         for index, consumer, payload in zip(
-                            (1, 0, 2, 1), (0, 0, 1, 2), japanese
+                            (0, 1, 2, 1), (0, 0, 1, 2), japanese
                         )
                     ]
                     expected += [
-                        (0, 1, 0, english[0], 0),
+                        (0, 1, 0, english[1], 0),
                         (0, 3, 0, b"<!LOC_INV!>", 6),
                         (0, 0xFFFFFFFF, 0, b"<!LOC_INV!>", 6),
                         (1, 1, 3, b"<!L", 4),
@@ -335,7 +335,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
                         self.assertLessEqual(control_count, 16)
                         controls = list(data[offset + 132:offset + 132 + control_count])
                         record.update(status=fields[2], controls=controls)
-                        if index in (0, 3, 4, 7, 8):
+                        if message == 1 and consumer in (0, 2):
                             self.assertEqual(controls, [1, 3, 2, 31])
                     observed.append(record)
                 if mask == 3:

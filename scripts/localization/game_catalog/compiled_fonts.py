@@ -16,9 +16,20 @@ class CompiledFontError(GameCatalogError):
     """A selected font object cannot establish its actual compiled metrics."""
 
 
+class SelectedFontInputs(TypedDict):
+    compiler_context: str
+    source_root: str
+    renderer_object: str
+    font_objects: tuple[str, str]
+    layout_object: str
+    relocated_font_object: str
+    locale_mask: int
+
+
 class SelectedFontMetrics(TypedDict):
     ascii: dict[str, dict[int, int]]
     localized: dict[str, dict[str, dict[int, int]]]
+    inputs: SelectedFontInputs
 
 
 @dataclass(frozen=True)
@@ -209,6 +220,7 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
             or context["schema_version"] != 1 or context.get("kind") != "fe8-selected-text-inputs"
             or not isinstance(context.get("source_root"), str)
             or not Path(context["source_root"]).is_absolute()
+            or not isinstance(context.get("linker"), str) or not context["linker"]
             or not isinstance(context.get("units"), list)):
         raise CompiledFontError(f"{context_path}: invalid selected compilation context")
     source_root = Path(context["source_root"])
@@ -235,6 +247,7 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
 
     renderer = selected("src/fontgrp.c")
     font = selected("src/fontgrp-data.c")
+    localized = selected("src/data/localized_font_data.c")
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     source = output_dir / "selected-font-layout.c"
@@ -267,29 +280,52 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
             f"{context_path}: selected native font layout compile failed:\n"
             + compiled.stdout + compiled.stderr
         )
+    font_path = output_dir / "selected-font-data.o"
+    linked = subprocess.run(
+        [
+            context["linker"], "-r", "-o", str(font_path),
+            str(source_root / font["object"]), str(source_root / localized["object"]),
+        ],
+        cwd=source_root, capture_output=True, text=True, check=False,
+    )
+    if linked.returncode:
+        raise CompiledFontError(
+            f"{context_path}: selected native font relocation link failed:\n"
+            + linked.stdout + linked.stderr
+        )
     layout = _ArmObject(layout_path)
     mask_bytes = layout.symbol_bytes(layout.symbol("gSelectedTextLocaleMask"))
     if len(mask_bytes) != 4:
         raise CompiledFontError(f"{layout_path}: invalid compiled locale mask")
     mask = struct.unpack("<I", mask_bytes)[0]
-    if not mask or mask & ~0x7F:
+    if not mask or mask & ~0xFF:
         raise CompiledFontError(f"{layout_path}: unsupported compiled locale mask {mask:#x}")
     result: SelectedFontMetrics = {
         "ascii": {
-            style: read_ascii_widths(source_root / font["object"], symbol, layout_object=layout_path)
+            style: read_ascii_widths(font_path, symbol, layout_object=layout_path)
             for style, symbol in (("system", "TextGlyphs_System"), ("talk", "TextGlyphs_Talk"))
         },
         "localized": {},
+        "inputs": {
+            "compiler_context": str(Path(context_path).resolve()),
+            "source_root": str(source_root),
+            "renderer_object": str(source_root / renderer["object"]),
+            "font_objects": (
+                str(source_root / font["object"]), str(source_root / localized["object"]),
+            ),
+            "layout_object": str(layout_path),
+            "relocated_font_object": str(font_path),
+            "locale_mask": mask,
+        },
     }
     for bit, locale, stem in (
         (1, "ja", "Ja"), (2, "zh-Hans", "ZhHans"), (3, "fr", "Eu"),
         (4, "de", "Eu"), (5, "es", "Eu"), (6, "it", "Eu"),
     ):
         if mask & (1 << bit):
-            localized = selected("src/data/localized_font_data.c")
             result["localized"][locale] = {
                 style: read_localized_widths(
-                    source_root / localized["object"], "gLocalizedFont" + stem + name,
+                    font_path, "gLocalizedFont" + stem + name,
                     layout_object=layout_path,
                 )
                 for style, name in (("system", "System"), ("talk", "Talk"))

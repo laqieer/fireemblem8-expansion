@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from scripts.generated_data.consumer_census import _strip_comments
 from scripts.generated_data.cparse import find_c_array_blocks, find_matching_paren
@@ -23,6 +23,9 @@ from scripts.localization.legacy_spacing import (
     LEGACY_SJIS_SPACE_SCALAR,
     LEGACY_SJIS_SPACE_WIDTH,
 )
+
+if TYPE_CHECKING:
+    from .compiled_fonts import SelectedFontMetrics
 
 CONTROL_DOMAIN_FE8J = "fe8j"
 CONTROL_DOMAIN_FE8U = "fe8u"
@@ -529,10 +532,17 @@ def load_talk_font_metrics(
     locale: str,
     *,
     repo_root: Path = Path("."),
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> TalkFontMetrics:
     try:
-        ascii_widths = _ascii_widths(repo_root, style="talk")
-        if locale in ("fr", "de", "es", "it"):
+        if font_metrics is not None:
+            ascii_widths = font_metrics["ascii"]["talk"]
+            cjk_widths = {} if locale == "en" else font_metrics["localized"][locale]["talk"]
+        elif locale == "en":
+            ascii_widths = _ascii_widths(repo_root, style="talk")
+            cjk_widths = {}
+        elif locale in ("fr", "de", "es", "it"):
+            ascii_widths = _ascii_widths(repo_root, style="talk")
             codepoint_data = (
                 repo_root / "graphics/fonts/eu/eu.talk.codepoints.u32le"
             ).read_bytes()
@@ -550,10 +560,11 @@ def load_talk_font_metrics(
                 for index, width in enumerate(width_data)
             }
         else:
+            ascii_widths = _ascii_widths(repo_root, style="talk")
             cjk_widths, _ = _cjk_widths(repo_root, locale, style="talk")
-    except (EndingLayoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (EndingLayoutError, OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError) as error:
         raise ControlStreamError(
-            f"{locale}: runtime system-font metrics are unavailable"
+            f"{locale}: runtime talk-font metrics are unavailable"
         ) from error
     return TalkFontMetrics(
         locale=locale,

@@ -304,7 +304,10 @@ def cmd_declare(args: argparse.Namespace) -> int:
         target_count = len(load_fe8u_target_ids(args.target_header))
     except MappingError as error:
         raise GameCatalogError(str(error)) from error
-    locales = _normalize_enabled_locales(args.enabled_locales)
+    locales = (
+        _normalize_enabled_locales(args.enabled_locales)
+        if args.enabled_locales.strip() else ()
+    )
     _write_bytes_if_changed(
         args.output, render_declarations(target_count, locales).encode("utf-8"),
     )
@@ -407,6 +410,9 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
 
     root, *objects = inventory("fe8-selected-text-objects")
     data_objects = set(inventory("fe8-selected-text-data"))
+    linkers = inventory("fe8-selected-text-linker")
+    if len(linkers) != 1 or not linkers[0]:
+        raise GameCatalogError("native Make must report exactly one selected linker")
     if (not objects or len(objects) != len(set(objects))
             or set(compiler) != set(objects) or not data_objects <= set(objects)):
         raise GameCatalogError("native Make compile plan differs from the selected C inventory")
@@ -433,7 +439,7 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
         })
     _write_bytes_if_changed(args.output, canonical_json_bytes({
         "schema_version": 1, "kind": "fe8-selected-text-inputs",
-        "source_root": str(Path.cwd().resolve()), "units": units,
+        "source_root": str(Path.cwd().resolve()), "linker": linkers[0], "units": units,
     }))
     return 0
 

@@ -107,10 +107,10 @@ static void RunActiveSet(void)
     char buffer[96];
     const char *text;
 
-    text = GetStringFromIndex(MSG_NATIVE_PAGES);
-    Record(MSG_NATIVE_PAGES, 0, text);
     text = GetStringFromIndex(MSG_NATIVE_ZERO);
     Record(MSG_NATIVE_ZERO, 0, text);
+    text = GetStringFromIndex(MSG_NATIVE_PAGES);
+    Record(MSG_NATIVE_PAGES, 0, text);
     text = GetItemName(1);
     Record(GetItemData(1)->nameTextId, 1, text);
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
@@ -141,7 +141,9 @@ void AgbMain(void)
     gNativeTextProbe.itemNameOffset = offsetof(struct ItemData, nameTextId);
     gNativeTextProbe.retainedId = GetItemData(1)->nameTextId;
     gNativeTextProbe.msgBufferBytes = sizeof(struct MsgBuffer);
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
     gNativeTextProbe.generatedTargetCount = FE8_GAME_LOCALIZATION_TARGET_COUNT;
+#endif
     StoreRoutinesToIRAM();
     gNativeTextProbe.decodeRamAddress = (u32)DecodeStringRAMFunc;
     gNativeTextProbe.copiedCodeBytes = ARMCodeToCopy_End - ARMCodeToCopy_Start;

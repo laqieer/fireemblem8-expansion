@@ -392,6 +392,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 "make", "--no-print-directory", "-f", str(makefile), str(context),
                 "graphics/debug_font.4bpp.h", "NODEP=1",
                 str(namespace / "src/fontgrp-data.o"), str(namespace / "src/fontgrp.o"),
+                str(namespace / "src/data/localized_font_data.o"),
                 f"MODERN_BUILD_ROOT={output}",
                 "MODERN_CONFIG=debug", "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en",
                 f"PYTHON={sys.executable}",
@@ -422,6 +423,20 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             apply_width_contract(
                 repo_root=ROOT, locale="en", target_payloads=(b"A" * 27 + b"\0",),
                 registry=registry, event_root=events, fixed_label_ids=(), font_metrics=metrics,
+            )
+        from scripts.localization.game_catalog.control_streams import (
+            ControlStreamError, load_talk_font_metrics, tokenize_payload, validate_talk_line_widths,
+        )
+        talk = load_talk_font_metrics("en", repo_root=ROOT, font_metrics=metrics)
+        tokens = tokenize_payload(b"\x08" + b"A" * 21 + b"\0", source_name="native talk")
+        self.assertEqual(
+            validate_talk_line_widths(tokens, source_name="native talk", metrics=talk)["max_talk_line_width"],
+            231,
+        )
+        with self.assertRaises(ControlStreamError):
+            validate_talk_line_widths(
+                tokenize_payload(b"\x08" + b"A" * 22 + b"\0", source_name="native talk"),
+                source_name="native talk", metrics=talk,
             )
         self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
         self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
@@ -481,8 +496,120 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(metrics["localized"], {
             "ja": {"system": {0x4E00: 13}, "talk": {0x4E8C: 7}},
         })
+        from scripts.localization.game_locales.fixed_width_labels import (
+            FixedWidthLabelError, build_fixed_width_label_metrics,
+        )
+        name = "一".encode("utf-8")
+        labels = build_fixed_width_label_metrics(
+            ROOT, localized_payloads={"ja": {530: name * 3 + b"\0"}},
+            fallback_payloads={530: b"A\0"}, font_metrics=metrics,
+        )
+        self.assertEqual(labels["summary"]["label_count"], 1)
+        with self.assertRaisesRegex(FixedWidthLabelError, "52px"):
+            build_fixed_width_label_metrics(
+                ROOT, localized_payloads={"ja": {530: name * 4 + b"\0"}},
+                fallback_payloads={530: b"A\0"}, font_metrics=metrics,
+            )
         self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
         self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+
+    def test_selected_font_metrics_resolve_glyphs_across_both_native_font_slots(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        table = self.project / "selected_tables.c"
+        table.write_text(
+            '#include "global.h"\n#include "fontgrp.h"\n'
+            "extern struct Glyph gExternalSystem;\nextern struct Glyph gExternalTalk;\n"
+            "struct Glyph *TextGlyphs_System[128] = {[63] = &gExternalSystem, [65] = &gExternalSystem};\n"
+            "struct Glyph *TextGlyphs_Talk[128] = {[63] = &gExternalTalk, [65] = &gExternalTalk};\n",
+            encoding="ascii",
+        )
+        glyphs = self.project / "selected_glyphs.c"
+        glyphs.write_text(
+            '#include "global.h"\n#include "fontgrp.h"\n'
+            "struct Glyph gExternalSystem = {0, 0, 13, {0}};\n"
+            "struct Glyph gExternalTalk = {0, 0, 7, {0}};\n",
+            encoding="ascii",
+        )
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := fonts\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                "FE8_PROJECT_FONT_REPLACEMENTS := "
+                f"src/fontgrp-data.c={table.relative_to(ROOT)} "
+                f"src/data/localized_font_data.c={glyphs.relative_to(ROOT)}\n",
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        namespace = output / "primary/debug/aapcs"
+        context = namespace / "selected-text-inputs.json"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "NODEP=1", str(context.relative_to(ROOT)),
+                "graphics/debug_font.4bpp.h",
+                str((namespace / "src/fontgrp-data.o").relative_to(ROOT)),
+                str((namespace / "src/data/localized_font_data.o").relative_to(ROOT)),
+                str((namespace / "src/fontgrp.o").relative_to(ROOT)),
+                f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
+                "EXPANSION_ENABLED_LOCALES=en", f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+        metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+        self.assertEqual(metrics["ascii"], {
+            "system": {63: 13, 65: 13}, "talk": {63: 7, 65: 7},
+        })
+        self.assertEqual(metrics["localized"], {})
+
+    def test_default_english_resolver_compiles_with_source_only_declarations(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="english-declarations-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            resolver = output / "debug/aapcs/src/localized_game_text.o"
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "NODEP=1", str(resolver),
+                    f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                    "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en",
+                    f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, text=True, capture_output=True, check=False, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(resolver.is_file())
+            self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+            self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+
+    def test_pseudo_locale_metrics_keep_the_native_latin_path_without_an_atlas(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="pseudo-font-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            namespace = output / "debug/aapcs"
+            context = namespace / "selected-text-inputs.json"
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "NODEP=1", str(context),
+                    "graphics/debug_font.4bpp.h", str(namespace / "src/fontgrp.o"),
+                    str(namespace / "src/fontgrp-data.o"),
+                    str(namespace / "src/data/localized_font_data.o"),
+                    f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug", "FE8_PROJECT=default",
+                    "EXPANSION_ENABLED_LOCALES=en,qps-ploc", "EXPANSION_DEFAULT_LOCALE=en",
+                    "EXPANSION_PSEUDO_LOCALE=1", f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, text=True, capture_output=True, check=False, timeout=90,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+            metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+            self.assertEqual(metrics["localized"], {})
+            self.assertIn(ord("A"), metrics["ascii"]["system"])
+            self.assertIn(ord("A"), metrics["ascii"]["talk"])
 
     def test_project_default_profile_supplies_its_effective_settings(self):
         identity = ec.load_identity(
