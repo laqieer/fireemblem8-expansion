@@ -149,8 +149,12 @@ fixture additions/deletions cannot change member identity or invent missing
 origin inputs. The optional reviewed fixture adapter does not replace required
 source capture; changed catalog/portrait validators remain semantic generated
 inputs. Data fixtures are not promoted to semantic predicates, and missing
-required origin imports still refuse explicitly. Valid encode/write failures and untyped malformed
-parser failures are contract violations, not unavailable setup evidence.
+required origin imports still refuse explicitly. At admitted candidate calls,
+value/type, arithmetic, attribute, lookup, runtime and LZMA failures are
+contract violations, not unavailable setup evidence. The two candidate-call
+paths share that finite error-family definition; independent reference and
+OS/backend setup failures remain unavailable. Unrecognized failures never
+supply success or affected-fixed credit and require explicit source triage.
 This binding does not wrap a whole-suite pass
 as member evidence or replace the font CLI, candidate/master Build or final
 delivery gates.
