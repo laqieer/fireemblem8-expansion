@@ -1743,7 +1743,10 @@ def write_resource_index(
     manifest = json.loads((root / manifest_path).read_bytes())
     outputs = {relative: data}
     if generated is None:
-        manifest["sources"]["fehrr_priority"]["sha256"] = sha256_bytes(data)
+        priority = manifest["sources"].get("fehrr_priority")
+        if not isinstance(priority, dict):
+            raise CjkFontError("cannot repack FEHRR index without a priority provenance binding")
+        priority["sha256"] = sha256_bytes(data)
     else:
         inventory_path = "fonts/cjk/inventory.json"
         inventory = json.loads(generated[inventory_path])

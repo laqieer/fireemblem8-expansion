@@ -13,6 +13,7 @@ import zlib
 
 from scripts.fonttools.cjk.inventory import CjkFontError, check_generated_files
 from scripts.fonttools.cjk.package import FEHRR_SOURCES, _read_fehrr_lock, check_compact_assets
+from scripts.fonttools.cjk.package import compact_asset_filenames, write_resource_index
 from scripts.fonttools.cjk.resource_index import (
     ENVELOPE_KIND,
     MAX_INDEX_BYTES,
@@ -73,6 +74,66 @@ class ResourceIndexTests(unittest.TestCase):
                 })
         for path in outputs[0]:
             self.assertTrue(outputs[0][path] == outputs[1][path], path + " packed outputs differ")
+
+    def test_repack_without_a_legacy_priority_binding_refuses_without_mutation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for prefix in ("fonts/cjk", "graphics/fonts/cjk"):
+                shutil.copytree(ROOT / prefix, root / prefix)
+            baseline = (root / "fonts/cjk/febuilder-baseline-manifest.json").read_bytes()
+            (root / "fonts/cjk/febuilder-manifest.json").write_bytes(baseline)
+            report_path = "fonts/cjk/reports/febuilder-generation-report.json"
+            report = json.loads((root / report_path).read_bytes())
+            manifest_path = root / "graphics/fonts/cjk/manifest.json"
+            manifest = json.loads(manifest_path.read_bytes())
+            total = aligned = 0
+            for job in json.loads(baseline)["jobs"]:
+                prefix = job["locale"] + "." + ("system" if job["styles"] == ["item"] else "talk")
+                names = compact_asset_filenames(prefix)
+                for kind, filename in names.items():
+                    data = (root / "fonts/cjk/febuilder-baseline" / filename).read_bytes()
+                    relative = "graphics/fonts/cjk/" + filename
+                    (root / relative).write_bytes(data)
+                    manifest["assets"][prefix][kind] = {
+                        "path": relative, "byte_count": len(data),
+                        "sha256": hashlib.sha256(data).hexdigest(),
+                    }
+                    total += len(data)
+                    aligned += (len(data) + 3) & ~3
+                codepoints = (root / "graphics/fonts/cjk" / names["codepoints"]).read_bytes()
+                scalars = struct.unpack("<" + "I" * (len(codepoints) // 4), codepoints)
+                (root / "fonts/cjk" / job["corpus"]["path"]).write_text(
+                    "".join(chr(scalar) for scalar in scalars), encoding="utf-8",
+                )
+                manifest["assets"][prefix]["glyph_count"] = len(scalars)
+            manifest["schema_version"] = 1
+            manifest["sources"]["febuilder_manifest"]["sha256"] = hashlib.sha256(baseline).hexdigest()
+            manifest["sources"].pop("fehrr_priority")
+            manifest["sources"]["febuilder_package"] = {
+                "disposition": "temporary maintainer artifact under build/tmp; not committed",
+                "payload_tree_sha256": report["payloadTreeSha256"],
+                "full_tree_sha256": report["fullTreeSha256"],
+                "package_report_sha256": hashlib.sha256((root / report_path).read_bytes()).hexdigest(),
+            }
+            manifest["rom_budget"] = {
+                "payload_bytes": total, "four_byte_aligned_blob_bytes": aligned, "bytes_per_glyph": 69,
+            }
+            manifest_path.write_bytes(encode_index(manifest))
+            check_compact_assets(root)
+            paths = (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json")
+            before = {path: (root / path).read_bytes() for path in paths}
+            with self.assertRaises(CjkFontError):
+                write_resource_index(root, "fehrr", packed=True)
+            self.assertEqual({path: (root / path).read_bytes() for path in paths}, before)
+            result = subprocess.run(
+                [sys.executable, "-B", "-m", "scripts.fonttools.cjk", "--root", str(root),
+                 "repack-index", "--index", "fehrr", "--format", "packed"],
+                cwd=ROOT, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertTrue(result.stderr.startswith("error:"), result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual({path: (root / path).read_bytes() for path in paths}, before)
 
     def test_unpaired_surrogate_keys_and_values_fail_through_the_typed_boundary(self):
         cases = (b'{"value":"\\ud800"}', b'{"\\udfff":"value"}', b'{"value":["\\ud800"]}')
