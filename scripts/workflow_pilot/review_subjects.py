@@ -33,6 +33,7 @@ BINDINGS = (
     SubjectSpec("TC-GAMEPLAY-006", "aoe-item-dispatch", "aoe"),
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
+    SubjectSpec("TC-CJK-RESOURCE-STORAGE-001", "cjk-resource-index", "cjk-resource"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
     SubjectSpec("TC-PROJECT-SELECTION-001", "project-selection", "project-selection"),
 )
@@ -46,6 +47,11 @@ EVENT_SCHEMA = "scripts/generated_data/eventlists/schema.py"
 EVENT_SOURCE = "src/data/ch2_eventlists.json"
 PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
+CJK_CODEC = "scripts/fonttools/cjk/resource_index.py"
+CJK_INDEXES = ("fonts/cjk/fehrr-sources.json", "fonts/cjk/runtime_usage.json")
+CJK_FIXTURE_PREFIXES = (
+    "fonts/cjk", "graphics/fonts/cjk", "src", "include", "texts", "assets", "reports",
+)
 CASE_REGISTRY = "docs/test-cases/registry.json"
 CASE_TEMPLATE = "docs/test-cases/template.md"
 CASE_DOCUMENT = "docs/test-cases/localization.md"
@@ -154,6 +160,56 @@ def project_declaration_model(tree):
                        "context_fields": sorted(PROJECT_CONTEXT_FIELDS)}, sort_keys=True)
 
 
+def local_python_inputs(tree, roots):
+    pending = set(roots)
+    captured = set()
+
+    def module(name, required=False):
+        if not (name == "scripts" or name.startswith("scripts.")):
+            return
+        prefix = name.replace(".", "/")
+        paths = (prefix + ".py", prefix + "/__init__.py")
+        found = next((path for path in paths if path in tree.entries), None)
+        if required:
+            review.require(found is not None or any(
+                path.startswith(prefix + "/") for path in tree.entries
+            ), "missing declared local Python import: " + name)
+        if found is not None:
+            pending.add(found)
+        parts = prefix.split("/")
+        for count in range(1, len(parts)):
+            initializer = "/".join(parts[:count]) + "/__init__.py"
+            if initializer in tree.entries:
+                pending.add(initializer)
+
+    while pending:
+        path = pending.pop()
+        if path in captured:
+            continue
+        captured.add(path)
+        package = path.removesuffix(".py").split("/")[:-1]
+        try:
+            source = ast.parse(tree.read(path), filename=path)
+        except SyntaxError as error:
+            raise review.ReviewError("invalid imported Python source: " + path) from error
+        for node in ast.walk(source):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    module(alias.name, required=True)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    review.require(node.level <= len(package), "local import escaped its package")
+                    base = ".".join(package[:len(package) - node.level + 1])
+                    if node.module:
+                        base += "." + node.module
+                else:
+                    base = node.module or ""
+                module(base, required=True)
+                for alias in node.names:
+                    module(base + "." + alias.name)
+    return tuple(sorted(captured))
+
+
 def authored_case_declaration(raw):
     catalog = json.loads(raw)
     features = [item for item in catalog["features"] if item["id"] == AUTHORED_FEATURE]
@@ -204,6 +260,12 @@ def event_validation_inputs(tree):
         if path.endswith("_bundle.json"):
             shared.update(item["file"] for item in json.loads(tree.read(path))["externalReferences"])
     return shared
+
+
+def fixture_inputs(tree, probes):
+    if any(probe.startswith("cjk-resource:generated:") for probe in probes):
+        return {path for prefix in CJK_FIXTURE_PREFIXES for path in tree.under(prefix)}
+    return set()
 
 
 def resolve_subject(case_id: str, subject: str, catalog: dict) -> SubjectSpec:
@@ -264,7 +326,7 @@ def schema_declaration(source: bytes, *, dependencies=True) -> tuple[dict, tuple
     return defaults, tuple(table_dependencies)
 
 
-def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
+def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
     result = []
 
     def add(family, role, name, producer, consumer, representation, revalidation,
@@ -338,6 +400,35 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         add("generated", "drift-checks", "eventlists", EVENT_SCHEMA + ":build_inventory",
             inventory, "committed generated inventory", "regenerate and compare",
             "generated-drift", inputs | {inventory}, kind="parsed", evidence=("positive", "generated"))
+    elif spec.model == "cjk-resource":
+        paths = {
+            CJK_CODEC, *CJK_INDEXES, "scripts/fonttools/cjk/package.py",
+            "scripts/fonttools/cjk/inventory.py", "scripts/fonttools/cjk/cli.py",
+        }
+        closure = local_python_inputs(head, (
+            CJK_CODEC, "scripts/fonttools/cjk/package.py",
+            "scripts/fonttools/cjk/inventory.py", "scripts/fonttools/cjk/cli.py",
+        ))
+        for family in ("generated", "wire", "resource"):
+            for role in review.FAMILIES[family]:
+                producer = (CJK_CODEC + ":encode_index"
+                            if family == "generated" and role == "outputs"
+                            else "scripts/fonttools/cjk/package.py:write_resource_index"
+                            if family == "generated" and role == "drift-checks" else CJK_CODEC)
+                consumer = ("scripts/fonttools/cjk/package.py:check_compact_assets"
+                            if family == "generated" and role == "consumers"
+                            else "scripts/fonttools/cjk/inventory.py:check_generated_files"
+                            if family == "generated" and role == "drift-checks" else CJK_CODEC)
+                add(family, role, "resource-index", producer, consumer,
+                    "plain JSON or version1 xz-base64 resource envelope",
+                    "complete values, physical checksums, stream reuse and bounded rejection",
+                    "cjk-resource:" + family + ":" + role,
+                    paths | {
+                        "scripts/localization/game_catalog/build.py",
+                        "scripts/localization/game_catalog/control_streams.py",
+                    } if family == "generated" else paths)
+        result = [replace(member, execution_inputs=tuple(sorted(set(closure) | paths)))
+                  for member in result]
     elif spec.model == "project-selection":
         declaration = project_declaration_model(tree)
         for role, name, inputs in (
@@ -475,8 +566,8 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
 
 
 def expand_members(spec: SubjectSpec, origin_tree, candidate_tree):
-    before = _members(spec, origin_tree)
-    after = _members(spec, candidate_tree)
+    before = _members(spec, origin_tree, candidate_tree)
+    after = _members(spec, candidate_tree, candidate_tree)
     # Deletion is not an exemption from a previously accepted obligation.
     review.require({item.identity for item in before} == {item.identity for item in after},
                    "added/deleted members require a reviewed finite model and removal evidence")
@@ -1386,6 +1477,675 @@ def _generated(probe: str) -> dict:
 
 
 @probe_result("host")
+def _cjk_resource(probe):
+    import base64
+    import hashlib
+    import lzma
+    import math
+    import shutil
+    import struct
+    import zlib
+    from scripts.fonttools.cjk import cli, package, resource_index as codec
+
+    _, family, role = probe.split(":")
+    checks = 0
+    limit = 4 * 1024 * 1024
+    operation_errors = (
+        ArithmeticError, AttributeError, LookupError, RuntimeError,
+        TypeError, ValueError, lzma.LZMAError,
+    )
+
+    def verify(condition, detail):
+        nonlocal checks
+        check(condition, detail)
+        checks += 1
+
+    def canonical(value):
+        return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2,
+                           allow_nan=False) + "\n").encode()
+
+    def reference_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate reference resource key")
+            value[key] = item
+        return value
+
+    def reference_number(token):
+        value = float(token)
+        if not math.isfinite(value):
+            raise ValueError("nonfinite reference resource number")
+        return value
+
+    def reference_json(data):
+        value = json.loads(
+            data.decode("utf-8"), object_pairs_hook=reference_object,
+            parse_float=reference_number, parse_constant=reference_number,
+        )
+        if not isinstance(value, dict):
+            raise ValueError("reference resource must be an object")
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return value
+
+    def reference(data):
+        if len(data) > limit:
+            raise ValueError("reference resource index exceeds 4 MiB")
+        value = reference_json(data)
+        if value.get("kind") != "cjk-resource-index":
+            return data
+        if (set(value) != {"kind", "version", "encoding", "decoded_bytes", "payload"}
+                or type(value["version"]) is not int or value["version"] != 1
+                or value["encoding"] != "xz-base64" or not isinstance(value["payload"], str)):
+            raise ValueError("unsupported reference resource envelope")
+        expected = value["decoded_bytes"]
+        if type(expected) is not int or not 0 <= expected <= limit:
+            raise ValueError("reference resource size exceeds its bound")
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=64 * 1024 * 1024)
+        decoded = decoder.decompress(
+            base64.b64decode(value["payload"], validate=True), max_length=limit + 1,
+        )
+        if len(decoded) > limit or len(decoded) != expected or not decoder.eof or decoder.unused_data:
+            raise ValueError("reference resource size or single-stream boundary differs")
+        if reference_json(decoded).get("kind") == "cjk-resource-index":
+            raise ValueError("nested reference resource envelope")
+        return decoded
+
+    def envelope(data, stream=None):
+        return {
+            "kind": "cjk-resource-index", "version": 1, "encoding": "xz-base64",
+            "decoded_bytes": len(data),
+            "payload": base64.b64encode(lzma.compress(data) if stream is None else stream).decode(),
+        }
+
+    def reject(call, error=codec.ResourceIndexError):
+        nonlocal checks
+        try:
+            call()
+        except error as failure:
+            checks += 1
+            return failure
+        except operation_errors as failure:
+            raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
+        raise ContractViolation("invalid resource input was accepted")
+
+    def accepted(function, *args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except operation_errors as failure:
+            raise ContractViolation("valid resource operation was rejected: " + str(failure)) from failure
+
+    def produced(data):
+        verify(isinstance(data, bytes), "resource producer did not emit bytes")
+        try:
+            return reference_json(reference(data))
+        except (ValueError, TypeError, RecursionError, lzma.LZMAError) as failure:
+            raise ContractViolation("resource producer emitted invalid storage: " + str(failure)) from failure
+
+    def decoded(data, expected):
+        value = accepted(codec.decode_index, data)
+        verify(canonical(value) == canonical(expected), "complete typed resource values differ")
+        return value
+
+    def owned_fonts(name, *, inventory=False):
+        root = Path("build") / name
+        prefixes = ("fonts/cjk", "graphics/fonts/cjk")
+        if inventory:
+            prefixes += ("src", "include", "texts", "assets", "reports")
+        for prefix in prefixes:
+            shutil.copytree(prefix, root / prefix, dirs_exist_ok=True)
+        if inventory:
+            for command in (
+                ["git", "init", "--quiet"], ["git", "add", "--", "src", "include"],
+            ):
+                result = run_process(command, cwd=root, env=os.environ.copy(),
+                                     timeout=20, new_session=False)
+                if result.returncode:
+                    raise OSError("owned tracked-source fixture unavailable: "
+                                  + result.stderr.decode(errors="replace")[-1000:])
+        return root
+
+    def legacy_fonts(name):
+        root = owned_fonts(name)
+        manifest_path = root / "graphics/fonts/cjk/manifest.json"
+        baseline = (root / "fonts/cjk/febuilder-baseline-manifest.json").read_bytes()
+        (root / "fonts/cjk/febuilder-manifest.json").write_bytes(baseline)
+        report_path = "fonts/cjk/reports/febuilder-generation-report.json"
+        report = json.loads((root / report_path).read_bytes())
+        metadata = json.loads(manifest_path.read_bytes())
+        payload_bytes = aligned_bytes = 0
+        for job in json.loads(baseline)["jobs"]:
+            prefix = job["locale"] + "." + ("system" if job["styles"] == ["item"] else "talk")
+            names = package.compact_asset_filenames(prefix)
+            for kind, filename in names.items():
+                data = (root / "fonts/cjk/febuilder-baseline" / filename).read_bytes()
+                relative = "graphics/fonts/cjk/" + filename
+                (root / relative).write_bytes(data)
+                metadata["assets"][prefix][kind] = {
+                    "path": relative, "byte_count": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+                payload_bytes += len(data)
+                aligned_bytes += (len(data) + 3) & ~3
+            codepoints = (root / "graphics/fonts/cjk" / names["codepoints"]).read_bytes()
+            scalars = struct.unpack("<" + "I" * (len(codepoints) // 4), codepoints)
+            (root / "fonts/cjk" / job["corpus"]["path"]).write_text(
+                "".join(chr(scalar) for scalar in scalars), encoding="utf-8",
+            )
+            metadata["assets"][prefix]["glyph_count"] = len(scalars)
+        metadata["schema_version"] = 1
+        metadata["sources"]["febuilder_manifest"]["sha256"] = hashlib.sha256(baseline).hexdigest()
+        metadata["sources"].pop("fehrr_priority")
+        metadata["sources"]["febuilder_package"] = {
+            "disposition": "temporary maintainer artifact under build/tmp; not committed",
+            "payload_tree_sha256": report["payloadTreeSha256"],
+            "full_tree_sha256": report["fullTreeSha256"],
+            "package_report_sha256": hashlib.sha256((root / report_path).read_bytes()).hexdigest(),
+        }
+        metadata["rom_budget"] = {
+            "payload_bytes": payload_bytes, "four_byte_aligned_blob_bytes": aligned_bytes,
+            "bytes_per_glyph": 69,
+        }
+        manifest_path.write_bytes(canonical(metadata))
+        accepted(package.check_compact_assets, root)
+        return root
+
+    def source_checkout(scalar=None, *, blank=False, glyphs=None):
+        selection = str(scalar) if glyphs is None else "-".join(
+            str(glyphs[prefix]) for prefix in sorted(glyphs)
+        )
+        root = Path("build/review-fehrr-generator-source-" + selection + "-" + str(blank))
+        root.mkdir(parents=True)
+        paths = {
+            Path("glyph") / locale / "font.fontall.txt"
+            for locale in package.FEHRR_LOCALES.values()
+        }
+        paths.update(
+            Path(directory) / "font.fontall.txt"
+            for styles in package.FEHRR_SUPPLEMENTAL_TIERS.values()
+            for tiers in styles.values() for _, directory in tiers
+        )
+        for relative in paths:
+            review.require(not relative.is_absolute() and ".." not in relative.parts,
+                           "FEHRR source fixture path escaped its owner")
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"")
+        if scalar is not None or glyphs is not None:
+            def chunk(kind, data):
+                return (struct.pack(">I", len(data)) + kind + data
+                        + struct.pack(">I", zlib.crc32(kind + data)))
+
+            scanlines = (
+                b"\0" + (b"\xff\xff\xff" if blank else b"\0\0\0") + b"\xff\xff\xff" * 15
+                + (b"\0" + b"\xff\xff\xff" * 16) * 15
+            )
+            png = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(scanlines))
+                + chunk(b"IEND", b"")
+            )
+            for locale, source_locale in package.FEHRR_LOCALES.items():
+                directory = root / "glyph" / source_locale
+                rows = []
+                for runtime_style, style, name in (
+                    ("system", "item", "FontItem_fixture.png"),
+                    ("talk", "text", "FontText_fixture.png"),
+                ):
+                    (directory / name).write_bytes(png)
+                    selected = scalar if glyphs is None else glyphs[locale + "." + runtime_style]
+                    rows.append(f"{chr(selected)}\t{style}\t9\t{name}\n")
+                (directory / "font.fontall.txt").write_text("".join(rows), encoding="utf-8")
+        for arguments in (
+            ["git", "init", "--quiet"],
+            ["git", "remote", "add", "origin", package.FEHRR_REPOSITORY],
+            ["git", "add", "--", "glyph"],
+            ["git", "-c", "user.name=Source fixture",
+             "-c", "user.email=source-fixture@example.invalid",
+             "-c", "core.hooksPath=/dev/null", "commit", "--quiet",
+             "-m", "owned empty-map source fixture"],
+        ):
+            result = run_process(arguments, cwd=root, env=os.environ.copy(),
+                                 timeout=20, new_session=False)
+            if result.returncode:
+                raise OSError("owned source fixture unavailable: "
+                              + result.stderr.decode(errors="replace")[-1000:])
+        return root
+
+    originals = []
+    for relative in CJK_INDEXES:
+        with Path(relative).open("rb") as stream:
+            originals.append(stream.read(limit + 1))
+    stocks = []
+    for data in originals:
+        stocks.append(json.loads(reference(data)))
+    seed = {"id": 1, "values": [True, 1.0, "\u4e00"]}
+    plain = canonical(seed)
+    wrapped = canonical(envelope(plain))
+    path = Path("build/review-resource-index.json")
+
+    if family == "generated":
+        if role == "owners":
+            for data, value in zip(originals, stocks):
+                decoded(data, value)
+            for invalid in (b"[]", b"\xff", b'{"a":1,"a":2}'):
+                reject(lambda invalid=invalid: codec.decode_index(invalid))
+        elif role == "outputs":
+            for value in stocks:
+                verify(accepted(codec.encode_index, value) == canonical(value),
+                       "existing canonical plain output changed")
+                stored = accepted(codec.encode_index, value, packed=True)
+                independent = produced(stored)
+                verify(canonical(independent) == canonical(value), "packed output lost fields/types")
+                verify(accepted(codec.encode_index, value, packed=True) == stored,
+                       "fresh same-encoder compression is not deterministic")
+            manifest = "graphics/fonts/cjk/manifest.json"
+            root = owned_fonts("review-resource-selected-only-glyph")
+            baseline = set()
+            for asset in json.loads((root / manifest).read_bytes())["assets"].values():
+                data = (root / "fonts/cjk/febuilder-baseline"
+                        / Path(asset["codepoints"]["path"]).name).read_bytes()
+                baseline.update(struct.unpack("<" + "I" * (len(data) // 4), data))
+            scalar = next(value for value in range(0x3400, 0x4DC0) if value not in baseline)
+            jobs_path = root / "fonts/cjk/febuilder-manifest.json"
+            jobs = json.loads(jobs_path.read_bytes())
+            corpus = chr(scalar).encode("utf-8")
+            for job in jobs["jobs"]:
+                (root / "fonts/cjk" / job["corpus"]["path"]).write_bytes(corpus)
+                job["corpus"]["sha256"] = hashlib.sha256(corpus).hexdigest()
+            jobs_path.write_bytes(canonical(jobs))
+            source = source_checkout(scalar)
+            outputs = accepted(package.build_runtime_split_assets, root, source)
+            metadata = produced(outputs[manifest])
+            verify(all(
+                outputs[asset["codepoints"]["path"]] == struct.pack("<I", scalar)
+                and outputs[asset["widths"]["path"]] == bytes([9])
+                and outputs[asset["bitmap"]["path"]] == b"\1" + bytes(63)
+                for asset in metadata["assets"].values()
+            ), "actual FEHRR-only scalar required an unrelated baseline glyph")
+            source = source_checkout()
+            for generator in (package.build_runtime_split_assets, package.build_fehrr_priority_assets):
+                for packed in (False, True):
+                    root = legacy_fonts(
+                        "review-generator-" + generator.__name__ + "-" + str(packed))
+                    (root / CJK_INDEXES[0]).write_bytes(
+                        accepted(codec.encode_index, stocks[0], packed=packed))
+                    before = {
+                        asset[kind]["path"]: (root / asset[kind]["path"]).read_bytes()
+                        for asset in json.loads((root / manifest).read_bytes())["assets"].values()
+                        for kind in ("bitmap", "codepoints", "widths")
+                    }
+                    outputs = accepted(generator, root, source)
+                    verify(isinstance(outputs, dict)
+                           and set(outputs) == {*before, CJK_INDEXES[0], manifest},
+                           "actual font generator lost complete output ownership")
+                    stored = outputs[CJK_INDEXES[0]]
+                    lock = produced(stored)
+                    metadata = produced(outputs[manifest])
+                    verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
+                           "actual font generator changed the stored representation")
+                    verify(metadata["sources"]["fehrr_priority"]["sha256"]
+                           == hashlib.sha256(stored).hexdigest(),
+                           "actual font generator bound a different physical index")
+                    verify(all(outputs[path] == data for path, data in before.items())
+                           and all(asset["glyph_count"] == 0 for asset in lock["assets"].values()),
+                           "owned empty-source fallback changed complete atlas ownership/bytes")
+                    for relative, data in outputs.items():
+                        (root / relative).write_bytes(data)
+                    accepted(package.check_compact_assets, root)
+                    repeated = accepted(generator, root, source)
+                    verify(repeated == outputs,
+                           "actual generator rejected or changed its own schema-2 output")
+            prefixes = ("ja.system", "ja.talk", "zh-Hans.system", "zh-Hans.talk")
+
+            def selections(lock):
+                return {
+                    prefix: tuple(int(row["scalar"][2:], 16) for row in asset["glyphs"])
+                    for prefix, asset in lock["assets"].items()
+                }
+
+            for schema in (1, 2):
+                make_root = legacy_fonts if schema == 1 else owned_fonts
+                seed_root = make_root("review-bound-selection-seed-" + str(schema))
+                seed_metadata = json.loads((seed_root / manifest).read_bytes())
+                corpora = {}
+                for prefix, asset in seed_metadata["assets"].items():
+                    data = (seed_root / asset["codepoints"]["path"]).read_bytes()
+                    corpora[prefix] = set(struct.unpack("<" + "I" * (len(data) // 4), data))
+                review.require(set(corpora) == set(prefixes),
+                               "bound-selection fixture asset coverage drifted")
+                groups = (
+                    {"ja": ("ja.system", "ja.talk"),
+                     "zh-Hans": ("zh-Hans.system", "zh-Hans.talk")}
+                    if schema == 1 else {prefix: (prefix,) for prefix in prefixes}
+                )
+                pairs = {}
+                for group, targets in groups.items():
+                    shared = set.intersection(*(corpora[prefix] for prefix in targets))
+                    elsewhere = set.union(*(values for prefix, values in corpora.items()
+                                            if prefix not in targets))
+                    exclusive = sorted(value for value in shared - elsewhere
+                                       if value > 0xFF and value != 0x3000)
+                    review.require(len(exclusive) >= 2,
+                                   "bound-selection fixture needs two isolated corpus scalars")
+                    pairs[group] = tuple(exclusive[:2])
+                owners = {prefix: group for group, targets in groups.items() for prefix in targets}
+                stable_glyphs = {prefix: pairs[owners[prefix]][0] for prefix in prefixes}
+                stable_source = source_checkout(glyphs=stable_glyphs)
+                changed_sources = {
+                    group: source_checkout(glyphs={
+                        prefix: pairs[owners[prefix]][1] if prefix in targets
+                        else stable_glyphs[prefix]
+                        for prefix in prefixes
+                    })
+                    for group, targets in groups.items()
+                }
+                expected_selection = {prefix: (scalar,) for prefix, scalar in stable_glyphs.items()}
+                base_outputs = accepted(package.build_runtime_split_assets, seed_root, stable_source)
+                verify(selections(produced(base_outputs[CJK_INDEXES[0]])) == expected_selection,
+                       "bound-selection fixture did not select one scalar per asset")
+                for packed in (False, True):
+                    seeded = dict(base_outputs)
+                    seeded[CJK_INDEXES[0]] = accepted(
+                        codec.encode_index, produced(base_outputs[CJK_INDEXES[0]]), packed=packed)
+                    metadata = produced(base_outputs[manifest])
+                    metadata["sources"]["fehrr_priority"]["sha256"] = hashlib.sha256(
+                        seeded[CJK_INDEXES[0]]).hexdigest()
+                    seeded[manifest] = canonical(metadata)
+                    root = make_root("review-bound-selection-" + str(packed) + "-" + str(schema))
+                    bound_metadata = json.loads((root / manifest).read_bytes())
+                    for relative, data in seeded.items():
+                        if relative != manifest:
+                            (root / relative).write_bytes(data)
+                    if schema == 2:
+                        bound_metadata = metadata
+                    else:
+                        bound_lock = produced(seeded[CJK_INDEXES[0]])
+                        for asset in bound_lock["assets"].values():
+                            asset["source_style"] = asset["preferred_source_style"]
+                        stored = accepted(codec.encode_index, bound_lock, packed=packed)
+                        (root / CJK_INDEXES[0]).write_bytes(stored)
+                        bound_metadata["assets"] = {
+                            prefix: {
+                                **asset,
+                                "source_priority": {
+                                    "fehrr_glyph_count": bound_lock["assets"][prefix]["glyph_count"],
+                                    "febuilder_fallback_glyph_count":
+                                        bound_lock["assets"][prefix]["febuilder_fallback_glyph_count"],
+                                    "source_locale": bound_lock["assets"][prefix]["source_locale"],
+                                    "source_style": bound_lock["assets"][prefix]["source_style"],
+                                },
+                            }
+                            for prefix, asset in metadata["assets"].items()
+                        }
+                        bound_metadata["rom_budget"] = metadata["rom_budget"]
+                        bound_metadata["sources"]["fehrr_priority"] = {
+                            "path": CJK_INDEXES[0],
+                            "sha256": hashlib.sha256(stored).hexdigest(),
+                            "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+                        }
+                    (root / manifest).write_bytes(canonical(bound_metadata))
+                    accepted(package.check_compact_assets, root)
+                    unchanged = accepted(package.build_fehrr_priority_assets, root, stable_source)
+                    verify(selections(produced(unchanged[CJK_INDEXES[0]])) == expected_selection,
+                           "unchanged bound source selection was rejected or changed")
+                    before = {relative: (root / relative).read_bytes() for relative in seeded}
+                    for group, changed_source in changed_sources.items():
+                        preview = accepted(package.build_runtime_split_assets, root, changed_source)
+                        changed_selection = {
+                            prefix: (pairs[group][1],) if prefix in groups[group]
+                            else expected_selection[prefix]
+                            for prefix in prefixes
+                        }
+                        verify(selections(produced(preview[CJK_INDEXES[0]])) == changed_selection,
+                               "source fixture changed a count or an unrelated asset selection")
+                        for operation in (
+                            package.build_fehrr_priority_assets,
+                            package.write_fehrr_priority_assets,
+                        ):
+                            reject(lambda operation=operation: operation(root, changed_source),
+                                   package.CjkFontError)
+                            verify(all((root / relative).read_bytes() == data
+                                       for relative, data in before.items()),
+                                   "changed bound selection published an output before refusing")
+                    written = accepted(package.write_fehrr_priority_assets, root, stable_source)
+                    verify(written == unchanged
+                           and all((root / relative).read_bytes() == data
+                                   for relative, data in written.items()),
+                           "unchanged bound selection did not publish its complete valid output")
+                    accepted(package.check_compact_assets, root)
+            root = legacy_fonts("review-generator-blank-fallback")
+            corpora = package._job_corpora(root, package._expected_jobs(root))
+            common = set.intersection(*(set(value[2]) for value in corpora.values()))
+            scalar = next(value for value in sorted(common) if value >= 0x4E00)
+            source = source_checkout(scalar, blank=True)
+            outputs = accepted(package.write_fehrr_priority_assets, root, source)
+            accepted(package.check_compact_assets, root)
+            lock = produced(outputs[CJK_INDEXES[0]])
+            verify(all(any(
+                row["scalar"] == package.scalar_text(scalar)
+                and row["reason"] == (
+                    "configured FEHRR glyph is blank and no visible same-game fallback exists"
+                )
+                for row in asset["febuilder_fallbacks"]
+            ) for asset in lock["assets"].values()),
+                   "actual blank-glyph fallback lost its supported source reason")
+        elif role == "consumers":
+            root = Path("build/review-resource-consumer")
+            source = root / CJK_INDEXES[0]
+            source.parent.mkdir(parents=True, exist_ok=True)
+            for packed in (False, True):
+                stored = accepted(codec.encode_index, stocks[0], packed=packed)
+                source.write_bytes(stored)
+                priority = {
+                    "path": CJK_INDEXES[0], "sha256": hashlib.sha256(stored).hexdigest(),
+                    "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+                }
+                value = accepted(package._read_fehrr_lock, root, {"fehrr_priority": priority})
+                verify(canonical(value) == canonical(stocks[0]), "real priority reader changed values")
+                priority["sha256"] = "0" * 64
+                reject(lambda: package._read_fehrr_lock(root, {"fehrr_priority": priority}),
+                       package.CjkFontError)
+            root = owned_fonts("review-resource-maintainer")
+            manifest = "graphics/fonts/cjk/manifest.json"
+            original_assets = {
+                asset[kind]["path"]: (root / asset[kind]["path"]).read_bytes()
+                for asset in json.loads((root / manifest).read_bytes())["assets"].values()
+                for kind in ("bitmap", "codepoints", "widths")
+            }
+            for packed in (False, True):
+                outputs = accepted(package.write_resource_index, root, "fehrr", packed=packed)
+                accepted(package.check_compact_assets, root)
+                stored = (root / CJK_INDEXES[0]).read_bytes()
+                decoded(stored, stocks[0])
+                verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
+                       "actual maintainer ignored the requested representation")
+                verify(set(outputs) == {CJK_INDEXES[0], manifest}
+                       and all((root / path).read_bytes() == value for path, value in outputs.items())
+                       and all((root / path).read_bytes() == value
+                               for path, value in original_assets.items()),
+                       "actual conversion changed its output ownership or atlas bytes")
+            legacy = legacy_fonts("review-resource-unbound-legacy")
+            saved = {name: (legacy / name).read_bytes() for name in (CJK_INDEXES[0], manifest)}
+            for packed in (False, True):
+                reject(lambda packed=packed: package.write_resource_index(
+                    legacy, "fehrr", packed=packed), package.CjkFontError)
+                verify(all((legacy / name).read_bytes() == value for name, value in saved.items()),
+                       "unbound legacy priority refusal changed a stored output")
+            root = owned_fonts("review-resource-cli")
+            accepted(package.check_compact_assets, root)
+            broken = b"invalid index"
+            cause = str(reject(lambda: codec.decode_index(broken)))
+            (root / CJK_INDEXES[0]).write_bytes(broken)
+            before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+            errors = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                status = accepted(cli.main, [
+                    "--root", str(root), "repack-index", "--index", "fehrr", "--format", "packed",
+                ])
+            verify(status == 1 and cause in errors.getvalue(),
+                   "actual schema2 CLI hid the codec diagnostic")
+            verify(all(path.read_bytes() == value for path, value in before.items()),
+                   "actual failed schema2 CLI changed an existing output")
+        elif role == "drift-checks":
+            alternate = canonical(envelope(plain, lzma.compress(plain, preset=0)))
+            path.write_bytes(alternate)
+            verify(accepted(codec.encode_like_index, seed, path) == alternate,
+                   "unchanged valid alternate stream was recompressed")
+            verify(accepted(codec.encode_like_index, seed, path, packed=True) == alternate,
+                   "explicit unchanged packed stream was recompressed")
+            path.write_bytes(b"invalid index")
+            reject(lambda: codec.encode_like_index(seed, path))
+            verify(path.read_bytes() == b"invalid index", "failed writer changed input")
+            root = owned_fonts("review-resource-inventory", inventory=True)
+            inventory_path = "fonts/cjk/inventory.json"
+            manifest_path = "graphics/fonts/cjk/manifest.json"
+            original_inventory = (root / inventory_path).read_bytes()
+            original_manifest = (root / manifest_path).read_bytes()
+            initially_packed = json.loads(originals[1]).get("kind") == "cjk-resource-index"
+            for packed in (not initially_packed, initially_packed):
+                outputs = accepted(package.write_resource_index, root, "runtime-usage", packed=packed)
+                stored = (root / CJK_INDEXES[1]).read_bytes()
+                decoded(stored, stocks[1])
+                verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
+                       "runtime-usage maintainer changed the requested format")
+                expected_inventory = json.loads(original_inventory)
+                expected_inventory["outputs"][CJK_INDEXES[1]] = {
+                    "byte_count": len(stored), "sha256": hashlib.sha256(stored).hexdigest(),
+                }
+                inventory_data = canonical(expected_inventory)
+                expected_manifest = json.loads(original_manifest)
+                expected_manifest["sources"]["inventory"]["sha256"] = hashlib.sha256(
+                    inventory_data).hexdigest()
+                verify(set(outputs) == {CJK_INDEXES[1], inventory_path, manifest_path}
+                       and all((root / name).read_bytes() == value
+                               for name, value in outputs.items())
+                       and (root / inventory_path).read_bytes() == inventory_data
+                       and (root / manifest_path).read_bytes() == canonical(expected_manifest),
+                       "inventory writer changed its ownership or physical checksum chain")
+            mapping = json.loads(
+                (root / "texts/locales/mapping/fe8u_target_map.json").read_bytes()
+            )
+            literal_source = next(
+                row["source"]["regional_sources"]["ja"]["provenance"]["source_path"]
+                for row in mapping["rows"]
+                if row["source"].get("regional_sources", {}).get("ja", {}).get("kind")
+                == "literal"
+            )
+            for relative in (literal_source, "assets/portrait_registry.json"):
+                selected_source = root / relative
+                saved = selected_source.read_bytes()
+                selected_source.unlink()
+                reject(lambda: package.check_generated_files(root), ValueError)
+                selected_source.write_bytes(saved)
+        else:
+            raise review.ReviewError("unknown resource generation role")
+    elif family == "wire":
+        if role == "producers":
+            stored = json.loads(accepted(codec.encode_index, seed, packed=True))
+            verify(set(stored) == {"kind", "version", "encoding", "decoded_bytes", "payload"}
+                   and stored["kind"] == "cjk-resource-index"
+                   and type(stored["version"]) is int and stored["version"] == 1
+                   and stored["encoding"] == "xz-base64"
+                   and type(stored["decoded_bytes"]) is int
+                   and stored["decoded_bytes"] == len(plain),
+                   "public envelope fields/version/types differ")
+            verify(reference(canonical(stored)) == plain,
+                   "producer payload differs from canonical complete input")
+            reject(lambda: codec.encode_index({"value": float("nan")}))
+            for value in ({"value": "\ud800"}, {"\udfff": "value"}, {"value": ["\ud800"]}):
+                reject(lambda value=value: codec.encode_index(value))
+        elif role == "consumers":
+            for number in (1e308, -1e308):
+                value = {"value": number}
+                decoded(canonical(value), value)
+                decoded(canonical(envelope(canonical(value))), value)
+            paired = b'{"value":"\\ud83d\\ude00"}'
+            decoded(paired, {"value": "\U0001F600"})
+            decoded(canonical(envelope(paired)), {"value": "\U0001F600"})
+            for token in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
+                data = ('{"value":' + token + "}").encode()
+                for stored in (data, canonical(envelope(data))):
+                    reject(lambda stored=stored: codec.decode_index(stored))
+            for data in (
+                b'{"value":' + b"[" * 16000 + b"0" + b"]" * 16000 + b"}",
+                b'{"value":' + b"1" * 5000 + b"}",
+                b'{"value":"\\ud800"}', b'{"\\udfff":"value"}', b'{"value":["\\ud800"]}',
+            ):
+                for stored in (data, canonical(envelope(data))):
+                    reject(lambda stored=stored: codec.decode_index(stored))
+        elif role == "validators":
+            base = envelope(plain)
+            stream = base64.b64decode(base["payload"])
+            cases = [
+                {**base, "version": 2}, {**base, "version": True},
+                {**base, "encoding": "unknown"}, {**base, "extra": 0},
+                {**base, "decoded_bytes": True}, {**base, "decoded_bytes": len(plain) + 1},
+                *({**base, "payload": item} for item in (None, False, 1, [], {}, "%%%")),
+                envelope(canonical(base)), envelope(plain, stream[:-4]),
+                envelope(plain, stream + b"x"), envelope(plain, stream * 2),
+                envelope(plain, stream[:-8] + bytes(8)),
+            ]
+            for value in cases:
+                reject(lambda value=value: codec.decode_index(canonical(value)))
+        elif role == "replay":
+            for packed in (False, True):
+                path.write_bytes(accepted(codec.encode_index, seed, packed=packed))
+                changed = {"id": 2, "values": [False, 2.0]}
+                actual = accepted(codec.encode_like_index, changed, path)
+                decoded(actual, changed)
+                verify((json.loads(actual).get("kind") == "cjk-resource-index") == packed,
+                       "updated writer changed stored representation")
+        elif role == "stale-bindings":
+            for value in (seed, {"id": 2}, seed):
+                path.write_bytes(accepted(codec.encode_index, value, packed=True))
+                verify(canonical(accepted(codec.load_index, path)) == canonical(value),
+                       "reopened index retained stale file contents")
+            path.write_bytes(b"invalid index")
+            reject(lambda: codec.load_index(path))
+        else:
+            raise review.ReviewError("unknown resource wire role")
+    elif family == "resource":
+        packed = role == "enabled"
+        stored = accepted(codec.encode_index, seed, packed=packed)
+        decoded(stored, seed)
+        if not packed:
+            verify(stored == plain, "plain representation changed")
+        prefix, suffix = b'{"x":"', b'"}'
+        oversized = prefix + b"x" * (limit + 1 - len(prefix) - len(suffix)) + suffix
+        if packed:
+            candidate = envelope(oversized)
+            candidate["decoded_bytes"] = limit
+            reject(lambda: codec.decode_index(canonical(candidate)))
+            for property_value in (27, 28):
+                stream = bytearray(lzma.compress(plain))
+                header_end = 12 + (stream[12] + 1) * 4
+                verify(bytes(stream[14:16]) == b"\x21\x01", "unsupported XZ fixture header")
+                stream[16] = property_value
+                stream[header_end - 4:header_end] = struct.pack(
+                    "<I", zlib.crc32(stream[12:header_end - 4]))
+                independent = lzma.LZMADecompressor(
+                    format=lzma.FORMAT_XZ, memlimit=80 * 1024 * 1024)
+                verify(independent.decompress(stream, max_length=len(plain) + 1) == plain
+                       and independent.eof and not independent.unused_data,
+                       "independent large-dictionary control is invalid")
+                bounded = canonical(envelope(plain, stream))
+                if property_value == 27:
+                    decoded(bounded, seed)
+                else:
+                    reject(lambda: codec.decode_index(bounded))
+        else:
+            reject(lambda: codec.decode_index(oversized))
+        path.write_bytes(oversized)
+        reject(lambda: codec.read_index_bytes(path))
+    else:
+        raise review.ReviewError("unknown resource family")
+    return {"kind": "host", "checks": checks,
+            "detail": "real codec, legacy/schema2 consumer, inventory format/drift and resource observations"}
+
+
+@probe_result("host")
 def _session_probe(probe: str) -> dict:
     # This is a registered production subject, not an import-name trust test.
     source = Path("build/review-subject.py").read_bytes()
@@ -1483,6 +2243,8 @@ def run_probe(probe: str) -> dict:
         "aoe-items", "aoe-targets", "aoe-slots", "aoe-execution",
         "aoe-reference:enabled", "aoe-reference:disabled", "aoe-arm:enabled", "aoe-arm:disabled",
         "generated-output", "generated-consumer", "generated-drift",
+        *("cjk-resource:" + family + ":" + role for family in ("generated", "wire", "resource")
+          for role in review.FAMILIES[family]),
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
         *("project:" + role for role in review.FAMILIES["action"]),
         *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
@@ -1503,6 +2265,8 @@ def run_probe(probe: str) -> dict:
         return _native(probe)
     if probe.startswith("generated-"):
         return _generated(probe)
+    if probe.startswith("cjk-resource:"):
+        return _cjk_resource(probe)
     if probe.startswith("authored-case:"):
         return _authored_case(probe)
     if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:",
