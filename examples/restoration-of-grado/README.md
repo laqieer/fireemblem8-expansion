@@ -119,6 +119,8 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
    and chapter flag 7. From both cleared and set starting states, reads must
    preserve every backing byte; set/clear operations must either preserve
    guide-owned storage or match the real backend's complete byte changes.
+   Capture the complete initial backing once and restore it before each
+   operation. In particular, clear-from-zero cannot inherit a prior set.
    The ARM object must route every guide flag call
    through the three public `GradoGuide_*Flag` policy functions; only those
    forwarders may reference the raw flag operations, chapter/permanent
@@ -132,6 +134,9 @@ flag 299 and a rendered guide entry reading `CheckPermanentFlag` directly.
 The complete flag-domain probe now rejects the former through a native
 assertion; the ARM relocation check rejects the latter after successful
 compilation. A compiler failure is neither negative control.
+A toggle-instead-of-clear implementation compiled and survived the old
+shared-state probe. With each operation isolated, it still compiles but the
+real native probe aborts on clear-from-zero.
 
 The host compiler removes only the unsupported ARM register annotation;
 native ARM compilation retains it. The unused event-dispatch dependency is

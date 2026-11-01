@@ -42,6 +42,8 @@ static void VerifyPolicyFlag(int flag, int guideOwned)
             ClearFlag(flag);
 
         assert(CheckFlag(flag) == initialState);
+        memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
         memcpy(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent));
         memcpy(expectedChapter, gChapterFlagBits, sizeof(expectedChapter));
         assert(GradoGuide_CheckFlag(flag) == (guideOwned || initialState));
@@ -50,8 +52,8 @@ static void VerifyPolicyFlag(int flag, int guideOwned)
 
         for (action = 0; action < 2; ++action)
         {
-            memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
-            memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+            memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
+            memcpy(gChapterFlagBits, beforeChapter, sizeof(beforeChapter));
 
             if (!guideOwned)
                 rawOperations[action](flag);
