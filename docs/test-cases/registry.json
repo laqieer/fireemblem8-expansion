@@ -63,14 +63,15 @@
   "features": [
     {
       "id": "grado-native-allocation",
-      "title": "Optional Grado native allocation validation",
+      "title": "Optional Grado allocation and guide ownership",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/315"
       ],
       "reference": "examples/restoration-of-grado/README.md",
       "status": "current",
       "required_cases": [
-        "TC-GRADO-ALLOCATION-001"
+        "TC-GRADO-ALLOCATION-001",
+        "TC-GRADO-GUIDE-001"
       ]
     },
     {
@@ -826,6 +827,35 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-GRADO-GUIDE-001",
+      "title": "Route native guide progression without consuming project flags",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-guide-001",
+      "profiles": [
+        "Unselected default progressive guide versus optional static source-slot adapter",
+        "Linux host-native real consumers and ARM7TDMI/Thumb AAPCS object routing"
+      ],
+      "purpose": "Preserve the native guide content and implementation while preventing its progressive consumers from reading or writing any of the 112 reclaimed display/read flags.",
+      "prerequisites": "Python3, host cc, supported ARM GCC/binutils and framework headers; no ROM, emulator, save or activated project profile.",
+      "actions": "Run the documented native module. Compile/link real guide and flag sources for default and selected controls, execute the native lock/unlock/read paths over all 56 entries, protect all permanent/chapter bytes, forward sort flag 179 and ordinary chapter flag 7, then inspect actual ARM relocations for complete policy routing.",
+      "expected_result": "The selected source exposes all 56 entries as read without changing any of 112 guide bits or other flag-buffer bytes. Original progression remains unchanged. Sort and ordinary flags reach the native backend; all raw flag references in the selected ARM guide slot are confined to its policy forwarders.",
+      "negative_control": "The original source locks under an empty permanent buffer, unlock-all exposes entries but leaves unread state. An unexpected unused event-dispatch call aborts the test; unresolved linker errors are not ignored.",
+      "interactions": "Uses the existing project code replacement slot and the same guide ownership predicate as allocation validation. No copied guide implementation, new framework gate or runtime selector. Activation remains deferred until the complete reference profile/save contract exists.",
+      "save_compatibility": "Host tests use only their own memory and never SRAM. No actual project allocation, save envelope, epoch or load route changes. Reclaimed bits are not available to a real project until its selected guide and lifecycle integrations are proved.",
+      "cleanup": "Tests remove only their own unique compiler/probe directories and preserve Git indexes, worktrees, saves and real engine state.",
+      "limitations": "Host compilation adapts only the ARM register annotation and aborts on an unused dispatcher dependency. ARM evidence is compiled-symbol/relocation routing, not target-ROM UI navigation or full save/lifecycle qualification.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",
+          "evidence": "scripts/modernize/tests/test_grado_state_native.py"
+        }
+      ]
+    },
     {
       "id": "TC-GRADO-ALLOCATION-001",
       "title": "Validate native flag domains, reservations and lifetimes",

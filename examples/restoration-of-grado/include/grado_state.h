@@ -55,4 +55,9 @@ enum GradoAllocationResult GradoState_ValidateAllocation(
     unsigned int count,
     enum GradoGuideStoragePolicy guidePolicy);
 
+int GradoState_IsProgressiveGuideFlag(unsigned int flag);
+int GradoGuide_CheckFlag(int flag);
+void GradoGuide_SetFlag(int flag);
+void GradoGuide_ClearFlag(int flag);
+
 #endif

@@ -2496,7 +2496,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertEqual(_text_publication_owner_errors(quoted), [])
         self.assertEqual(verify._parse_workflow_structure_text(quoted), verify._parse_workflow_structure_text(self.text))
         self.assertEqual(len(_job_blocks(self.text)), 8)
-        self.assertEqual(len(verify.gates()), 31)
+        self.assertEqual(len(verify.gates()), 32)
 
     def test_protected_environment_is_exact_and_cannot_mask_python(self):
         workflow_env_variants = (

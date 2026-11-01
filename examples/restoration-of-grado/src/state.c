@@ -1,9 +1,9 @@
 #include "global.h"
 
 #include "constants/event-flags.h"
-#include "grado_state.h"
+#include "../include/grado_state.h"
 
-static int GradoState_IsGuideFlag(unsigned int flag)
+int GradoState_IsProgressiveGuideFlag(unsigned int flag)
 {
     return (flag >= 0xB4 && flag <= 0xEB) || (flag >= 0xF0 && flag <= 0x127);
 }
@@ -15,7 +15,7 @@ static int GradoState_IsReservedFlag(unsigned int flag, unsigned int scope)
 
     return flag <= EVFLAG_EXTRA_UNIT(9) || (flag >= 0x71 && flag <= 0x77)
         || flag == 0x7D || flag == 0x82 || flag == EVFLAG_HIDE_BLINKING_ICON
-        || flag == 0x87 || flag == EVFLAG_136 || flag == 0x8A || flag == 0xB3;
+        || flag == 0x87 || flag == EVFLAG_136 || flag == 0x89 || flag == 0x8A || flag == 0xB3;
 }
 
 enum GradoAllocationResult GradoState_ValidateAllocation(
@@ -79,7 +79,8 @@ enum GradoAllocationResult GradoState_ValidateAllocation(
                 return GRADO_ALLOCATION_RESERVED;
 
             if (field->scope == GRADO_STATE_PERMANENT
-                && guidePolicy == GRADO_GUIDE_PROGRESSIVE && GradoState_IsGuideFlag(flag))
+                && guidePolicy == GRADO_GUIDE_PROGRESSIVE
+                && GradoState_IsProgressiveGuideFlag(flag))
                 return GRADO_ALLOCATION_GUIDE_OWNED;
         }
 

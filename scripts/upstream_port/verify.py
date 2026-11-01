@@ -1053,6 +1053,7 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("build", "Build tools"),
     ("build", "Run CodeQL alert regression suite (issue #84)"),
     ("build", "Check default build lane and quickstart legacy glue (issue #15)"),
+    ("build", "Check optional Grado allocation metadata (issue 315)"),
     ("build", "Check generated-data tables for drift"),
     ("build", "Build and verify modern target ROMs and linker"),
     ("build", "Boundary/serialization item-ID-expansion + content runtime gate (cap 0xCE)"),
@@ -1125,6 +1126,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", "Build tools"),
         ("gate", "Run CodeQL alert regression suite (issue #84)"),
         ("gate", "Check default build lane and quickstart legacy glue (issue #15)"),
+        ("gate", "Check optional Grado allocation metadata (issue 315)"),
         ("gate", "Check generated-data tables for drift"),
         ("gate", "Build and verify modern target ROMs and linker"),
         (
@@ -2532,6 +2534,21 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "issue #15 closure: asserts quickstart.sh only reaches the "
                 "archival agbcc lane via explicit `make legacy`/`make "
                 "fireemblem8.gba`, never via env/CLI variable overrides"
+            ),
+        ),
+        Gate(
+            name="grado-native-state",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "scripts.modernize.tests.test_grado_state_native",
+                "-v",
+            ],
+            applicable_note=(
+                "issue #315 optional reference: real allocation/guide host "
+                "consumers and supported ARM object routing, not full game "
+                "save/lifecycle qualification"
             ),
         ),
         Gate(
