@@ -451,6 +451,104 @@ afterward as described in step 6. No visual/audio/manual-only criterion applies.
 This setup cannot supply missing Git authority or discharge
 the consumers' independent protected-principal/deployment requirements.
 
+## TC-WORKFLOW-REPORTER-RUNTIME-001: Bound complete isolated reporter execution
+
+- **Feature / issue:** `workflow-governance` /
+  [#359](https://github.com/laqieer/fireemblem8-expansion/issues/359).
+- **Profile / prerequisites:** Linux source checkout with the existing locked
+  CPython 3.12 host environment, Git and ordinary process controls. The focused
+  fixtures need no ARM compiler, ROM, credentials or new package.
+- **Starting state:** preserve existing work. Tests copy the actual launcher
+  into uniquely owned temporary roots under `build/test-artifacts`, populate
+  disposable unittest modules and clean only those roots.
+
+### Actions
+
+1. If needed, create/check the existing locked environment using
+   `scripts/host_python.py create` and `check` as documented above.
+2. From the repository root, run the focused CLI regressions:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests -v
+   ```
+
+3. Observe real process behavior: six dynamically discovered cases execute
+   exactly once across two distinct child PIDs with one common parent.
+   The first case in each process verifies that the other PID is live before
+   either can finish. Each process runs its module/class setup and teardown
+   exactly once. Every recorded interpreter is isolated and ambient Git
+   variables are absent. A singleton still runs. Workers rediscover and select
+   the actual assigned instances, preserving `load_tests` configuration;
+   changed child discovery fails instead of running an accepted subset.
+   Live unittest progress and tracebacks have worker-PID labels; the parent
+   drains the existing process pipes and emits intact, attributable lines.
+4. Observe refusals: an assertion failure makes the parent fail while other
+   cases still execute. Actual child exits 7 or an early 0 make the parent
+   fail. A small local completion pipe is sent only after the unittest runner
+   returns; a stopped suite or a no-op `TestCase.run()` is not accepted.
+   Completion accounts for actual finished case IDs, not copied assignment
+   counts. Normal class/module setup skips cover only the contiguous cases in
+   that actual fixture invocation; re-entry cannot excuse an earlier unrun
+   case or reject an earlier valid run. These remain unittest
+   skips, not completed native positives. Empty,
+   duplicate and syntactically broken discovery and extra CLI arguments
+   cannot report success or execute an accepted partial suite.
+5. Exercise the unchanged full entrypoint when collecting complete evidence:
+
+   ```bash
+   time build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+   ```
+
+   The launcher reports its actual discovered unique-case count and runs all
+   IDs across at most two processes; new tests enter discovery automatically.
+   Preserve the real unittest results, wall time and exact revision. A focused
+   rendezvous or selected workload is not complete-suite or full-CI evidence.
+   Required candidate and automatic exact-master Build still contain all
+   eight jobs and retain both 90-minute host bounds.
+
+### Expected result
+
+All discovered cases execute exactly once, with normal unittest fixtures in
+each owned process, isolated startup and explicit failure propagation.
+Bounded concurrent execution reduces the serial reporter critical path;
+only successful complete native CI establishes the end-to-end outcome.
+
+### Negative control
+
+The pre-fix serial launcher fails the actual live-PID rendezvous because no
+second reporter process exists. The original host traces reach their native
+90-minute cap before all checks finish, including the repeated unchanged
+usage candidate. dropping cases, losing a configured discovered instance, ignoring a child
+completion result, or accepting empty
+discovery fails the focused controls; increasing deadlines is not the fix.
+
+### Interactions and save compatibility
+
+Dependencies are the existing isolated launcher, unittest, standard-library
+process spawning, hash-locked host environment and independently owned test
+fixtures. Each process owns separate module/class fixture instances; tests
+must not depend on cross-process shared mutation. No workflow job, trigger,
+runner, permission, command authority, native subprocess limit, summary or
+final delivery gate changes. No game/save/config/epoch, ROM/RAM, locale,
+generated-content, modern profile or archival compiler change.
+
+### Automation
+
+`scripts/workflow_pilot/tests/test_host_python.py` exercises the real copied
+CLI and observes actual OS PIDs, file effects, interpreter flags and exit
+results. The unchanged reporter entrypoint supplies complete integration
+evidence. Synchronization files are not success attestations.
+
+### Cleanup and limitations
+
+The focused suite removes only its own temporary roots. Retain the owned
+host environment for subsequent checks; existing cleanup rules apply.
+Two processes are a per-invocation bound, not an OS sandbox, hostile-process
+isolation claim or guaranteed performance on every runner. No visual,
+audio or human-approval criterion is added.
+
 ## TC-WORKFLOW-REVIEW-FIRST-001: Gate expensive Builds after accepted review
 
 - **Feature / issue:** `workflow-governance` /
