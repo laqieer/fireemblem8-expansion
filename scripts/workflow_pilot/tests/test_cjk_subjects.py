@@ -186,6 +186,20 @@ class CjkSubjectTests(unittest.TestCase):
             "decode_index(read_index_bytes(root / relative)), root / relative, packed=True,", 1)
         self.remediation(broken, "generated", "consumers", path)
 
+    def test_unbound_legacy_maintainer_failure_is_not_false_credit(self):
+        path = "scripts/fonttools/cjk/package.py"
+        original = (self.repo.root / path).read_text()
+        guarded = (
+            '        priority = manifest["sources"].get("fehrr_priority")\n'
+            '        if not isinstance(priority, dict):\n'
+            '            raise CjkFontError("cannot repack FEHRR index without a priority provenance binding")\n'
+            '        priority["sha256"] = sha256_bytes(data)\n'
+        )
+        broken = original.replace(
+            guarded, '        manifest["sources"]["fehrr_priority"]["sha256"] = sha256_bytes(data)\n', 1,
+        )
+        self.remediation(broken, "generated", "consumers", path)
+
     def test_schema2_packed_reader_and_inventory_drift_use_their_real_predicates(self):
         path = "scripts/fonttools/cjk/package.py"
         original = (self.repo.root / path).read_text()
