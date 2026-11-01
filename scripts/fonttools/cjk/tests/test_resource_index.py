@@ -11,7 +11,7 @@ import tempfile
 import unittest
 import zlib
 
-from scripts.fonttools.cjk.inventory import CjkFontError, check_generated_files
+from scripts.fonttools.cjk.inventory import CjkFontError, _runtime_catalog_usage, check_generated_files
 from scripts.fonttools.cjk.package import FEHRR_SOURCES, _read_fehrr_lock, check_compact_assets
 from scripts.fonttools.cjk.package import compact_asset_filenames, write_resource_index
 from scripts.fonttools.cjk.resource_index import (
@@ -70,6 +70,32 @@ class ResourceIndexTests(unittest.TestCase):
                 })
         for path in outputs[0]:
             self.assertTrue(outputs[0][path] == outputs[1][path], path + " packed outputs differ")
+
+    def test_runtime_catalog_usage_reads_the_selected_root_without_changing_cwd(self):
+        from scripts.localization.game_catalog import build as catalog
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for prefix in ("src", "include", "texts", "fonts/cjk", "graphics/fonts"):
+                shutil.copytree(
+                    ROOT / prefix, root / prefix,
+                    ignore=shutil.ignore_patterns("*.o", "__pycache__"),
+                )
+            mapping_path = root / catalog.DEFAULT_MAPPING_PATH
+            mapping = json.loads(mapping_path.read_bytes())
+            mapping["rows"][0]["source"] = {
+                "kind": "authored", "translation_key": "selected_root_zero",
+            }
+            mapping_path.write_text(json.dumps(mapping), encoding="utf-8")
+            authored_path = root / catalog.DEFAULT_AUTHORED_PATHS["ja"]
+            authored = json.loads(authored_path.read_bytes())
+            authored["strings"]["selected_root_zero"] = "一一"
+            authored_path.write_text(json.dumps(authored, ensure_ascii=False), encoding="utf-8")
+            cwd = Path.cwd()
+            strings, records, counts = _runtime_catalog_usage(root, "ja")
+            self.assertEqual(Path.cwd(), cwd)
+            self.assertEqual(strings["system"][0], "一一")
+            self.assertEqual(len(records), sum(counts.values()))
 
     def test_repack_without_a_legacy_priority_binding_refuses_without_mutation(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -364,7 +390,7 @@ class ResourceIndexTests(unittest.TestCase):
             ):
                 shutil.copytree(
                     ROOT / relative, root / relative,
-                    ignore=shutil.ignore_patterns("*.o", "*.d", "__pycache__"),
+                    ignore=shutil.ignore_patterns("*.o", "__pycache__"),
                 )
             originals = {
                 relative: (root / relative).read_bytes()

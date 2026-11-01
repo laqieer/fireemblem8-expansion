@@ -293,10 +293,30 @@ def _runtime_catalog_usage(
     of system, talk, or both and no target is silently omitted.
     """
 
-    from scripts.localization.game_catalog.build import build_game_catalog
+    root = root.resolve()
+    from scripts.localization.game_catalog import build as catalog
     from scripts.localization.game_catalog.control_streams import tokenize_payload
 
-    build = build_game_catalog(enabled_locales=(locale,))
+    build = catalog.build_game_catalog(
+        enabled_locales=(locale,),
+        english_texts_path=root / catalog.DEFAULT_ENGLISH_TEXTS_PATH,
+        english_definitions_path=root / catalog.DEFAULT_ENGLISH_DEFINITIONS_PATH,
+        ja_indexed_path=root / catalog.DEFAULT_JA_INDEXED_PATH,
+        ja_raw_path=root / catalog.DEFAULT_JA_RAW_PATH,
+        zh_indexed_path=root / catalog.DEFAULT_ZH_INDEXED_PATH,
+        zh_raw_path=root / catalog.DEFAULT_ZH_RAW_PATH,
+        mapping_path=root / catalog.DEFAULT_MAPPING_PATH,
+        eu_mapping_path=root / catalog.DEFAULT_EU_MAPPING_PATH,
+        target_header_path=root / catalog.DEFAULT_TARGET_HEADER_PATH,
+        authored_paths={
+            name: root / path for name, path in catalog.DEFAULT_AUTHORED_PATHS.items()
+        },
+        fixed_width_aliases_path=root / catalog.FIXED_WIDTH_ALIASES_PATH,
+        width_registry_path=root / catalog.DEFAULT_WIDTH_REGISTRY_PATH,
+        event_root_path=root / catalog.DEFAULT_EVENT_ROOT,
+        portrait_map_path=root / catalog.DEFAULT_PORTRAIT_MAP_PATH,
+        font_root_path=root,
+    )
     registry = load_width_registry(root / WIDTH_REGISTRY_PATH)
     classifications, _ = classify_targets(
         root, target_count=build.target_count, registry=registry

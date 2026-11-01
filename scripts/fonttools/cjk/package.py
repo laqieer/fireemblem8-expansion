@@ -1517,7 +1517,9 @@ def build_runtime_split_assets(
         bitmaps = bytearray()
         for scalar in scalars:
             try:
-                width, bitmap = selected[prefix].get(scalar, fallback[scalar])
+                width, bitmap = (
+                    selected[prefix][scalar] if scalar in selected[prefix] else fallback[scalar]
+                )
             except KeyError as error:
                 raise CjkFontError(f"{prefix}: no verified fallback for {scalar_text(scalar)}") from error
             codepoints.extend(struct.pack("<I", scalar))
@@ -1625,69 +1627,21 @@ def build_fehrr_priority_assets(
     root: Path,
     source_root: Path,
 ) -> Dict[str, bytes]:
-    existing = check_compact_assets(root)
-    report_data = (root / GENERATION_REPORT).read_bytes()
-    report, jobs, corpora = _load_report(root, report_data, "generate")
+    check_compact_assets(root)
     asset_manifest_path = root / ASSET_ROOT / "manifest.json"
     asset_manifest = json.loads(asset_manifest_path.read_text(encoding="utf-8"))
     sources = asset_manifest.get("sources")
     if not isinstance(sources, dict):
         raise CjkFontError("compact asset sources are invalid")
 
-    lock, source_glyphs = _collect_fehrr_sources(root, source_root, jobs, corpora)
     old_lock = _read_fehrr_lock(root, sources)
+    outputs = build_runtime_split_assets(root, source_root)
+    lock = decode_index(outputs[FEHRR_SOURCES])
     if old_lock and _source_selection(old_lock) != _source_selection(lock):
         raise CjkFontError(
             "FEHRR source coverage changed; regenerate the FEBuilder baseline before refresh"
         )
 
-    outputs = dict(existing)
-    for job_id in sorted(jobs):
-        locale, runtime_style, _ = _job_contract(jobs[job_id])
-        prefix = f"{locale}.{runtime_style}"
-        _, _, expected_scalars = corpora[job_id]
-        codepoints = existing[
-            f"{ASSET_ROOT}/{compact_asset_filenames(prefix)['codepoints']}"
-        ]
-        widths = bytearray(
-            existing[f"{ASSET_ROOT}/{compact_asset_filenames(prefix)['widths']}"]
-        )
-        glyphs = bytearray(
-            existing[f"{ASSET_ROOT}/{compact_asset_filenames(prefix)['bitmap']}"]
-        )
-        scalar_index = {scalar: index for index, scalar in enumerate(expected_scalars)}
-        for scalar, (width, packed) in source_glyphs[prefix].items():
-            index = scalar_index[scalar]
-            widths[index] = width
-            glyphs[index * 64 : (index + 1) * 64] = packed
-        filenames = compact_asset_filenames(prefix)
-        outputs[f"{ASSET_ROOT}/{filenames['codepoints']}"] = codepoints
-        outputs[f"{ASSET_ROOT}/{filenames['widths']}"] = bytes(widths)
-        outputs[f"{ASSET_ROOT}/{filenames['bitmap']}"] = bytes(glyphs)
-
-        asset = asset_manifest["assets"][prefix]
-        for kind, filename in filenames.items():
-            path = f"{ASSET_ROOT}/{filename}"
-            data = outputs[path]
-            asset_kind = "bitmap" if kind == "bitmap" else kind
-            asset[asset_kind]["byte_count"] = len(data)
-            asset[asset_kind]["sha256"] = sha256_bytes(data)
-        asset["source_priority"] = {
-            "fehrr_glyph_count": len(source_glyphs[prefix]),
-            "febuilder_fallback_glyph_count": len(expected_scalars)
-            - len(source_glyphs[prefix]),
-            "source_locale": FEHRR_LOCALES[locale],
-            "source_style": FEHRR_SOURCE_STYLES[runtime_style],
-        }
-
-    lock_data = encode_like_index(lock, root / FEHRR_SOURCES)
-    sources["fehrr_priority"] = {
-        "path": FEHRR_SOURCES,
-        "sha256": sha256_bytes(lock_data),
-        "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
-    }
-    outputs[FEHRR_SOURCES] = lock_data
-    outputs[f"{ASSET_ROOT}/manifest.json"] = json_bytes(asset_manifest)
     return outputs
 
 
