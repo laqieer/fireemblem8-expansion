@@ -181,18 +181,18 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 32 current-master
+or executes the upstream ref/tree.** It orchestrates all current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same 32 commands with argv/order preserved across its combined
+carries the same commands with argv/order preserved across its combined
 host, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
 below. A no-checkout event identity validator, event router, and mode-specific
 classifier check precede the four combined workers in CI; the four combined
 workers run in parallel after that decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
-workers. Local `verify` runs the same 32 gates in its
+workers. Local `verify` runs the same gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
-Every mirrored command uses repository-relative argv, so all 32 subprocesses
+Every mirrored command uses repository-relative argv, so all subprocesses
 run at one resolved target repository root. Launch the source-tree module from
 this source repository root. Implicit selection targets that source checkout;
 `--repo <target-root>` may select another checkout while the module still
@@ -210,7 +210,7 @@ the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
 The complete job-name order must also match, so extra jobs fail. All three
-setup jobs are parsed and never become an additional local gate. The 32 gate
+setup jobs are parsed and never become an additional local gate. The gate
 commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
@@ -222,7 +222,7 @@ environment, metadata-only/nonempty conditions, and reviewed command sequences.
 The producer's missing-base and failure branches leave no proof; the verifier
 does not replace those holds with a local invocation or fabricated fingerprint.
 Missing, duplicate, relinked, or unreviewed producer/marker steps fail before
-gate execution. The local gate count and argv remain exactly 31.
+gate execution. The mirrored gate set and argv remain unchanged.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
@@ -274,8 +274,8 @@ or condition substitutions, deployment environment, concurrency, reusable-job
 or reordered keys fail before dry-run.
 The complete eight-job structure retains all four validation workers,
 identity/router/classifier and summary. The normal `build` job additionally
-contains two authenticated master-push-only packaging/upload steps, not new
-local gates: the mirror still executes exactly 32 gates. Their conditions,
+contains two authenticated master-push-only packaging/upload steps, not local
+gates. Their conditions,
 secret scope, existing-output packaging invocation and pinned patch-only
 upload remain parsed contracts.
 
@@ -317,8 +317,8 @@ worker needs, Ubuntu/five-minute context, exact classifier/result
 env, metadata-skip and full-run validation, and missing/stale identity
 failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
-drift in these jobs or packaging steps fails before local dry-run even though neither job becomes
-one of the 31 locally executed gates.
+drift in these jobs or packaging steps fails before local dry-run even though
+neither job becomes a locally executed gate.
 Candidate-evidence normalization independently requires one canonical
 successful `event-identity` job context in both full and metadata runs;
 missing, failed, skipped, renamed, duplicate, or unknown setup contexts reject
@@ -336,7 +336,7 @@ those blob object IDs are fetched without the commit-level blob filter; other
 blobs remain omitted. The helper rechecks exact `EXPECTED_BUILD_SHA`, the
 complete ref set, and FETCH_HEAD after both phases. This covers force-pushed
 candidates that an all-head fetch cannot recover. It is CI setup, not one of
-the 32 local gates; normal local clones are never hydrated by `verify`, which
+the local gates; normal local clones are never hydrated by `verify`, which
 remains deliberately network-independent and fails if authority is incomplete.
 The read-only `isolated_launcher.py anchor-refs` command documented in
 [`workflow-pilot.md`](workflow-pilot.md) prints the mappings for the owner
@@ -348,7 +348,7 @@ archival setup is intentionally opt-in (`./scripts/quickstart.sh --legacy`
 or the equivalent instructions in
 [`docs/archival-decomp.md`](archival-decomp.md)); `verify` has no safe
 subset switch and fails closed if the legacy toolchain is absent. Use
-`verify --dry-run` to inspect the complete 32-gate sequence without those
+`verify --dry-run` to inspect the complete gate sequence without those
 local prerequisites.
 
 Also create the [locked host Python environment](workflow-pilot.md#isolated-host-python-dependencies)
@@ -405,9 +405,10 @@ substitute. Setup is not another gate and `verify` remains network-independent.
 31. `make legacy -j2`
 32. `make -C mgfembp compare`
 
-Gates 20-21 aggregate the complete modern debug/release ROM, linker, budget,
+The modern debug/release linker-check commands aggregate the complete ROM,
+linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 22-23 reuse the item-expansion runtime
+`expansion-modern-linker-check`. The item-expansion commands reuse the runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No additional
 item-expansion ROM build or gate is added.
