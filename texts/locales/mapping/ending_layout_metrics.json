@@ -22,15 +22,15 @@
   "font_inputs": {
     "ja": {
       "codepoints_path": "graphics/fonts/cjk/ja.system.codepoints.u32le",
-      "codepoints_sha256": "473bbd9bf18e70bd8c3bd732f83e6bbe35769dc2c7b846a2c7df0d6d2d35b9a3",
+      "codepoints_sha256": "ac3f24a6ff58944c652fe053863577a737384951b18e56f117093da094b992c3",
       "widths_path": "graphics/fonts/cjk/ja.system.widths.u8",
-      "widths_sha256": "a928715e8634099cf61100411414e4ab6d016229054c78872f155b2a69ebc9c2"
+      "widths_sha256": "f3ebdeab6c734b041322f2c56141bb671e45a6563fe8f29c3a1a2e6119bcc184"
     },
     "zh-Hans": {
       "codepoints_path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-      "codepoints_sha256": "132f7f7e6f947e9c21e808d5b1aae21f259c5c938397571bfd06ea963e04454c",
+      "codepoints_sha256": "740697baa45210a6fa48e555db25f8755b5ccb75b3af8ddcfa75d9c999029d79",
       "widths_path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-      "widths_sha256": "379cead8e454b06562b0fcb2b14aca4f58e67d89ead32bd41594af27ad4167a9"
+      "widths_sha256": "2dfce12be6b62e4b6277b647772a20844afdbd3f35430225b5428d75200f118d"
     }
   },
   "kind": "fe8u-ending-layout-metrics",

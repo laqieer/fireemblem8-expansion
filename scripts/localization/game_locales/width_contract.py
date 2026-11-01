@@ -230,7 +230,7 @@ def _visible_scalar(token) -> bool:
 def _hard_line_boundary(token) -> bool:
     return (
         token.kind == "end"
-        or (token.kind == "control" and token.control == 0x01)
+        or (token.kind == "control" and token.control in (0x01, 0x02))
         or (token.kind == "extended" and token.scalar == 0x04)
     )
 

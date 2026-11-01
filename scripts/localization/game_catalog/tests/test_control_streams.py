@@ -48,6 +48,61 @@ def structural_sequence(text):
 
 
 class SelectedEventContinuationTests(unittest.TestCase):
+    def test_popup_message_ids_are_checked_without_replacing_talk_models(self):
+        english = (b"Zero\0", b"One\x80\x04Two\0", b"Last\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind, tail in (
+                ("BROWNBOXTEXT", ", 8, 8"), ("EvtDisplayPopupSilently", ", 8, 8"),
+                ("NOTIFY", ", SONG_NOTIFICATION"), ("EvtDisplayPopup", ", SONG_NOTIFICATION"),
+            ):
+                for operand in ("3", "MSG_RETIRED"):
+                    with self.subTest(kind=kind, operand=operand):
+                        source.write_text(
+                            "EventScr Selected[] = {\nTEXTSHOW(1)\n"
+                            f"{kind}({operand}{tail})\nTEXTCONT\nENDA\n}};\n"
+                        )
+                        with self.assertRaisesRegex(ControlStreamError, "active"):
+                            validate_event_continuations(
+                                english_payloads=english, localized_payloads={"ja": english},
+                                event_root=event_root, message_ids={"MSG_RETIRED": 3},
+                            )
+                for operand in ("0", "2", "-1", "0xFFFF"):
+                    with self.subTest(kind=kind, operand=operand):
+                        source.write_text(
+                            "EventScr Selected[] = {\nTEXTSHOW(1)\n"
+                            f"{kind}({operand}{tail})\nTEXTCONT\nENDA\n}};\n"
+                        )
+                        self.assertEqual(
+                            validate_event_continuations(
+                                english_payloads=english, localized_payloads={"ja": english},
+                                event_root=event_root,
+                            ),
+                            {"modeled_target_count": 1, "model_count": 1},
+                        )
+
+    def test_zero_text_show_keeps_the_current_dialogue_continuation(self):
+        english = (b"Zero\0", b"One\x80\x04Two\0", b"Last\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind in ("TEXTSHOW", "EvtTextShow", "EvtTextShow2"):
+                for zero in ("0", "MSG_ZERO"):
+                    with self.subTest(kind=kind, zero=zero):
+                        source.write_text(
+                            "EventScr Selected[] = {\nTEXTSHOW(1)\n"
+                            f"{kind}({zero})\nTEXTCONT\nENDA\n}};\n"
+                        )
+                        self.assertEqual(
+                            validate_event_continuations(
+                                english_payloads=english,
+                                localized_payloads={"ja": english},
+                                event_root=event_root, message_ids={"MSG_ZERO": 0},
+                            ),
+                            {"modeled_target_count": 1, "model_count": 1},
+                        )
+
     def test_explicit_dialogue_skip_guard_does_not_skip_later_id_validation(self):
         english = (b"Zero\0", b"One\x80\x04Two\0", b"Last\0")
         with tempfile.TemporaryDirectory() as directory:
@@ -156,6 +211,8 @@ class SelectedEventContinuationTests(unittest.TestCase):
                     f"EventScr Selected[] = {{\n{kind}(0x0003\n{tail})\nENDA\n}};\n",
                     f"EventScr Selected[] =\n{{\n{kind}\n(\n0x0003{tail}\n)\nENDA\n}};\n",
                     f"EventScr Selected[] = {{ {kind}(0x0003{tail}) ENDA }};\n",
+                    f"EventScr Selected[4] = {{ {kind}(0x0003{tail}) ENDA }};\n",
+                    f"EventScr Selected [ 4 ] =\n{{\n{kind}(0x0003{tail})\nENDA\n}};\n",
                 )
                 for shape, text in enumerate(forms):
                     with self.subTest(kind=kind, shape=shape):

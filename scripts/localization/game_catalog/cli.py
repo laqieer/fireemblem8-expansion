@@ -8,6 +8,8 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from scripts.generated_data.diagnostics import GeneratedDataError
+from scripts.generated_data.schema import SchemaInputs, parse_source_overrides
 from scripts.localization.game_locales.authored import (
     AuthoredCatalogError,
     check_authored_catalogs,
@@ -77,6 +79,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
+    parser.add_argument("--source-override", action="append", metavar="TABLE=PATH")
     parser.add_argument("--event-root", type=Path, default=DEFAULT_EVENT_ROOT)
     parser.add_argument("--eu-mapping", type=Path, default=DEFAULT_EU_MAPPING_PATH)
     parser.add_argument("--eu-indexed", action="append", metavar="LOCALE=PATH")
@@ -160,6 +163,10 @@ def _build_summary(build) -> str:
 
 
 def _build_from_args(args: argparse.Namespace):
+    try:
+        sources = parse_source_overrides(args.source_override)
+    except GeneratedDataError as error:
+        raise GameCatalogError(str(error)) from error
     authored_paths = _locale_path_map(args.authored)
     inherited = tuple(
         locale for locale in CJK_LOCALE_IDS
@@ -184,6 +191,7 @@ def _build_from_args(args: argparse.Namespace):
         event_root_path=args.event_root,
         width_registry_path=args.width_registry,
         fixed_width_aliases_path=args.fixed_width_aliases,
+        schema_inputs=SchemaInputs(sources, message_header=str(args.target_header)),
         authored_paths=authored_paths,
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),

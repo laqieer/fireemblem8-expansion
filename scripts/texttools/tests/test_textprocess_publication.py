@@ -126,7 +126,7 @@ class TextPublicationTests(unittest.TestCase):
 
     def inputs(self, count=32, text="[X][Y][X]"):
         self.source.write_text(
-            "".join(f"#{index:04X}\n{text}\n" for index in range(1, count + 1)), encoding="utf-8")
+            "".join(f"#{index:04X}\n{text}\n" for index in range(count)), encoding="utf-8")
 
     def arguments(self, encoding="utf8"):
         return [str(self.source), str(self.definitions), str(self.data), str(self.header), encoding]
@@ -227,6 +227,22 @@ class TextPublicationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.pair(), previous)
         self.assert_no_staging()
+
+    def test_out_of_order_or_gapped_allocations_preserve_both_published_outputs(self):
+        previous = self.seed()
+        for allocation in ((1, 0, 2), (0, 2), (1, 2)):
+            with self.subTest(allocation=allocation):
+                self.source.write_text(
+                    "".join(f"#{index:04X}\n[X][Y][X]\n" for index in allocation),
+                    encoding="utf-8",
+                )
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments()],
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.pair(), previous)
+                self.assert_no_staging()
 
     def test_implicit_and_symbolic_allocations_cannot_own_the_same_message_name(self):
         previous = self.seed()

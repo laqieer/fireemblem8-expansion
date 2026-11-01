@@ -1,7 +1,9 @@
 import shutil
 import hashlib
 import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_catalog.build import build_game_catalog
 from scripts.localization.game_catalog.model import GameCatalogError
+from scripts.generated_data.schema import SchemaInputs
 from scripts.localization.game_locales.width_contract import (
     DEFAULT_WIDTH_REGISTRY_PATH,
     load_width_registry,
@@ -17,6 +20,48 @@ from scripts.localization.game_locales.width_contract import (
 
 
 class FixtureBuildTests(unittest.TestCase):
+    def test_extended_catalog_retains_real_narrow_name_aliases(self):
+        with tempfile.TemporaryDirectory(prefix="selected-name-labels-", dir=ROOT / "build") as directory:
+            work = Path(directory)
+            source = work / "texts.txt"
+            source.write_text(
+                f'#include "{ROOT / "texts/texts.txt"}"\n'
+                "## MSG_SELECTED_EXTRA\nExtra[.][X]\n",
+                encoding="utf-8",
+            )
+            header = work / "msg.h"
+            result = subprocess.run(
+                [sys.executable, "-B", str(ROOT / "scripts/texttools/textprocess.py"),
+                 str(source), str(ROOT / "texts/textdefs.txt"),
+                 str(work / "msg_data.c"), str(header), "utf8"],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            mapping = json.loads((ROOT / "texts/locales/mapping/fe8u_target_map.json").read_bytes())
+            mapping["rows"].append({
+                "target_id": "0x0D56", "state": "verified",
+                "source": {"kind": "english_fallback", "reason": "selected-extension-fixture"},
+                "verification": {
+                    "method": "authored-fixture", "evidence": "original selected extension",
+                    "evidence_kind": "fixture", "source_table": "selected message fixture",
+                    "source_symbol": "MSG_SELECTED_EXTRA", "source_key": "0x0D56",
+                    "subsystem": "fixture", "rationale": "one actual extra message",
+                    "confidence": "explicit",
+                },
+            })
+            mapping_path = work / "mapping.json"
+            mapping_path.write_text(json.dumps(mapping), encoding="utf-8")
+            build = build_game_catalog(
+                english_texts_path=source, target_header_path=header,
+                mapping_path=mapping_path, enabled_locales=("ja",),
+            )
+            self.assertEqual(build.target_count, 3415)
+            expected = json.loads((ROOT / "texts/locales/fixed_width_display_aliases.json").read_bytes())
+            self.assertEqual(
+                build.display_aliases.get("ja", {}).get("item_name_56", {}),
+                {int(key, 16): value for key, value in expected["aliases"]["ja"]["item_name_56"].items()},
+            )
+
     def setUp(self):
         self.fixture_dir = Path(__file__).resolve().parent / "fixtures"
         if self.fixture_dir.exists():
@@ -295,6 +340,92 @@ class FixtureBuildTests(unittest.TestCase):
             "ja_raw_expected_repository": None,
             "ja_raw_expected_revision": None,
         }
+
+    def test_selected_typed_name_sources_enforce_every_narrow_surface(self):
+        inputs = self.selected_inputs()
+        inputs.update(event_root_path=self.fixture_dir, enabled_locales=("ja",))
+        mapping = json.loads(inputs["mapping_path"].read_bytes())
+        mapping["rows"][1]["source"] = {"kind": "authored", "translation_key": "narrow"}
+        inputs["mapping_path"].write_text(json.dumps(mapping), encoding="utf-8")
+        authored = self.fixture_dir / "authored.ja.json"
+        authored.write_text(json.dumps({
+            "kind": "fe8u-game-authored-catalog", "locale": "ja",
+            "strings": {"narrow": "日" * 10},
+        }, ensure_ascii=False), encoding="utf-8")
+        inputs["authored_paths"] = {"ja": authored}
+        aliases_path = self.fixture_dir / "aliases.json"
+        default_aliases = json.loads((ROOT / "texts/locales/fixed_width_display_aliases.json").read_bytes())
+        for table, surface in (
+            ("characters", "character_name_40"),
+            ("classes", "class_name_64"),
+            ("items", "item_name_56"),
+        ):
+            with self.subTest(table=table):
+                schema = SchemaInputs().resolve(table)
+                data = json.loads((ROOT / schema.default_source).read_bytes())
+                data[table] = data[table][:1]
+                data[table][0]["nameTextId"] = 1
+                source = self.fixture_dir / (table + ".json")
+                source.write_text(json.dumps(data), encoding="utf-8")
+                context = SchemaInputs({table: str(source)}, message_header=str(inputs["target_header_path"]))
+                with self.assertRaisesRegex(GameCatalogError, "canonical width"):
+                    build_game_catalog(**inputs, schema_inputs=context)
+                aliases = json.loads(json.dumps(default_aliases))
+                aliases["aliases"]["ja"][surface]["0x0001"] = "日"
+                aliases_path.write_text(json.dumps(aliases, ensure_ascii=False), encoding="utf-8")
+                build = build_game_catalog(
+                    **inputs, schema_inputs=context, fixed_width_aliases_path=aliases_path,
+                )
+                self.assertEqual(build.display_aliases["ja"][surface], {1: "日"})
+                self.assertEqual(build.report["fixed_width_labels"]["summary"]["alias_count"], 1)
+                arguments = [
+                    sys.executable, "-B", "-m", "scripts.localization.game_catalog", "check-width",
+                    "--english-texts", str(inputs["english_texts_path"]),
+                    "--english-definitions", str(inputs["english_definitions_path"]),
+                    "--mapping", str(inputs["mapping_path"]),
+                    "--target-header", str(inputs["target_header_path"]),
+                    "--event-root", str(self.fixture_dir),
+                    "--ja-indexed", str(inputs["ja_indexed_path"]),
+                    "--authored", "ja=" + str(authored), "--enabled-locales", "ja",
+                    "--source-override", table + "=" + str(source),
+                ]
+                result = subprocess.run(arguments, cwd=ROOT, capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("canonical width", result.stderr)
+                result = subprocess.run(
+                    [*arguments, "--fixed-width-aliases", str(aliases_path)],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_selected_name_terminators_do_not_change_rendered_width(self):
+        inputs = self.selected_inputs()
+        inputs.update(event_root_path=self.fixture_dir, enabled_locales=("ja",))
+        with inputs["english_definitions_path"].open("a", encoding="utf-8") as stream:
+            stream.write("[.] = 31\n")
+        mapping = json.loads(inputs["mapping_path"].read_bytes())
+        mapping["rows"][1]["source"] = {"kind": "authored", "translation_key": "narrow"}
+        inputs["mapping_path"].write_text(json.dumps(mapping), encoding="utf-8")
+        authored = self.fixture_dir / "authored.ja.json"
+        inputs["authored_paths"] = {"ja": authored}
+        items = json.loads((ROOT / "src/data/items.json").read_bytes())
+        items["items"] = items["items"][:1]
+        items["items"][0]["nameTextId"] = 1
+        source = self.fixture_dir / "items.json"
+        source.write_text(json.dumps(items), encoding="utf-8")
+        context = SchemaInputs({"items": str(source)})
+        for suffix in ("", "[.][X]"):
+            with self.subTest(suffix=suffix):
+                authored.write_text(json.dumps({
+                    "kind": "fe8u-game-authored-catalog", "locale": "ja",
+                    "strings": {"narrow": "剣" * 6 + suffix},
+                }, ensure_ascii=False), encoding="utf-8")
+                build = build_game_catalog(**inputs, schema_inputs=context)
+                self.assertEqual(build.display_aliases["ja"]["item_name_56"], {})
+                record, = build.report["fixed_width_labels"]["locales"]["ja"]["surfaces"][
+                    "item_name_56"]["records"]
+                self.assertEqual(record["canonical_width"], 54)
+                self.assertEqual(record["display_text"], "剣" * 6)
 
     def test_composition_derives_required_glyphs_before_render_validation(self):
         from scripts.localization.game_catalog.build import compose_game_catalog

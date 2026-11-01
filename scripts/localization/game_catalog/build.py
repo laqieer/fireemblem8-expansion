@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -9,6 +10,8 @@ from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+
+from scripts.generated_data.schema import SchemaInputs
 
 from scripts.localization.game_locales.controls import (
     ControlSyntaxError,
@@ -24,7 +27,6 @@ from scripts.localization.game_locales.fixed_width_labels import (
     ALIASES_PATH as FIXED_WIDTH_ALIASES_PATH,
     FixedWidthLabelError,
     build_fixed_width_label_metrics,
-    load_fixed_width_aliases,
 )
 from scripts.localization.game_locales.width_contract import (
     DEFAULT_WIDTH_REGISTRY_PATH,
@@ -1257,6 +1259,7 @@ def build_game_catalog(
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
     event_root_path: Path = DEFAULT_EVENT_ROOT,
+    schema_inputs: SchemaInputs | None = None,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
@@ -1280,6 +1283,12 @@ def build_game_catalog(
         ja_raw_expected_repository=ja_raw_expected_repository,
         ja_raw_expected_revision=ja_raw_expected_revision,
     )
+    if schema_inputs is not None:
+        if (schema_inputs.message_header is not None
+                and Path(schema_inputs.message_header).resolve() != Path(target_header_path).resolve()):
+            raise GameCatalogError("selected name context uses a different message header")
+        schema_inputs = copy.copy(schema_inputs)
+        schema_inputs.message_header = str(target_header_path)
     target_count = composition.target_count
     mapping = composition.mapping
     english_bundle = composition.english
@@ -1333,40 +1342,43 @@ def build_game_catalog(
         except (TextWidthContractError, ControlStreamError) as error:
             raise GameCatalogError(str(error)) from error
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
-    fixed_width_metrics = None
-    if target_count == 3414:
-        repo_root = Path(__file__).resolve().parents[3]
-        alias_path = Path(fixed_width_aliases_path)
-        if not alias_path.is_absolute():
-            alias_path = repo_root / alias_path
-        cjk_locale_bundles = tuple(
-            bundle for bundle in locale_bundles
-            if bundle.locale in CJK_LOCALE_IDS
+    repo_root = Path(__file__).resolve().parents[3]
+    alias_path = Path(fixed_width_aliases_path)
+    if not alias_path.is_absolute():
+        alias_path = repo_root / alias_path
+    cjk_locale_bundles = tuple(
+        bundle for bundle in locale_bundles
+        if bundle.locale in CJK_LOCALE_IDS
+    )
+    try:
+        fixed_width_metrics = build_fixed_width_label_metrics(
+            repo_root,
+            localized_payloads={
+                bundle.locale: {
+                    entry.target_id: entry.encoded_bytes
+                    for entry in bundle.entries
+                    if entry.encoded_bytes is not None
+                }
+                for bundle in cjk_locale_bundles
+            },
+            aliases_path=alias_path,
+            fallback_payloads={
+                entry.target_id: entry.encoded_bytes for entry in english_entries
+            },
+            schema_inputs=schema_inputs,
         )
-        try:
-            fixed_width_metrics = build_fixed_width_label_metrics(
-                repo_root,
-                localized_payloads={
-                    bundle.locale: {
-                        entry.target_id: entry.source_text
-                        for entry in bundle.entries
-                        if entry.source_text is not None
-                    }
-                    for bundle in cjk_locale_bundles
-                },
-                aliases_path=alias_path,
-            )
-            all_aliases = load_fixed_width_aliases(alias_path)
-        except FixedWidthLabelError as error:
-            raise GameCatalogError(str(error)) from error
-        display_aliases = {
-            locale: (
-                all_aliases[locale]
-                if locale in CJK_LOCALE_IDS
-                else {}
-            )
-            for locale in enabled_locales
-        }
+    except (FixedWidthLabelError, ControlStreamError) as error:
+        raise GameCatalogError(str(error)) from error
+    display_aliases = {
+        locale: {
+            surface: {
+                int(record["target_id"], 16): record["display_text"]
+                for record in data["records"] if record["alias_applied"]
+            }
+            for surface, data in fixed_width_metrics["locales"][locale]["surfaces"].items()
+        } if locale in fixed_width_metrics["locales"] else {}
+        for locale in enabled_locales
+    }
     locale_reports = {
         bundle.locale: _locale_report(bundle, suffix_share=suffix_share)
         for bundle in locale_bundles

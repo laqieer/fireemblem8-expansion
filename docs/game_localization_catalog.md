@@ -125,6 +125,15 @@ Source composition is shared with font inventory through
 build/report. Font inventory can derive required glyphs before the atlas exists;
 the strict builder still requires valid actual fonts, widths, controls and
 continuations. There is no skip-validation mode.
+Narrow character/class/item names use the existing 40/64/56px contract and
+display-alias registry regardless of the total message count. The builder's
+optional `schema_inputs` reuses invocation-local `SchemaInputs` for selected
+typed data sources; CLI `--source-override TABLE=PATH` and selected Make
+providers pass that same context. Retained default name IDs are intersected
+with the actual active set; explicitly selected names must belong to it.
+Absent localized names are measured from their effective English bytes, not
+replaced with unrelated translated aliases. Only validated active aliases
+are emitted. No new name resolver, ID registry or text language is introduced.
 Removal flushes the current message and advances to subsequent commands.
 The source model distinguishes the explicit dialogue-skip guard from ordinary
 branches without skipping later ID validation. Correct traversal now covers
@@ -155,6 +164,99 @@ page/glyph/portrait evidence, or production-content qualification; it does not
 call the historical English-only decoder with invalid IDs.
 Its deliberately absent JA entry is not a production catalog: the production
 generation/leakage gate still rejects unmaterialized entries.
+
+### TC-PROJECT-TEXT-001: Validate the selected gameplay message set
+
+- **Feature / issue:** selected gameplay text /
+  [#314](https://github.com/laqieer/fireemblem8-expansion/issues/314).
+  `TEST-TEXT-I18N-COVERAGE` maps to this case's host and native observations,
+  not to a second catalog or resolver.
+- **Profile / artifact:** Linux/CPython 3.12 source build. The native fixture
+  uses modern ARM GCC/AAPCS and headless libmGBA, three active messages,
+  English-only and English/JA masks. No original ROM is needed.
+- **Prerequisites / state:** run from this source checkout with host `cc`,
+  the supported ARM GCC/binutils and libmGBA available. Use the existing
+  `MODERN_CC`, `MODERN_NM` and `MODERN_OBJCOPY` overrides when necessary.
+  Fixtures and generated headers belong to temporary directories; do not
+  edit a tracked header or a build-local generated output.
+
+#### Actions
+
+1. Run the actual source/header, event and publication checks:
+
+   ```sh
+   python3 -m unittest scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests scripts.localization.game_catalog.tests.test_control_streams.SelectedEventContinuationTests scripts.texttools.tests.test_textprocess_publication -v
+   python3 -m unittest scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests.test_explicit_english_fallback_is_validated_without_reflow_or_materialization scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests.test_nl2_keeps_full_width_talk_lines_separate_without_reflow -v
+   ```
+
+2. Observe the owned three-message fixtures. An allocation/header symbol must
+   retain its actual table position; missing, colliding, retired, reordered
+   or gapped allocations reject before either public text output changes.
+   Valid declarations with `[]` or an explicit bound both expose their event
+   operands. Literal and selected-header popup/notify IDs are range-checked
+   without becoming Talk continuation models. Signed dynamic event operands
+   retain their slot semantics; zero text-show leaves the active dialogue
+   unchanged. NL and NL2 delimit rendered lines without fallback reflow or
+   materializing an absent locale descriptor.
+3. Execute the real target consumers, explicitly outside the host-only lane:
+
+   ```sh
+   env -u GBA_PLAYTEST_HOST_ONLY python3 -m unittest scripts.localization.game_catalog.tests.runtime.selected_text_native -v
+   ```
+
+#### Expected result
+
+The host fixtures reject invalid active IDs, unresolved/colliding header
+bindings, missing authored keys, malformed controls, incompatible continuation
+counts, bad portrait operands and width/substitution overflow. Failures remain
+explicit; existing publication files stay unchanged.
+
+The native JSON records report three messages and masks 1 and 3. The real
+English ARM decoder and localized consumers return the fixture's exact bytes.
+The multi-page message retains control sequence `[1, 3, 2, 31]`; the absent JA
+entry falls back to English without becoming a translated entry. The retained
+`ItemData.nameTextId = 2` returns the correct item name through the real
+item-name consumer, with its ABI unchanged. Locale switching returns the
+appropriate payload. Localized invalid IDs return the explicit invalid marker;
+bounded decode reports overflow without changing either destination guard.
+The selected typed item source also requires a validated compact name. The
+real native display-alias lookup returns that generated alias for the 56px
+surface and refuses the 55px request, while canonical item lookup keeps the
+full localized name. This tests the alias lookup interface with explicit
+width inputs, not an entire rendered forecast screen.
+
+#### Negative control
+
+English-only output is the real legacy-consumer control, not a host stub.
+The three-entry set cannot accept static ID 3; reordering or omitting table
+positions cannot publish a success-shaped header/table pair. A second 248px
+line still rejects even when separated by NL2. Missing locale entries may
+exercise the documented fallback fixture but do not qualify production
+generation or leakage gates.
+
+#### Interactions and save compatibility
+
+Depends on the existing project input seam, text tools, selected event source,
+font metrics, portrait map and locale consumers. No new dialogue language,
+resolver, ID registry, flag, locale or save/epoch change. Modern debug runs the
+native fixture explicitly; release and archival behavior retain their existing
+gates. Default catalogs and all complete candidate/master checks remain
+required independently.
+
+#### Automation
+
+The commands above map the case and `TEST-TEXT-I18N-COVERAGE` directly to
+generated outputs, real host refusals and target RAM/control/retained-field
+observations. The debug linker-check gate runs the native command. No
+subjective manual criterion is asserted by this module-level case.
+
+#### Cleanup and limitations
+
+The suites remove only their owned temporary source, object, ELF and ROM
+fixtures. Preserve their emitted records as evidence when needed. This is
+module-native coverage, not a complete supported game profile, rendered
+glyph/portrait judgment, full-game playback or Grado production qualification.
+Do not invoke the historical English-only decoder with invalid IDs.
 
 English-only modern and archival builds do not generate or link this catalog.
 They retain the historical 4 KiB `MsgBuffer`, English `gMsgTable`, and ARM

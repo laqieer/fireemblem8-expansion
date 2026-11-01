@@ -79,6 +79,26 @@ class WidthContractTests(unittest.TestCase):
                 source_name="word",
             )
 
+    def test_nl2_keeps_full_width_talk_lines_separate_without_reflow(self):
+        payload = b"A" * 30 + b"\x02" + b"A" * 30 + b"\0"
+        self.assertEqual(
+            validate_payload_width(
+                payload, metrics=self.metrics, max_pixels=240, source_name="English fallback",
+            ),
+            {"line_count": 2, "max_line_width": 240},
+        )
+        self.assertEqual(
+            insert_safe_line_breaks(
+                payload, metrics=self.metrics, max_pixels=240, source_name="English fallback",
+            ),
+            (payload, 0),
+        )
+        with self.assertRaises(TextWidthContractError):
+            validate_payload_width(
+                payload[:-1] + b"A\0", metrics=self.metrics, max_pixels=240,
+                source_name="overflowing English fallback",
+            )
+
     def test_wrap_is_an_insertion_only_transform(self):
         payload = "日 本語".encode("utf-8") + b"\0"
         wrapped, inserted = insert_safe_line_breaks(

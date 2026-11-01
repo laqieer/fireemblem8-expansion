@@ -136,6 +136,35 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(identity.rom_size_bytes, 32 * 1024 * 1024)
         self.assertEqual(identity.project_profile, "primary")
 
+    def test_selected_name_sources_reach_the_real_catalog_width_command(self):
+        declarations = [
+            "FE8_PROJECT_REPLACE := characters classes items\n",
+            "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n",
+        ]
+        expected = {}
+        for table in ("characters", "classes", "items"):
+            source = self.project / (table + ".json")
+            shutil.copyfile(ROOT / "src/data" / (table + ".json"), source)
+            expected[table] = str(source.relative_to(ROOT))
+            declarations.append(f"FE8_PROJECT_SOURCE_{table} := {source.relative_to(ROOT)}\n")
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.writelines(declarations)
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-s", "-n", "NODEP=1",
+             f"FE8_PROJECT={self.project.name}", "GAME_LOCALIZATION_ENABLED_LOCALES=ja",
+             "PYTHON=" + sys.executable, "PYTHON3=" + sys.executable,
+             "game-localization-width-check"],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        command = next(shlex.split(line) for line in result.stdout.replace("\\\n", " ").splitlines()
+                       if "scripts.localization.game_catalog" in line)
+        actual = dict(command[index + 1].split("=", 1) for index, value in enumerate(command)
+                      if value == "--source-override")
+        self.assertEqual(actual, expected)
+
     def test_english_only_standalone_translation_targets_do_not_forward_empty_locales(self):
         output = ROOT / "build/projects" / self.project.name
         self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)

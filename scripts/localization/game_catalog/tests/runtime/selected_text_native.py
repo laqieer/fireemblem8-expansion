@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "tools/gba-playtest"))
 
 from probe_bindings import resolve_elf_symbol  # noqa: E402
 from scripts.localization.game_catalog.build import build_game_catalog, write_build  # noqa: E402
+from scripts.generated_data.schema import SchemaInputs  # noqa: E402
 
 
 @unittest.skipIf(
@@ -72,7 +73,7 @@ class SelectedTextNativeTests(unittest.TestCase):
             "locale": "ja",
             "strings": {
                 "pages": "剣[NL]一[A][NL2]二[.]剣[.][X]",
-                "item": "剣[.][X]",
+                "item": "剣" * 10 + "[.][X]",
             },
         }, ensure_ascii=False), encoding="utf-8")
         rows = []
@@ -105,6 +106,15 @@ class SelectedTextNativeTests(unittest.TestCase):
             "note": "Original native fixture; not a production translation claim.",
             "rows": rows,
         }), encoding="utf-8")
+        aliases = json.loads((ROOT / "texts/locales/fixed_width_display_aliases.json").read_bytes())
+        aliases["aliases"]["ja"]["item_name_56"]["0x0002"] = "剣"
+        aliases_path = source / "aliases.json"
+        aliases_path.write_text(json.dumps(aliases, ensure_ascii=False), encoding="utf-8")
+        items = json.loads((ROOT / "src/data/items.json").read_bytes())
+        items["items"] = items["items"][:1]
+        items["items"][0].update(nameTextId=2, descTextId=0, useDescTextId=0)
+        item_path = source / "items.json"
+        item_path.write_text(json.dumps(items), encoding="utf-8")
         self.run_command([
             sys.executable, "-B", "-m", "scripts.localization.game_catalog", "check-width",
             "--english-texts", source / "texts.txt",
@@ -115,6 +125,8 @@ class SelectedTextNativeTests(unittest.TestCase):
             "--event-root", source,
             "--authored", "ja=" + str(source / "authored.ja.json"),
             "--enabled-locales", "ja",
+            "--source-override", "items=" + str(item_path),
+            "--fixed-width-aliases", aliases_path,
         ], cwd=ROOT)
         catalog = build_game_catalog(
             english_texts_path=source / "texts.txt",
@@ -125,8 +137,11 @@ class SelectedTextNativeTests(unittest.TestCase):
             event_root_path=source,
             authored_paths={"ja": source / "authored.ja.json"},
             enabled_locales=("ja",),
+            fixed_width_aliases_path=aliases_path,
+            schema_inputs=SchemaInputs({"items": str(item_path)}),
         )
         self.assertEqual(catalog.target_count, 3)
+        self.assertEqual(catalog.display_aliases["ja"]["item_name_56"], {2: "剣"})
         write_build(catalog, output_dir=generated / "localized")
         return generated
 
@@ -267,7 +282,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
             b"Practice Blade", b"Native\x01One\x03\x02Second\x1fTail",
         ]
         japanese = [
-            "剣\x01一\x03\x02二\x1f剣".encode(), b"Base zero", "剣".encode(),
+            "剣\x01一\x03\x02二\x1f剣".encode(), b"Base zero", ("剣" * 10).encode(),
             "剣\x01一\x03\x02二\x1f剣".encode(),
         ]
         for mask in (1, 3):
@@ -297,6 +312,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "native EWRAM overflow")
                         (0, 3, 0, b"<!LOC_INV!>", 6),
                         (0, 0xFFFFFFFF, 0, b"<!LOC_INV!>", 6),
                         (1, 1, 3, b"<!L", 4),
+                        (1, 2, 4, "剣".encode(), 1),
+                        (1, 2, 5, ("剣" * 10).encode(), 1),
                     ]
                 self.assertEqual(count, len(expected))
                 observed = []

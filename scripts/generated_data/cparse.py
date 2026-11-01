@@ -45,7 +45,7 @@ def find_matching_paren(text, open_index):
 
 
 def find_c_array_blocks(text, decl_pattern):
-    """Find every ``<decl_pattern> <NAME>[] = { ... };`` block in ``text``.
+    """Find every ``<decl_pattern> <NAME>[optional bound] = { ... };`` block in ``text``.
 
     ``decl_pattern`` is a regex fragment matching the declaration prefix up
     to (not including) the array name, e.g. ``r"CONST_DATA\\s+struct\\s+REDA"``.
@@ -55,7 +55,9 @@ def find_c_array_blocks(text, decl_pattern):
     (exclusive), and ``start_index`` is the character offset of the ``NAME``
     token (for line-number diagnostics).
     """
-    header_re = re.compile(decl_pattern + r"\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*\]\s*=\s*", re.MULTILINE)
+    header_re = re.compile(
+        decl_pattern + r"\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[[^\[\]]*\]\s*=\s*", re.MULTILINE
+    )
     blocks = []
     for match in header_re.finditer(text):
         name = match.group(1)

@@ -50,6 +50,8 @@ _MESSAGE_START_RE = re.compile(
     r"\b(?P<kind>TEXTSHOW|WM_TEXT|EvtTextShow2)\s*\(\s*"
     r"(?P<target>[^,)\r\n]*)(?:,[^)\r\n]*)?\)"
 )
+_POPUP_MESSAGE_RE = re.compile(r"\b(?:BROWNBOXTEXT|NOTIFY)\s*\(\s*([^,)]*)")
+_POPUP_MESSAGE_COMMANDS = frozenset(("BROWNBOXTEXT", "NOTIFY"))
 _LABEL_RE = re.compile(r"^\s*LABEL\s*\(\s*(0x[0-9A-Fa-f]+|\d+)\s*\)")
 _GOTO_RE = re.compile(r"^\s*GOTO\s*\(\s*(0x[0-9A-Fa-f]+|\d+)\s*\)")
 _BRANCH_RE = re.compile(
@@ -791,11 +793,12 @@ def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[SourceEventComm
         alias_source = _strip_comments(alias_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as error:
         raise ControlStreamError(f"{alias_path}: event macro aliases are unavailable") from error
-    aliases = {name: name for name in _FLOW_COMMANDS}
+    commands = _FLOW_COMMANDS | _POPUP_MESSAGE_COMMANDS
+    aliases = {name: name for name in commands}
     for short, public in re.findall(
         r"^\s*#define[ \t]+(\w+)[ \t]+(\w+)[ \t]*$", alias_source, re.MULTILINE
     ):
-        if short in _FLOW_COMMANDS:
+        if short in commands:
             aliases[public] = short
     for path in sorted(Path(event_root).rglob("*")):
         if path.suffix not in (".c", ".h") or not path.is_file():
@@ -820,6 +823,23 @@ def _dialogue_skip_branch(command: str, previous: str) -> Optional[bool]:
         command,
     )
     return None if branch is None else branch.group(1) == "BNE"
+
+
+def _resolve_event_message_id(
+    operand: str, message_ids: Mapping[str, int], path: Path, *, dynamic_slot: bool
+) -> int:
+    try:
+        target_id = int(operand, 0)
+    except ValueError:
+        if operand not in message_ids:
+            raise ControlStreamError(f"{path}: unresolved event message {operand!r}") from None
+        target_id = message_ids[operand]
+    if dynamic_slot and isinstance(target_id, int) and not isinstance(target_id, bool):
+        if -0x8000 <= target_id < 0:
+            target_id &= 0xFFFF
+    if not isinstance(target_id, int) or isinstance(target_id, bool) or not 0 <= target_id <= 0xFFFF:
+        raise ControlStreamError(f"{path}: invalid event message operand {operand!r}")
+    return target_id
 
 
 def _array_continuations(
@@ -855,33 +875,18 @@ def _array_continuations(
         line = lines[pc].text
         message = _MESSAGE_START_RE.search(line)
         if message:
-            if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations, dialogue_skipped))
             operand = message.group("target").strip()
-            try:
-                target_id = int(operand, 0)
-            except ValueError:
-                if operand not in message_ids:
-                    raise ControlStreamError(
-                        f"{path}: unresolved event message {operand!r}"
-                    ) from None
-                target_id = message_ids[operand]
-            if (
-                message.group("kind") in ("TEXTSHOW", "EvtTextShow2")
-                and isinstance(target_id, int)
-                and not isinstance(target_id, bool)
-                and -0x8000 <= target_id < 0
-            ):
-                target_id &= 0xFFFF
-            if (
-                not isinstance(target_id, int)
-                or isinstance(target_id, bool)
-                or not 0 <= target_id <= 0xFFFF
-            ):
-                raise ControlStreamError(f"{path}: invalid event message operand {operand!r}")
-            start_kind = message.group("kind")
-            continuations = 0
-            dialogue_skipped = False
+            next_target_id = _resolve_event_message_id(
+                operand, message_ids, path,
+                dynamic_slot=message.group("kind") in ("TEXTSHOW", "EvtTextShow2"),
+            )
+            if not (message.group("kind") in ("TEXTSHOW", "EvtTextShow2") and next_target_id == 0):
+                if target_id is not None and start_kind is not None:
+                    results.add((target_id, start_kind, continuations, dialogue_skipped))
+                target_id = next_target_id
+                start_kind = message.group("kind")
+                continuations = 0
+                dialogue_skipped = False
         elif re.search(r"\bTEXTCONT\b", line) and target_id is not None:
             continuations += 1
 
@@ -933,11 +938,17 @@ def build_event_continuation_models(
     *,
     message_ids: Optional[Mapping[str, int]] = None,
 ) -> Mapping[int, Tuple[EventContinuationModel, ...]]:
+    return _event_continuation_models(
+        _event_arrays(event_root), {} if message_ids is None else message_ids,
+    )
+
+
+def _event_continuation_models(
+    arrays: Iterable[Tuple[Path, List[SourceEventCommand]]], message_ids: Mapping[str, int]
+) -> Mapping[int, Tuple[EventContinuationModel, ...]]:
     by_target: Dict[int, List[EventContinuationModel]] = {}
-    for path, lines in _event_arrays(event_root):
-        for model in _array_continuations(
-            path, lines, {} if message_ids is None else message_ids
-        ):
+    for path, lines in arrays:
+        for model in _array_continuations(path, lines, message_ids):
             by_target.setdefault(model.target_id, []).append(model)
     return {
         target_id: tuple(
@@ -972,7 +983,22 @@ def validate_event_continuations(
                 f"{locale}: final payload count {len(payloads)} != "
                 f"active English count {len(english_payloads)}"
             )
-    models = build_event_continuation_models(event_root, message_ids=message_ids)
+    arrays = tuple(_event_arrays(event_root))
+    message_ids = {} if message_ids is None else message_ids
+    for path, commands in arrays:
+        for command in commands:
+            popup = _POPUP_MESSAGE_RE.search(command.text)
+            if popup is None:
+                continue
+            target_id = _resolve_event_message_id(
+                popup.group(1).strip(), message_ids, path, dynamic_slot=True,
+            )
+            if len(english_payloads) <= target_id < 0x8000:
+                raise ControlStreamError(
+                    f"{path}: popup message 0x{target_id:04X} is outside the active English "
+                    f"set of {len(english_payloads)} targets"
+                )
+    models = _event_continuation_models(arrays, message_ids)
     checked = 0
     for target_id, target_models in sorted(models.items()):
         if target_id >= len(english_payloads):

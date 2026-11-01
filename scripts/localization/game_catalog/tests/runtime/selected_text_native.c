@@ -166,6 +166,23 @@ void AgbMain(void)
     Record(MSG_NATIVE_PAGES, 3, text);
     gNativeTextProbe.records[gNativeTextProbe.count - 1].guardBefore = bounded.before;
     gNativeTextProbe.records[gNativeTextProbe.count - 1].guardAfter = bounded.after;
+    GetItemName(1);
+    text = LocalizedGameText_GetDisplayAliasForWidth(
+        MSG_NATIVE_ITEM, LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56, 56, 57);
+    if (text == 0)
+    {
+        gNativeTextProbe.phase = 0x314BAD;
+        return;
+    }
+    Record(MSG_NATIVE_ITEM, 4, text);
+    text = LocalizedGameText_GetDisplayAliasForWidth(
+        MSG_NATIVE_ITEM, LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56, 55, 57);
+    if (text != 0)
+    {
+        gNativeTextProbe.phase = 0x314BAD;
+        return;
+    }
+    Record(MSG_NATIVE_ITEM, 5, GetItemName(1));
 #else
     gNativeTextProbe.localeSelectionOk &= !ExpansionLocale_SetCurrent(EXPANSION_LOCALE_JA);
 #endif

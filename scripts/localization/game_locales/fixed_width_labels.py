@@ -8,6 +8,9 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence, Tuple
 
+from scripts.generated_data.diagnostics import GeneratedDataError
+from scripts.generated_data.schema import SchemaInputs
+
 from .ending_metrics import (
     EndingLayoutError,
     _ascii_widths,
@@ -401,8 +404,10 @@ def _records(
 def build_fixed_width_label_metrics(
     repo_root: Path,
     *,
-    localized_payloads: Mapping[str, Mapping[int, str]],
+    localized_payloads: Mapping[str, Mapping[int, str | bytes]],
     aliases_path: Path | None = None,
+    fallback_payloads: Mapping[int, bytes] | None = None,
+    schema_inputs: SchemaInputs | None = None,
 ) -> Dict[str, Any]:
     repo_root = Path(repo_root)
     aliases_path = (
@@ -413,6 +418,33 @@ def build_fixed_width_label_metrics(
     if not _SHA256_RE.fullmatch(_sha256(alias_raw)):
         raise FixedWidthLabelError("alias registry SHA-256 generation failed")
     source_contract = _source_contract(repo_root)
+    if schema_inputs is not None:
+        for surface, specification in SURFACES.items():
+            table = {"character": "characters", "class": "classes", "item": "items"}[
+                specification["category"]
+            ]
+            if table not in schema_inputs.sources:
+                continue
+            schema = schema_inputs.resolve(table)
+            source = Path(schema_inputs.source(schema))
+            if not source.is_absolute():
+                source = repo_root / source
+            try:
+                records = schema.load_records(str(source))
+            except GeneratedDataError as error:
+                raise FixedWidthLabelError(str(error)) from error
+            targets = {
+                record.name_text_id for record in records
+                if record.name_text_id or record.name_text_loc is not None
+            }
+            if fallback_payloads is not None and not targets <= set(fallback_payloads):
+                raise FixedWidthLabelError(f"{table}: selected name IDs are outside the active set")
+            source_contract[surface]["target_ids"] = [
+                f"0x{target:04X}" for target in sorted(targets)
+            ]
+            source_contract[surface]["data_source"] = {
+                "path": str(schema_inputs.source(schema)), "sha256": _sha256(source.read_bytes()),
+            }
     ascii_widths = _ascii_widths(repo_root)
     locales = {}
     font_inputs = {}
@@ -428,12 +460,44 @@ def build_fixed_width_label_metrics(
             contract = source_contract[surface]
             target_ids = tuple(
                 int(target, 16) for target in contract["target_ids"]
+                if fallback_payloads is None or int(target, 16) in fallback_payloads
             )
+            payloads = localized_payloads[locale]
+            effective_payloads = {}
+            for target in target_ids:
+                payload = payloads.get(target)
+                if payload is None and fallback_payloads is not None:
+                    payload = fallback_payloads.get(target)
+                if payload is None:
+                    continue
+                if isinstance(payload, bytes):
+                    from scripts.localization.game_catalog.control_streams import (
+                        ControlStreamError,
+                        tokenize_payload,
+                    )
+
+                    try:
+                        tokens = tokenize_payload(payload, source_name=f"name 0x{target:04X}")
+                        payload = "".join(
+                            chr(token.scalar) for token in tokens
+                            if token.kind == "scalar" and token.scalar is not None
+                        )
+                    except (ControlStreamError, ValueError) as error:
+                        raise FixedWidthLabelError(
+                            f"name 0x{target:04X}: invalid rendered payload"
+                        ) from error
+                effective_payloads[target] = payload
+            scoped_aliases = parsed_aliases[locale][surface]
+            if fallback_payloads is not None:
+                scoped_aliases = {
+                    target: text for target, text in scoped_aliases.items()
+                    if target in fallback_payloads and target in payloads
+                }
             records = _records(
                 locale=locale,
                 surface=surface,
-                payloads=localized_payloads[locale],
-                aliases=parsed_aliases[locale][surface],
+                payloads=effective_payloads,
+                aliases=scoped_aliases,
                 target_ids=target_ids,
                 allocation_pixels=specification["allocation_pixels"],
                 ascii_widths=ascii_widths,

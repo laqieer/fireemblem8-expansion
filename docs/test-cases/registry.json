@@ -34,6 +34,7 @@
       "modern-framework-build",
       "configuration-identity",
       "project-input-selection",
+      "selected-gameplay-text",
       "save-compatibility",
       "generated-data-platform",
       "typed-id-item-cap",
@@ -60,6 +61,18 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "selected-gameplay-text",
+      "title": "Selected gameplay message-set validation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/314"
+      ],
+      "reference": "docs/game_localization_catalog.md",
+      "status": "current",
+      "required_cases": [
+        "TC-PROJECT-TEXT-001"
+      ]
+    },
     {
       "id": "project-input-selection",
       "title": "Explicit project input providers and isolated profiles",
@@ -811,6 +824,40 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-PROJECT-TEXT-001",
+      "title": "Validate the selected gameplay message set",
+      "feature_id": "selected-gameplay-text",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/314"
+      ],
+      "document": "docs/game_localization_catalog.md",
+      "anchor": "tc-project-text-001-validate-the-selected-gameplay-message-set",
+      "profiles": ["Linux CPython 3.12 host checks and modern ARM GCC/AAPCS libmGBA three-message English-only/English-JA fixture"],
+      "purpose": "TEST-TEXT-I18N-COVERAGE: validate the actual non-3414 active set and prove equivalent multi-page control semantics and retained engine-field lookup through real English/localized consumers.",
+      "prerequisites": "Run from the source checkout with host cc, supported ARM GCC/binutils and libmGBA. Fixtures own their source/header/event/output directories; no original ROM or tracked-header edit.",
+      "actions": "Run the fixture builder, selected-event and atomic-publication suites plus effective-fallback/NL2 width controls, then explicitly unset GBA_PLAYTEST_HOST_ONLY and run selected_text_native. Observe active/source/header binding, bounded arrays, popup/notify IDs, zero text-show, continuation and publication refusals, and native three-message records.",
+      "expected_result": "Three-message masks1/3 return exact English/JA bytes and control sequence1/3/2/31; absent JA falls back without materialization; retained ItemData.nameTextId2 returns the correct real item name with unchanged ABI. Localized invalid IDs and guarded overflow report explicit statuses without out-of-bounds writes. All host semantic failures preserve existing outputs.",
+      "negative_control": "Real English-only ARM decoding is the default control. Static ID3, reordered/gapped/colliding/retired allocations, bad keys/controls/continuations/portraits and width/substitution overflow reject; a second248px NL2 line still fails. Dynamic event-slot semantics remain valid.",
+      "interactions": "Depends on project input selection, existing text tools/event sources, fonts/portrait metrics and locale consumers; no new dialogue language, resolver, registry or feature flag. Default and complete candidate/master/profile gates remain separate.",
+      "save_compatibility": "No save/epoch or retained engine-field ABI change. Module-native fixture does not qualify every modern release or archival game profile.",
+      "cleanup": "TemporaryDirectory removes only the owned source, generated files, objects, ELF and ROM. Preserve emitted records when retaining evidence.",
+      "limitations": "No subjective manual criterion in this bounded module case; not rendered glyph/portrait judgment, full-game playback or production Grado qualification. Never send invalid IDs to the historical English-only decoder.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests scripts.localization.game_catalog.tests.test_control_streams.SelectedEventContinuationTests scripts.texttools.tests.test_textprocess_publication -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_build_fixture.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests.test_explicit_english_fallback_is_validated_without_reflow_or_materialization scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests.test_nl2_keeps_full_width_talk_lines_separate_without_reflow -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_width_contract.py"
+        },
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -m unittest scripts.localization.game_catalog.tests.runtime.selected_text_native -v",
+          "evidence": "scripts/localization/game_catalog/tests/runtime/selected_text_native.py"
+        }
+      ]
+    },
     {
       "id": "TC-PROJECT-SELECTION-001",
       "title": "Select real project providers without default-content leakage",
