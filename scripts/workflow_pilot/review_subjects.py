@@ -675,7 +675,7 @@ def _cjk_resource(probe):
         except error:
             checks += 1
             return
-        except (ValueError, RecursionError) as failure:
+        except (ValueError, RecursionError, KeyError) as failure:
             raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
         raise ContractViolation("invalid resource input was accepted")
 
@@ -761,6 +761,54 @@ def _cjk_resource(probe):
                        and all((root / path).read_bytes() == value
                                for path, value in original_assets.items()),
                        "actual conversion changed its output ownership or atlas bytes")
+            legacy = owned_fonts("review-resource-unbound-legacy")
+            baseline = (legacy / "fonts/cjk/febuilder-baseline-manifest.json").read_bytes()
+            (legacy / "fonts/cjk/febuilder-manifest.json").write_bytes(baseline)
+            report_path = "fonts/cjk/reports/febuilder-generation-report.json"
+            report = json.loads((legacy / report_path).read_bytes())
+            asset_path = legacy / manifest
+            metadata = json.loads(asset_path.read_bytes())
+            payload_bytes = aligned_bytes = 0
+            for job in json.loads(baseline)["jobs"]:
+                prefix = job["locale"] + "." + ("system" if job["styles"] == ["item"] else "talk")
+                names = package.compact_asset_filenames(prefix)
+                for kind, filename in names.items():
+                    data = (legacy / "fonts/cjk/febuilder-baseline" / filename).read_bytes()
+                    relative = "graphics/fonts/cjk/" + filename
+                    (legacy / relative).write_bytes(data)
+                    metadata["assets"][prefix][kind] = {
+                        "path": relative, "byte_count": len(data),
+                        "sha256": hashlib.sha256(data).hexdigest(),
+                    }
+                    payload_bytes += len(data)
+                    aligned_bytes += (len(data) + 3) & ~3
+                codepoints = (legacy / "graphics/fonts/cjk" / names["codepoints"]).read_bytes()
+                scalars = struct.unpack("<" + "I" * (len(codepoints) // 4), codepoints)
+                (legacy / "fonts/cjk" / job["corpus"]["path"]).write_text(
+                    "".join(chr(scalar) for scalar in scalars), encoding="utf-8",
+                )
+                metadata["assets"][prefix]["glyph_count"] = len(scalars)
+            metadata["schema_version"] = 1
+            metadata["sources"]["febuilder_manifest"]["sha256"] = hashlib.sha256(baseline).hexdigest()
+            metadata["sources"].pop("fehrr_priority")
+            metadata["sources"]["febuilder_package"] = {
+                "disposition": "temporary maintainer artifact under build/tmp; not committed",
+                "payload_tree_sha256": report["payloadTreeSha256"],
+                "full_tree_sha256": report["fullTreeSha256"],
+                "package_report_sha256": hashlib.sha256((legacy / report_path).read_bytes()).hexdigest(),
+            }
+            metadata["rom_budget"] = {
+                "payload_bytes": payload_bytes, "four_byte_aligned_blob_bytes": aligned_bytes,
+                "bytes_per_glyph": 69,
+            }
+            asset_path.write_bytes(canonical(metadata))
+            package.check_compact_assets(legacy)
+            saved = {name: (legacy / name).read_bytes() for name in (CJK_INDEXES[0], manifest)}
+            for packed in (False, True):
+                reject(lambda packed=packed: package.write_resource_index(
+                    legacy, "fehrr", packed=packed), package.CjkFontError)
+                verify(all((legacy / name).read_bytes() == value for name, value in saved.items()),
+                       "unbound legacy priority refusal changed a stored output")
             root = owned_fonts("review-resource-cli")
             package.check_compact_assets(root)
             broken = b"invalid index"

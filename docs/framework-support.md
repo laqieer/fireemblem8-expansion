@@ -108,11 +108,16 @@ No custom UID, namespace, cgroup, supervisor, broker or capability platform is
 part of this contract. The retired isolation proposals are superseded, not
 claimed to have passed their tests.
 
-The modern `build` job, including master-only packaging, retains its
-90-minute ceiling. Host, extended-host and archival jobs retain 60 minutes;
+The modern `build` job, including master-only packaging, and both comprehensive
+host jobs retain 90-minute ceilings. The archival job retains 60 minutes;
 identity/router/classifier and summary retain 5 minutes.
 The same validation jobs run on candidates and master; only packaging/upload
 steps are master-only.
+The host-runtime repair's candidate and automatic-master job annotations are
+separate remote delivery evidence, outside the source-only pilot baseline
+procedure. Require all eight jobs to succeed: a one-hour deadline cancellation
+is not completed host evidence. Local parsed topology checks do not prove
+end-to-end CI completion.
 Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions
 there as community-reported, not CI-caught.

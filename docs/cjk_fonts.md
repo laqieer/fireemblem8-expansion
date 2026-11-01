@@ -41,6 +41,9 @@ Logical schema, FEHRR source priority, immutable FEBuilder baseline and
 glyph/width/bitmap checks are unchanged. Physical checksums bind the actual
 stored representation, not a reconstruction of its decoded JSON. A format
 conversion never creates font, content or provenance approval.
+Repacking an older valid manifest without a FEHRR priority binding refuses
+through the normal typed diagnostic without changing files; conversion does
+not invent that missing provenance.
 
 For an explicitly selected index in an owned checkout or fixture:
 
