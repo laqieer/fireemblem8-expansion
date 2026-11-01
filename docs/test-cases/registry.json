@@ -541,7 +541,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/279",
         "https://github.com/laqieer/fireemblem8-expansion/issues/309",
         "https://github.com/laqieer/fireemblem8-expansion/issues/346",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/354"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/354",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/356"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -3137,7 +3138,8 @@
       "title": "Freeze reproducible pilot baseline and decisions",
       "feature_id": "workflow-governance",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/356"
       ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-pilot-baseline-001-freeze-reproducible-pilot-baseline-and-decisions",

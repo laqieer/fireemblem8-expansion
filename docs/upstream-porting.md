@@ -231,8 +231,8 @@ reviewed names, runner, timeout, outputs, environment,
 dependencies/conditions, and steps. Each combined job contains only its
 identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
 its exact allowlisted environment, and `steps`. The comprehensive `build` job
-has `timeout-minutes: 90`; `host-tests`, `extended-host-tests`, and `legacy`
-remain 60 minutes, while identity/router/classifier and summary remain 5.
+and both comprehensive host jobs have `timeout-minutes: 90`; `legacy`
+remains 60 minutes, while identity/router/classifier and summary remain 5.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
 or unusable;
