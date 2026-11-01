@@ -29,7 +29,10 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "modernize"))
 
 import expansion_config as ec  # noqa: E402
-from scripts.modernize.tests.make_database import make_database_variable
+from scripts.modernize.tests.make_database import (
+    make_database_rule_header,
+    make_database_variable,
+)
 
 
 def assert_rejects_wrong_length(test_case, validator, values):
@@ -393,6 +396,45 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertIn("src/main.c", units)
         self.assertEqual(units["src/main.c"]["compiler_input"], "src/main.c")
         self.assertTrue(dependency.is_file())
+        self.assertEqual(list(output.rglob("*.o")), [])
+        self.assertEqual(list(output.rglob("*.pre.c")), [])
+
+    def test_selected_catalog_prepares_every_native_compiler_input_producer(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="text-producers-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        artifact = output / "debug/aapcs/selected-text-inputs.json"
+        settings = [
+            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+            "FE8_PROJECT=default", "MODERN_ROM_SIZE=32M", "EXPANSION_ENABLED_LOCALES=en,ja",
+            "MODERN_CC=/missing/fe8-compiler", "MODERN_PREPROC=/missing/fe8-preprocessor",
+            "MODERN_SCANINC=/missing/scaninc", f"PYTHON={sys.executable}",
+        ]
+        result = subprocess.run(
+            ["make", "--no-print-directory", str(artifact), *settings],
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        context = json.loads(artifact.read_bytes())
+        catalog = next(unit["compiler_input"] for unit in context["units"]
+                       if unit["logical_source"] == "src/localized_game_text-catalog.c")
+        database = subprocess.run(
+            [
+                "make", "--no-print-directory", "-rpn", catalog, *settings,
+                "NODEP=1", "MODERN_DRY_RUN=1", "-o", str(artifact),
+                "-o", "/missing/fe8-preprocessor", "-o", "expansion-modern-toolchain-check",
+            ],
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(database.returncode, 0, database.stderr)
+        header = make_database_rule_header(database.stdout, catalog)
+        self.assertIsNotNone(header)
+        prerequisites = set(shlex.split(header.split(":", 1)[1]))
+        expected = {unit["compiler_input"] for unit in context["units"]} - {catalog}
+        self.assertEqual(expected - prerequisites, set())
+        self.assertNotIn(catalog, prerequisites)
         self.assertEqual(list(output.rglob("*.o")), [])
         self.assertEqual(list(output.rglob("*.pre.c")), [])
 

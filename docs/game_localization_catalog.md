@@ -395,8 +395,14 @@ directory, checks the prospective synthetic catalog C and its headers,
 and only then returns to the ordinary publication/audit path. A stale
 invalid final C does not replace this prospective source; an invalid
 prospective C still fails the native checker rather than being exempt.
-The Make producer prepares the actual data-preprocessing, selected English
-and UI-catalog prerequisites before native checking. The fixed stock
+The Make producer prepares every actual compiler input from the same
+selected-source registry, including data preprocessing, reinstated tables,
+presentation manifests, selected English and UI catalogs. Its own staged
+catalog is excluded from that prerequisite graph, not from native checking.
+The Make regression parses the real compiler-context JSON and GNU Make
+database: every non-self compiler input must be a prerequisite, while the
+self source must not form a cycle. It does not assert Make source spelling
+or execute a fake compiler. The fixed stock
 143-surface CJK leakage audit is unchanged; the small EN/FR fixture does
 not qualify that audit or an entire game profile.
 English source-only declarations and the pseudo locale's Latin-font path
