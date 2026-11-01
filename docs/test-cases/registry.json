@@ -570,7 +570,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/309",
         "https://github.com/laqieer/fireemblem8-expansion/issues/346",
         "https://github.com/laqieer/fireemblem8-expansion/issues/354",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/356"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/356",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/359"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -602,6 +603,7 @@
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+        "TC-WORKFLOW-REPORTER-RUNTIME-001",
         "TC-WORKFLOW-ASSET-DISCOVERY-001",
         "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
         "TC-PROBE-CONTENT-PUBLICATION-001",
@@ -2875,6 +2877,38 @@
         {
           "command": "python3 scripts/artifact_guard.py --revision HEAD",
           "evidence": "scripts/artifact_guard.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-REPORTER-RUNTIME-001",
+      "title": "Bound complete isolated reporter execution",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/359"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-reporter-runtime-001-bound-complete-isolated-reporter-execution",
+      "profiles": [
+        "Source checkout; locked CPython 3.12 host environment on Linux"
+      ],
+      "purpose": "Execute the complete dynamically discovered reporter suite in at most two isolated child processes without omitting cases, weakening failures or changing any CI gate.",
+      "prerequisites": "Existing locked host environment, Git and process controls; preserve work. Fixtures own disposable roots under build/test-artifacts and need no ARM compiler, ROM or credentials.",
+      "actions": "Run ReporterExecutionTests through the controlled isolated interpreter. Observe concurrent distinct live child PIDs, one common parent, complete no-duplicate execution, per-process fixture lifecycle and cleared ambient Git. Exercise assertion failure, abnormal exit, singleton, empty/duplicate/broken discovery and closed arguments. Run the unchanged full reporter CLI for complete evidence and preserve actual wall time/revision/results.",
+      "expected_result": "Every dynamically discovered case executes exactly once across at most two isolated processes. Any discovery or child failure fails the parent. Complete candidate/master eight-job Build succeeds within unchanged host bounds before delivery.",
+      "negative_control": "The original serial launcher fails the live-PID rendezvous and original CI traces exceed the 90-minute host cap. Omitted cases, ignored child failure or empty partial coverage cannot report success; deadline increases are not the fix.",
+      "interactions": "Existing isolated launcher/unittest/process support and independent test fixtures only. Workflow topology, authority, permissions, runners, deadlines, baseline/profile/archival and summary gates remain unchanged.",
+      "save_compatibility": "No gameplay, save/config/epoch, ROM/RAM, locale, generated-content, modern profile or archival compiler changes.",
+      "cleanup": "Tests remove only their owned temporary roots; retain the owned host environment for later checks. Preserve benchmark and native CI evidence.",
+      "limitations": "Separate process-owned module/class fixtures require no cross-process shared mutation. The process bound is per invocation, not hostile same-UID isolation or guaranteed speed. A selected workload or synchronization fixture is not complete CI evidence; no manual criterion is added.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_host_python.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests",
+          "evidence": "scripts/workflow_pilot/isolated_launcher.py"
         }
       ]
     },

@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 import uuid
@@ -253,6 +254,169 @@ class HostPythonTests(unittest.TestCase):
         )
         checked = self.run_python("-I", BOOTSTRAP, "check", python=python)
         self.assert_failed(checked, "system site packages must be disabled")
+
+
+class ReporterExecutionTests(unittest.TestCase):
+    def setUp(self):
+        artifacts = ROOT / "build/test-artifacts"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="reporter-execution-", dir=artifacts)
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.tests = self.root / "scripts/workflow_pilot/tests"
+        self.tests.mkdir(parents=True)
+        for directory in (self.root / "scripts", self.tests.parent, self.tests):
+            (directory / "__init__.py").write_text("", encoding="ascii")
+        self.launcher = self.tests.parent / "isolated_launcher.py"
+        shutil.copyfile(ROOT / "scripts/workflow_pilot/isolated_launcher.py", self.launcher)
+        (self.root / "records").mkdir()
+
+    def run_launcher(self, *arguments):
+        environment = dict(host_python.tool_environment(self.root))
+        environment["GIT_DIR"] = str(self.root / "not-git-authority")
+        return subprocess.run(
+            [sys.executable, "-I", str(self.launcher), "reporter-tests", *arguments],
+            cwd=self.root, env=environment, capture_output=True, text=True, timeout=20,
+        )
+
+    def test_complete_discovery_uses_two_distinct_live_isolated_processes(self):
+        (self.tests / "test_concurrent.py").write_text(
+            'import json, os, sys, time, unittest\nfrom pathlib import Path\n'
+            'ROOT = Path(__file__).resolve().parents[3]\n'
+            'def phase(name):\n'
+            '    with (ROOT / "records" / (name + "-" + str(os.getpid()))).open("x") as stream:\n'
+            '        stream.write(str(os.getpid()))\n'
+            'def setUpModule(): phase("module-setup")\n'
+            'def tearDownModule(): phase("module-teardown")\n'
+            'class Cases(unittest.TestCase):\n'
+            '    @classmethod\n'
+            '    def setUpClass(cls): phase("class-setup")\n'
+            '    @classmethod\n'
+            '    def tearDownClass(cls): phase("class-teardown")\n'
+            '    def record(self, number):\n'
+            '        pid = os.getpid()\n'
+            '        records = ROOT / "records"\n'
+            '        with (records / ("case-" + str(number))).open("x") as stream:\n'
+            '            json.dump({"pid": pid, "ppid": os.getppid(), "isolated": sys.flags.isolated,\n'
+            '                       "git": [name for name in os.environ if name.startswith("GIT_")]}, stream)\n'
+            '        marker = records / ("pid-" + str(pid))\n'
+            '        if marker.exists():\n'
+            '            return\n'
+            '        marker.touch()\n'
+            '        deadline = time.monotonic() + 5\n'
+            '        while time.monotonic() < deadline:\n'
+            '            others = [int(path.name[4:]) for path in records.glob("pid-*")\n'
+            '                      if path != marker]\n'
+            '            if others:\n'
+            '                os.kill(others[0], 0)\n'
+            '                break\n'
+            '            time.sleep(0.01)\n'
+            '        else:\n'
+            '            self.fail("no second live isolated reporter process")\n'
+            '        (records / ("observed-" + str(pid))).touch()\n'
+            '        while len(list(records.glob("observed-*"))) < 2:\n'
+            '            self.assertLess(time.monotonic(), deadline)\n'
+            '            time.sleep(0.01)\n'
+            'def case(number):\n'
+            '    return lambda self: self.record(number)\n'
+            'for number in range(6):\n'
+            '    setattr(Cases, "test_" + str(number), case(number))\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        records = {
+            path.name: json.loads(path.read_text())
+            for path in (self.root / "records").glob("case-*")
+        }
+        self.assertEqual(set(records), {f"case-{number}" for number in range(6)})
+        pids = {record["pid"] for record in records.values()}
+        self.assertEqual(len(pids), 2)
+        self.assertEqual(len({record["ppid"] for record in records.values()}), 1)
+        for phase in ("module-setup", "module-teardown", "class-setup", "class-teardown"):
+            self.assertEqual(
+                {int(path.read_text()) for path in (self.root / "records").glob(phase + "-*")},
+                pids,
+            )
+        self.assertTrue(all(record["isolated"] == 1 and not record["git"]
+                            for record in records.values()))
+
+    def test_one_assertion_fails_the_parent_without_omitting_other_tests(self):
+        (self.tests / "test_failure.py").write_text(
+            'import os, unittest\nfrom pathlib import Path\n'
+            'ROOT = Path(__file__).resolve().parents[3]\n'
+            'class Cases(unittest.TestCase):\n'
+            '    def record(self, number):\n'
+            '        with (ROOT / "records" / str(number)).open("x") as stream:\n'
+            '            stream.write(str(os.getpid()))\n'
+            '        self.assertNotEqual(number, 1, "deliberate assertion failure")\n'
+            'def case(number): return lambda self: self.record(number)\n'
+            'for number in range(6):\n'
+            '    setattr(Cases, "test_" + str(number), case(number))\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("deliberate assertion failure", completed.stderr)
+        self.assertEqual(
+            {path.name for path in (self.root / "records").iterdir()},
+            {str(number) for number in range(6)},
+        )
+
+    def test_abnormal_reporter_process_exit_fails_the_parent(self):
+        (self.tests / "test_exit.py").write_text(
+            'import os, unittest\nfrom pathlib import Path\n'
+            'ROOT = Path(__file__).resolve().parents[3]\n'
+            'class Cases(unittest.TestCase):\n'
+            '    def test_abnormal(self): os._exit(7)\n'
+            '    def test_other(self): (ROOT / "records" / "other").write_text(str(os.getpid()))\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("exited 7", completed.stderr)
+        self.assertTrue((self.root / "records/other").is_file())
+
+    def test_single_discovered_case_is_not_dropped(self):
+        (self.tests / "test_single.py").write_text(
+            'import os, sys, unittest\nfrom pathlib import Path\n'
+            'class Single(unittest.TestCase):\n'
+            '    def test_only(self):\n'
+            '        self.assertEqual(sys.flags.isolated, 1)\n'
+            '        (Path(__file__).resolve().parents[3] / "records/only").write_text(str(os.getpid()))\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue((self.root / "records/only").is_file())
+
+    def test_duplicate_discovery_is_rejected_before_execution(self):
+        (self.tests / "test_duplicate.py").write_text(
+            'import unittest\nfrom pathlib import Path\n'
+            'class Single(unittest.TestCase):\n'
+            '    def test_only(self):\n'
+            '        (Path(__file__).resolve().parents[3] / "records/ran").touch()\n'
+            'def load_tests(loader, tests, pattern):\n'
+            '    return unittest.TestSuite([Single("test_only"), Single("test_only")])\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unique test IDs", completed.stderr)
+        self.assertEqual(list((self.root / "records").iterdir()), [])
+
+    def test_empty_or_broken_discovery_and_extra_arguments_are_not_success(self):
+        empty = self.run_launcher()
+        self.assertNotEqual(empty.returncode, 0)
+        self.assertIn("nonempty", empty.stderr)
+        (self.tests / "test_broken.py").write_text("def broken syntax\n", encoding="ascii")
+        broken = self.run_launcher()
+        self.assertNotEqual(broken.returncode, 0)
+        self.assertIn("Failed to import test module", broken.stderr)
+        closed = self.run_launcher("--test", "anything")
+        self.assertNotEqual(closed.returncode, 0)
+        self.assertIn("accepts no arguments", closed.stderr)
+        self.assertEqual(list((self.root / "records").iterdir()), [])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import multiprocessing
 import re
 import subprocess
 import sys
@@ -56,16 +57,69 @@ def controlled_repository_root(arguments: list[str], *, external: bool = False) 
     return root
 
 
+def reporter_test_ids(suite: unittest.TestSuite):
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            yield from reporter_test_ids(test)
+        else:
+            yield test.id()
+
+
+def run_reporter_shard(test_ids: list[str]) -> None:
+    clear_ambient_git_environment()
+    os.chdir(ROOT)
+    sys.path.insert(0, str(ROOT))
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromNames(test_ids)
+    if loader.errors:
+        raise ValueError("\n".join(loader.errors))
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    raise SystemExit(0 if result.wasSuccessful() else 1)
+
+
 def run_reporter_tests(arguments: list[str]) -> int:
     if arguments:
         raise ValueError("reporter-tests mode accepts no arguments")
-    suite = unittest.defaultTestLoader.discover(
+    loader = unittest.TestLoader()
+    suite = loader.discover(
         str(ROOT / "scripts" / "workflow_pilot" / "tests"),
         pattern="test_*.py",
         top_level_dir=str(ROOT),
     )
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
-    return 0 if result.wasSuccessful() else 1
+    if loader.errors:
+        raise ValueError("\n".join(loader.errors))
+    test_ids = list(reporter_test_ids(suite))
+    if not test_ids or len(test_ids) != len(set(test_ids)):
+        raise ValueError("reporter discovery must contain nonempty unique test IDs")
+    print(
+        f"workflow-pilot-launcher: discovered {len(test_ids)} unique tests "
+        f"across {min(2, len(test_ids))} isolated reporter processes",
+        flush=True,
+    )
+    context = multiprocessing.get_context("spawn")
+    workers = []
+    try:
+        for shard in (test_ids[::2], test_ids[1::2]):
+            if shard:
+                worker = context.Process(target=run_reporter_shard, args=(shard,))
+                worker.start()
+                workers.append(worker)
+        for worker in workers:
+            worker.join()
+        failed = [worker for worker in workers if worker.exitcode != 0]
+        for worker in failed:
+            print(
+                f"workflow-pilot-launcher: reporter process {worker.pid} exited {worker.exitcode}",
+                file=sys.stderr,
+            )
+        return 1 if failed else 0
+    finally:
+        for worker in workers:
+            if worker.is_alive():
+                worker.terminate()
+        for worker in workers:
+            worker.join()
+            worker.close()
 
 
 def run_lifecycle_check(arguments: list[str]) -> int:
