@@ -26,8 +26,9 @@ The existing English text generator emits two original fixture messages and
 their header. The test compiles the real message consumer, RAM-copy helper
 and ARM decoder, then links and boots its owned module ROM in libmGBA.
 It captures the real0,0,1,0 lookup records after60frames.
-The same native case runs through a selected compiler symlink facade; its
-entrypoint is kept rather than dereferenced, matching ccache-style drivers.
+The same native case runs through selected compiler, symbol-reader and
+objcopy symlink facades. Their entrypoints are kept rather than dereferenced,
+matching basename-sensitive drivers such as ccache.
 
 ### Expected result
 

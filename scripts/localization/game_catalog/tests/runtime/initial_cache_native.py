@@ -199,25 +199,33 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 (1, 9, b"Cache one"), (0, 10, b"Cache zero"),
             ])
 
-    def test_selected_compiler_keeps_its_symlink_entrypoint(self):
-        executable = shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc"))
-        self.assertIsNotNone(executable, "required native compiler is missing")
+    def test_selected_tools_keep_their_symlink_entrypoints(self):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-compiler-entry-", dir=ROOT / "build") as directory:
             work = Path(directory)
             driver = work / "driver"
+            environment = os.environ.copy()
+            forwarding = []
+            for variable, name in (
+                ("MODERN_CC", "arm-none-eabi-gcc"),
+                ("MODERN_NM", "arm-none-eabi-nm"),
+                ("MODERN_OBJCOPY", "arm-none-eabi-objcopy"),
+            ):
+                executable = shutil.which(os.environ.get(variable, name))
+                self.assertIsNotNone(executable, f"required native tool is missing: {variable}")
+                forwarding.append(
+                    "*/" + name + ") exec "
+                    + shlex.quote(str(Path(executable).absolute())) + ' "$@";;\n'
+                )
+                selected = work / name
+                selected.symlink_to(driver)
+                environment[variable] = str(selected)
             driver.write_text(
-                '#!/bin/sh\ncase "$0" in\n'
-                '*/arm-none-eabi-gcc) ;;\n'
-                '*) echo "selected compiler entrypoint was lost" >&2; exit 64;;\nesac\n'
-                "exec " + shlex.quote(str(Path(executable).absolute())) + ' "$@"\n',
+                '#!/bin/sh\ncase "$0" in\n' + "".join(forwarding)
+                + '*) echo "selected tool entrypoint was lost" >&2; exit 64;;\nesac\n',
                 encoding="utf-8",
             )
             driver.chmod(0o755)
-            selected = work / "arm-none-eabi-gcc"
-            selected.symlink_to(driver)
-            environment = os.environ.copy()
-            environment["MODERN_CC"] = str(selected)
             environment.pop("GBA_PLAYTEST_HOST_ONLY", None)
             result = subprocess.run(
                 [
