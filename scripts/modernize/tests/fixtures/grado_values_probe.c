@@ -47,12 +47,24 @@ int main(void)
     const struct GradoStateField temporaryMonotonic = {
         7, 1, GRADO_STATE_MONOTONIC, 1, 3, GRADO_STATE_CHAPTER
     };
+    const struct
+    {
+        struct GradoStateField field;
+        u16 value;
+        u16 setFlag;
+    } guide[] = {
+        {{180, 1, GRADO_STATE_BOOLEAN, 1, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 1, 180},
+        {{233, 3, GRADO_STATE_ONE_HOT, 3, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 3, 235},
+        {{240, 2, GRADO_STATE_COUNTER, 3, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 2, 241},
+        {{295, 1, GRADO_STATE_MONOTONIC, 1, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 1, 295},
+    };
     u8 beforePermanent[25];
     u8 expectedPermanent[25];
     u8 beforeChapter[5];
     u8 expectedChapter[5];
     u16 value;
     unsigned int i;
+    unsigned int bit;
 
     for (i = 0; i < sizeof(gPermanentFlagBits); ++i)
         gPermanentFlagBits[i] = i * 13 + 7;
@@ -194,5 +206,36 @@ int main(void)
         == GRADO_STATE_VALUE_LAYOUT);
     assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
     assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
+    for (i = 0; i < sizeof(guide) / sizeof(guide[0]); ++i)
+    {
+        for (bit = 0; bit < guide[i].field.bitCount; ++bit)
+            ClearFlag(guide[i].field.firstFlag + bit);
+        memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+        value = 0xBEEF;
+        assert(GradoState_ReadValue(&guide[i].field, GRADO_GUIDE_PROGRESSIVE, 3, &value)
+            == GRADO_STATE_VALUE_LAYOUT && value == 0xBEEF);
+        assert(GradoState_WriteValue(&guide[i].field, GRADO_GUIDE_PROGRESSIVE, 3, guide[i].value)
+            == GRADO_STATE_VALUE_LAYOUT);
+        assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
+        SetFlag(guide[i].setFlag);
+        memcpy(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent));
+        memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
+        assert(GradoState_WriteValue(&guide[i].field, GRADO_GUIDE_STATIC, 3, guide[i].value)
+            == GRADO_STATE_VALUE_VALID);
+        assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+        assert(GradoState_ReadValue(&guide[i].field, GRADO_GUIDE_STATIC, 3, &value)
+            == GRADO_STATE_VALUE_VALID && value == guide[i].value);
+        assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+        value = 0xBEEF;
+        assert(GradoState_ReadValue(&guide[i].field, GRADO_GUIDE_PROGRESSIVE, 3, &value)
+            == GRADO_STATE_VALUE_LAYOUT && value == 0xBEEF);
+        assert(GradoState_WriteValue(&guide[i].field, GRADO_GUIDE_PROGRESSIVE, 3, 0)
+            == GRADO_STATE_VALUE_LAYOUT);
+        assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    }
     return 0;
 }

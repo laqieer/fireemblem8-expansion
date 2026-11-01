@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import os
 import hashlib
+import multiprocessing
+from multiprocessing.connection import Connection, wait
 import re
 import subprocess
 import sys
@@ -56,16 +58,197 @@ def controlled_repository_root(arguments: list[str], *, external: bool = False) 
     return root
 
 
-def run_reporter_tests(arguments: list[str]) -> int:
-    if arguments:
-        raise ValueError("reporter-tests mode accepts no arguments")
-    suite = unittest.defaultTestLoader.discover(
+def reporter_test_cases(suite: unittest.TestSuite):
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            yield from reporter_test_cases(test)
+        else:
+            yield test
+
+
+class ReporterOutput:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+        self.pending = ""
+
+    def write(self, text: str) -> int:
+        self.pending += text
+        while "\n" in self.pending:
+            line, self.pending = self.pending.split("\n", 1)
+            self.connection.send(line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self.pending:
+            self.connection.send(self.pending)
+            self.pending = ""
+
+
+class ReporterResult(unittest.TextTestResult):
+    def __init__(self, *arguments, cases):
+        super().__init__(*arguments)
+        self.completed: set[str] = set()
+        self.fixture_skipped: set[str] = set()
+        self.cases = cases
+        self.active_index: int | None = None
+
+    def stopTest(self, test):
+        self.completed.add(test.id())
+        super().stopTest(test)
+
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        # unittest reports setup fixture skips as holders, without starting their cases.
+        if self.active_index is None:
+            return
+        cls = type(self.cases[self.active_index])
+        class_setup = test.id() == f"setUpClass ({cls.__module__}.{cls.__qualname__})"
+        module_setup = test.id() == f"setUpModule ({cls.__module__})"
+        if not class_setup and not module_setup:
+            return
+        # A later load_tests re-entry is a separate fixture invocation.
+        for case in self.cases[self.active_index:]:
+            if class_setup and type(case) is not cls:
+                break
+            if module_setup and type(case).__module__ != cls.__module__:
+                break
+            self.fixture_skipped.add(case.id())
+
+
+class ReporterSuite(unittest.TestSuite):
+    def __init__(self, cases):
+        self.active_result: ReporterResult | None = None
+        super().__init__(cases)
+
+    def run(self, result, debug=False):
+        self.active_result = result
+        try:
+            return super().run(result, debug)
+        finally:
+            self.active_result = None
+
+    def __iter__(self):
+        for index, case in enumerate(super().__iter__()):
+            if self.active_result is not None:
+                self.active_result.active_index = index
+            yield case
+
+
+def run_reporter_shard(
+    test_ids: list[str], discovered_ids: list[str], completion: Connection,
+) -> None:
+    clear_ambient_git_environment()
+    os.chdir(ROOT)
+    sys.path.insert(0, str(ROOT))
+    loader = unittest.TestLoader()
+    discovered = loader.discover(
         str(ROOT / "scripts" / "workflow_pilot" / "tests"),
         pattern="test_*.py",
         top_level_dir=str(ROOT),
     )
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
-    return 0 if result.wasSuccessful() else 1
+    if loader.errors:
+        raise ValueError("\n".join(loader.errors))
+    cases = list(reporter_test_cases(discovered))
+    actual_ids = [case.id() for case in cases]
+    if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != set(discovered_ids):
+        raise ValueError("reporter child discovery differs from the assigned complete test set")
+    by_id = {case.id(): case for case in cases}
+    assigned = [by_id[name] for name in test_ids]
+    suite = ReporterSuite(assigned)
+    output = ReporterOutput(completion)
+    result = unittest.TextTestRunner(
+        stream=output, verbosity=2,
+        resultclass=lambda *arguments: ReporterResult(*arguments, cases=assigned),
+    ).run(suite)
+    accounted = result.completed | result.fixture_skipped
+    complete = (
+        accounted == set(test_ids)
+        and not result.completed & result.fixture_skipped
+        and result.testsRun == len(result.completed)
+    )
+    if not complete:
+        output.write(
+            "incomplete reporter execution: "
+            f"ran={result.testsRun}, completed={len(result.completed)}, "
+            f"fixture-skipped={len(result.fixture_skipped)}, assigned={len(test_ids)}\n"
+        )
+    success = result.wasSuccessful() and complete
+    completion.send((len(accounted), success, result.shouldStop))
+    completion.close()
+    raise SystemExit(0 if success else 1)
+
+
+def run_reporter_tests(arguments: list[str]) -> int:
+    if arguments:
+        raise ValueError("reporter-tests mode accepts no arguments")
+    loader = unittest.TestLoader()
+    suite = loader.discover(
+        str(ROOT / "scripts" / "workflow_pilot" / "tests"),
+        pattern="test_*.py",
+        top_level_dir=str(ROOT),
+    )
+    if loader.errors:
+        raise ValueError("\n".join(loader.errors))
+    test_ids = [test.id() for test in reporter_test_cases(suite)]
+    if not test_ids or len(test_ids) != len(set(test_ids)):
+        raise ValueError("reporter discovery must contain nonempty unique test IDs")
+    print(
+        f"workflow-pilot-launcher: discovered {len(test_ids)} unique tests "
+        f"across {min(2, len(test_ids))} isolated reporter processes",
+        flush=True,
+    )
+    context = multiprocessing.get_context("spawn")
+    workers = []
+    try:
+        for shard in (test_ids[::2], test_ids[1::2]):
+            if shard:
+                receiving, sending = context.Pipe(duplex=False)
+                worker = context.Process(
+                    target=run_reporter_shard, args=(shard, test_ids, sending),
+                )
+                workers.append((worker, receiving, sending, len(shard)))
+                worker.start()
+                sending.close()
+        pending = {receiving: worker for worker, receiving, _, _ in workers}
+        completions = {}
+        while pending:
+            for receiving in wait(pending):
+                try:
+                    message = receiving.recv()
+                except EOFError:
+                    del pending[receiving]
+                    continue
+                if isinstance(message, str):
+                    print(
+                        f"[reporter {pending[receiving].pid}] {message}",
+                        file=sys.stderr, flush=True,
+                    )
+                else:
+                    completions[receiving] = message
+                    del pending[receiving]
+        for worker, _, _, _ in workers:
+            worker.join()
+        failed = False
+        for worker, receiving, _, count in workers:
+            completed = completions.get(receiving)
+            if worker.exitcode != 0 or completed != (count, True, False):
+                failed = True
+                print(
+                    f"workflow-pilot-launcher: reporter process {worker.pid} exited "
+                    f"{worker.exitcode}; completion={completed!r}, assigned={count}",
+                    file=sys.stderr,
+                )
+        return int(failed)
+    finally:
+        for worker, _, _, _ in workers:
+            if worker.pid is not None and worker.is_alive():
+                worker.terminate()
+        for worker, receiving, sending, _ in workers:
+            if worker.pid is not None:
+                worker.join()
+                worker.close()
+            receiving.close()
+            sending.close()
 
 
 def run_lifecycle_check(arguments: list[str]) -> int:

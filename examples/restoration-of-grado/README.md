@@ -163,6 +163,11 @@ No ROM, emulator, save file, credentials or manual judgment is needed.
    refuses 1-to-0 without changing any backing, and cannot be allocated in
    chapter-local storage. This write primitive does not prove that the four
    production retirement states or every save/load consumer are wired.
+   Guide-owned descriptors of all four kinds refuse both reads and writes
+   under the progressive policy, preserving the output guard and every
+   backing byte from cleared and set starting states. Under the static
+   policy they round-trip through the actual native backend, with complete
+   expected-byte checks across both guide ranges and their upper boundaries.
 3. Zero one-hot backing reports `UNSET`, not a default choice. Multiple set
    bits or an encoded counter above its bound report `CORRUPT`, preserving
    every byte and the output guard. A later explicit valid write can replace
@@ -176,6 +181,8 @@ probe, an unrelated retained event-dispatch dependency is an abort-only
 adapter: executing it fails rather than simulating success.
 Removing the actual monotonic write guard still compiles, but the native
 probe aborts on the attempted clear; compiler failure is not that control.
+Hard-coding either guide policy also compiles, but the same native probe
+aborts on the opposite policy's read/write contract.
 Alternative fixture descriptors are not a production physical assignment.
 The suites remove only their own temporary files. Default linking, the
 native buffers/envelope and framework epoch remain unchanged; complete
