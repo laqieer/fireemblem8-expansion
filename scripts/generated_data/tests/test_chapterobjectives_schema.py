@@ -339,6 +339,55 @@ class ChapterObjectivesSchemaTests(unittest.TestCase):
             ["a_objectives.json", "b_objectives.json"],
         )
 
+    def test_selected_map_dimensions_follow_each_authored_provider_kind(self):
+        with scratch_dir() as tmp:
+            manifest_path = os.path.join(tmp, "selected-assets.json")
+            metadata_path = os.path.join(tmp, "selected-layout.json")
+            for kind, chapter, symbol, sources, dimensions in (
+                (
+                    "tiled-tmx-map-layout", 2, "Ch2Map",
+                    ["assets/tmx/Ch2Map.tmx"], (15, 15),
+                ),
+                (
+                    "chapter-map-layout", 1, "Ch1Map",
+                    ["graphics/map/layout/Ch1Map.mar", metadata_path], (15, 10),
+                ),
+            ):
+                with self.subTest(kind=kind):
+                    metadata = {"id": symbol, "width": dimensions[0], "height": dimensions[1]}
+                    with open(metadata_path, "w", encoding="utf-8") as handle:
+                        json.dump(metadata, handle)
+                    asset = {
+                        "id": "SELECTED_MAP", "kind": kind, "sources": sources,
+                        "ownership": {"symbol": symbol},
+                        "resources": {"mapWidth": dimensions[0], "mapHeight": dimensions[1]},
+                    }
+
+                    def dimensions_from_selected():
+                        with open(manifest_path, "w", encoding="utf-8") as handle:
+                            json.dump({"assets": [asset]}, handle)
+                        return chapterbundle_schema.read_chapter_map_dimensions(
+                            chapter, asset_manifest_path=manifest_path, require_manifest=True,
+                        )
+
+                    self.assertEqual(dimensions_from_selected(), dimensions)
+                    asset["resources"]["mapWidth"] -= 1
+                    with self.assertRaises(GeneratedDataError):
+                        dimensions_from_selected()
+                    asset["resources"]["mapWidth"] += 1
+                    if kind == "chapter-map-layout":
+                        for content in (
+                            "{", "[]", json.dumps({"width": True, "height": 10}),
+                            json.dumps({"width": 15, "height": 0}),
+                        ):
+                            with open(metadata_path, "w", encoding="utf-8") as handle:
+                                handle.write(content)
+                            with self.assertRaises(GeneratedDataError):
+                                dimensions_from_selected()
+                    asset["sources"] = []
+                    with self.assertRaises(GeneratedDataError):
+                        dimensions_from_selected()
+
     def test_fallback_layout_metadata_fails_closed_with_owner_diagnostic(self):
         with scratch_dir() as tmp:
             layout_dir = os.path.join(tmp, "layouts")

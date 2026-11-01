@@ -73,6 +73,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/ownership-probe-dependencies.md | laqieer | current | Confined dependency-only C preprocessing, header provenance and real Make publication (issue #228)
 - docs/release-migration-template.md | laqieer | template | Unfilled scaffolding for a future version-to-version migration guide
 - docs/config_identity.md | laqieer | current | Config surface + ROM identity fingerprint reference (issue #8)
+- docs/project_selection.md | laqieer | current | Explicit project/profile input providers, isolated outputs and TC-PROJECT-SELECTION-001
 - docs/save_format.md | laqieer | current | Save format + compatibility gate reference (issue #2)
 - docs/id_space.md | laqieer | current | Extensible ID space DEFAULT vs ACTIVE contract reference (issue #10)
 - docs/debugtools.md | laqieer | current | Debug-tools reference: action registry, hotkey hub, bounded chapter/skirmish selector, save fixtures, diagnostics, lifecycle/release safety, and non-goals (issues #11/#123/#127/#128)

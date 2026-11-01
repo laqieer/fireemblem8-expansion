@@ -27,8 +27,8 @@ ASSET_PROFILE_ROOT := build/generated/assets
 ASSET_DISCOVERY_ROOT := build/generated/asset-discovery
 ASSET_OUTPUT_DIR ?= $(ASSET_PROFILE_ROOT)
 else
-ASSET_PROFILE_ROOT := $(MODERN_BUILD_ROOT)/generated/assets
-ASSET_DISCOVERY_ROOT := $(MODERN_BUILD_ROOT)/generated/asset-discovery
+ASSET_PROFILE_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR),$(MODERN_BUILD_ROOT))/generated/assets
+ASSET_DISCOVERY_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR),$(MODERN_BUILD_ROOT))/generated/asset-discovery
 ASSET_OUTPUT_DIR ?= $(ASSET_PROFILE_ROOT)/$(ASSET_PROFILE_KEY)
 endif
 ASSET_TOOL := $(PYTHON) -m scripts.assets --custom-spell-effects "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" --item-id-cap "$(ASSET_RESOLVED_ITEM_ID_CAP)"

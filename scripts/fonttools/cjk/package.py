@@ -1634,7 +1634,10 @@ def build_fehrr_priority_assets(
     if not isinstance(sources, dict):
         raise CjkFontError("compact asset sources are invalid")
 
-    old_lock = _read_fehrr_lock(root, sources)
+    old_lock = (
+        decode_index(read_index_bytes(root / FEHRR_SOURCES))
+        if sources.get("fehrr_priority") is not None else {}
+    )
     outputs = build_runtime_split_assets(root, source_root)
     lock = decode_index(outputs[FEHRR_SOURCES])
     if old_lock and _source_selection(old_lock) != _source_selection(lock):

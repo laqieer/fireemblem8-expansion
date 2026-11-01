@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import os
 import sys
 
@@ -43,10 +44,11 @@ def _implementation_module_paths():
     return tuple(sorted(paths))
 
 
-def collect_input_paths(objectives_source, bundle_source):
+def collect_input_paths(objectives_source, bundle_source, asset_manifest_path=None):
     """Return a sorted complete prerequisite set for objective generation."""
     objective_records = objectives_schema.load_records(objectives_source)
     bundles = bundle_schema.load_records(bundle_source)
+    manifest_path = asset_manifest_path or bundle_schema.ASSET_MANIFEST_PATH
     paths = set(objective_records.source_paths)
     paths.update(bundles.source_paths)
     paths.add(_canonical(objectives_source))
@@ -62,7 +64,7 @@ def collect_input_paths(objectives_source, bundle_source):
             _canonical(objectives_schema.character_refs.CHARACTERS_HEADER),
             _canonical(bundle_schema.CHAPTER_SETTINGS_JSON),
             _canonical(bundle_schema.CHAPTER_DATA_ASSET_TABLE_SOURCE),
-            _canonical(bundle_schema.ASSET_MANIFEST_PATH),
+            _canonical(manifest_path),
         )
     )
     paths.update(_implementation_module_paths())
@@ -70,7 +72,18 @@ def collect_input_paths(objectives_source, bundle_source):
         for table in bundle.tables:
             paths.add(_owner_source(table.source))
         paths.add(_owner_source(bundle.support_owners.source))
-    paths.add(_canonical(os.path.dirname(bundle_schema.ASSET_MANIFEST_PATH)))
+    paths.add(_canonical(os.path.dirname(manifest_path)))
+    if asset_manifest_path is not None:
+        try:
+            with open(asset_manifest_path, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        except json.JSONDecodeError as error:
+            raise GeneratedDataError(
+                "could not parse selected asset manifest '{}': {}".format(asset_manifest_path, error)
+            ) from error
+        for asset in manifest.get("assets", ()):
+            if {"mapWidth", "mapHeight"} <= set(asset.get("resources", ())):
+                paths.update(_owner_source(path) for path in asset.get("sources", ()))
     paths.add(_canonical(bundle_schema.MAP_LAYOUT_DIR))
     paths.add(_canonical(os.path.join(bundle_schema.REPO_ROOT, "assets", "tmx")))
     paths.update(_canonical(path) for path in glob.glob(os.path.join(bundle_schema.MAP_LAYOUT_DIR, "*.json")))
@@ -108,11 +121,12 @@ def main(argv=None):
     parser.add_argument("--bundle-source", required=True)
     parser.add_argument("--make-target")
     parser.add_argument("--depfile")
+    parser.add_argument("--asset-manifest")
     args = parser.parse_args(argv)
     if bool(args.make_target) != bool(args.depfile):
         parser.error("--make-target and --depfile must be supplied together")
     try:
-        inputs = collect_input_paths(args.source, args.bundle_source)
+        inputs = collect_input_paths(args.source, args.bundle_source, args.asset_manifest)
     except OSError as error:
         print(
             "error: unable to read chapter objective dependency source: {}".format(error),
