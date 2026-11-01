@@ -34,6 +34,7 @@
       "modern-framework-build",
       "configuration-identity",
       "project-input-selection",
+      "grado-native-allocation",
       "save-compatibility",
       "generated-data-platform",
       "typed-id-item-cap",
@@ -60,6 +61,18 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "grado-native-allocation",
+      "title": "Optional Grado native allocation validation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "reference": "examples/restoration-of-grado/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GRADO-ALLOCATION-001"
+      ]
+    },
     {
       "id": "project-input-selection",
       "title": "Explicit project input providers and isolated profiles",
@@ -813,6 +826,35 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-GRADO-ALLOCATION-001",
+      "title": "Validate native flag domains, reservations and lifetimes",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-allocation-001",
+      "profiles": [
+        "Unselected default framework; Linux host-native metadata probe",
+        "ARM7TDMI/Thumb GNU89, default supported AAPCS compile-only"
+      ],
+      "purpose": "Exercise the real optional reference C validator without changing game buffers or claiming a complete production allocation.",
+      "prerequisites": "Python 3, host cc and supported ARM GCC from quickstart; no ROM, emulator, save file or alternate profile.",
+      "actions": "Run python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v. Execute valid descriptors, different-chapter bit reuse, same-chapter overlap, invalid one-hot/counter domains and scopes, native last-bit overflow, engine/debug/sort reservations and progressive versus static guide ownership.",
+      "expected_result": "The real C probe accepts valid nonoverlapping descriptors and different-chapter reuse, rejects invalid domains, overflow and reserved/owned flags, then the same production validator compiles for ARM/AAPCS.",
+      "negative_control": "Before the tracer, the public interface and source are absent and both compiler probes fail. Progressive policy rejects guide-bit allocation; the unselected default links no reference code.",
+      "interactions": "Project-specific reference only, using existing native event-flag constants. Static-guide policy is input to allocation validation, not proof that guide consumers have been redirected. No new framework feature gate or prerequisite is added.",
+      "save_compatibility": "This tracer mutates no state, envelope, epoch, checksum or SRAM. Complete Grado schema1/epoch256 and normal/Suspend/legacy loading remain open in issue315; default framework epoch2 is unchanged.",
+      "cleanup": "Tests remove only their own temporary compiler/probe directories and preserve Git indexes, worktrees, saves and engine buffers.",
+      "limitations": "Host execution uses only an ABI-type adapter around the real validator. ARM evidence is compile-only, not target-ROM behavior. No complete227-FLAG/16-STATE allocation, guide, save, recovery, gameplay or manual qualification is claimed.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",
+          "evidence": "scripts/modernize/tests/test_grado_state_native.py"
+        }
+      ]
+    },
     {
       "id": "TC-PROJECT-SELECTION-001",
       "title": "Select real project providers without default-content leakage",
