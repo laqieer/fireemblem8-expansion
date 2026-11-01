@@ -149,33 +149,39 @@ class CjkSubjectTests(unittest.TestCase):
                     {role: ("contract-violation", 1) for role in roles},
                 )
 
-    def test_untyped_base64_payload_failure_is_a_contract_violation(self):
+    def test_untyped_payload_parser_failures_are_contract_violations(self):
         path = "scripts/fonttools/cjk/resource_index.py"
         original = (self.repo.root / path).read_text()
-        tree = ast.parse(original)
-        function = next(node for node in tree.body
-                        if isinstance(node, ast.FunctionDef) and node.name == "decode_index")
-        function.body[:0] = ast.parse(
-            "import base64 as malformed_base64\n"
-            "import json as malformed_json\n"
-            f"if malformed_json.loads({function.args.args[0].arg}).get('payload', False) is None:\n"
-            "    malformed_base64.b64decode(None, validate=True)\n"
-        ).body
-        before = self.repo.commit({path: ast.unparse(tree) + "\n"})
-        after = self.repo.commit({path: original}, parent=before)
-        members = tuple(item for item in self.tools.members(self.scope(after), (before,))
-                        if item.family == "wire")
-        self.assertEqual(
-            [(item.verdict, item.checks) for item in self.tools.run_obligations(members, before)
-             if item.obligation.role == "validators"],
-            [("contract-violation", 1)],
-        )
-        self.assert_satisfied(self.tools.run_obligations(members, after))
+        for failure in (
+            "malformed_base64.b64decode(None, validate=True)",
+            'raise RuntimeError("controlled untyped parser failure")',
+        ):
+            with self.subTest(failure=failure):
+                tree = ast.parse(original)
+                function = next(node for node in tree.body
+                                if isinstance(node, ast.FunctionDef) and node.name == "decode_index")
+                function.body[:0] = ast.parse(
+                    "import base64 as malformed_base64\n"
+                    "import json as malformed_json\n"
+                    f"if malformed_json.loads({function.args.args[0].arg}).get('payload', False) is None:\n"
+                    f"    {failure}\n"
+                ).body
+                before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                after = self.repo.commit({path: original}, parent=before)
+                members = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                                if item.family == "wire")
+                self.assertEqual(
+                    [(item.verdict, item.checks)
+                     for item in self.tools.run_obligations(members, before)
+                     if item.obligation.role == "validators"],
+                    [("contract-violation", 1)],
+                )
+                self.assert_satisfied(self.tools.run_obligations(members, after))
 
     def test_untyped_valid_encoder_and_writer_failures_are_contract_violations(self):
         path = "scripts/fonttools/cjk/resource_index.py"
         original = (self.repo.root / path).read_text()
-        for error in ("TypeError", "KeyError"):
+        for error in ("TypeError", "KeyError", "RuntimeError"):
             for name in ("encode_index", "encode_like_index"):
                 with self.subTest(error=error, operation=name):
                     tree = ast.parse(original)

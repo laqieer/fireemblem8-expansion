@@ -1561,14 +1561,14 @@ def _cjk_resource(probe):
         except error:
             checks += 1
             return
-        except (ValueError, RecursionError, KeyError, TypeError, lzma.LZMAError) as failure:
+        except (ValueError, RuntimeError, KeyError, TypeError, lzma.LZMAError) as failure:
             raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
         raise ContractViolation("invalid resource input was accepted")
 
     def accepted(function, *args, **kwargs):
         try:
             return function(*args, **kwargs)
-        except (ValueError, TypeError, KeyError, RecursionError, lzma.LZMAError) as failure:
+        except (ValueError, TypeError, KeyError, RuntimeError, lzma.LZMAError) as failure:
             raise ContractViolation("valid resource operation was rejected: " + str(failure)) from failure
 
     def produced(data):
