@@ -99,10 +99,111 @@ class CjkSubjectTests(unittest.TestCase):
         path = "scripts/fonttools/cjk/unused_review_fixture.py"
         head = self.repo.commit({path: '"""Unused captured production module."""\n'})
         members = self.tools.members(self.scope(head), (self.repo.base,))
-        self.assertTrue(all(path in item.source_inputs and path not in item.inputs
-                            for item in members))
         wire = tuple(item for item in members if item.family == "wire")
+        self.assert_satisfied(self.tools.run_obligations(wire, self.repo.base))
         self.assert_satisfied(self.tools.run_obligations(wire, head))
+        self.assertTrue(all(path not in item.source_inputs for item in members))
+
+    def test_valid_encode_and_writer_failures_are_contract_violations(self):
+        path = "scripts/fonttools/cjk/resource_index.py"
+        original = (self.repo.root / path).read_text()
+        for name, roles in (
+            ("encode_index", {("generated", "outputs"), ("wire", "producers"),
+                              ("resource", "enabled"), ("resource", "disabled")}),
+            ("encode_like_index", {("generated", "drift-checks"), ("wire", "replay")}),
+        ):
+            with self.subTest(operation=name):
+                tree = ast.parse(original)
+                function = next(
+                    node for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == name
+                )
+                function.body[:0] = ast.parse(
+                    'raise ResourceIndexError("controlled valid-input failure")'
+                ).body
+                before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                after = self.repo.commit({path: original}, parent=before)
+                members = tuple(
+                    item for item in self.tools.members(self.scope(after), (before,))
+                    if item.family in {family for family, _ in roles}
+                )
+                broken = self.tools.run_obligations(members, before)
+                self.assertEqual(
+                    {(item.obligation.family, item.obligation.role):
+                     (item.verdict, item.checks) for item in broken
+                     if (item.obligation.family, item.obligation.role) in roles},
+                    {role: ("contract-violation", 1) for role in roles},
+                )
+
+    def test_untyped_base64_payload_failure_is_a_contract_violation(self):
+        path = "scripts/fonttools/cjk/resource_index.py"
+        original = (self.repo.root / path).read_text()
+        tree = ast.parse(original)
+        function = next(node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == "decode_index")
+        function.body[:0] = ast.parse(
+            "import base64 as malformed_base64\n"
+            "import json as malformed_json\n"
+            f"if malformed_json.loads({function.args.args[0].arg}).get('payload', False) is None:\n"
+            "    malformed_base64.b64decode(None, validate=True)\n"
+        ).body
+        before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+        after = self.repo.commit({path: original}, parent=before)
+        members = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                        if item.family == "wire")
+        self.assertEqual(
+            [(item.verdict, item.checks) for item in self.tools.run_obligations(members, before)
+             if item.obligation.role == "validators"],
+            [("contract-violation", 1)],
+        )
+        self.assert_satisfied(self.tools.run_obligations(members, after))
+
+    def test_actual_generator_format_regressions_do_not_get_codec_output_credit(self):
+        path = "scripts/fonttools/cjk/package.py"
+        original = (self.repo.root / path).read_text()
+        for name in ("build_runtime_split_assets", "build_fehrr_priority_assets"):
+            with self.subTest(generator=name):
+                tree = ast.parse(original)
+                function = next(node for node in tree.body
+                                if isinstance(node, ast.FunctionDef) and node.name == name)
+                class PlainResult(ast.NodeTransformer):
+                    def visit_FunctionDef(self, node):
+                        return node
+
+                    def visit_Return(self, node):
+                        if node.value is not None:
+                            node.value = ast.Call(
+                                func=ast.Name(id="source_mutant_plain_result", ctx=ast.Load()),
+                                args=[node.value], keywords=[],
+                            )
+                        return node
+
+                function.body = [PlainResult().visit(node) for node in function.body]
+                tree.body.extend(ast.parse(
+                    "def source_mutant_plain_result(outputs):\n"
+                    "    import hashlib\n"
+                    "    import json\n"
+                    "    from .resource_index import decode_index, json_bytes\n"
+                    "    index = 'fonts/cjk/fehrr-sources.json'\n"
+                    "    manifest = 'graphics/fonts/cjk/manifest.json'\n"
+                    "    outputs[index] = json_bytes(decode_index(outputs[index]))\n"
+                    "    metadata = json.loads(outputs[manifest])\n"
+                    "    metadata['sources']['fehrr_priority']['sha256'] = hashlib.sha256(outputs[index]).hexdigest()\n"
+                    "    outputs[manifest] = json_bytes(metadata)\n"
+                    "    return outputs\n"
+                ).body)
+                before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                after = self.repo.commit({path: original}, parent=before)
+                members = tuple(
+                    item for item in self.tools.members(self.scope(after), (before,))
+                    if item.family == "generated"
+                )
+                observed = self.tools.run_obligations(members, before)
+                self.assertEqual(
+                    [(item.verdict, item.checks) for item in observed
+                     if item.obligation.role == "outputs"],
+                    [("contract-violation", 1)],
+                )
 
     def test_unsupported_reference_metadata_is_setup_unavailable(self):
         seed = b'{"value":1}'
