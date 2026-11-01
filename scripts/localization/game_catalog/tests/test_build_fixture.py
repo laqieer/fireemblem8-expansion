@@ -377,17 +377,18 @@ class FixtureBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(GameCatalogError, "280px"):
             build_game_catalog(**inputs, font_metrics=metrics)
 
-    def test_selected_context_checks_live_retained_cpp_references(self):
+    def selected_native_inputs(self, *, locale="ja"):
         compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
         if shutil.which(compiler) is None:
             self.skipTest("selected ARM compiler is unavailable")
         work = self.fixture_dir / "native"
         work.mkdir()
+        mask, stem, codepoint = {"ja": (3, "Ja", 0x4E00), "fr": (9, "Eu", 0xE9)}[locale]
         flags = [
             "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-mabi=aapcs",
             "-std=gnu89", "-ffreestanding", "-fno-common", "-ffunction-sections",
             "-fdata-sections", "-DMODERN=1", "-DNONMATCHING=1",
-            "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=3u",
+            f"-DFE8_EXPANSION_ENABLED_LOCALE_MASK={mask}u",
             "-DFE8_EXPANSION_DEFAULT_LOCALE_ID=0", "-DFE8_EXPANSION_STARTER_CONTENT=0",
             "-DSELECTED_CJK_WIDTH=13",
             "-I" + str(ROOT / "include"), "-I" + str(ROOT),
@@ -409,10 +410,11 @@ class FixtureBuildTests(unittest.TestCase):
         localized.write_text(
             '#include "global.h"\n#include "localized_font.h"\n'
             + "".join(
-                f"const u8 gLocalizedFontJa{style}Codepoints[] = {{0, 0x4E, 0, 0}};\n"
-                f"const u8 gLocalizedFontJa{style}Widths[] = {{SELECTED_CJK_WIDTH}};\n"
-                f"const u8 gLocalizedFontJa{style}Bitmaps[LOCALIZED_FONT_BITMAP_STRIDE] = {{0}};\n"
-                f"const u32 gLocalizedFontJa{style}GlyphCount = 1;\n"
+                f"const u8 gLocalizedFont{stem}{style}Codepoints[] = "
+                f"{{{codepoint & 0xFF}, {codepoint >> 8}, 0, 0}};\n"
+                f"const u8 gLocalizedFont{stem}{style}Widths[] = {{SELECTED_CJK_WIDTH}};\n"
+                f"const u8 gLocalizedFont{stem}{style}Bitmaps[LOCALIZED_FONT_BITMAP_STRIDE] = {{0}};\n"
+                f"const u32 gLocalizedFont{stem}{style}GlyphCount = 1;\n"
                 for style in ("System", "Talk")
             ),
             encoding="ascii",
@@ -469,8 +471,142 @@ class FixtureBuildTests(unittest.TestCase):
             row["verification"]["confidence"] = "explicit"
         inputs["mapping_path"].write_text(json.dumps(mapping), encoding="utf-8")
         context = work / "context.json"
-        arguments = [
-            sys.executable, "-B", "-m", "scripts.localization.game_catalog", "check-width",
+        context.write_text(json.dumps({
+            "schema_version": 1, "kind": "fe8-selected-text-inputs",
+            "source_root": str(ROOT), "linker": "arm-none-eabi-ld", "units": units,
+        }), encoding="utf-8")
+        return inputs, units, context
+
+    def test_selected_generation_rejects_live_native_ids_before_publication(self):
+        inputs, units, context = self.selected_native_inputs(locale="fr")
+        work = context.parent
+        eu_mapping = work / "eu-mapping.json"
+        eu_mapping.write_text(json.dumps({
+            "kind": "fe8eu-to-fe8u-target-map", "format": 1, "authoritative": True,
+            "target_count": 3, "locale_ids": ["fr", "de", "es", "it"],
+            "source_message_count": 1,
+            "rows": [
+                {"target_id": f"0x{target:04X}", "source": {
+                    "kind": "english_preserve", "reason": "scoped native publication fixture",
+                }}
+                for target in range(3)
+            ],
+        }), encoding="utf-8")
+        eu_indexed = work / "fr.txt"
+        eu_indexed.write_text("#0x0000\nA\n", encoding="ascii")
+        authored_arguments = []
+        for locale in ("fr", "de", "es", "it"):
+            authored = work / f"{locale}.authored.json"
+            authored.write_text(json.dumps({
+                "kind": "fe8eu-target-authored-catalog", "locale": locale, "strings": {},
+            }), encoding="utf-8")
+            authored_arguments.extend(("--eu-authored", f"{locale}={authored}"))
+        generated = work / "published"
+        from scripts.localization.game_catalog.constants import OUTPUT_SOURCE_NAME
+        catalog_source = generated / OUTPUT_SOURCE_NAME
+        catalog_object = work / "catalog.o"
+        catalog_command = list(units[0]["compiler_argv"])
+        catalog_command[catalog_command.index("-c") + 1] = str(catalog_source)
+        catalog_command[-1] = str(catalog_object)
+        catalog_command[1:1] = ["-I" + str(generated)]
+        units.append({
+            "logical_source": "src/localized_game_text-catalog.c",
+            "selected_source": str(catalog_source), "compiler_input": str(catalog_source),
+            "object": str(catalog_object), "compiler_argv": catalog_command,
+            "preprocessor_argv": [],
+        })
+        context.write_text(json.dumps({
+            "schema_version": 1, "kind": "fe8-selected-text-inputs",
+            "source_root": str(ROOT), "linker": "arm-none-eabi-ld", "units": units,
+        }), encoding="utf-8")
+        program = [sys.executable, "-B", "-m", "scripts.localization.game_catalog"]
+        options = [
+            "--english-texts", str(inputs["english_texts_path"]),
+            "--english-definitions", str(inputs["english_definitions_path"]),
+            "--target-header", str(inputs["target_header_path"]),
+            "--mapping", str(inputs["mapping_path"]), "--eu-mapping", str(eu_mapping),
+            "--eu-indexed", f"fr={eu_indexed}", *authored_arguments,
+            "--event-root", str(self.fixture_dir), "--enabled-locales", "fr",
+            "--compile-context", str(context),
+        ]
+        arguments = [*program, "generate", *options, "--out-dir", str(generated)]
+        result = subprocess.run(
+            arguments, cwd=ROOT, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        published = {
+            path.relative_to(generated): path.read_bytes()
+            for path in generated.rglob("*") if path.is_file()
+        }
+        self.assertTrue(published)
+        catalog_source.write_text(
+            '#include "global.h"\n'
+            "void StaleCatalog(void) { GetStringFromIndex(3); }\n",
+            encoding="ascii",
+        )
+        result = subprocess.run(
+            arguments, cwd=ROOT, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(catalog_source.read_bytes(), published[Path(OUTPUT_SOURCE_NAME)])
+        texts = inputs["english_texts_path"]
+        texts.write_text(texts.read_text().replace("A[X]", "B[X]", 1), encoding="ascii")
+        units[-2]["compiler_argv"] = [
+            argument if not argument.startswith("-DSELECTED_REFERENCE_BAD=")
+            else "-DSELECTED_REFERENCE_BAD=1" for argument in units[-2]["compiler_argv"]
+        ]
+        context.write_text(json.dumps({
+            "schema_version": 1, "kind": "fe8-selected-text-inputs",
+            "source_root": str(ROOT), "linker": "arm-none-eabi-ld", "units": units,
+        }), encoding="utf-8")
+        for command in (
+            "generate", "check", "budget", "validate",
+            "audit-leakage", "check-leakage", "check-width",
+        ):
+            with self.subTest(command=command):
+                outputs = (
+                    ["--out-dir", str(generated)]
+                    if command in ("generate", "check", "budget") else
+                    ["--report", str(generated / "audit.json")]
+                    if command in ("audit-leakage", "check-leakage") else []
+                )
+                result = subprocess.run(
+                    [*program, command, *options, *outputs],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("retained.c", result.stderr)
+                self.assertEqual(published, {
+                    path.relative_to(generated): path.read_bytes()
+                    for path in generated.rglob("*") if path.is_file()
+                })
+        units[-2]["compiler_argv"] = [
+            argument if not argument.startswith("-DSELECTED_REFERENCE_BAD=")
+            else "-DSELECTED_REFERENCE_BAD=0" for argument in units[-2]["compiler_argv"]
+        ]
+        context.write_text(json.dumps({
+            "schema_version": 1, "kind": "fe8-selected-text-inputs",
+            "source_root": str(ROOT), "linker": "arm-none-eabi-ld", "units": units,
+        }), encoding="utf-8")
+        catalog_source.write_text(
+            '#include "global.h"\n'
+            "void InvalidProspectiveCatalog(void) { GetStringFromIndex(3); }\n",
+            encoding="ascii",
+        )
+        from scripts.localization.game_catalog.compiled_inputs import (
+            CompiledInputError, validate_compiled_references,
+        )
+        with self.assertRaisesRegex(CompiledInputError, "outside the active"):
+            validate_compiled_references(
+                context, target_count=3, generated_catalog_dir=generated,
+            )
+
+    def test_selected_context_checks_live_retained_cpp_references(self):
+        inputs, units, context = self.selected_native_inputs()
+        work = context.parent
+        mapping = json.loads(inputs["mapping_path"].read_bytes())
+        program = [sys.executable, "-B", "-m", "scripts.localization.game_catalog"]
+        options = [
             "--english-texts", str(inputs["english_texts_path"]),
             "--english-definitions", str(inputs["english_definitions_path"]),
             "--target-header", str(inputs["target_header_path"]),
@@ -479,6 +615,7 @@ class FixtureBuildTests(unittest.TestCase):
             "--event-root", str(self.fixture_dir), "--enabled-locales", "ja",
             "--compile-context", str(context),
         ]
+        arguments = [*program, "check-width", *options]
         original_command = units[-1]["compiler_argv"]
         for field in (0, 1, 2, 3):
             for bad in (0, 1):

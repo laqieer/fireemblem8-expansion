@@ -20,6 +20,7 @@ from scripts.localization.game_locales.structural_completion import (
 )
 
 from .model import GameCatalogError
+from .constants import OUTPUT_SOURCE_NAME
 
 
 class CompiledInputError(GameCatalogError):
@@ -220,15 +221,28 @@ def _validate_native_calls(source: str, target_count: int, selected_source: str)
                     )
 
 
-def validate_compiled_references(context_path: Path, *, target_count: int) -> None:
+def validate_compiled_references(
+    context_path: Path, *, target_count: int, generated_catalog_dir: Path | None = None,
+) -> None:
     context = load_compile_context(context_path)
     root = Path(context["source_root"])
     with TemporaryDirectory(prefix="selected-text-cpp-") as directory:
         for index, unit in enumerate(context["units"]):
             output = Path(directory) / f"{index}.i"
+            source = None
+            if (generated_catalog_dir is not None
+                    and unit["logical_source"] == "src/localized_game_text-catalog.c"):
+                if unit["preprocessor_argv"]:
+                    raise CompiledInputError(
+                        f"{context_path}: generated catalog slot cannot use data preprocessing"
+                    )
+                source = Path(generated_catalog_dir) / OUTPUT_SOURCE_NAME
+            command = _native_command(unit, output, source=source, preprocess=True)
+            if generated_catalog_dir is not None:
+                command[1:1] = ["-iquote", str(Path(generated_catalog_dir).resolve())]
             try:
                 result = subprocess.run(
-                    _native_command(unit, output, preprocess=True),
+                    command,
                     cwd=root, capture_output=True, text=True, timeout=90,
                     check=False,
                 )

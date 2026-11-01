@@ -383,6 +383,22 @@ It preserves that 13px CLI measurement/reflow contract while private CPP
 flags alternately expose valid ID 1 or invalid ID 3 in a real message call
 and each `ItemData` name/description/use-description field. The latter must
 fail explicitly; changing only a raw disabled branch must not fail.
+The separate EN/FR publication fixture uses a real locale-mask-9 context
+and explicit English-preserve mappings. `generate` succeeds with live ID 1,
+including on a cold output directory whose catalog C does not yet exist.
+All seven build/validation/audit commands reject live ID 3 before replacing
+any output, even when the changed English input would produce different
+bytes. These commands share the native check at their existing build
+boundary; `check-width` is not a special qualification-only path.
+The catalog producer stages its genuine six outputs in an owned temporary
+directory, checks the prospective synthetic catalog C and its headers,
+and only then returns to the ordinary publication/audit path. A stale
+invalid final C does not replace this prospective source; an invalid
+prospective C still fails the native checker rather than being exempt.
+The Make producer prepares the actual data-preprocessing, selected English
+and UI-catalog prerequisites before native checking. The fixed stock
+143-surface CJK leakage audit is unchanged; the small EN/FR fixture does
+not qualify that audit or an entire game profile.
 English source-only declarations and the pseudo locale's Latin-font path
 need no measured catalog or locale atlas. These are bounded compiler and
 consumer observations, not complete selected CPP/reference/multi-renderer

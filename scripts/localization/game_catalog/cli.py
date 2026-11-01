@@ -197,7 +197,7 @@ def _build_from_args(args: argparse.Namespace):
             )
         if Path(font_metrics["inputs"]["source_root"]).resolve() != Path.cwd().resolve():
             raise GameCatalogError("selected compilation context uses a different engine root")
-    return build_game_catalog(
+    build = build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
         ja_indexed_path=args.ja_indexed,
@@ -218,6 +218,15 @@ def _build_from_args(args: argparse.Namespace):
         suffix_share=_suffix_share(args),
         font_metrics=font_metrics,
     )
+    if args.compile_context is not None:
+        with TemporaryDirectory(prefix="selected-text-catalog-") as directory:
+            staged = Path(directory)
+            write_build(build, output_dir=staged)
+            validate_compiled_references(
+                args.compile_context, target_count=build.target_count,
+                generated_catalog_dir=staged,
+            )
+    return build
 
 
 def _enabled_locales(args: argparse.Namespace):
@@ -540,8 +549,6 @@ def cmd_check_leakage(args: argparse.Namespace) -> int:
 
 def cmd_check_width(args: argparse.Namespace) -> int:
     build = _build_from_args(args)
-    if args.compile_context is not None:
-        validate_compiled_references(args.compile_context, target_count=build.target_count)
     validation = build.report.get("width_validation")
     if not isinstance(validation, dict):
         raise GameCatalogError(
