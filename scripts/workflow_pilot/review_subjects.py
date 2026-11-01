@@ -355,6 +355,11 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
                 "project-life:" + role, (PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"))
         for role in review.FAMILIES["wire"]:
             inputs = {PROJECT_SCHEMA_INPUTS, PROJECT_REGISTRY}
+            if role != "producers":
+                inputs.update({
+                    "scripts/generated_data/chapterbundle/schema.py",
+                    "scripts/assets/tmx.py",
+                })
             if role == "producers":
                 inputs = {PROJECT_DECLARATION, PROJECT_CONFIG, "config.mk"}
             elif role == "stale-bindings":
@@ -415,7 +420,13 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         result = [replace(
             member, execution_inputs=tuple(sorted(
                 set(closure) | (generated_inputs if member.family == "generated"
-                               else resource_inputs if member.family == "resource" else set())
+                               else resource_inputs if member.family == "resource"
+                               else {
+                                   "src/data/chapter_settings.json", "src/data/data_8B363C.c",
+                                   "assets/tmx/Ch2Map.tmx", "graphics/map/layout/Ch1Map.mar",
+                                   "graphics/map/layout/Ch1Map.json",
+                               } if member.family == "wire" and member.role != "producers"
+                               else set())
             )),
         ) for member in result]
     elif spec.model == "authored-case":
@@ -787,6 +798,8 @@ def _project(probe):
             checks += 2
         else:
             raise review.ReviewError("unknown direct project wire probe")
+        if role != "producers":
+            checks += _project_map_dimensions(root, project)
     elif family == "project-life":
         def default_identity():
             return config.load_identity(
@@ -935,6 +948,69 @@ def _project(probe):
         raise review.ReviewError("unknown direct project probe")
     return {"kind": "host", "checks": checks,
             "detail": "real project declaration/identity functions executed; no compiler/ROM claim"}
+
+
+def _project_map_dimensions(root, project):
+    import shutil
+    from scripts.generated_data.chapterbundle.schema import read_chapter_map_dimensions
+    from scripts.generated_data.diagnostics import GeneratedDataError
+
+    checks = 0
+    manifest = project / "selected-map-assets.json"
+    for kind, chapter, symbol, original_sources, expected in (
+        ("tiled-tmx-map-layout", 2, "Ch2Map", ("assets/tmx/Ch2Map.tmx",), (15, 15)),
+        ("chapter-map-layout", 1, "Ch1Map",
+         ("graphics/map/layout/Ch1Map.mar", "graphics/map/layout/Ch1Map.json"), (15, 10)),
+    ):
+        sources = []
+        for original in original_sources:
+            target = project / Path(original).name
+            shutil.copyfile(root / original, target)
+            sources.append(target.relative_to(root).as_posix())
+        asset = {
+            "id": "SELECTED_MAP", "kind": kind, "sources": sources,
+            "ownership": {"symbol": symbol},
+            "resources": {"mapWidth": expected[0], "mapHeight": expected[1]},
+        }
+
+        def read():
+            manifest.write_text(json.dumps({"assets": [asset]}))
+            return read_chapter_map_dimensions(
+                chapter, chapter_settings_path=str(root / "src/data/chapter_settings.json"),
+                asset_table_path=str(root / "src/data/data_8B363C.c"),
+                asset_manifest_path=str(manifest), require_manifest=True,
+            )
+
+        def reject():
+            nonlocal checks
+            try:
+                read()
+            except GeneratedDataError:
+                checks += 1
+                return
+            raise ContractViolation("invalid selected map source/dimensions were accepted")
+
+        try:
+            observed = read()
+        except GeneratedDataError as error:
+            raise ContractViolation("valid selected " + kind + " was rejected") from error
+        check(observed == expected, "selected map kind lost its actual source dimensions")
+        checks += 1
+        asset["resources"]["mapWidth"] += 1
+        reject()
+        asset["resources"]["mapWidth"] -= 1
+        source = root / sources[-1]
+        original = source.read_bytes()
+        try:
+            source.write_bytes(b"not an authored map\n")
+            reject()
+            source.unlink()
+            reject()
+        finally:
+            source.write_bytes(original)
+        asset["sources"] = []
+        reject()
+    return checks
 
 
 def _project_resources(role, root, project):

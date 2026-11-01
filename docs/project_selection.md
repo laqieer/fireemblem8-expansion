@@ -119,7 +119,10 @@ Selected text production follows the actual parser's transitive includes,
 including non-`.txt` files. Its content-stable writer preserves C/header
 modification times on an unchanged run; no second include scanner is used.
 Objective bounds and their dependency discovery use the effective selected
-asset manifest and its TMX sources rather than stock map dimensions.
+asset manifest and the owning provider: TMX dimensions for
+`tiled-tmx-map-layout`, or the associated JSON dimensions for the ordered
+MAR/JSON `chapter-map-layout`. Both must agree with the manifest; malformed,
+missing or stale selected sources fail rather than fall back to stock bounds.
 The existing generated-data and ACTIVE CLI interfaces accept
 `--asset-manifest PATH`; `SchemaInputs.asset_manifest` keeps that binding
 invocation-local and does not change cached default schemas.
@@ -348,7 +351,11 @@ project outputs and fixtures. They do not modify the contributor's index.
    Recursive runtime/budget consumers must name the same private namespace as
    their producers; derived directory overrides reject while tool inputs remain
    allowed. Resizing the selected map from **15x15 to 1x1** rejects out-of-map
-   objective areas and preserves previous generated C. Corrupting an inherited
+   objective areas and preserves previous generated C.
+   The supported selected Ch1 MAR/JSON provider resolves to **15x10**, while
+   Ch2 TMX resolves to **15x15**; malformed selected metadata and dimensions
+   that disagree with the manifest reject without using stock fallback.
+   Corrupting an inherited
    JA or ZH catalog rejects even with another locale replaced; a stale unused
    default JA catalog does not block its valid explicit replacement.
    A fresh selected leakage check creates its own zero-unapproved report
