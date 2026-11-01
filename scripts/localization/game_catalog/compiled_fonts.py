@@ -213,7 +213,12 @@ def read_localized_widths(
 
 
 def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedFontMetrics:
-    context = json.loads(Path(context_path).read_text(encoding="utf-8"))
+    try:
+        context = json.loads(Path(context_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CompiledFontError(
+            f"{context_path}: selected compilation context is unreadable or malformed: {error}"
+        ) from error
     if (not isinstance(context, dict) or type(context.get("schema_version")) is not int
             or context["schema_version"] != 1 or context.get("kind") != "fe8-selected-text-inputs"
             or not isinstance(context.get("source_root"), str)

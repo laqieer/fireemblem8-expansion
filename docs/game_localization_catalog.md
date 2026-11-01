@@ -100,6 +100,8 @@ input for width, Talk and fixed-name checks. It uses actual compiler-emitted
 layout and locale facts and the selected linker; missing objects, fonts,
 styles or locales fail explicitly, without stock fallback. Private measurement
 outputs are temporary, not declared inputs or serialized report identities.
+Unreadable, non-UTF-8 or malformed JSON contexts report a path-qualified CLI
+error without a traceback or replacement of previously generated output.
 Omitting the option retains the standalone stock-font authoring path; that
 path is not proof of a project's selected compiler/font context.
 

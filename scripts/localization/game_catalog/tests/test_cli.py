@@ -68,6 +68,28 @@ class CliTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(output.read_bytes(), b"existing descriptor\n")
 
+    def test_bad_compile_context_reports_an_error_without_publishing(self):
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            output = root / "output"
+            output.mkdir()
+            sentinel = output / "game_localization_report.json"
+            sentinel.write_bytes(b"previous output\n")
+            for name, payload in (("bad-json", b"{bad"), ("bad-utf8", b"\xff")):
+                with self.subTest(name=name):
+                    context = root / (name + ".json")
+                    context.write_bytes(payload)
+                    result = run_cli([
+                        "generate", "--out-dir", str(output),
+                        "--compile-context", str(context),
+                    ])
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn("error:", result.stdout)
+                    self.assertIn(str(context), result.stdout)
+                    self.assertNotIn("Traceback", result.stdout)
+                    self.assertEqual(sentinel.read_bytes(), b"previous output\n")
+                    self.assertEqual(list(output.iterdir()), [sentinel])
+
     def test_validate_reports_committed_counts(self):
         result = run_cli(["validate"])
         self.assertEqual(result.returncode, 0, result.stdout)
