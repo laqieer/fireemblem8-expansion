@@ -1,8 +1,11 @@
 import json
+import os
+import shlex
 import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from scripts.modernize.tests.make_database import make_database_variable
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -19,6 +22,56 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
     def tearDown(self):
         if BUILD_ROOT.exists():
             shutil.rmtree(BUILD_ROOT)
+
+    def test_native_catalog_owns_its_profile_context_and_font_prerequisites(self):
+        build_root = BUILD_ROOT / "native-catalog"
+        for config in ("debug", "release"):
+            with self.subTest(config=config):
+                settings = [
+                    "NODEP=1", "MODERN_DRY_RUN=1", "FE8_PROJECT=default",
+                    f"MODERN_BUILD_ROOT={build_root}", f"MODERN_CONFIG={config}",
+                    "EXPANSION_ENABLED_LOCALES=en,ja", "MODERN_ROM_SIZE=32M",
+                ]
+                database = subprocess.run(
+                    ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "-pn",
+                     *settings, "native-catalog-query"],
+                    input="native-catalog-query:\n\t@:\n", cwd=ROOT,
+                    capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(database.returncode, 0, database.stdout + database.stderr)
+                namespace = build_root / config / "aapcs"
+                generated = namespace / "game-localization/generated"
+                self.assertEqual(
+                    make_database_variable(database.stdout, "MODERN_GAME_LOCALIZATION_GENERATED_DIR"),
+                    str(generated),
+                )
+                context = namespace / "selected-text-inputs.json"
+                source = generated / "game_localization_catalog.c"
+                dependencies = set()
+                for line in database.stdout.splitlines():
+                    target, separator, prerequisites = line.partition(":")
+                    if separator and target == str(source):
+                        dependencies.update(prerequisites.split())
+                self.assertTrue({
+                    str(context), str(namespace / "src/fontgrp-data.o"),
+                    str(namespace / "src/data/localized_font_data.o"),
+                } <= dependencies, dependencies)
+                planned = subprocess.run(
+                    ["make", "--no-print-directory", "-n", *settings, str(source)],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+                invocations = [
+                    shlex.split(line)
+                    for line in planned.stdout.replace("\\\n", " ").splitlines()
+                    if "scripts.localization.game_catalog generate" in line
+                ]
+                self.assertEqual(len(invocations), 1)
+                arguments = invocations[0]
+                self.assertEqual(
+                    arguments[arguments.index("--compile-context") + 1], str(context),
+                )
+                self.assertEqual(arguments[arguments.index("--out-dir") + 1], str(generated))
 
     def _metadata_for(
         self,
@@ -59,7 +112,7 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
 
     def _generated_catalog_for(self, name, enabled_locales):
         build_root = BUILD_ROOT / name
-        generated_dir = build_root / "game-localization" / "generated"
+        generated_dir = build_root / "debug/aapcs/game-localization/generated"
         source_path = generated_dir / "game_localization_catalog.c"
         result = subprocess.run(
             [
@@ -143,6 +196,8 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
         )
 
     def test_modern_generation_passes_the_selected_catalog_profile(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is required for native catalog generation")
         ja = self._generated_catalog_for("catalog-ja", "en,ja")
         zh = self._generated_catalog_for("catalog-zh", "en,zh-Hans")
         both = self._generated_catalog_for(

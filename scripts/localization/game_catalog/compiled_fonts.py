@@ -21,8 +21,6 @@ class SelectedFontInputs(TypedDict):
     source_root: str
     renderer_object: str
     font_objects: tuple[str, str]
-    layout_object: str
-    relocated_font_object: str
     locale_mask: int
 
 
@@ -313,8 +311,6 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
             "font_objects": (
                 str(source_root / font["object"]), str(source_root / localized["object"]),
             ),
-            "layout_object": str(layout_path),
-            "relocated_font_object": str(font_path),
             "locale_mask": mask,
         },
     }

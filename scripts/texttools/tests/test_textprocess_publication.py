@@ -255,6 +255,28 @@ class TextPublicationTests(unittest.TestCase):
         self.assertEqual(self.pair(), previous)
         self.assert_no_staging()
 
+    def test_generated_header_names_cannot_be_authored_message_symbols(self):
+        self.source.write_text("## MSG_COUNTED\nA[X]\n", encoding="utf-8")
+        self.generate()
+        observed = subprocess.run(
+            [self.cc, "-E", "-P", "-x", "c", "-"],
+            input=f'#include "{self.header}"\nMSG_COUNT MSG_COUNTED\n',
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(observed.returncode, 0, observed.stderr)
+        self.assertEqual([int(value, 0) for value in observed.stdout.split()], [1, 0])
+        previous = self.pair()
+        for symbol in ("MSG_COUNT", "MSG_H"):
+            with self.subTest(symbol=symbol):
+                self.source.write_text(f"## {symbol}\nB[X]\n", encoding="utf-8")
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments()],
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.pair(), previous)
+                self.assert_no_staging()
+
     def test_direct_writer_control_exposes_partial_header_and_data_to_real_readers(self):
         self.seed()
         self.inputs(5000)

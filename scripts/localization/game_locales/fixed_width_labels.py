@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Dict, Mapping, Sequence, Tuple
 
 from scripts.generated_data.diagnostics import GeneratedDataError
 from scripts.generated_data.schema import SchemaInputs
+from scripts.localization.legacy_spacing import LEGACY_SJIS_SPACE_SCALAR
 
 from .ending_metrics import (
     EndingLayoutError,
@@ -312,6 +313,7 @@ def _records(
     allocation_pixels: int,
     ascii_widths: Mapping[int, int],
     cjk_widths: Mapping[int, int],
+    payload_widths: Mapping[int, int] | None = None,
 ) -> Tuple[Dict[str, Any], ...]:
     target_set = set(target_ids)
     stale_aliases = sorted(set(aliases) - target_set)
@@ -323,7 +325,7 @@ def _records(
 
     records = []
     overflow_ids = set()
-    display_to_targets: Dict[str, list[int]] = {}
+    display_to_targets: Dict[Tuple[str, int], list[int]] = {}
     for target_id in target_ids:
         canonical = payloads.get(target_id)
         if not isinstance(canonical, str) or not canonical:
@@ -331,11 +333,15 @@ def _records(
                 f"{locale}/{surface}: 0x{target_id:04X} has no final payload"
             )
         try:
-            canonical_width = _line_width(
-                canonical,
-                locale=locale,
-                ascii_widths=ascii_widths,
-                cjk_widths=cjk_widths,
+            canonical_width = (
+                payload_widths[target_id]
+                if payload_widths is not None and target_id in payload_widths
+                else _line_width(
+                    canonical,
+                    locale=locale,
+                    ascii_widths=ascii_widths,
+                    cjk_widths=cjk_widths,
+                )
             )
         except EndingLayoutError as error:
             raise FixedWidthLabelError(
@@ -357,7 +363,7 @@ def _records(
             )
         display = alias if alias is not None else canonical
         try:
-            display_width = _line_width(
+            display_width = canonical_width if alias is None else _line_width(
                 display,
                 locale=locale,
                 ascii_widths=ascii_widths,
@@ -372,7 +378,7 @@ def _records(
                 f"{locale}/{surface}/0x{target_id:04X}: display width "
                 f"{display_width}px exceeds {allocation_pixels}px"
             )
-        display_to_targets.setdefault(display, []).append(target_id)
+        display_to_targets.setdefault((display, display_width), []).append(target_id)
         records.append(
             {
                 "alias_applied": alias is not None,
@@ -388,15 +394,15 @@ def _records(
             f"{locale}/{surface}: alias set does not exactly match overflows"
         )
     collisions = {
-        text: targets
-        for text, targets in display_to_targets.items()
+        display: targets
+        for display, targets in display_to_targets.items()
         if len(targets) > 1 and any(target in aliases for target in targets)
     }
     if collisions:
         detail = "; ".join(
-            f"{text!r}="
+            f"{text!r}@{width}px="
             + ",".join(f"0x{target_id:04X}" for target_id in targets)
-            for text, targets in sorted(collisions.items())
+            for (text, width), targets in sorted(collisions.items())
         )
         raise FixedWidthLabelError(
             f"{locale}/{surface}: compact display aliases collide: {detail}"
@@ -488,6 +494,7 @@ def build_fixed_width_label_metrics(
             )
             payloads = localized_payloads[locale]
             effective_payloads = {}
+            payload_widths = {}
             for target in target_ids:
                 payload = payloads.get(target)
                 if payload is None and fallback_payloads is not None:
@@ -521,9 +528,22 @@ def build_fixed_width_label_metrics(
                         raise FixedWidthLabelError(
                             f"name 0x{target:04X}: line controls are unsupported in fixed labels"
                         )
-                    payload = "".join(
-                        chr(token.scalar) for token in tokens
+                    from .width_contract import TextWidthContractError, WidthMetrics, _scalar_width
+
+                    scalars = tuple(
+                        token.scalar for token in tokens
                         if token.kind == "scalar" and token.scalar is not None
+                    )
+                    try:
+                        metrics = WidthMetrics(locale, "system", ascii_widths, cjk_widths)
+                        payload_widths[target] = sum(
+                            _scalar_width(scalar, metrics) for scalar in scalars
+                        )
+                    except TextWidthContractError as error:
+                        raise FixedWidthLabelError(f"name 0x{target:04X}: {error}") from error
+                    payload = "".join(
+                        "\u3000" if scalar == LEGACY_SJIS_SPACE_SCALAR else chr(scalar)
+                        for scalar in scalars
                     )
                 effective_payloads[target] = payload
             scoped_aliases = parsed_aliases[locale][surface]
@@ -541,6 +561,7 @@ def build_fixed_width_label_metrics(
                 allocation_pixels=specification["allocation_pixels"],
                 ascii_widths=ascii_widths,
                 cjk_widths=cjk_widths,
+                payload_widths=payload_widths,
             )
             alias_count = sum(record["alias_applied"] for record in records)
             total_aliases += alias_count

@@ -496,6 +496,9 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(metrics["localized"], {
             "ja": {"system": {0x4E00: 13}, "talk": {0x4E8C: 7}},
         })
+        self.assertEqual(
+            metrics, measure_selected_fonts(context, output_dir=output / "second-metrics"),
+        )
         from scripts.localization.game_locales.fixed_width_labels import (
             FixedWidthLabelError, build_fixed_width_label_metrics,
         )
@@ -510,6 +513,70 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 ROOT, localized_payloads={"ja": {530: name * 4 + b"\0"}},
                 fallback_payloads={530: b"A\0"}, font_metrics=metrics,
             )
+        texts = self.project / "native-texts.txt"
+        definitions = self.project / "native-definitions.txt"
+        header = self.project / "native-msg.h"
+        texts.write_text(
+            "".join(f"## MSG_NATIVE_FONT_{index}\nA[X]\n" for index in range(3)),
+            encoding="ascii",
+        )
+        definitions.write_text("[X] = 0\n", encoding="ascii")
+        generated = subprocess.run(
+            [
+                sys.executable, "-B", str(ROOT / "scripts/texttools/textprocess.py"),
+                str(texts), str(definitions), str(self.project / "native-msg.c"), str(header),
+                "utf8",
+            ],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
+        mapping = self.project / "native-mapping.json"
+        mapping.write_text(json.dumps({
+            "schema_version": 2, "kind": "fe8u-locale-mapping",
+            "authority": "verified", "authoritative": True, "locale_ids": ["ja", "zh-Hans"],
+            "note": "Original bounded native-font fixture, not a full-game project.",
+            "rows": [{
+                "target_id": f"0x{index:04X}", "state": "verified",
+                "source": {"kind": "authored", "translation_key": f"font-{index}"},
+                "verification": {
+                    "method": "authored-fixture", "evidence": "original native font fixture",
+                    "evidence_kind": "fixture", "source_table": "native font fixture",
+                    "source_symbol": f"MSG_NATIVE_FONT_{index}", "source_key": f"0x{index:04X}",
+                    "subsystem": "compiler-font fixture", "rationale": "original test input",
+                    "confidence": "high",
+                },
+            } for index in range(3)],
+        }), encoding="utf-8")
+        authored = self.project / "native-authored.ja.json"
+        catalog = {
+            "kind": "fe8u-game-authored-catalog", "locale": "ja",
+            "strings": {f"font-{index}": "一" * 18 for index in range(3)},
+        }
+        authored.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+        authored_zh = self.project / "native-authored.zh-Hans.json"
+        authored_zh.write_text(
+            json.dumps({**catalog, "locale": "zh-Hans"}, ensure_ascii=False), encoding="utf-8",
+        )
+        command = [
+            sys.executable, "-B", "-m", "scripts.localization.game_catalog", "check-width",
+            "--english-texts", str(texts), "--english-definitions", str(definitions),
+            "--target-header", str(header), "--mapping", str(mapping),
+            "--event-root", str(self.project), "--enabled-locales", "ja",
+            "--authored", f"ja={authored}", "--authored", f"zh-Hans={authored_zh}",
+            "--compile-context", str(context),
+        ]
+        accepted = subprocess.run(
+            command, cwd=ROOT, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn("inserted=0", accepted.stdout)
+        catalog["strings"]["font-1"] = "一" * 19
+        authored.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+        reflowed = subprocess.run(
+            command, cwd=ROOT, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(reflowed.returncode, 0, reflowed.stdout + reflowed.stderr)
+        self.assertIn("inserted=1", reflowed.stdout)
         self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
         self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
 

@@ -327,7 +327,7 @@ def main(args):
     control_chars = load_control_chars(input_parse_ref)
     messages = process_file(input_fpath, control_chars, encoding_method)
     allocated_ids = set()
-    allocated_names = set()
+    allocated_names = {"MSG_H", "MSG_COUNT"}
     for position, message in enumerate(messages):
         if message.idx in allocated_ids:
             sys.exit(f"{input_fpath}: duplicate message allocation 0x{message.idx:04X}")

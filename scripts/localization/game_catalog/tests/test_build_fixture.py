@@ -12,10 +12,15 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_catalog.build import build_game_catalog, write_build
 from scripts.localization.game_catalog.model import GameCatalogError
+from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
 from scripts.generated_data.schema import SchemaInputs
 from scripts.localization.game_locales.width_contract import (
     DEFAULT_WIDTH_REGISTRY_PATH,
     load_width_registry,
+)
+from scripts.localization.game_locales.fixed_width_labels import (
+    FixedWidthLabelError,
+    build_fixed_width_label_metrics,
 )
 
 
@@ -341,6 +346,53 @@ class FixtureBuildTests(unittest.TestCase):
             "ja_raw_expected_repository": None,
             "ja_raw_expected_revision": None,
         }
+
+    def test_selected_font_metrics_reach_final_catalog_width_validation(self):
+        inputs = self.selected_inputs()
+        inputs.update(event_root_path=self.fixture_dir, enabled_locales=("ja",))
+        metrics: SelectedFontMetrics = {
+            "ascii": {
+                "system": {scalar: 20 for scalar in range(0x20, 0x7F)},
+                "talk": {scalar: 1 for scalar in range(0x20, 0x7F)},
+            },
+            "localized": {
+                "ja": {
+                    style: {ord("日"): 13, ord("生"): 7}
+                    for style in ("system", "talk")
+                },
+            },
+            "inputs": {
+                "compiler_context": "fixture-only-not-native-evidence",
+                "source_root": str(ROOT),
+                "renderer_object": "fixture-renderer",
+                "font_objects": ("fixture-font", "fixture-localized-font"),
+                "locale_mask": 3,
+            },
+        }
+        build = build_game_catalog(**inputs, font_metrics=metrics)
+        self.assertEqual(build.report["width_validation"]["ja"]["max_line_width"], 236)
+        self.assertIsNone(build.locales[0].entries[2].encoded_bytes)
+        metrics["ascii"]["system"] = {scalar: 24 for scalar in range(0x20, 0x7F)}
+        with self.assertRaisesRegex(GameCatalogError, "280px"):
+            build_game_catalog(**inputs, font_metrics=metrics)
+
+    def test_selected_name_keeps_legacy_space_distinct_from_ideographic_space(self):
+        def measure(payload):
+            return build_fixed_width_label_metrics(
+                ROOT, localized_payloads={"ja": {530: payload}},
+                fallback_payloads={530: b"A\0"},
+            )
+
+        measured = measure(b"AAA\x81\x40AAA\0")
+        records = measured["locales"]["ja"]["surfaces"]["character_name_40"]["records"]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["canonical_width"], 36)
+        self.assertEqual(records[0]["display_width"], 36)
+        self.assertFalse(records[0]["alias_applied"])
+        with self.assertRaisesRegex(FixedWidthLabelError, "41px"):
+            measure(b"AAAA\x81\x40AAA\0")
+        with self.assertRaisesRegex(FixedWidthLabelError, "46px"):
+            measure(b"AAA" + "\u3000".encode("utf-8") + b"AAA\0")
 
     def test_selected_typed_name_sources_enforce_every_narrow_surface(self):
         inputs = self.selected_inputs()

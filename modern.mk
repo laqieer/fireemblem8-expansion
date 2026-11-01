@@ -555,7 +555,7 @@ MODERN_GAME_LOCALIZATION_AVAILABLE := $(and \
 	$(wildcard texts/locales/fixed_width_display_aliases.json),\
 	$(wildcard texts/locales/mapping/fe8u_target_map.json),\
 	$(wildcard texts/locales/mapping/fe8eu_to_fe8u.json))
-MODERN_GAME_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/game-localization,$(MODERN_BUILD_ROOT)/game-localization)
+MODERN_GAME_LOCALIZATION_ROOT := $(MODERN_OUTPUT_DIR)/game-localization
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated
 MODERN_GAME_LOCALIZATION_CONFIG_H := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/localized_game_text_data.h
 MODERN_GAME_LOCALIZATION_HEADER := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_catalog.h
@@ -595,6 +595,7 @@ endif
 
 MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.o))
 MODERN_TEXT_COMPILE_CONTEXT := $(MODERN_OUTPUT_DIR)/selected-text-inputs.json
+MODERN_TEXT_FONT_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,src/fontgrp-data.o src/data/localized_font_data.o)
 MODERN_TEXT_INPUT_REQUESTED := $(filter $(MODERN_OUTPUT_DIR)/%.text-input.json $(MODERN_TEXT_COMPILE_CONTEXT),$(MAKECMDGOALS))
 modern_compile_family = $(1) $(filter $(MODERN_ALL_C_HEADER_DEPS),$(patsubst %.o,%.headers.d,$(1)))
 
@@ -1002,6 +1003,8 @@ $(foreach source,$(MODERN_ALL_C_SOURCES),$(eval $(call MODERN_TEXT_INPUT_RULE,$(
 $(foreach source,$(MODERN_ALL_DATA_C_SOURCES),$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/$(source:.c=.o),$(source),$(call modern_c_source,$(source)),$(MODERN_OUTPUT_DIR)/$(source:.c=.pre.c),1)))
 
 expansion-modern-text-inputs: $(MODERN_TEXT_COMPILE_CONTEXT)
+
+$(MODERN_TEXT_FONT_OBJECTS): $(MODERN_TEXT_COMPILE_CONTEXT)
 
 $(MODERN_TEXT_COMPILE_CONTEXT): FORCE
 	@mkdir -p "$(@D)"
@@ -2542,10 +2545,12 @@ $(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER) \
 $(MODERN_GAME_LOCALIZATION_C) $(MODERN_GAME_LOCALIZATION_REPORT_JSON) \
 $(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION \
 	$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+	$(MODERN_TEXT_COMPILE_CONTEXT) $(MODERN_TEXT_FONT_OBJECTS) graphics/debug_font.4bpp.h \
 	$(FE8_PROJECT_GAME_INPUTS) $(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)"
 	@python3 -m scripts.localization.game_catalog generate \
 		$(FE8_PROJECT_GAME_ARGS) \
+		--compile-context "$(MODERN_TEXT_COMPILE_CONTEXT)" \
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 
@@ -4907,10 +4912,19 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
 ifeq ($(MODERN_CONFIG),debug)
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
+		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
 		"$(PYTHON)" -m unittest \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compile_context_plans_all_c_slots_once_without_catalog_build \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compiled_font_metrics_use_real_private_include_and_macro_context \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_cjk_metrics_use_compiled_counts_widths_and_enabled_locale \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_metrics_resolve_glyphs_across_both_native_font_slots \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_default_english_resolver_compiles_with_source_only_declarations \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_pseudo_locale_metrics_keep_the_native_latin_path_without_an_atlas \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_cjk_font_compiles_before_measured_game_catalog \
+		scripts.localization.game_catalog.tests.test_modern_integration.ModernGameLocalizationIntegrationTests.test_modern_generation_passes_the_selected_catalog_profile \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL -u GBA_PLAYTEST_HOST_ONLY \

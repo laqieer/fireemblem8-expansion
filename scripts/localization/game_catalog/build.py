@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from scripts.generated_data.schema import SchemaInputs
 
@@ -99,6 +99,9 @@ from .control_streams import (
     validate_final_payload,
     validate_substitution_bounds,
 )
+
+if TYPE_CHECKING:
+    from .compiled_fonts import SelectedFontMetrics
 
 DEFAULT_ENGLISH_TEXTS_PATH = Path("texts/texts.txt")
 DEFAULT_ENGLISH_DEFINITIONS_PATH = Path("texts/textdefs.txt")
@@ -782,13 +785,16 @@ def _validate_final_catalog_payloads(
     english_entries,
     portrait_map,
     font_root_path: Path = Path("."),
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Dict[str, int]:
     totals = Counter()
     max_talk_line_width = 0
     validated_fallback_payload_count = 0
     for bundle in locale_bundles:
         try:
-            talk_metrics = load_talk_font_metrics(bundle.locale, repo_root=font_root_path)
+            talk_metrics = load_talk_font_metrics(
+                bundle.locale, repo_root=font_root_path, font_metrics=font_metrics,
+            )
         except ControlStreamError as error:
             raise GameCatalogError(str(error)) from error
         for entry in bundle.entries:
@@ -1278,6 +1284,7 @@ def build_game_catalog(
     portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
     portrait_root_path: Path = Path("."),
     font_root_path: Path = Path("."),
+    font_metrics: SelectedFontMetrics | None = None,
     schema_inputs: SchemaInputs | None = None,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
@@ -1359,6 +1366,7 @@ def build_game_catalog(
                 entry.target_id: entry.encoded_bytes for entry in english_entries
             },
             schema_inputs=schema_inputs,
+            font_metrics=font_metrics,
         )
     except (FixedWidthLabelError, ControlStreamError) as error:
         raise GameCatalogError(str(error)) from error
@@ -1394,6 +1402,7 @@ def build_game_catalog(
                     event_root=event_root_path,
                     message_ids=message_ids,
                     fixed_label_ids=fixed_label_ids,
+                    font_metrics=font_metrics,
                 )
                 entries = tuple(
                     replace(entry, encoded_bytes=payload)
@@ -1431,6 +1440,7 @@ def build_game_catalog(
         english_entries=english_entries,
         portrait_map=portrait_map,
         font_root_path=font_root_path,
+        font_metrics=font_metrics,
     )
     try:
         control_validation = validate_event_continuations(

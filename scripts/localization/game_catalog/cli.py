@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from scripts.generated_data.diagnostics import GeneratedDataError
 from scripts.generated_data.schema import SchemaInputs, parse_source_overrides
@@ -39,6 +40,7 @@ from .build import (
 )
 from .c_emitter import render_declarations
 from .constants import CJK_LOCALE_IDS, LOCALE_IDS
+from .compiled_fonts import measure_selected_fonts
 from .control_streams import DEFAULT_EVENT_ROOT
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
@@ -87,6 +89,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
     parser.add_argument("--source-override", action="append", metavar="TABLE=PATH")
     parser.add_argument("--event-root", type=Path, default=DEFAULT_EVENT_ROOT)
+    parser.add_argument(
+        "--compile-context", type=Path,
+        help="use font objects and native compiler inputs from the selected Make context",
+    )
     parser.add_argument("--eu-mapping", type=Path, default=DEFAULT_EU_MAPPING_PATH)
     parser.add_argument("--eu-indexed", action="append", metavar="LOCALE=PATH")
     parser.add_argument("--eu-authored", action="append", metavar="LOCALE=PATH")
@@ -182,6 +188,14 @@ def _build_from_args(args: argparse.Namespace):
     )
     if inherited:
         check_authored_catalogs(Path("."), locales=inherited)
+    font_metrics = None
+    if args.compile_context is not None:
+        with TemporaryDirectory(prefix="selected-text-font-") as directory:
+            font_metrics = measure_selected_fonts(
+                args.compile_context, output_dir=Path(directory),
+            )
+        if Path(font_metrics["inputs"]["source_root"]).resolve() != Path.cwd().resolve():
+            raise GameCatalogError("selected compilation context uses a different engine root")
     return build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
@@ -201,6 +215,7 @@ def _build_from_args(args: argparse.Namespace):
         authored_paths=authored_paths,
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),
+        font_metrics=font_metrics,
     )
 
 

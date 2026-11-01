@@ -86,6 +86,23 @@ Outputs are generated under `build/game-localization/generated/`:
 - `game_localization_latin_span_audit.json`: final materialized Latin/script/
   confusable/artifact audit with exact scope/locale/target approvals.
 
+Modern ROM catalogs instead live under the selected
+`MODERN_OUTPUT_DIR/game-localization/generated/`, including default-project
+debug/release and ABI dimensions. Their producer depends on the existing
+`selected-text-inputs.json` Make context and both selected font objects.
+Changes to that context also refresh the font objects, so target-private
+compiler flags cannot leave an older object paired with new planned inputs.
+The source-known declaration header and real debug-font resource permit font
+compilation before any measured catalog header is generated.
+
+The CLI's optional `--compile-context PATH` selects that same native font
+input for width, Talk and fixed-name checks. It uses actual compiler-emitted
+layout and locale facts and the selected linker; missing objects, fonts,
+styles or locales fail explicitly, without stock fallback. Private measurement
+outputs are temporary, not declared inputs or serialized report identities.
+Omitting the option retains the standalone stock-font authoring path; that
+path is not proof of a project's selected compiler/font context.
+
 Every present message is strict UTF-8 plus canonical engine control bytes and
 one trailing NUL. Each descriptor records both compressed byte length and
 exact meaningful bit length; the standalone NUL is the final Huffman symbol at
@@ -192,6 +209,8 @@ generation/leakage gate still rejects unmaterialized entries.
 2. Observe the owned three-message fixtures. An allocation/header symbol must
    retain its actual table position; missing, colliding, retired, reordered
    or gapped allocations reject before either public text output changes.
+   The generated header's `MSG_COUNT` and `MSG_H` names cannot be authored
+   message symbols; unrelated names such as `MSG_COUNTED` remain valid.
    Valid declarations with `[]` or an explicit bound both expose their event
    operands. Literal and selected-header popup/notify IDs are range-checked
    without becoming Talk continuation models. Signed dynamic event operands
@@ -228,6 +247,13 @@ real native display-alias lookup returns that generated alias for the 56px
 surface and refuses the 55px request, while canonical item lookup keeps the
 full localized name. This tests the alias lookup interface with explicit
 width inputs, not an entire rendered forecast screen.
+Fixed-name measurement keeps the legacy `81 40` space at six pixels,
+distinct from the native 16px Unicode U+3000 space. Its JSON display text
+uses a Unicode visual space, but widths are measured from the original
+tokens and canonical payload bytes are unchanged. The source fixture's
+six `A` glyphs plus legacy space occupy 36px; seven plus legacy space
+occupy 41px and require an alias on the 40px surface. The same six glyphs
+with genuine U+3000 occupy 46px and also reject without an alias.
 
 #### Negative control
 
@@ -253,10 +279,15 @@ cross-object glyph references, and pass the measured widths to the width,
 Talk and fixed-name interfaces. Private System/Talk widths 9/11 accept 234px
 and 231px examples but reject the next character. A selected Japanese
 System width of 13 accepts a 39px name and rejects 52px on the 40px surface.
+The real three-message CLI fixture retains 18 such glyphs at 234px without
+reflow; 19 glyphs require one inserted NL under the existing CJK wrapping
+policy. Repeating measurement in another private directory preserves the
+same metric/input facts. The final builder passes one supplied metric input
+to all three consumer families, rather than reloading stock widths.
 English source-only declarations and the pseudo locale's Latin-font path
 need no measured catalog or locale atlas. These are bounded compiler and
-consumer tracers, not completed production catalog/context integration,
-rendered pages, full-game profiles or release qualification.
+consumer observations, not complete selected CPP/reference/multi-renderer
+integration, rendered pages, full-game profiles or release qualification.
 
 #### Interactions and save compatibility
 
