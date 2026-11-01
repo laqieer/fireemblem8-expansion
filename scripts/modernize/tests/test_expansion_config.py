@@ -123,6 +123,367 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_selected_compile_descriptor_records_late_private_flags_without_catalog_build(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="text-trace-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        makefile = self.project / "trace.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            'MODERN_CFLAGS += -DTRACE_LATE_FLAG=1 -I"include with spaces"\n'
+            f"{output}/debug/aapcs/src/action_semantics.o: private MODERN_CFLAGS += -DTRACE_OBJECT_ONLY=1\n",
+            encoding="utf-8",
+        )
+        descriptor = output / "debug/aapcs/src/action_semantics.text-input.json"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile), str(descriptor),
+                f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                "FE8_PROJECT=default", "MODERN_CC=/missing/compiler with spaces",
+                "MODERN_SCANINC=/missing/scaninc",
+                f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        value = json.loads(descriptor.read_bytes())
+        self.assertEqual(value["logical_source"], "src/action_semantics.c")
+        self.assertEqual(value["selected_source"], "src/action_semantics.c")
+        self.assertEqual(value["compiler_input"], "src/action_semantics.c")
+        self.assertEqual(value["compiler_argv"][0], "/missing/compiler with spaces")
+        self.assertIn("-Os", value["compiler_argv"])
+        self.assertIn("-DTRACE_LATE_FLAG=1", value["compiler_argv"])
+        self.assertIn("-DTRACE_OBJECT_ONLY=1", value["compiler_argv"])
+        self.assertIn("-Iinclude with spaces", value["compiler_argv"])
+        self.assertEqual(value["preprocessor_argv"], [])
+        self.assertEqual(list(output.rglob("*.o")), [])
+        self.assertEqual(list(output.rglob("*.headers.d")), [])
+        self.assertEqual(list(output.rglob("*.assets.d")), [])
+        self.assertEqual(list(output.rglob("game_localization_*")), [])
+        self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+
+    def test_selected_data_descriptor_preserves_preprocessor_argv_and_private_layout(self):
+        source = self.project / "font.c"
+        source.write_text('#include "global.h"\n', encoding="utf-8")
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := fonts\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_FONT_REPLACEMENTS := src/data/localized_font_data.c={source.relative_to(ROOT)}\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        makefile = self.project / "data-trace.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            'MODERN_PREPROC_FLAGS := -i "charmap with spaces"\n'
+            "MODERN_CFLAGS += -DTRACE_LATE_DATA=1\n",
+            encoding="utf-8",
+        )
+        namespace = output / "primary/debug/aapcs"
+        descriptor = namespace / "src/data/localized_font_data.text-input.json"
+        normal = namespace / "src/action_semantics.text-input.json"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile),
+                str(descriptor.relative_to(ROOT)), str(normal.relative_to(ROOT)),
+                f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
+                "MODERN_CC=/missing/compiler with spaces",
+                "MODERN_PREPROC=/missing/preprocessor with spaces",
+                "MODERN_SCANINC=/missing/scaninc",
+                "MODERN_DATA_LAYOUT_FLAGS=-DTRACE_DATA_LAYOUT=1",
+                f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        value = json.loads(descriptor.read_bytes())
+        self.assertEqual(value["logical_source"], "src/data/localized_font_data.c")
+        self.assertEqual(value["selected_source"], str(source.relative_to(ROOT)))
+        self.assertEqual(
+            value["compiler_input"],
+            str((namespace / "src/data/localized_font_data.pre.c").relative_to(ROOT)),
+        )
+        self.assertEqual(value["preprocessor_argv"], [
+            "/missing/preprocessor with spaces", "-i", "charmap with spaces",
+            str(source.relative_to(ROOT)),
+        ])
+        self.assertIn("-DTRACE_DATA_LAYOUT=1", value["compiler_argv"])
+        self.assertIn("-DTRACE_LATE_DATA=1", value["compiler_argv"])
+        self.assertNotIn("-DTRACE_DATA_LAYOUT=1", json.loads(normal.read_bytes())["compiler_argv"])
+        self.assertEqual(list(output.rglob("*.pre.c")), [])
+        self.assertEqual(list(output.rglob("*.assets.d")), [])
+        self.assertEqual(list(output.rglob("game_localization_*")), [])
+
+    def test_generated_table_descriptor_keeps_its_reinstated_compile_slot(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="text-generated-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        makefile = self.project / "generated-trace.mk"
+        makefile.write_text(
+            "include Makefile\nMODERN_CFLAGS += -DTRACE_GENERATED_LATE=1\n",
+            encoding="utf-8",
+        )
+        descriptor = output / "debug/aapcs/src/data_items.text-input.json"
+        synthetic = output / "debug/aapcs/src/events_u-ch2units.text-input.json"
+        units = output / "generated/data/data_ch2_units.c"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile), str(descriptor), str(synthetic),
+                f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                "FE8_PROJECT=default", "MODERN_CC=/missing/compiler with spaces",
+                f"GENERATED_DATA_OUT_DIR={output / 'generated/data'}",
+                f"GENERATED_DATA_CH2_UNITS_C={units}",
+                "MODERN_SCANINC=/missing/scaninc", f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        value = json.loads(descriptor.read_bytes())
+        generated = output / "generated/data/data_items.c"
+        self.assertEqual(value["object"], str(output / "debug/aapcs/src/data_items.o"))
+        self.assertEqual(value["logical_source"], "src/data_items.c")
+        self.assertEqual(value["selected_source"], str(generated))
+        self.assertEqual(value["compiler_input"], str(generated))
+        self.assertEqual(value["preprocessor_argv"], [])
+        self.assertIn("-DTRACE_GENERATED_LATE=1", value["compiler_argv"])
+        added = json.loads(synthetic.read_bytes())
+        self.assertEqual(added["logical_source"], "src/events_u-ch2units.c")
+        self.assertEqual(added["selected_source"], str(units))
+        self.assertEqual(added["compiler_input"], str(units))
+        self.assertIn("-DTRACE_GENERATED_LATE=1", added["compiler_argv"])
+        self.assertEqual(added["preprocessor_argv"], [])
+        self.assertFalse(generated.exists())
+        self.assertFalse(units.exists())
+        self.assertEqual(list(output.rglob("game_localization_*")), [])
+
+    def test_compile_descriptor_inventory_matches_all_enabled_c_slots(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="text-inventory-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        for locales in ("en", "en,ja"):
+            with self.subTest(locales=locales):
+                output = Path(temporary.name) / locales.replace(",", "-")
+                result = subprocess.run(
+                    [
+                        "make", "--no-print-directory", "-pn", "expansion-modern-text-inputs",
+                        f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                        "MODERN_ROM_SIZE=32M",
+                        "FE8_PROJECT=default", f"EXPANSION_ENABLED_LOCALES={locales}",
+                        "EXPANSION_DEFAULT_LOCALE=en",
+                        "MODERN_CC=/missing/compiler", "MODERN_SCANINC=/missing/scaninc",
+                        f"PYTHON={sys.executable}",
+                    ],
+                    cwd=ROOT, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                objects = set()
+                for variable in ("MODERN_ALL_C_OBJECTS", "MODERN_ALL_DATA_OBJECTS"):
+                    value = make_database_variable(result.stdout, variable)
+                    self.assertIsNotNone(value, variable)
+                    objects.update(value.split())
+                descriptors = make_database_variable(
+                    result.stdout, "MODERN_TEXT_COMPILE_DESCRIPTORS",
+                )
+                self.assertIsNotNone(descriptors)
+                self.assertEqual(
+                    set(descriptors.split()),
+                    {path.removesuffix(".o") + ".text-input.json" for path in objects},
+                )
+                optional = str(output / "debug/aapcs/src/localized_game_text-catalog.o")
+                self.assertEqual(optional in objects, locales == "en,ja")
+                self.assertEqual(list(output.rglob("game_localization_*")), [])
+
+    def test_selected_compile_context_plans_all_c_slots_once_without_catalog_build(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="text-context-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        namespace = output / "debug/aapcs"
+        artifact = namespace / "selected-text-inputs.json"
+        counter = self.project / "make-calls"
+        wrapper = self.project / "native-make"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' call >> {shlex.quote(str(counter))}\n"
+            f'exec {shlex.quote(shutil.which("make"))} "$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+        makefile = self.project / "context.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            "MODERN_CFLAGS += -DTRACE_CONTEXT_LATE=1\n"
+            f"{namespace}/src/action_semantics.o: private MODERN_CFLAGS += -DTRACE_CONTEXT_OBJECT=1\n",
+            encoding="utf-8",
+        )
+        settings = [
+            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug", "FE8_PROJECT=default",
+            "MODERN_ROM_SIZE=32M", "EXPANSION_ENABLED_LOCALES=en,ja",
+            "MODERN_CC=/missing/compiler with spaces",
+            "MODERN_PREPROC=/missing/preprocessor with spaces", "MODERN_SCANINC=/missing/scaninc",
+            f"PYTHON={sys.executable}", f"MAKE={wrapper}",
+        ]
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-f", str(makefile), str(artifact), *settings],
+            cwd=ROOT, text=True, capture_output=True, check=False, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        context = json.loads(artifact.read_bytes())
+        self.assertEqual(context["kind"], "fe8-selected-text-inputs")
+        self.assertEqual(counter.read_text().splitlines(), ["call"])
+        database = subprocess.run(
+            ["make", "--no-print-directory", "-f", str(makefile), "-pn", str(artifact), *settings],
+            cwd=ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertEqual(database.returncode, 0, database.stderr)
+        expected = set()
+        for variable in ("MODERN_ALL_C_OBJECTS", "MODERN_ALL_DATA_OBJECTS"):
+            expected.update(make_database_variable(database.stdout, variable).split())
+        self.assertEqual({unit["object"] for unit in context["units"]}, expected)
+        units = {unit["logical_source"]: unit for unit in context["units"]}
+        self.assertIn("-DTRACE_CONTEXT_OBJECT=1", units["src/action_semantics.c"]["compiler_argv"])
+        self.assertTrue(all("-DTRACE_CONTEXT_LATE=1" in unit["compiler_argv"]
+                            for unit in context["units"]))
+        self.assertTrue(all(unit["preprocessor_argv"] for unit in context["units"]
+                            if unit["logical_source"].startswith("src/data/")))
+        self.assertEqual(list(output.rglob("*.o")), [])
+        self.assertEqual(list(output.rglob("*.pre.c")), [])
+        self.assertEqual(list(output.rglob("*.headers.d")), [])
+        self.assertEqual(list(output.rglob("game_localization_*")), [])
+
+    def test_selected_compiled_font_metrics_use_real_private_include_and_macro_context(self):
+        compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
+        if shutil.which(compiler) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="selected-font-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        headers = self.project / "headers"
+        glyphs = headers / "src/data/fonts"
+        glyphs.mkdir(parents=True)
+        for number, style, width in ((1, "System", "SELECTED_FONT_WIDTH"), (2, "Talk", "11")):
+            (glyphs / f"glyphs_{number}.h").write_text(
+                f"struct Glyph sSelected{style} = {{0, 0, {width}, {{0}}}};\n"
+                f"struct Glyph *TextGlyphs_{style}[128] = {{\n"
+                f"    [63] = &sSelected{style}, [65] = &sSelected{style}\n"
+                "};\n",
+                encoding="ascii",
+            )
+        namespace = output / "debug/aapcs"
+        makefile = self.project / "selected-font.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            f"{namespace}/src/fontgrp-data.o: private MODERN_CFLAGS := "
+            f"-I{headers} $(MODERN_CFLAGS) -DSELECTED_FONT_WIDTH=9\n",
+            encoding="utf-8",
+        )
+        context = namespace / "selected-text-inputs.json"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile), str(context),
+                "graphics/debug_font.4bpp.h", "NODEP=1",
+                str(namespace / "src/fontgrp-data.o"), str(namespace / "src/fontgrp.o"),
+                f"MODERN_BUILD_ROOT={output}",
+                "MODERN_CONFIG=debug", "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en",
+                f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+        metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+        self.assertEqual(metrics["ascii"], {
+            "system": {63: 9, 65: 9}, "talk": {63: 11, 65: 11},
+        })
+        self.assertEqual(metrics["localized"], {})
+        from scripts.localization.game_locales.width_contract import (
+            TextWidthContractError, apply_width_contract, load_width_registry,
+        )
+        events = self.project / "empty-events"
+        events.mkdir()
+        registry = load_width_registry(ROOT / "texts/locales/mapping/text_width_contexts.json")
+        payload = b"A" * 26 + b"\0"
+        wrapped, report = apply_width_contract(
+            repo_root=ROOT, locale="en", target_payloads=(payload,), registry=registry,
+            event_root=events, fixed_label_ids=(), font_metrics=metrics,
+        )
+        self.assertEqual(wrapped, (payload,))
+        self.assertEqual(report["max_line_width"], 234)
+        with self.assertRaises(TextWidthContractError):
+            apply_width_contract(
+                repo_root=ROOT, locale="en", target_payloads=(b"A" * 27 + b"\0",),
+                registry=registry, event_root=events, fixed_label_ids=(), font_metrics=metrics,
+            )
+        self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+        self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+
+    def test_selected_cjk_metrics_use_compiled_counts_widths_and_enabled_locale(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        source = self.project / "selected_cjk.c"
+        source.write_text(
+            '#include "global.h"\n#include "localized_font.h"\n'
+            "#if !FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED\n"
+            '#error "requires the actual selected CJK profile"\n'
+            "#endif\n"
+            "const u8 gLocalizedFontJaSystemCodepoints[] = {0, 0x4E, 0, 0};\n"
+            "const u8 gLocalizedFontJaSystemWidths[] = {SELECTED_CJK_WIDTH};\n"
+            "const u8 gLocalizedFontJaSystemBitmaps[LOCALIZED_FONT_BITMAP_STRIDE] = {0};\n"
+            "const u32 gLocalizedFontJaSystemGlyphCount = 1;\n"
+            "const u8 gLocalizedFontJaTalkCodepoints[] = {0x8C, 0x4E, 0, 0};\n"
+            "const u8 gLocalizedFontJaTalkWidths[] = {7};\n"
+            "const u8 gLocalizedFontJaTalkBitmaps[LOCALIZED_FONT_BITMAP_STRIDE] = {0};\n"
+            "const u32 gLocalizedFontJaTalkGlyphCount = 1;\n",
+            encoding="ascii",
+        )
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_primary_EXPANSION_ENABLED_LOCALES := en,ja\n"
+                "FE8_PROJECT_REPLACE := fonts\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_FONT_REPLACEMENTS := src/data/localized_font_data.c={source.relative_to(ROOT)}\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        namespace = output / "primary/debug/aapcs"
+        makefile = self.project / "selected-cjk.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            f"{(namespace / 'src/data/localized_font_data.o').relative_to(ROOT)}: "
+            "private MODERN_CFLAGS += -DSELECTED_CJK_WIDTH=13\n",
+            encoding="utf-8",
+        )
+        context = namespace / "selected-text-inputs.json"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile), "NODEP=1",
+                str(context.relative_to(ROOT)), "graphics/debug_font.4bpp.h",
+                str((namespace / "src/data/localized_font_data.o").relative_to(ROOT)),
+                str((namespace / "src/fontgrp-data.o").relative_to(ROOT)),
+                str((namespace / "src/fontgrp.o").relative_to(ROOT)),
+                f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
+                "EXPANSION_ENABLED_LOCALES=en,ja", f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+        metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+        self.assertEqual(metrics["localized"], {
+            "ja": {"system": {0x4E00: 13}, "talk": {0x4E8C: 7}},
+        })
+        self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+        self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+
     def test_project_default_profile_supplies_its_effective_settings(self):
         identity = ec.load_identity(
             ROOT / "config.mk",
@@ -1054,6 +1415,47 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 ROOT / "config.mk", config_preset="release", abi="apcs-gnu",
                 rom_size=None, repo_root=ROOT, project=self.project.name,
             )
+
+    @unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "ARM compiler required")
+    def test_selected_cjk_font_compiles_before_measured_game_catalog(self):
+        source = self.project / "bootstrap_font.c"
+        source.write_text(
+            '#include "global.h"\n'
+            "#if !FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED\n"
+            '#error "the font bootstrap probe requires the actual CJK profile"\n'
+            "#endif\n"
+            "const u8 gLocalizedFontJaSystemWidths[] = {9};\n",
+            encoding="utf-8",
+        )
+        with (self.project / "project.mk").open("a", encoding="utf-8") as stream:
+            stream.write(
+                "FE8_PROJECT_primary_EXPANSION_ENABLED_LOCALES := en,ja\n"
+                "FE8_PROJECT_REPLACE := fonts\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_FONT_REPLACEMENTS := src/data/localized_font_data.c={source.relative_to(ROOT)}\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        obj = output / "primary/release/aapcs/src/data/localized_font_data.o"
+        message = output / "primary/release/aapcs/src/msg.o"
+        resolver = output / "primary/release/aapcs/src/localized_game_text.o"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-s", "NODEP=1",
+                f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=release",
+                "EXPANSION_ENABLED_LOCALES=en,ja",
+                str(obj.with_suffix(".assets.d").relative_to(ROOT)),
+                str(obj.relative_to(ROOT)),
+                str(message.relative_to(ROOT)), str(resolver.relative_to(ROOT)),
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(obj.is_file())
+        self.assertTrue(message.is_file())
+        self.assertTrue(resolver.is_file())
+        self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+        self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
 
     @unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "ARM compiler required")
     def test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot(self):
@@ -3261,6 +3663,9 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
     def test_make_database_variable_collects_cflags_continuations(self):
         fixture = "\n".join(
             (
+                "define UNEXPANDED_RECIPE",
+                "MODERN_CFLAGS += not-a-resolved-flag",
+                "endef",
                 "MODERN_CFLAGS := -DFE8_EXPANSION_STARTER_CONTENT=1 \\",
                 "    -DFE8_ITEM_ID_CAP=0xCE",
                 "    recipe-must-not-be-part-of-the-variable",
@@ -3270,6 +3675,7 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
         cflags = make_database_variable(fixture, "MODERN_CFLAGS")
         self.assertIn("-DFE8_EXPANSION_STARTER_CONTENT=1", cflags)
         self.assertIn("-DFE8_ITEM_ID_CAP=0xCE", cflags)
+        self.assertNotIn("not-a-resolved-flag", cflags)
 
 
 if __name__ == "__main__":

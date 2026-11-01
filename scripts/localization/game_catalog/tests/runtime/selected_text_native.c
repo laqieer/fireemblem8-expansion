@@ -5,6 +5,7 @@
 #include "bmunit.h"
 #include "bmlib.h"
 #include "localized_game_text.h"
+#include "localized_game_text_storage.h"
 #include "text_utf8.h"
 #include "selected_msg.h"
 

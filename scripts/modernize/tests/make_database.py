@@ -46,7 +46,16 @@ def make_database_rule(database, target):
 def make_database_variable(database, name):
     pattern = re.compile(rf"^{re.escape(name)}\s*(?::=|\?=|\+=|=)\s*(.*)$")
     lines = database.splitlines()
+    definition_depth = 0
     for index, line in enumerate(lines):
+        if line.startswith("define "):
+            definition_depth += 1
+            continue
+        if line == "endef" and definition_depth:
+            definition_depth -= 1
+            continue
+        if definition_depth:
+            continue
         match = pattern.match(line)
         if match:
             lines[index] = match.group(1)

@@ -478,14 +478,29 @@ def build_fixed_width_label_metrics(
 
                     try:
                         tokens = tokenize_payload(payload, source_name=f"name 0x{target:04X}")
-                        payload = "".join(
-                            chr(token.scalar) for token in tokens
-                            if token.kind == "scalar" and token.scalar is not None
-                        )
                     except (ControlStreamError, ValueError) as error:
                         raise FixedWidthLabelError(
                             f"name 0x{target:04X}: invalid rendered payload"
                         ) from error
+                    if any(
+                        token.kind == "extended"
+                        and token.scalar in (0x12, 0x13, 0x14, 0x15, 0x20, 0x22)
+                        for token in tokens
+                    ):
+                        raise FixedWidthLabelError(
+                            f"name 0x{target:04X}: substitutions are unsupported in fixed labels"
+                        )
+                    if any(
+                        token.kind == "control" and token.control in (0x01, 0x02)
+                        for token in tokens
+                    ):
+                        raise FixedWidthLabelError(
+                            f"name 0x{target:04X}: line controls are unsupported in fixed labels"
+                        )
+                    payload = "".join(
+                        chr(token.scalar) for token in tokens
+                        if token.kind == "scalar" and token.scalar is not None
+                    )
                 effective_payloads[target] = payload
             scoped_aliases = parsed_aliases[locale][surface]
             if fallback_payloads is not None:

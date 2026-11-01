@@ -28,6 +28,46 @@ class CliTests(unittest.TestCase):
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
 
+    def test_describe_compile_preserves_argv_without_loading_generated_inputs(self):
+        with self._tmpdir() as tmp:
+            output = Path(tmp) / "unit.json"
+            command = ["arm-none-eabi-gcc", "-DMODERN", "-Iinclude with spaces", "-Os"]
+            result = run_cli([
+                "describe-compile", "--output", str(output),
+                "--object", "build/profile/source.o",
+                "--logical-source", "src/source.c",
+                "--selected-source", "examples/project/source.c",
+                "--cc-input", "build/profile/source.pre.c",
+                "--preprocessor-arg", "tools/preproc/preproc",
+                "--preprocessor-arg=-Iasset includes",
+                "--", *command,
+            ])
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(json.loads(output.read_text()), {
+                "schema_version": 1,
+                "kind": "fe8-selected-text-compile",
+                "object": "build/profile/source.o",
+                "logical_source": "src/source.c",
+                "selected_source": "examples/project/source.c",
+                "compiler_input": "build/profile/source.pre.c",
+                "compiler_argv": command,
+                "preprocessor_argv": ["tools/preproc/preproc", "-Iasset includes"],
+            })
+
+    def test_describe_compile_refuses_missing_compiler_without_replacing_output(self):
+        with self._tmpdir() as tmp:
+            output = Path(tmp) / "unit.json"
+            output.write_bytes(b"existing descriptor\n")
+            result = run_cli([
+                "describe-compile", "--output", str(output),
+                "--object", "build/profile/source.o",
+                "--logical-source", "src/source.c",
+                "--selected-source", "examples/project/source.c",
+                "--cc-input", "build/profile/source.pre.c", "--",
+            ])
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(output.read_bytes(), b"existing descriptor\n")
+
     def test_validate_reports_committed_counts(self):
         result = run_cli(["validate"])
         self.assertEqual(result.returncode, 0, result.stdout)

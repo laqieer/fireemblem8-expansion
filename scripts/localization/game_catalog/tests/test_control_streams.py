@@ -48,6 +48,24 @@ def structural_sequence(text):
 
 
 class SelectedEventContinuationTests(unittest.TestCase):
+    def test_branch_join_retains_both_native_renderer_modes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            (event_root / "selected.c").write_text(
+                "EventScr Selected[] = {\n"
+                "BEQ(1, EVT_SLOT_C, EVT_SLOT_0)\n"
+                "TEXTSTART TEXTSHOW(MSG_SELECTED) GOTO(2)\n"
+                "LABEL(1) SOLOTEXTBOXSTART TEXTSHOW(MSG_SELECTED)\n"
+                "LABEL(2) ENDA\n};\n"
+            )
+            models = build_event_continuation_models(
+                event_root, message_ids={"MSG_SELECTED": 1},
+            )
+            self.assertEqual(
+                {(model.text_mode.style, model.continuation_count) for model in models[1]},
+                {("talk", 0), ("system", 0)},
+            )
+
     def test_popup_message_ids_are_checked_without_replacing_talk_models(self):
         english = (b"Zero\0", b"One\x80\x04Two\0", b"Last\0")
         with tempfile.TemporaryDirectory() as directory:
@@ -269,21 +287,54 @@ class SelectedEventContinuationTests(unittest.TestCase):
                         {"modeled_target_count": 0, "model_count": 1},
                     )
 
-    def test_world_map_text_keeps_its_non_message_operand(self):
+    def test_world_map_text_combines_both_message_operands(self):
         english = (b"Zero\0", b"One\0", b"Two\0")
         with tempfile.TemporaryDirectory() as directory:
             event_root = Path(directory)
-            (event_root / "selected.c").write_text(
-                "EventScr Selected[] = {\n    WM_TEXT(0x0001, 0)\n    ENDA\n};\n"
-            )
-            self.assertEqual(
-                validate_event_continuations(
-                    english_payloads=english,
-                    localized_payloads={"ja": english},
-                    event_root=event_root,
-                ),
-                {"modeled_target_count": 1, "model_count": 1},
-            )
+            source = event_root / "selected.c"
+            for arguments, target in (("1, 0", 1), ("0, 2", 2), ("MSG_ONE, 0", 1)):
+                with self.subTest(arguments=arguments):
+                    source.write_text(f"EventScr Selected[] = {{ WM_TEXT({arguments}) ENDA }};")
+                    self.assertEqual(
+                        set(build_event_continuation_models(
+                            event_root, message_ids={"MSG_ONE": 1},
+                        )),
+                        {target},
+                    )
+            for arguments in ("1, 2", "MSG_ONE, MSG_TWO", "0, 0x8000"):
+                with self.subTest(arguments=arguments):
+                    source.write_text(f"EventScr Selected[] = {{ WM_TEXT({arguments}) ENDA }};")
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english, localized_payloads={"ja": english},
+                            event_root=event_root, message_ids={"MSG_ONE": 1, "MSG_TWO": 2},
+                        )
+
+    def test_looping_events_cannot_hide_direct_message_ids(self):
+        english = (b"Zero\0", b"One\0", b"Two\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for kind in ("TEXTSHOW", "EvtTextShow2", "EvtTextShow"):
+                with self.subTest(kind=kind):
+                    text = (
+                        f"EventScr Selected[] = {{ {kind}(3) TEXTEND "
+                        "LABEL(0) STAL(1) GOTO(0) };"
+                    )
+                    source.write_text(text)
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english, localized_payloads={"ja": english},
+                            event_root=event_root,
+                        )
+                    source.write_text(text.replace("(3)", "(1)"))
+                    self.assertEqual(
+                        validate_event_continuations(
+                            english_payloads=english, localized_payloads={"ja": english},
+                            event_root=event_root,
+                        ),
+                        {"modeled_target_count": 1, "model_count": 1},
+                    )
 
     def test_locale_payloads_cover_exactly_the_active_english_set(self):
         english = (b"Zero\0", b"One\0", b"Two\0")
@@ -311,6 +362,36 @@ class SelectedEventContinuationTests(unittest.TestCase):
                 ),
                 {"modeled_target_count": 1, "model_count": 1},
             )
+
+
+class SelectedPayloadSemanticsTests(unittest.TestCase):
+    def validate(self, english, localized):
+        return validate_final_payload(
+            localized, english_payload=english, target_id=1, locale="ja",
+            control_domain=CONTROL_DOMAIN_FE8U, portrait_map=load_portrait_operand_map(),
+            talk_metrics=TalkFontMetrics(
+                locale="ja", ascii_widths={value: 8 for value in range(0x20, 0x7F)},
+                cjk_widths={ord("剣"): 8},
+            ),
+        )
+
+    def test_selected_payload_cannot_change_gameplay_choice_defaults(self):
+        for english, localized in (
+            (b"Question\x18\0", "剣".encode() + b"\x19\0"),
+            (b"Question\x18\0", b"Question\0"),
+            (b"Question\x18\0", b"Question\x18\x18\0"),
+            (b"Question\x18\x19\0", b"Question\x19\x18\0"),
+            (b"Question\x1A\x1B\0", b"Question\x1B\x1A\0"),
+        ):
+            with self.subTest(english=english, localized=localized):
+                with self.assertRaisesRegex(ControlStreamError, "gameplay"):
+                    self.validate(english, localized)
+
+    def test_choice_semantics_allow_locale_specific_line_breaks(self):
+        self.validate(
+            b"Question\x18Answer\x1AAgain\x1BNo\x19\0",
+            "剣".encode() + b"\x01\x18Q\x1A\x01R\x1BS\x19\0",
+        )
 
 
 class FinalControlStreamTests(unittest.TestCase):

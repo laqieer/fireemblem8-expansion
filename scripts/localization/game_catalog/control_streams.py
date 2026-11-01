@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -48,7 +49,7 @@ _MOUTH_TOPOLOGY_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
 
 _MESSAGE_START_RE = re.compile(
     r"\b(?P<kind>TEXTSHOW|WM_TEXT|EvtTextShow2)\s*\(\s*"
-    r"(?P<target>[^,)\r\n]*)(?:,[^)\r\n]*)?\)"
+    r"(?P<target>[^,)\r\n]*)(?:,\s*(?P<extra>[^)\r\n]*))?\)"
 )
 _POPUP_MESSAGE_RE = re.compile(r"\b(?:BROWNBOXTEXT|NOTIFY)\s*\(\s*([^,)]*)")
 _POPUP_MESSAGE_COMMANDS = frozenset(("BROWNBOXTEXT", "NOTIFY"))
@@ -58,16 +59,40 @@ _BRANCH_RE = re.compile(
     r"^\s*(?:BEQ|BNE|BGE|BGT|BLE|BLT|BEQ_EVFLAG|BNE_EVFLAG)"
     r"\s*\(\s*(0x[0-9A-Fa-f]+|\d+)"
 )
+_TEXT_MODE_COMMANDS = {
+    "TEXTSTART": 0,
+    "REMOVEPORTRAITS": 1,
+    "EvtTextStartType2": 2,
+    "TUTORIALTEXTBOXSTART": 3,
+    "EvtTextStartType3": 3,
+    "SOLOTEXTBOXSTART": 4,
+    "EvtTextStartType5": 5,
+}
 _FLOW_COMMANDS = frozenset(
     ("TEXTSHOW", "WM_TEXT", "EvtTextShow2", "LABEL", "GOTO", "BEQ", "BNE",
      "BGE", "BGT", "BLE", "BLT", "BEQ_EVFLAG", "BNE_EVFLAG", "TEXTCONT",
      "REMA", "WM_REMOVETEXT", "ENDA", "CHECK_EVBIT")
+) | frozenset(_TEXT_MODE_COMMANDS)
+_BARE_FLOW_COMMANDS = (
+    frozenset(("TEXTCONT", "REMA", "WM_REMOVETEXT", "ENDA")) | frozenset(_TEXT_MODE_COMMANDS)
 )
-_BARE_FLOW_COMMANDS = frozenset(("TEXTCONT", "REMA", "WM_REMOVETEXT", "ENDA"))
 
 
 class ControlStreamError(ValueError):
     """Raised when a final localized payload is unsafe or semantically invalid."""
+
+
+class EventTextMode(IntEnum):
+    TALK = 0
+    TALK_WITHOUT_PORTRAITS = 1
+    CG = 2
+    TUTORIAL_BOX = 3
+    SOLO_BOX = 4
+    BOX_TYPE5 = 5
+
+    @property
+    def style(self) -> str:
+        return "talk" if self.value <= 2 else "system"
 
 
 @dataclass(frozen=True)
@@ -96,6 +121,7 @@ class EventContinuationModel:
     continuation_count: int
     source_path: str
     dialogue_skipped: bool = False
+    text_mode: EventTextMode = EventTextMode.TALK
 
 
 @dataclass(frozen=True)
@@ -396,6 +422,18 @@ def tokenize_payload(payload: bytes, *, source_name: str) -> Tuple[StreamToken, 
     return tuple(tokens)
 
 
+def validate_substitution_bounds(payload: bytes, *, source_name: str) -> None:
+    tokens = tokenize_payload(payload, source_name=source_name)
+    substitutions = sum(
+        token.kind == "extended" and token.scalar in (0x12, 0x13, 0x14, 0x15, 0x20, 0x22)
+        for token in tokens
+    )
+    if substitutions and len(payload) + substitutions * (0x100 - 2) > 0x400:
+        raise ControlStreamError(
+            f"{source_name}: expanded substitutions exceed the 0x400-byte transform buffer"
+        )
+
+
 def _face_operands(tokens: Iterable[StreamToken]) -> Tuple[int, ...]:
     return tuple(
         token.argument
@@ -679,6 +717,18 @@ def validate_final_payload(
     english_tokens = tokenize_payload(
         english_payload, source_name=f"English target 0x{target_id:04X}"
     )
+    localized_choices, english_choices = (
+        tuple(
+            token.control for token in stream
+            if token.kind == "control" and token.control in (0x18, 0x19, 0x1A, 0x1B)
+        )
+        for stream in (tokens, english_tokens)
+    )
+    if localized_choices != english_choices:
+        raise ControlStreamError(
+            f"{name}: ordered gameplay choice controls differ from the English target: "
+            f"{localized_choices} != {english_choices}"
+        )
     faces = _face_operands(tokens)
     english_faces = _face_operands(english_tokens)
     invalid_faces = [
@@ -800,6 +850,8 @@ def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[SourceEventComm
     ):
         if short in commands:
             aliases[public] = short
+        elif public in commands:
+            aliases[short] = public
     for path in sorted(Path(event_root).rglob("*")):
         if path.suffix not in (".c", ".h") or not path.is_file():
             continue
@@ -842,6 +894,20 @@ def _resolve_event_message_id(
     return target_id
 
 
+def _resolve_message_start(
+    message: re.Match[str], message_ids: Mapping[str, int], path: Path
+) -> int:
+    target_id = _resolve_event_message_id(
+        message.group("target").strip(), message_ids, path,
+        dynamic_slot=message.group("kind") in ("TEXTSHOW", "EvtTextShow2"),
+    )
+    if message.group("kind") == "WM_TEXT" and message.group("extra") is not None:
+        target_id |= _resolve_event_message_id(
+            message.group("extra").strip(), message_ids, path, dynamic_slot=False,
+        )
+    return target_id
+
+
 def _array_continuations(
     path: Path,
     lines: Sequence[SourceEventCommand],
@@ -853,16 +919,18 @@ def _array_continuations(
         if match:
             labels[int(match.group(1), 0)] = index
 
-    initial = (0, None, None, 0, False)
+    initial = (0, None, None, 0, False, EventTextMode.TALK, EventTextMode.TALK)
     stack = [initial]
     visited = set()
     results = set()
     max_steps = max(64, len(lines) * 32)
     steps = 0
     while stack:
-        pc, target_id, start_kind, continuations, dialogue_skipped = stack.pop()
-        state = (pc, target_id, start_kind, continuations, dialogue_skipped)
+        pc, target_id, start_kind, continuations, dialogue_skipped, active_mode, text_mode = stack.pop()
+        state = (pc, target_id, start_kind, continuations, dialogue_skipped, active_mode, text_mode)
         if state in visited:
+            if target_id is not None and start_kind is not None:
+                results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
             continue
         visited.add(state)
         steps += 1
@@ -870,21 +938,25 @@ def _array_continuations(
             raise ControlStreamError(f"{path}: event continuation analysis exceeded bound")
         if pc >= len(lines):
             if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations, dialogue_skipped))
+                results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
             continue
         line = lines[pc].text
+        if line in _TEXT_MODE_COMMANDS:
+            next_mode = EventTextMode(_TEXT_MODE_COMMANDS[line])
+            if next_mode != active_mode and next_mode != EventTextMode.BOX_TYPE5:
+                if target_id is not None and start_kind is not None:
+                    results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
+                target_id, start_kind, continuations, dialogue_skipped = None, None, 0, False
+            active_mode = next_mode
         message = _MESSAGE_START_RE.search(line)
         if message:
-            operand = message.group("target").strip()
-            next_target_id = _resolve_event_message_id(
-                operand, message_ids, path,
-                dynamic_slot=message.group("kind") in ("TEXTSHOW", "EvtTextShow2"),
-            )
+            next_target_id = _resolve_message_start(message, message_ids, path)
             if not (message.group("kind") in ("TEXTSHOW", "EvtTextShow2") and next_target_id == 0):
                 if target_id is not None and start_kind is not None:
-                    results.add((target_id, start_kind, continuations, dialogue_skipped))
+                    results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
                 target_id = next_target_id
                 start_kind = message.group("kind")
+                text_mode = EventTextMode.TALK if start_kind == "WM_TEXT" else active_mode
                 continuations = 0
                 dialogue_skipped = False
         elif re.search(r"\bTEXTCONT\b", line) and target_id is not None:
@@ -892,11 +964,11 @@ def _array_continuations(
 
         if re.search(r"\b(REMA|WM_REMOVETEXT)\b", line):
             if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations, dialogue_skipped))
+                results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
             target_id, start_kind, continuations, dialogue_skipped = None, None, 0, False
         if re.search(r"\bENDA\b", line):
             if target_id is not None and start_kind is not None:
-                results.add((target_id, start_kind, continuations, dialogue_skipped))
+                results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
             continue
 
         goto = _GOTO_RE.search(line)
@@ -904,7 +976,8 @@ def _array_continuations(
             destination = labels.get(int(goto.group(1), 0))
             if destination is not None:
                 stack.append((
-                    destination + 1, target_id, start_kind, continuations, dialogue_skipped
+                    destination + 1, target_id, start_kind, continuations, dialogue_skipped,
+                    active_mode, text_mode,
                 ))
             continue
         branch = _BRANCH_RE.search(line)
@@ -917,19 +990,22 @@ def _array_continuations(
                 stack.append((
                     destination + 1, target_id, start_kind, continuations,
                     dialogue_skipped or taken_skip is True,
+                    active_mode, text_mode,
                 ))
         stack.append((
             pc + 1, target_id, start_kind, continuations,
             dialogue_skipped or taken_skip is False,
+            active_mode, text_mode,
         ))
 
-    for target_id, start_kind, continuations, dialogue_skipped in sorted(results):
+    for target_id, start_kind, continuations, dialogue_skipped, text_mode in sorted(results):
         yield EventContinuationModel(
             target_id=target_id,
             start_kind=start_kind,
             continuation_count=continuations,
             source_path=path.as_posix(),
             dialogue_skipped=dialogue_skipped,
+            text_mode=text_mode,
         )
 
 
@@ -955,7 +1031,7 @@ def _event_continuation_models(
             sorted(
                 {
                     (model.start_kind, model.continuation_count, model.source_path,
-                     model.dialogue_skipped): model
+                     model.dialogue_skipped, model.text_mode): model
                     for model in models
                 }.values(),
                 key=lambda model: (
@@ -963,6 +1039,7 @@ def _event_continuation_models(
                     model.continuation_count,
                     model.source_path,
                     model.dialogue_skipped,
+                    model.text_mode,
                 ),
             )
         )
@@ -987,15 +1064,23 @@ def validate_event_continuations(
     message_ids = {} if message_ids is None else message_ids
     for path, commands in arrays:
         for command in commands:
+            message = _MESSAGE_START_RE.search(command.text)
             popup = _POPUP_MESSAGE_RE.search(command.text)
-            if popup is None:
+            if message is not None:
+                target_id = _resolve_message_start(message, message_ids, path)
+                dynamic_slot = message.group("kind") in ("TEXTSHOW", "EvtTextShow2")
+            elif popup is not None:
+                target_id = _resolve_event_message_id(
+                    popup.group(1).strip(), message_ids, path, dynamic_slot=True,
+                )
+                dynamic_slot = True
+            else:
                 continue
-            target_id = _resolve_event_message_id(
-                popup.group(1).strip(), message_ids, path, dynamic_slot=True,
-            )
-            if len(english_payloads) <= target_id < 0x8000:
+            if target_id >= len(english_payloads) and not (
+                dynamic_slot and target_id >= 0x8000
+            ):
                 raise ControlStreamError(
-                    f"{path}: popup message 0x{target_id:04X} is outside the active English "
+                    f"{path}: event message 0x{target_id:04X} is outside the active English "
                     f"set of {len(english_payloads)} targets"
                 )
     models = _event_continuation_models(arrays, message_ids)

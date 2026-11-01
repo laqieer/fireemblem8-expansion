@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
-from scripts.localization.game_catalog.build import build_game_catalog
+from scripts.localization.game_catalog.build import build_game_catalog, write_build
 from scripts.localization.game_catalog.model import GameCatalogError
 from scripts.generated_data.schema import SchemaInputs
 from scripts.localization.game_locales.width_contract import (
@@ -63,6 +63,7 @@ class FixtureBuildTests(unittest.TestCase):
             )
 
     def setUp(self):
+        (ROOT / "build").mkdir(exist_ok=True)
         self.fixture_dir = Path(__file__).resolve().parent / "fixtures"
         if self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir)
@@ -427,6 +428,67 @@ class FixtureBuildTests(unittest.TestCase):
                 self.assertEqual(record["canonical_width"], 54)
                 self.assertEqual(record["display_text"], "剣" * 6)
 
+    def test_selected_names_reject_substitutions_and_generated_wrapping(self):
+        inputs = self.selected_inputs()
+        inputs.update(event_root_path=self.fixture_dir, enabled_locales=("ja",))
+        mapping = json.loads(inputs["mapping_path"].read_bytes())
+        mapping["rows"][1]["source"] = {"kind": "authored", "translation_key": "narrow"}
+        inputs["mapping_path"].write_text(json.dumps(mapping), encoding="utf-8")
+        authored = self.fixture_dir / "authored.ja.json"
+        inputs["authored_paths"] = {"ja": authored}
+        items = json.loads((ROOT / "src/data/items.json").read_bytes())
+        items["items"] = items["items"][:1]
+        items["items"][0]["nameTextId"] = 1
+        source = self.fixture_dir / "items.json"
+        source.write_text(json.dumps(items), encoding="utf-8")
+        context = SchemaInputs({"items": str(source)})
+        aliases = json.loads((ROOT / "texts/locales/fixed_width_display_aliases.json").read_bytes())
+        aliases["aliases"]["ja"]["item_name_56"]["0x0001"] = "剣"
+        alias_path = self.fixture_dir / "aliases.json"
+        alias_path.write_text(json.dumps(aliases, ensure_ascii=False), encoding="utf-8")
+        for text, error in (
+            ("MMMM[CTRL:0080][CTRL:0020]", "substitution"), ("剣" * 30, "240px"),
+        ):
+            with self.subTest(text=text):
+                authored.write_text(json.dumps({
+                    "kind": "fe8u-game-authored-catalog", "locale": "ja",
+                    "strings": {"narrow": text},
+                }, ensure_ascii=False), encoding="utf-8")
+                with self.assertRaisesRegex(GameCatalogError, error):
+                    build_game_catalog(
+                        **inputs, schema_inputs=context,
+                        fixed_width_aliases_path=alias_path if text.startswith("剣") else
+                        ROOT / "texts/locales/fixed_width_display_aliases.json",
+                    )
+
+    def test_selected_streams_enforce_the_real_transform_capacity(self):
+        inputs = self.selected_inputs()
+        inputs.update(event_root_path=self.fixture_dir, enabled_locales=("ja",))
+        with inputs["english_definitions_path"].open("a", encoding="utf-8") as stream:
+            stream.write("[Item] = 0x80, 0x22\n")
+        original = inputs["english_texts_path"].read_text()
+        indexed = inputs["ja_indexed_path"].read_text()
+        for locale in ("en", "ja"):
+            for count in (2, 1025):
+                with self.subTest(locale=locale, count=count):
+                    inputs["english_texts_path"].write_text(
+                        original.replace("English zero", "[Item]" * count)
+                        if locale == "en" else original,
+                        encoding="utf-8",
+                    )
+                    inputs["ja_indexed_path"].write_text(
+                        indexed.replace(
+                            "日[CTRL:0080][CTRL:0020]", "[CTRL:0080][CTRL:0022]" * count,
+                        )
+                        if locale == "ja" else indexed,
+                        encoding="utf-8",
+                    )
+                    if count == 1025:
+                        with self.assertRaisesRegex(GameCatalogError, "transform"):
+                            build_game_catalog(**inputs)
+                    else:
+                        build_game_catalog(**inputs)
+
     def test_composition_derives_required_glyphs_before_render_validation(self):
         from scripts.localization.game_catalog.build import compose_game_catalog
 
@@ -575,6 +637,27 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["locales"]["ja"]["explicit_fallback_count"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["provider_counts"]["raw"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            written = write_build(build, output_dir=output)
+            probe = output / "declaration-and-storage.c"
+            probe.write_text(
+                '#include "game_localization_declarations.h"\n'
+                '#include "game_localization_catalog.h"\n'
+                "const struct GameLocalizationLocaleCatalog *Probe(void)\n"
+                "{ return &gGameLocalizationCatalogJa; }\n",
+                encoding="ascii",
+            )
+            for source in (written["source"], probe):
+                result = subprocess.run(
+                    [
+                        "cc", "-std=c89", "-pedantic-errors", "-Wall", "-Wextra", "-Werror",
+                        "-I", str(Path(__file__).parent / "host_include"),
+                        "-I", str(output), "-fsyntax-only", str(source),
+                    ],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_selected_events_drive_both_width_context_and_active_id_validation(self):
         inputs = self.selected_inputs()

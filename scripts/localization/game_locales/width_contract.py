@@ -15,7 +15,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Sequence, Tuple
 
 from scripts.localization.legacy_spacing import (
     LEGACY_SJIS_SPACE_SCALAR,
@@ -24,6 +24,9 @@ from scripts.localization.legacy_spacing import (
 
 from .ending_metrics import EndingLayoutError, _ascii_widths, _cjk_widths
 from .fixed_width_labels import SURFACES, _message_ids
+
+if TYPE_CHECKING:
+    from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
 
 
 DEFAULT_WIDTH_REGISTRY_PATH = Path("texts/locales/mapping/text_width_contexts.json")
@@ -176,17 +179,23 @@ def load_width_metrics(
     *,
     locale: str,
     style: str,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> WidthMetrics:
     """Read exactly the VWF assets that the selected runtime font uses."""
 
     try:
-        ascii_widths = _ascii_widths(repo_root, style=style)
-        cjk_widths, _ = _cjk_widths(repo_root, locale, style=style)
+        if font_metrics is None:
+            ascii_widths = _ascii_widths(repo_root, style=style)
+            cjk_widths = {} if locale == "en" else _cjk_widths(repo_root, locale, style=style)[0]
+        else:
+            ascii_widths = font_metrics["ascii"][style]
+            cjk_widths = {} if locale == "en" else font_metrics["localized"][locale][style]
     except (
         EndingLayoutError,
         OSError,
         UnicodeDecodeError,
         json.JSONDecodeError,
+        KeyError,
     ) as error:
         raise TextWidthContractError(
             f"{locale}/{style}: runtime VWF metrics are unavailable"
@@ -227,10 +236,12 @@ def _visible_scalar(token) -> bool:
     return token.kind == "scalar" and token.scalar is not None
 
 
-def _hard_line_boundary(token) -> bool:
+def _hard_line_boundary(token, *, style: str) -> bool:
     return (
         token.kind == "end"
-        or (token.kind == "control" and token.control in (0x01, 0x02))
+        or (token.kind == "control" and (
+            token.control == 0x01 or (token.control == 0x02 and style == "talk")
+        ))
         or (token.kind == "extended" and token.scalar == 0x04)
     )
 
@@ -277,7 +288,7 @@ def _wrap_one_line(
     last_safe: Tuple[int, Any] | None = None
     previous_visible: Any | None = None
     for token in tokens:
-        if _hard_line_boundary(token):
+        if _hard_line_boundary(token, style=metrics.style):
             return payload, 0
         if not _visible_scalar(token):
             continue
@@ -327,7 +338,9 @@ def insert_safe_line_breaks(
             cursor += rewritten.index(b"\x01") + 1
             continue
         tokens = _tokenize_payload(suffix, source_name=source_name)
-        boundary = next((token for token in tokens if _hard_line_boundary(token)), None)
+        boundary = next(
+            (token for token in tokens if _hard_line_boundary(token, style=metrics.style)), None,
+        )
         if boundary is None or boundary.kind == "end":
             break
         cursor += boundary.offset + boundary.length
@@ -354,7 +367,7 @@ def validate_payload_width(
             width += _scalar_width(token.scalar, metrics)
             saw_visible = True
             continue
-        if not _hard_line_boundary(token):
+        if not _hard_line_boundary(token, style=metrics.style):
             continue
         if saw_visible:
             line_count += 1
@@ -438,6 +451,7 @@ def classify_targets(
     registry: WidthRegistry,
     event_root: Path | None = None,
     message_ids: Mapping[str, int] | None = None,
+    fixed_label_ids: Iterable[int] | None = None,
 ) -> Tuple[Mapping[int, Tuple[str, str]], Dict[str, int]]:
     """Assign each target one audited scene/usage context without exemptions."""
 
@@ -452,7 +466,9 @@ def classify_targets(
                 "ending-details source allocation; exact line/page rules are "
                 "validated by ending_layout_metrics",
             )
-    for target_id in _fixed_label_target_ids(repo_root):
+    for target_id in (
+        _fixed_label_target_ids(repo_root) if fixed_label_ids is None else fixed_label_ids
+    ):
         if target_id < target_count:
             assigned[target_id] = (
                 registry.fixed_context,
@@ -463,7 +479,7 @@ def classify_targets(
         repo_root / "src/events" if event_root is None else event_root,
         message_ids,
     ).items():
-        if target_id < target_count:
+        if target_id < target_count and any(model.text_mode.style == "talk" for model in models):
             assigned[target_id] = (
                 registry.talk_context,
                 "event dialogue: "
@@ -492,6 +508,8 @@ def apply_width_contract(
     fallback_payloads: Sequence[bytes] | None = None,
     event_root: Path | None = None,
     message_ids: Mapping[str, int] | None = None,
+    fixed_label_ids: Iterable[int] | None = None,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Tuple[Tuple[bytes | None, ...], Dict[str, Any]]:
     """Wrap then validate a complete locale payload table against all contexts."""
 
@@ -501,9 +519,12 @@ def apply_width_contract(
         registry=registry,
         event_root=event_root,
         message_ids=message_ids,
+        fixed_label_ids=fixed_label_ids,
     )
     metrics_by_style = {
-        style: load_width_metrics(repo_root, locale=locale, style=style)
+        style: load_width_metrics(
+            repo_root, locale=locale, style=style, font_metrics=font_metrics,
+        )
         for style in ("system", "talk")
     }
     output = []

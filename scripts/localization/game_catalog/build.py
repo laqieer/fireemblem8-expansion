@@ -47,7 +47,7 @@ from scripts.localization.game_locales.raw_providers import (
 from scripts.texttools.multilang_codec import build_catalog
 from scripts.texttools.multilang_codec.codec import SCHEMA as CODEC_SCHEMA
 
-from .c_emitter import render_config_header, render_header, render_source
+from .c_emitter import render_config_header, render_declarations, render_header, render_source
 from .constants import (
     BUDGET_KIND,
     BUDGET_SCHEMA_VERSION,
@@ -62,6 +62,7 @@ from .constants import (
     LOCALE_POINTER_ARRAY_BYTES,
     OUTPUT_BUDGET_NAME,
     OUTPUT_CONFIG_HEADER_NAME,
+    OUTPUT_DECLARATIONS_HEADER_NAME,
     OUTPUT_HEADER_NAME,
     OUTPUT_REPORT_NAME,
     OUTPUT_SOURCE_NAME,
@@ -95,6 +96,7 @@ from .control_streams import (
     remap_fe8j_portrait_operands,
     validate_event_continuations,
     validate_final_payload,
+    validate_substitution_bounds,
 )
 
 DEFAULT_ENGLISH_TEXTS_PATH = Path("texts/texts.txt")
@@ -1107,6 +1109,7 @@ def _build_budget(
             "locale_catalog_struct_bytes": len(locale_bundles) * LOCALE_CATALOG_STRUCT_SIZE_BYTES,
             "shared_english_catalog_struct_bytes": LOCALE_CATALOG_STRUCT_SIZE_BYTES,
             "locale_pointer_array_bytes": LOCALE_POINTER_ARRAY_BYTES,
+            "runtime_scalar_bytes": 4 * (len(locale_bundles) + 1),
             "shared_english_bytes": english_estimated_bytes,
             "estimated_total_c_bytes": (
                 total_node_bytes
@@ -1114,6 +1117,7 @@ def _build_budget(
                 + total_entry_bytes
                 + (len(locale_bundles) + 1) * LOCALE_CATALOG_STRUCT_SIZE_BYTES
                 + LOCALE_POINTER_ARRAY_BYTES
+                + 4 * (len(locale_bundles) + 1)
             ),
         },
     }
@@ -1298,6 +1302,50 @@ def build_game_catalog(
     portrait_map = composition.portrait_map
     mapping_source_counts = _mapping_source_counts(mapping)
     message_ids = composition.message_ids
+    try:
+        for entry in english_entries:
+            validate_substitution_bounds(
+                entry.encoded_bytes, source_name=f"en target 0x{entry.target_id:04X}",
+            )
+        for bundle in locale_bundles:
+            for entry in bundle.entries:
+                if entry.encoded_bytes is not None:
+                    validate_substitution_bounds(
+                        entry.encoded_bytes,
+                        source_name=f"{bundle.locale} target 0x{entry.target_id:04X}",
+                    )
+    except ControlStreamError as error:
+        raise GameCatalogError(str(error)) from error
+    repo_root = Path(__file__).resolve().parents[3]
+    alias_path = Path(fixed_width_aliases_path)
+    if not alias_path.is_absolute():
+        alias_path = repo_root / alias_path
+    cjk_locale_bundles = tuple(
+        bundle for bundle in locale_bundles if bundle.locale in CJK_LOCALE_IDS
+    )
+    try:
+        fixed_width_metrics = build_fixed_width_label_metrics(
+            repo_root,
+            localized_payloads={
+                bundle.locale: {
+                    entry.target_id: entry.encoded_bytes
+                    for entry in bundle.entries if entry.encoded_bytes is not None
+                }
+                for bundle in cjk_locale_bundles
+            },
+            aliases_path=alias_path,
+            fallback_payloads={
+                entry.target_id: entry.encoded_bytes for entry in english_entries
+            },
+            schema_inputs=schema_inputs,
+        )
+    except (FixedWidthLabelError, ControlStreamError) as error:
+        raise GameCatalogError(str(error)) from error
+    fixed_label_ids = frozenset(
+        int(target, 16)
+        for contract in fixed_width_metrics["source_contract"].values()
+        for target in contract["target_ids"]
+    )
     width_validation = None
     unwrapped_locale_entries = {
         bundle.locale: bundle.entries for bundle in locale_bundles
@@ -1325,6 +1373,7 @@ def build_game_catalog(
                     fallback_payloads=tuple(entry.encoded_bytes for entry in english_entries),
                     event_root=event_root_path,
                     message_ids=message_ids,
+                    fixed_label_ids=fixed_label_ids,
                 )
                 entries = tuple(
                     replace(entry, encoded_bytes=payload)
@@ -1342,33 +1391,6 @@ def build_game_catalog(
         except (TextWidthContractError, ControlStreamError) as error:
             raise GameCatalogError(str(error)) from error
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
-    repo_root = Path(__file__).resolve().parents[3]
-    alias_path = Path(fixed_width_aliases_path)
-    if not alias_path.is_absolute():
-        alias_path = repo_root / alias_path
-    cjk_locale_bundles = tuple(
-        bundle for bundle in locale_bundles
-        if bundle.locale in CJK_LOCALE_IDS
-    )
-    try:
-        fixed_width_metrics = build_fixed_width_label_metrics(
-            repo_root,
-            localized_payloads={
-                bundle.locale: {
-                    entry.target_id: entry.encoded_bytes
-                    for entry in bundle.entries
-                    if entry.encoded_bytes is not None
-                }
-                for bundle in cjk_locale_bundles
-            },
-            aliases_path=alias_path,
-            fallback_payloads={
-                entry.target_id: entry.encoded_bytes for entry in english_entries
-            },
-            schema_inputs=schema_inputs,
-        )
-    except (FixedWidthLabelError, ControlStreamError) as error:
-        raise GameCatalogError(str(error)) from error
     display_aliases = {
         locale: {
             surface: {
@@ -1509,18 +1531,23 @@ def _write_bytes_if_changed(path: Path, content: bytes) -> bool:
 def write_build(build: GameCatalogBuild, *, output_dir: Path) -> Dict[str, Path]:
     output_dir = Path(output_dir)
     config_header_path = output_dir / OUTPUT_CONFIG_HEADER_NAME
+    declarations_path = output_dir / OUTPUT_DECLARATIONS_HEADER_NAME
     header_path = output_dir / OUTPUT_HEADER_NAME
     source_path = output_dir / OUTPUT_SOURCE_NAME
     report_path = output_dir / OUTPUT_REPORT_NAME
     budget_path = output_dir / OUTPUT_BUDGET_NAME
 
     _write_text_if_changed(config_header_path, render_config_header(build))
+    _write_text_if_changed(
+        declarations_path, render_declarations(build.target_count, build.enabled_locales),
+    )
     _write_text_if_changed(header_path, render_header(build))
     _write_text_if_changed(source_path, render_source(build))
     _write_bytes_if_changed(report_path, canonical_json_bytes(build.report))
     _write_bytes_if_changed(budget_path, canonical_json_bytes(build.budget))
     return {
         "config_header": config_header_path,
+        "declarations_header": declarations_path,
         "header": header_path,
         "source": source_path,
         "report_json": report_path,

@@ -5,6 +5,7 @@
 
 #include "bmitem.h"
 #include "localized_game_text.h"
+#include "localized_game_text_storage.h"
 
 char *GetStringFromIndex(int index);
 char *GetStringFromIndexInBufferWithLimit(int index, char *buffer, u32 bufferCapacity);

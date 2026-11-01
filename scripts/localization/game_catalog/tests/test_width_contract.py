@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -99,6 +100,21 @@ class WidthContractTests(unittest.TestCase):
                 source_name="overflowing English fallback",
             )
 
+    def test_nl2_does_not_reset_the_system_font_cursor(self):
+        metrics = WidthMetrics(
+            locale="ja", style="system", ascii_widths=self.metrics.ascii_widths,
+            cjk_widths=self.metrics.cjk_widths,
+        )
+        payload = b"A" * 30 + b"\x02" + b"A" * 30 + b"\0"
+        with self.assertRaisesRegex(TextWidthContractError, "480px"):
+            validate_payload_width(
+                payload, metrics=metrics, max_pixels=240, source_name="system NL2",
+            )
+        with self.assertRaisesRegex(TextWidthContractError, "unbreakable"):
+            insert_safe_line_breaks(
+                payload, metrics=metrics, max_pixels=240, source_name="system NL2",
+            )
+
     def test_wrap_is_an_insertion_only_transform(self):
         payload = "日 本語".encode("utf-8") + b"\0"
         wrapped, inserted = insert_safe_line_breaks(
@@ -134,6 +150,36 @@ class WidthContractTests(unittest.TestCase):
         )
         for target in (0x0866, 0x0867):
             self.assertEqual(assignments[target][0], registry.subtitle_context)
+
+    def test_event_font_classification_preserves_native_text_mode(self):
+        registry = load_width_registry(ROOT / "texts/locales/mapping/text_width_contexts.json")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            source = event_root / "selected.c"
+            for start, expected in (
+                ("TEXTSTART", registry.talk_context),
+                ("EvtTextStart", registry.talk_context),
+                ("REMOVEPORTRAITS", registry.talk_context),
+                ("EvtTextStartType1", registry.talk_context),
+                ("_1A22", registry.talk_context),
+                ("EvtTextStartType2", registry.talk_context),
+                ("TUTORIALTEXTBOXSTART", registry.default_context),
+                ("EvtTextTutorialStart", registry.default_context),
+                ("EvtTextStartType3", registry.default_context),
+                ("SOLOTEXTBOXSTART", registry.default_context),
+                ("EvtTextStartType4", registry.default_context),
+                ("_1A25", registry.default_context),
+                ("EvtTextStartType5", registry.default_context),
+            ):
+                with self.subTest(start=start):
+                    source.write_text(
+                        f"EventScr Selected[] = {{ {start} TEXTSHOW(MSG_SELECTED) ENDA }};\n"
+                    )
+                    assignments, _ = classify_targets(
+                        ROOT, target_count=3, registry=registry, event_root=event_root,
+                        message_ids={"MSG_SELECTED": 1}, fixed_label_ids=(),
+                    )
+                    self.assertEqual(assignments[1][0], expected)
 
     def test_subtitle_help_payloads_never_receive_generated_newlines(self):
         build = build_game_catalog(enabled_locales=("ja",))

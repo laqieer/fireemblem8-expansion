@@ -5,6 +5,7 @@
 
 #include "authored_corpus_ids.h"
 #include "game_localization_catalog.h"
+#include "localized_game_text_storage.h"
 #include "localized_text_codec.h"
 
 ExpansionLocaleId ExpansionLocale_GetCurrent(void)
