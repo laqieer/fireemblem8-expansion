@@ -7,6 +7,175 @@ bitmaps and width records win whenever they cover a scalar. Only missing
 glyphs retain the immutable FEBuilderGBA/Noto result. Bare `make` does not
 invoke FEHRR, FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
+## Resource index storage
+
+The host tools accept the existing plain JSON representation and the version-1
+`cjk-resource-index` envelope for `fonts/cjk/fehrr-sources.json` and
+`fonts/cjk/runtime_usage.json`. Defaults remain plain; generation preserves the
+representation already present. Both decode to the same complete JSON object.
+The shared `scripts.fonttools.cjk.resource_index` API provides `decode_index`,
+`encode_index(value, packed=False)`, `load_index` and `encode_like_index`.
+The last preserves the existing format unless the maintainer operation
+explicitly supplies its `packed` keyword.
+
+The envelope has exactly `kind`, `version`, `encoding`, `decoded_bytes` and
+`payload` fields. `kind` is `cjk-resource-index`, integer `version` is `1`,
+`encoding` is `xz-base64`, integer `decoded_bytes` is the canonical UTF-8 JSON
+byte count, and `payload` is base64 of one XZ stream. Encoding uses sorted,
+two-space-indented UTF-8 JSON with a final newline and the standard-library XZ
+preset 6. Repeated encoding is deterministic within one encoder build; valid
+XZ streams can differ across liblzma builds. Generation and same-format
+conversion retain validated stored packed bytes when their canonical JSON
+is unchanged, avoiding false drift without pinning a new toolchain.
+Stored and decoded indexes are
+bounded to 4 MiB; XZ decoding has a 64 MiB decoder-memory bound. Unknown fields
+or versions, duplicate keys, malformed data, incorrect size/checksum, truncated
+or trailing streams and nested envelopes fail explicitly.
+Numeric tokens that would become non-finite host values, including exponent
+overflow, reject before mutation; representable finite exponents remain valid.
+Unpaired surrogate keys or values reject through `ResourceIndexError` before
+return or publication. Valid escaped Unicode pairs still round-trip; failed
+encoding leaves the previous stored file unchanged.
+
+Logical schema, FEHRR source priority, immutable FEBuilder baseline and
+glyph/width/bitmap checks are unchanged. Physical checksums bind the actual
+stored representation, not a reconstruction of its decoded JSON. A format
+conversion never creates font, content or provenance approval.
+Repacking an older valid manifest without a FEHRR priority binding refuses
+through the normal typed diagnostic without changing files; conversion does
+not invent that missing provenance.
+
+For an explicitly selected index in an owned checkout or fixture:
+
+```bash
+python3 -m scripts.fonttools.cjk --root OWNED_ROOT repack-index --index fehrr --format packed
+python3 -m scripts.fonttools.cjk --root OWNED_ROOT repack-index --index runtime-usage --format packed
+python3 -m scripts.fonttools.cjk --root OWNED_ROOT check
+```
+
+Use `--format plain` to reverse the conversion. The operation validates the
+existing compact assets (and generated inventory for runtime usage), prepares
+all bytes before writing, and updates only the selected index and its existing
+inventory/asset-manifest checksum chain. It does not provide a multi-file
+transaction: use an owned, otherwise idle root and inspect every resulting
+file. Invalid input is rejected before writes. Do not hand-edit generated
+indexes or checksums. Revert a migration through the normal Git delivery path.
+
+Dependencies are the existing CJK tools and Python 3.12 standard library;
+there is no new package, service or feature conflict. This host-only interface
+changes no atlas, ROM/RAM, locale, configuration identity, save epoch, modern
+debug/release or archival behavior. Default-index migrations are independent
+dependent contracts [#349](https://github.com/laqieer/fireemblem8-expansion/issues/349)
+and [#350](https://github.com/laqieer/fireemblem8-expansion/issues/350).
+
+### TC-CJK-RESOURCE-STORAGE-001: bounded lossless resource indexes
+
+Issue [#348](https://github.com/laqieer/fireemblem8-expansion/issues/348).
+Start from a clean source checkout on Linux/CPython 3.12 with the committed CJK
+inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
+
+1. Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index -v`.
+   The test creates an owned temporary source/font fixture, converts both
+   indexes through the actual CLI, and runs existing inventory/compact-asset
+   consumers against plain and packed inputs.
+2. Require complete decoded equality, repeated deterministic encoding,
+   unchanged plain bytes and every glyph/width/bitmap byte, valid physical
+   checksums, and complete reverse-conversion data in the original format.
+   Fresh encoding is deterministic within one encoder build. Unchanged packed
+   inputs retain their original streams without recompression, including valid
+   alternate streams. Explicit format round trips preserve complete logical
+   data, not necessarily the historical compressed bytes.
+   Explicit format changes update only the actual physical checksum chain.
+   The
+   pre-interface FEHRR reader rejects the packed fixture. An explicit plain
+   fixture remains the representation control even after default migrations;
+   obtain pre-migration plain data from the exact parent Git blob, not by
+   assuming the current checkout still stores that index in plain form.
+3. Exercise malformed encoding, non-JSON NaN/infinity constants, unknown
+   fields/version, non-string payloads, nested envelopes, boolean size/version,
+   wrong size, damaged/truncated/trailing streams and oversized expansion.
+   Require explicit errors; a corrupt previous index identifies its path,
+   and a corrupt owned CLI input must leave every
+   existing index/checksum file unchanged. Legacy and schema-2 readers share
+   the source-lock schema/repository/commit/tree validation before repacking.
+4. In owned roots, exercise both `build_runtime_split_assets` and
+   `build_fehrr_priority_assets` with existing plain and packed FEHRR indexes.
+   The returned index keeps that representation, and the returned manifest
+   hashes its actual emitted bytes. The fallback fixture preserves all twelve
+   atlas payloads; a separate supplied FEHRR glyph need not also exist in the
+   fallback baseline. A configured blank FEHRR glyph with no visible same-game
+   fallback uses the supported baseline reason and remains valid after refresh.
+   Runtime-usage catalog, event, portrait and font inputs
+   resolve against the requested root, including relative roots, without
+   changing the caller's working directory. Missing or untracked literal
+   provenance in that root must refuse instead of borrowing the tool checkout.
+5. In valid bound legacy/schema-2 roots with each stored representation,
+   replace selected scalars without changing their counts. Full-union legacy
+   corpora use representable paired-style changes per locale; schema-2 uses
+   actual corpus-exclusive scalars to isolate each of the four assets. The
+   preview must verify every changed and unchanged selection, including
+   Chinese fallback from Japanese sources. Both the priority builder and
+   writer must refuse before changing any atlas, index or manifest output. An
+   unchanged bound selection must still build and publish its complete valid
+   output. The source-backed generator controls below create these owned
+   fixtures and also reject count-only comparison and writer-bypass mutations.
+
+The priority refresh uses the existing canonical runtime-split producer and
+retains its source-coverage-change refusal. Legacy schema-1 assets remain
+readable; an explicit priority regeneration emits the current validated
+schema-2 asset manifest rather than the obsolete incompatible writer shape.
+This is independent of the plain/packed resource-index representation and
+does not convert committed defaults.
+
+The automation is the codec module above plus actual package/inventory/CLI
+consumers, not a raw-source assertion. It removes only its owned temporary
+files and never converts stock inputs. All existing source/schema/provenance
+checks remain required. This is storage evidence, not font-art, selected-game,
+rendered-text or supported ROM-profile qualification.
+
+The existing review-family `cjk-resource-index` binding exercises direct
+wire, generated-owner/output/consumer/drift and plain/packed resource
+predicates. Run
+`python3 -B -m unittest scripts.workflow_pilot.tests.test_cjk_subjects -v`
+for its complete-source, real numeric/stream mutation and
+semantics-preserving-refactor controls. Independent reference reads and XZ
+decoding enforce the same 4 MiB physical/decoded and 64 MiB decoder-memory
+bound before parsing expected values; invalid references yield unavailable,
+zero-check observations, not codec regression credit. Both stored formats
+reach the real legacy/schema-2 compact consumers and the inventory
+generator/check through the public maintainer operation. Actual generator
+controls use owned, clean Git source fixtures with empty maps, one supplied
+glyph, or a representable same-count scalar replacement; they execute the
+public generators and emitted-output consumer, not a
+mock collector, and do not qualify upstream font provenance or font art.
+The owned literal-provenance source
+fixture gives the existing literal-provenance checker a local Git index of
+its requested-root C/header inputs, without creating a commit or borrowing credentials.
+The separate font-input fixture creates its own real local commit.
+The execution-only closure follows transitive declared local imports from
+the immutable candidate, including relative and function-local imports; an
+unrelated new script does not become an origin prerequisite. Execution-only
+data fixtures are staged from each observed immutable tree, so unrelated
+fixture additions/deletions cannot change member identity or invent missing
+origin inputs. The optional reviewed fixture adapter does not replace required
+source capture; changed catalog/portrait validators remain semantic generated
+inputs. Data fixtures are not promoted to semantic predicates, and missing
+required origin imports still refuse explicitly. At admitted candidate calls,
+value/type, arithmetic, attribute, lookup, runtime and LZMA failures are
+contract violations, not unavailable setup evidence. The two candidate-call
+paths share that finite error-family definition; independent reference and
+OS/backend setup failures remain unavailable. Unrecognized failures never
+supply success or affected-fixed credit and require explicit source triage.
+Only the complete generated CJK family stages its additional fixtures, in
+its own existing worker root. Mixed requests retain their declared execution
+union and observation order, but other probes cannot see CJK-only fixture
+trees. Wire/resource-only observations read their declared indexes without
+copying those fixture trees. The malformed-input decoder and CLI diagnostic
+consumer reuse the same finite failure handling and preserve actual causes.
+This binding does not wrap a whole-suite pass
+as member evidence or replace the font CLI, candidate/master Build or final
+delivery gates.
+
 ## Inventory contract
 
 Run:

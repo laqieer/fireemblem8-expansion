@@ -28,6 +28,7 @@ from scripts.fonttools.cjk.package import (
     compact_asset_filenames,
     refresh_compact_asset_inventory_provenance,
 )
+from scripts.fonttools.cjk.resource_index import decode_index, load_index
 
 
 class CjkFontTests(unittest.TestCase):
@@ -231,7 +232,7 @@ class CjkFontTests(unittest.TestCase):
         self.assertIn(0x8BCA, locale_scalars["zh-Hans"])
 
     def test_runtime_usage_registry_covers_every_string_without_reunion(self):
-        usage = json.loads((ROOT / "fonts/cjk/runtime_usage.json").read_text())
+        usage = load_index(ROOT / "fonts/cjk/runtime_usage.json")
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         self.assertEqual(
             usage["policy"],
@@ -397,7 +398,7 @@ class CjkFontTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "graphics/fonts/cjk/manifest.json").read_text()
         )
-        fehrr_lock = json.loads((ROOT / FEHRR_SOURCES).read_text())
+        fehrr_lock = load_index(ROOT / FEHRR_SOURCES)
         source_scalars = {
             prefix: {
                 int(row["scalar"][2:], 16)
@@ -449,7 +450,7 @@ class CjkFontTests(unittest.TestCase):
     def test_fehrr_priority_lock_preserves_source_widths_and_fallbacks(self):
         manifest = json.loads((ROOT / "graphics/fonts/cjk/manifest.json").read_text())
         lock_data = (ROOT / FEHRR_SOURCES).read_bytes()
-        lock = json.loads(lock_data)
+        lock = decode_index(lock_data)
         priority = manifest["sources"]["fehrr_priority"]
         self.assertEqual(priority["path"], FEHRR_SOURCES)
         self.assertEqual(priority["sha256"], hashlib.sha256(lock_data).hexdigest())

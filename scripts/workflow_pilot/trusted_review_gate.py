@@ -404,6 +404,9 @@ class ReviewTools:
     def _stage(self, tree, root, members):
         paths = {path for member in members for path in member.source_inputs}
         probes = {item.probe for item in members}
+        fixtures = getattr(self.subjects, "fixture_inputs", None)
+        if fixtures is not None:
+            paths.update(fixtures(tree, probes))
         tree.materialize(root, sorted(paths))
         (root / "build").mkdir(exist_ok=True)
         tool_paths = ("scripts/workflow_pilot/__init__.py",
@@ -428,6 +431,15 @@ class ReviewTools:
                       "obligation omits shared worker candidate inputs")
         probes = [item.probe for item in members]
         model.unique(probes, "probe bindings")
+        generated = tuple(item for item in members
+                          if item.probe.startswith("cjk-resource:generated:"))
+        remaining = tuple(item for item in members
+                          if not item.probe.startswith("cjk-resource:generated:"))
+        if generated and remaining:
+            observed = (*self.run_obligations(generated, revision),
+                        *self.run_obligations(remaining, revision))
+            by_member = {item.obligation.identity: item for item in observed}
+            return tuple(by_member[item.identity] for item in members)
         objects = {item.identity: tuple((path, tree.oid(path)) for path in item.source_inputs)
                    for item in members}
         build = self.subject_root / "build"
