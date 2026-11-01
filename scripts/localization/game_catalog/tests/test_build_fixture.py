@@ -580,45 +580,80 @@ class FixtureBuildTests(unittest.TestCase):
                             CompiledInputError, "outside the active message set",
                         ):
                             validate_compiled_references(context, target_count=3)
+        for body, valid in (
+            ("struct P { int *msg[2]; }; struct P p = {.msg = {0, 0}};", True),
+            ('struct P { const char *msg; }; struct P p = {.msg = "not an ID"};', True),
+            ("struct P { struct { int a, b; } msg; }; struct P p = {.msg = {3, 4}};", True),
+            ("struct P { u16 optionTextId; }; struct P p = {.optionTextId = 1};"
+             "int Read(void) { return p.optionTextId == 0; }", True),
+            ("struct P { u16 msg; }; struct P p = {.msg = 1};", True),
+            ("struct P { u16 msg; }; struct P p = {.msg = 3};", False),
+            ("struct P { u16 msg; }; struct P p = {.msg = {3}};", False),
+            ("struct P { u16 msg; }; struct P p = {.msg = {{1},}};", True),
+        ):
+            with self.subTest(member_kind=body):
+                source.write_text('#include "global.h"\n' + body + "\n", encoding="ascii")
+                if valid:
+                    validate_compiled_references(context, target_count=3)
+                else:
+                    with self.assertRaisesRegex(
+                        CompiledInputError, "outside the active message set",
+                    ):
+                        validate_compiled_references(context, target_count=3)
+        for field in ("nameTextId", "descTextId", "useDescTextId"):
+            for value, valid in (("1u", True), ("3u", False)):
+                with self.subTest(array_member_designator=field, value=value):
+                    source.write_text(
+                        '#include "global.h"\n#include "bmitem.h"\n'
+                        f"const struct ItemData Retained[] = {{[0].{field} = {value}}};\n",
+                        encoding="ascii",
+                    )
+                    if valid:
+                        validate_compiled_references(context, target_count=3)
+                    else:
+                        with self.assertRaisesRegex(
+                            CompiledInputError, "outside the active message set",
+                        ):
+                            validate_compiled_references(context, target_count=3)
         for value, valid in (("1u", True), ("3u", False)):
             for operand in (
-                    "SELECTED_MESSAGE", "(enum MessageId)SELECTED_MESSAGE",
-                    "(const enum MessageId)SELECTED_MESSAGE",
-                    "__builtin_bswap16(SELECTED_MESSAGE << 8)",
+                "SELECTED_MESSAGE", "(enum MessageId)SELECTED_MESSAGE",
+                "(const enum MessageId)SELECTED_MESSAGE",
+                "__builtin_bswap16(SELECTED_MESSAGE << 8)",
             ):
-                    with self.subTest(enum_value=value, operand=operand):
-                        source.write_text(
-                            '#include "global.h"\n'
-                            f"enum MessageId {{ SELECTED_MESSAGE = {value} }};\n"
-                            f"void Retained(void) {{ GetStringFromIndex({operand}); }}\n",
-                            encoding="ascii",
-                        )
-                        if valid:
+                with self.subTest(enum_value=value, operand=operand):
+                    source.write_text(
+                        '#include "global.h"\n'
+                        f"enum MessageId {{ SELECTED_MESSAGE = {value} }};\n"
+                        f"void Retained(void) {{ GetStringFromIndex({operand}); }}\n",
+                        encoding="ascii",
+                    )
+                    if valid:
+                        validate_compiled_references(context, target_count=3)
+                    else:
+                        with self.assertRaisesRegex(
+                            CompiledInputError, "outside the active message set",
+                        ):
                             validate_compiled_references(context, target_count=3)
-                        else:
-                            with self.assertRaisesRegex(
-                                CompiledInputError, "outside the active message set",
-                            ):
-                                validate_compiled_references(context, target_count=3)
             for body in (
-                    "typedef unsigned short LocalId __attribute__((may_alias));"
-                    "struct ItemData item = {.nameTextId = (LocalId)SELECTED_MESSAGE};"
-                    "GetStringFromIndex(item.nameTextId);",
-                    "GetStringFromIndex((StartTalkMsg(1, 1, SELECTED_MESSAGE), 1));",
+                "typedef unsigned short LocalId __attribute__((may_alias));"
+                "struct ItemData item = {.nameTextId = (LocalId)SELECTED_MESSAGE};"
+                "GetStringFromIndex(item.nameTextId);",
+                "GetStringFromIndex((StartTalkMsg(1, 1, SELECTED_MESSAGE), 1));",
             ):
-                    with self.subTest(local_or_nested=value, body=body):
-                        source.write_text(
-                            '#include "global.h"\n#include "bmitem.h"\n#include "scene.h"\n'
-                            f"void Retained(void) {{ enum {{ SELECTED_MESSAGE = {value} }};"
-                            + body + "}\n", encoding="ascii",
-                        )
-                        if valid:
+                with self.subTest(local_or_nested=value, body=body):
+                    source.write_text(
+                        '#include "global.h"\n#include "bmitem.h"\n#include "scene.h"\n'
+                        f"void Retained(void) {{ enum {{ SELECTED_MESSAGE = {value} }};"
+                        + body + "}\n", encoding="ascii",
+                    )
+                    if valid:
+                        validate_compiled_references(context, target_count=3)
+                    else:
+                        with self.assertRaisesRegex(
+                            CompiledInputError, "outside the active message set",
+                        ):
                             validate_compiled_references(context, target_count=3)
-                        else:
-                            with self.assertRaisesRegex(
-                                CompiledInputError, "outside the active message set",
-                            ):
-                                validate_compiled_references(context, target_count=3)
         for selected, included, valid in (("u16", "u8", False), ("u8", "u16", True)):
             with self.subTest(selected=selected, included=included):
                 source.write_text(

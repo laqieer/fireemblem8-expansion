@@ -47,7 +47,7 @@ _INTEGER_RE = re.compile(
 )
 _MESSAGE_FIELD_RE = re.compile(
     r"\.(nameTextId|descTextId|useDescTextId|helpTextId|textId|msgId|messageId|itemName|"
-    r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*="
+    r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*=(?!=)"
 )
 _MESSAGE_CALL_ARGUMENTS = {
     "GetStringFromIndex": (0,),
@@ -389,8 +389,41 @@ def _split_arguments(arguments: str) -> List[str]:
     return result
 
 
+def _message_designator_start(masked: str, dot: int) -> Optional[int]:
+    cursor = dot
+    while True:
+        previous = cursor - 1
+        while previous >= 0 and masked[previous].isspace():
+            previous -= 1
+        if previous < 0:
+            return None
+        if masked[previous] in "{,":
+            return cursor
+        if masked[previous] == "]":
+            depth = 1
+            previous -= 1
+            while previous >= 0 and depth:
+                depth += (masked[previous] == "]") - (masked[previous] == "[")
+                previous -= 1
+            if depth:
+                return None
+            cursor = previous + 1
+        elif masked[previous].isalnum() or masked[previous] == "_":
+            while previous >= 0 and (masked[previous].isalnum() or masked[previous] == "_"):
+                previous -= 1
+            while previous >= 0 and masked[previous].isspace():
+                previous -= 1
+            if previous < 0 or masked[previous] != ".":
+                return None
+            cursor = previous
+        else:
+            return None
+
+
 def _iter_message_fields(masked: str) -> Iterable[Tuple[str, int, int]]:
     for match in _MESSAGE_FIELD_RE.finditer(masked):
+        if _message_designator_start(masked, match.start()) is None:
+            continue
         start = end = match.end()
         while end < len(masked) and masked[end] not in ",;)]}":
             if masked[end] in "([{":

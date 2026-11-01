@@ -358,6 +358,44 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(list(output.rglob("*.headers.d")), [])
         self.assertEqual(list(output.rglob("game_localization_*")), [])
 
+    def test_selected_compile_context_excludes_late_dependency_file_remakes(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="text-late-dependency-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        namespace = output / "debug/aapcs"
+        artifact = namespace / "selected-text-inputs.json"
+        dependency = namespace / "src/main.d"
+        makefile = self.project / "late-dependency.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            ".PHONY: late-dependency\n"
+            f"{artifact}: | late-dependency\n"
+            "late-dependency:\n"
+            f'\t@mkdir -p "{dependency.parent}"\n'
+            f'\t@printf "\\n" > "{dependency}"\n',
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile), str(artifact),
+                f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug", "FE8_PROJECT=default",
+                "MODERN_CC=/missing/fe8-compiler", "CC=/missing/fe8-compiler",
+                "MODERN_PREPROC=/missing/preprocessor", "MODERN_SCANINC=/missing/scaninc",
+                f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, text=True, capture_output=True, check=False, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        context = json.loads(artifact.read_bytes())
+        units = {unit["logical_source"]: unit for unit in context["units"]}
+        self.assertIn("src/main.c", units)
+        self.assertEqual(units["src/main.c"]["compiler_input"], "src/main.c")
+        self.assertTrue(dependency.is_file())
+        self.assertEqual(list(output.rglob("*.o")), [])
+        self.assertEqual(list(output.rglob("*.pre.c")), [])
+
     def test_selected_compiled_font_metrics_use_real_private_include_and_macro_context(self):
         compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
         if shutil.which(compiler) is None:

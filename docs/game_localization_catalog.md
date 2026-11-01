@@ -189,7 +189,13 @@ arithmetic or filtered by a C-type name whitelist. Call IDs come from that
 compiler's semantic `tree-original` output after actual argument conversion;
 signed-int, typedef and comma-list declarations are not message calls.
 Scalar/array initializer fields use their actual destination member type
-and compile-time range expressions in the original C scope. Evaluation
+and compile-time assertions after their declaration in the original C
+scope, without rewriting the initializer. Integer `.msg` members are
+checked; unrelated pointer, pointer-array and aggregate `.msg` members are
+left intact. Nested scalar braces and trailing commas preserve their native
+conversion. Complete direct designator lists such as `[0].nameTextId` do
+not evade checks, and equality/member expressions are not initializers.
+Evaluation
 compiles the frozen preprocessed token stream, without replaying operands
 under later macros or another include depth. The checked copy and compiler
 dump are temporary; they add no final ROM data or runtime code. Dynamic
@@ -254,6 +260,7 @@ rendered page, layout, portrait or full-game qualification.
    ```sh
    python3 -m unittest scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests scripts.localization.game_catalog.tests.test_control_streams.SelectedEventContinuationTests scripts.texttools.tests.test_textprocess_publication -v
    python3 -m unittest scripts.localization.game_catalog.tests.test_width_contract.WidthContractTests scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_direct_talk_inventory_is_independent_of_directory_order scripts.fonttools.cjk.tests.test_cjk_fonts.CjkFontTests.test_inventory_uses_all_native_requirements_and_rejects_missing_payloads -v
+   python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compile_context_plans_all_c_slots_once_without_catalog_build scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compile_context_excludes_late_dependency_file_remakes -v
    ```
 
 2. Observe the owned three-message fixtures. An allocation/header symbol must
@@ -284,6 +291,11 @@ rendered page, layout, portrait or full-game qualification.
    `u16` inversion controls retain their original C semantics.
    Named enum casts, compiler builtins, local attributed typedefs/initializers
    and nested message calls are checked in their actual scope.
+   The Make context fixture creates a dependency file after the parent has
+   parsed its include list. Its native child plan must still contain
+   exactly the selected C objects, not a builtin `.d.o` remake. This plans
+   real recipes without executing either compiler or preprocessor; late
+   private flags and recorded data-preprocessor arguments remain intact.
 3. Execute the real target consumers, explicitly outside the host-only lane:
 
    ```sh

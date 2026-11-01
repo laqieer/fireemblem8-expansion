@@ -980,10 +980,12 @@ $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 .SECONDEXPANSION:
 MODERN_TEXT_NATIVE_MAKE := $(MAKE)
 MODERN_TEXT_NATIVE_MAKEFILE := $(firstword $(MAKEFILE_LIST))
-modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -n -B \
+# A dependency created after parent parsing must not gain a builtin .d.o remake.
+modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n -B \
 	-f "$(MODERN_TEXT_NATIVE_MAKEFILE)" NODEP=1 MODERN_DRY_RUN=1 \
 	$(foreach makefile,$(MAKEFILE_LIST),-o "$(makefile)") \
 	-o expansion-modern-toolchain-check -o "$(MODERN_PREPROC)" \
+	$(foreach prerequisite,$(MODERN_PREPROC),-o "$(prerequisite)") \
 	-o "$(MODERN_TEXT_COMPILE_CONTEXT)" expansion-modern-toolchain-check
 define MODERN_TEXT_INPUT_RULE
 ifneq ($(and $(strip $(3)),$(filter $(1),$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS))),)

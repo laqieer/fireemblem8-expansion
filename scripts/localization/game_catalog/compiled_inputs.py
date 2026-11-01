@@ -15,6 +15,7 @@ from scripts.localization.game_locales.structural_completion import (
     _iter_message_fields,
     _iter_named_calls,
     _mask_c_comments_and_strings,
+    _message_designator_start,
     _scan_balanced,
 )
 
@@ -101,6 +102,48 @@ def _native_command(
     return command
 
 
+def _scalar_initializer_operand(value: str) -> str | None:
+    while True:
+        masked = _mask_c_comments_and_strings(value)
+        opening = len(masked) - len(masked.lstrip())
+        if opening >= len(masked) or masked[opening] != "{":
+            return value
+        _, closing = _scan_balanced(masked, opening)
+        if masked[closing + 1:].strip():
+            return None
+        body = masked[opening + 1:closing]
+        end = len(body.rstrip())
+        if end and body[end - 1] == ",":
+            end -= 1
+        index = 0
+        while index < end:
+            if body[index] in "([{":
+                _, nested = _scan_balanced(body, index)
+                index = nested + 1
+            elif body[index] == ",":
+                return None
+            else:
+                index += 1
+        if body.lstrip().startswith((".", "[")):
+            return None
+        value = value[opening + 1:opening + 1 + end].strip()
+        if not value:
+            return "0"
+
+
+def _initializer_declaration_end(masked: str, closing: int) -> int:
+    index = closing + 1
+    while index < len(masked):
+        if masked[index] in "([{":
+            _, nested = _scan_balanced(masked, index)
+            index = nested + 1
+        elif masked[index] == ";":
+            return index + 1
+        else:
+            index += 1
+    raise CompiledInputError("native initializer declaration has no statement terminator")
+
+
 def _checked_initializers(source: str, target_count: int) -> str:
     masked = _mask_c_comments_and_strings(source)
     references = []
@@ -112,29 +155,47 @@ def _checked_initializers(source: str, target_count: int) -> str:
         opening = masked.index("{", match.start())
         _, closing = _scan_balanced(masked, opening)
         owners.append((
-            opening, closing, match.group(1) + "[0]" * match.group(2).count("["),
+            opening, closing, match.group(1), match.group(2).count("["),
+            _initializer_declaration_end(masked, closing),
         ))
     for kind, start, end in _iter_message_fields(masked):
-        containing = [(closing - opening, owner) for opening, closing, owner in owners
+        containing = [(closing - opening, owner, rank, after)
+                      for opening, closing, owner, rank, after in owners
                       if opening < start < closing]
         if not containing:
             raise CompiledInputError(
                 f"cannot bind native initializer field {kind}({source[start:end].strip()})"
             )
-        _, owner = min(containing)
-        references.append((start, end, f"__typeof__({owner}.{kind})"))
+        _, owner, rank, after = min(containing)
+        dot = masked.rfind(".", 0, start)
+        designator = _message_designator_start(masked, dot)
+        if designator is None:
+            raise CompiledInputError("native message field lost its initializer designator")
+        prefix = source[designator:dot].strip()
+        for _ in range(rank):
+            if not prefix.startswith("["):
+                break
+            _, closing = _scan_balanced(_mask_c_comments_and_strings(prefix), 0)
+            prefix = prefix[closing + 1:].lstrip()
+        member = owner + "[0]" * rank + prefix + "." + kind
+        references.append((source[start:end].strip(), member, after))
     insertions = []
-    for start, end, destination in references:
-        # Classify and narrow in the original C scope; only the checked copy is compiled.
-        converted = f"({destination})({source[start:end]})"
-        condition = (
-            f"__builtin_choose_expr(__builtin_constant_p(({converted})), "
-            f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
-        )
-        insertions.append((start, f"__extension__ (({destination})("))
+    for index, (value, member, after) in enumerate(references):
+        integer = f"(__builtin_classify_type(({member})) == 1)"
+        operand = _scalar_initializer_operand(value)
+        condition = f"!{integer}"
+        if operand is not None:
+            destination = f"__typeof__(__builtin_choose_expr({integer}, ({member}), 0))"
+            converted = (
+                f"({destination})(__builtin_choose_expr({integer}, ({operand}), 0))"
+            )
+            condition = (
+                f"__builtin_choose_expr({integer} && __builtin_constant_p(({converted})), "
+                f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
+            )
         insertions.append((
-            end, ") + 0 * (int)sizeof(struct { char "
-            f"fe8_message_reference_outside_active_set[({condition}) ? 1 : -1]; }}))",
+            after, "\n__extension__ typedef char "
+            f"__fe8_message_reference_outside_active_set_{index}[({condition}) ? 1 : -1];\n",
         ))
     for offset, text in sorted(insertions, reverse=True):
         source = source[:offset] + text + source[offset:]
