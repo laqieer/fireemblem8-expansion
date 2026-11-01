@@ -1671,15 +1671,20 @@ Run and job times use a manual canonical
 Runner-backed completed jobs require
 `run-created <= job-created <= job-started <= job-completed <= run-updated`
 after the exact terminal refresh.
-Queued jobs have null start/completion, and in-progress jobs have a valid start
-but null completion. An active run's `updated_at` is not a live job-completion
+Native pending jobs may report strict integer-zero runner/group IDs with empty
+runner/group names. Only that coherent tuple is normalized to unknown runner
+identity; its null or creation-equal start is normalized to unknown start.
+These placeholders prove neither execution nor successful Build. After
+normalization, queued jobs require null start/completion; in-progress jobs
+require a valid start but null completion. An active run's `updated_at` is not a live job-completion
 upper bound; active jobs retain strict intrinsic chronology, while the upper
 bound is applied only after terminal run refresh. Canonical unassigned skipped jobs preserve GitHub's live
 timestamp quirk: created and started must be equal, while completion may equal
 them or precede them by exactly one second. Positive skipped duration,
 including one or 28 seconds, is rejected. These unassigned skipped jobs never
-satisfy a runner-backed success requirement. No wider chronology exception is
-accepted.
+satisfy a runner-backed success requirement. Apart from the exact pending
+placeholder normalization and captured skipped-job quirk, no chronology
+exception is accepted.
 
 ```bash
 repo=laqieer/fireemblem8-expansion
@@ -2262,8 +2267,8 @@ At job scope, router and mode-classifier have separate closed setup mappings.
 Every combined worker has a closed direct mapping: classifier dependency and
 fail-closed condition,
 `runs-on: ubuntu-latest`, its reviewed environment, and `steps`. The
-comprehensive `build` worker has `timeout-minutes: 90`; `host-tests`,
-`extended-host-tests`, and `legacy` remain 60 minutes, while all setup jobs and
+comprehensive `build`, `host-tests`, and `extended-host-tests` workers have
+`timeout-minutes: 90`; `legacy` remains 60 minutes, while all setup jobs and
 summary remain 5. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
 other dependencies, conditions/advisory mode, deployment environments, concurrency,
