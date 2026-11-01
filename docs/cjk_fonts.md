@@ -269,8 +269,10 @@ No classification, message, corpus, source-priority or atlas change is allowed.
 
 The physical chain is usage bytes -> inventory output byte-count/hash ->
 asset-manifest inventory checksum. The FEHRR index has no inventory-hash field
-and remains byte-identical. With `BASE` set to the exact parent, verify the
-complete committed conversion from the source root:
+and remains byte-identical. To verify the committed conversion, run from
+a clean checkout of the exact packed migration candidate (`HEAD`), with
+`BASE` set to its pre-migration parent containing the plain usage index.
+This is a conversion check, not a check of unrelated later usage changes:
 
 ```bash
 python3 - "$BASE" <<'PY'
