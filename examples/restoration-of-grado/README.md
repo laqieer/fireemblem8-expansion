@@ -58,10 +58,18 @@ emulator, SRAM file, alternate profile or manual judgment is needed.
    One-hot/counter fields whose later bits reach engine, debug or sort
    reservations must reject even when the first bit is free; a field crossing
    the guide-read boundary rejects only under the progressive policy.
+   The standalone C corpus replaces the former mutable inline two-field
+   script. It checks every ordering of three-field chapter/permanent,
+   interval-edge, overlapping and distinct-lifetime examples under both
+   guide policies, plus every colliding pair among eight descriptor positions.
+   Input bytes must remain unchanged after every result, including refusals.
 3. Keep the unselected default as the negative control: this module has no
    default build input or runtime hook. The pre-tracer interface was absent
    and the same host/ARM probes failed compilation. Do not treat either
    compiler success or these metadata vectors as target-ROM state evidence.
+   The former adjacent-only overlap control survived compilation/execution;
+   the complete ordering/position corpus now rejects it with a real native
+   assertion, not a compiler or loader failure.
 
 The tests use unique temporary directories and remove only those directories.
 They never change the real Git index, existing save files or framework flag
