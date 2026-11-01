@@ -1,6 +1,7 @@
 """Execute the optional reference's real allocation validator at its C interface."""
 
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 import unittest
@@ -89,6 +90,80 @@ class GradoAllocationNativeTests(unittest.TestCase):
                 "    fields[1].maxValue = 3;\n"
                 "    assert(GradoState_ValidateAllocation(fields, 2, GRADO_GUIDE_STATIC)"
                 " == GRADO_ALLOCATION_CAPACITY);\n"
+                "    {\n"
+                "        static const unsigned short owned[] = {\n"
+                "            101,102,103,104,105,106,107,108,109,110,111,112,\n"
+                "            113,114,115,116,117,118,119,125,130,132,135,136,138,179\n"
+                "        };\n"
+                "        struct GradoStateField single =\n"
+                "            {120,1,GRADO_STATE_BOOLEAN,1,255,GRADO_STATE_PERMANENT};\n"
+                "        unsigned int i;\n"
+                "        for (i = 0; i < sizeof(owned) / sizeof(owned[0]); ++i)\n"
+                "        {\n"
+                "            single.firstFlag = owned[i];\n"
+                "            assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_RESERVED);\n"
+                "        }\n"
+                "        for (i = 180; i <= 295; ++i)\n"
+                "        {\n"
+                "            single.firstFlag = i;\n"
+                "            assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_PROGRESSIVE)"
+                " == (i <= 235 || i >= 240 ? GRADO_ALLOCATION_GUIDE_OWNED"
+                " : GRADO_ALLOCATION_VALID));\n"
+                "            assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALID);\n"
+                "        }\n"
+                "        single.firstFlag = 120;\n"
+                "        single.chapter = 0;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_SCOPE);\n"
+                "        single.scope = GRADO_STATE_CHAPTER;\n"
+                "        single.firstFlag = 7;\n"
+                "        single.chapter = 21;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALID);\n"
+                "        single.chapter = 22;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_SCOPE);\n"
+                "        single.chapter = 0;\n"
+                "        single.bitCount = 0;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALUE);\n"
+                "        single.bitCount = 9;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALUE);\n"
+                "        single.bitCount = 1;\n"
+                "        single.kind = 255;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALUE);\n"
+                "        single.kind = GRADO_STATE_COUNTER;\n"
+                "        single.bitCount = 8;\n"
+                "        single.maxValue = 255;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALID);\n"
+                "        single.maxValue = 256;\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALUE);\n"
+                "        assert(GradoState_ValidateAllocation(0,1,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_INPUT);\n"
+                "        assert(GradoState_ValidateAllocation(&single,0,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_INPUT);\n"
+                "        assert(GradoState_ValidateAllocation(&single,1,"
+                "(enum GradoGuideStoragePolicy)2) == GRADO_ALLOCATION_INPUT);\n"
+                "        fields[0].firstFlag = 140;\n"
+                "        fields[0].bitCount = 3;\n"
+                "        fields[0].kind = GRADO_STATE_ONE_HOT;\n"
+                "        fields[0].maxValue = 3;\n"
+                "        fields[0].chapter = 255;\n"
+                "        fields[0].scope = GRADO_STATE_PERMANENT;\n"
+                "        fields[1] = fields[0];\n"
+                "        fields[1].firstFlag = 142;\n"
+                "        assert(GradoState_ValidateAllocation(fields,2,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_OVERLAP);\n"
+                "        fields[1].firstFlag = 143;\n"
+                "        assert(GradoState_ValidateAllocation(fields,2,GRADO_GUIDE_STATIC)"
+                " == GRADO_ALLOCATION_VALID);\n"
+                "    }\n"
                 "    return 0;\n}\n"
             )
             binary = root / "probe"
@@ -107,11 +182,17 @@ class GradoAllocationNativeTests(unittest.TestCase):
 
     def test_native_validator_compiles_for_the_supported_arm_abi(self):
         with tempfile.TemporaryDirectory() as temporary:
+            newlib = os.environ.get(
+                "MODERN_NEWLIB_INCLUDE",
+                "/usr/include/newlib" if Path("/usr/include/newlib/stdlib.h").is_file() else "",
+            )
+            header_flags = ["-isystem", newlib] if newlib else []
             result = subprocess.run(
                 [
                     "arm-none-eabi-gcc", "-std=gnu89", "-mthumb", "-mcpu=arm7tdmi",
                     "-DMODERN", "-DNONMATCHING", "-I", str(ROOT / "include"),
                     "-I", str(ROOT), "-I", str(EXAMPLE / "include"),
+                    *header_flags,
                     "-Wall", "-Wextra", "-Werror", "-c", str(SOURCE),
                     "-o", str(Path(temporary) / "state.o"),
                 ],

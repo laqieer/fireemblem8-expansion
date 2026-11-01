@@ -841,7 +841,7 @@
       ],
       "purpose": "Exercise the real optional reference C validator without changing game buffers or claiming a complete production allocation.",
       "prerequisites": "Python 3, host cc and supported ARM GCC from quickstart; no ROM, emulator, save file or alternate profile.",
-      "actions": "Run python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v. Execute valid descriptors, different-chapter bit reuse, same-chapter overlap, invalid one-hot/counter domains and scopes, native last-bit overflow, engine/debug/sort reservations and progressive versus static guide ownership.",
+      "actions": "Run python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v. Execute valid descriptors, temporary/permanent overlap and chapter reuse, invalid inputs/shapes/value/scope/chapter tags, native last-bit overflow, every retained fixed engine/debug/sort reservation and both complete progressive-guide ranges under both policies.",
       "expected_result": "The real C probe accepts valid nonoverlapping descriptors and different-chapter reuse, rejects invalid domains, overflow and reserved/owned flags, then the same production validator compiles for ARM/AAPCS.",
       "negative_control": "Before the tracer, the public interface and source are absent and both compiler probes fail. Progressive policy rejects guide-bit allocation; the unselected default links no reference code.",
       "interactions": "Project-specific reference only, using existing native event-flag constants. Static-guide policy is input to allocation validation, not proof that guide consumers have been redirected. No new framework feature gate or prerequisite is added.",

@@ -13,8 +13,9 @@ static int GradoState_IsReservedFlag(unsigned int flag, unsigned int scope)
     if (scope == GRADO_STATE_CHAPTER)
         return flag <= EVFLAG_DEFEAT_ALL || flag == 39;
 
-    return flag <= EVFLAG_EXTRA_UNIT(9) || flag == EVFLAG_HIDE_BLINKING_ICON
-        || flag == EVFLAG_136 || flag == 0xB3;
+    return flag <= EVFLAG_EXTRA_UNIT(9) || (flag >= 0x71 && flag <= 0x77)
+        || flag == 0x7D || flag == 0x82 || flag == EVFLAG_HIDE_BLINKING_ICON
+        || flag == 0x87 || flag == EVFLAG_136 || flag == 0x8A || flag == 0xB3;
 }
 
 enum GradoAllocationResult GradoState_ValidateAllocation(

@@ -39,9 +39,13 @@ emulator, SRAM file, alternate profile or manual judgment is needed.
    bit reuse across different chapters. Same-chapter overlap, incompatible
    one-hot/count domains, unknown scopes, boundary overflow, chapter flags
    1 through 6, debug flag 39 and permanent engine/sort reservations reject.
-   The first guide display flag rejects under the progressive policy and is
-   available only under the explicit static policy. Native last-bit
-   boundaries are exercised without writing any game flags.
+   This includes inherited postgame flags 0x71 through 0x77, ending flag
+   0x7D, boss-BGM flag 0x82, trade-tutorial flag 0x87 and saved world-map
+   flag 0x8A, not just names already present in `event-flags.h`.
+   Both complete guide display/read ranges reject under the progressive
+   policy and are available only under the explicit static policy; their
+   unused gap remains available. Native last-bit, chapter-index, empty-input
+   and permanent-overlap boundaries are exercised without writing game flags.
 3. Keep the unselected default as the negative control: this module has no
    default build input or runtime hook. The pre-tracer interface was absent
    and the same host/ARM probes failed compilation. Do not treat either
@@ -51,5 +55,8 @@ The tests use unique temporary directories and remove only those directories.
 They never change the real Git index, existing save files or framework flag
 buffers. The host probe uses only an ABI-type adapter; it compiles the real
 validator rather than a retyped implementation. The ARM compile uses actual
-framework headers and constants. Runtime guide policy, concrete allocation,
+framework headers and constants, including the supported Debian/Ubuntu
+newlib-header fallback. The existing full Build job runs this suite after its
+host/ARM dependencies are installed; no new job or tool prerequisite is added.
+Runtime guide policy, concrete allocation,
 save compatibility and gameplay integrations are intentionally not claimed.
