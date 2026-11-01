@@ -155,6 +155,9 @@ class CjkSubjectTests(unittest.TestCase):
         for failure in (
             "malformed_base64.b64decode(None, validate=True)",
             'raise RuntimeError("controlled untyped parser failure")',
+            'raise AttributeError("controlled untyped parser failure")',
+            'raise IndexError("controlled untyped parser failure")',
+            'raise ArithmeticError("controlled untyped parser failure")',
         ):
             with self.subTest(failure=failure):
                 tree = ast.parse(original)
@@ -181,7 +184,10 @@ class CjkSubjectTests(unittest.TestCase):
     def test_untyped_valid_encoder_and_writer_failures_are_contract_violations(self):
         path = "scripts/fonttools/cjk/resource_index.py"
         original = (self.repo.root / path).read_text()
-        for error in ("TypeError", "KeyError", "RuntimeError"):
+        for error in (
+            "TypeError", "KeyError", "RuntimeError",
+            "AttributeError", "IndexError", "ArithmeticError",
+        ):
             for name in ("encode_index", "encode_like_index"):
                 with self.subTest(error=error, operation=name):
                     tree = ast.parse(original)
