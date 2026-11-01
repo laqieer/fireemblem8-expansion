@@ -85,6 +85,8 @@ class ResourceIndexTests(unittest.TestCase):
                     ROOT / prefix, root / prefix,
                     ignore=shutil.ignore_patterns("*.o", "__pycache__"),
                 )
+            for arguments in (("init", "--quiet"), ("add", "--", "src", "include")):
+                subprocess.run(["git", "-C", str(root), *arguments], check=True)
             mapping_path = root / catalog.DEFAULT_MAPPING_PATH
             mapping = json.loads(mapping_path.read_bytes())
             mapping["rows"][0]["source"] = {
@@ -111,6 +113,49 @@ class ResourceIndexTests(unittest.TestCase):
                     _runtime_catalog_usage(root, "ja")
             finally:
                 registry.write_bytes(original)
+            literal_source = next(
+                row["source"]["regional_sources"]["ja"]["provenance"]["source_path"]
+                for row in mapping["rows"]
+                if row["source"].get("regional_sources", {}).get("ja", {}).get("kind")
+                == "literal"
+            )
+            literal_path = root / literal_source
+            literal_bytes = literal_path.read_bytes()
+            literal_path.unlink()
+            with self.assertRaisesRegex(ValueError, "source_path"):
+                _runtime_catalog_usage(root, "ja")
+            literal_path.write_bytes(literal_bytes)
+            subprocess.run(
+                ["git", "-C", str(root), "rm", "--cached", "--quiet", "--", literal_source],
+                check=True,
+            )
+            with self.assertRaisesRegex(ValueError, "not committed"):
+                _runtime_catalog_usage(root, "ja")
+
+    def test_schema2_repack_rejects_invalid_lock_provenance_without_writing(self):
+        for field, value in (
+            ("schema_version", 2), ("schema_version", True),
+            ("repository", "https://example.invalid/unrelated"),
+            ("commit", "not-a-commit"), ("tree_sha256", "not-a-tree"),
+        ):
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                for prefix in ("fonts/cjk", "graphics/fonts/cjk"):
+                    shutil.copytree(ROOT / prefix, root / prefix)
+                lock_path = root / FEHRR_SOURCES
+                lock = decode_index(lock_path.read_bytes())
+                target = lock if field == "schema_version" else lock["source"]
+                target[field] = value
+                data = encode_index(lock)
+                lock_path.write_bytes(data)
+                manifest_path = root / "graphics/fonts/cjk/manifest.json"
+                manifest = json.loads(manifest_path.read_bytes())
+                manifest["sources"]["fehrr_priority"]["sha256"] = hashlib.sha256(data).hexdigest()
+                manifest_path.write_bytes(encode_index(manifest))
+                before = {path: path.read_bytes() for path in (lock_path, manifest_path)}
+                with self.assertRaisesRegex(CjkFontError, "provenance"):
+                    write_resource_index(root, "fehrr", packed=True)
+                self.assertEqual({path: path.read_bytes() for path in before}, before)
 
     def test_repack_without_a_legacy_priority_binding_refuses_without_mutation(self):
         with tempfile.TemporaryDirectory() as temporary:

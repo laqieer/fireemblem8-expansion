@@ -96,15 +96,19 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
    fields/version, non-string payloads, nested envelopes, boolean size/version,
    wrong size, damaged/truncated/trailing streams and oversized expansion.
    Require explicit errors; a corrupt owned CLI input must leave every
-   existing index/checksum file unchanged.
+   existing index/checksum file unchanged. Legacy and schema-2 readers share
+   the source-lock schema/repository/commit/tree validation before repacking.
 4. In owned roots, exercise both `build_runtime_split_assets` and
    `build_fehrr_priority_assets` with existing plain and packed FEHRR indexes.
    The returned index keeps that representation, and the returned manifest
    hashes its actual emitted bytes. The fallback fixture preserves all twelve
    atlas payloads; a separate supplied FEHRR glyph need not also exist in the
-   fallback baseline. Runtime-usage catalog, event, portrait and font inputs
+   fallback baseline. A configured blank FEHRR glyph with no visible same-game
+   fallback uses the supported baseline reason and remains valid after refresh.
+   Runtime-usage catalog, event, portrait and font inputs
    resolve against the requested root, including relative roots, without
-   changing the caller's working directory.
+   changing the caller's working directory. Missing or untracked literal
+   provenance in that root must refuse instead of borrowing the tool checkout.
 
 The priority refresh uses the existing canonical runtime-split producer and
 retains its source-coverage-change refusal. Legacy schema-1 assets remain
@@ -135,13 +139,17 @@ glyph; they execute the public generators and emitted-output consumer, not a
 mock collector, and do not qualify upstream font provenance or font art.
 The owned literal-provenance source
 fixture gives the existing literal-provenance checker a local Git index of
-captured C/header inputs, without creating a commit or borrowing credentials.
+its requested-root C/header inputs, without creating a commit or borrowing credentials.
 The separate font-input fixture creates its own real local commit.
 The execution-only closure follows transitive declared local imports from
 the immutable candidate, including relative and function-local imports; an
-unrelated new script does not become an origin prerequisite. Data fixtures
-are not promoted to semantic predicates, and missing required origin imports
-still refuse explicitly. Valid encode/write failures and untyped malformed
+unrelated new script does not become an origin prerequisite. Execution-only
+data fixtures are staged from each observed immutable tree, so unrelated
+fixture additions/deletions cannot change member identity or invent missing
+origin inputs. The optional reviewed fixture adapter does not replace required
+source capture; changed catalog/portrait validators remain semantic generated
+inputs. Data fixtures are not promoted to semantic predicates, and missing
+required origin imports still refuse explicitly. Valid encode/write failures and untyped malformed
 parser failures are contract violations, not unavailable setup evidence.
 This binding does not wrap a whole-suite pass
 as member evidence or replace the font CLI, candidate/master Build or final
