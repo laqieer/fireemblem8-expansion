@@ -137,7 +137,10 @@ def encode_like_index(
         previous = read_index_bytes(path)
     except FileNotFoundError:
         return encode_index(value, packed=packed is True)
-    previous_value, previous_packed = _decode(previous)
+    try:
+        previous_value, previous_packed = _decode(previous)
+    except ResourceIndexError as error:
+        raise ResourceIndexError(f"{path}: {error}") from error
     if packed is None:
         packed = previous_packed
     if packed and previous_packed and json_bytes(previous_value) == json_bytes(value):
