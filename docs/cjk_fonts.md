@@ -192,7 +192,13 @@ and candidate Git blobs using `decode_index`, including every source,
 selection and glyph record. Compare all twelve bitmap/codepoint/width files
 named by the four original manifest assets byte-for-byte; only the FEHRR index
 and its physical checksum in the asset manifest change among generated files.
-With `BASE` set to the exact parent revision, run from the source root:
+For committed verification, use a clean checkout of the exact #352 FEHRR
+migration candidate recorded in its canonical evidence comment. Preserve any
+existing work by using a separate checkout if necessary. Do not use current
+`master` or a later descendant containing #350: that independently changes
+runtime usage and its manifest fields, outside this comparison's scope.
+With `BASE` set to the exact plain parent revision, run from that candidate's
+source root:
 
 ```bash
 python3 - "$BASE" <<'PY'
