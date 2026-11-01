@@ -641,6 +641,8 @@ FE8_CFG_BLUE_PHASE_DELEGATE
 FE8_CFG_DANGER_OVERLAY_MENU
 FE8_CFG_MECHANICS_SAMPLE
 FE8_CFG_MECHANICS_HOOKS
+FE8_CFG_PROJECT_PROFILE
+FE8_CFG_PROJECT
 PYTHON
 target_alias
 host_alias
@@ -684,6 +686,8 @@ SHELL'
 ac_subst_files=''
 ac_user_opts='
 enable_option_checking
+with_project
+with_project_profile
 enable_mechanics_hooks
 enable_mechanics_sample
 enable_danger_overlay_menu
@@ -1361,6 +1365,9 @@ Optional Features:
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --with-project=NAME     select default or a reviewed bundled project
+  --with-project-profile=NAME
+                          select a preset belonging to the selected project
   --with-asset-manifest=PATH
                           persist the source-owned asset manifest selected by
                           ordinary make
@@ -1886,6 +1893,36 @@ printf "%s\n" "no" >&6; }
     as_fn_error $? "Python 3 is required" "$LINENO" 5
 fi
 
+
+# Check whether --with-project was given.
+if test ${with_project+y}
+then :
+  withval=$with_project; case $withval in #(
+  yes|no|"") :
+    as_fn_error $? "--with-project requires a project name" "$LINENO" 5 ;; #(
+  *) :
+    fe8_project=$withval ;;
+esac
+else $as_nop
+  fe8_project=
+fi
+
+
+
+# Check whether --with-project-profile was given.
+if test ${with_project_profile+y}
+then :
+  withval=$with_project_profile; case $withval in #(
+  yes|no|"") :
+    as_fn_error $? "--with-project-profile requires a preset name" "$LINENO" 5 ;; #(
+  *) :
+    fe8_project_profile=$withval ;;
+esac
+else $as_nop
+  fe8_project_profile=
+fi
+
+
 # Check whether --enable-mechanics-hooks was given.
 if test ${enable_mechanics_hooks+y}
 then :
@@ -2203,6 +2240,20 @@ else $as_nop
 fi
 
 
+if test -n "$fe8_project"
+then :
+  FE8_CFG_PROJECT="FE8_PROJECT := $fe8_project"
+else $as_nop
+  FE8_CFG_PROJECT=
+fi
+if test -n "$fe8_project_profile"
+then :
+  FE8_CFG_PROJECT_PROFILE="ifeq (\$(FE8_PROJECT),${fe8_project:-default})
+FE8_PROJECT_PROFILE := $fe8_project_profile
+endif"
+else $as_nop
+  FE8_CFG_PROJECT_PROFILE=
+fi
 if test -n "$fe8_mechanics_hooks"
 then :
   FE8_CFG_MECHANICS_HOOKS="EXPANSION_MECHANICS_HOOKS := $fe8_mechanics_hooks"
@@ -2349,7 +2400,8 @@ fi
 
 
 
-fe8_validate_rom_size=${fe8_rom_size:-16M}
+
+
 fe8_validate_text_shift=${fe8_text_shift:-0}
 fe8_validate_config=release
 if test "$fe8_autoplay_planner" = 1
@@ -2357,6 +2409,36 @@ then
     fe8_validate_config=debug
 fi
 fe8_abs_srcdir=`cd "$srcdir" && pwd`
+
+fe8_query_project () {
+    set -- --repo-root "$fe8_abs_srcdir" --project "${fe8_project:-default}"
+    if test -n "$fe8_project_profile"
+    then
+        set -- "$@" --project-profile "$fe8_project_profile"
+    fi
+    "$PYTHON" "$fe8_abs_srcdir/scripts/modernize/expansion_config.py" project "$@"
+}
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking selected project and preset" >&5
+printf %s "checking selected project and preset... " >&6; }
+fe8_project_output=`fe8_query_project 2>&1`
+fe8_project_status=$?
+if test "$fe8_project_status" -eq 0
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: valid" >&5
+printf "%s\n" "valid" >&6; }
+else $as_nop
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: invalid" >&5
+printf "%s\n" "invalid" >&6; }
+     as_fn_error $? "$fe8_project_output" "$LINENO" 5
+fi
+fe8_validate_project_profile=`printf '%s\n' "$fe8_project_output" |
+    "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("profile"))'`
+fe8_validate_rom_size=$fe8_rom_size
+if test -z "$fe8_validate_rom_size"
+then
+    fe8_validate_rom_size=`printf '%s\n' "$fe8_project_output" |
+        "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("settings").get("MODERN_ROM_SIZE", "16M"))'`
+fi
 
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking configured expansion profile" >&5
 printf %s "checking configured expansion profile... " >&6; }
@@ -2368,6 +2450,8 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --rom-size "$fe8_validate_rom_size" \
     --text-shift "$fe8_validate_text_shift" \
     --repo-root "$fe8_abs_srcdir" \
+    --project "${fe8_project:-default}" \
+    --project-profile "$fe8_validate_project_profile" \
     --enabled-locales "$fe8_enabled_locales" \
     --default-locale "$fe8_default_locale" \
     --pseudo-locale "$fe8_pseudo_locale" \

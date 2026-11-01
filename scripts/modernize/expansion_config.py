@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -134,6 +135,72 @@ _ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.*?)\s*$")
 
 class ConfigError(ValueError):
     """A configuration value is invalid, or an incompatible combination was given."""
+
+
+def load_project_selection(
+    repo_root: Path, project: str, project_profile: Optional[str] = None
+) -> dict:
+    if not isinstance(project, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]*", project
+    ):
+        raise ConfigError("FE8_PROJECT must be a project directory name or default")
+    if project == "default":
+        if project_profile not in (None, "default"):
+            raise ConfigError("FE8_PROJECT=default requires FE8_PROJECT_PROFILE=default")
+        return {
+            "project": "default", "profile": "default",
+            "settings": {}, "asset_manifest": None,
+        }
+    if project_profile is not None and (
+        not isinstance(project_profile, str)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", project_profile)
+    ):
+        raise ConfigError("FE8_PROJECT_PROFILE must be a profile name")
+    command = [
+        "make", "--no-print-directory", "-s", "-f", "project_selection.mk",
+        "project-selection-config", f"FE8_PROJECT={project}",
+    ]
+    if project_profile is not None:
+        command.append(f"FE8_PROJECT_PROFILE={project_profile}")
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key not in {
+            "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES",
+            "FE8_PROJECT", "FE8_PROJECT_PROFILE",
+        }
+    }
+    result = subprocess.run(
+        command, cwd=repo_root, env=environment,
+        text=True, capture_output=True,
+    )
+    if result.returncode:
+        raise ConfigError(result.stderr.strip() or "project selection failed")
+    try:
+        selection = json.loads(result.stdout)
+    except ValueError as exc:
+        raise ConfigError("project declaration produced invalid selection JSON") from exc
+    if (
+        not isinstance(selection, dict)
+        or set(selection) != {"project", "profile", "settings", "asset_manifest"}
+        or selection["project"] != project
+        or not isinstance(selection["profile"], str)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", selection["profile"])
+        or (project_profile is not None and selection["profile"] != project_profile)
+        or not isinstance(selection["settings"], dict)
+        or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in selection["settings"].items()
+        )
+        or (
+            selection["asset_manifest"] is not None
+            and (
+                not isinstance(selection["asset_manifest"], str)
+                or not selection["asset_manifest"]
+            )
+        )
+    ):
+        raise ConfigError("project declaration produced an inconsistent selection")
+    return selection
 
 
 def resolve_custom_spell_contract(
@@ -735,6 +802,10 @@ class ExpansionIdentity:
     item_id_cap: int = ITEM_ID_DEFAULT_CAP
     config_fingerprint: str = field(default="")
     autoplay_planner: int = 0
+    def __post_init__(self) -> None:
+        """Selection is invocation context, not part of the positional constructor."""
+        self.project: str = "default"
+        self.project_profile: str = "default"
 
     @property
     def version_string(self) -> str:
@@ -801,16 +872,48 @@ class ExpansionIdentity:
                 "inventory_digest": self.custom_spell_effect_inventory_digest,
                 "resource_budget_digest": self.custom_spell_effect_resource_budget_digest,
             }
+        if self.project != "default":
+            fields["project"] = self.project
+            fields["project_profile"] = self.project_profile
         return fields
 
     def to_dict(self) -> dict:
         data = asdict(self)
+        if self.project != "default":
+            data["project"] = self.project
+            data["project_profile"] = self.project_profile
         data["enabled_locales"] = list(self.enabled_locales)
         data["version_string"] = self.version_string
         data["version_packed"] = self.version_packed
         data["enabled_locale_mask"] = self.enabled_locale_mask
         data["default_locale_id"] = self.default_locale_id
         return data
+
+
+def validate_project_requirements(
+    identity: ExpansionIdentity, settings: Dict[str, str]
+) -> None:
+    validators = {
+        "MODERN_ROM_SIZE": ("rom_size_bytes", validate_rom_size),
+        "EXPANSION_ROM_TITLE": ("rom_title", validate_title),
+        "EXPANSION_ENABLED_LOCALES": ("enabled_locales", validate_enabled_locales),
+        "EXPANSION_DEFAULT_LOCALE": (
+            "default_locale",
+            lambda value: validate_default_locale(value, identity.enabled_locales),
+        ),
+        "EXPANSION_SAVE_COMPAT_EPOCH": (
+            "save_compat_epoch", validate_save_compat_epoch,
+        ),
+    }
+    for key, value in settings.items():
+        if key not in validators:
+            raise ConfigError(f"project profile declares unsupported setting {key!r}")
+        attribute, validator = validators[key]
+        if getattr(identity, attribute) != validator(value):
+            raise ConfigError(
+                f"FE8_PROJECT={identity.project} profile "
+                f"{identity.project_profile} requires {key}={value}"
+            )
 
 
 def load_identity(
@@ -847,6 +950,8 @@ def load_identity(
     bgm_continuation_policy=None,
     item_id_cap=None,
     autoplay_planner=None,
+    project="default",
+    project_profile=None,
 ) -> ExpansionIdentity:
     """Parse, validate, and resolve a complete ExpansionIdentity.
 
@@ -869,7 +974,21 @@ def load_identity(
     config_mk_path = Path(config_mk_path)
     repo_root = Path(repo_root) if repo_root is not None else config_mk_path.resolve().parent
 
-    cfg = parse_config_mk(config_mk_path)
+    selection = load_project_selection(repo_root, project, project_profile)
+    if project != "default" and abi != "aapcs":
+        raise ConfigError(f"FE8_PROJECT={project} supports only modern AAPCS")
+    selected_manifest = selection["asset_manifest"]
+    if selected_manifest is not None:
+        if asset_manifest not in (None, "") and (
+            (repo_root / asset_manifest).resolve()
+            != (repo_root / selected_manifest).resolve()
+        ):
+            raise ConfigError("ASSET_MANIFEST contradicts the selected assets provider")
+        asset_manifest = selected_manifest
+    project_settings = selection["settings"]
+    cfg = {**parse_config_mk(config_mk_path), **project_settings}
+    if rom_size is None:
+        rom_size = project_settings.get("MODERN_ROM_SIZE", "16M")
 
     major, minor, patch = validate_version(
         version_major if version_major not in (None, "") else cfg["EXPANSION_VERSION_MAJOR"],
@@ -1040,6 +1159,9 @@ def load_identity(
         bgm_continuation_policy=resolved_bgm_continuation_policy,
         item_id_cap=resolved_item_id_cap,
     )
+    identity.project = selection["project"]
+    identity.project_profile = selection["profile"]
+    validate_project_requirements(identity, project_settings)
     identity.config_fingerprint = compute_fingerprint(identity.fingerprint_fields())
     return identity
 
@@ -1113,6 +1235,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--text-shift", default="0")
     parser.add_argument("--build-id", default="")
     parser.add_argument("--repo-root", type=Path, default=None)
+    parser.add_argument("--project", default="default")
+    parser.add_argument("--project-profile", default=None)
     # Optional overrides for the version/ROM-identity fields config.mk
     # otherwise supplies. These exist so a Make-level override (e.g. `make
     # ... EXPANSION_ROM_TITLE=...`) can be threaded through to this tool --
@@ -1260,9 +1384,20 @@ def main(argv=None) -> int:
     _add_common_args(generate_p)
     generate_p.add_argument("--output-dir", type=Path, required=True)
 
+    project_p = sub.add_parser("project", help="resolve the reviewed project declaration")
+    project_p.add_argument("--repo-root", type=Path, default=Path.cwd())
+    project_p.add_argument("--project", default="default")
+    project_p.add_argument("--project-profile", default=None)
+
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "project":
+            selection = load_project_selection(
+                args.repo_root, args.project, args.project_profile
+            )
+            print(json.dumps(selection, sort_keys=True))
+            return 0
         identity = load_identity(
             config_mk_path=args.config_mk,
             config_preset=args.config,
@@ -1297,6 +1432,8 @@ def main(argv=None) -> int:
             autoplay_strategies=args.autoplay_strategies,
             autoplay_planner=args.autoplay_planner,
             bgm_continuation_policy=args.bgm_continuation_policy,
+            project=args.project,
+            project_profile=args.project_profile,
         )
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)

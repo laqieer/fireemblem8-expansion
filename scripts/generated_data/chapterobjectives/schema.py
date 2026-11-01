@@ -567,12 +567,16 @@ def _owner_unit_groups(owner, diagnostics, record):
     }
 
 
-def _owner_map_dimensions(owner, diagnostics, record):
+def _owner_map_dimensions(owner, diagnostics, record, asset_manifest_path=None):
     from ..chapterbundle import schema as chapterbundle_schema
 
     try:
         return chapterbundle_schema.read_chapter_map_dimensions(
-            owner.chapter.chapter_settings_index
+            owner.chapter.chapter_settings_index,
+            **(
+                {"asset_manifest_path": asset_manifest_path, "require_manifest": True}
+                if asset_manifest_path is not None else {}
+            )
         )
     except GeneratedDataError as error:
         diagnostics.add(
@@ -587,7 +591,7 @@ def _owner_map_dimensions(owner, diagnostics, record):
 
 def validate(records, diagnostics, dependency_records=None,
              chapters_header=CHAPTERS_HEADER, event_flags_header=EVENT_FLAGS_HEADER,
-             characters_header=character_refs.CHARACTERS_HEADER):
+             characters_header=character_refs.CHARACTERS_HEADER, asset_manifest_path=None):
     dependency_records = dependency_records or {}
     chapters = extract_enum_constants(chapters_header, name_prefix="CHAPTER_")
     characters = character_refs.read_character_designators(characters_header)
@@ -698,7 +702,9 @@ def validate(records, diagnostics, dependency_records=None,
         else:
             chapter_bundle = owners[0]
             unit_groups = _owner_unit_groups(chapter_bundle, diagnostics, record)
-            map_dimensions = _owner_map_dimensions(chapter_bundle, diagnostics, record)
+            map_dimensions = _owner_map_dimensions(
+                chapter_bundle, diagnostics, record, asset_manifest_path
+            )
             objective_owner = chapter_bundle.chapter_objectives
             if objective_owner is None:
                 diagnostics.add(
@@ -1183,7 +1189,10 @@ class ChapterObjectivesTableSchema(TableSchema):
         return load_records(source_path)
 
     def validate(self, records, diagnostics, dependency_records=None):
-        validate(records, diagnostics, dependency_records)
+        validate(
+            records, diagnostics, dependency_records,
+            asset_manifest_path=getattr(self, "asset_manifest", None),
+        )
 
     def generate_c(self, records, source_path):
         from . import generate

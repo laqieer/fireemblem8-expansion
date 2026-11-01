@@ -1125,14 +1125,20 @@ def build_game_catalog(
     authored_paths: Optional[Mapping[str, Path]] = None,
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
+    engine_root_path: Path | None = None,
     event_root_path: Path = DEFAULT_EVENT_ROOT,
     portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
+    portrait_root_path: Path = Path("."),
     font_root_path: Path = Path("."),
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
     ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
 ) -> GameCatalogBuild:
+    repo_root = (
+        Path(engine_root_path).resolve()
+        if engine_root_path is not None else Path(__file__).resolve().parents[3]
+    )
     enabled_locales = _normalize_enabled_locales(enabled_locales)
     target_count = len(load_fe8u_target_ids(target_header_path))
     english_entries = load_english_source_entries(
@@ -1159,7 +1165,9 @@ def build_game_catalog(
         else ()
     )
     try:
-        portrait_map = load_portrait_operand_map(portrait_map_path)
+        portrait_map = load_portrait_operand_map(
+            portrait_map_path, repo_root=portrait_root_path,
+        )
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error
     indexed_sources = {}
@@ -1227,8 +1235,6 @@ def build_game_catalog(
         bundle.locale: bundle.entries for bundle in locale_bundles
     }
     if target_count == 3414:
-        mapping_absolute = Path(mapping_path).resolve()
-        repo_root = mapping_absolute.parents[3]
         registry_path = Path(width_registry_path)
         if not registry_path.is_absolute():
             registry_path = repo_root / registry_path
@@ -1266,8 +1272,6 @@ def build_game_catalog(
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
     fixed_width_metrics = None
     if target_count == 3414:
-        mapping_absolute = Path(mapping_path).resolve()
-        repo_root = mapping_absolute.parents[3]
         alias_path = Path(fixed_width_aliases_path)
         if not alias_path.is_absolute():
             alias_path = repo_root / alias_path

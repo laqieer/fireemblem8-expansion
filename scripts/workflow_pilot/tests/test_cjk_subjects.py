@@ -158,6 +158,27 @@ class CjkSubjectTests(unittest.TestCase):
         )
         self.assert_satisfied(self.tools.run_obligations(members, after))
 
+    def test_untyped_xz_parser_failure_is_a_contract_violation(self):
+        path = "scripts/fonttools/cjk/resource_index.py"
+        original = (self.repo.root / path).read_text()
+        tree = ast.parse(original)
+        function = next(node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == "decode_index")
+        function.body[:0] = ast.parse(
+            "import lzma as malformed_xz\n"
+            "raise malformed_xz.LZMAError('controlled malformed-stream failure')\n"
+        ).body
+        before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+        after = self.repo.commit({path: original}, parent=before)
+        members = tuple(item for item in self.tools.members(self.scope(after), (before,))
+                        if item.family == "wire")
+        self.assertEqual(
+            [(item.verdict, item.checks) for item in self.tools.run_obligations(members, before)
+             if item.obligation.role == "validators"],
+            [("contract-violation", 1)],
+        )
+        self.assert_satisfied(self.tools.run_obligations(members, after))
+
     def test_actual_generator_format_regressions_do_not_get_codec_output_credit(self):
         path = "scripts/fonttools/cjk/package.py"
         original = (self.repo.root / path).read_text()

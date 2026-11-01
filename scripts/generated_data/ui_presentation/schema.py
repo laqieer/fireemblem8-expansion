@@ -87,14 +87,21 @@ def load_records(source_path):
     return records
 
 
-def _load_localization():
-    from scripts.localization.catalog import load_catalog
+def _load_localization(registry_path=None, catalog_paths=None):
+    from scripts.localization.catalog import DEFAULT_REGISTRY_PATH, load_catalog
+    from scripts.localization.schema import SchemaError
 
-    return load_catalog()
+    try:
+        return load_catalog(
+            registry_path=registry_path or DEFAULT_REGISTRY_PATH,
+            catalog_paths=catalog_paths,
+        )
+    except SchemaError as exc:
+        raise GeneratedDataError(str(exc)) from exc
 
 
-def validate(records, diagnostics, dependency_records=None):
-    catalog = _load_localization()
+def validate(records, diagnostics, dependency_records=None, catalog=None):
+    catalog = catalog or _load_localization()
     active = catalog.active_by_key()
 
     if len(records) > MAX_RECORDS:
@@ -158,8 +165,8 @@ def validate(records, diagnostics, dependency_records=None):
             ))
 
 
-def generate_c(records, source_path):
-    catalog = _load_localization()
+def generate_c(records, source_path, catalog=None):
+    catalog = catalog or _load_localization()
     active = catalog.active_by_key()
     lines = [
         '#include "expansion_ui_presentation.h"',
@@ -219,10 +226,16 @@ class UiPresentationTableSchema(TableSchema):
         return load_records(source_path)
 
     def validate(self, records, diagnostics, dependency_records=None):
-        validate(records, diagnostics, dependency_records)
+        validate(
+            records, diagnostics, dependency_records,
+            catalog=_load_localization(self.localization_registry, self.localization_catalogs),
+        )
 
     def generate_c(self, records, source_path):
-        return generate_c(records, source_path)
+        return generate_c(
+            records, source_path,
+            catalog=_load_localization(self.localization_registry, self.localization_catalogs),
+        )
 
     def build_inventory(self, records):
         return (
