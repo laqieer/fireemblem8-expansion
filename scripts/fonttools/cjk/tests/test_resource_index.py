@@ -31,6 +31,16 @@ SOURCE_FIXTURE_PATHS = (
 )
 
 
+def copy_source_fixture(source, destination):
+    for relative in SOURCE_FIXTURE_PATHS:
+        shutil.copytree(
+            source / relative, destination / relative,
+            ignore=shutil.ignore_patterns("*.o", "__pycache__"),
+        )
+    for arguments in (("init", "--quiet"), ("add", "--", "src", "include")):
+        subprocess.run(["git", "-C", str(destination), *arguments], check=True)
+
+
 class ResourceIndexTests(unittest.TestCase):
     def test_fehrr_fresh_plain_roots_produce_identical_packed_outputs(self):
         outputs = []
@@ -444,13 +454,7 @@ class ResourceIndexTests(unittest.TestCase):
     def test_actual_cli_round_trips_both_indexes_with_existing_consumers(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "first"
-            for relative in SOURCE_FIXTURE_PATHS:
-                shutil.copytree(
-                    ROOT / relative, root / relative,
-                    ignore=shutil.ignore_patterns("*.o", "__pycache__"),
-                )
-            for arguments in (("init", "--quiet"), ("add", "--", "src", "include")):
-                subprocess.run(["git", "-C", str(root), *arguments], check=True)
+            copy_source_fixture(ROOT, root)
             originals = {
                 relative: (root / relative).read_bytes()
                 for relative in (
@@ -477,11 +481,7 @@ class ResourceIndexTests(unittest.TestCase):
                                 (root / "fonts/cjk/inventory.json").read_bytes()
                             )["outputs"][relative]
                             fresh_root = Path(temporary) / "second"
-                            for path in SOURCE_FIXTURE_PATHS:
-                                shutil.copytree(
-                                    root / path, fresh_root / path,
-                                    ignore=shutil.ignore_patterns("*.o", "*.d", "__pycache__"),
-                                )
+                            copy_source_fixture(root, fresh_root)
                         result = subprocess.run(
                             [
                                 sys.executable, "-B", "-m", "scripts.fonttools.cjk",
