@@ -62,6 +62,44 @@ class CjkSubjectTests(unittest.TestCase):
             ("resource", "enabled"), ("resource", "disabled"),
         })
         self.assert_satisfied(self.tools.run_obligations(members, self.repo.base))
+        path = "scripts/fonttools/cjk/package.py"
+        original = (self.repo.root / path).read_text()
+        for variant in ("same-count-selections", "writer-bypasses-selection"):
+            with self.subTest(variant=variant):
+                tree = ast.parse(original)
+                name = (
+                    "_source_selection" if variant == "same-count-selections"
+                    else "write_fehrr_priority_assets"
+                )
+                function = next(node for node in tree.body
+                                if isinstance(node, ast.FunctionDef) and node.name == name)
+                if variant == "same-count-selections":
+                    function.body = ast.parse(
+                        "return {prefix: tuple(range(len(asset['glyphs']))) "
+                        "for prefix, asset in lock['assets'].items()}"
+                    ).body
+                else:
+                    class BypassSelection(ast.NodeTransformer):
+                        def visit_Call(self, node):
+                            self.generic_visit(node)
+                            if (isinstance(node.func, ast.Name)
+                                    and node.func.id == "build_fehrr_priority_assets"):
+                                node.func.id = "build_runtime_split_assets"
+                            return node
+
+                    function.body = [BypassSelection().visit(node) for node in function.body]
+                before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                after = self.repo.commit({path: original}, parent=before)
+                members = tuple(
+                    item for item in self.tools.members(self.scope(after), (before,))
+                    if item.family == "generated"
+                )
+                observed = self.tools.run_obligations(members, before)
+                self.assertEqual(
+                    [(item.verdict, item.checks) for item in observed
+                     if item.obligation.role == "outputs"],
+                    [("contract-violation", 1)],
+                )
 
     def test_invalid_reference_bounds_are_unavailable_not_codec_regression_credit(self):
         limit = 4 * 1024 * 1024
