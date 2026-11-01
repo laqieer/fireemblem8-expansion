@@ -64,6 +64,56 @@ CASE_SECTIONS = frozenset({
 })
 
 
+def local_python_inputs(tree, roots):
+    pending = set(roots)
+    captured = set()
+
+    def module(name, required=False):
+        if not (name == "scripts" or name.startswith("scripts.")):
+            return
+        prefix = name.replace(".", "/")
+        paths = (prefix + ".py", prefix + "/__init__.py")
+        found = next((path for path in paths if path in tree.entries), None)
+        if required:
+            review.require(found is not None or any(
+                path.startswith(prefix + "/") for path in tree.entries
+            ), "missing declared local Python import: " + name)
+        if found is not None:
+            pending.add(found)
+        parts = prefix.split("/")
+        for count in range(1, len(parts)):
+            initializer = "/".join(parts[:count]) + "/__init__.py"
+            if initializer in tree.entries:
+                pending.add(initializer)
+
+    while pending:
+        path = pending.pop()
+        if path in captured:
+            continue
+        captured.add(path)
+        package = path.removesuffix(".py").split("/")[:-1]
+        try:
+            source = ast.parse(tree.read(path), filename=path)
+        except SyntaxError as error:
+            raise review.ReviewError("invalid imported Python source: " + path) from error
+        for node in ast.walk(source):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    module(alias.name, required=True)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    review.require(node.level <= len(package), "local import escaped its package")
+                    base = ".".join(package[:len(package) - node.level + 1])
+                    if node.module:
+                        base += "." + node.module
+                else:
+                    base = node.module or ""
+                module(base, required=True)
+                for alias in node.names:
+                    module(base + "." + alias.name)
+    return tuple(sorted(captured))
+
+
 def authored_case_declaration(raw):
     catalog = json.loads(raw)
     features = [item for item in catalog["features"] if item["id"] == AUTHORED_FEATURE]
@@ -253,9 +303,9 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
             CJK_CODEC, *CJK_INDEXES, "scripts/fonttools/cjk/package.py",
             "scripts/fonttools/cjk/inventory.py", "scripts/fonttools/cjk/cli.py",
         }
-        closure = tuple(sorted(
-            path for path in head.entries if path.startswith("scripts/") and path.endswith(".py")
-            and "/tests/" not in path and not path.startswith("scripts/workflow_pilot/")
+        closure = local_python_inputs(head, (
+            CJK_CODEC, "scripts/fonttools/cjk/package.py",
+            "scripts/fonttools/cjk/inventory.py", "scripts/fonttools/cjk/cli.py",
         ))
         for family in ("generated", "wire", "resource"):
             for role in review.FAMILIES[family]:
@@ -675,15 +725,25 @@ def _cjk_resource(probe):
         except error:
             checks += 1
             return
-        except (ValueError, RecursionError, KeyError) as failure:
+        except (ValueError, RecursionError, KeyError, TypeError) as failure:
             raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
         raise ContractViolation("invalid resource input was accepted")
 
-    def decoded(data, expected):
+    def accepted(function, *args, **kwargs):
         try:
-            value = codec.decode_index(data)
-        except codec.ResourceIndexError as failure:
-            raise ContractViolation("valid resource input was rejected") from failure
+            return function(*args, **kwargs)
+        except (codec.ResourceIndexError, package.CjkFontError) as failure:
+            raise ContractViolation("valid resource operation was rejected: " + str(failure)) from failure
+
+    def produced(data):
+        verify(isinstance(data, bytes), "resource producer did not emit bytes")
+        try:
+            return reference_json(reference(data))
+        except (ValueError, TypeError, RecursionError, lzma.LZMAError) as failure:
+            raise ContractViolation("resource producer emitted invalid storage: " + str(failure)) from failure
+
+    def decoded(data, expected):
+        value = accepted(codec.decode_index, data)
         verify(canonical(value) == canonical(expected), "complete typed resource values differ")
         return value
 
@@ -694,6 +754,107 @@ def _cjk_resource(probe):
             prefixes += ("src", "include", "texts", "assets", "reports")
         for prefix in prefixes:
             shutil.copytree(prefix, root / prefix, dirs_exist_ok=True)
+        return root
+
+    def legacy_fonts(name):
+        root = owned_fonts(name)
+        manifest_path = root / "graphics/fonts/cjk/manifest.json"
+        baseline = (root / "fonts/cjk/febuilder-baseline-manifest.json").read_bytes()
+        (root / "fonts/cjk/febuilder-manifest.json").write_bytes(baseline)
+        report_path = "fonts/cjk/reports/febuilder-generation-report.json"
+        report = json.loads((root / report_path).read_bytes())
+        metadata = json.loads(manifest_path.read_bytes())
+        payload_bytes = aligned_bytes = 0
+        for job in json.loads(baseline)["jobs"]:
+            prefix = job["locale"] + "." + ("system" if job["styles"] == ["item"] else "talk")
+            names = package.compact_asset_filenames(prefix)
+            for kind, filename in names.items():
+                data = (root / "fonts/cjk/febuilder-baseline" / filename).read_bytes()
+                relative = "graphics/fonts/cjk/" + filename
+                (root / relative).write_bytes(data)
+                metadata["assets"][prefix][kind] = {
+                    "path": relative, "byte_count": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+                payload_bytes += len(data)
+                aligned_bytes += (len(data) + 3) & ~3
+            codepoints = (root / "graphics/fonts/cjk" / names["codepoints"]).read_bytes()
+            scalars = struct.unpack("<" + "I" * (len(codepoints) // 4), codepoints)
+            (root / "fonts/cjk" / job["corpus"]["path"]).write_text(
+                "".join(chr(scalar) for scalar in scalars), encoding="utf-8",
+            )
+            metadata["assets"][prefix]["glyph_count"] = len(scalars)
+        metadata["schema_version"] = 1
+        metadata["sources"]["febuilder_manifest"]["sha256"] = hashlib.sha256(baseline).hexdigest()
+        metadata["sources"].pop("fehrr_priority")
+        metadata["sources"]["febuilder_package"] = {
+            "disposition": "temporary maintainer artifact under build/tmp; not committed",
+            "payload_tree_sha256": report["payloadTreeSha256"],
+            "full_tree_sha256": report["fullTreeSha256"],
+            "package_report_sha256": hashlib.sha256((root / report_path).read_bytes()).hexdigest(),
+        }
+        metadata["rom_budget"] = {
+            "payload_bytes": payload_bytes, "four_byte_aligned_blob_bytes": aligned_bytes,
+            "bytes_per_glyph": 69,
+        }
+        manifest_path.write_bytes(canonical(metadata))
+        accepted(package.check_compact_assets, root)
+        return root
+
+    def source_checkout(scalar=None):
+        root = Path("build/review-fehrr-generator-source-" + str(scalar))
+        root.mkdir(parents=True)
+        paths = {
+            Path("glyph") / locale / "font.fontall.txt"
+            for locale in package.FEHRR_LOCALES.values()
+        }
+        paths.update(
+            Path(directory) / "font.fontall.txt"
+            for styles in package.FEHRR_SUPPLEMENTAL_TIERS.values()
+            for tiers in styles.values() for _, directory in tiers
+        )
+        for relative in paths:
+            review.require(not relative.is_absolute() and ".." not in relative.parts,
+                           "FEHRR source fixture path escaped its owner")
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"")
+        if scalar is not None:
+            def chunk(kind, data):
+                return (struct.pack(">I", len(data)) + kind + data
+                        + struct.pack(">I", zlib.crc32(kind + data)))
+
+            scanlines = (
+                b"\0\0\0\0" + b"\xff\xff\xff" * 15
+                + (b"\0" + b"\xff\xff\xff" * 16) * 15
+            )
+            png = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(scanlines))
+                + chunk(b"IEND", b"")
+            )
+            for locale in package.FEHRR_LOCALES.values():
+                directory = root / "glyph" / locale
+                rows = []
+                for style, name in (("item", "FontItem_fixture.png"), ("text", "FontText_fixture.png")):
+                    (directory / name).write_bytes(png)
+                    rows.append(f"{chr(scalar)}\t{style}\t9\t{name}\n")
+                (directory / "font.fontall.txt").write_text("".join(rows), encoding="utf-8")
+        for arguments in (
+            ["git", "init", "--quiet"],
+            ["git", "remote", "add", "origin", package.FEHRR_REPOSITORY],
+            ["git", "add", "--", "glyph"],
+            ["git", "-c", "user.name=Source fixture",
+             "-c", "user.email=source-fixture@example.invalid",
+             "-c", "core.hooksPath=/dev/null", "commit", "--quiet",
+             "-m", "owned empty-map source fixture"],
+        ):
+            result = run_process(arguments, cwd=root, env=os.environ.copy(),
+                                 timeout=20, new_session=False)
+            if result.returncode:
+                raise OSError("owned source fixture unavailable: "
+                              + result.stderr.decode(errors="replace")[-1000:])
         return root
 
     originals = []
@@ -716,25 +877,79 @@ def _cjk_resource(probe):
                 reject(lambda invalid=invalid: codec.decode_index(invalid))
         elif role == "outputs":
             for value in stocks:
-                verify(codec.encode_index(value) == canonical(value),
+                verify(accepted(codec.encode_index, value) == canonical(value),
                        "existing canonical plain output changed")
-                stored = codec.encode_index(value, packed=True)
-                independent = json.loads(reference(stored))
+                stored = accepted(codec.encode_index, value, packed=True)
+                independent = produced(stored)
                 verify(canonical(independent) == canonical(value), "packed output lost fields/types")
-                verify(codec.encode_index(value, packed=True) == stored,
+                verify(accepted(codec.encode_index, value, packed=True) == stored,
                        "fresh same-encoder compression is not deterministic")
+            manifest = "graphics/fonts/cjk/manifest.json"
+            root = owned_fonts("review-resource-selected-only-glyph")
+            baseline = set()
+            for asset in json.loads((root / manifest).read_bytes())["assets"].values():
+                data = (root / "fonts/cjk/febuilder-baseline"
+                        / Path(asset["codepoints"]["path"]).name).read_bytes()
+                baseline.update(struct.unpack("<" + "I" * (len(data) // 4), data))
+            scalar = next(value for value in range(0x3400, 0x4DC0) if value not in baseline)
+            jobs_path = root / "fonts/cjk/febuilder-manifest.json"
+            jobs = json.loads(jobs_path.read_bytes())
+            corpus = chr(scalar).encode("utf-8")
+            for job in jobs["jobs"]:
+                (root / "fonts/cjk" / job["corpus"]["path"]).write_bytes(corpus)
+                job["corpus"]["sha256"] = hashlib.sha256(corpus).hexdigest()
+            jobs_path.write_bytes(canonical(jobs))
+            source = source_checkout(scalar)
+            outputs = accepted(package.build_runtime_split_assets, root, source)
+            metadata = produced(outputs[manifest])
+            verify(all(
+                outputs[asset["codepoints"]["path"]] == struct.pack("<I", scalar)
+                and outputs[asset["widths"]["path"]] == bytes([9])
+                and outputs[asset["bitmap"]["path"]] == b"\1" + bytes(63)
+                for asset in metadata["assets"].values()
+            ), "actual FEHRR-only scalar required an unrelated baseline glyph")
+            source = source_checkout()
+            for generator in (package.build_runtime_split_assets, package.build_fehrr_priority_assets):
+                for packed in (False, True):
+                    root = legacy_fonts(
+                        "review-generator-" + generator.__name__ + "-" + str(packed))
+                    (root / CJK_INDEXES[0]).write_bytes(
+                        accepted(codec.encode_index, stocks[0], packed=packed))
+                    before = {
+                        asset[kind]["path"]: (root / asset[kind]["path"]).read_bytes()
+                        for asset in json.loads((root / manifest).read_bytes())["assets"].values()
+                        for kind in ("bitmap", "codepoints", "widths")
+                    }
+                    outputs = accepted(generator, root, source)
+                    verify(isinstance(outputs, dict)
+                           and set(outputs) == {*before, CJK_INDEXES[0], manifest},
+                           "actual font generator lost complete output ownership")
+                    stored = outputs[CJK_INDEXES[0]]
+                    lock = produced(stored)
+                    metadata = produced(outputs[manifest])
+                    verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
+                           "actual font generator changed the stored representation")
+                    verify(metadata["sources"]["fehrr_priority"]["sha256"]
+                           == hashlib.sha256(stored).hexdigest(),
+                           "actual font generator bound a different physical index")
+                    verify(all(outputs[path] == data for path, data in before.items())
+                           and all(asset["glyph_count"] == 0 for asset in lock["assets"].values()),
+                           "owned empty-source fallback changed complete atlas ownership/bytes")
+                    for relative, data in outputs.items():
+                        (root / relative).write_bytes(data)
+                    accepted(package.check_compact_assets, root)
         elif role == "consumers":
             root = Path("build/review-resource-consumer")
             source = root / CJK_INDEXES[0]
             source.parent.mkdir(parents=True, exist_ok=True)
             for packed in (False, True):
-                stored = codec.encode_index(stocks[0], packed=packed)
+                stored = accepted(codec.encode_index, stocks[0], packed=packed)
                 source.write_bytes(stored)
                 priority = {
                     "path": CJK_INDEXES[0], "sha256": hashlib.sha256(stored).hexdigest(),
                     "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
                 }
-                value = package._read_fehrr_lock(root, {"fehrr_priority": priority})
+                value = accepted(package._read_fehrr_lock, root, {"fehrr_priority": priority})
                 verify(canonical(value) == canonical(stocks[0]), "real priority reader changed values")
                 priority["sha256"] = "0" * 64
                 reject(lambda: package._read_fehrr_lock(root, {"fehrr_priority": priority}),
@@ -747,11 +962,8 @@ def _cjk_resource(probe):
                 for kind in ("bitmap", "codepoints", "widths")
             }
             for packed in (False, True):
-                try:
-                    outputs = package.write_resource_index(root, "fehrr", packed=packed)
-                    package.check_compact_assets(root)
-                except (package.CjkFontError, codec.ResourceIndexError) as failure:
-                    raise ContractViolation("valid maintainer conversion was rejected") from failure
+                outputs = accepted(package.write_resource_index, root, "fehrr", packed=packed)
+                accepted(package.check_compact_assets, root)
                 stored = (root / CJK_INDEXES[0]).read_bytes()
                 decoded(stored, stocks[0])
                 verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
@@ -761,48 +973,7 @@ def _cjk_resource(probe):
                        and all((root / path).read_bytes() == value
                                for path, value in original_assets.items()),
                        "actual conversion changed its output ownership or atlas bytes")
-            legacy = owned_fonts("review-resource-unbound-legacy")
-            baseline = (legacy / "fonts/cjk/febuilder-baseline-manifest.json").read_bytes()
-            (legacy / "fonts/cjk/febuilder-manifest.json").write_bytes(baseline)
-            report_path = "fonts/cjk/reports/febuilder-generation-report.json"
-            report = json.loads((legacy / report_path).read_bytes())
-            asset_path = legacy / manifest
-            metadata = json.loads(asset_path.read_bytes())
-            payload_bytes = aligned_bytes = 0
-            for job in json.loads(baseline)["jobs"]:
-                prefix = job["locale"] + "." + ("system" if job["styles"] == ["item"] else "talk")
-                names = package.compact_asset_filenames(prefix)
-                for kind, filename in names.items():
-                    data = (legacy / "fonts/cjk/febuilder-baseline" / filename).read_bytes()
-                    relative = "graphics/fonts/cjk/" + filename
-                    (legacy / relative).write_bytes(data)
-                    metadata["assets"][prefix][kind] = {
-                        "path": relative, "byte_count": len(data),
-                        "sha256": hashlib.sha256(data).hexdigest(),
-                    }
-                    payload_bytes += len(data)
-                    aligned_bytes += (len(data) + 3) & ~3
-                codepoints = (legacy / "graphics/fonts/cjk" / names["codepoints"]).read_bytes()
-                scalars = struct.unpack("<" + "I" * (len(codepoints) // 4), codepoints)
-                (legacy / "fonts/cjk" / job["corpus"]["path"]).write_text(
-                    "".join(chr(scalar) for scalar in scalars), encoding="utf-8",
-                )
-                metadata["assets"][prefix]["glyph_count"] = len(scalars)
-            metadata["schema_version"] = 1
-            metadata["sources"]["febuilder_manifest"]["sha256"] = hashlib.sha256(baseline).hexdigest()
-            metadata["sources"].pop("fehrr_priority")
-            metadata["sources"]["febuilder_package"] = {
-                "disposition": "temporary maintainer artifact under build/tmp; not committed",
-                "payload_tree_sha256": report["payloadTreeSha256"],
-                "full_tree_sha256": report["fullTreeSha256"],
-                "package_report_sha256": hashlib.sha256((legacy / report_path).read_bytes()).hexdigest(),
-            }
-            metadata["rom_budget"] = {
-                "payload_bytes": payload_bytes, "four_byte_aligned_blob_bytes": aligned_bytes,
-                "bytes_per_glyph": 69,
-            }
-            asset_path.write_bytes(canonical(metadata))
-            package.check_compact_assets(legacy)
+            legacy = legacy_fonts("review-resource-unbound-legacy")
             saved = {name: (legacy / name).read_bytes() for name in (CJK_INDEXES[0], manifest)}
             for packed in (False, True):
                 reject(lambda packed=packed: package.write_resource_index(
@@ -810,7 +981,7 @@ def _cjk_resource(probe):
                 verify(all((legacy / name).read_bytes() == value for name, value in saved.items()),
                        "unbound legacy priority refusal changed a stored output")
             root = owned_fonts("review-resource-cli")
-            package.check_compact_assets(root)
+            accepted(package.check_compact_assets, root)
             broken = b"invalid index"
             try:
                 codec.decode_index(broken)
@@ -832,9 +1003,9 @@ def _cjk_resource(probe):
         elif role == "drift-checks":
             alternate = canonical(envelope(plain, lzma.compress(plain, preset=0)))
             path.write_bytes(alternate)
-            verify(codec.encode_like_index(seed, path) == alternate,
+            verify(accepted(codec.encode_like_index, seed, path) == alternate,
                    "unchanged valid alternate stream was recompressed")
-            verify(codec.encode_like_index(seed, path, packed=True) == alternate,
+            verify(accepted(codec.encode_like_index, seed, path, packed=True) == alternate,
                    "explicit unchanged packed stream was recompressed")
             path.write_bytes(b"invalid index")
             reject(lambda: codec.encode_like_index(seed, path))
@@ -853,10 +1024,7 @@ def _cjk_resource(probe):
             original_manifest = (root / manifest_path).read_bytes()
             initially_packed = json.loads(originals[1]).get("kind") == "cjk-resource-index"
             for packed in (not initially_packed, initially_packed):
-                try:
-                    outputs = package.write_resource_index(root, "runtime-usage", packed=packed)
-                except (package.CjkFontError, codec.ResourceIndexError) as failure:
-                    raise ContractViolation("valid inventory generation/check was rejected") from failure
+                outputs = accepted(package.write_resource_index, root, "runtime-usage", packed=packed)
                 stored = (root / CJK_INDEXES[1]).read_bytes()
                 decoded(stored, stocks[1])
                 verify((json.loads(stored).get("kind") == "cjk-resource-index") == packed,
@@ -879,7 +1047,7 @@ def _cjk_resource(probe):
             raise review.ReviewError("unknown resource generation role")
     elif family == "wire":
         if role == "producers":
-            stored = json.loads(codec.encode_index(seed, packed=True))
+            stored = json.loads(accepted(codec.encode_index, seed, packed=True))
             verify(set(stored) == {"kind", "version", "encoding", "decoded_bytes", "payload"}
                    and stored["kind"] == "cjk-resource-index"
                    and type(stored["version"]) is int and stored["version"] == 1
@@ -927,16 +1095,16 @@ def _cjk_resource(probe):
                 reject(lambda value=value: codec.decode_index(canonical(value)))
         elif role == "replay":
             for packed in (False, True):
-                path.write_bytes(codec.encode_index(seed, packed=packed))
+                path.write_bytes(accepted(codec.encode_index, seed, packed=packed))
                 changed = {"id": 2, "values": [False, 2.0]}
-                actual = codec.encode_like_index(changed, path)
+                actual = accepted(codec.encode_like_index, changed, path)
                 decoded(actual, changed)
                 verify((json.loads(actual).get("kind") == "cjk-resource-index") == packed,
                        "updated writer changed stored representation")
         elif role == "stale-bindings":
             for value in (seed, {"id": 2}, seed):
-                path.write_bytes(codec.encode_index(value, packed=True))
-                verify(canonical(codec.load_index(path)) == canonical(value),
+                path.write_bytes(accepted(codec.encode_index, value, packed=True))
+                verify(canonical(accepted(codec.load_index, path)) == canonical(value),
                        "reopened index retained stale file contents")
             path.write_bytes(b"invalid index")
             reject(lambda: codec.load_index(path))
@@ -944,7 +1112,7 @@ def _cjk_resource(probe):
             raise review.ReviewError("unknown resource wire role")
     elif family == "resource":
         packed = role == "enabled"
-        stored = codec.encode_index(seed, packed=packed)
+        stored = accepted(codec.encode_index, seed, packed=packed)
         decoded(stored, seed)
         if not packed:
             verify(stored == plain, "plain representation changed")

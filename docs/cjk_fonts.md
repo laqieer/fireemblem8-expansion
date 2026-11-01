@@ -96,6 +96,21 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
    wrong size, damaged/truncated/trailing streams and oversized expansion.
    Require explicit errors; a corrupt owned CLI input must leave every
    existing index/checksum file unchanged.
+4. In owned roots, exercise both `build_runtime_split_assets` and
+   `build_fehrr_priority_assets` with existing plain and packed FEHRR indexes.
+   The returned index keeps that representation, and the returned manifest
+   hashes its actual emitted bytes. The fallback fixture preserves all twelve
+   atlas payloads; a separate supplied FEHRR glyph need not also exist in the
+   fallback baseline. Runtime-usage catalog, event, portrait and font inputs
+   resolve against the requested root, including relative roots, without
+   changing the caller's working directory.
+
+The priority refresh uses the existing canonical runtime-split producer and
+retains its source-coverage-change refusal. Legacy schema-1 assets remain
+readable; an explicit priority regeneration emits the current validated
+schema-2 asset manifest rather than the obsolete incompatible writer shape.
+This is independent of the plain/packed resource-index representation and
+does not convert committed defaults.
 
 The automation is the codec module above plus actual package/inventory/CLI
 consumers, not a raw-source assertion. It removes only its owned temporary
@@ -113,11 +128,20 @@ decoding enforce the same 4 MiB physical/decoded and 64 MiB decoder-memory
 bound before parsing expected values; invalid references yield unavailable,
 zero-check observations, not codec regression credit. Both stored formats
 reach the real legacy/schema-2 compact consumers and the inventory
-generator/check through the public maintainer operation. The owned source
+generator/check through the public maintainer operation. Actual generator
+controls use owned, clean Git source fixtures with empty maps or one supplied
+glyph; they execute the public generators and emitted-output consumer, not a
+mock collector, and do not qualify upstream font provenance or font art.
+The owned literal-provenance source
 fixture gives the existing literal-provenance checker a local Git index of
 captured C/header inputs, without creating a commit or borrowing credentials.
-The execution-only closure is fixed from the candidate tree, not promoted
-to the semantic predicate set; missing origin paths still refuse explicitly.
+The separate font-input fixture creates its own real local commit.
+The execution-only closure follows transitive declared local imports from
+the immutable candidate, including relative and function-local imports; an
+unrelated new script does not become an origin prerequisite. Data fixtures
+are not promoted to semantic predicates, and missing required origin imports
+still refuse explicitly. Valid encode/write failures and untyped malformed
+parser failures are contract violations, not unavailable setup evidence.
 This binding does not wrap a whole-suite pass
 as member evidence or replace the font CLI, candidate/master Build or final
 delivery gates.

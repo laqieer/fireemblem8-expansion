@@ -84,6 +84,8 @@ from .model import (
 from .control_streams import (
     CONTROL_DOMAIN_FE8J,
     CONTROL_DOMAIN_FE8U,
+    DEFAULT_EVENT_ROOT,
+    DEFAULT_PORTRAIT_MAP_PATH,
     ControlStreamError,
     load_talk_font_metrics,
     load_portrait_operand_map,
@@ -773,12 +775,13 @@ def _validate_final_catalog_payloads(
     locale_bundles: Sequence[LocaleCatalogBundle],
     english_entries,
     portrait_map,
+    font_root_path: Path = Path("."),
 ) -> Dict[str, int]:
     totals = Counter()
     max_talk_line_width = 0
     for bundle in locale_bundles:
         try:
-            talk_metrics = load_talk_font_metrics(bundle.locale)
+            talk_metrics = load_talk_font_metrics(bundle.locale, repo_root=font_root_path)
         except ControlStreamError as error:
             raise GameCatalogError(str(error)) from error
         for entry in bundle.entries:
@@ -1122,6 +1125,9 @@ def build_game_catalog(
     authored_paths: Optional[Mapping[str, Path]] = None,
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
+    event_root_path: Path = DEFAULT_EVENT_ROOT,
+    portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
+    font_root_path: Path = Path("."),
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
@@ -1153,7 +1159,7 @@ def build_game_catalog(
         else ()
     )
     try:
-        portrait_map = load_portrait_operand_map()
+        portrait_map = load_portrait_operand_map(portrait_map_path)
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error
     indexed_sources = {}
@@ -1302,6 +1308,7 @@ def build_game_catalog(
         locale_bundles=locale_bundles,
         english_entries=english_entries,
         portrait_map=portrait_map,
+        font_root_path=font_root_path,
     )
     try:
         control_validation = validate_event_continuations(
@@ -1312,6 +1319,7 @@ def build_game_catalog(
                 )
                 for bundle in locale_bundles
             },
+            event_root=event_root_path,
         )
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error
