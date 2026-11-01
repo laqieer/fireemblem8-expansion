@@ -55,6 +55,9 @@ emulator, SRAM file, alternate profile or manual judgment is needed.
    policy and are available only under the explicit static policy; their
    unused gap remains available. Native last-bit, chapter-index, empty-input
    and permanent-overlap boundaries are exercised without writing game flags.
+   One-hot/counter fields whose later bits reach engine, debug or sort
+   reservations must reject even when the first bit is free; a field crossing
+   the guide-read boundary rejects only under the progressive policy.
 3. Keep the unselected default as the negative control: this module has no
    default build input or runtime hook. The pre-tracer interface was absent
    and the same host/ARM probes failed compilation. Do not treat either
@@ -91,7 +94,8 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
    display/read flag through the real guide consumers and policy operations;
    all 112 bits remain byte-identical.
 3. Sort flag 179 and ordinary chapter flag 7 still pass through to the real
-   native flag backend. The ARM object must route every guide flag call
+   native flag backend, including clear-to-set writes from a known cleared
+   starting state. The ARM object must route every guide flag call
    through the three public `GradoGuide_*Flag` policy functions; only those
    forwarders may call raw `CheckFlag`, `SetFlag` or `ClearFlag`. This is a
    compiled-symbol/relocation contract, not a source-spelling check.

@@ -65,10 +65,14 @@ int main(void)
     assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
     assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
 
+    ClearFlag(0xB3);
+    assert(!CheckFlag(0xB3));
     GradoGuide_SetFlag(0xB3);
     assert(CheckFlag(0xB3));
     GradoGuide_ClearFlag(0xB3);
     assert(!CheckFlag(0xB3));
+    ClearFlag(7);
+    assert(!CheckFlag(7));
     GradoGuide_SetFlag(7);
     assert(CheckFlag(7));
     GradoGuide_ClearFlag(7);
