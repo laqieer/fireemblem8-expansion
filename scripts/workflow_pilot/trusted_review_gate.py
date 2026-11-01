@@ -404,6 +404,9 @@ class ReviewTools:
     def _stage(self, tree, root, members):
         paths = {path for member in members for path in member.source_inputs}
         probes = {item.probe for item in members}
+        fixtures = getattr(self.subjects, "fixture_inputs", None)
+        if fixtures is not None:
+            paths.update(fixtures(tree, probes))
         tree.materialize(root, sorted(paths))
         (root / "build").mkdir(exist_ok=True)
         tool_paths = ("scripts/workflow_pilot/__init__.py",

@@ -104,6 +104,20 @@ class CjkSubjectTests(unittest.TestCase):
         self.assert_satisfied(self.tools.run_obligations(wire, head))
         self.assertTrue(all(path not in item.source_inputs for item in members))
 
+    def test_fixture_presence_follows_each_observed_revision(self):
+        path = "src/review_unused_fixture.c"
+        added = self.repo.commit({path: "/* Owned unused source fixture. */\n"})
+        added_members = self.tools.members(self.scope(added), (self.repo.base,))
+        wire = tuple(item for item in added_members if item.family == "wire")
+        self.assert_satisfied(self.tools.run_obligations(wire, self.repo.base))
+        self.assert_satisfied(self.tools.run_obligations(wire, added))
+        removed = self.repo.commit({path: None}, parent=added)
+        removed_members = self.tools.members(self.scope(removed), (added,))
+        wire = tuple(item for item in removed_members if item.family == "wire")
+        self.assert_satisfied(self.tools.run_obligations(wire, added))
+        self.assert_satisfied(self.tools.run_obligations(wire, removed))
+        self.assertTrue(all(path not in item.source_inputs for item in removed_members))
+
     def test_valid_encode_and_writer_failures_are_contract_violations(self):
         path = "scripts/fonttools/cjk/resource_index.py"
         original = (self.repo.root / path).read_text()
@@ -158,6 +172,80 @@ class CjkSubjectTests(unittest.TestCase):
         )
         self.assert_satisfied(self.tools.run_obligations(members, after))
 
+    def test_untyped_valid_encoder_and_writer_failures_are_contract_violations(self):
+        path = "scripts/fonttools/cjk/resource_index.py"
+        original = (self.repo.root / path).read_text()
+        for error in ("TypeError", "KeyError"):
+            for name in ("encode_index", "encode_like_index"):
+                with self.subTest(error=error, operation=name):
+                    tree = ast.parse(original)
+                    function = next(
+                        node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == name
+                    )
+                    function.body[:0] = ast.parse(
+                        f'raise {error}("controlled valid-input failure")'
+                    ).body
+                    before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                    after = self.repo.commit({path: original}, parent=before)
+                    members = tuple(
+                        item for item in self.tools.members(self.scope(after), (before,))
+                        if item.family == "wire"
+                    )
+                    role = "producers" if name == "encode_index" else "replay"
+                    self.assertEqual(
+                        [(item.verdict, item.checks)
+                         for item in self.tools.run_obligations(members, before)
+                         if item.obligation.role == role],
+                        [("contract-violation", 1)],
+                    )
+
+    def test_root_validator_changes_have_real_generated_source_evidence(self):
+        paths = {
+            "scripts/localization/game_catalog/build.py",
+            "scripts/localization/game_catalog/control_streams.py",
+        }
+        for path in sorted(paths):
+            with self.subTest(path=path):
+                original = (self.repo.root / path).read_text()
+                tree = ast.parse(original)
+                if path.endswith("/build.py"):
+                    function = next(
+                        node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == "_load_mapping"
+                    )
+                    call = next(
+                        node for node in ast.walk(function)
+                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == "validate_mapping_document"
+                    )
+                    call.keywords = [item for item in call.keywords if item.arg != "repo_root"]
+                else:
+                    function = next(
+                        node for node in tree.body
+                        if isinstance(node, ast.FunctionDef)
+                        and node.name == "load_portrait_operand_map"
+                    )
+                    assignment = next(
+                        node for node in ast.walk(function)
+                        if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == "fe8u_source"
+                                for target in node.targets)
+                    )
+                    assignment.value = ast.Name(id="fe8u_relative", ctx=ast.Load())
+                before = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                after = self.repo.commit({path: original}, parent=before)
+                members = tuple(
+                    item for item in self.tools.members(self.scope(after), (before,))
+                    if item.family == "generated"
+                )
+                self.assertTrue(all(paths <= set(item.inputs) for item in members))
+                self.assertEqual(
+                    [(item.verdict, item.checks)
+                     for item in self.tools.run_obligations(members, before)
+                     if item.obligation.role == "drift-checks"],
+                    [("contract-violation", 1)],
+                )
     def test_untyped_xz_parser_failure_is_a_contract_violation(self):
         path = "scripts/fonttools/cjk/resource_index.py"
         original = (self.repo.root / path).read_text()
