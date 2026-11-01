@@ -204,6 +204,31 @@ class GradoAllocationNativeTests(unittest.TestCase):
                 SOURCE, Path(temporary) / "state.o", ("-Werror",),
             )
 
+    def test_native_field_values_preserve_real_backend_and_refusals(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            values = EXAMPLE / "src/values.c"
+            binary = root / "values"
+            result = subprocess.run(
+                [
+                    "cc", "-std=gnu89", "-DMODERN=1", "-DNONMATCHING=1",
+                    "-funsigned-char", "-ffunction-sections", "-fdata-sections",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=incompatible-pointer-types",
+                    "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
+                    "-I", str(ROOT / "include"), "-I", str(EXAMPLE / "include"),
+                    "-no-pie", "-Wl,--gc-sections",
+                    str(Path(__file__).parent / "fixtures/grado_values_probe.c"),
+                    str(SOURCE), str(values), str(ROOT / "src/eventinfo.c"),
+                    "-o", str(binary),
+                ],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self._arm_compile(values, root / "values.o", ("-Werror",))
+
 
 if __name__ == "__main__":
     unittest.main()

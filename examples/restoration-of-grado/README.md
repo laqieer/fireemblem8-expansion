@@ -13,6 +13,15 @@ Permanent guide flags remain owned by the progressive guide unless the caller
 supplies the static-guide policy. Supplying that policy is **not** evidence
 that the native guide consumers have been redirected.
 
+The unselected `src/values.c` codec reads and writes these descriptors through
+the original native flag backend. Use only fields from a complete allocation
+already validated as a whole; each access additionally checks its own layout,
+guide policy, value domain and explicit current project-chapter ordinal.
+It distinguishes unset one-hot fields and corrupt stored values without
+changing output or backing on refusal. Writes are explicit requests, not
+automatic load recovery. Generic Boolean writes do not implement retirement
+monotonicity, which remains a separate required lifecycle contract.
+
 An unselected static-guide adapter is also available for the existing
 `src/bmguide.c` code slot: `src/static_guide.c` includes that native
 implementation unchanged and routes only its flag operations through the
@@ -42,7 +51,7 @@ emulator, SRAM file, alternate profile or manual judgment is needed.
    `python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v`.
    The test compiles and executes the real example C, then compiles the same
    source for ARM7TDMI/Thumb with the default AAPCS ABI. Compiler and process
-   diagnostics must be empty of failures; all five methods must pass.
+   diagnostics must be empty of failures; the complete module must pass.
 2. The executed native vectors accept nonoverlapping descriptors and temporary
    bit reuse across different chapters. Same-chapter overlap, incompatible
    one-hot/count domains, unknown scopes, boundary overflow, chapter flags
@@ -91,7 +100,7 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
 
 1. Run
    `python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v`.
-   All five methods must pass. The guide probe compiles the real native guide
+   The complete module must pass. The guide probe compiles the real native guide
    table, native flag backend and either the original or replacement guide
    source. It does not retype those implementations or ignore unresolved
    linker errors.
@@ -129,3 +138,38 @@ simulating success. Tests use actual native capacities/content and only
 their own memory/temporary directories. The same source still implements
 windows/navigation/sort, but no target-ROM UI judgment or selected-profile
 save/lifecycle qualification is implied by these host and object checks.
+
+## TC-GRADO-STATE-VALUES-001
+
+This subcase exercises native field values, not the complete token allocation,
+save identity, producer recovery or retirement rules. It uses the same Linux
+source checkout, host `cc` and supported ARM GCC/headers as the other subcases.
+No ROM, emulator, save file, credentials or manual judgment is needed.
+
+1. Run
+   `python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v`.
+   The field probe links the real example codec/validator and original
+   `src/eventinfo.c` flag routines against its own 25 permanent/5 chapter
+   bytes, then compiles the value module for ARM7TDMI/Thumb AAPCS.
+2. Observe explicit Boolean, bounded-counter and one-hot reads/writes. The
+   counter encoding is checked through real native flag reads and complete
+   expected backing bytes, not a second codec. The last permanent Boolean
+   remains in bounds. A chapter-local access with the wrong project ordinal,
+   an engine-reserved descriptor and an out-of-domain write refuse without
+   changing backing. Invalid input preserves the output guard.
+3. Zero one-hot backing reports `UNSET`, not a default choice. Multiple set
+   bits or an encoded counter above its bound report `CORRUPT`, preserving
+   every byte and the output guard. A later explicit valid write can replace
+   those bytes; this is not permission for an automatic load-repair path.
+   Valid accesses do not alter unrelated permanent/chapter storage.
+
+The absent pre-feature interface is a structural negative control, not
+target execution evidence. The actual host vectors supply the positive and
+adversarial value evidence; ARM compilation alone does not. As in the guide
+probe, an unrelated retained event-dispatch dependency is an abort-only
+adapter: executing it fails rather than simulating success.
+Alternative fixture descriptors are not a production physical assignment.
+The suites remove only their own temporary files. Default linking, the
+native buffers/envelope and framework epoch remain unchanged; complete
+Grado normal/Suspend/legacy loading, schema1/epoch256, atomic checkpoints,
+producer-sensitive recovery, retirement, profiles and ROM/RAM remain open.

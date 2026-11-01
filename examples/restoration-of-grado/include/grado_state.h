@@ -34,6 +34,17 @@ enum GradoAllocationResult
     GRADO_ALLOCATION_OVERLAP,
 };
 
+enum GradoStateValueResult
+{
+    GRADO_STATE_VALUE_VALID,
+    GRADO_STATE_VALUE_UNSET,
+    GRADO_STATE_VALUE_INPUT,
+    GRADO_STATE_VALUE_LAYOUT,
+    GRADO_STATE_VALUE_CHAPTER,
+    GRADO_STATE_VALUE_CORRUPT,
+    GRADO_STATE_VALUE_RANGE,
+};
+
 enum
 {
     GRADO_STATE_CHAPTER_COUNT = 22,
@@ -54,6 +65,18 @@ enum GradoAllocationResult GradoState_ValidateAllocation(
     const struct GradoStateField * fields,
     unsigned int count,
     enum GradoGuideStoragePolicy guidePolicy);
+
+enum GradoStateValueResult GradoState_ReadValue(
+    const struct GradoStateField * field,
+    enum GradoGuideStoragePolicy guidePolicy,
+    unsigned int chapter,
+    u16 * value);
+
+enum GradoStateValueResult GradoState_WriteValue(
+    const struct GradoStateField * field,
+    enum GradoGuideStoragePolicy guidePolicy,
+    unsigned int chapter,
+    u16 value);
 
 int GradoState_IsProgressiveGuideFlag(unsigned int flag);
 int GradoGuide_CheckFlag(int flag);

@@ -64,7 +64,7 @@
   "features": [
     {
       "id": "grado-native-allocation",
-      "title": "Optional Grado allocation and guide ownership",
+      "title": "Optional Grado native fields and guide ownership",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/315"
       ],
@@ -72,7 +72,8 @@
       "status": "current",
       "required_cases": [
         "TC-GRADO-ALLOCATION-001",
-        "TC-GRADO-GUIDE-001"
+        "TC-GRADO-GUIDE-001",
+        "TC-GRADO-STATE-VALUES-001"
       ]
     },
     {
@@ -842,6 +843,35 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-GRADO-STATE-VALUES-001",
+      "title": "Read and write typed fields through the native flag backend",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-state-values-001",
+      "profiles": [
+        "Unselected optional reference; Linux host-native original flag routines",
+        "ARM7TDMI/Thumb GNU89 AAPCS compile-only"
+      ],
+      "purpose": "Exercise explicit Boolean/counter/one-hot values through the actual existing native flag backend, without claiming production allocation or save/lifecycle integration.",
+      "prerequisites": "Host cc, Python3, supported ARM GCC/headers and owned temporary files. Use fields from a complete validated allocation; the current project chapter is an explicit ordinal. No ROM, emulator, save file, credentials or new dependency.",
+      "actions": "Run the documented native module. Execute real example value functions with original eventinfo.c and owned native backing arrays; verify worked counter encoding, Boolean last-bit bounds, chapter scoping, input/layout/domain refusal, unset and conflicting one-hot states and corrupt stored counters, then compile the same value module under the supported ARM ABI.",
+      "expected_result": "Valid explicit values round-trip without touching unrelated backing. Invalid access or write preserves storage/output guards. Zero one-hot reports UNSET; conflicting one-hot or out-of-domain backing reports CORRUPT without recovery/defaults. Original default behavior is unchanged.",
+      "negative_control": "The pre-feature interface is absent and fails compilation; that is structural evidence only. Actual adversarial native vectors reject reserved/wrong-chapter/range/corrupt states. The unrelated event dispatcher dependency aborts if executed rather than supplying a success stub.",
+      "interactions": "Shares the existing typed allocation validator and original native flag backend. Static policy is not proof of guide redirection; full allocation/selected profile remains required. Generic Boolean writes do not enforce retirement monotonicity.",
+      "save_compatibility": "No new blob, physical production assignment, save envelope, epoch, load hook, selected project or SRAM change. Grado schema1/epoch256, normal/Suspend/legacy and atomic/recovery/retirement requirements remain incomplete.",
+      "cleanup": "Tests remove only their owned unique temporary probe/object directories and preserve saves, worktrees and real game buffers.",
+      "limitations": "Host-native value behavior and ARM compilation are not target-ROM/save/profile/UI qualification. Alternative descriptors are fixture inputs, not production assignments; valid explicit writes are not automatic repair authority.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",
+          "evidence": "scripts/modernize/tests/test_grado_state_native.py"
+        }
+      ]
+    },
     {
       "id": "TC-GRADO-GUIDE-001",
       "title": "Route native guide progression without consuming project flags",
