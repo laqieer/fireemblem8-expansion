@@ -43,12 +43,12 @@ _EVENT_DEFINITION_RE = re.compile(
 _EVENT_CALL_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*$")
 _EVENT_BARE_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$")
 _INTEGER_RE = re.compile(
-    r"^(?:MSG_([0-9A-Fa-f]+)|0[xX]([0-9A-Fa-f]+)|([0-9]+))$"
+    r"^(?:MSG_([0-9A-Fa-f]+)|(?:0[xX]([0-9A-Fa-f]+)|([0-9]+))[uUlL]*)$"
 )
 _MESSAGE_FIELD_RE = re.compile(
-    r"\.(nameTextId|descTextId|helpTextId|textId|msgId|messageId|itemName|"
+    r"\.(nameTextId|descTextId|useDescTextId|helpTextId|textId|msgId|messageId|itemName|"
     r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*=\s*"
-    r"(MSG_[0-9A-Fa-f]{1,4}|0[xX][0-9A-Fa-f]+|[0-9]+)\b"
+    r"(MSG_[0-9A-Fa-f]{1,4}|(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*)\b"
 )
 _MESSAGE_CALL_ARGUMENTS = {
     "GetStringFromIndex": (0,),

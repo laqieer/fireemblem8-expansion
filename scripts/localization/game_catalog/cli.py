@@ -41,6 +41,7 @@ from .build import (
 from .c_emitter import render_declarations
 from .constants import CJK_LOCALE_IDS, LOCALE_IDS
 from .compiled_fonts import measure_selected_fonts
+from .compiled_inputs import validate_compiled_references
 from .control_streams import DEFAULT_EVENT_ROOT
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
@@ -539,6 +540,8 @@ def cmd_check_leakage(args: argparse.Namespace) -> int:
 
 def cmd_check_width(args: argparse.Namespace) -> int:
     build = _build_from_args(args)
+    if args.compile_context is not None:
+        validate_compiled_references(args.compile_context, target_count=build.target_count)
     validation = build.report.get("width_validation")
     if not isinstance(validation, dict):
         raise GameCatalogError(

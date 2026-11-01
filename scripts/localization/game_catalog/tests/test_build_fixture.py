@@ -1,6 +1,7 @@
 import shutil
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -375,6 +376,153 @@ class FixtureBuildTests(unittest.TestCase):
         metrics["ascii"]["system"] = {scalar: 24 for scalar in range(0x20, 0x7F)}
         with self.assertRaisesRegex(GameCatalogError, "280px"):
             build_game_catalog(**inputs, font_metrics=metrics)
+
+    def test_selected_context_checks_live_retained_cpp_references(self):
+        compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
+        if shutil.which(compiler) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        work = self.fixture_dir / "native"
+        work.mkdir()
+        flags = [
+            "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-mabi=aapcs",
+            "-std=gnu89", "-ffreestanding", "-fno-common", "-ffunction-sections",
+            "-fdata-sections", "-DMODERN=1", "-DNONMATCHING=1",
+            "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=3u",
+            "-DFE8_EXPANSION_DEFAULT_LOCALE_ID=0", "-DFE8_EXPANSION_STARTER_CONTENT=0",
+            "-DSELECTED_CJK_WIDTH=13",
+            "-I" + str(ROOT / "include"), "-I" + str(ROOT),
+        ]
+        renderer = work / "renderer.c"
+        renderer.write_text(
+            '#include "global.h"\n#include "fontgrp.h"\n#include "localized_font.h"\n',
+            encoding="ascii",
+        )
+        font = work / "font.c"
+        font.write_text(
+            '#include "global.h"\n#include "fontgrp.h"\n'
+            'static struct Glyph sFixtureGlyph = {0, 0, 6, {0}};\n'
+            'struct Glyph *TextGlyphs_System[128] = {[0 ... 127] = &sFixtureGlyph};\n'
+            'struct Glyph *TextGlyphs_Talk[128] = {[0 ... 127] = &sFixtureGlyph};\n',
+            encoding="ascii",
+        )
+        localized = work / "localized.c"
+        localized.write_text(
+            '#include "global.h"\n#include "localized_font.h"\n'
+            + "".join(
+                f"const u8 gLocalizedFontJa{style}Codepoints[] = {{0, 0x4E, 0, 0}};\n"
+                f"const u8 gLocalizedFontJa{style}Widths[] = {{SELECTED_CJK_WIDTH}};\n"
+                f"const u8 gLocalizedFontJa{style}Bitmaps[LOCALIZED_FONT_BITMAP_STRIDE] = {{0}};\n"
+                f"const u32 gLocalizedFontJa{style}GlyphCount = 1;\n"
+                for style in ("System", "Talk")
+            ),
+            encoding="ascii",
+        )
+        retained = work / "retained.c"
+        retained.write_text(
+            '#include "global.h"\n#include "bmitem.h"\n'
+            '#if SELECTED_REFERENCE_BAD\n'
+            '#define RETAINED_MESSAGE 3u\n'
+            '#else\n'
+            '#define RETAINED_MESSAGE 1u\n'
+            '#endif\n'
+            '#if SELECTED_REFERENCE_FIELD\n'
+            'const struct ItemData RetainedItem = {\n'
+            '#if SELECTED_REFERENCE_FIELD == 1\n'
+            '    .nameTextId = RETAINED_MESSAGE,\n'
+            '#elif SELECTED_REFERENCE_FIELD == 2\n'
+            '    .descTextId = RETAINED_MESSAGE,\n'
+            '#else\n'
+            '    .useDescTextId = RETAINED_MESSAGE,\n'
+            '#endif\n'
+            '};\n'
+            '#else\n'
+            'void RetainedReference(void) { GetStringFromIndex(RETAINED_MESSAGE); }\n'
+            '#endif\n',
+            encoding="ascii",
+        )
+        units = []
+        for logical, source in (
+            ("src/fontgrp.c", renderer),
+            ("src/fontgrp-data.c", font),
+            ("src/data/localized_font_data.c", localized),
+            ("src/retained.c", retained),
+        ):
+            target = work / Path(logical).with_suffix(".o").name
+            command = [compiler, *flags, "-DSELECTED_REFERENCE_BAD=0", "-c", str(source),
+                       "-o", str(target)]
+            result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            units.append({
+                "schema_version": 1, "kind": "fe8-selected-text-compile",
+                "logical_source": logical, "selected_source": str(source),
+                "compiler_input": str(source), "object": str(target),
+                "compiler_argv": command, "preprocessor_argv": [],
+            })
+        inputs = self.selected_inputs()
+        inputs["english_texts_path"].write_text(
+            "## MSG_000\nA[X]\n## MSG_FIXTURE_ONE\nA[X]\n## MSG_FIXTURE_TWO\nA[X]\n",
+            encoding="ascii",
+        )
+        mapping = json.loads(inputs["mapping_path"].read_bytes())
+        for row in mapping["rows"]:
+            row["source"] = {"kind": "english_fallback", "reason": "module-native CPP fixture"}
+            row["verification"]["confidence"] = "explicit"
+        inputs["mapping_path"].write_text(json.dumps(mapping), encoding="utf-8")
+        context = work / "context.json"
+        arguments = [
+            sys.executable, "-B", "-m", "scripts.localization.game_catalog", "check-width",
+            "--english-texts", str(inputs["english_texts_path"]),
+            "--english-definitions", str(inputs["english_definitions_path"]),
+            "--target-header", str(inputs["target_header_path"]),
+            "--mapping", str(inputs["mapping_path"]),
+            "--ja-indexed", str(inputs["ja_indexed_path"]),
+            "--event-root", str(self.fixture_dir), "--enabled-locales", "ja",
+            "--compile-context", str(context),
+        ]
+        original_command = units[-1]["compiler_argv"]
+        for field in (0, 1, 2, 3):
+            for bad in (0, 1):
+                with self.subTest(field=field, live_invalid_reference=bad):
+                    units[-1]["compiler_argv"] = [
+                        original_command[0], f"-DSELECTED_REFERENCE_FIELD={field}",
+                        *(
+                            argument if not argument.startswith("-DSELECTED_REFERENCE_BAD=")
+                            else f"-DSELECTED_REFERENCE_BAD={bad}"
+                            for argument in original_command[1:]
+                        ),
+                    ]
+                    context.write_text(json.dumps({
+                        "schema_version": 1, "kind": "fe8-selected-text-inputs",
+                        "source_root": str(ROOT), "linker": "arm-none-eabi-ld", "units": units,
+                    }), encoding="utf-8")
+                    result = subprocess.run(
+                        arguments, cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(result.returncode, bad, result.stdout + result.stderr)
+                    if bad:
+                        self.assertIn("retained.c", result.stderr)
+                        self.assertIn("active", result.stderr)
+        units[-1]["compiler_argv"] = original_command
+        context.write_text(json.dumps({
+            "schema_version": 1, "kind": "fe8-selected-text-inputs",
+            "source_root": str(ROOT), "linker": "arm-none-eabi-ld", "units": units,
+        }), encoding="utf-8")
+        mapping["rows"][1]["source"] = {"kind": "authored", "translation_key": "native-width"}
+        mapping["rows"][1]["verification"]["confidence"] = "high"
+        inputs["mapping_path"].write_text(json.dumps(mapping), encoding="utf-8")
+        authored = work / "authored.ja.json"
+        for glyphs, inserted in ((18, 0), (19, 1)):
+            with self.subTest(native_glyphs=glyphs):
+                authored.write_text(json.dumps({
+                    "kind": "fe8u-game-authored-catalog", "locale": "ja",
+                    "strings": {"native-width": "一" * glyphs},
+                }, ensure_ascii=False), encoding="utf-8")
+                result = subprocess.run(
+                    [*arguments, "--authored", f"ja={authored}"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(f"inserted={inserted}", result.stdout)
 
     def test_selected_name_keeps_legacy_space_distinct_from_ideographic_space(self):
         def measure(payload):

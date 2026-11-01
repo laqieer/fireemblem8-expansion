@@ -177,6 +177,14 @@ Width-report records expose `contexts` and `requirements` instead of one
 Custom schema-1 width registries must be updated to include the explicit
 box and CG classification contexts; unsupported schemas reject explicitly.
 
+`check-width --compile-context` also preprocesses the supplied selected C
+inputs with their actual compiler arguments before accepting direct literal
+message calls and designated message fields. Private conditional branches
+therefore select the checked references; raw disabled branches are not live
+references. The context loader is shared with font measurement. This is a
+first source-reference slice, not complete constant-expression/dataflow,
+event-helper, generated-owner or fresh full-project integration.
+
 ## Runtime and build gating
 
 The focused selected-text native check is:
@@ -322,6 +330,13 @@ reflow; 19 glyphs require one inserted NL under the existing CJK wrapping
 policy. Repeating measurement in another private directory preserves the
 same metric/input facts. The final builder passes one supplied metric input
 to all three consumer families, rather than reloading stock widths.
+The CLI reference fixture supplies four genuine scoped compiler inputs
+(layout declarations, native font data, localized font data and a retained
+consumer), not a whole default engine paired with only three messages.
+It preserves that 13px CLI measurement/reflow contract while private CPP
+flags alternately expose valid ID 1 or invalid ID 3 in a real message call
+and each `ItemData` name/description/use-description field. The latter must
+fail explicitly; changing only a raw disabled branch must not fail.
 English source-only declarations and the pseudo locale's Latin-font path
 need no measured catalog or locale atlas. These are bounded compiler and
 consumer observations, not complete selected CPP/reference/multi-renderer

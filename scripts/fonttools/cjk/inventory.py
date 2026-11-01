@@ -224,7 +224,7 @@ def _runtime_catalog_usage(
 ) -> Tuple[Dict[str, List[str]], List[Dict[str, object]], Dict[str, int]]:
     """Classify every emitted runtime string before deriving a font corpus.
 
-    The game catalog is the authoritative FE8U target resolver.  The width
+    The game catalog is the authoritative FE8U target resolver.
     Width checking and glyph inventory share the complete native requirement
     set. A payload used by several renderers contributes to every required
     font, including an inherited-font measurement before Talk-font drawing.

@@ -10,6 +10,7 @@ import subprocess
 from typing import TypedDict
 
 from .model import GameCatalogError
+from .compiled_inputs import CompiledInputError, load_compile_context
 
 
 class CompiledFontError(GameCatalogError):
@@ -214,34 +215,11 @@ def read_localized_widths(
 
 def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedFontMetrics:
     try:
-        context = json.loads(Path(context_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise CompiledFontError(
-            f"{context_path}: selected compilation context is unreadable or malformed: {error}"
-        ) from error
-    if (not isinstance(context, dict) or type(context.get("schema_version")) is not int
-            or context["schema_version"] != 1 or context.get("kind") != "fe8-selected-text-inputs"
-            or not isinstance(context.get("source_root"), str)
-            or not Path(context["source_root"]).is_absolute()
-            or not isinstance(context.get("linker"), str) or not context["linker"]
-            or not isinstance(context.get("units"), list)):
-        raise CompiledFontError(f"{context_path}: invalid selected compilation context")
+        context = load_compile_context(context_path)
+    except CompiledInputError as error:
+        raise CompiledFontError(str(error)) from error
     source_root = Path(context["source_root"])
-    units = {}
-    for unit in context["units"]:
-        if (not isinstance(unit, dict) or any(
-                not isinstance(unit.get(field), str) or not unit[field]
-                for field in ("logical_source", "selected_source", "compiler_input", "object"))
-                or not isinstance(unit.get("compiler_argv"), list)
-                or any(not isinstance(argument, str) for argument in unit["compiler_argv"])):
-            raise CompiledFontError(f"{context_path}: invalid selected compilation unit")
-        name = unit["logical_source"]
-        argv = unit["compiler_argv"]
-        if (name in units or argv.count("-c") != 1 or len(argv) < 5
-                or argv[-2:] != ["-o", unit["object"]]
-                or argv[argv.index("-c") + 1] != unit["compiler_input"]):
-            raise CompiledFontError(f"{context_path}: ambiguous selected compilation unit {name}")
-        units[name] = unit
+    units = {unit["logical_source"]: unit for unit in context["units"]}
 
     def selected(name):
         if name not in units:
