@@ -263,7 +263,7 @@ def event_validation_inputs(tree):
 
 
 def fixture_inputs(tree, probes):
-    if any(probe.startswith("cjk-resource:") for probe in probes):
+    if any(probe.startswith("cjk-resource:generated:") for probe in probes):
         return {path for prefix in CJK_FIXTURE_PREFIXES for path in tree.under(prefix)}
     return set()
 
@@ -1562,9 +1562,9 @@ def _cjk_resource(probe):
         nonlocal checks
         try:
             call()
-        except error:
+        except error as failure:
             checks += 1
-            return
+            return failure
         except operation_errors as failure:
             raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
         raise ContractViolation("invalid resource input was accepted")
@@ -1976,17 +1976,12 @@ def _cjk_resource(probe):
             root = owned_fonts("review-resource-cli")
             accepted(package.check_compact_assets, root)
             broken = b"invalid index"
-            try:
-                codec.decode_index(broken)
-            except codec.ResourceIndexError as failure:
-                cause = str(failure)
-            else:
-                raise ContractViolation("codec accepted malformed diagnostic control")
+            cause = str(reject(lambda: codec.decode_index(broken)))
             (root / CJK_INDEXES[0]).write_bytes(broken)
             before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
             errors = io.StringIO()
             with redirect_stdout(io.StringIO()), redirect_stderr(errors):
-                status = cli.main([
+                status = accepted(cli.main, [
                     "--root", str(root), "repack-index", "--index", "fehrr", "--format", "packed",
                 ])
             verify(status == 1 and cause in errors.getvalue(),

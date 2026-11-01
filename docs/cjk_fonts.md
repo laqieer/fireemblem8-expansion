@@ -94,7 +94,8 @@ inputs. No ROM, emulator, font-source checkout or manual judgment is needed.
 3. Exercise malformed encoding, non-JSON NaN/infinity constants, unknown
    fields/version, non-string payloads, nested envelopes, boolean size/version,
    wrong size, damaged/truncated/trailing streams and oversized expansion.
-   Require explicit errors; a corrupt owned CLI input must leave every
+   Require explicit errors; a corrupt previous index identifies its path,
+   and a corrupt owned CLI input must leave every
    existing index/checksum file unchanged. Legacy and schema-2 readers share
    the source-lock schema/repository/commit/tree validation before repacking.
 4. In owned roots, exercise both `build_runtime_split_assets` and
@@ -165,6 +166,12 @@ contract violations, not unavailable setup evidence. The two candidate-call
 paths share that finite error-family definition; independent reference and
 OS/backend setup failures remain unavailable. Unrecognized failures never
 supply success or affected-fixed credit and require explicit source triage.
+Only the complete generated CJK family stages its additional fixtures, in
+its own existing worker root. Mixed requests retain their declared execution
+union and observation order, but other probes cannot see CJK-only fixture
+trees. Wire/resource-only observations read their declared indexes without
+copying those fixture trees. The malformed-input decoder and CLI diagnostic
+consumer reuse the same finite failure handling and preserve actual causes.
 This binding does not wrap a whole-suite pass
 as member evidence or replace the font CLI, candidate/master Build or final
 delivery gates.
