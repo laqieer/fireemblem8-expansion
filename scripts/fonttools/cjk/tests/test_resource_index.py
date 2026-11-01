@@ -405,6 +405,8 @@ class ResourceIndexTests(unittest.TestCase):
                     ROOT / relative, root / relative,
                     ignore=shutil.ignore_patterns("*.o", "__pycache__"),
                 )
+            for arguments in (("init", "--quiet"), ("add", "--", "src", "include")):
+                subprocess.run(["git", "-C", str(root), *arguments], check=True)
             originals = {
                 relative: (root / relative).read_bytes()
                 for relative in (
