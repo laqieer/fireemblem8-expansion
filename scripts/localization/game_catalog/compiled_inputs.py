@@ -105,14 +105,15 @@ def _native_command(
 def _scalar_initializer_operand(value: str) -> str | None:
     while True:
         masked = _mask_c_comments_and_strings(value)
-        opening = len(masked) - len(masked.lstrip())
+        literals = _mask_c_comments_and_strings(value, mask_strings=False)
+        opening = len(literals) - len(literals.lstrip())
         if opening >= len(masked) or masked[opening] != "{":
             return value
         _, closing = _scan_balanced(masked, opening)
         if masked[closing + 1:].strip():
             return None
         body = masked[opening + 1:closing]
-        end = len(body.rstrip())
+        end = len(literals[opening + 1:closing].rstrip())
         if end and body[end - 1] == ",":
             end -= 1
         index = 0

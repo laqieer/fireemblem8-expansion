@@ -130,6 +130,12 @@ Numeric and active source/header message symbols are resolved before checking
 the actual English allocation. Unknown symbols, missing roots and ordinary
 retired IDs reject rather than disappear from coverage. C comments are not
 event commands, and the world-map command's remaining operand is not a message ID.
+Allocation headers contain stable object-like single-integer bindings.
+Parentheses, integer suffixes, octal/hex spelling, comments and definition
+ordering do not change ownership. Unsupported expressions, function-like
+message macros, `#undef` and redefinition reject explicitly instead of
+leaving an obsolete value active in the validator. `MSG_COUNT` retains its
+hexadecimal metadata format and must match the active source.
 Shared C-array/delimiter parsing preserves multiline and inline formatting.
 Public engine macro aliases are read from the existing `EAstdlib.h`; implicit
 `MSG_NNN` symbols from numeric source entries retain their validated bindings.
@@ -289,6 +295,9 @@ rendered page, layout, portrait or full-game qualification.
    reject it as an `int` API ID; 4294967297 narrows to ID 1 in both.
    Qualified casts, named enum constants and include-depth-selected `u8`/
    `u16` inversion controls retain their original C semantics.
+   Braced character literals retain their complete expression spans:
+   `{'3'}` is native ID 51 and rejects against three messages, while
+   `{1 + '\0'}` and nested braced character value 1 remain valid.
    Named enum casts, compiler builtins, local attributed typedefs/initializers
    and nested message calls are checked in their actual scope.
    The Make context fixture creates a dependency file after the parent has

@@ -6,7 +6,10 @@ import re
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from scripts.generated_data.validators import extract_define_constants
+from scripts.localization.game_locales.structural_completion import (
+    StructuralCompletionError,
+    _mask_c_comments_and_strings,
+)
 
 from .model import EnglishSourceEntry, GameCatalogError
 
@@ -16,6 +19,13 @@ _EXPLICIT_ID_RE = re.compile(r"^#([0-9A-Fa-fx]+)\s*$")
 _MACRO_RE = re.compile(r"^##\s*(\w+)\s*$")
 _INCLUDE_RE = re.compile(r'^#include\s+"([^"]+)"\s*$')
 _TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
+_HEADER_DIRECTIVE_RE = re.compile(
+    r"^\s*#\s*(define|undef)\s+([A-Za-z_][A-Za-z0-9_]*)(.*)$"
+)
+_HEADER_INTEGER_RE = re.compile(
+    r"(-?(?:0[xX][0-9A-Fa-f]+|[0-9]+))"
+    r"(?:[uU](?:ll|LL|[lL])?|(?:ll|LL|[lL])[uU]?)?"
+)
 
 _PRINTABLE_REPLACEMENTS = {
     "DashedLine": b"-",
@@ -266,15 +276,73 @@ def load_english_source_entries(
     return tuple(by_id[target_id] for target_id in range(target_count))
 
 
+def _header_allocations(
+    header_path: Path, source_names: set[str],
+) -> Dict[str, Tuple[int, int]]:
+    try:
+        text = _mask_c_comments_and_strings(_strict_utf8_text(header_path))
+    except StructuralCompletionError as error:
+        raise GameCatalogError(f"{header_path}: invalid allocation header: {error}") from error
+    constants: Dict[str, Tuple[int, int]] = {}
+    seen = set()
+    for line_number, line in enumerate(text.splitlines(), 1):
+        directive = _HEADER_DIRECTIVE_RE.fullmatch(line)
+        if directive is None:
+            continue
+        action, name, tail = directive.groups()
+        relevant = name in source_names or name.startswith("MSG_") or name in constants
+        if action == "undef":
+            if relevant:
+                raise GameCatalogError(
+                    f"{header_path}:{line_number}: gameplay allocation {name} cannot be undefined"
+                )
+            continue
+        value = tail.strip()
+        if not value and name not in source_names and (
+            name == "MSG_H" or not name.startswith("MSG_")
+        ):
+            continue
+        if name in seen:
+            raise GameCatalogError(
+                f"{header_path}:{line_number}: gameplay allocation {name} is redefined"
+            )
+        while value.startswith("(") and value.endswith(")"):
+            value = value[1:-1].strip()
+        literal = None if tail.startswith("(") else _HEADER_INTEGER_RE.fullmatch(value)
+        if literal is None:
+            if relevant:
+                raise GameCatalogError(
+                    f"{header_path}:{line_number}: unsupported gameplay allocation directive {name}"
+                )
+            continue
+        digits = literal.group(1)
+        unsigned = digits.lstrip("-")
+        base = 16 if unsigned.lower().startswith("0x") else (
+            8 if len(unsigned) > 1 and unsigned.startswith("0") else 10
+        )
+        try:
+            number = int(digits, base)
+        except ValueError as error:
+            raise GameCatalogError(
+                f"{header_path}:{line_number}: invalid gameplay allocation literal {name}"
+            ) from error
+        seen.add(name)
+        constants[name] = (number, line_number)
+    return constants
+
+
 def validate_english_source_header(
     entries: Sequence[EnglishSourceEntry],
     header_path: Path,
 ) -> None:
-    constants = extract_define_constants(header_path)
-    source_names = set()
+    source_names = {
+        entry.definition or f"MSG_{entry.target_id:03X}" for entry in entries
+    }
+    constants = _header_allocations(header_path, source_names)
+    if "MSG_COUNT" in constants and constants["MSG_COUNT"][0] != len(entries):
+        raise GameCatalogError(f"{header_path}: MSG_COUNT differs from the active source")
     for entry in entries:
         name = entry.definition or f"MSG_{entry.target_id:03X}"
-        source_names.add(name)
         binding = constants.get(name)
         if binding is None:
             raise GameCatalogError(f"{header_path}: missing gameplay message allocation {name}")

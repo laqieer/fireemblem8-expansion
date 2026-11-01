@@ -301,7 +301,7 @@ def _normalized_context(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _mask_c_comments_and_strings(text: str) -> str:
+def _mask_c_comments_and_strings(text: str, *, mask_strings: bool = True) -> str:
     result = list(text)
     index = 0
     state = "code"
@@ -322,7 +322,8 @@ def _mask_c_comments_and_strings(text: str) -> str:
                 continue
             if char in ('"', "'"):
                 quote = char
-                result[index] = " "
+                if mask_strings:
+                    result[index] = " "
                 index += 1
                 state = "string"
                 continue
@@ -341,13 +342,15 @@ def _mask_c_comments_and_strings(text: str) -> str:
                 result[index] = " "
         else:
             if char == "\\" and index + 1 < len(text):
-                result[index] = result[index + 1] = " "
+                if mask_strings:
+                    result[index] = result[index + 1] = " "
                 index += 2
                 continue
             if char == quote:
-                result[index] = " "
+                if mask_strings:
+                    result[index] = " "
                 state = "code"
-            elif char != "\n":
+            elif mask_strings and char != "\n":
                 result[index] = " "
         index += 1
     return "".join(result)

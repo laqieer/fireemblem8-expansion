@@ -590,6 +590,9 @@ class FixtureBuildTests(unittest.TestCase):
             ("struct P { u16 msg; }; struct P p = {.msg = 3};", False),
             ("struct P { u16 msg; }; struct P p = {.msg = {3}};", False),
             ("struct P { u16 msg; }; struct P p = {.msg = {{1},}};", True),
+            ("struct P { u16 msg; }; struct P p = {.msg = {'3'}};", False),
+            (r"struct P { u16 msg; }; struct P p = {.msg = {1 + '\0'}};", True),
+            (r"struct P { u16 msg; }; struct P p = {.msg = {{'\1'},}};", True),
         ):
             with self.subTest(member_kind=body):
                 source.write_text('#include "global.h"\n' + body + "\n", encoding="ascii")
@@ -922,6 +925,36 @@ class FixtureBuildTests(unittest.TestCase):
                 ja_raw_expected_repository=None,
                 ja_raw_expected_revision=None,
             )
+
+    def test_selected_header_cannot_hide_unsupported_or_rebound_allocations(self):
+        header = self.fixture_dir / "msg.h"
+        original = header.read_text(encoding="utf-8")
+        inputs = self.selected_inputs()
+        inputs["event_root_path"] = self.fixture_dir
+        for directive in (
+            "#define MSG_RETIRED 0xFFFFu\n",
+            "#define MSG_RETIRED (1u + 2u)\n",
+            "#define RETIRED_ALIAS -1\n",
+            "#undef MSG_FIXTURE_ONE\n#define MSG_FIXTURE_ONE (0x0002)\n",
+            "#define MSG_FIXTURE_ONE (0x0002)\n",
+        ):
+            with self.subTest(directive=directive):
+                header.write_text(original + directive, encoding="utf-8")
+                with self.assertRaises(GameCatalogError):
+                    build_game_catalog(**inputs)
+        header.write_text(
+            original.replace(
+                "#define MSG_FIXTURE_ONE 0x0001",
+                "#define MSG_FIXTURE_ONE ((0x0001u)) /* same allocation */",
+            ).replace(
+                "#define MSG_FIXTURE_TWO 0x0002",
+                "#define MSG_FIXTURE_TWO 02UL",
+            )
+            + "/*\n#define MSG_COMMENTED_OUT 0xFFFF\n*/\n",
+            encoding="utf-8",
+        )
+        build = build_game_catalog(**inputs)
+        self.assertEqual(build.target_count, 3)
 
     def test_non_stock_catalog_rejects_an_overwide_unbreakable_system_label(self):
         source = self.fixture_dir / "ja_indexed.txt"
