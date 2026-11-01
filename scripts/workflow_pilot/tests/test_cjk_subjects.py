@@ -8,6 +8,7 @@ import shutil
 import struct
 import subprocess
 import unittest
+from unittest import mock
 import zlib
 
 from scripts.workflow_pilot.tests.review_support import ENV, ROOT, git, request, snapshot
@@ -132,6 +133,46 @@ class CjkSubjectTests(unittest.TestCase):
                 self.assertEqual([(item.kind, item.verdict, item.checks) for item in observed
                                   if item.obligation.role == "owners"],
                                  [("host", "unavailable", 0)])
+
+    def test_fixture_workers_do_not_expose_extra_paths_to_other_probes(self):
+        fixture = "graphics/fonts/cjk/manifest.json"
+        for kind in ("mixed", "wire-resource"):
+            with self.subTest(kind=kind):
+                data = self.scope()
+                if kind == "mixed":
+                    data["subjects"].extend(request()["subjects"])
+                members = self.tools.members(data)
+                if kind == "wire-resource":
+                    members = tuple(item for item in members
+                                    if item.family in {"wire", "resource"})
+                declared = {path for item in members for path in item.source_inputs}
+                self.assertNotIn(fixture, declared)
+                calls = []
+                run_process = self.tools.subjects.run_process
+
+                def observe(command, **keywords):
+                    probes = json.loads(keywords["input"])
+                    root = keywords["cwd"]
+                    calls.append((probes, (root / fixture).is_file()))
+                    return run_process(command, **keywords)
+
+                with mock.patch.object(self.tools.subjects, "run_process", side_effect=observe):
+                    observed = self.tools.run_obligations(members, self.repo.base)
+                self.assert_satisfied(observed)
+                self.assertEqual(
+                    [item.obligation.identity for item in observed],
+                    [item.identity for item in members],
+                )
+                self.assertEqual(
+                    {probe for probes, _ in calls for probe in probes},
+                    {item.probe for item in members},
+                )
+                for probes, has_fixture in calls:
+                    generated = [probe.startswith("cjk-resource:generated:") for probe in probes]
+                    self.assertEqual(has_fixture, all(generated))
+                    self.assertTrue(all(generated) or not any(generated))
+                for item in observed:
+                    self.assertEqual(set(dict(item.source_objects)), declared)
 
     def test_execution_only_closure_uses_the_stable_candidate_universe(self):
         path = "scripts/fonttools/cjk/unused_review_fixture.py"
@@ -429,6 +470,45 @@ class CjkSubjectTests(unittest.TestCase):
         renamed = self.repo.commit({path: original.replace("previous", "old_data")})
         members = self.tools.members(self.scope(renamed))
         self.assert_satisfied(self.tools.run_obligations(members, renamed))
+
+    def test_generated_consumer_programming_errors_are_not_backend_failures(self):
+        baseline = tuple(item for item in self.tools.members(self.scope())
+                         if item.family == "generated")
+        self.assert_satisfied(self.tools.run_obligations(baseline, self.repo.base))
+        sources = {
+            path: (self.repo.root / path).read_text()
+            for path in ("scripts/fonttools/cjk/resource_index.py", "scripts/fonttools/cjk/cli.py")
+        }
+        for operation, failure, expected in (
+            ("decode_index", "RuntimeError", "contract-violation"),
+            ("main", "TypeError", "contract-violation"),
+            ("main", "OSError", "unavailable"),
+        ):
+            with self.subTest(operation=operation, failure=failure):
+                path = (
+                    "scripts/fonttools/cjk/resource_index.py" if operation == "decode_index"
+                    else "scripts/fonttools/cjk/cli.py"
+                )
+                original = sources[path]
+                tree = ast.parse(original)
+                function = next(node for node in tree.body
+                                if isinstance(node, ast.FunctionDef) and node.name == operation)
+                statement = f'raise {failure}("controlled consumer failure")\n'
+                if operation == "decode_index":
+                    statement = (
+                        f"if {function.args.args[0].arg} == b'invalid index':\n"
+                        f"    {statement}"
+                    )
+                function.body[:0] = ast.parse(statement).body
+                head = self.repo.commit({path: ast.unparse(tree) + "\n"})
+                members = tuple(item for item in self.tools.members(self.scope(head))
+                                if item.family == "generated")
+                observed = self.tools.run_obligations(members, head)
+                self.assertEqual(
+                    [(item.verdict, item.checks) for item in observed
+                     if item.obligation.role == "consumers"],
+                    [(expected, 1 if expected == "contract-violation" else 0)],
+                )
 
     def test_schema2_cli_cause_mutation_does_not_get_legacy_reader_credit(self):
         path = "scripts/fonttools/cjk/package.py"

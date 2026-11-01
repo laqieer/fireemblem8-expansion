@@ -403,10 +403,18 @@ class ResourceIndexTests(unittest.TestCase):
                 encoded = encode_like_index(changed, path)
                 self.assertEqual(encoded, encode_index(changed, packed=packed))
                 self.assertEqual(decode_index(encoded), changed)
-            path.write_bytes(b"invalid index")
-            with self.assertRaises(ResourceIndexError):
-                encode_like_index(changed, path)
-            self.assertEqual(path.read_bytes(), b"invalid index")
+            for invalid in (
+                b"invalid index",
+                json.dumps({
+                    "kind": ENVELOPE_KIND, "version": 1, "encoding": "xz-base64",
+                    "decoded_bytes": 1, "payload": "!",
+                }).encode(),
+            ):
+                path.write_bytes(invalid)
+                with self.assertRaises(ResourceIndexError) as caught:
+                    encode_like_index(changed, path)
+                self.assertIn(str(path), str(caught.exception))
+                self.assertEqual(path.read_bytes(), invalid)
 
     def test_unchanged_packed_json_keeps_a_valid_alternate_encoder_stream(self):
         value = {"glyphs": [0x4E00, 0x4E01]}
