@@ -1490,6 +1490,10 @@ def _cjk_resource(probe):
     _, family, role = probe.split(":")
     checks = 0
     limit = 4 * 1024 * 1024
+    operation_errors = (
+        ArithmeticError, AttributeError, LookupError, RuntimeError,
+        TypeError, ValueError, lzma.LZMAError,
+    )
 
     def verify(condition, detail):
         nonlocal checks
@@ -1561,14 +1565,14 @@ def _cjk_resource(probe):
         except error:
             checks += 1
             return
-        except (ValueError, RuntimeError, KeyError, TypeError, lzma.LZMAError) as failure:
+        except operation_errors as failure:
             raise ContractViolation("parser failure bypassed the typed resource boundary") from failure
         raise ContractViolation("invalid resource input was accepted")
 
     def accepted(function, *args, **kwargs):
         try:
             return function(*args, **kwargs)
-        except (ValueError, TypeError, KeyError, RuntimeError, lzma.LZMAError) as failure:
+        except operation_errors as failure:
             raise ContractViolation("valid resource operation was rejected: " + str(failure)) from failure
 
     def produced(data):
