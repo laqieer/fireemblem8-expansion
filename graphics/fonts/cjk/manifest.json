@@ -167,7 +167,7 @@
     "fehrr_priority": {
       "path": "fonts/cjk/fehrr-sources.json",
       "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
-      "sha256": "d5dec3884aa5ae438ccb772ff2bdefcc4357917f2f571f7df71306245f713f75"
+      "sha256": "addd53c4f8a669947801e61dcf85cf2e3dbd87c99353f5a2af6bc4bd41c00adb"
     },
     "inventory": {
       "path": "fonts/cjk/inventory.json",
