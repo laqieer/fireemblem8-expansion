@@ -401,12 +401,14 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
         "https://github.com/laqieer/fireemblem8-expansion/issues/102",
         "https://github.com/laqieer/fireemblem8-expansion/issues/197",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/236"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/236",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/365"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
       "required_cases": [
         "TC-CORE-001",
+        "TC-TEXT-NATIVE-METRICS-001",
         "TC-BUILD-HOST-DEPENDENCIES-001",
         "TC-BUILD-GCC14-MENU-RETURN-001"
       ]
@@ -2103,6 +2105,42 @@
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_custom_spell_effect.CustomSpellLifecycleTests -v",
           "evidence": "tools/gba-playtest/tests/c/custom_spell_effect_host_driver.c"
+        }
+      ]
+    },
+    {
+      "id": "TC-TEXT-NATIVE-METRICS-001",
+      "title": "Capture selected native fonts without a payload cycle",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/365"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-text-native-metrics-001-capture-selected-native-fonts-without-a-payload-cycle",
+      "profiles": [
+        "Modern ARM GCC/AAPCS selected English/pseudo and CJK/EU input objects"
+      ],
+      "purpose": "Capture actual selected native inputs and measure fonts without a payload/type bootstrap cycle.",
+      "prerequisites": "Run from the root with ARM GCC/binutils, Python and existing repository build helpers; no base ROM.",
+      "actions": "Run the two public Make capture/declaration targets and the exact native/declaration/storage commands in the procedure.",
+      "expected_result": "One exact context, source-only declarations, private measured storage and selected native width consumers succeed.",
+      "negative_control": "Ambiguous inputs, bad native resources, missing/fake compiler/linker output and stale measured facts fail.",
+      "interactions": "Existing project/font/message and localization interfaces only; actual shared-interface edits require integration.",
+      "save_compatibility": "No save bytes, schema, locale identity or compatibility epoch change.",
+      "cleanup": "Automation removes only owned temporary project/build directories.",
+      "limitations": "Not whole-game/reference/event/liveness/corpus or English-decoder-safety qualification; no manual criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests -k native -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_cli.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_build_fixture.py"
         }
       ]
     },

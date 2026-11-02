@@ -1,6 +1,8 @@
 import shutil
 import hashlib
 import json
+import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -8,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
-from scripts.localization.game_catalog.build import build_game_catalog
+from scripts.localization.game_catalog.build import GameCatalogError, build_game_catalog, write_build
 
 
 class FixtureBuildTests(unittest.TestCase):
@@ -273,8 +275,8 @@ class FixtureBuildTests(unittest.TestCase):
         if self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir)
 
-    def test_fixture_build_materializes_raw_providers_and_preserves_explicit_fallback(self):
-        build = build_game_catalog(
+    def _build_fixture(self, **overrides):
+        inputs = dict(
             english_texts_path=self.fixture_dir / "texts.txt",
             english_definitions_path=self.fixture_dir / "textdefs.txt",
             ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
@@ -286,6 +288,10 @@ class FixtureBuildTests(unittest.TestCase):
             ja_raw_expected_repository=None,
             ja_raw_expected_revision=None,
         )
+        return build_game_catalog(**(inputs | overrides))
+
+    def test_fixture_build_materializes_raw_providers_and_preserves_explicit_fallback(self):
+        build = self._build_fixture()
         ja = build.locale_bundle("ja")
         zh = build.locale_bundle("zh-Hans")
 
@@ -311,6 +317,98 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["locales"]["ja"]["explicit_fallback_count"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["provider_counts"]["raw"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
+
+    def test_build_uses_supplied_talk_widths(self):
+        with (self.fixture_dir / "textdefs.txt").open("a", encoding="utf-8") as stream:
+            stream.write("[OpenLeft] = 0x08\n")
+        (self.fixture_dir / "texts.txt").write_text(
+            "#0x0\n[OpenLeft]A[X]\n## MSG_FIXTURE_ONE\nA[X]\n## MSG_FIXTURE_TWO\nA[X]\n",
+            encoding="ascii",
+        )
+        metrics = {
+            "ascii": {"system": {ord("A"): 9}, "talk": {ord("A"): 11}},
+            "localized": {},
+            "inputs": {
+                "compiler_context": str(self.fixture_dir / "metric-input.json"),
+                "source_root": str(ROOT), "renderer_object": "renderer.o",
+                "font_objects": ("latin.o", "regional.o"), "locale_mask": 3,
+            },
+        }
+        for count, succeeds in ((21, True), (22, False)):
+            with self.subTest(glyphs=count):
+                (self.fixture_dir / "ja_indexed.txt").write_text(
+                    "#0x0000\n[CTRL:0008]" + "A" * count + "\n", encoding="ascii",
+                )
+                if succeeds:
+                    build = self._build_fixture(enabled_locales=("ja",), font_metrics=metrics)
+                    self.assertEqual(
+                        build.report["control_stream_validation"]["max_talk_line_width"], 231,
+                    )
+                else:
+                    with self.assertRaisesRegex(GameCatalogError, "242px"):
+                        self._build_fixture(enabled_locales=("ja",), font_metrics=metrics)
+
+    def test_generated_cjk_storage_has_one_measured_native_owner(self):
+        compiler = shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc"))
+        nm = shutil.which(os.environ.get("MODERN_NM", "arm-none-eabi-nm"))
+        if compiler is None or nm is None:
+            self.skipTest("selected ARM compiler and nm required")
+        output = self.fixture_dir / "native"
+        for decoded_bytes in (16, 6001):
+            with self.subTest(decoded_bytes=decoded_bytes):
+                (self.fixture_dir / "texts.txt").write_text(
+                    "#0x0\n" + "A" * (decoded_bytes - 1)
+                    + "[X]\n## MSG_FIXTURE_ONE\nA[X]\n## MSG_FIXTURE_TWO\nA[X]\n",
+                    encoding="ascii",
+                )
+                build = self._build_fixture()
+                written = write_build(build, output_dir=output)
+                object_path = output / "catalog.o"
+                compiled = subprocess.run(
+                    [
+                        compiler, "-mcpu=arm7tdmi", "-mthumb", "-mabi=aapcs", "-std=gnu89",
+                        "-DMODERN=1", "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=3u",
+                        "-I" + str(output), "-I" + str(ROOT / "include"), "-I" + str(ROOT),
+                        "-c", str(written["source"]), "-o", str(object_path),
+                    ],
+                    cwd=ROOT, capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+                symbols = subprocess.check_output(
+                    [nm, "-S", "--defined-only", str(object_path)], text=True, timeout=30,
+                )
+                storage = [row.split() for row in symbols.splitlines()
+                           if row.split()[-1] == "sMsgString"]
+                self.assertEqual(len(storage), 1)
+                self.assertEqual(int(storage[0][1], 16), max(0x1600, decoded_bytes))
+        probe = output / "consumer.c"
+        probe.write_text(
+            '#include "global.h"\nchar gPublicMsgSize[sizeof(struct MsgBuffer)];\n',
+            encoding="ascii",
+        )
+        for mask, succeeds in ((1, True), (3, False)):
+            with self.subTest(public_consumer_mask=mask):
+                object_path = output / f"consumer-{mask}.o"
+                compiled = subprocess.run(
+                    [
+                        compiler, "-mcpu=arm7tdmi", "-mthumb", "-mabi=aapcs", "-std=gnu89",
+                        "-DMODERN=1", f"-DFE8_EXPANSION_ENABLED_LOCALE_MASK={mask}u",
+                        "-I" + str(output), "-I" + str(ROOT / "include"), "-I" + str(ROOT),
+                        "-c", str(probe), "-o", str(object_path),
+                    ],
+                    cwd=ROOT, capture_output=True, text=True, timeout=30,
+                )
+                if succeeds:
+                    self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+                    rows = subprocess.check_output(
+                        [nm, "-S", "--defined-only", str(object_path)], text=True, timeout=30,
+                    )
+                    size, = (int(row.split()[1], 16) for row in rows.splitlines()
+                             if row.split()[-1] == "gPublicMsgSize")
+                    self.assertEqual(size, 4096)
+                else:
+                    self.assertNotEqual(compiled.returncode, 0)
+                    self.assertFalse(object_path.exists())
 
     def test_committed_build_emits_verified_japanese_raw_literal(self):
         build = build_game_catalog()

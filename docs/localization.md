@@ -27,6 +27,45 @@ they do not create a second registry or change this framework contract.
 
 ## Architecture
 
+### Selected native text inputs and font metrics
+
+Projects can measure their selected native fonts rather than the stock source
+inventory. `make expansion-modern-text-inputs` emits one
+`selected-text-inputs.json` in the selected config/ABI output directory. It
+captures one nonexecuting native Make plan: logical source slots, selected
+physical and compiler-input paths, exact private compiler/preprocessor argv,
+and the selected linker. It neither compiles all units nor emits per-object
+sidecars. Late dependency-file settings and data-preprocessor steps remain part
+of that actual plan.
+
+`make expansion-modern-game-localization-declarations` emits
+`game_localization_declarations.h` from the selected message header and enabled
+locales alone. It does not need payloads or fonts. Only the generated catalog
+owns the complete measured CJK `MsgBuffer`; other consumers use its incomplete
+type, preserved legacy prefix and exported capacity. English/pseudo and
+archival storage remain 4 KiB. CJK storage retains its existing `0x1600` floor
+and grows to the actual generated decoded maximum, including its terminator.
+
+`measure_selected_fonts(context_path, output_dir=...)` in
+`scripts/localization/game_catalog/compiled_fonts.py` measures the selected
+renderer ABI and relocatably links both selected font-data slots. Build those
+three object paths from the context before calling it. The typed result has
+System/Talk ASCII maps, enabled regional maps and input references.
+`load_width_metrics`, `apply_width_contract`, `load_talk_font_metrics`,
+`build_fixed_width_label_metrics`, and `build_game_catalog` accept its optional
+`font_metrics` argument. Without it their existing source-derived path remains.
+
+The normal localized catalog Make recipe builds just those font inputs and
+passes `--compile-context` through the existing CLI. This foundation does not
+add an all-source native scan on every catalog build, validate retained message
+references/events, qualify English decoder safety, or regenerate glyph corpora.
+It adds no feature flag, locale, save/epoch change, toolchain service or archival
+prerequisite. Missing/malformed ARM facts and stale/no-output compiler or linker
+results are errors, never measurements. See
+[`TC-TEXT-NATIVE-METRICS-001`](test-cases/core-framework.md#tc-text-native-metrics-001-capture-selected-native-fonts-without-a-payload-cycle).
+
+### Existing runtime layers
+
 The framework is layered, each layer independently testable:
 
 1. **Stable ID contract** (`scripts/localization/schema.py`,

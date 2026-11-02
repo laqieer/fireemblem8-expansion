@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from scripts.localization.game_locales.authored import (
     AuthoredCatalogError,
     check_authored_catalogs,
 )
 from scripts.localization.game_locales.fixed_width_labels import ALIASES_PATH
+from scripts.localization.game_locales.coverage import load_fe8u_target_ids
+from scripts.localization.game_locales.mapping import MappingError
 from scripts.localization.game_locales.width_contract import DEFAULT_WIDTH_REGISTRY_PATH
 
 from .build import (
@@ -29,7 +34,10 @@ from .build import (
     GameCatalogError,
     build_game_catalog,
     write_build,
+    _normalize_enabled_locales,
 )
+from .c_emitter import render_declarations
+from .compiled_fonts import measure_selected_fonts
 from .constants import CJK_LOCALE_IDS, LOCALE_IDS
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
@@ -76,6 +84,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
+    parser.add_argument(
+        "--compile-context", type=Path,
+        help="measure fonts through the selected native Make context",
+    )
     parser.add_argument("--eu-mapping", type=Path, default=DEFAULT_EU_MAPPING_PATH)
     parser.add_argument("--eu-indexed", action="append", metavar="LOCALE=PATH")
     parser.add_argument("--eu-authored", action="append", metavar="LOCALE=PATH")
@@ -167,6 +179,10 @@ def _build_from_args(args: argparse.Namespace):
     )
     if inherited:
         check_authored_catalogs(Path("."), locales=inherited)
+    font_metrics = None
+    if args.compile_context is not None:
+        with TemporaryDirectory(prefix="selected-font-metrics-") as directory:
+            font_metrics = measure_selected_fonts(args.compile_context, output_dir=Path(directory))
     return build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
@@ -184,6 +200,7 @@ def _build_from_args(args: argparse.Namespace):
         authored_paths=authored_paths,
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),
+        font_metrics=font_metrics,
     )
 
 
@@ -280,6 +297,108 @@ def _write_bytes_if_changed(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists() or path.read_bytes() != content:
         path.write_bytes(content)
+
+def cmd_declare(args: argparse.Namespace) -> int:
+    try:
+        target_count = len(load_fe8u_target_ids(args.target_header))
+    except MappingError as error:
+        raise GameCatalogError(str(error)) from error
+    locales = (
+        _normalize_enabled_locales(args.enabled_locales) if args.enabled_locales.strip() else ()
+    )
+    _write_bytes_if_changed(
+        args.output, render_declarations(target_count, locales).encode("utf-8"),
+    )
+    return 0
+
+
+def cmd_describe_make_context(args: argparse.Namespace) -> int:
+    try:
+        sources = args.sources_file.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise GameCatalogError(f"native Make source inventory is unreadable: {error}") from error
+    if not sources or any(not source for source in sources):
+        raise GameCatalogError("native Make source inventory is empty or malformed")
+    command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
+    if not command:
+        raise GameCatalogError("native text context requires the actual Make plan command")
+    planned = subprocess.run(
+        [*command, *(argument for source in sources for argument in ("-o", source))],
+        capture_output=True, text=True, check=False,
+    )
+    if planned.returncode:
+        raise GameCatalogError("native Make compile plan failed:\n" + planned.stdout + planned.stderr)
+    lines = planned.stdout.replace("\\\n", " ").splitlines()
+
+    def matching(program):
+        prefixes = (program + " ", '"' + program + '" ', "'" + program + "' ")
+        return (line.strip() for line in lines if line.lstrip().startswith(prefixes))
+
+    def words(line):
+        try:
+            return shlex.split(line)
+        except ValueError as error:
+            raise GameCatalogError("native Make emitted invalid command quoting") from error
+
+    compiler = {}
+    preprocessors = {}
+    for line in matching(args.compiler):
+        argv = words(line)
+        if "-c" not in argv:
+            continue
+        if len(argv) < 5 or argv[-2] != "-o" or argv.count("-c") != 1:
+            raise GameCatalogError("native Make emitted an unsupported object compile")
+        if argv[-1] in compiler:
+            raise GameCatalogError(f"native Make planned two compiles for {argv[-1]}")
+        compiler[argv[-1]] = argv
+    for line in matching(args.preprocessor):
+        invocation, separator, after = line.rpartition(" > ")
+        if not separator:
+            continue
+        target = words(after)
+        if not target:
+            raise GameCatalogError("native Make data preprocessor has no output")
+        if target[0] in preprocessors:
+            raise GameCatalogError(f"native Make planned two preprocessors for {target[0]}")
+        preprocessors[target[0]] = words(invocation)
+
+    def inventory(marker):
+        rows = [words(line) for line in lines if line.startswith(": " + marker + " ")]
+        if len(rows) != 1:
+            raise GameCatalogError(f"native Make must report exactly one {marker} inventory")
+        return rows[0][2:]
+
+    selected = inventory("fe8-selected-text-objects")
+    data_objects = set(inventory("fe8-selected-text-data"))
+    linkers = inventory("fe8-selected-text-linker")
+    if len(selected) < 2:
+        raise GameCatalogError("native Make selected C inventory is empty")
+    root, *objects = selected
+    if (len(linkers) != 1 or not linkers[0] or len(objects) != len(set(objects))
+            or set(compiler) != set(objects) or not data_objects <= set(objects)):
+        raise GameCatalogError("native Make compile plan differs from the selected C inventory")
+    units = []
+    for object_path in objects:
+        argv = compiler[object_path]
+        compiler_input = argv[argv.index("-c") + 1]
+        preprocessing = preprocessors.get(compiler_input, [])
+        if (object_path in data_objects) != bool(preprocessing):
+            raise GameCatalogError(f"native Make data preprocessing differs for {object_path}")
+        try:
+            logical = Path(object_path).relative_to(root).with_suffix(".c").as_posix()
+        except ValueError as error:
+            raise GameCatalogError(f"native Make object is outside selected output: {object_path}") from error
+        units.append({
+            "logical_source": logical,
+            "selected_source": preprocessing[-1] if preprocessing else compiler_input,
+            "compiler_input": compiler_input, "object": object_path,
+            "compiler_argv": argv, "preprocessor_argv": preprocessing,
+        })
+    _write_bytes_if_changed(args.output, canonical_json_bytes({
+        "schema_version": 1, "kind": "fe8-selected-text-inputs",
+        "source_root": str(Path.cwd().resolve()), "linker": linkers[0], "units": units,
+    }))
+    return 0
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -386,6 +505,23 @@ def cmd_check_width(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    context_p = sub.add_parser(
+        "describe-make-context", help="capture selected C inputs from one nonexecuting native Make plan",
+    )
+    context_p.add_argument("--output", type=Path, required=True)
+    context_p.add_argument("--sources-file", type=Path, required=True)
+    context_p.add_argument("--compiler", required=True)
+    context_p.add_argument("--preprocessor", required=True)
+    context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
+    context_p.set_defaults(handler=cmd_describe_make_context)
+
+    declare_p = sub.add_parser(
+        "declare", help="emit source-known catalog types and counts without fonts or payloads",
+    )
+    declare_p.add_argument("--output", type=Path, required=True)
+    declare_p.add_argument("--target-header", type=Path, required=True)
+    declare_p.add_argument("--enabled-locales", default="ja,zh-Hans")
+    declare_p.set_defaults(handler=cmd_declare)
 
     validate_p = sub.add_parser("validate", help="validate inputs and in-memory catalogs")
     _add_common_args(validate_p)

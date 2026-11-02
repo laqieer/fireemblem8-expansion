@@ -2,6 +2,8 @@
 
 MODERN_GOALS := \
 	expansion-modern-toolchain-check \
+	expansion-modern-text-inputs \
+	expansion-modern-game-localization-declarations \
 	expansion-modern-cohort \
 	expansion-modern-all \
 	expansion-modern-elf \
@@ -556,6 +558,7 @@ MODERN_GAME_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MOD
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated
 MODERN_GAME_LOCALIZATION_CONFIG_H := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/localized_game_text_data.h
 MODERN_GAME_LOCALIZATION_HEADER := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_catalog.h
+MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_declarations.h
 MODERN_GAME_LOCALIZATION_C := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_catalog.c
 MODERN_GAME_LOCALIZATION_REPORT_JSON := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_report.json
 MODERN_GAME_LOCALIZATION_BUDGET_JSON := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_budget.json
@@ -590,6 +593,11 @@ endif
 endif
 
 MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.o))
+MODERN_TEXT_COMPILE_CONTEXT := $(MODERN_OUTPUT_DIR)/selected-text-inputs.json
+MODERN_TEXT_FONT_OBJECTS := \
+	$(MODERN_OUTPUT_DIR)/src/fontgrp.o \
+	$(MODERN_OUTPUT_DIR)/src/fontgrp-data.o \
+	$(MODERN_OUTPUT_DIR)/src/data/localized_font_data.o
 
 # Reinstate a linked table's object at exactly its *original* (hand
 # source's) output path, e.g. $(MODERN_OUTPUT_DIR)/src/data_classes.o --
@@ -970,6 +978,35 @@ expansion-modern-all: expansion-modern-toolchain-check \
 $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 
 .SECONDEXPANSION:
+MODERN_TEXT_NATIVE_MAKE := $(MAKE)
+MODERN_TEXT_NATIVE_MAKEFILE := $(firstword $(MAKEFILE_LIST))
+modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n -B \
+	-f "$(MODERN_TEXT_NATIVE_MAKEFILE)" NODEP=1 MODERN_DRY_RUN=1 \
+	$(foreach makefile,$(MAKEFILE_LIST),-o "$(makefile)") \
+	-o expansion-modern-toolchain-check -o "$(MODERN_PREPROC)" \
+	$(foreach prerequisite,$(MODERN_PREPROC),-o "$(prerequisite)") \
+	-o "$(MODERN_TEXT_COMPILE_CONTEXT)" expansion-modern-toolchain-check
+modern_text_selected_source = $(if $(and $(strip $(2)),$(filter $(1),$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS))),$(eval MODERN_TEXT_SELECTED_SOURCES += $(2)))
+
+$(foreach source,$(MODERN_ALL_C_SOURCES),$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/$(source:.c=.o),$(call modern_c_source,$(source))))
+$(foreach source,$(MODERN_ALL_DATA_C_SOURCES),$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/$(source:.c=.o),$(call modern_c_source,$(source))))
+
+.PHONY: expansion-modern-text-inputs _expansion-modern-text-object-plan
+expansion-modern-text-inputs: $(MODERN_TEXT_COMPILE_CONTEXT)
+
+$(MODERN_TEXT_COMPILE_CONTEXT): FORCE
+	@mkdir -p "$(@D)"
+	@printf '%s\n' $(foreach source,$(sort $(MODERN_TEXT_SELECTED_SOURCES)),"$(source)") > "$@.sources"
+	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
+		--output "$@" --sources-file "$@.sources" \
+		--compiler "$(MODERN_CC)" --preprocessor "$(MODERN_PREPROC)" \
+		-- $(modern_text_native_plan) _expansion-modern-text-object-plan
+
+_expansion-modern-text-object-plan: $$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)
+	@: fe8-selected-text-objects "$(MODERN_OUTPUT_DIR)" $(foreach object,$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS),"$(object)")
+	@: fe8-selected-text-data $(foreach object,$(MODERN_ALL_DATA_OBJECTS),"$(object)")
+	@: fe8-selected-text-linker "$(MODERN_LD)"
+
 $(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
@@ -978,6 +1015,7 @@ ifneq ($(strip $(MODERN_UI_PRESENTATION_AVAILABLE)),)
 $(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o: $(MODERN_UI_PRESENTATION_MANIFEST_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o,$(MODERN_UI_PRESENTATION_MANIFEST_C))
 
 $(MODERN_UI_PRESENTATION_MANIFEST_C): $(or $(call generated_data_source,ui_presentation,src/data/ui_presentation.json),src/data/ui_presentation.json) \
 	scripts/generated_data/ui_presentation/schema.py \
@@ -1035,6 +1073,7 @@ $(MODERN_OUTPUT_DIR)/src/data_$(1).o: $(GENERATED_DATA_OUT_DIR)/data_$(1).c
 endef
 
 $(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_OVERRIDE_RULES,$(t))))
+$(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/data_$(t).o,$(GENERATED_DATA_OUT_DIR)/data_$(t).c))
 
 # Issue #6: in the content profile the bundled content module compiles the
 # BUILD-LOCAL generated authored-text header, so make it an explicit
@@ -1066,6 +1105,7 @@ endif
 $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o,$(GENERATED_DATA_CH2_UNITS_C))
 
 # Issue #5 Batch 3b: same reasoning as the units synthetic-slot rule just
 # above, for the traps table's synthetic slot object. A safe no-op target
@@ -1075,6 +1115,7 @@ $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
 $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o,$(GENERATED_DATA_CH2_TRAPS_C))
 
 # Issue #5 Batch 3c: same reasoning as the units/traps synthetic-slot
 # rules above, for the shops table's synthetic slot object. A safe no-op
@@ -1084,6 +1125,7 @@ $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
 $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o,$(GENERATED_DATA_CH2_SHOPS_C))
 
 # Issue #5 Batch 3d: same reasoning as the units/traps/shops
 # synthetic-slot rules above, for the eventlists table's synthetic slot
@@ -1094,14 +1136,17 @@ $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLISTS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o,$(GENERATED_DATA_CH2_EVENTLISTS_C))
 
 $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o,$(GENERATED_DATA_CHAPTEROBJECTIVES_C))
 
 $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o: $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o,$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C))
 
 .PHONY: expansion-modern-autoplay-strategies-objects
 expansion-modern-autoplay-strategies-objects: \
@@ -1214,6 +1259,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o,$(GENERATED_DATA_TERRAINSTATS_C))
 
 # Issue #5 Batch 2 (mechanics): same reasoning as the terrainstats
 # synthetic-slot rule above, for the movecost table's synthetic slot
@@ -1224,6 +1270,7 @@ $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
 $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/data_t-movecost.o,$(GENERATED_DATA_MOVECOST_C))
 
 # Issue #5 Batch 3 (mechanics): same reasoning as the terrainstats/
 # movecost synthetic-slot rules above, for the weapontriangle table's
@@ -1234,6 +1281,7 @@ $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
 $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o,$(GENERATED_DATA_WEAPONTRIANGLE_C))
 
 # IWRAM-placed symbols need per-symbol BSS sections. agb_sram.c additionally
 # subtracts adjacent function addresses when copying routines into IWRAM.
@@ -2458,33 +2506,50 @@ endif
 $(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o: $(MODERN_LOCALIZATION_CATALOG_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o,$(MODERN_LOCALIZATION_CATALOG_C))
 
 # The full-game CJK catalog plus its single shared modern English bundle are
 # generated and linked only when the production profile enables real CJK.
 # Grouped outputs prevent parallel compiles from racing the deterministic
 # writer when the runtime headers and generated source are requested together.
 ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+.PHONY: expansion-modern-game-localization-declarations
+expansion-modern-game-localization-declarations: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
+
+$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER): FORCE \
+	$(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
+	@mkdir -p "$(@D)"
+	$(PYTHON) -m scripts.localization.game_catalog declare --output "$@" \
+		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(MSG_HEADER),include/constants/msg.h)" \
+		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
+
+$(MODERN_OUTPUT_DIR)/src/localized_game_text.o: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
+game_localization_declarations.h: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) ;
+
 .PHONY: FORCE_MODERN_GAME_LOCALIZATION
 FORCE_MODERN_GAME_LOCALIZATION:
 
 $(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER) \
 $(MODERN_GAME_LOCALIZATION_C) $(MODERN_GAME_LOCALIZATION_REPORT_JSON) \
 $(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION \
+	$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+	$(MODERN_TEXT_COMPILE_CONTEXT) $(MODERN_TEXT_FONT_OBJECTS) graphics/debug_font.4bpp.h \
 	$(FE8_PROJECT_GAME_INPUTS) $(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)"
-	@python3 -m scripts.localization.game_catalog generate \
+	@$(PYTHON) -m scripts.localization.game_catalog generate \
 		$(FE8_PROJECT_GAME_ARGS) \
+		--compile-context "$(MODERN_TEXT_COMPILE_CONTEXT)" \
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 
-$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS): \
-	$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER)
 game_localization_catalog.h: $(MODERN_GAME_LOCALIZATION_HEADER) ;
 localized_game_text_data.h: $(MODERN_GAME_LOCALIZATION_CONFIG_H) ;
 
-$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: $(MODERN_GAME_LOCALIZATION_C)
+$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: $(MODERN_GAME_LOCALIZATION_C) \
+	$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+$(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o,$(MODERN_GAME_LOCALIZATION_C))
 else
 # Do not invoke the catalog generator for EN/qps-only profiles. These
 # no-recipe targets only absorb full-path prerequisites retained in old CJK

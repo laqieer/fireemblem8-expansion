@@ -123,6 +123,432 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_native_text_context_records_actual_recipes_without_catalog(self):
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="native-text-inputs-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        namespace = output / "debug/aapcs"
+        context = namespace / "selected-text-inputs.json"
+        inventory_path = output / "native-object-inventory"
+        counter = self.project / "native-make-calls"
+        wrapper = self.project / "native-make"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' call >> {shlex.quote(str(counter))}\n"
+            f'exec {shlex.quote(shutil.which("make"))} "$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+        makefile = self.project / "native-inputs.mk"
+        late = self.project / "late-native.d"
+        late.write_text(
+            f"{namespace}/src/action_semantics.o: private MODERN_CFLAGS += -DNATIVE_SLOT_ONLY=1\n",
+            encoding="ascii",
+        )
+        makefile.write_text(
+            "include Makefile\n"
+            'MODERN_CFLAGS += -DNATIVE_LATE_FLAG=1 -I"include with spaces"\n'
+            f"include {late}\n"
+            ".PHONY: native-object-inventory\n"
+            "native-object-inventory:\n"
+            f'\t@printf \'%s\\n\' $(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS) > "{inventory_path}"\n',
+            encoding="utf-8",
+        )
+        settings = [
+            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug", "FE8_PROJECT=default",
+            "MODERN_ROM_SIZE=32M", "EXPANSION_ENABLED_LOCALES=en,ja",
+            "MODERN_CC=/missing/compiler with spaces",
+            "MODERN_PREPROC=/missing/preprocessor with spaces", "MODERN_SCANINC=/missing/scaninc",
+            "MODERN_DATA_LAYOUT_FLAGS=-DNATIVE_DATA_LAYOUT=1",
+            f"PYTHON={sys.executable}", f"MAKE={wrapper}",
+        ]
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-f", str(makefile),
+             "expansion-modern-text-inputs", *settings],
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        captured = json.loads(context.read_bytes())
+        self.assertEqual(captured["kind"], "fe8-selected-text-inputs")
+        self.assertEqual(counter.read_text().splitlines(), ["call"])
+        inventory = subprocess.run(
+            ["make", "--no-print-directory", "-f", str(makefile),
+             "native-object-inventory", *settings],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(inventory.returncode, 0, inventory.stderr)
+        self.assertEqual(
+            {unit["object"] for unit in captured["units"]},
+            set(inventory_path.read_text(encoding="utf-8").splitlines()),
+        )
+        units = {unit["logical_source"]: unit for unit in captured["units"]}
+        self.assertIn("-DNATIVE_SLOT_ONLY=1", units["src/action_semantics.c"]["compiler_argv"])
+        self.assertIn("-Iinclude with spaces", units["src/action_semantics.c"]["compiler_argv"])
+        self.assertTrue(all("-DNATIVE_LATE_FLAG=1" in unit["compiler_argv"]
+                            for unit in captured["units"]))
+        self.assertIn(
+            "-DNATIVE_DATA_LAYOUT=1", units["src/data/localized_font_data.c"]["compiler_argv"],
+        )
+        self.assertTrue(units["src/data/localized_font_data.c"]["preprocessor_argv"])
+        for pattern in ("*.o", "*.pre.c", "*.text-input.json", "game_localization_*"):
+            self.assertEqual(list(output.rglob(pattern)), [], pattern)
+        from scripts.localization.game_catalog.compiled_inputs import (
+            CompiledInputError, load_compile_context,
+        )
+        self.assertEqual(len(load_compile_context(context)["units"]), len(captured["units"]))
+        for defect in ("duplicate-object", "wrong-output", "relative-root", "missing-input"):
+            with self.subTest(context_defect=defect):
+                invalid = json.loads(json.dumps(captured))
+                if defect == "duplicate-object":
+                    extra = dict(invalid["units"][0])
+                    extra["logical_source"] = "src/duplicate_native_slot.c"
+                    invalid["units"].append(extra)
+                elif defect == "wrong-output":
+                    invalid["units"][0]["object"] += ".wrong"
+                elif defect == "relative-root":
+                    invalid["source_root"] = "."
+                else:
+                    invalid["units"][0]["object"] = "-c"
+                    invalid["units"][0]["compiler_argv"] = ["cc", "-g", "source.c", "-o", "-c"]
+                context.write_text(json.dumps(invalid), encoding="utf-8")
+                with self.assertRaises(CompiledInputError):
+                    load_compile_context(context)
+
+    def test_native_text_metrics_read_selected_private_font_objects(self):
+        compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
+        if shutil.which(compiler) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        build = ROOT / "build"
+        build.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="native-font-metrics-", dir=build)
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        headers = self.project / "headers"
+        glyphs = headers / "src/data/fonts"
+        glyphs.mkdir(parents=True)
+        for number, style, width in ((1, "System", "SELECTED_FONT_WIDTH"), (2, "Talk", "11")):
+            (glyphs / f"glyphs_{number}.h").write_text(
+                f"struct Glyph sSelected{style} = {{0, 0, {width}, {{0}}}};\n"
+                f"struct Glyph *TextGlyphs_{style}[128] = {{\n"
+                f"    [63] = &sSelected{style}, [65] = &sSelected{style}\n"
+                "};\n",
+                encoding="ascii",
+            )
+        namespace = output / "debug/aapcs"
+        makefile = self.project / "native-font.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            f"{namespace}/src/fontgrp-data.o: private MODERN_CFLAGS := "
+            f"-I{headers} $(MODERN_CFLAGS) -DSELECTED_FONT_WIDTH=9\n",
+            encoding="utf-8",
+        )
+        context = namespace / "selected-text-inputs.json"
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-f", str(makefile), "expansion-modern-text-inputs",
+                "graphics/debug_font.4bpp.h", "NODEP=1",
+                str(namespace / "src/fontgrp-data.o"), str(namespace / "src/fontgrp.o"),
+                str(namespace / "src/data/localized_font_data.o"),
+                f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en",
+                f"PYTHON={sys.executable}",
+            ],
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+        metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+        self.assertEqual(metrics["ascii"], {
+            "system": {63: 9, 65: 9}, "talk": {63: 11, 65: 11},
+        })
+        self.assertEqual(metrics["localized"], {})
+        self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+        self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+        from scripts.localization.game_catalog.control_streams import (
+            ControlStreamError, load_talk_font_metrics, tokenize_payload,
+            validate_talk_line_widths,
+        )
+        from scripts.localization.game_locales.fixed_width_labels import (
+            ALIASES_PATH, SURFACES, _message_ids, build_fixed_width_label_metrics,
+        )
+        from scripts.localization.game_locales.width_contract import (
+            TextWidthContractError, load_width_metrics, validate_payload_width,
+        )
+        with self.subTest(consumer="system-width"):
+            selected = load_width_metrics(
+                ROOT, locale="en", style="system", font_metrics=metrics,
+            )
+            with self.assertRaises(TextWidthContractError):
+                validate_payload_width(
+                    b"A" * 27 + b"\0", metrics=selected, max_pixels=240,
+                    source_name="selected system glyphs",
+                )
+        with self.subTest(consumer="talk-width"):
+            selected = load_talk_font_metrics("en", repo_root=ROOT, font_metrics=metrics)
+            tokens = tokenize_payload(b"\x08" + b"A" * 23 + b"\0", source_name="selected Talk")
+            with self.assertRaises(ControlStreamError):
+                validate_talk_line_widths(tokens, source_name="selected Talk", metrics=selected)
+        with self.subTest(consumer="fixed-labels"):
+            aliases = json.loads((ROOT / ALIASES_PATH).read_text(encoding="utf-8"))
+            aliases["aliases"] = {
+                locale: {surface: {} for surface in SURFACES} for locale in ("ja", "zh-Hans")
+            }
+            aliases_path = output / "aliases.json"
+            aliases_path.write_text(json.dumps(aliases), encoding="utf-8")
+            labels = {
+                target: "AAAA" for surface in SURFACES.values()
+                for target in _message_ids(ROOT / surface["data_path"])
+            }
+            measured = build_fixed_width_label_metrics(
+                ROOT, localized_payloads={"ja": labels}, aliases_path=aliases_path,
+                font_metrics=metrics,
+            )
+            self.assertTrue(all(
+                row["canonical_width"] == 36
+                for surface in measured["locales"]["ja"]["surfaces"].values()
+                for row in surface["records"]
+            ))
+        pseudo_command = [
+            "EXPANSION_ENABLED_LOCALES=en,qps-ploc"
+            if argument.startswith("EXPANSION_ENABLED_LOCALES=") else argument
+            for argument in result.args
+        ]
+        pseudo = subprocess.run(
+            [*pseudo_command, "EXPANSION_PSEUDO_LOCALE=1"],
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(pseudo.returncode, 0, pseudo.stdout + pseudo.stderr)
+        pseudo_metrics = measure_selected_fonts(context, output_dir=output / "pseudo-metrics")
+        self.assertEqual(pseudo_metrics["ascii"], metrics["ascii"])
+        self.assertEqual(pseudo_metrics["localized"], {})
+        self.assertEqual(pseudo_metrics["inputs"]["locale_mask"], 0x81)
+        from scripts.localization.game_catalog.compiled_fonts import (
+            CompiledFontError, read_ascii_widths,
+        )
+        wrong_machine = output / "wrong-machine.o"
+        binary = (output / "metrics/selected-font-data.o").read_bytes()
+        wrong_machine.write_bytes(binary[:18] + b"\x03\0" + binary[20:])
+        with self.assertRaises(CompiledFontError):
+            read_ascii_widths(
+                wrong_machine, "TextGlyphs_System",
+                layout_object=output / "metrics/selected-font-layout.o",
+            )
+        noop = output / "no-native-output"
+        noop.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
+        noop.chmod(0o755)
+        invalid = json.loads(context.read_text(encoding="utf-8"))
+        renderer = next(unit for unit in invalid["units"] if unit["logical_source"] == "src/fontgrp.c")
+        real_compiler = renderer["compiler_argv"][0]
+        renderer["compiler_argv"][0] = str(noop)
+        context.write_text(json.dumps(invalid), encoding="utf-8")
+        for folder in ("no-measurement", "metrics"):
+            with self.subTest(noop_compiler=folder), self.assertRaises(CompiledFontError):
+                measure_selected_fonts(context, output_dir=output / folder)
+        renderer["compiler_argv"][0] = real_compiler
+        invalid["linker"] = str(noop)
+        context.write_text(json.dumps(invalid), encoding="utf-8")
+        for folder in ("no-link-output", "pseudo-metrics"):
+            with self.subTest(noop_linker=folder), self.assertRaises(CompiledFontError):
+                measure_selected_fonts(context, output_dir=output / folder)
+
+    def test_native_cjk_fonts_bootstrap_without_payload_generation(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-cjk-bootstrap-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            namespace = output / "debug/aapcs"
+            context = namespace / "selected-text-inputs.json"
+            python = output / "python3"
+            python.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" = -m ] && [ "$2" = scripts.localization.game_catalog ] '
+                '&& [ "$3" = generate ]; then\n'
+                '    echo "payload generation requested during font bootstrap" >&2\n'
+                "    exit 97\n"
+                "fi\n"
+                f'exec {shlex.quote(sys.executable)} "$@"\n',
+                encoding="ascii",
+            )
+            python.chmod(0o755)
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "expansion-modern-text-inputs",
+                    "graphics/debug_font.4bpp.h",
+                    str(namespace / "src/fontgrp-data.o"), str(namespace / "src/fontgrp.o"),
+                    str(namespace / "src/data/localized_font_data.o"),
+                    str(namespace / "src/localized_game_text.o"),
+                    str(namespace / "src/msg.o"),
+                    f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                    "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en,ja",
+                    "MODERN_ROM_SIZE=32M", "NODEP=1", f"PYTHON={python}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=120,
+                env={**os.environ, "PATH": str(output) + os.pathsep + os.environ["PATH"]},
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+            metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+            for style in ("system", "talk"):
+                with self.subTest(style=style):
+                    codepoints = (ROOT / f"graphics/fonts/cjk/ja.{style}.codepoints.u32le").read_bytes()
+                    widths = (ROOT / f"graphics/fonts/cjk/ja.{style}.widths.u8").read_bytes()
+                    expected = {
+                        int.from_bytes(codepoints[index * 4:index * 4 + 4], "little"): width
+                        for index, width in enumerate(widths)
+                    }
+                    self.assertEqual(metrics["localized"]["ja"][style], expected)
+            self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+            self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+
+    def test_selected_regional_metrics_and_cross_slot_relocations_are_native(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        latin = self.project / "latin.c"
+        latin.write_text(
+            '#include "global.h"\n#include "fontgrp.h"\n'
+            "extern struct Glyph gCrossSystemGlyph;\n"
+            "struct Glyph gPrivateTalkGlyph = {0, 0, 11, {0}};\n"
+            "struct Glyph *TextGlyphs_System[128] = {[65] = &gCrossSystemGlyph};\n"
+            "struct Glyph *TextGlyphs_Talk[128] = {[65] = &gPrivateTalkGlyph};\n",
+            encoding="ascii",
+        )
+        regional = self.project / "regional.c"
+        source = (
+            '#include "global.h"\n#include "fontgrp.h"\n#include "localized_font.h"\n'
+            "struct Glyph gCrossSystemGlyph = {0, 0, 9, {0}};\n"
+        )
+        for stem, scalars, widths in (
+            ("Ja", (0x4E00, 0x4E8C), ("PRIVATE_SYSTEM_WIDTH", "7")),
+            ("Eu", (0xE9, 0xE9), ("5", "6")),
+        ):
+            for style, scalar, width in zip(("System", "Talk"), scalars, widths):
+                name = "gLocalizedFont" + stem + style
+                values = ", ".join(str(byte) for byte in scalar.to_bytes(4, "little"))
+                source += (
+                    f"const u8 {name}Codepoints[] = {{{values}}};\n"
+                    f"const u8 {name}Widths[] = {{{width}}};\n"
+                    f"const u8 {name}Bitmaps[LOCALIZED_FONT_BITMAP_STRIDE] = {{0}};\n"
+                    f"const u32 {name}GlyphCount = 1;\n"
+                )
+        regional.write_text(source, encoding="ascii")
+        with (self.project / "project.mk").open("a", encoding="ascii") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := fonts\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_FONT_REPLACEMENTS := src/fontgrp-data.c={latin.relative_to(ROOT)} "
+                f"src/data/localized_font_data.c={regional.relative_to(ROOT)}\n"
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        namespace = output / "primary/debug/aapcs"
+        makefile = self.project / "regional.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            f"{(namespace / 'src/data/localized_font_data.o').relative_to(ROOT)}: "
+            "private MODERN_CFLAGS += -DPRIVATE_SYSTEM_WIDTH=13\n",
+            encoding="ascii",
+        )
+        objects = [namespace / f"src/{name}.o" for name in (
+            "fontgrp", "fontgrp-data", "data/localized_font_data",
+        )]
+        command = [
+            "make", "--no-print-directory", "-f", str(makefile), "NODEP=1",
+            f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
+            "EXPANSION_ENABLED_LOCALES=en,ja,fr", f"PYTHON={sys.executable}",
+        ]
+        compiled = subprocess.run(
+            [*command, "expansion-modern-text-inputs",
+             *(str(path.relative_to(ROOT)) for path in objects)],
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+        from scripts.localization.game_catalog.compiled_fonts import (
+            CompiledFontError, measure_selected_fonts,
+        )
+        context = namespace / "selected-text-inputs.json"
+        metrics = measure_selected_fonts(context, output_dir=namespace / "metrics")
+        self.assertEqual(metrics["ascii"], {"system": {65: 9}, "talk": {65: 11}})
+        self.assertEqual(metrics["localized"], {
+            "ja": {"system": {0x4E00: 13}, "talk": {0x4E8C: 7}},
+            "fr": {"system": {0xE9: 5}, "talk": {0xE9: 6}},
+        })
+        from scripts.localization.game_locales.width_contract import (
+            TextWidthContractError, load_width_metrics, validate_payload_width,
+        )
+        system = load_width_metrics(ROOT, locale="ja", style="system", font_metrics=metrics)
+        for count, succeeds in ((3, True), (4, False)):
+            payload = ("一" * count).encode("utf-8") + b"\0"
+            if succeeds:
+                self.assertEqual(validate_payload_width(
+                    payload, metrics=system, max_pixels=40, source_name="native JA",
+                )["max_line_width"], 39)
+            else:
+                with self.assertRaises(TextWidthContractError):
+                    validate_payload_width(
+                        payload, metrics=system, max_pixels=40, source_name="native JA",
+                    )
+        from scripts.localization.game_catalog.control_streams import (
+            ControlStreamError, load_talk_font_metrics, tokenize_payload, validate_talk_line_widths,
+        )
+        talk = load_talk_font_metrics("ja", repo_root=ROOT, font_metrics=metrics)
+        for count, succeeds in ((34, True), (35, False)):
+            tokens = tokenize_payload(
+                b"\x08" + ("二" * count).encode("utf-8") + b"\0", source_name="native JA Talk",
+            )
+            if succeeds:
+                self.assertEqual(validate_talk_line_widths(
+                    tokens, source_name="native JA Talk", metrics=talk,
+                )["max_talk_line_width"], 238)
+            else:
+                with self.assertRaises(ControlStreamError):
+                    validate_talk_line_widths(tokens, source_name="native JA Talk", metrics=talk)
+        from scripts.localization.game_locales.fixed_width_labels import (
+            ALIASES_PATH, SURFACES, FixedWidthLabelError, _message_ids, build_fixed_width_label_metrics,
+        )
+        aliases = json.loads((ROOT / ALIASES_PATH).read_text(encoding="utf-8"))
+        aliases["aliases"] = {
+            locale: {surface: {} for surface in SURFACES} for locale in ("ja", "zh-Hans")
+        }
+        aliases_path = self.project / "native-aliases.json"
+        aliases_path.write_text(json.dumps(aliases), encoding="utf-8")
+        labels = {
+            target: "一" * 3 for surface in SURFACES.values()
+            for target in _message_ids(ROOT / surface["data_path"])
+        }
+        fixed = build_fixed_width_label_metrics(
+            ROOT, localized_payloads={"ja": labels}, aliases_path=aliases_path, font_metrics=metrics,
+        )
+        self.assertTrue(all(
+            row["canonical_width"] == 39
+            for surface in fixed["locales"]["ja"]["surfaces"].values() for row in surface["records"]
+        ))
+        with self.assertRaises(FixedWidthLabelError):
+            build_fixed_width_label_metrics(
+                ROOT, localized_payloads={"ja": {target: "一" * 4 for target in labels}},
+                aliases_path=aliases_path, font_metrics=metrics,
+            )
+        for defect, invalid in (
+            ("count", source.replace("gLocalizedFontJaSystemGlyphCount = 1", "gLocalizedFontJaSystemGlyphCount = 2")),
+            ("width", source.replace("{PRIVATE_SYSTEM_WIDTH}", "{0}")),
+            ("scalar", source.replace("{0, 78, 0, 0}", "{0, 216, 0, 0}")),
+            ("bitmap", source.replace("[LOCALIZED_FONT_BITMAP_STRIDE]", "[LOCALIZED_FONT_BITMAP_STRIDE - 1]", 1)),
+            ("missing-symbol", source.replace("const u32 gLocalizedFontJaSystemGlyphCount = 1;\n", "")),
+        ):
+            with self.subTest(native_defect=defect):
+                regional.write_text(invalid, encoding="ascii")
+                rebuilt = subprocess.run(
+                    [*command, str(objects[2].relative_to(ROOT))],
+                    cwd=ROOT, capture_output=True, text=True, timeout=120,
+                )
+                self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+                with self.assertRaises(CompiledFontError):
+                    measure_selected_fonts(context, output_dir=namespace / defect)
+        self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+        self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
+
     def test_project_default_profile_supplies_its_effective_settings(self):
         identity = ec.load_identity(
             ROOT / "config.mk",

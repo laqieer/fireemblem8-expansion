@@ -5,6 +5,70 @@ authoring capabilities listed by issue [#57](https://github.com/laqieer/fireembl
 They reuse existing commands and semantic scenarios. They do not introduce a
 second registry, harness, generated-data schema, or project ruleset.
 
+## TC-TEXT-NATIVE-METRICS-001: Capture selected native fonts without a payload cycle
+
+- **Feature / issue:** `modern-framework-build` /
+  [#365](https://github.com/laqieer/fireemblem8-expansion/issues/365), extracted
+  from [#314](https://github.com/laqieer/fireemblem8-expansion/issues/314).
+- **Profiles and prerequisites:** supported ARM GCC/AAPCS source build, Python
+  and existing repository build helpers. Run at the repository root. No ROM,
+  save, external asset, libmGBA session or manual judgment is needed for this
+  compile/measurement contract. A skipped ARM test is not completed evidence.
+- **Starting state:** the automation owns fresh project/build directories.
+  Preserve user work; no global clean is needed.
+
+### Actions
+
+1. Run `make expansion-modern-text-inputs expansion-modern-game-localization-declarations MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+   Inspect the selected output directory's single context and declaration
+   header; neither command needs a compiled payload or measured font.
+2. Run the native Make/font scenarios:
+
+   ```bash
+   python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests -k native -v
+   ```
+
+3. Run the source-only declaration and measured-storage scenarios:
+
+   ```bash
+   python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
+   ```
+
+### Expected result and controls
+
+The actual native object inventory appears exactly once after a late dependency
+file. Private and spaced flags, physical source selection, ordinary/data/
+reinstated/synthetic slots, and data preprocessing are retained. Capturing it
+executes one native Make plan, no compiler/preprocessor/catalog and no hundreds
+of sidecars. Ambiguous objects, wrong outputs and relative roots are refused.
+
+Cold English/pseudo and CJK font/message consumers compile before a payload
+exists. Actual ARM objects show one generated CJK storage owner at the `0x1600`
+floor and at a real 6,001-byte decoded maximum. Public CJK storage is incomplete;
+English remains exactly 4 KiB. An isolated declaration command needs only its
+message header, and a changed count changes the compiled declaration contract.
+
+Private System/Talk Latin widths are 9/11 pixels, including a real cross-slot
+ARM glyph relocation. Private Japanese System/Talk widths are 13/7; selected
+European styles and counts are measured too. Existing width, Talk and fixed-name
+consumers accept fitting data and refuse the next overflowing glyph using those
+native maps. English/pseudo keeps the same selected Latin data. Bad native
+counts, scalar/width bounds, bitmap lengths, missing symbols and wrong-machine
+objects fail. Fake compiler/linker success cannot reuse stale measurement
+objects or pass without emitting fresh native facts.
+
+### Interactions, cleanup and limitations
+
+This reuses project code/font/message selection and existing localization
+interfaces. Conflicts are actual edits to those interfaces; there is no new
+feature flag, locale, save field/epoch or archival prerequisite. The test removes
+only its owned temporary directories. Production debug/release/default/
+localized/archival ROM and RAM integration stays in complete Build CI.
+
+This is native input/layout/measurement coverage, not retained-reference,
+event/liveness/control, English-buffer-safety, corpus/glyph completeness or
+whole-game qualification. It does not fix or close those dependent contracts.
+
 ## TC-CORE-001: Modern default build and archival split
 
 - **Feature / originating issue:** `modern-framework-build` /

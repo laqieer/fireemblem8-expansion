@@ -28,6 +28,46 @@ class CliTests(unittest.TestCase):
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
 
+    def test_declarations_require_only_the_actual_message_header(self):
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            source = root / "msg.h"
+            source.write_text("#define MSG_COUNT 0x0003\n", encoding="ascii")
+            output = root / "declarations.h"
+            command = [
+                sys.executable, "-B", "-m", "scripts.localization.game_catalog", "declare",
+                "--target-header", str(source), "--enabled-locales", "fr",
+                "--output", str(output),
+            ]
+            result = subprocess.run(
+                command, cwd=root, env={**os.environ, "PYTHONPATH": str(ROOT)},
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(sorted(path.name for path in root.iterdir()), ["declarations.h", "msg.h"])
+            compiler = os.environ.get("CC", "cc")
+            probe = root / "probe.c"
+            probe.write_text(
+                '#include "declarations.h"\n'
+                "typedef char HeaderMatches[(GAME_LOCALIZATION_TARGET_COUNT == 3"
+                " && GAME_LOCALIZATION_FR_ENABLED == 1 && GAME_LOCALIZATION_JA_ENABLED == 0)"
+                " ? 1 : -1];\n",
+                encoding="ascii",
+            )
+            arguments = [
+                compiler, "-std=c89", "-pedantic-errors", "-I", str(TEST_DIR / "host_include"),
+                "-I", str(root), "-fsyntax-only", str(probe),
+            ]
+            checked = subprocess.run(arguments, capture_output=True, text=True, timeout=30)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            source.write_text("#define MSG_COUNT 0x0004\n", encoding="ascii")
+            subprocess.run(
+                command, cwd=root, env={**os.environ, "PYTHONPATH": str(ROOT)}, check=True,
+                capture_output=True, text=True, timeout=30,
+            )
+            checked = subprocess.run(arguments, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(checked.returncode, 0)
+
     def test_validate_reports_committed_counts(self):
         result = run_cli(["validate"])
         self.assertEqual(result.returncode, 0, result.stdout)

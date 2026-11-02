@@ -14,7 +14,10 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Sequence, Tuple
+
+if TYPE_CHECKING:
+    from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
 
 from scripts.localization.legacy_spacing import (
     LEGACY_SJIS_SPACE_SCALAR,
@@ -175,9 +178,16 @@ def load_width_metrics(
     *,
     locale: str,
     style: str,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> WidthMetrics:
     """Read exactly the VWF assets that the selected runtime font uses."""
 
+    if font_metrics is not None:
+        return WidthMetrics(
+            locale=locale, style=style,
+            ascii_widths=font_metrics["ascii"][style],
+            cjk_widths=font_metrics["localized"].get(locale, {}).get(style, {}),
+        )
     try:
         ascii_widths = _ascii_widths(repo_root, style=style)
         cjk_widths, _ = _cjk_widths(repo_root, locale, style=style)
@@ -485,6 +495,7 @@ def apply_width_contract(
     locale: str,
     target_payloads: Sequence[bytes],
     registry: WidthRegistry,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Tuple[Tuple[bytes, ...], Dict[str, Any]]:
     """Wrap then validate a complete locale payload table against all contexts."""
 
@@ -494,7 +505,9 @@ def apply_width_contract(
         registry=registry,
     )
     metrics_by_style = {
-        style: load_width_metrics(repo_root, locale=locale, style=style)
+        style: load_width_metrics(
+            repo_root, locale=locale, style=style, font_metrics=font_metrics,
+        )
         for style in ("system", "talk")
     }
     output = []
