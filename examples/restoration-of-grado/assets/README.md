@@ -42,7 +42,7 @@ this source-only case. Use ordinary generated output under
 2. The test generates the selected manifest through the public asset command
    and converts both MAR inputs with the original `scripts/mar_to_map.py`.
    Inspect native dimensions16x12, total386bytes, four-entry alignment and
-   the independently worked source samples, including CH00 altar and CH02
+   the independently worked source samples, including CH00 altar/stair and CH02
    road/door/dais positions.
 3. Generate default then Grado again in that same owned output directory
    without cleaning. The actual default CH02 map is15x15 with initial native
@@ -64,11 +64,35 @@ Conflicting ownership is rejected by the existing validator.
 **Cleanup:** the test removes only its owned temporary build directory.
 Master sources and default tracked assets are never rewritten.
 
-**Not yet qualified:** native compile/link/map/palette/movement/coordinate
+### Native map/configuration subcase
+
+Run
+`env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_visuals_native -v`
+with the supported ARM toolchain and libmGBA. Explicit host-only CI skips this
+module; a skip is not native evidence. It reuses the existing module-ROM
+startup, fixed IWRAM layout, tool selection and semantic capture route.
+
+The owned fixture supplies only native chapter/table inputs. Original
+`GetChapterMapPointer`, `UnpackChapterMap`, `InitBaseTilesBmMap`,
+`GetTrueTerrainAt` and BIOS copy/decode execute against the actual generated
+maps and assembled Fort configuration. Both maps must bind their declared
+table slots, decode16x12 and report the worked native values and real
+wall/floor/throne/pillar/stair/road/door terrain. The CH00 `(12,1)` sample is
+`TERRAIN_STAIRS`, not the adjacent northern door. Unexpected SRAM/extra-map/
+audio paths trap with an explicit failing phase, never success stubs.
+
+The unscaled-data control reaches the same consumers and completion but
+reports426/499/623/719/452 and terrain1/0/0/1/0 for CH00, not the correct
+configuration/terrain; CH02 remains correct. The test captures actual ROM/
+EWRAM/IWRAM sizes and retains module resource limits. These owned raw type0
+inputs exercise real native decoding, not final compressed/game-profile,
+movement, palette or visual qualification.
+
+**Not yet qualified:** selected production map/palette/movement/coordinate
 consumers, real target screenshots, required early portrait packages,
 title/BG/CG carriers and normal/crossfade limits. In particular old ASCII
 deployment/cortege points can land on real walls/doors in the accepted master;
 EVT must establish actual coordinates and route safety after preflight.
 These warnings are retained, not converted into approval or a generic human
-review gate. Native consumer/effect evidence and precise material artistic
+review gate. Remaining consumer/effect evidence and precise material artistic
 criteria still block issue completion.
