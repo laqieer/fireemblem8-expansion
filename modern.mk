@@ -4933,8 +4933,11 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL -u GBA_PLAYTEST_HOST_ONLY \
 		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+		MODERN_BINUTILS_DIR="$(MODERN_BINUTILS_DIR)" MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
+		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
 		"$(PYTHON)" -m unittest \
-		scripts.localization.game_catalog.tests.runtime.selected_text_native -v
+		scripts.localization.game_catalog.tests.runtime.selected_text_native \
+		scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \

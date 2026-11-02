@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -32,6 +33,30 @@ def base_map_report(rom_capacity=0x02000000):
 
 
 class LocaleBankBudgetTests(unittest.TestCase):
+    def test_committed_default_headroom_matches_linker_reports(self):
+        root = Path(__file__).resolve().parents[3]
+        fields = (
+            "capacity_bytes", "occupied_bytes", "free_bytes", "physical_free_bytes", "overflow",
+        )
+        for profile in ("debug", "release"):
+            with self.subTest(profile=profile):
+                generic = json.loads(
+                    (root / f"reports/linker-budget/modern-{profile}.json").read_text(encoding="utf-8")
+                )
+                localized = json.loads(
+                    (root / f"reports/linker-budget/modern-localization-{profile}.json").read_text(
+                        encoding="utf-8"
+                    )
+                )["regions_headroom"]
+                mapped = {region["name"]: region for region in generic["regions"]}
+                self.assertEqual(set(localized), set(mapped))
+                for name in mapped:
+                    self.assertEqual(
+                        {field: localized[name][field] for field in fields},
+                        {field: mapped[name][field] for field in fields},
+                        f"{profile} {name}",
+                    )
+
     def build_report(self, map_report):
         with mock.patch.object(lb, "_nm_sizes", return_value={}):
             return lb.build_report(map_report, "fixture.elf", None)
