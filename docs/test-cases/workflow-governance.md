@@ -6415,12 +6415,15 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    change still exceeds the independent delegated whole-task aggregate budget.
 
    For a standalone public-CLI replay, run this from the source root. It owns
-   and removes only its temporary repository; it changes no source checkout,
+   and removes only its temporary repository after all checks succeed; it changes no source checkout,
    worktree, remote or credentials. Each printed exit is checked against the
    actual process result. It runs only the checker already present in this
    reviewed source checkout: it does not acquire or execute a historical blob,
    probe history, or fetch. No partial-clone or Git-version fetch control is
    part of the replay.
+   The printed fixture path is retained on any error, timeout or interruption;
+   do not delete it until its owned processes are confirmed stopped. Retention
+   is a failed/incomplete replay, never success or a cleanup guarantee.
 
    For the pre-fix negative control, run the **same program separately** from
    an already available pristine `fe4608b334169ed025266d05e79ec3a194983577`
@@ -6435,62 +6438,64 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    python3 - <<'PY'
    import os
    from pathlib import Path
+   import shutil
    import subprocess
    import sys
    import tempfile
 
    source = Path.cwd().resolve()
    checker = source / "scripts/workflow_pilot/raw_diff_check.py"
-   with tempfile.TemporaryDirectory(prefix="fe8-raw-cli-") as directory:
-       home = Path(directory)
-       work = home / "repository"
-       work.mkdir()
-       env = {
-           "PATH": os.environ["PATH"], "HOME": str(home), "LC_ALL": "C",
-           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
-       }
-       def git(*args):
-           return subprocess.check_output(
-               ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
-                "-C", str(work), *args], env=env, stderr=subprocess.PIPE,
-           ).decode().strip()
-       git("init", "--template=", "-b", "master")
-       git("config", "user.name", "Raw CLI fixture")
-       git("config", "user.email", "raw-cli@example.invalid")
-       paths = [work / name for name in ("first.txt", "second.txt")]
-       line = "unchanged payload line\n"
-       payload = line * (4 * 1024 * 1024 // (3 * len(line)) + 1)
-       def commit(label):
-           git("add", "first.txt", "second.txt")
-           git("commit", "-m", label)
-           return git("rev-parse", "HEAD")
-       for path in paths:
-           path.write_text("before\n" + payload)
-       parent = commit("parent")
-       def check(label, tool, candidate, expected, diagnostic=""):
-           result = subprocess.run(
-               [sys.executable, "-I", str(tool), "--repository-root", str(work),
-                "--parent", parent, "--candidate", candidate],
-               env=env, capture_output=True, text=True, timeout=30,
-           )
-           output = result.stdout + result.stderr
-           print(f"{label}: exit {result.returncode}", flush=True)
-           if result.returncode != expected or diagnostic not in output:
-               raise RuntimeError(output)
-       for path in paths:
-           path.write_text("after\n" + payload)
-       clean = commit("clean multi-file change")
-       check("clean", checker, clean, 0)
-       paths[1].write_text("after \n" + payload)
-       check("second-file EOL", checker, commit("EOL control"), 1, "blank-at-eol")
-       paths[1].write_text("after\n" + payload + "\n")
-       check("second-file EOF", checker, commit("EOF control"), 1, "blank-at-eof")
-       paths[0].write_text("after\n" + payload * 2)
-       paths[1].write_text("after\n" + payload)
-       check("oversized pair", checker, commit("pair control"), 2, "4 MiB")
-       for path in paths:
-           path.write_text("after\n" + payload.replace("unchanged", "rewritten"))
-       check("aggregate diff", checker, commit("diff control"), 2, "process output exceeds")
+   home = Path(tempfile.mkdtemp(prefix="fe8-raw-cli-"))
+   print(f"fixture: {home}", flush=True)
+   work = home / "repository"
+   work.mkdir()
+   env = {
+       "PATH": os.environ["PATH"], "HOME": str(home), "LC_ALL": "C",
+       "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+   }
+   def git(*args):
+       return subprocess.check_output(
+           ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+            "-C", str(work), *args], env=env, stderr=subprocess.PIPE,
+       ).decode().strip()
+   git("init", "--template=", "-b", "master")
+   git("config", "user.name", "Raw CLI fixture")
+   git("config", "user.email", "raw-cli@example.invalid")
+   paths = [work / name for name in ("first.txt", "second.txt")]
+   line = "unchanged payload line\n"
+   payload = line * (4 * 1024 * 1024 // (3 * len(line)) + 1)
+   def commit(label):
+       git("add", "first.txt", "second.txt")
+       git("commit", "-m", label)
+       return git("rev-parse", "HEAD")
+   for path in paths:
+       path.write_text("before\n" + payload)
+   parent = commit("parent")
+   def check(label, tool, candidate, expected, diagnostic=""):
+       result = subprocess.run(
+           [sys.executable, "-I", str(tool), "--repository-root", str(work),
+            "--parent", parent, "--candidate", candidate],
+           env=env, capture_output=True, text=True, timeout=30,
+       )
+       output = result.stdout + result.stderr
+       print(f"{label}: exit {result.returncode}", flush=True)
+       if result.returncode != expected or diagnostic not in output:
+           raise RuntimeError(output)
+   for path in paths:
+       path.write_text("after\n" + payload)
+   clean = commit("clean multi-file change")
+   check("clean", checker, clean, 0)
+   paths[1].write_text("after \n" + payload)
+   check("second-file EOL", checker, commit("EOL control"), 1, "blank-at-eol")
+   paths[1].write_text("after\n" + payload + "\n")
+   check("second-file EOF", checker, commit("EOF control"), 1, "blank-at-eof")
+   paths[0].write_text("after\n" + payload * 2)
+   paths[1].write_text("after\n" + payload)
+   check("oversized pair", checker, commit("pair control"), 2, "4 MiB")
+   for path in paths:
+       path.write_text("after\n" + payload.replace("unchanged", "rewritten"))
+   check("aggregate diff", checker, commit("diff control"), 2, "process output exceeds")
+   shutil.rmtree(home)
    PY
    ```
 
