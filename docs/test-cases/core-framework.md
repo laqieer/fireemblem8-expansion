@@ -68,6 +68,10 @@ With an owned selected binary font width input, direct catalog/header and
 custom-parent generation consume the original width and both decremented native values,
 not the stale initial object. Only selected font-data dependency owners enter
 this bootstrap; pure capture/declaration and cleanup remain independent.
+Both public catalog/header aliases also work directly for the default project
+with `en,ja` or `en,zh-Hans` in a 32 MiB debug build. Their compiled System/Talk
+maps match the selected binary codepoint/width inputs instead of using an
+English-only configuration fallback.
 
 Private System/Talk Latin widths are 9/11 pixels, including a real cross-slot
 ARM glyph relocation. Private Japanese System/Talk widths are 13/7; selected

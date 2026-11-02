@@ -889,6 +889,43 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 self.assertTrue(widths)
                 self.assertEqual(set(widths), {current[index]})
 
+    def test_native_default_catalog_header_aliases_resolve_cjk_locales(self):
+        if host_only_enabled() or shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("native catalog header proof belongs to the target lane")
+        from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-default-headers-", dir=ROOT / "build") as directory:
+            for locale in ("ja", "zh-Hans"):
+                for goal in ("game_localization_catalog.h", "localized_game_text_data.h"):
+                    with self.subTest(locale=locale, goal=goal):
+                        output = Path(directory) / locale / goal
+                        built = subprocess.run(
+                            [
+                                "make", "--no-print-directory", goal, "NODEP=1",
+                                f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                                "MODERN_ABI=aapcs", "MODERN_ROM_SIZE=32M", "FE8_PROJECT=default",
+                                f"EXPANSION_ENABLED_LOCALES=en,{locale}", f"PYTHON={sys.executable}",
+                            ],
+                            cwd=ROOT, capture_output=True, text=True, timeout=180,
+                        )
+                        self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                        context = output / "debug/aapcs/selected-text-inputs.json"
+                        metrics = measure_selected_fonts(context, output_dir=output / "metrics")
+                        for style in ("system", "talk"):
+                            codepoints = (
+                                ROOT / f"graphics/fonts/cjk/{locale}.{style}.codepoints.u32le"
+                            ).read_bytes()
+                            widths = (ROOT / f"graphics/fonts/cjk/{locale}.{style}.widths.u8").read_bytes()
+                            expected = {
+                                int.from_bytes(codepoints[index * 4:index * 4 + 4], "little"): width
+                                for index, width in enumerate(widths)
+                            }
+                            self.assertEqual(metrics["localized"][locale][style], expected)
+                        generated = output / "game-localization/generated"
+                        self.assertTrue((generated / "game_localization_catalog.h").is_file())
+                        self.assertTrue((generated / "localized_game_text_data.h").is_file())
+
     def test_native_cjk_fonts_bootstrap_without_payload_generation(self):
         if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
             self.skipTest("selected ARM compiler is unavailable")

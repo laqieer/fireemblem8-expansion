@@ -1932,6 +1932,7 @@ MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOAL
 		$(MODERN_TEXT_COMPILE_CONTEXT) $(MODERN_GAME_LOCALIZATION_C) \
 		$(MODERN_GAME_LOCALIZATION_HEADER) $(MODERN_GAME_LOCALIZATION_CONFIG_H) \
 		$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+		game_localization_catalog.h localized_game_text_data.h \
 		$(MODERN_GAME_LOCALIZATION_REPORT_JSON) $(MODERN_GAME_LOCALIZATION_BUDGET_JSON),\
 		$(MAKECMDGOALS))
 MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out $(MODERN_CLEAN_GOALS),$(MAKECMDGOALS)),default))
@@ -4941,6 +4942,7 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cleanup_does_not_import_the_catalog_migrator \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_english_object_does_not_force_declarations \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_catalog_tracks_selected_raw_font_assets_for_direct_and_parent_goals \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_default_catalog_header_aliases_resolve_cjk_locales \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cjk_fonts_bootstrap_without_payload_generation \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_regional_metrics_and_cross_slot_relocations_are_native \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_translation_and_mapping_use_the_real_engine_root \
