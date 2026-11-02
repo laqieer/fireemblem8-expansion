@@ -30,7 +30,7 @@ class GradoVisualAssetTests(unittest.TestCase):
             )
             self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
             sources = {
-                "CH00": ASSETS / "maps/CH00.mar",
+                "CH00": ROOT / "graphics/map/layout/grado/CH00.mar",
                 "CH02": output / "tmx/CH2_MAIN_MAP.mar",
             }
             for chapter, source in sources.items():

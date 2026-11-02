@@ -5,8 +5,8 @@
       "id": "GRADO_CH00_MAP",
       "kind": "chapter-map-layout",
       "sources": [
-        "examples/restoration-of-grado/assets/maps/CH00.mar",
-        "examples/restoration-of-grado/assets/maps/CH00.json"
+        "graphics/map/layout/grado/CH00.mar",
+        "graphics/map/layout/grado/CH00.json"
       ],
       "dependsOn": [],
       "options": {

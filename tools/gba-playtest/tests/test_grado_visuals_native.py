@@ -55,7 +55,7 @@ class GradoVisualNativeTests(unittest.TestCase):
             ], cwd=ROOT)
             binaries = []
             for chapter, source in (
-                ("CH00", ROOT / "examples/restoration-of-grado/assets/maps/CH00.mar"),
+                ("CH00", ROOT / "graphics/map/layout/grado/CH00.mar"),
                 ("CH02", assets / "tmx/CH2_MAIN_MAP.mar"),
             ):
                 target = work / (chapter + ".bin")

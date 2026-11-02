@@ -9,6 +9,9 @@ The CH00 ordered MAR/JSON and CH02 `tmx-safe-v1` input preserve the original
 16x12 creator tile layouts without importing external tileset images or
 modifying their design masters. They use the existing manifest and conversion
 modules, not a second map parser or asset registry.
+The binary MAR and its JSON live under `graphics/map/layout/grado`, the
+existing permitted source-asset root; the project manifest binds them there.
+The tracked-artifact guard remains unchanged and is not waived by a manifest.
 
 The real Fort family `3c003d3e` selects native asset slots60/61/62:
 `ObjectType5`, `MapPalette7`, `TileConfiguration5`. One creator metatile
@@ -39,6 +42,9 @@ this source-only case. Use ordinary generated output under
 
 1. Run
    `python3 -B -m unittest scripts.assets.tests.test_grado_visuals -v`.
+   Authors also stage their inputs and run
+   `python3 -B scripts/artifact_guard.py --index`; candidate CI checks the
+   immutable committed revision.
 2. The test generates the selected manifest through the public asset command
    and converts both MAR inputs with the original `scripts/mar_to_map.py`.
    Inspect native dimensions16x12, total386bytes, four-entry alignment and
