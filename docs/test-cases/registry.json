@@ -2932,7 +2932,8 @@
       "title": "Bound complete isolated reporter execution",
       "feature_id": "workflow-governance",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/359"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/359",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/361"
       ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-reporter-runtime-001-bound-complete-isolated-reporter-execution",
@@ -2941,10 +2942,10 @@
       ],
       "purpose": "Execute the complete dynamically discovered reporter suite in at most two isolated child processes without omitting cases, weakening failures or changing any CI gate.",
       "prerequisites": "Existing locked host environment, Git and process controls; preserve work. Fixtures own disposable roots under build/test-artifacts and need no ARM compiler, ROM or credentials.",
-      "actions": "Run ReporterExecutionTests through the controlled isolated interpreter. Observe concurrent distinct live child PIDs, one common parent, complete no-duplicate execution, per-process fixture lifecycle, intact PID-labelled live progress and cleared ambient Git. Preserve configured load_tests instances; reject changed child discovery, assertion failure, abnormal or early-zero exit, stopped/no-op suites, empty/duplicate/broken discovery and extra arguments. Retain normal class/module setup skips only for their actual contiguous invocation, including class/module re-entry and singleton execution. Run the unchanged full reporter CLI for complete evidence and preserve actual wall time/revision/results.",
+      "actions": "Run ReporterExecutionTests through the controlled isolated interpreter. Observe concurrent distinct live child PIDs, one common parent, complete no-duplicate execution, per-process fixture lifecycle, intact PID-labelled live progress and cleared ambient Git. Preserve configured load_tests instances; reject changed child discovery, assertion failure, abnormal or early-zero exit, stopped/no-op suites, empty/duplicate/broken discovery and extra arguments. Retain normal class/module setup skips only for their actual contiguous invocation, including class/module re-entry and singleton execution. Run the unchanged full reporter CLI for complete evidence and preserve actual wall time/revision/results. Parse complete workflow/command ownership to prove the four full-game commands execute exactly once on an independent existing worker, with the same host bootstrap before archival setup. Reject altered bootstrap, masked failures or omitted raw closure; retain actual candidate/master timings.",
       "expected_result": "Every dynamically discovered case uses its actual configured instance across at most two isolated processes, with intact worker-labelled log lines. Completion accounts for actual finished IDs and matching fixture-invocation skips, not copied assignments or unrelated, earlier or later skips. Changed discovery or any incomplete/failed child result fails the parent; zero OS exit alone is insufficient without actual runner completion. Complete candidate/master eight-job Build succeeds within unchanged host bounds before delivery.",
       "negative_control": "The original serial launcher fails the live-PID rendezvous and original CI traces exceed the 90-minute host cap. Omitted cases, ignored child failure or empty partial coverage cannot report success; deadline increases are not the fix.",
-      "interactions": "Existing isolated launcher/unittest/process support and independent test fixtures only. Workflow topology, authority, permissions, runners, deadlines, baseline/profile/archival and summary gates remain unchanged.",
+      "interactions": "Existing isolated launcher/unittest/process support and independent test fixtures. Full-game commands move to an existing independent worker before archival setup, with their original host environment. All eight jobs, authority, permissions, runners, deadlines, baseline/profile/archival and summary gates remain unchanged.",
       "save_compatibility": "No gameplay, save/config/epoch, ROM/RAM, locale, generated-content, modern profile or archival compiler changes.",
       "cleanup": "Tests remove only their owned temporary roots; retain the owned host environment for later checks. Preserve benchmark and native CI evidence.",
       "limitations": "Separate process-owned module/class fixtures require no cross-process shared mutation. The process bound is per invocation, not hostile same-UID isolation or guaranteed speed. A selected workload or synchronization fixture is not complete CI evidence; no manual criterion is added.",
@@ -2956,6 +2957,14 @@
         {
           "command": "build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests",
           "evidence": "scripts/workflow_pilot/isolated_launcher.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_bootstrap_and_reporter_interpreter_agree -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
         }
       ]
     },
