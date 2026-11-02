@@ -6417,20 +6417,19 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    For a standalone public-CLI replay, run this from the source root. It owns
    and removes only its temporary repository; it changes no source checkout,
    worktree, remote or credentials. Each printed exit is checked against the
-   actual process result, including the immutable pre-fix checker control.
-   The source checkout must already contain the pinned commit and checker blob.
-   For a shallow or partial checkout, prepare only the missing history first:
+   actual process result. It runs only the checker already present in this
+   reviewed source checkout: it does not acquire or execute a historical blob,
+   probe history, or fetch. No partial-clone or Git-version fetch control is
+   part of the replay.
 
-   ```bash
-   if ! GIT_NO_LAZY_FETCH=1 git --no-replace-objects cat-file -e \
-       fe4608b334169ed025266d05e79ec3a194983577:scripts/workflow_pilot/raw_diff_check.py
-   then
-       git fetch --depth=1 origin fe4608b334169ed025266d05e79ec3a194983577
-   fi
-   ```
-
-   The replay itself performs no fetch, ignores replacement objects, and fails
-   explicitly if the required local history is still unavailable:
+   For the pre-fix negative control, run the **same program separately** from
+   an already available pristine `fe4608b334169ed025266d05e79ec3a194983577`
+   source context. Its first clean CLI call must print `clean: exit 2` with
+   `changed blob bytes exceed 4 MiB`, then fail the assertion. That nonzero
+   wrapper result is the expected pre-fix failure, not a passing replay.
+   Preparing a trusted source version is the normal source-control task,
+   outside this program; no history availability is needed for the current
+   positive/whitespace/pair/diff controls:
 
    ```bash
    python3 - <<'PY'
@@ -6449,7 +6448,6 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
        env = {
            "PATH": os.environ["PATH"], "HOME": str(home), "LC_ALL": "C",
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
-           "GIT_NO_REPLACE_OBJECTS": "1", "GIT_NO_LAZY_FETCH": "1",
        }
        def git(*args):
            return subprocess.check_output(
@@ -6469,12 +6467,6 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
        for path in paths:
            path.write_text("before\n" + payload)
        parent = commit("parent")
-       old_checker = home / "pre-fix-checker.py"
-       old_checker.write_bytes(subprocess.check_output(
-           ["git", "-C", str(source), "show",
-            "fe4608b334169ed025266d05e79ec3a194983577:scripts/workflow_pilot/raw_diff_check.py"],
-           env=env,
-       ))
        def check(label, tool, candidate, expected, diagnostic=""):
            result = subprocess.run(
                [sys.executable, "-I", str(tool), "--repository-root", str(work),
@@ -6482,14 +6474,13 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
                env=env, capture_output=True, text=True, timeout=30,
            )
            output = result.stdout + result.stderr
+           print(f"{label}: exit {result.returncode}", flush=True)
            assert result.returncode == expected, output
            assert diagnostic in output, output
-           print(f"{label}: exit {result.returncode}")
        for path in paths:
            path.write_text("after\n" + payload)
        clean = commit("clean multi-file change")
        check("clean", checker, clean, 0)
-       check("pre-fix aggregate refusal", old_checker, clean, 2, "4 MiB")
        paths[1].write_text("after \n" + payload)
        check("second-file EOL", checker, commit("EOL control"), 1, "blank-at-eol")
        paths[1].write_text("after\n" + payload + "\n")
