@@ -46,9 +46,14 @@ The actual native object inventory appears exactly once after a late dependency
 file. Warm input dependency bytes remain unchanged during pure capture.
 An implicit main Makefile still loads with preloaded `MAKEFILES`. Actual
 target-private compiler/preprocessor paths are recorded without executing
-their sentinels. Changing a selected tool file at an unchanged path rebuilds
+their sentinels, for both ordinary and spaced filenames. Also request capture
+with missing spaced private compiler/preprocessor/scanner paths: the context
+must preserve the requested tools without requiring their files or execution.
+Changing a selected tool file at an unchanged path rebuilds
 its native data product: the ARM version symbol changes14-to-15, and the
 generated scanner dependency changes to the corresponding real input.
+Repeat both real preprocessor and scanner transitions with spaced paths; each
+is one literal prerequisite, not a split implicit target.
 Private and spaced flags, physical source selection, ordinary/data/
 reinstated/synthetic slots, and data preprocessing are retained. Capturing it
 executes one native Make plan, no compiler/preprocessor/catalog and no hundreds

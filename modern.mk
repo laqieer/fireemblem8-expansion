@@ -979,14 +979,16 @@ expansion-modern-all: expansion-modern-toolchain-check \
 $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 
 .SECONDEXPANSION:
+modern_empty :=
+modern_space := $(modern_empty) $(modern_empty)
+modern_tool_prerequisite = $(if $(filter 1,$(MODERN_DRY_RUN)),,$(subst $(modern_space),\$(modern_space),$(1)))
 MODERN_TEXT_NATIVE_MAKE := $(MAKE)
 # Keep C target scopes, but do not enter recursive non-C/link preparation.
 modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n -B \
 	NODEP=1 MODERN_DRY_RUN=1 \
 	$(foreach makefile,$(MAKEFILE_LIST),-o "$(makefile)") \
 	-o expansion-modern-toolchain-check -o expansion-modern-link-prepare \
-	-o "$(MODERN_MGFEMBP_PAYLOAD)" -o "$(MODERN_PREPROC)" \
-	$(foreach prerequisite,$(MODERN_PREPROC),-o "$(prerequisite)") \
+	-o "$(MODERN_MGFEMBP_PAYLOAD)" \
 	-o "$(GENERATED_DATA_CH2_EVENTLISTS_C)" \
 	-o "$(MODERN_TEXT_COMPILE_CONTEXT)" expansion-modern-toolchain-check
 .PHONY: expansion-modern-text-inputs _expansion-modern-text-object-plan
@@ -1302,7 +1304,7 @@ $(MODERN_OUTPUT_DIR)/%.o: %.s
 # top-level Makefile's own generation rules (e.g. %.4bpp: %.png) before
 # preproc is ever invoked, on the very first invocation -- rather than
 # preproc failing hard on the first unresolved INCBIN it hits.
-$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $$(MODERN_PREPROC)
+$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $$(call modern_tool_prerequisite,$$(MODERN_PREPROC))
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_PREPROC)" ]; then \
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
@@ -1491,7 +1493,7 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 	' _
   FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
 endif
-$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $$(MODERN_SCANINC)
+$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $$(call modern_tool_prerequisite,$$(MODERN_SCANINC))
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_SCANINC)" ]; then \
 		printf '%s\n' "error: modern scaninc not found or not executable: $(MODERN_SCANINC)" >&2; \

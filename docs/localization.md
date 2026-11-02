@@ -88,6 +88,11 @@ unit records its actual target-scoped tool, not a global program-name match.
 The CLI's older global tool options remain compatibility hints only.
 Data preprocessing and asset-dependency products depend on the actual
 target-scoped preprocessor/scanner files, including changes at the same path.
+Each executable remains one literal Make prerequisite even when its path has
+spaces. Existing metadata mode omits those tool-file edges entirely: capture
+does not need either global or target-private executables to exist, and never
+executes compiler/preprocessor/scanner sentinels. Real builds retain the file
+dependencies and warm rebuilds; no global word-splitting ignore list is used.
 With no explicit goals, capture traverses the actual `.DEFAULT_GOAL` while
 retaining empty `MAKECMDGOALS` for caller conditionals. Native link targets
 report their own selected linker, including private and inherited settings;
