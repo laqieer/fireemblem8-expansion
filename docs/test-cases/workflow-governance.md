@@ -6417,7 +6417,9 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    For a standalone public-CLI replay, run this from the source root. It owns
    and removes only its temporary repository after all checks succeed; it changes no source checkout,
    worktree, remote or credentials. Each printed exit is checked against the
-   actual process result. It runs only the checker already present in this
+   actual process result. Both source contexts use the already-required
+   issue #216 locked interpreter below, not an implicit system `python3`.
+   It runs only the checker already present in this
    reviewed source checkout: it does not acquire or execute a historical blob,
    probe history, or fetch. No partial-clone or Git-version fetch control is
    part of the replay.
@@ -6435,7 +6437,7 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    positive/whitespace/pair/diff controls:
 
    ```bash
-   python3 - <<'PY'
+   build/host-python/bin/python3 -I - <<'PY'
    import os
    from pathlib import Path
    import shutil
