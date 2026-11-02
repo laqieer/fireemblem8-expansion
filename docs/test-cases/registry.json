@@ -918,15 +918,15 @@
         "Unselected default framework; Linux host-native metadata probe",
         "ARM7TDMI/Thumb GNU89, default supported AAPCS compile-only"
       ],
-      "purpose": "Exercise the real optional reference C validator without changing game buffers or claiming a complete production allocation.",
+      "purpose": "Exercise the real optional reference C validator and complete candidate campaign bindings through owned native buffers, without activating or qualifying a game profile.",
       "prerequisites": "Python 3, host cc and supported ARM GCC from quickstart; no ROM, emulator, save file or alternate profile.",
-      "actions": "Run python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v. Execute valid descriptors, temporary/permanent overlap and chapter reuse, invalid inputs/shapes/value/scope/chapter tags, native last-bit overflow, every retained fixed engine/debug/sort reservation and both complete progressive-guide ranges under both policies.",
-      "expected_result": "The real C probe accepts valid nonoverlapping descriptors and different-chapter reuse, rejects invalid domains, overflow and reserved/owned flags, then the same production validator compiles for ARM/AAPCS.",
+      "actions": "Run python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v. Execute descriptor domain/reservation/overlap controls and the complete campaign allocation with original native flag routines. Exercise semantic/backing and direction/ending agreement, both identified rescue collections across all16 subsets with duplicate records, explicit value/lifetime/readonly/monotonic refusals and retained later-chapter readers after native chapter reset.",
+      "expected_result": "The complete immutable physical allocation validates and every logical entry resolves. Typed states, aliases and independent rescue identities/counts agree; retained continuity survives chapter reset; refused operations preserve full native backing/output. Descriptor boundary and progressive-policy controls still reject. Actual campaign and validator sources compile for ARM/AAPCS.",
       "negative_control": "Before the tracer, the public interface and source are absent and both compiler probes fail. Progressive policy rejects guide-bit allocation; the unselected default links no reference code.",
       "interactions": "Project-specific reference only, using existing native event-flag constants. Static-guide policy is input to allocation validation, not proof that guide consumers have been redirected. No new framework feature gate or prerequisite is added.",
-      "save_compatibility": "This tracer mutates no state, envelope, epoch, checksum or SRAM. Complete Grado schema1/epoch256 and normal/Suspend/legacy loading remain open in issue315; default framework epoch2 is unchanged.",
+      "save_compatibility": "Campaign probes mutate only owned native-format buffers, never actual engine state or SRAM. No envelope, epoch or checksum changes. Complete Grado schema1/epoch256 and normal/Suspend/legacy loading remain open in issue315; default framework epoch2 is unchanged and the candidate physical map is not a released save ABI.",
       "cleanup": "Tests remove only their own temporary compiler/probe directories and preserve Git indexes, worktrees, saves and engine buffers.",
-      "limitations": "Host execution uses only an ABI-type adapter around the real validator. ARM evidence is compile-only, not target-ROM behavior. No complete227-FLAG/16-STATE allocation, guide, save, recovery, gameplay or manual qualification is claimed.",
+      "limitations": "Host probes execute real example modules and native flag routines with owned buffers; ARM evidence is compile-only, not target-ROM behavior. All243 candidate logical entries are mapped, but guide initialization, selected profile, save/recovery/checkpoint/gameplay and manual qualification remain unclaimed.",
       "automation": [
         {
           "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",

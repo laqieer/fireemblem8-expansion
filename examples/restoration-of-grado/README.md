@@ -32,15 +32,83 @@ content, scripts, window, navigation or sort code. An eventual project must
 replace that slot and include `src/state.c`; no project preset is activated
 by this reference.
 
-There is no complete production allocation, activated state/guide profile,
-save envelope, epoch change, load hook, recovery or playable content here.
-The complete 227-FLAG/16-STATE inventory, aliases and derived
-entries, actual guide consumers, Grado schema 1/epoch 256, strict compatible
-normal/Suspend/legacy loading and producer-sensitive lifecycles remain the
-unchanged issue contract. Framework epoch 2 and its existing envelope are
-untouched.
+The candidate campaign allocation now names all 227 FLAG and 16 STATE entries
+in `include/grado_campaign_state.def`. That single C definition owns explicit
+native slots, scope, complete value domains, aliases and derived counts.
+`src/campaign_state.c` validates its complete physical allocation through the
+existing validator and exposes typed symbol reads/writes through the original
+flag backend. Logical enum ordinals are build-local C selectors, not serialized
+identities; changing definition order does not change the explicit native slots.
+The physical map is not yet a qualified, released save ABI.
+
+Choice backing flags are read-only views of their semantic one-hot state.
+The final ending is a read-only direction projection. CH04 and CH05 each use
+four separate monotonic facts; their counts are read-only cardinalities, not
+mutable totals. `RecordRescue` records an explicit fact, not evidence that an
+evacuation/category producer's conditions were satisfied. The eventual native
+event adapter must establish those conditions and a coherent checkpoint.
+An unset semantic one-hot reports `UNSET`; its Boolean backing views are false.
+Corrupt one-hot storage refuses both views rather than exposing partial truth.
+Call `GradoState_ValidateCampaign` before using this immutable allocation.
+
+Retained narrative/epilogue outcomes, absence-at-event markers, omen continuity
+and choice backing use permanent storage even when the old register called
+their immediate use local. True local flags reuse chapter bits with explicit
+project ordinals: CH00..CH05 are 0..5, CH05X is 6, CH06..CH18 are 7..19,
+CH18X is 20 and FINAL is 21. Local access does not reset storage or implement
+new-chapter/Suspend behavior. The allocated guide truth slot and transition
+backing are reserved for their owning initialization/producer, not initialized
+or qualified by the allocation validator.
+
+There is still no activated state/guide profile, epoch change, load hook,
+recovery or playable content here. Actual initialized guide consumers,
+Grado schema 1/epoch 256, strict compatible normal/Suspend/legacy loading,
+producer-sensitive lifecycles and target-ROM/RAM proof remain required.
+Framework epoch 2 and its existing envelope are untouched. Do not select or
+save this unfinished allocation as a supported game.
 
 ## TC-GRADO-ALLOCATION-001
+
+### Complete campaign bindings
+
+This subcase of `TEST-STATE-TOKEN-AUDIT` uses the same Linux compilers and
+owned temporary memory as the native cases below. It requires no ROM, real
+save, credentials or manual judgment.
+
+1. Run
+   `python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v`.
+   The campaign probe links the real allocation, codec and native flag
+   implementation, executes them, then compiles the campaign source for
+   ARM7TDMI/Thumb AAPCS. The previous absent campaign interface failed host
+   compilation; that structural negative does not claim target-ROM evidence.
+2. The complete physical allocation must pass the existing reservation,
+   capacity, scope and overlap validator. Every logical symbol must resolve
+   without an unknown-input result from its cleared starting state. Exercise
+   a semantic choice and both true/false backing views, all four-direction
+   ending values, permanent wyvern and guard fields, the bounded CH13
+   local count and a monotonic retirement fact.
+3. Execute every subset of each four-member rescue collection in a permuted
+   input order, recording each present fact twice. Each exact identity must
+   remain queryable, cardinalities must be 0..4, and the two collections must
+   remain independent. Completed-zero validity is a value-codec result here;
+   producer-sensitive missing-state and checkpoint proof remain separate.
+   Record the retained political, letter, persuasion, recruitment and
+   epilogue facts in their real producer chapters, call the original native
+   chapter reset, then read them from their declared later chapters and FINAL.
+   Their values must survive; a new chapter does not erase narrative history.
+4. Read-only alias/count/ending writes, out-of-range values, wrong local
+   chapter, retirement clearing and invalid symbols/facts must refuse
+   without changing either complete native backing array. Invalid reads
+   preserve the output guard. Keep the unselected default as the negative
+   profile: this example still supplies no default build source or hook.
+
+The owning source inventory is the accepted state register in
+[Design main](https://github.com/laqieer/Restoration_of_Grado-Design/blob/578bcc136581c52c537f0cacb0591cb840626e89/docs/06_technical/EVENT_FLAGS_AND_STATE_FLOW.md).
+Name coverage is structural inventory evidence, not state/save/runtime proof.
+The C definition is the implementation's sole allocation authority, not a
+second mutable storage ledger. Original engine/debug/sort reservations remain.
+
+### Generic descriptor controls
 
 This allocation subcase contributes to `TEST-STATE-TOKEN-AUDIT`; it does not
 qualify the complete state, guide or save protocols.

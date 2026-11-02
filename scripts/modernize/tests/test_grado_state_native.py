@@ -229,6 +229,31 @@ class GradoAllocationNativeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self._arm_compile(values, root / "values.o", ("-Werror",))
 
+    def test_campaign_symbols_share_native_backing_and_rescue_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            campaign = EXAMPLE / "src/campaign_state.c"
+            binary = root / "campaign"
+            result = subprocess.run(
+                [
+                    "cc", "-std=gnu89", "-DMODERN=1", "-DNONMATCHING=1",
+                    "-funsigned-char", "-ffunction-sections", "-fdata-sections",
+                    "-Werror=implicit-function-declaration",
+                    "-Werror=incompatible-pointer-types",
+                    "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
+                    "-I", str(ROOT / "include"), "-I", str(EXAMPLE / "include"),
+                    "-no-pie", "-Wl,--gc-sections",
+                    str(Path(__file__).parent / "fixtures/grado_campaign_probe.c"),
+                    str(SOURCE), str(EXAMPLE / "src/values.c"), str(campaign),
+                    str(ROOT / "src/eventinfo.c"), "-o", str(binary),
+                ],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self._arm_compile(campaign, root / "campaign.o", ("-Werror",))
+
 
 if __name__ == "__main__":
     unittest.main()
