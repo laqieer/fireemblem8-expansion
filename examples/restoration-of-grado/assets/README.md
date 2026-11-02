@@ -77,6 +77,9 @@ Run
 with the supported ARM toolchain and libmGBA. Explicit host-only CI skips this
 module; a skip is not native evidence. It reuses the existing module-ROM
 startup, fixed IWRAM layout, tool selection and semantic capture route.
+The existing debug ARM-enabled `expansion-modern-linker-check` invocation
+also executes it in candidate and master Build CI, with the host-only switch
+removed. A parsed Make execution-contract test preserves that binding.
 
 The owned fixture supplies only native chapter/table inputs. Original
 `GetChapterMapPointer`, `UnpackChapterMap`, `InitBaseTilesBmMap`,
