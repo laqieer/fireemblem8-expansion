@@ -75,6 +75,9 @@ producer/filter. No dependency edge is removed or whole build serialized.
 The SIO fixture supplies an already-ready owned opaque payload and executes
 the actual native assembler/filter; it does not qualify multiboot runtime or
 an archival ROM build.
+The existing debug ARM-enabled linker invocation runs this complete matrix in
+Build CI with the host-only switch removed. Explicit host-only requests skip
+before native tool discovery, even when an ARM compiler is installed.
 Actual target-private compiler/preprocessor paths are recorded without executing
 their sentinels, for both ordinary and spaced filenames. Also request capture
 with missing spaced private compiler/preprocessor/scanner paths: the context

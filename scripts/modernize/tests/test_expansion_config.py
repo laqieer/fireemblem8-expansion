@@ -416,6 +416,8 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
     def test_native_parallel_capture_reads_only_complete_dependency_products(self):
         from scripts.workflow_pilot import raw_diff_check as raw
 
+        if host_only_enabled():
+            self.skipTest("native dependency publication belongs to the target lane")
         compiler = shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc"))
         if compiler is None:
             self.skipTest("selected ARM compiler is unavailable")
@@ -560,6 +562,20 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                             Path(argv[argv.index("-MF") + 1]),
                             Path(unit["object"]).with_suffix(".d"),
                         )
+
+    def test_host_only_skips_native_dependency_publication(self):
+        case = ProjectSelectionIdentityTests(
+            "test_native_parallel_capture_reads_only_complete_dependency_products",
+        )
+        result = unittest.TestResult()
+        with mock.patch.dict(os.environ, {"GBA_PLAYTEST_HOST_ONLY": "1"}), mock.patch.object(
+            shutil, "which", side_effect=AssertionError("host-only request resolved a native tool"),
+        ):
+            case.run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+        self.assertEqual(len(result.skipped), 1)
 
     def test_native_context_captures_target_specific_native_tools(self):
         (ROOT / "build").mkdir(exist_ok=True)

@@ -423,6 +423,23 @@ class SubjectTests(SubjectTestCase):
                      "MODERN_SIZE=$(MODERN_SIZE)", "$(PYTHON)", "-m", "unittest",
                      "scripts.workflow_pilot.tests.arm_review_subjects", "-v"],
                     commands)
+                if config == "debug":
+                    commands = [
+                        shlex.split(line.lstrip("\t").lstrip("@+"))
+                        for line in rule.replace("\\\n", " ").splitlines()
+                        if line.startswith("\t")
+                    ]
+                    publication = [
+                        command for command in commands
+                        if "scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests."
+                        "test_native_parallel_capture_reads_only_complete_dependency_products" in command
+                    ]
+                    self.assertEqual(len(publication), 1)
+                    self.assertEqual(publication[0][0], "env")
+                    self.assertIn(
+                        ("-u", "GBA_PLAYTEST_HOST_ONLY"),
+                        tuple(zip(publication[0], publication[0][1:])),
+                    )
 
     def test_ci_keeps_both_arm_review_profiles_in_existing_legacy_headroom(self):
         workflow = (ROOT / ".github/workflows/build.yml").read_text()
