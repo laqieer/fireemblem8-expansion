@@ -6425,7 +6425,7 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    For the pre-fix negative control, run the **same program separately** from
    an already available pristine `fe4608b334169ed025266d05e79ec3a194983577`
    source context. Its first clean CLI call must print `clean: exit 2` with
-   `changed blob bytes exceed 4 MiB`, then fail the assertion. That nonzero
+   `changed blob bytes exceed 4 MiB`, then fail the expectation check. That nonzero
    wrapper result is the expected pre-fix failure, not a passing replay.
    Preparing a trusted source version is the normal source-control task,
    outside this program; no history availability is needed for the current
@@ -6475,8 +6475,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
            )
            output = result.stdout + result.stderr
            print(f"{label}: exit {result.returncode}", flush=True)
-           assert result.returncode == expected, output
-           assert diagnostic in output, output
+           if result.returncode != expected or diagnostic not in output:
+               raise RuntimeError(output)
        for path in paths:
            path.write_text("after\n" + payload)
        clean = commit("clean multi-file change")
