@@ -358,7 +358,8 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 "make", "--no-print-directory", "-f", str(entrypoint), "NODEP=1",
                 "MODERN_DRY_RUN=1", "FE8_PROJECT=default", "MODERN_ROM_SIZE=32M",
                 "EXPANSION_ENABLED_LOCALES=en,ja", f"MODERN_BUILD_ROOT={output}",
-                f"PYTHON={sys.executable}",
+                f"PYTHON={sys.executable}", f"MODERN_CC={temporary / 'unavailable-compiler'}",
+                "--old-file=expansion-modern-toolchain-check",
             ]
             query = subprocess.run(
                 [*arguments, "-n", "native-dependency-inventory"],
