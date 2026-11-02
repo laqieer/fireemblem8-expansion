@@ -492,10 +492,6 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
         raise GameCatalogError("native Make compile plan failed:\n" + planned.stdout + planned.stderr)
     lines = planned.stdout.replace("\\\n", " ").splitlines()
 
-    def matching(program):
-        prefixes = (program + " ", '"' + program + '" ', "'" + program + "' ")
-        return (line.strip() for line in lines if line.lstrip().startswith(prefixes))
-
     def words(line):
         try:
             return shlex.split(line)
@@ -525,9 +521,15 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
     if assembly_objects & set(objects):
         raise GameCatalogError("native Make C and assembly inventories overlap")
 
+    def quoted_forms(value):
+        return (value, '"' + value + '"', "'" + value + "'")
+
+    object_outputs = {value for path in objects for value in quoted_forms(path)}
     compiler = {}
     preprocessors = {}
-    for line in matching(args.compiler):
+    for line in lines:
+        if line.rpartition(" -o ")[2].strip() not in object_outputs:
+            continue
         argv = words(line)
         if "-c" not in argv:
             continue
@@ -538,9 +540,17 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
         if argv[-1] in compiler:
             raise GameCatalogError(f"native Make planned two compiles for {argv[-1]}")
         compiler[argv[-1]] = argv
-    for line in matching(args.preprocessor):
+    data_inputs = {
+        compiler[path][compiler[path].index("-c") + 1]
+        for path in data_objects if path in compiler
+    }
+    data_outputs = {value for path in data_inputs for value in quoted_forms(path)}
+    for line in lines:
         invocation, separator, after = line.rpartition(" > ")
         if not separator:
+            continue
+        if not any(after.strip() == value or after.lstrip().startswith(value + " ")
+                   for value in data_outputs):
             continue
         target = words(after)
         if not target:
@@ -690,8 +700,8 @@ def build_parser() -> argparse.ArgumentParser:
         "describe-make-context", help="capture selected C inputs from one nonexecuting native Make plan",
     )
     context_p.add_argument("--output", type=Path, required=True)
-    context_p.add_argument("--compiler", required=True)
-    context_p.add_argument("--preprocessor", required=True)
+    context_p.add_argument("--compiler", help="compatibility hint; selected Make recipes own each tool")
+    context_p.add_argument("--preprocessor", help="compatibility hint; selected Make recipes own each tool")
     context_p.add_argument("--invoker-pid", type=int)
     context_p.add_argument("--invoker-goals")
     context_p.add_argument("make_argv", nargs=argparse.REMAINDER)

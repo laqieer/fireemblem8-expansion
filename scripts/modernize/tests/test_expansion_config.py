@@ -225,6 +225,138 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             )
             self.assertIn("graphics/debug_font.4bpp.h", prerequisites)
 
+    def test_native_context_keeps_implicit_makefile_with_preloaded_input(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-preloaded-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            preload = self.project / "preloaded.mk"
+            preload.write_text("NATIVE_PRELOADED_INPUT := 1\n", encoding="ascii")
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "expansion-modern-text-inputs",
+                    f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug", "FE8_PROJECT=default",
+                    "MODERN_CC=/missing/compiler", "MODERN_PREPROC=/missing/preprocessor",
+                    "MODERN_DRY_RUN=1", "NODEP=1", f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+                env={**os.environ, "MAKEFILES": str(preload)},
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            context = json.loads((output / "debug/aapcs/selected-text-inputs.json").read_text())
+            self.assertTrue(context["units"])
+            self.assertTrue(all(unit["logical_source"].endswith(".c") for unit in context["units"]))
+            self.assertEqual(list(output.rglob("*.o")), [])
+
+    def test_native_context_captures_target_specific_native_tools(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-private-tools-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            namespace = output / "debug/aapcs"
+            executed = output / "unexpected-native-execution"
+            compiler = self.project / "private-compiler"
+            preprocessor = self.project / "private-preprocessor"
+            for tool in (compiler, preprocessor):
+                tool.write_text(
+                    "#!/bin/sh\n"
+                    f"printf called > {shlex.quote(str(executed))}\nexit 71\n",
+                    encoding="ascii",
+                )
+                tool.chmod(0o755)
+            makefile = self.project / "private-tools.mk"
+            makefile.write_text(
+                "include Makefile\n"
+                "MODERN_CC := /missing/global-compiler\n"
+                "MODERN_PREPROC := /missing/global-preprocessor\n"
+                f"{namespace}/src/fontgrp-data.o: private MODERN_CC := {compiler}\n"
+                f"{namespace}/src/data/localized_font_data.pre.c: "
+                f"private MODERN_PREPROC := {preprocessor}\n",
+                encoding="ascii",
+            )
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-f", str(makefile),
+                    "expansion-modern-text-inputs", f"MODERN_BUILD_ROOT={output}",
+                    "MODERN_CONFIG=debug", "FE8_PROJECT=default", "MODERN_DRY_RUN=1", "NODEP=1",
+                    f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            context = json.loads((namespace / "selected-text-inputs.json").read_text())
+            units = {unit["logical_source"]: unit for unit in context["units"]}
+            self.assertEqual(units["src/fontgrp-data.c"]["compiler_argv"][0], str(compiler))
+            self.assertEqual(
+                units["src/data/localized_font_data.c"]["preprocessor_argv"][0], str(preprocessor),
+            )
+            self.assertFalse(executed.exists())
+
+    def test_native_data_dependencies_follow_target_specific_tools(self):
+        if host_only_enabled() or shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("native data tool dependency proof belongs to the target lane")
+        from scripts.localization.game_catalog.compiled_fonts import _ArmObject
+
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-tool-inputs-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            namespace = output / "debug/aapcs"
+            object_path = namespace / "src/data/localized_font_data.o"
+            dependency = object_path.with_suffix(".assets.d")
+            preprocessor = self.project / "selected-preprocessor"
+            scanner = self.project / "selected-scanner"
+            makefile = self.project / "tool-inputs.mk"
+            makefile.write_text(
+                "include Makefile\n"
+                f"{object_path.with_suffix('.pre.c')}: private MODERN_PREPROC := {preprocessor}\n"
+                f"{dependency}: private MODERN_SCANINC := {scanner}\n",
+                encoding="ascii",
+            )
+            command = [
+                "make", "--no-print-directory", "-f", str(makefile), "NODEP=1",
+                f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en", f"PYTHON={sys.executable}",
+            ]
+            for version in (14, 15):
+                with self.subTest(preprocessor_version=version):
+                    preprocessor.write_text(
+                        f"#!{sys.executable}\n"
+                        "import os, sys\n"
+                        f"sys.stdout.write('const unsigned int gPrivatePreprocessorVersion = {version};\\n')\n"
+                        "sys.stdout.flush()\n"
+                        f"os.execv({str(ROOT / 'tools/preproc/preproc')!r}, "
+                        f"[{str(ROOT / 'tools/preproc/preproc')!r}, *sys.argv[1:]])\n",
+                        encoding="ascii",
+                    )
+                    preprocessor.chmod(0o755)
+                    built = subprocess.run(
+                        [*command, str(object_path)], cwd=ROOT,
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    native = _ArmObject(object_path)
+                    self.assertEqual(int.from_bytes(native.symbol_bytes(
+                        native.symbol("gPrivatePreprocessorVersion"),
+                    ), "little"), version)
+            for version in (14, 15):
+                with self.subTest(scanner_version=version):
+                    asset = self.project / f"scanner-input-{version}.bin"
+                    asset.write_bytes(bytes((version,)))
+                    scanner.write_text(
+                        f"#!{sys.executable}\n"
+                        "import os, subprocess, sys\n"
+                        f"result = subprocess.run([{str(ROOT / 'tools/scaninc/scaninc')!r}, "
+                        "*sys.argv[1:]], check=True, stdout=subprocess.PIPE)\n"
+                        "sys.stdout.buffer.write(result.stdout)\n"
+                        f"sys.stdout.buffer.write({os.fsencode(str(asset))!r} + b'\\n')\n",
+                        encoding="ascii",
+                    )
+                    scanner.chmod(0o755)
+                    built = subprocess.run(
+                        [*command, str(dependency)], cwd=ROOT,
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    self.assertIn(str(asset), dependency.read_text())
+
     def test_native_text_context_records_actual_recipes_without_catalog(self):
         build = ROOT / "build"
         build.mkdir(exist_ok=True)

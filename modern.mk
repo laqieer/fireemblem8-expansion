@@ -979,10 +979,9 @@ $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 
 .SECONDEXPANSION:
 MODERN_TEXT_NATIVE_MAKE := $(MAKE)
-MODERN_TEXT_NATIVE_MAKEFILE := $(firstword $(MAKEFILE_LIST))
 # Keep C target scopes, but do not enter recursive non-C/link preparation.
 modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n -B \
-	-f "$(MODERN_TEXT_NATIVE_MAKEFILE)" NODEP=1 MODERN_DRY_RUN=1 \
+	NODEP=1 MODERN_DRY_RUN=1 \
 	$(foreach makefile,$(MAKEFILE_LIST),-o "$(makefile)") \
 	-o expansion-modern-toolchain-check -o expansion-modern-link-prepare \
 	-o "$(MODERN_MGFEMBP_PAYLOAD)" -o "$(MODERN_PREPROC)" \
@@ -996,7 +995,6 @@ $(MODERN_TEXT_COMPILE_CONTEXT): FORCE
 	@mkdir -p "$(@D)"
 	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
 		--output "$@" \
-		--compiler "$(MODERN_CC)" --preprocessor "$(MODERN_PREPROC)" \
 		--invoker-pid "$(shell echo $$PPID)" \
 		--invoker-goals "$(MAKECMDGOALS)" \
 		-- $(modern_text_native_plan) _expansion-modern-text-object-plan
@@ -1303,7 +1301,7 @@ $(MODERN_OUTPUT_DIR)/%.o: %.s
 # top-level Makefile's own generation rules (e.g. %.4bpp: %.png) before
 # preproc is ever invoked, on the very first invocation -- rather than
 # preproc failing hard on the first unresolved INCBIN it hits.
-$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $(MODERN_PREPROC)
+$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $$(MODERN_PREPROC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_PREPROC)" ]; then \
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
@@ -1492,7 +1490,7 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 	' _
   FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
 endif
-$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $(MODERN_SCANINC)
+$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $$(MODERN_SCANINC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_SCANINC)" ]; then \
 		printf '%s\n' "error: modern scaninc not found or not executable: $(MODERN_SCANINC)" >&2; \
@@ -4900,6 +4898,9 @@ ifeq ($(MODERN_CONFIG),debug)
 		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
 		"$(PYTHON)" -m unittest \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_context_records_actual_recipes_without_catalog \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_context_keeps_implicit_makefile_with_preloaded_input \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_context_captures_target_specific_native_tools \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_data_dependencies_follow_target_specific_tools \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_public_build_entrypoints_capture_only_c_without_execution \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_metrics_read_selected_private_font_objects \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_warm_presplit_dependencies_use_rebuilt_font_metrics \

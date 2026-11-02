@@ -81,6 +81,13 @@ pre-split payload/font cycles without discarding real dependencies or requiring
 a global clean.
 Capture still evaluates trusted project Makefiles; it is not an OS sandbox
 for arbitrary authored Make expressions.
+Implicit main Makefiles use GNU Make's normal discovery even with preloaded
+`MAKEFILES`; explicit entrypoints still replay in their actual order.
+The canonical selected outputs identify compiler/preprocessor recipes, so each
+unit records its actual target-scoped tool, not a global program-name match.
+The CLI's older global tool options remain compatibility hints only.
+Data preprocessing and asset-dependency products depend on the actual
+target-scoped preprocessor/scanner files, including changes at the same path.
 With no explicit goals, capture traverses the actual `.DEFAULT_GOAL` while
 retaining empty `MAKECMDGOALS` for caller conditionals. Native link targets
 report their own selected linker, including private and inherited settings;
