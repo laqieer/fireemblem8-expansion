@@ -6,6 +6,12 @@
 #include "chapterdata.h"
 #include "m4a.h"
 
+#ifdef GRADO_NATIVE_SOURCE_OWNER
+#define GradoNativeMapCH00 PrologueMap
+#define GradoNativeMapCH02 Ch2Map
+#define GradoNativeTileConfig TileConfiguration5
+#endif
+
 extern const u8 GradoNativeMapCH00[];
 extern const u8 GradoNativeMapCH02[];
 extern const u8 GradoNativeTileConfig[];

@@ -29,6 +29,27 @@ class GradoVisualNativeTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def build_native_owner(self, work, tools, chapter_input):
+        work.mkdir()
+        output = work / "native"
+        target = output / "debug/aapcs/src/data/const_data_chapter_maps.o"
+        entrypoint = work / "native.mk"
+        entrypoint.write_text(
+            "include Makefile\n"
+            + "MODERN_PREPROC_FLAGS += "
+            + json.dumps("-Rgraphics/map/layout/PrologueMap.bin.lz=" + str(chapter_input)) + "\n"
+            + str(target.with_suffix(".pre.c")) + ": " + str(chapter_input) + "\n"
+            + "include " + str(target.with_suffix(".assets.d")) + "\n",
+            encoding="ascii",
+        )
+        self.run_command([
+            "make", "--no-print-directory", "-f", entrypoint, "-j2", target,
+            "NODEP=1", "FE8_PROJECT=default", "MODERN_BUILD_ROOT=" + str(output),
+            "ASSET_MANIFEST=examples/restoration-of-grado/assets/manifest.json",
+            "PYTHON=" + sys.executable, "MODERN_CC=" + tools["MODERN_CC"],
+        ], cwd=ROOT)
+        return target
+
     def test_native_map_binding_and_terrain_consumers(self):
         tools = _selected_tools(os.environ)
         paths = {
@@ -167,7 +188,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ]
             expected_terrain = [[0x1A, 0x17, 0x1F, 0x1D, 0x2D], [0x1A, 2, 0x1E, 0x1F, 0x17]]
             observed = {}
-            for compression, unscaled in itertools.product(("raw", "lz77"), (False, True)):
+            for compression, unscaled in itertools.product(("raw", "lz77", "native-owner"), (False, True)):
                 payloads = [bytearray(data) for data in binaries]
                 if unscaled:
                     for index in range(2, len(payloads[0]), 2):
@@ -175,10 +196,14 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         payloads[0][index:index + 2] = value.to_bytes(2, "little")
                 assembly = work / "native_inputs.S"
                 lines = []
-                for name, payload in (
+                payload_paths = {}
+                native_payloads = (
                     ("GradoNativeMapCH00", payloads[0]), ("GradoNativeMapCH02", payloads[1]),
                     ("GradoNativeTileConfig", config),
-                ):
+                )
+                if compression == "native-owner":
+                    native_payloads = native_payloads[:1]
+                for name, payload in native_payloads:
                     if compression == "raw":
                         path = work / (name + ".raw")
                         path.write_bytes(struct.pack("<I", (len(payload) + 4) << 8) + payload)
@@ -190,22 +215,39 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                             os.environ.get("GBAGFX", str(ROOT / "tools/gbagfx/gbagfx")),
                             source, path,
                         ], cwd=ROOT)
+                    payload_paths[name] = path
                     lines.extend((
                         f'.section .rodata.{name}, "a", %progbits', ".balign 4",
                         f".global {name}", f"{name}:", f".incbin {json.dumps(str(path))}",
                     ))
-                assembly.write_text("\n".join(lines) + "\n", encoding="ascii")
-                inputs = work / "native_inputs.o"
-                self.run_command([
-                    tools["MODERN_CC"], *driver_flags, "-mcpu=arm7tdmi",
-                    "-c", assembly, "-o", inputs,
-                ], cwd=ROOT)
+                selected_objects = objects
+                if compression == "native-owner":
+                    inputs = self.build_native_owner(
+                        work / ("owner" + str(int(unscaled))), tools, payload_paths["GradoNativeMapCH00"],
+                    )
+                    selected_fixture = work / "source_owner_fixture.o"
+                    if not selected_fixture.exists():
+                        self.run_command([
+                            tools["MODERN_CC"], *flags, "-DGRADO_NATIVE_SOURCE_OWNER=1",
+                            "-c", fixture, "-o", selected_fixture,
+                        ], cwd=ROOT)
+                    selected_objects = [
+                        selected_fixture if value.name == "grado_map_native.o" else value
+                        for value in objects
+                    ]
+                else:
+                    assembly.write_text("\n".join(lines) + "\n", encoding="ascii")
+                    inputs = work / "native_inputs.o"
+                    self.run_command([
+                        tools["MODERN_CC"], *driver_flags, "-mcpu=arm7tdmi",
+                        "-c", assembly, "-o", inputs,
+                    ], cwd=ROOT)
                 elf, rom = work / "module.elf", work / "module.gba"
                 self.run_command([
                     tools["MODERN_CC"], *driver_flags, *library_flags,
                     "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-mabi=aapcs",
                     "-nostartfiles", "-Wl,--gc-sections", "-Wl,--no-undefined",
-                    "-Wl,-T," + str(linker), *objects, inputs,
+                    "-Wl,-T," + str(linker), *selected_objects, inputs,
                     "-lc", "-lnosys", "-lgcc", "-o", elf,
                 ], cwd=work)
                 empty_data = (

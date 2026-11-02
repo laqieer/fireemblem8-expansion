@@ -13,7 +13,7 @@ The binary MAR and its JSON live under `graphics/map/layout/grado`, the
 existing permitted source-asset root; the project manifest binds them there.
 The tracked-artifact guard remains unchanged and is not waived by a manifest.
 
-The real Fort family `3c003d3e` selects native asset slots60/61/62:
+The real Fort family `3c003d3e` selects native asset slots 60/61/62:
 `ObjectType5`, `MapPalette7`, `TileConfiguration5`. One creator metatile
 occupies four u16 configuration entries. Consequently safe TMX uses
 `4 * creator_tile + 1`, MAR uses `32 * creator_tile`, and the existing
@@ -21,8 +21,8 @@ occupies four u16 configuration entries. Consequently safe TMX uses
 that value right2; copying creator tile numbers directly would select the
 wrong configuration/terrain.
 
-Each converted map contains386bytes (two dimension bytes plus192 u16
-entries), within the existing2,048-byte map buffer. This is generated-format
+Each converted map contains 386 bytes (two dimension bytes plus 192 u16
+entries), within the existing 2,048-byte map buffer. This is generated-format
 evidence, not proof of correct units, routes, collision, graphics or effects.
 CH02 retains the existing `Ch2Map` generated consumer identity. CH00's
 `PrologueMap` slot still needs its project consumer selection; selecting this
@@ -47,12 +47,12 @@ this source-only case. Use ordinary generated output under
    immutable committed revision.
 2. The test generates the selected manifest through the public asset command
    and converts both MAR inputs with the original `scripts/mar_to_map.py`.
-   Inspect native dimensions16x12, total386bytes, four-entry alignment and
+   Inspect native dimensions 16x12, total 386 bytes, four-entry alignment and
    the independently worked source samples, including CH00 altar/stair and CH02
    road/door/dais positions.
 3. Generate default then Grado again in that same owned output directory
-   without cleaning. The actual default CH02 map is15x15 with initial native
-   value520; selected Grado is16x12 with initial native value2604.
+   without cleaning. The actual default CH02 map is 15x15 with initial native
+   value 520; selected Grado is 16x12 with initial native value 2604.
    No stale selected geometry may leak into the default or next selection.
 
 **Controls:** absent source input fails explicitly. Omitting the creator
@@ -87,20 +87,35 @@ The owned fixture supplies only native chapter/table inputs. Original
 `GetChapterMapPointer`, `UnpackChapterMap`, `InitBaseTilesBmMap`,
 `GetTrueTerrainAt` and BIOS copy/decode execute against the actual generated
 maps and assembled Fort configuration. Both maps must bind their declared
-table slots, decode16x12 and report the worked native values and real
+table slots, decode 16x12 and report the worked native values and real
 wall/floor/throne/pillar/stair/road/door terrain. The CH00 `(12,1)` sample is
 `TERRAIN_STAIRS`, not the adjacent northern door. Unexpected SRAM/extra-map/
 audio paths trap with an explicit failing phase, never success stubs.
 
 The unscaled-data control reaches the same consumers and completion but
-reports426/499/623/719/452 and terrain1/0/0/1/0 for CH00, not the correct
+reports 426/499/623/719/452 and terrain 1/0/0/1/0 for CH00, not the correct
 configuration/terrain; CH02 remains correct. The test captures actual ROM/
 EWRAM/IWRAM sizes and retains module resource limits. Repeat both positive
 and unscaled inputs as owned type0 and actual gbagfx-produced GBA LZ77
 carriers for maps and Fort configuration. The original decode/BIOS consumers
-must produce the same native records from both formats. These are isolated
-native carrier inputs, not selected production C/incbin owners, a game
-profile, movement, palette or visual qualification.
+must produce the same native records from both formats.
+
+The source-owner subcase also compiles the original
+`src/data/const_data_chapter_maps.c` through its public native Make target,
+preprocessor and real `INCBIN_U8` sources, including only that owner's
+canonical generated dependency fragment. The fixture's existing `-R`
+preprocessor remap selects the owned CH00 carrier and declares it as an
+input; CH02 uses the manifest's existing generated path. Native readers
+consume the original `PrologueMap`, `Ch2Map` and `TileConfiguration5`
+symbols directly. The same correct/unscaled semantics must hold. Without
+the fixture remap, the actual original CH00 owner remains 15x10, not the
+selected 16x12 derivative.
+
+This proves actual C/incbin producer integration, not activation of a
+supported project: chapter/table inputs and the remap entrypoint remain
+owned by the isolated module. The manifest alone still does not select
+CH00 or change its native tileset settings. A game profile, movement,
+palette/rendering and visual qualification remain open.
 
 **Not yet qualified:** selected production map/palette/movement/coordinate
 consumers, real target screenshots, required early portrait packages,
