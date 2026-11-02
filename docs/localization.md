@@ -65,6 +65,9 @@ and remains an explicit build failure; no global serialization or new lock
 is used.
 The same success-only rule holds with `.ONESHELL`: recipe-local fail-fast
 handling prevents a successful rename from masking a compiler refusal.
+The SIO assembler's payload-directory change is confined to its compiler
+subshell. Filtering and publication retain the repository working directory
+for both absolute and relative build roots in either shell mode.
 The plan traverses the actual original goals before completing its selected
 inventory, so inherited target-specific scopes are evaluated by GNU Make,
 not approximated by a goal-name variable or a second variable snapshot.

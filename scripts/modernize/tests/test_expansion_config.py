@@ -12,6 +12,7 @@ early, actionable rejection of invalid inputs and incompatible
 combinations before any file is written).
 """
 
+import itertools
 import json
 import os
 import re
@@ -431,21 +432,22 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             selected.write_text("".join(
                 f'#include "native_{index:03}.h"\n' for index in range(160)
             ))
-            for slot, fails, oneshell in (
-                ("src/bmunit.o", False, False), ("src/data/data_8B363C.o", False, False),
-                ("asm/arm_call.o", False, False), ("src/bmunit.o", True, False),
-                ("asm/fe6sio.o", False, False), ("asm/fe6sio.o", True, False),
-                ("asm/arm_call.o", True, False), ("src/bmunit.o", False, True),
-                ("asm/arm_call.o", False, True), ("src/bmunit.o", True, True),
-                ("asm/arm_call.o", True, True),
+            for slot, fails, oneshell, relative in itertools.product(
+                ("src/bmunit.o", "src/data/data_8B363C.o", "asm/arm_call.o", "asm/fe6sio.o"),
+                (False, True), (False, True), (False, True),
             ):
-                with self.subTest(slot=slot, compiler_failure=fails, oneshell=oneshell):
+                with self.subTest(
+                    slot=slot, compiler_failure=fails, oneshell=oneshell, relative_build_root=relative,
+                ):
                     work = temporary / (
                         slot.replace("/", "-") + ("-failure" if fails else "")
                         + ("-oneshell" if oneshell else "")
+                        + ("-relative" if relative else "-absolute")
                     )
                     work.mkdir()
                     output = work / "native"
+                    if relative:
+                        output = output.relative_to(ROOT)
                     object_path = output / "debug/aapcs" / slot
                     ready, done = work / "ready", work / "done"
                     os.mkfifo(ready)
@@ -519,6 +521,11 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                             f"MODERN_MGFEMBP_PAYLOAD={payload}",
                             "--old-file=" + str(payload),
                         ))
+                        if relative:
+                            arguments.append(
+                                f"MODERN_MGFEMBP_BUILDER={sys.executable} "
+                                + str(ROOT / "scripts/modernize/build_mgfembp.py")
+                            )
                     built = raw.run_process(
                         [*arguments, str(object_path), f"PYTHON={sys.executable}",
                          f"MODERN_CC={compiler}"],
@@ -537,7 +544,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                     )
                     facts = json.loads(observed.read_text())
                     self.assertTrue(facts["complete"])
-                    self.assertNotEqual(Path(facts["requested_mf"]), dependency)
+                    self.assertNotEqual(Path(facts["requested_mf"]).resolve(), dependency.resolve())
                     self.assertEqual(dependency.read_bytes(), before)
                     if fails:
                         self.assertEqual(raced.returncode, 2)

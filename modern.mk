@@ -2645,13 +2645,13 @@ $(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
 	*) cc=$$(command -v "$$cc" 2>/dev/null) || { \
 		printf '%s\n' "error: cannot resolve modern CC: $(MODERN_CC)" >&2; \
 		exit 1; } ;; esac; \
-	cd "$(abspath $(MODERN_MGFEMBP_DIR))" && \
+	(cd "$(abspath $(MODERN_MGFEMBP_DIR))" && \
 	"$$cc" \
 		$(MODERN_DRIVER_FLAGS) $(MODERN_ARCH_FLAGS) \
 		-I"$(CURDIR)/include" -I"$(CURDIR)" \
 		$(MODERN_ABI_FLAGS) \
 		-Wa,--MD,"$(abspath $(@:.o=.d)).tmp" \
-		-c "$(CURDIR)/$<" -o "$(abspath $@)"
+		-c "$(CURDIR)/$<" -o "$(abspath $@)")
 	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(abspath $(@:.o=.d)).tmp"
 	@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
 

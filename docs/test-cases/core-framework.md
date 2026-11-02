@@ -63,8 +63,12 @@ capture under `-j2`, synchronizing their real dependency output between
 flushes. Replay must succeed using complete dependencies and every selected
 C compiler command must stage its dependency output. A refused compiler
 remains an explicit error and preserves the previous good dependency.
-Repeat C/GAS success and refusal with `.ONESHELL`; successful publication
-must never mask the compiler's failure status.
+Exercise ordinary C, preprocessed C, GAS and filtered SIO with both absolute
+and relative build roots, standard recipes and `.ONESHELL`, and compiler
+success/refusal. All32 combinations preserve the old complete dependency
+until successful publication; successful rename must never mask refusal.
+The SIO compiler's directory change must not escape into filtering or
+publication, including the default relative filter-helper command.
 Generated/reinstated/synthetic/locale/catalog C owners use the same publisher;
 assembler and filtered SIO outputs publish only after their successful
 producer/filter. No dependency edge is removed or whole build serialized.
