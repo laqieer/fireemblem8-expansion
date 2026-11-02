@@ -2379,12 +2379,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         if _contains_command(extended_host, duplicate):
             errors.append(f"extended host repeats Build-owned evidence: {duplicate}")
 
-    for command in (
-        "scripts.localization.game_locales check-crosswalk",
-        "scripts.localization.game_locales check-raw-closure",
-    ):
-        if not _contains_command(jobs["host-tests"], command):
-            errors.append(f"candidate host lost Build-owned evidence: {command}")
     for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
         if not _contains_exact_command(
             jobs["host-tests"],
@@ -2422,6 +2416,37 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append("candidate host execution defaults must not alter pilot gates")
 
     legacy = jobs["legacy"]
+    width_steps = [
+        step for step in _step_blocks(legacy)
+        if _step_name(step) == "Run full-game localization width contract (issue #18)"
+    ]
+    if len(width_steps) != 1 or not _run_step_is_exact(
+        width_steps[0],
+        "Run full-game localization width contract (issue #18)",
+        (
+            "make game-localization-test",
+            "python3 -m scripts.localization.game_locales check",
+            "python3 -m scripts.localization.game_locales check-crosswalk",
+            "python3 -m scripts.localization.game_locales check-raw-closure",
+        ),
+        if_expression=FULL_WORKER_STEP_CONDITION,
+    ):
+        errors.append("independent host worker lost exact full-game evidence")
+    host_setup = [
+        step for step in _step_blocks(legacy)
+        if _step_name(step) == "Install host-only dependencies (no arm-none-eabi toolchain)"
+    ]
+    if len(host_setup) != 1 or not _run_step_is_exact(
+        host_setup[0],
+        "Install host-only dependencies (no arm-none-eabi toolchain)",
+        (
+            "sudo apt-get update && sudo apt-get install -y "
+            "build-essential libmgba-dev python3-venv",
+            "/usr/bin/python3 -I scripts/host_python.py create",
+        ),
+        if_expression=FULL_WORKER_STEP_CONDITION,
+    ):
+        errors.append("independent full-game worker host bootstrap differs")
     for command in ("make legacy -j2", "make -C mgfembp compare"):
         if not _contains_command(legacy, command):
             errors.append(f"legacy job lost unique evidence: {command}")
@@ -5835,6 +5860,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
         )
         self.assertEqual(setup["if"], reporter["if"])
+        legacy = next(steps for name, _, steps in jobs if name == "legacy")
+        full_game_setup = next(dict(fields) for _, name, fields in legacy if name == setup_name)
+        self.assertEqual(full_game_setup, setup)
+        legacy_names = [name for _, name, _ in legacy]
+        self.assertLess(
+            legacy_names.index("Run full-game localization width contract (issue #18)"),
+            legacy_names.index("Install archival build dependencies"),
+        )
         for changed in (
             self.text.replace(
                 "        /usr/bin/python3 -I scripts/host_python.py create\n", "", 1
@@ -5848,6 +5881,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "scripts/host_python.py create", "scripts/host_python.py check", 1
             ),
         ):
+            self.assertNotEqual(changed, self.text)
+            self.assertTrue(_errors(changed, False))
+        prefix, legacy_body = self.text.split("  legacy:\n", 1)
+        for changed_body in (
+            legacy_body.replace("libmgba-dev python3-venv", "libmgba-dev", 1),
+            legacy_body.replace(
+                "scripts/host_python.py create", "scripts/host_python.py check", 1,
+            ),
+            legacy_body.replace(
+                "make game-localization-test", "make game-localization-test || true", 1,
+            ),
+            legacy_body.replace(
+                "        python3 -m scripts.localization.game_locales check-raw-closure\n",
+                "", 1,
+            ),
+        ):
+            changed = prefix + "  legacy:\n" + changed_body
             self.assertNotEqual(changed, self.text)
             self.assertTrue(_errors(changed, False))
 

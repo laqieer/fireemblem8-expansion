@@ -1015,18 +1015,6 @@ jobs:
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
 
-    # The full-game payload has a separate source format from the expansion
-    # catalog. Its test target includes the typed rendered-width registry,
-    # metrics-aware generated-break validation, and native text consumer
-    # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
-    - name: Run full-game localization width contract (issue #18)
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: |
-        make game-localization-test
-        python3 -m scripts.localization.game_locales check
-        python3 -m scripts.localization.game_locales check-crosswalk
-        python3 -m scripts.localization.game_locales check-raw-closure
-
   # Ubuntu libmGBA ROM/runtime gate: builds the full modern object/ELF/ROM
   # chain for both supported configs (debug, release; AAPCS only -- see
   # docs/config_identity.md), checks deterministic memory budgets, rejects
@@ -1620,8 +1608,9 @@ jobs:
         python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v
         python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v
 
-  # The archival lane is a combined-gate member for both candidate and master
-  # runs, parallel with the supported modern jobs.
+  # Independent full-game host checks use this existing worker's headroom,
+  # before archival tools or artifacts can alter their host-only environment.
+  # Both gate groups remain required for candidate and master.
   legacy:
     needs: [event-identity, event-classifier]
     if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
@@ -1645,6 +1634,20 @@ jobs:
         ACTUAL_SHA="$(git rev-parse HEAD)"
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+
+    - name: Install host-only dependencies (no arm-none-eabi toolchain)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: |
+        sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev python3-venv
+        /usr/bin/python3 -I scripts/host_python.py create
+
+    - name: Run full-game localization width contract (issue #18)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: |
+        make game-localization-test
+        python3 -m scripts.localization.game_locales check
+        python3 -m scripts.localization.game_locales check-crosswalk
+        python3 -m scripts.localization.game_locales check-raw-closure
 
     - name: Install archival build dependencies
       run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev pkg-config python3-pip python3-numpy python3-pil
