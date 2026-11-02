@@ -134,9 +134,22 @@ save, credentials or manual judgment.
 The same native corpus exercises all14 public one-hot fields and all8 stored
 counter bindings using independent source-domain bounds, not descriptor
 metadata. Every legal value round-trips; zero is `UNSET` for one-hot and
-valid for counters. All31 choice/direction backing views agree across their
-full domains, and all4 retirement facts refuse clearing. An upper-bound
-write preserves both complete native arrays.
+valid for counters. All34 choice/direction/transition backing views agree
+with their native values, refuse corrupt input and remain read-only.
+Exercise all16 native direction/ending bit patterns and all8 private
+transition patterns: unset semantic direction/ending preserves the output
+guard, unset Boolean views are false, valid one-hot values project exactly,
+and every multi-bit pattern refuses without exposing a default ending or
+partial alias truth. After every read/refusal, compare both complete native
+arrays immediately; do not let later fixture preparation hide a write.
+All4 retirement facts refuse clearing. An upper-bound write preserves both
+complete native arrays.
+
+The four one-variable wrong-transition-target, unset-ending-default,
+corrupt-ending-default and corrupt-transition-default controls compile and
+survive the earlier corpus but abort in this native probe. These are actual
+projection/guard controls, not source-spelling assertions or whole-suite
+results relabelled as target-ROM evidence.
 
 The owning source inventory is the accepted state register in
 [Design main](https://github.com/laqieer/Restoration_of_Grado-Design/blob/578bcc136581c52c537f0cacb0591cb840626e89/docs/06_technical/EVENT_FLAGS_AND_STATE_FLOW.md).

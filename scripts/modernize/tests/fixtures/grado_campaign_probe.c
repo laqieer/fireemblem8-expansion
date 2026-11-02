@@ -8,6 +8,7 @@
 #include "bm.h"
 #include "eventinfo.h"
 #include "grado_campaign_state.h"
+#include "grado_state_internal.h"
 
 u8 gChapterFlagBits[5];
 u8 gPermanentFlagBits[25];
@@ -267,6 +268,34 @@ int GetUnitItemSlot(struct Unit * unit, int item)
     abort();
 }
 
+static void CheckSymbolRead(enum GradoStateSymbol symbol, unsigned int chapter,
+    enum GradoStateValueResult expectedResult, u16 expectedValue)
+{
+    u8 permanent[25];
+    u8 local[5];
+    u16 value;
+
+    memcpy(permanent, gPermanentFlagBits, sizeof(permanent));
+    memcpy(local, gChapterFlagBits, sizeof(local));
+    value = 0xBEEF;
+    assert(GradoState_ReadSymbol(symbol, chapter, &value) == expectedResult);
+    assert(value == expectedValue);
+    assert(memcmp(permanent, gPermanentFlagBits, sizeof(permanent)) == 0);
+    assert(memcmp(local, gChapterFlagBits, sizeof(local)) == 0);
+}
+
+static void CheckReadOnlyWrite(enum GradoStateSymbol symbol, unsigned int chapter)
+{
+    u8 permanent[25];
+    u8 local[5];
+
+    memcpy(permanent, gPermanentFlagBits, sizeof(permanent));
+    memcpy(local, gChapterFlagBits, sizeof(local));
+    assert(GradoState_WriteSymbol(symbol, chapter, 0xBEEF) == GRADO_STATE_VALUE_READ_ONLY);
+    assert(memcmp(permanent, gPermanentFlagBits, sizeof(permanent)) == 0);
+    assert(memcmp(local, gChapterFlagBits, sizeof(local)) == 0);
+}
+
 static void CheckRescueSubsets(void)
 {
     const unsigned int counts[] = {0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4};
@@ -429,7 +458,6 @@ static void CheckTypedDomains(void)
     unsigned int expected;
     unsigned int alias;
     u16 value;
-    u16 selected;
 
     for (i = 0; i < sizeof(domains) / sizeof(domains[0]); ++i)
     {
@@ -458,9 +486,9 @@ static void CheckTypedDomains(void)
             }
             for (alias = 0; alias < domains[i].aliasCount; ++alias)
             {
-                assert(GradoState_ReadSymbol(domains[i].aliases[alias], domains[i].chapter,
-                    &selected) == GRADO_STATE_VALUE_VALID);
-                assert(selected == (expected == alias + 1));
+                CheckSymbolRead(domains[i].aliases[alias], domains[i].chapter,
+                    GRADO_STATE_VALUE_VALID, expected == alias + 1);
+                CheckReadOnlyWrite(domains[i].aliases[alias], domains[i].chapter);
             }
         }
         memcpy(permanent, gPermanentFlagBits, sizeof(permanent));
@@ -469,6 +497,24 @@ static void CheckTypedDomains(void)
             domains[i].maximum + 1) == GRADO_STATE_VALUE_RANGE);
         assert(memcmp(permanent, gPermanentFlagBits, sizeof(permanent)) == 0);
         assert(memcmp(chapter, gChapterFlagBits, sizeof(chapter)) == 0);
+        if (domains[i].oneHot)
+        {
+            assert(GradoState_WriteSymbol(domains[i].symbol, domains[i].chapter, 1)
+                == GRADO_STATE_VALUE_VALID);
+            memcpy(permanent, gPermanentFlagBits, sizeof(permanent));
+            assert(GradoState_WriteSymbol(domains[i].symbol, domains[i].chapter,
+                domains[i].maximum) == GRADO_STATE_VALUE_VALID);
+            for (alias = 0; alias < sizeof(permanent); ++alias)
+                gPermanentFlagBits[alias] |= permanent[alias];
+            CheckSymbolRead(domains[i].symbol, domains[i].chapter,
+                GRADO_STATE_VALUE_CORRUPT, 0xBEEF);
+            for (alias = 0; alias < domains[i].aliasCount; ++alias)
+            {
+                CheckSymbolRead(domains[i].aliases[alias], domains[i].chapter,
+                    GRADO_STATE_VALUE_CORRUPT, 0xBEEF);
+                CheckReadOnlyWrite(domains[i].aliases[alias], domains[i].chapter);
+            }
+        }
     }
     for (i = 0; i < sizeof(retired) / sizeof(retired[0]); ++i)
     {
@@ -482,20 +528,74 @@ static void CheckTypedDomains(void)
     ResetChapterFlags();
 }
 
+static void CheckPackedProjection(unsigned int firstFlag, unsigned int bits,
+    const enum GradoStateSymbol * direct, unsigned int directCount,
+    const enum GradoStateSymbol * aliases, unsigned int aliasCount)
+{
+    const u16 decoded[] = {
+        0, 1, 2, 0xFFFF, 3, 0xFFFF, 0xFFFF, 0xFFFF,
+        4, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
+    };
+    enum GradoStateValueResult result;
+    unsigned int mask;
+    unsigned int bit;
+    unsigned int i;
+    u16 value;
+
+    for (mask = 0; mask < (1u << bits); ++mask)
+    {
+        ResetPermanentFlags();
+        memset(gChapterFlagBits, 0xA6, sizeof(gChapterFlagBits));
+        for (bit = 0; bit < bits; ++bit)
+            if (mask & (1u << bit))
+                SetFlag(firstFlag + bit);
+        result = decoded[mask] == 0xFFFF ? GRADO_STATE_VALUE_CORRUPT
+            : mask == 0 ? GRADO_STATE_VALUE_UNSET : GRADO_STATE_VALUE_VALID;
+        value = result == GRADO_STATE_VALUE_VALID ? decoded[mask] : 0xBEEF;
+        for (i = 0; i < directCount; ++i)
+        {
+            CheckSymbolRead(direct[i], 21, result, value);
+            if (i != 0)
+                CheckReadOnlyWrite(direct[i], 21);
+        }
+        for (i = 0; i < aliasCount; ++i)
+        {
+            CheckSymbolRead(aliases[i], 21,
+                result == GRADO_STATE_VALUE_CORRUPT ? result : GRADO_STATE_VALUE_VALID,
+                result == GRADO_STATE_VALUE_CORRUPT ? 0xBEEF : decoded[mask] == i + 1);
+            CheckReadOnlyWrite(aliases[i], 21);
+        }
+    }
+    ResetPermanentFlags();
+    ResetChapterFlags();
+}
+
 int main(void)
 {
+    const enum GradoStateSymbol ending[] = {
+        GRADO_STATE_DIRECTION, GRADO_FLAG_FINAL_ENDING,
+    };
+    const enum GradoStateSymbol directions[] = {
+        GRADO_FLAG_CH18_DIR_CENTRAL, GRADO_FLAG_CH18_DIR_AUTONOMY,
+        GRADO_FLAG_CH18_DIR_FOREIGN, GRADO_FLAG_CH18_DIR_RECKONING,
+    };
+    const enum GradoStateSymbol transitions[] = {
+        GRADO_FLAG_CH18_TRANSITION_SMOOTH, GRADO_FLAG_CH18_TRANSITION_MIXED,
+        GRADO_FLAG_CH18_TRANSITION_CONFLICT,
+    };
     enum GradoStateValueResult result;
     u8 beforePermanent[25];
     u8 beforeChapter[5];
     u8 visited[GRADO_STATE_SYMBOL_COUNT] = {0};
     unsigned int symbol;
-    unsigned int direction;
     u16 value;
 
     assert(GradoState_ValidateCampaign() == GRADO_ALLOCATION_VALID);
     CheckRescueSubsets();
     CheckRetainedContinuity();
     CheckTypedDomains();
+    CheckPackedProjection(166, 4, ending, 2, directions, 4);
+    CheckPackedProjection(GRADO_INTERNAL_TRANSITION, 3, 0, 0, transitions, 3);
 
     assert(sizeof(sRequiredSymbols) / sizeof(sRequiredSymbols[0]) == 16 + 227);
     assert(sizeof(sRequiredSymbols) / sizeof(sRequiredSymbols[0]) == GRADO_STATE_SYMBOL_COUNT);
@@ -515,15 +615,6 @@ int main(void)
     assert(value == 1);
     assert(GradoState_ReadSymbol(GRADO_FLAG_CH02_CENTRAL, 3, &value) == GRADO_STATE_VALUE_VALID);
     assert(value == 0);
-    for (direction = 1; direction <= 4; ++direction)
-    {
-        assert(GradoState_WriteSymbol(GRADO_STATE_DIRECTION, 20, direction)
-            == GRADO_STATE_VALUE_VALID);
-        assert(GradoState_ReadSymbol(GRADO_FLAG_FINAL_ENDING, 21, &value)
-            == GRADO_STATE_VALUE_VALID);
-        assert(value == direction);
-    }
-
     assert(GradoState_RecordRescue(GRADO_RESCUE_CIV_02) == GRADO_STATE_VALUE_VALID);
     assert(GradoState_RecordRescue(GRADO_RESCUE_CIV_02) == GRADO_STATE_VALUE_VALID);
     assert(GradoState_RecordRescue(GRADO_RESCUE_CIV_04) == GRADO_STATE_VALUE_VALID);
@@ -565,16 +656,5 @@ int main(void)
     assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
     assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
 
-    SetFlag(139);
-    memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
-    value = 0xBEEF;
-    assert(GradoState_ReadSymbol(GRADO_STATE_LEGITIMACY, 17, &value)
-        == GRADO_STATE_VALUE_CORRUPT);
-    assert(value == 0xBEEF);
-    assert(GradoState_ReadSymbol(GRADO_FLAG_CH02_COUNCIL, 17, &value)
-        == GRADO_STATE_VALUE_CORRUPT);
-    assert(value == 0xBEEF);
-    assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
-    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
     return 0;
 }
