@@ -180,6 +180,10 @@ No ROM, emulator, save file, credentials or manual judgment is needed.
    every byte and the output guard. A later explicit valid write can replace
    those bytes; this is not permission for an automatic load-repair path.
    Valid accesses do not alter unrelated permanent/chapter storage.
+   Explicit one-hot zero writes clear an already selected value in ordinary
+   permanent, chapter-local and static-guide backing. Compare both complete
+   arrays with direct native clearing, then read `UNSET` without changing the
+   output guard or any backing byte.
 
 The absent pre-feature interface is a structural negative control, not
 target execution evidence. The actual host vectors supply the positive and
@@ -190,6 +194,8 @@ Removing the actual monotonic write guard still compiles, but the native
 probe aborts on the attempted clear; compiler failure is not that control.
 Hard-coding either guide policy also compiles, but the same native probe
 aborts on the opposite policy's read/write contract.
+Returning success without clearing a valid one-hot zero write compiles and
+survived the former vectors; the current native probe rejects that mutation.
 Alternative fixture descriptors are not a production physical assignment.
 The suites remove only their own temporary files. Default linking, the
 native buffers/envelope and framework epoch remain unchanged; complete

@@ -32,6 +32,9 @@ int main(void)
     const struct GradoStateField choice = {
         143, 3, GRADO_STATE_ONE_HOT, 3, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT
     };
+    const struct GradoStateField chapterChoice = {
+        7, 2, GRADO_STATE_ONE_HOT, 2, 3, GRADO_STATE_CHAPTER
+    };
     const struct GradoStateField bounded = {
         139, 3, GRADO_STATE_COUNTER, 3, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT
     };
@@ -63,6 +66,15 @@ int main(void)
         {{233, 3, GRADO_STATE_ONE_HOT, 3, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 3, 235},
         {{240, 2, GRADO_STATE_COUNTER, 3, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 2, 241},
         {{295, 1, GRADO_STATE_MONOTONIC, 1, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT}, 1, 295},
+    };
+    const struct
+    {
+        const struct GradoStateField * field;
+        enum GradoGuideStoragePolicy policy;
+    } oneHot[] = {
+        {&choice, GRADO_GUIDE_PROGRESSIVE},
+        {&chapterChoice, GRADO_GUIDE_PROGRESSIVE},
+        {&guide[1].field, GRADO_GUIDE_STATIC},
     };
     u8 beforePermanent[25];
     u8 expectedPermanent[25];
@@ -197,6 +209,29 @@ int main(void)
     assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
     assert(GradoState_ReadValue(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &value)
         == GRADO_STATE_VALUE_VALID && value == 3);
+
+    for (i = 0; i < sizeof(oneHot) / sizeof(oneHot[0]); ++i)
+    {
+        assert(GradoState_WriteValue(oneHot[i].field, oneHot[i].policy, 3,
+            oneHot[i].field->maxValue) == GRADO_STATE_VALUE_VALID);
+        memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        for (bit = 0; bit < oneHot[i].field->bitCount; ++bit)
+            ClearFlag(oneHot[i].field->firstFlag + bit);
+        memcpy(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent));
+        memcpy(expectedChapter, gChapterFlagBits, sizeof(expectedChapter));
+        memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
+        memcpy(gChapterFlagBits, beforeChapter, sizeof(beforeChapter));
+        assert(GradoState_WriteValue(oneHot[i].field, oneHot[i].policy, 3, 0)
+            == GRADO_STATE_VALUE_VALID);
+        assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+        assert(memcmp(expectedChapter, gChapterFlagBits, sizeof(expectedChapter)) == 0);
+        value = 0xBEEF;
+        assert(GradoState_ReadValue(oneHot[i].field, oneHot[i].policy, 3, &value)
+            == GRADO_STATE_VALUE_UNSET && value == 0xBEEF);
+        assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+        assert(memcmp(expectedChapter, gChapterFlagBits, sizeof(expectedChapter)) == 0);
+    }
 
     ClearFlag(147);
     memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
