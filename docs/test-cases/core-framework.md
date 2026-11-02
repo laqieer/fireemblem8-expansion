@@ -31,7 +31,7 @@ second registry, harness, generated-data schema, or project ruleset.
 3. Run the source-only declaration and measured-storage scenarios:
 
    ```bash
-   python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
+   python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_selects_and_validates_actual_linker_scopes scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
    ```
 
 4. Run `python3 -m unittest scripts.modernize.tests.test_save_compat_epoch_modern_build -v`.
@@ -55,6 +55,11 @@ and one plan. Compiler/preprocessor sentinels must not execute even for
 library discovery; assembly and unrelated non-C preparation remain outside
 the context. An ordinary dry profile request still invokes its recursive
 Make command with the real profile arguments.
+Private ELF and inherited ROM/link-check linker choices match the actual link
+scope. Repeated identical choices are valid; conflicting choices refuse
+without replacing a previous context. Non-linking plans retain their default
+linker. A real no-goal CJK parent retains empty `MAKECMDGOALS`, inherits
+changed widths 14/15 and rebuilds the measured native font data accordingly.
 
 Cold English/pseudo and CJK font/message consumers compile before a payload
 exists. Actual ARM objects show one generated CJK storage owner at the `0x1600`
@@ -64,6 +69,11 @@ private C-layout inputs change the floor.
 English remains exactly 4 KiB. An isolated declaration command needs only its
 message header, and a changed count changes the compiled declaration contract.
 A late fallback-header producer runs for cold and changed input counts.
+Request a payload after compiling its declaration consumer with a fallback
+header one entry larger than the unchanged stock English source. The actual
+source/header range mismatch must fail explicitly, preserve every declaration
+byte and keep its compiled count, without generating stock-bound fallback
+output. Valid selected-project message/header pairs still generate normally.
 An actual warm pre-split `.d`/`.headers.d` build consumes rebuilt font metrics
 for both full and bare old header edges, including an inherited parent with
 changed native compiler arguments. Only those obsolete edges disappear;

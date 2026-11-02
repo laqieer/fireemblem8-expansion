@@ -31,6 +31,41 @@ class CliTests(unittest.TestCase):
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
 
+    def test_native_context_selects_and_validates_actual_linker_scopes(self):
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            makefile = root / "scopes.mk"
+            output = root / "context.json"
+            for scopes, expected in (
+                ((), "global-linker"),
+                (("selected-linker", "selected-linker"), "selected-linker"),
+                (("selected-linker", "other-linker"), None),
+            ):
+                with self.subTest(scoped_linkers=scopes):
+                    makefile.write_text(
+                        ".PHONY: native-plan\nnative-plan:\n"
+                        "\tcc -c sample.c -o out/sample.o\n"
+                        "\t: fe8-selected-text-objects out out/sample.o\n"
+                        "\t: fe8-selected-text-data \n"
+                        "\t: fe8-selected-text-assembly \n"
+                        "\t: fe8-selected-text-linker-default global-linker\n"
+                        + "".join(f"\t: fe8-selected-text-linker {linker}\n" for linker in scopes),
+                        encoding="ascii",
+                    )
+                    before = output.read_bytes() if output.exists() else None
+                    result = run_cli([
+                        "describe-make-context", "--output", str(output),
+                        "--compiler", "cc", "--preprocessor", "pp",
+                        "--", "make", "--no-print-directory", "-n", "-f", str(makefile), "native-plan",
+                    ])
+                    if expected is None:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("conflicting linker scopes", result.stdout)
+                        self.assertEqual(output.read_bytes(), before)
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stdout)
+                        self.assertEqual(json.loads(output.read_text())["linker"], expected)
+
     def test_native_font_dependency_migration_preserves_real_make_edges(self):
         with self._tmpdir() as tmp:
             root = Path(tmp)

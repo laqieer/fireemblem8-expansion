@@ -81,6 +81,10 @@ pre-split payload/font cycles without discarding real dependencies or requiring
 a global clean.
 Capture still evaluates trusted project Makefiles; it is not an OS sandbox
 for arbitrary authored Make expressions.
+With no explicit goals, capture traverses the actual `.DEFAULT_GOAL` while
+retaining empty `MAKECMDGOALS` for caller conditionals. Native link targets
+report their own selected linker, including private and inherited settings;
+conflicting link selections fail rather than choosing an unrelated global.
 
 Compiler flags and identity consumers share one cached configuration resolver.
 The same locale and identity reach literal targets, public aliases and custom
@@ -91,7 +95,12 @@ requests do not acquire a new configuration prerequisite.
 `make expansion-modern-game-localization-declarations` emits
 `game_localization_declarations.h` from the selected project's message header
 (or the Make graph's late `TEXT_HEADER`, including its real producer) and enabled
-locales alone. It does not need payloads or fonts. Only the generated catalog
+locales alone. It does not need payloads or fonts. The payload and declaration
+writers share that same selected-header expression, so later
+payload generation cannot silently replace a consumer's declared count.
+An incompatible English-source/header range fails explicitly and preserves
+the declarations instead of generating stock-bound fallback output.
+Only the generated catalog
 owns the complete measured CJK `MsgBuffer`; other consumers use its incomplete
 type, preserved legacy prefix and exported capacity. The allocation owner derives
 that CJK capacity from `sizeof(sMsgString)`, not a duplicate Python floor.

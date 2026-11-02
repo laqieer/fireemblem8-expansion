@@ -511,7 +511,14 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
     selected = inventory("fe8-selected-text-objects")
     data_objects = set(inventory("fe8-selected-text-data"))
     assembly_objects = set(inventory("fe8-selected-text-assembly"))
-    linkers = inventory("fe8-selected-text-linker")
+    scoped_linkers = {
+        tuple(words(line)[2:]) for line in lines
+        if line.startswith(": fe8-selected-text-linker ")
+    }
+    if len(scoped_linkers) > 1:
+        raise GameCatalogError("native Make selected conflicting linker scopes")
+    linkers = (next(iter(scoped_linkers)) if scoped_linkers else
+               inventory("fe8-selected-text-linker-default"))
     if len(selected) < 2:
         raise GameCatalogError("native Make selected C inventory is empty")
     root, *objects = selected

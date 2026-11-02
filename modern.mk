@@ -1001,12 +1001,12 @@ $(MODERN_TEXT_COMPILE_CONTEXT): FORCE
 		--invoker-goals "$(MAKECMDGOALS)" \
 		-- $(modern_text_native_plan) _expansion-modern-text-object-plan
 
-_expansion-modern-text-object-plan: $$(filter-out expansion-modern-text-inputs $$(MODERN_TEXT_COMPILE_CONTEXT) _expansion-modern-text-object-plan,$$(MAKECMDGOALS)) \
+_expansion-modern-text-object-plan: $$(filter-out expansion-modern-text-inputs $$(MODERN_TEXT_COMPILE_CONTEXT) _expansion-modern-text-object-plan,$$(or $$(MAKECMDGOALS),$$(.DEFAULT_GOAL))) \
 	$$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)
 	@: fe8-selected-text-objects "$(MODERN_OUTPUT_DIR)" $(foreach object,$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS),"$(object)")
 	@: fe8-selected-text-data $(foreach object,$(MODERN_ALL_DATA_OBJECTS),"$(object)")
 	@: fe8-selected-text-assembly $(foreach object,$(sort $(MODERN_ALL_ASM_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_FE6SIO_OBJ)),"$(object)")
-	@: fe8-selected-text-linker "$(MODERN_LD)"
+	@: fe8-selected-text-linker-default "$(MODERN_LD)"
 
 $(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
@@ -2524,6 +2524,7 @@ $(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION \
 	@mkdir -p "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)"
 	@$(PYTHON) -m scripts.localization.game_catalog generate \
 		$(FE8_PROJECT_GAME_ARGS) \
+		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(TEXT_HEADER))" \
 		--compile-context "$(MODERN_TEXT_COMPILE_CONTEXT)" \
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
@@ -2790,6 +2791,8 @@ ifneq ($(MODERN_DRY_RUN),1)
 		-o "$@" \
 		-lc -lnosys -lgcc
 	@printf 'Linked modern ELF: %s\n' "$@"
+else
+	@: fe8-selected-text-linker "$(MODERN_LD)"
 endif
 
 expansion-modern-elf: expansion-modern-mgfembp expansion-modern-all \
@@ -4904,6 +4907,7 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_english_object_does_not_force_declarations \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_catalog_tracks_selected_raw_font_assets_for_direct_and_parent_goals \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_default_catalog_header_aliases_resolve_cjk_locales \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_payload_preserves_selected_declarations_on_source_mismatch \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cjk_fonts_bootstrap_without_payload_generation \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_regional_metrics_and_cross_slot_relocations_are_native \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_translation_and_mapping_use_the_real_engine_root \
