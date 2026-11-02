@@ -1000,6 +1000,8 @@ $(MODERN_TEXT_COMPILE_CONTEXT): FORCE
 	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
 		--output "$@" --sources-file "$@.sources" \
 		--compiler "$(MODERN_CC)" --preprocessor "$(MODERN_PREPROC)" \
+		--make-invocation "/proc/$(shell echo $$PPID)/cmdline" \
+		--invoker-goals "$(MAKECMDGOALS)" \
 		-- $(modern_text_native_plan) _expansion-modern-text-object-plan
 
 _expansion-modern-text-object-plan: $$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)
@@ -1914,7 +1916,13 @@ endif
 # over-length title) must not block `make expansion-modern-clean` -- clean
 # has to keep working precisely so a bad config's build tree can be
 # recovered from without hand-deleting it.
-MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOALS))
+MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOALS)) \
+	$(filter $(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS) \
+		$(MODERN_TEXT_COMPILE_CONTEXT) $(MODERN_GAME_LOCALIZATION_C) \
+		$(MODERN_GAME_LOCALIZATION_HEADER) $(MODERN_GAME_LOCALIZATION_CONFIG_H) \
+		$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+		$(MODERN_GAME_LOCALIZATION_REPORT_JSON) $(MODERN_GAME_LOCALIZATION_BUDGET_JSON),\
+		$(MAKECMDGOALS))
 MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out clean clean_fast clean_tools distclean expansion-modern-clean assets-clean,$(MAKECMDGOALS)),default))
 
 # Whether this invocation's MODERN_CFLAGS actually receives the
@@ -2512,7 +2520,8 @@ $(call modern_text_selected_source,$(MODERN_OUTPUT_DIR)/src/expansion_locale-cat
 # generated and linked only when the production profile enables real CJK.
 # Grouped outputs prevent parallel compiles from racing the deterministic
 # writer when the runtime headers and generated source are requested together.
-ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+$(MODERN_OUTPUT_DIR)/src/fontgrp.o: graphics/debug_font.4bpp.h
+
 .PHONY: expansion-modern-game-localization-declarations
 expansion-modern-game-localization-declarations: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
 
@@ -2526,6 +2535,7 @@ $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER): FORCE \
 $(MODERN_OUTPUT_DIR)/src/localized_game_text.o: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
 game_localization_declarations.h: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) ;
 
+ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
 .PHONY: FORCE_MODERN_GAME_LOCALIZATION
 FORCE_MODERN_GAME_LOCALIZATION:
 
@@ -4899,7 +4909,20 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
 ifeq ($(MODERN_CONFIG),debug)
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
+		-u GBA_PLAYTEST_HOST_ONLY \
+		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" \
+		MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+		MODERN_BINUTILS_DIR="$(MODERN_BINUTILS_DIR)" \
+		MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
+		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
 		"$(PYTHON)" -m unittest \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_context_records_actual_recipes_without_catalog \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_metrics_read_selected_private_font_objects \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cjk_fonts_bootstrap_without_payload_generation \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_regional_metrics_and_cross_slot_relocations_are_native \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_translation_and_mapping_use_the_real_engine_root \
+		scripts.localization.game_catalog.tests.test_modern_integration.ModernGameLocalizationIntegrationTests.test_modern_generation_passes_the_selected_catalog_profile \
+		scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \

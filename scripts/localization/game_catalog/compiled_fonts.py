@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import struct
 import subprocess
@@ -236,7 +235,6 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
     source = output_dir / "selected-font-layout.c"
     layout_path = output_dir / "selected-font-layout.o"
     source.write_text(
-        f'#include {json.dumps(str(source_root / renderer["compiler_input"]))}\n'
         "const unsigned int gSelectedTextGlyphLayout[] = {\n"
         "    sizeof(struct Glyph *), sizeof(struct Glyph),\n"
         "    __builtin_offsetof(struct Glyph, width), sizeof(((struct Glyph *)0)->width)\n"
@@ -252,6 +250,7 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
     command = list(renderer["compiler_argv"])
     command[command.index("-c") + 1] = str(source)
     command[-1] = str(layout_path)
+    command.extend(("-include", str(source_root / renderer["compiler_input"])))
     for index, argument in enumerate(command[:-1]):
         if argument in ("-MF", "-MQ", "-MT"):
             command[index + 1] = str(

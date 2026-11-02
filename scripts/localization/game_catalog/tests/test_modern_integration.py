@@ -1,20 +1,25 @@
 import json
+import os
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
 TEST_DIR = Path(__file__).resolve().parent
-BUILD_ROOT = TEST_DIR / ".modern-identity"
+BUILD_ROOT = ROOT / "build/test-game-localization-modern-identity"
+sys.path.insert(0, str(ROOT / "tools/gba-playtest/tests"))
+
+from host_mode import host_only_enabled  # noqa: E402
 
 
 class ModernGameLocalizationIntegrationTests(unittest.TestCase):
     def setUp(self):
         if BUILD_ROOT.exists():
             shutil.rmtree(BUILD_ROOT)
-        BUILD_ROOT.mkdir()
+        BUILD_ROOT.mkdir(parents=True)
 
     def tearDown(self):
         if BUILD_ROOT.exists():
@@ -69,6 +74,7 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
                 "MODERN_ROM_SIZE=32M",
                 f"MODERN_BUILD_ROOT={build_root}",
                 f"EXPANSION_ENABLED_LOCALES={enabled_locales}",
+                "EXPANSION_PSEUDO_LOCALE=" + str(int("qps-ploc" in enabled_locales.split(","))),
             ],
             cwd=ROOT,
             text=True,
@@ -142,6 +148,11 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
             qps_output,
         )
 
+    @unittest.skipIf(host_only_enabled(), "native catalog generation belongs to the ARM lane")
+    @unittest.skipUnless(
+        shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")),
+        "selected ARM compiler required",
+    )
     def test_modern_generation_passes_the_selected_catalog_profile(self):
         ja = self._generated_catalog_for("catalog-ja", "en,ja")
         zh = self._generated_catalog_for("catalog-zh", "en,zh-Hans")

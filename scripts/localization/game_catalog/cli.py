@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -312,6 +313,56 @@ def cmd_declare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _invocation_makefiles(path: Path) -> list[str]:
+    try:
+        arguments = [os.fsdecode(value) for value in path.read_bytes().split(b"\0") if value]
+    except OSError as error:
+        raise GameCatalogError(f"native Make invocation is unreadable: {error}") from error
+    if not arguments:
+        raise GameCatalogError("native Make invocation is empty")
+    files = []
+    index = 1
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            break
+        option, separator, value = argument.partition("=")
+        if option.startswith("--") and any(
+                name.startswith(option) for name in ("--file", "--makefile")):
+            if not separator:
+                index += 1
+                if index >= len(arguments):
+                    raise GameCatalogError("native Make entrypoint has no filename")
+                value = arguments[index]
+            files.append(value)
+        elif argument in (
+            "--directory", "--eval", "--include-dir", "--old-file", "--assume-old",
+            "--what-if", "--new-file", "--assume-new",
+        ):
+            index += 1
+        elif argument.startswith("-") and not argument.startswith("--"):
+            for position, flag in enumerate(argument[1:], 1):
+                if flag == "f":
+                    value = argument[position + 1:]
+                    if not value:
+                        index += 1
+                        if index >= len(arguments):
+                            raise GameCatalogError("native Make entrypoint has no filename")
+                        value = arguments[index]
+                    files.append(value)
+                    break
+                if flag in "CEIoW":
+                    if position + 1 == len(argument):
+                        index += 1
+                    break
+                if flag in "jlO":
+                    break
+        index += 1
+    if any(path == "-" or not Path(path).is_file() for path in files):
+        raise GameCatalogError("native Make capture cannot replay an unavailable entrypoint")
+    return files
+
+
 def cmd_describe_make_context(args: argparse.Namespace) -> int:
     try:
         sources = args.sources_file.read_text(encoding="utf-8").splitlines()
@@ -322,6 +373,17 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
     command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
     if not command:
         raise GameCatalogError("native text context requires the actual Make plan command")
+    if args.make_invocation is not None:
+        makefiles = _invocation_makefiles(args.make_invocation)
+        if makefiles:
+            flags = [argument for path in makefiles for argument in ("-f", path)]
+            if "-f" in command:
+                position = command.index("-f")
+                command[position:position + 2] = flags
+            else:
+                command[1:1] = flags
+    if args.invoker_goals is not None:
+        command.append("MAKECMDGOALS=" + args.invoker_goals)
     planned = subprocess.run(
         [*command, *(argument for source in sources for argument in ("-o", source))],
         capture_output=True, text=True, check=False,
@@ -512,6 +574,8 @@ def build_parser() -> argparse.ArgumentParser:
     context_p.add_argument("--sources-file", type=Path, required=True)
     context_p.add_argument("--compiler", required=True)
     context_p.add_argument("--preprocessor", required=True)
+    context_p.add_argument("--make-invocation", type=Path)
+    context_p.add_argument("--invoker-goals")
     context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
     context_p.set_defaults(handler=cmd_describe_make_context)
 

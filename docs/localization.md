@@ -37,6 +37,10 @@ physical and compiler-input paths, exact private compiler/preprocessor argv,
 and the selected linker. It neither compiles all units nor emits per-object
 sidecars. Late dependency-file settings and data-preprocessor steps remain part
 of that actual plan.
+On the supported Linux/GNU Make path, capture reads its own invoker's process
+arguments to preserve all explicit entrypoint files in order, and retains the
+original goal-dependent settings. Unreadable invocation data or stdin-only
+entrypoints fail explicitly rather than replaying a different configuration.
 
 `make expansion-modern-game-localization-declarations` emits
 `game_localization_declarations.h` from the selected message header and enabled
@@ -61,7 +65,9 @@ add an all-source native scan on every catalog build, validate retained message
 references/events, qualify English decoder safety, or regenerate glyph corpora.
 It adds no feature flag, locale, save/epoch change, toolchain service or archival
 prerequisite. Missing/malformed ARM facts and stale/no-output compiler or linker
-results are errors, never measurements. See
+results are errors, never measurements. Compiler-dependent Make-generation
+scenarios run in the existing ARM-equipped debug linker group; source-derived
+catalog and host-C/runtime coverage stays independent of ARM GCC. See
 [`TC-TEXT-NATIVE-METRICS-001`](test-cases/core-framework.md#tc-text-native-metrics-001-capture-selected-native-fonts-without-a-payload-cycle).
 
 ### Existing runtime layers

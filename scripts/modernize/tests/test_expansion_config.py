@@ -27,8 +27,10 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "modernize"))
+sys.path.insert(0, str(ROOT / "tools/gba-playtest/tests"))
 
 import expansion_config as ec  # noqa: E402
+from host_mode import host_only_enabled  # noqa: E402
 from scripts.modernize.tests.make_database import make_database_variable
 
 
@@ -123,6 +125,52 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_source_only_make_declarations_cover_english_and_pseudo(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="source-only-declarations-", dir=ROOT / "build") as directory:
+            for locales, pseudo in (("en", "0"), ("en,qps-ploc", "1")):
+                with self.subTest(locales=locales):
+                    output = Path(directory) / pseudo
+                    result = subprocess.run(
+                        [
+                            "make", "--no-print-directory", "NODEP=1",
+                            "expansion-modern-game-localization-declarations",
+                            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                            "FE8_PROJECT=default", f"EXPANSION_ENABLED_LOCALES={locales}",
+                            f"EXPANSION_PSEUDO_LOCALE={pseudo}", "MODERN_CC=/missing/compiler",
+                            f"PYTHON={sys.executable}",
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    header = output / "game-localization/generated/game_localization_declarations.h"
+                    self.assertTrue(header.is_file(), result.stdout + result.stderr)
+                    self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+
+    def test_native_renderer_make_graph_owns_its_generated_debug_font(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-font-graph-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            renderer = output / "debug/aapcs/src/fontgrp.o"
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-pq", "NODEP=1",
+                    "-o", "expansion-modern-toolchain-check", str(renderer),
+                    f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                    "FE8_PROJECT=default", "MODERN_CC=/missing/compiler",
+                    f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
+            prerequisites = next(
+                shlex.split(line.partition(":")[2])
+                for line in result.stdout.splitlines()
+                if line.startswith(str(renderer) + ":")
+                and "src/fontgrp.c" in shlex.split(line.partition(":")[2])
+            )
+            self.assertIn("graphics/debug_font.4bpp.h", prerequisites)
+
     def test_native_text_context_records_actual_recipes_without_catalog(self):
         build = ROOT / "build"
         build.mkdir(exist_ok=True)
@@ -142,6 +190,8 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         )
         wrapper.chmod(0o755)
         makefile = self.project / "native-inputs.mk"
+        secondary = self.project / "second-entrypoint.mk"
+        secondary.write_text("MODERN_CFLAGS += -DNATIVE_SECOND_ENTRYPOINT=1\n", encoding="ascii")
         late = self.project / "late-native.d"
         late.write_text(
             f"{namespace}/src/action_semantics.o: private MODERN_CFLAGS += -DNATIVE_SLOT_ONLY=1\n",
@@ -150,6 +200,10 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         makefile.write_text(
             "include Makefile\n"
             'MODERN_CFLAGS += -DNATIVE_LATE_FLAG=1 -I"include with spaces"\n'
+            "MODERN_CFLAGS += -DNATIVE_EVAL_FLAG=$(NATIVE_EVAL_FLAG)\n"
+            "ifneq ($(filter expansion-modern-text-inputs,$(MAKECMDGOALS)),)\n"
+            "MODERN_CFLAGS += -DNATIVE_INVOKED_GOAL=1\n"
+            "endif\n"
             f"include {late}\n"
             ".PHONY: native-object-inventory\n"
             "native-object-inventory:\n"
@@ -165,7 +219,8 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             f"PYTHON={sys.executable}", f"MAKE={wrapper}",
         ]
         result = subprocess.run(
-            ["make", "--no-print-directory", "-f", str(makefile),
+            ["make", "--no-print-directory", "-f", str(makefile), "-f", str(secondary),
+             "-E", "NATIVE_EVAL_FLAG:=1",
              "expansion-modern-text-inputs", *settings],
             cwd=ROOT, capture_output=True, text=True, timeout=120,
         )
@@ -174,7 +229,8 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(captured["kind"], "fe8-selected-text-inputs")
         self.assertEqual(counter.read_text().splitlines(), ["call"])
         inventory = subprocess.run(
-            ["make", "--no-print-directory", "-f", str(makefile),
+            ["make", "--no-print-directory", "-f", str(makefile), "-f", str(secondary),
+             "-E", "NATIVE_EVAL_FLAG:=1",
              "native-object-inventory", *settings],
             cwd=ROOT, capture_output=True, text=True, timeout=30,
         )
@@ -188,12 +244,42 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertIn("-Iinclude with spaces", units["src/action_semantics.c"]["compiler_argv"])
         self.assertTrue(all("-DNATIVE_LATE_FLAG=1" in unit["compiler_argv"]
                             for unit in captured["units"]))
+        self.assertTrue(all("-DNATIVE_SECOND_ENTRYPOINT=1" in unit["compiler_argv"]
+                            for unit in captured["units"]))
+        for flag in ("-DNATIVE_INVOKED_GOAL=1", "-DNATIVE_EVAL_FLAG=1"):
+            with self.subTest(invocation_flag=flag):
+                self.assertTrue(all(flag in unit["compiler_argv"] for unit in captured["units"]))
         self.assertIn(
             "-DNATIVE_DATA_LAYOUT=1", units["src/data/localized_font_data.c"]["compiler_argv"],
         )
         self.assertTrue(units["src/data/localized_font_data.c"]["preprocessor_argv"])
         for pattern in ("*.o", "*.pre.c", "*.text-input.json", "game_localization_*"):
             self.assertEqual(list(output.rglob(pattern)), [], pattern)
+        for primary, other in (
+            (["--file=" + str(makefile)], ["--makefile", str(secondary)]),
+            (["-sf" + str(makefile)], ["--makefile=" + str(secondary)]),
+        ):
+            with self.subTest(entrypoint_options=(primary, other)):
+                replayed = subprocess.run(
+                    [
+                        "make", "--no-print-directory", *primary, *other,
+                        "-E", "NATIVE_EVAL_FLAG:=1", "expansion-modern-text-inputs", *settings,
+                    ],
+                    cwd=ROOT, capture_output=True, text=True, timeout=120,
+                )
+                self.assertEqual(replayed.returncode, 0, replayed.stdout + replayed.stderr)
+                selected = json.loads(context.read_text(encoding="utf-8"))
+                for flag in (
+                    "-DNATIVE_SECOND_ENTRYPOINT=1", "-DNATIVE_EVAL_FLAG=1",
+                    "-DNATIVE_INVOKED_GOAL=1", "-DNATIVE_SLOT_ONLY=1",
+                ):
+                    if flag == "-DNATIVE_SLOT_ONLY=1":
+                        unit = next(row for row in selected["units"]
+                                    if row["logical_source"] == "src/action_semantics.c")
+                        self.assertIn(flag, unit["compiler_argv"])
+                    else:
+                        self.assertTrue(all(flag in unit["compiler_argv"] for unit in selected["units"]))
+        self.assertEqual(counter.read_text().splitlines(), ["call", "call", "call"])
         from scripts.localization.game_catalog.compiled_inputs import (
             CompiledInputError, load_compile_context,
         )
@@ -310,6 +396,17 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 for surface in measured["locales"]["ja"]["surfaces"].values()
                 for row in surface["records"]
             ))
+        unusual = self.project / '描画\\font"source.c'
+        copied = json.loads(context.read_text(encoding="utf-8"))
+        selected = next(unit for unit in copied["units"] if unit["logical_source"] == "src/fontgrp.c")
+        unusual.write_bytes((ROOT / selected["compiler_input"]).read_bytes())
+        selected["selected_source"] = str(unusual)
+        selected["compiler_input"] = str(unusual)
+        selected["compiler_argv"][selected["compiler_argv"].index("-c") + 1] = str(unusual)
+        unusual_context = output / "unusual-context.json"
+        unusual_context.write_text(json.dumps(copied), encoding="utf-8")
+        unusual_metrics = measure_selected_fonts(unusual_context, output_dir=output / "unusual-metrics")
+        self.assertEqual(unusual_metrics["ascii"], metrics["ascii"])
         pseudo_command = [
             "EXPANSION_ENABLED_LOCALES=en,qps-ploc"
             if argument.startswith("EXPANSION_ENABLED_LOCALES=") else argument
@@ -375,7 +472,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             python.chmod(0o755)
             result = subprocess.run(
                 [
-                    "make", "--no-print-directory", "expansion-modern-text-inputs",
+                    "make", "--no-print-directory", str(context),
                     "graphics/debug_font.4bpp.h",
                     str(namespace / "src/fontgrp-data.o"), str(namespace / "src/fontgrp.o"),
                     str(namespace / "src/data/localized_font_data.o"),
@@ -1774,6 +1871,11 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertGreater(audit["summary"]["game_payload_count"], 0)
         self.assertEqual((stock.read_bytes(), stock.stat().st_mtime_ns), previous)
 
+    @unittest.skipIf(host_only_enabled(), "native catalog generation belongs to the ARM lane")
+    @unittest.skipUnless(
+        shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")),
+        "selected ARM compiler required",
+    )
     def test_selected_translation_and_mapping_use_the_real_engine_root(self):
         authored = self.project / "authored.fr.json"
         data = json.loads(
