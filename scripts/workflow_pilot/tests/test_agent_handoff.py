@@ -1232,6 +1232,51 @@ class RawDiffBoundaryTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "4 MiB"):
                     raw.raw_diff_errors(f.worktree, f.parent, revision)
 
+    def test_full_pr_raw_cli_bounds_each_pair_without_skipping_other_files(self):
+        f = self.fixture
+        line = "unchanged payload line\n"
+        payload = line * (raw.MAX_BYTES // (3 * len(line)) + 1)
+        paths = [f.worktree / "docs" / name for name in ("first.txt", "second.txt")]
+        for path in paths:
+            path.write_text("before\n" + payload)
+        parent = f.commit_pending()
+        for path in paths:
+            path.write_text("after\n" + payload)
+        revision = f.commit_pending()
+        command = [
+            sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/raw_diff_check.py"),
+            "--repository-root", str(f.worktree), "--parent", parent,
+            "--candidate", revision,
+        ]
+        clean = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(clean.returncode, 0, (clean.stdout + clean.stderr).decode())
+        assignment = {**f.assignment, "assigned_parent_sha": parent}
+        with self.assertRaisesRegex(handoff.HandoffDataError, "4 MiB"):
+            handoff.task_changes(assignment, revision)
+        paths[1].write_text("after \n" + payload)
+        invalid = f.commit_pending()
+        command[-1] = invalid
+        refused = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(refused.returncode, 1, (refused.stdout + refused.stderr).decode())
+        self.assertIn(b"blank-at-eol", refused.stdout + refused.stderr)
+
+    def test_raw_cli_still_refuses_an_oversized_old_new_pair(self):
+        f = self.fixture
+        line = "unchanged payload line\n"
+        payload = line * (raw.MAX_BYTES // (2 * len(line)) + 1)
+        parent = f.commit("before\n" + payload)
+        revision = f.commit("after\n" + payload)
+        refused = raw.run_process(
+            [
+                sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/raw_diff_check.py"),
+                "--repository-root", str(f.worktree), "--parent", parent,
+                "--candidate", revision,
+            ],
+            cwd=ROOT, env=raw.git_environment(),
+        )
+        self.assertEqual(refused.returncode, 2, (refused.stdout + refused.stderr).decode())
+        self.assertIn(b"4 MiB", refused.stdout + refused.stderr)
+
     def test_raw_lf_crlf_empty_and_unchanged_eof_controls(self):
         f = self.fixture
         for content, fails in (("clean\n", False), ("\n", True), ("CRLF\r\n", True),

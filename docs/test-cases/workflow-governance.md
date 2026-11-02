@@ -6377,7 +6377,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
+  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6407,6 +6408,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    whitespace/checker replacement, and incremental line-budget controls.
    Remove only the failing condition and confirm success returns. Candidate
    `passed` fields and printed `exit 0` cannot replace a failing OS exit.
+   In the public raw CLI, use two changed text files whose aggregate old/new
+   bytes exceed4MiB while each complete pair stays below4MiB. Clean changes
+   pass; trailing whitespace in either file still refuses. A single pair
+   above4MiB still refuses before materialization, and the same multi-file
+   change still exceeds the independent delegated whole-task aggregate budget.
 4. Exercise actual parsed protocol and resource inputs. Unknown/non-host
    resources, unquantified binary changes and ROM/RAM/protocol overages reject.
    Schema/runtime controls reject unknown fields, duplicate scope/keys,
