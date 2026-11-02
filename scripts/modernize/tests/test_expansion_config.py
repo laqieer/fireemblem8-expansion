@@ -249,6 +249,12 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             f"{namespace}/src/action_semantics.o: private MODERN_CFLAGS += -DNATIVE_SLOT_ONLY=1\n",
             encoding="ascii",
         )
+        warm_dependency = namespace / "src/fontgrp-data.d"
+        warm_dependency.parent.mkdir(parents=True)
+        warm_input = (
+            f"{namespace}/src/fontgrp-data.o: src/fontgrp-data.c localized_game_text_data.h\n"
+        ).encode()
+        warm_dependency.write_bytes(warm_input)
         makefile.write_text(
             "include Makefile\n"
             'MODERN_CFLAGS += -DNATIVE_LATE_FLAG=1 -I"include with spaces"\n'
@@ -277,6 +283,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             cwd=ROOT, capture_output=True, text=True, timeout=120,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(warm_dependency.read_bytes(), warm_input)
         captured = json.loads(context.read_bytes())
         self.assertEqual(captured["kind"], "fe8-selected-text-inputs")
         self.assertEqual(counter.read_text().splitlines(), ["call"])
@@ -896,13 +903,22 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
 
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-default-headers-", dir=ROOT / "build") as directory:
+            makefile = Path(directory) / "parent.mk"
+            makefile.write_text(
+                "include Makefile\n"
+                ".PHONY: native-header-parent\n"
+                "native-header-parent: $(MODERN_GAME_LOCALIZATION_C)\n",
+                encoding="ascii",
+            )
             for locale in ("ja", "zh-Hans"):
-                for goal in ("game_localization_catalog.h", "localized_game_text_data.h"):
+                for index, goal in enumerate((
+                    "game_localization_catalog.h", "localized_game_text_data.h", "native-header-parent",
+                )):
                     with self.subTest(locale=locale, goal=goal):
-                        output = Path(directory) / locale / goal
+                        output = Path(directory) / locale / str(index)
                         built = subprocess.run(
                             [
-                                "make", "--no-print-directory", goal, "NODEP=1",
+                                "make", "--no-print-directory", "-f", str(makefile), goal, "NODEP=1",
                                 f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
                                 "MODERN_ABI=aapcs", "MODERN_ROM_SIZE=32M", "FE8_PROJECT=default",
                                 f"EXPANSION_ENABLED_LOCALES=en,{locale}", f"PYTHON={sys.executable}",

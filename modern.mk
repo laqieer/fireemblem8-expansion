@@ -287,8 +287,8 @@ MODERN_CFLAGS := \
 # running instance of make parsed modern.mk (an ambient shell environment
 # variable, or a `make FE8_ITEM_ID_CAP=... <goal>` command-line assignment
 # for this very invocation) via MODERN_DEFINE_FLAGS above -- MODERN_CFLAGS
-# itself is a plain `:=` snapshot, taken once, not re-evaluated per recipe
-# line. expansion-modern-idspace-active-check needs to compile three
+# base is a `:=` snapshot, taken once before configuration is consumed.
+# expansion-modern-idspace-active-check needs to compile three
 # DIFFERENT, explicit cap states (no cap define at all, -DFE8_ITEM_ID_CAP=0xCE,
 # and "the 0xCE-record table with no cap define") in the course of ONE gate
 # run, regardless of whatever ambient value the *caller* happened to invoke
@@ -1558,10 +1558,14 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c
 # Included makefiles are otherwise remade even under GNU Make's -n.
 MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
 MODERN_CLEAN_GOALS := clean clean_fast clean_tools distclean expansion-modern-clean assets-clean
+MODERN_TEXT_METADATA_GOALS := $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
+	expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT) \
+	expansion-modern-game-localization-declarations $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+	game_localization_declarations.h
 # Replay target scopes without starting recursive profile builds.
 modern_recursive_make = $(if $(filter 1,$(MODERN_DRY_RUN)),:,$(MAKE))
 ifeq ($(MODERN_DRY_RUN),)
-ifneq (,$(filter-out $(MODERN_CLEAN_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+ifneq (,$(filter-out $(MODERN_TEXT_METADATA_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
 ifneq (,$(wildcard $(MODERN_TEXT_FONT_OBJECTS:.o=.d) $(MODERN_TEXT_FONT_OBJECTS:.o=.headers.d)))
 MODERN_TEXT_DEPENDENCY_MIGRATION := $(shell $(PYTHON) -m scripts.localization.game_catalog \
 	prune-native-font-dependencies --objects $(foreach object,$(MODERN_TEXT_FONT_OBJECTS),"$(object)"))
@@ -1576,10 +1580,7 @@ ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
 include $(MODERN_ALL_DATA_ASSET_DEPS)
 else
 ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
-ifneq (,$(filter-out $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
-	expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT) \
-	expansion-modern-game-localization-declarations $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
-	game_localization_declarations.h,$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+ifneq (,$(filter-out $(MODERN_TEXT_METADATA_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
 include $(filter $(MODERN_TEXT_FONT_OBJECTS:.o=.assets.d),$(MODERN_ALL_DATA_ASSET_DEPS))
 endif
 endif
@@ -1915,49 +1916,15 @@ else
 	@printf '%s\n' '{"expansion_config_available": false}' > "$@"
 endif
 
-# The eager $(shell ...) resolution below (needed only to feed MODERN_CFLAGS
-# -D defines for actual C compilation) stays gated on
-# MODERN_CONFIG_RESOLVE_GOALS -- MODERN_GOALS with expansion-modern-clean
-# excluded -- like NODEP above (so a legacy-only invocation of `make` never
-# shells out to Python for it), and on MODERN_EXPANSION_CONFIG_AVAILABLE (so
-# the minimal synthetic modern.mk-only fixtures described above are
-# unaffected). expansion-modern-clean must be excluded from this gate: it
-# only removes build output, never compiles or embeds anything
-# expansion-config-related, so an invalid EXPANSION_* value (e.g. an
-# over-length title) must not block `make expansion-modern-clean` -- clean
-# has to keep working precisely so a bad config's build tree can be
-# recovered from without hand-deleting it.
-MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOALS)) \
-	$(filter $(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS) \
-		$(MODERN_TEXT_COMPILE_CONTEXT) $(MODERN_GAME_LOCALIZATION_C) \
-		$(MODERN_GAME_LOCALIZATION_HEADER) $(MODERN_GAME_LOCALIZATION_CONFIG_H) \
-		$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
-		game_localization_catalog.h localized_game_text_data.h \
-		$(MODERN_GAME_LOCALIZATION_REPORT_JSON) $(MODERN_GAME_LOCALIZATION_BUDGET_JSON),\
-		$(MAKECMDGOALS))
+# Resolve once when flags or identity consumers need configuration, including
+# arbitrary inherited parents. Public goals retain their early validation.
 MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out $(MODERN_CLEAN_GOALS),$(MAKECMDGOALS)),default))
-
-# Whether this invocation's MODERN_CFLAGS actually receives the
-# FE8_EXPANSION_* -D defines below (both gates below hold). Used again
-# further down to keep MODERN_COMPILE_SETTINGS -- the content-addressed
-# recompilation stamp for every modern C/data object that observes
-# include/expansion_config.h -- a single source of truth with the defines
-# it is stamping, instead of re-deriving the same two gates a second time.
-MODERN_EXPANSION_DEFINES_ACTIVE :=
-# Selected standalone producers share the compiled configuration's validation.
-ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT_CONFIG_REQUESTED))
- ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
-  MODERN_EXPANSION_DEFINES_ACTIVE := 1
-  # Every version/ROM-identity value is passed explicitly here as the
-  # *current* Make variable value (config.mk's ?= default, or a
-  # command-line/environment override -- Make itself resolves which wins).
-  # This is what keeps this tool, the -D defines below, and the generated
-  # metadata JSON as a single source of truth: whatever `make ...
-  # EXPANSION_ROM_TITLE=...` resolves to is exactly what gets validated,
-  # embedded in the ROM, and checked by the verifier -- never re-derived
-  # from config.mk alone (which would silently ignore a command-line
-  # override and desync the compiled ROM from the generated metadata).
-  MODERN_EXPANSION_CONFIG_RESOLVE := $(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve \
+MODERN_EXPANSION_DEFINES_ACTIVE := $(if $(MODERN_EXPANSION_CONFIG_AVAILABLE),1)
+ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
+MODERN_EXPANSION_BASE_CFLAGS := $(MODERN_CFLAGS)
+define modern_resolve_config
+$(if $(MODERN_EXPANSION_CONFIG_RESOLVED),,\
+  $(eval MODERN_EXPANSION_CONFIG_RESOLVE := $(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve \
 	--project "$(or $(FE8_PROJECT),default)" \
 	--project-profile "$(or $(FE8_PROJECT_PROFILE),default)" \
 	--config-mk config.mk \
@@ -1991,65 +1958,54 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT
 	--autoplay-planner "$(EXPANSION_AUTOPLAY_PLANNER)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
-	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
-  ifneq (,$(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-    $(error $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
-  MODERN_BUILD_COMMIT := $(patsubst MODERN_BUILD_COMMIT=%,%,$(filter MODERN_BUILD_COMMIT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_CONFIG_FINGERPRINT := $(patsubst MODERN_CONFIG_FINGERPRINT=%,%,$(filter MODERN_CONFIG_FINGERPRINT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_VERSION_PACKED := $(patsubst MODERN_VERSION_PACKED=%,%,$(filter MODERN_VERSION_PACKED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_VERSION_STRING := $(patsubst MODERN_VERSION_STRING=%,%,$(filter MODERN_VERSION_STRING=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1))\
+  $(eval MODERN_EXPANSION_CONFIG_STATUS := $(.SHELLSTATUS))\
+  $(if $(filter 0,$(MODERN_EXPANSION_CONFIG_STATUS)),,$(error $(MODERN_EXPANSION_CONFIG_RESOLVE)))\
+  $(if $(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)),$(error $(MODERN_EXPANSION_CONFIG_RESOLVE)))\
+  $(foreach name,MODERN_BUILD_COMMIT MODERN_SAVE_COMPAT_EPOCH MODERN_EXPANSION_ENABLED_LOCALE_MASK,\
+    $(if $(filter $(name)=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)),,\
+      $(error modern.mk: failed to resolve $(name) from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))))\
+  $(eval MODERN_EXPANSION_CONFIG_RESOLVED := 1))
+endef
+modern_config_value = $(strip $(call modern_resolve_config)$(patsubst $(1)=%,%,$(filter $(1)=%,$(MODERN_EXPANSION_CONFIG_RESOLVE))))
+  MODERN_BUILD_COMMIT = $(call modern_config_value,MODERN_BUILD_COMMIT)
+  MODERN_CONFIG_FINGERPRINT = $(call modern_config_value,MODERN_CONFIG_FINGERPRINT)
+  MODERN_VERSION_PACKED = $(call modern_config_value,MODERN_VERSION_PACKED)
+  MODERN_VERSION_STRING = $(call modern_config_value,MODERN_VERSION_STRING)
   # Issue #2 slice 1 (review fix #4): the save-compatibility epoch is a
   # separate compatibility gate from the #8 fingerprint above (see
   # docs/config_identity.md) -- resolved the exact same way (config.mk
-  # default, or a command-line/environment MODERN_CONFIG_RESOLVE_GOALS
-  # override) so `make ... EXPANSION_SAVE_COMPAT_EPOCH=2` changes the
+  # default, or a command-line/environment override) so
+  # `make ... EXPANSION_SAVE_COMPAT_EPOCH=2` changes the
   # embedded ROM metadata without requiring `make clean` first.
-  MODERN_SAVE_COMPAT_EPOCH := $(patsubst MODERN_SAVE_COMPAT_EPOCH=%,%,$(filter MODERN_SAVE_COMPAT_EPOCH=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_SAVE_COMPAT_EPOCH = $(call modern_config_value,MODERN_SAVE_COMPAT_EPOCH)
   # Issue #18 sprint 1: locale identity tokens, resolved and validated the
   # exact same way (config.mk default, or a command-line/environment
-  # MODERN_CONFIG_RESOLVE_GOALS override) as every other identity field
+  # override) as every other identity field
   # above -- see scripts/modernize/expansion_config.py's
   # validate_enabled_locales/validate_default_locale/validate_pseudo_locale
   # (an invalid or inconsistent combination already made
   # MODERN_EXPANSION_CONFIG_RESOLVE start with "error:" above, which the
   # $(error ...) a few lines up already caught).
-  MODERN_EXPANSION_ENABLED_LOCALE_MASK := $(patsubst MODERN_EXPANSION_ENABLED_LOCALE_MASK=%,%,$(filter MODERN_EXPANSION_ENABLED_LOCALE_MASK=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_DEFAULT_LOCALE_ID := $(patsubst MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,%,$(filter MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED := $(patsubst MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,%,$(filter MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_AOE_REFERENCE := $(patsubst MODERN_EXPANSION_AOE_REFERENCE=%,%,$(filter MODERN_EXPANSION_AOE_REFERENCE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := $(patsubst MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,%,$(filter MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_AUTOPLAY_STRATEGIES := $(patsubst MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_AUTOPLAY_PLANNER := $(patsubst MODERN_EXPANSION_AUTOPLAY_PLANNER=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_PLANNER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
-    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
-  else ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),resume)
-    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 1
-  else ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),restart)
-    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 2
-  else
-    $(error modern.mk: unresolved BGM continuation policy '$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)')
-  endif
-  ifeq ($(strip $(MODERN_BUILD_COMMIT)),)
-    $(error modern.mk: failed to resolve MODERN_BUILD_COMMIT from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
-  ifeq ($(strip $(MODERN_SAVE_COMPAT_EPOCH)),)
-    $(error modern.mk: failed to resolve MODERN_SAVE_COMPAT_EPOCH from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
-  ifeq ($(strip $(MODERN_EXPANSION_ENABLED_LOCALE_MASK)),)
-    $(error modern.mk: failed to resolve MODERN_EXPANSION_ENABLED_LOCALE_MASK from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
+  MODERN_EXPANSION_ENABLED_LOCALE_MASK = $(call modern_config_value,MODERN_EXPANSION_ENABLED_LOCALE_MASK)
+  MODERN_EXPANSION_DEFAULT_LOCALE_ID = $(call modern_config_value,MODERN_EXPANSION_DEFAULT_LOCALE_ID)
+  MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED = $(call modern_config_value,MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED)
+  MODERN_EXPANSION_AOE_REFERENCE = $(call modern_config_value,MODERN_EXPANSION_AOE_REFERENCE)
+  MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS = $(call modern_config_value,MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS)
+  MODERN_EXPANSION_CASUAL_MODE = $(call modern_config_value,MODERN_EXPANSION_CASUAL_MODE)
+  MODERN_EXPANSION_HQ_MIXER = $(call modern_config_value,MODERN_EXPANSION_HQ_MIXER)
+  MODERN_EXPANSION_AUTOPLAY_STRATEGIES = $(call modern_config_value,MODERN_EXPANSION_AUTOPLAY_STRATEGIES)
+  MODERN_EXPANSION_AUTOPLAY_PLANNER = $(call modern_config_value,MODERN_EXPANSION_AUTOPLAY_PLANNER)
+  MODERN_EXPANSION_BGM_CONTINUATION_POLICY = $(call modern_config_value,MODERN_EXPANSION_BGM_CONTINUATION_POLICY)
+  MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID = $(if $(filter preserve,$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)),0,$(if $(filter resume,$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)),1,$(if $(filter restart,$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)),2,$(error modern.mk: unresolved BGM continuation policy '$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'))))
 
-  MODERN_COMPILED_ENABLED_LOCALE_MASK := $(MODERN_EXPANSION_ENABLED_LOCALE_MASK)
+  MODERN_COMPILED_ENABLED_LOCALE_MASK = $(MODERN_EXPANSION_ENABLED_LOCALE_MASK)
 
   # Modern-only compiler defines feeding include/expansion_config.h. These
   # are never added to the legacy Makefile's CFLAGS, so the legacy build
   # keeps that header's hardcoded #ifndef fallbacks (today's exact ROM
   # identity) unchanged.
-  MODERN_CFLAGS += \
+  MODERN_EXPANSION_CPPFLAGS = \
 	-DFE8_EXPANSION_VERSION_MAJOR=$(EXPANSION_VERSION_MAJOR) \
 	-DFE8_EXPANSION_VERSION_MINOR=$(EXPANSION_VERSION_MINOR) \
 	-DFE8_EXPANSION_VERSION_PATCH=$(EXPANSION_VERSION_PATCH) \
@@ -2081,6 +2037,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT
 	-DFE8_EXPANSION_AUTOPLAY_PLANNER=$(EXPANSION_AUTOPLAY_PLANNER) \
 	-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID=$(EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
+  MODERN_CFLAGS = $(MODERN_EXPANSION_BASE_CFLAGS) $(MODERN_EXPANSION_CPPFLAGS)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
   # NOT folded into MODERN_CONFIG_FINGERPRINT / save identity): defined for
@@ -2089,7 +2046,10 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT
   # present in every modern build, while the legacy build keeps
   # include/expansion_config.h's 0 fallback and emits no orphan ewram_data.
   MODERN_CFLAGS += -DFE8_EXPANSION_MODERN_BUILD=1
- endif
+ifneq (,$(filter-out expansion-modern-clean,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT_CONFIG_REQUESTED))
+  $(call modern_resolve_config)
+  MODERN_CFLAGS := $(MODERN_CFLAGS)
+endif
 endif
 
 .PHONY: expansion-modern-game-localization-config-check
@@ -2542,6 +2502,7 @@ expansion-modern-game-localization-declarations: $(MODERN_GAME_LOCALIZATION_DECL
 
 $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER): FORCE \
 	$$(or $$(MODERN_PROJECT_MSG_HEADER),$$(TEXT_HEADER)) $(FE8_PROJECT_DECLARATION)
+	$(call modern_resolve_config)
 	@mkdir -p "$(@D)"
 	$(PYTHON) -m scripts.localization.game_catalog declare --output "$@" \
 		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(TEXT_HEADER))" \

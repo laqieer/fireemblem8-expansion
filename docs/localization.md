@@ -75,9 +75,18 @@ Existing owned products trigger this narrow migration regardless of the
 top-level goal name, including inherited-parent builds.
 Cleanup-only requests use the existing cleanup classification and skip the
 catalog migration helper, so a failed helper cannot prevent build recovery.
-Other escaped prerequisites and phony header rules remain intact; dry capture
-does not mutate them. This breaks pre-split payload/font cycles without
-discarding real dependencies or requiring a global clean.
+Pure context/declaration requests also leave warm dependency inputs unchanged.
+Other escaped prerequisites and phony header rules remain intact. This breaks
+pre-split payload/font cycles without discarding real dependencies or requiring
+a global clean.
+Capture still evaluates trusted project Makefiles; it is not an OS sandbox
+for arbitrary authored Make expressions.
+
+Compiler flags and identity consumers share one cached configuration resolver.
+The same locale and identity reach literal targets, public aliases and custom
+inherited parents, without maintaining a second list of build-goal names.
+Public modern goals retain early validation, and cleanup/archival/host-only
+requests do not acquire a new configuration prerequisite.
 
 `make expansion-modern-game-localization-declarations` emits
 `game_localization_declarations.h` from the selected project's message header

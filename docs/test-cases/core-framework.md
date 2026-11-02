@@ -34,10 +34,17 @@ second registry, harness, generated-data schema, or project ruleset.
    python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
    ```
 
+4. Run `python3 -m unittest scripts.modernize.tests.test_save_compat_epoch_modern_build -v`.
+   An inherited identity-stamp parent resolves configuration exactly once per
+   invocation for each BGM continuation policy. Its actual stamp retains the
+   requested policy and default save epoch; changed epochs still invalidate the
+   stamp without changing the configuration fingerprint.
+
 ### Expected result and controls
 
 The actual native object inventory appears exactly once after a late dependency
-file. Private and spaced flags, physical source selection, ordinary/data/
+file. Warm input dependency bytes remain unchanged during pure capture.
+Private and spaced flags, physical source selection, ordinary/data/
 reinstated/synthetic slots, and data preprocessing are retained. Capturing it
 executes one native Make plan, no compiler/preprocessor/catalog and no hundreds
 of sidecars. Ambiguous objects, wrong outputs and relative roots are refused.
@@ -68,10 +75,10 @@ With an owned selected binary font width input, direct catalog/header and
 custom-parent generation consume the original width and both decremented native values,
 not the stale initial object. Only selected font-data dependency owners enter
 this bootstrap; pure capture/declaration and cleanup remain independent.
-Both public catalog/header aliases also work directly for the default project
-with `en,ja` or `en,zh-Hans` in a 32 MiB debug build. Their compiled System/Talk
-maps match the selected binary codepoint/width inputs instead of using an
-English-only configuration fallback.
+Both public catalog/header aliases and an inherited catalog parent also work
+for the default project with `en,ja` or `en,zh-Hans` in a 32 MiB debug build.
+Their compiled System/Talk maps match the selected binary codepoint/width inputs
+instead of using an English-only configuration fallback.
 
 Private System/Talk Latin widths are 9/11 pixels, including a real cross-slot
 ARM glyph relocation. Private Japanese System/Talk widths are 13/7; selected
