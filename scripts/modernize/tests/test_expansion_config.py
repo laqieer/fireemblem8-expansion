@@ -434,18 +434,15 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             selected.write_text("".join(
                 f'#include "native_{index:03}.h"\n' for index in range(160)
             ))
-            for slot, fails, oneshell, relative in itertools.product(
+            for case_index, (slot, fails, oneshell, relative) in enumerate(itertools.product(
                 ("src/bmunit.o", "src/data/data_8B363C.o", "asm/arm_call.o", "asm/fe6sio.o"),
                 (False, True), (False, True), (False, True),
-            ):
+            )):
                 with self.subTest(
                     slot=slot, compiler_failure=fails, oneshell=oneshell, relative_build_root=relative,
                 ):
-                    work = temporary / (
-                        slot.replace("/", "-") + ("-failure" if fails else "")
-                        + ("-oneshell" if oneshell else "")
-                        + ("-relative" if relative else "-absolute")
-                    )
+                    # Long semantic labels exceed asset-discovery filenames in hosted checkouts.
+                    work = temporary / str(case_index)
                     work.mkdir()
                     output = work / "native"
                     if relative:
