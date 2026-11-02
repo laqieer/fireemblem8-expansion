@@ -77,6 +77,8 @@ Run
 with the supported ARM toolchain and libmGBA. Explicit host-only CI skips this
 module; a skip is not native evidence. It reuses the existing module-ROM
 startup, fixed IWRAM layout, tool selection and semantic capture route.
+The existing `tools/gbagfx/gbagfx` compressor is also required; if missing,
+build that existing helper with `make -C tools/gbagfx`.
 The existing debug ARM-enabled `expansion-modern-linker-check` invocation
 also executes it in candidate and master Build CI, with the host-only switch
 removed. A parsed Make execution-contract test preserves that binding.
@@ -93,9 +95,12 @@ audio paths trap with an explicit failing phase, never success stubs.
 The unscaled-data control reaches the same consumers and completion but
 reports426/499/623/719/452 and terrain1/0/0/1/0 for CH00, not the correct
 configuration/terrain; CH02 remains correct. The test captures actual ROM/
-EWRAM/IWRAM sizes and retains module resource limits. These owned raw type0
-inputs exercise real native decoding, not final compressed/game-profile,
-movement, palette or visual qualification.
+EWRAM/IWRAM sizes and retains module resource limits. Repeat both positive
+and unscaled inputs as owned type0 and actual gbagfx-produced GBA LZ77
+carriers for maps and Fort configuration. The original decode/BIOS consumers
+must produce the same native records from both formats. These are isolated
+native carrier inputs, not selected production C/incbin owners, a game
+profile, movement, palette or visual qualification.
 
 **Not yet qualified:** selected production map/palette/movement/coordinate
 consumers, real target screenshots, required early portrait packages,

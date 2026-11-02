@@ -1,5 +1,6 @@
 """Execute original map/configuration consumers in an isolated ARM module ROM."""
 
+import itertools
 import json
 import os
 from pathlib import Path
@@ -166,7 +167,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ]
             expected_terrain = [[0x1A, 0x17, 0x1F, 0x1D, 0x2D], [0x1A, 2, 0x1E, 0x1F, 0x17]]
             observed = {}
-            for unscaled in (False, True):
+            for compression, unscaled in itertools.product(("raw", "lz77"), (False, True)):
                 payloads = [bytearray(data) for data in binaries]
                 if unscaled:
                     for index in range(2, len(payloads[0]), 2):
@@ -178,8 +179,17 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     ("GradoNativeMapCH00", payloads[0]), ("GradoNativeMapCH02", payloads[1]),
                     ("GradoNativeTileConfig", config),
                 ):
-                    path = work / (name + ".raw")
-                    path.write_bytes(struct.pack("<I", (len(payload) + 4) << 8) + payload)
+                    if compression == "raw":
+                        path = work / (name + ".raw")
+                        path.write_bytes(struct.pack("<I", (len(payload) + 4) << 8) + payload)
+                    else:
+                        source = work / (name + ".bin")
+                        source.write_bytes(payload)
+                        path = work / (name + ".lz")
+                        self.run_command([
+                            os.environ.get("GBAGFX", str(ROOT / "tools/gbagfx/gbagfx")),
+                            source, path,
+                        ], cwd=ROOT)
                     lines.extend((
                         f'.section .rodata.{name}, "a", %progbits', ".balign 4",
                         f".global {name}", f"{name}:", f".incbin {json.dumps(str(path))}",
@@ -245,7 +255,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     for name in ("__data_start", "__data_end", "__ewram_start", "__ewram_end",
                                  "__iwram_start", "__iwram_end")
                 }
-                observed["unscaled" if unscaled else "native"] = {
+                observed[compression + ("-unscaled" if unscaled else "-native")] = {
                     "records": records, "rom_bytes": rom.stat().st_size,
                     "ewram_bytes": addresses["__data_end"] - addresses["__data_start"]
                     + addresses["__ewram_end"] - addresses["__ewram_start"],
