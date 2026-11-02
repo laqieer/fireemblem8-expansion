@@ -50,6 +50,21 @@ class GradoVisualNativeTests(unittest.TestCase):
         ], cwd=ROOT)
         return target
 
+    def fort_pixel(self, config, graphics, palette, metatile, x, y):
+        tile = struct.unpack_from("<H", config, 2 * (metatile + 2 * (y // 8) + x // 8))[0]
+        px, py = x % 8, y % 8
+        if tile & 0x400:
+            px = 7 - px
+        if tile & 0x800:
+            py = 7 - py
+        packed = graphics[32 * (tile & 0x3FF) + 4 * py + px // 2]
+        color = (packed >> (4 * (px % 2))) & 15
+        if color == 0:
+            return "0x000000"
+        bgr = struct.unpack_from("<H", palette, 32 * (tile >> 12) + 2 * color)[0]
+        channels = (bgr & 31, (bgr >> 5) & 31, (bgr >> 10) & 31)
+        return "0x" + "".join(f"{(channel << 3) | (channel >> 2):02x}" for channel in channels)
+
     def test_native_map_binding_and_terrain_consumers(self):
         tools = _selected_tools(os.environ)
         paths = {
@@ -188,7 +203,14 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ]
             expected_terrain = [[0x1A, 0x17, 0x1F, 0x1D, 0x2D], [0x1A, 2, 0x1E, 0x1F, 0x17]]
             observed = {}
-            for compression, unscaled in itertools.product(("raw", "lz77", "native-owner"), (False, True)):
+            owner_objects = {}
+            cases = (
+                *itertools.product(("raw", "lz77", "native-owner"), (False, True)),
+                *itertools.product(("render0", "render2"), (False, True)),
+            )
+            for compression, unscaled in cases:
+                render_chapter = {"render0": 0, "render2": 2}.get(compression)
+                source_owner = compression == "native-owner" or render_chapter is not None
                 payloads = [bytearray(data) for data in binaries]
                 if unscaled:
                     for index in range(2, len(payloads[0]), 2):
@@ -201,7 +223,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     ("GradoNativeMapCH00", payloads[0]), ("GradoNativeMapCH02", payloads[1]),
                     ("GradoNativeTileConfig", config),
                 )
-                if compression == "native-owner":
+                if source_owner:
                     native_payloads = native_payloads[:1]
                 for name, payload in native_payloads:
                     if compression == "raw":
@@ -221,14 +243,20 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         f".global {name}", f"{name}:", f".incbin {json.dumps(str(path))}",
                     ))
                 selected_objects = objects
-                if compression == "native-owner":
-                    inputs = self.build_native_owner(
-                        work / ("owner" + str(int(unscaled))), tools, payload_paths["GradoNativeMapCH00"],
-                    )
-                    selected_fixture = work / "source_owner_fixture.o"
+                if source_owner:
+                    if unscaled not in owner_objects:
+                        owner_objects[unscaled] = self.build_native_owner(
+                            work / ("owner" + str(int(unscaled))), tools,
+                            payload_paths["GradoNativeMapCH00"],
+                        )
+                    inputs = owner_objects[unscaled]
+                    selected_fixture = work / ("source_owner_fixture-" + str(render_chapter) + ".o")
                     if not selected_fixture.exists():
                         self.run_command([
                             tools["MODERN_CC"], *flags, "-DGRADO_NATIVE_SOURCE_OWNER=1",
+                            *([] if render_chapter is None else [
+                                "-DGRADO_RENDER_CHAPTER=" + str(render_chapter),
+                            ]),
                             "-c", fixture, "-o", selected_fixture,
                         ], cwd=ROOT)
                     selected_objects = [
@@ -262,12 +290,33 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 _, size = resolve_elf_symbol(elf, "gGradoMapProbe", tools["MODERN_NM"])
                 self.assertEqual(size, 152)
                 scenario = work / "scenario.json"
+                pixel_probes = []
+                if render_chapter is not None:
+                    coordinates = (
+                        ((0, 0), (2, 4), (4, 3), (14, 5), (12, 1)),
+                        ((0, 0), (7, 10), (4, 9), (14, 1), (7, 4)),
+                    )[render_chapter // 2]
+                    graphics = (ROOT / "graphics/map/ObjectType5.4bpp").read_bytes()
+                    palette = (ROOT / "graphics/map/MapPalette7.gbapal").read_bytes()
+                    for (x, y), metatile in zip(coordinates, expected_values[render_chapter // 2]):
+                        if y >= 10:
+                            continue
+                        if unscaled and render_chapter == 0:
+                            metatile //= 4
+                        for px, py in ((0, 0), (7, 7), (8, 8), (15, 15)):
+                            pixel_probes.append({
+                                "x": x * 16 + px, "y": y * 16 + py,
+                                "expected": self.fort_pixel(config, graphics, palette, metatile, px, py),
+                            })
                 scenario.write_text(json.dumps({
-                    "schema_version": 1, "name": "grado-map-native", "frames": [],
+                    "schema_version": 1,
+                    "name": "grado-map-" + compression + ("-unscaled" if unscaled else "-native"),
+                    "frames": [],
                     "checkpoints": [{
-                        "name": "map-records", "frame": 30, "framebuffer": False,
+                        "name": "map-records", "frame": 30, "framebuffer": render_chapter is not None,
                         "probes": [{"address": f"gGradoMapProbe+0x{offset:x}", "size": 4}
                                    for offset in range(0, size, 4)],
+                        "pixel_probes": pixel_probes,
                     }],
                 }))
                 capture = work / "capture.json"
@@ -276,7 +325,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
                     "--scenario", scenario, "--output", capture,
                 ], cwd=ROOT)
-                probes = json.loads(capture.read_text())["checkpoints"][0]["probes"]
+                checkpoint = json.loads(capture.read_text())["checkpoints"][0]
+                probes = checkpoint["probes"]
                 data = {probe["address"]: int(probe["value"], 16) for probe in probes}
                 values = [data[f"gGradoMapProbe+0x{offset:x}"] for offset in range(0, size, 4)]
                 self.assertEqual(values[:2], [2, 0])
@@ -302,5 +352,13 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     "ewram_bytes": addresses["__data_end"] - addresses["__data_start"]
                     + addresses["__ewram_end"] - addresses["__ewram_start"],
                     "iwram_bytes": addresses["__iwram_end"] - addresses["__iwram_start"],
+                    **({"framebuffer": checkpoint["framebuffer_hash"], "pixels": checkpoint["pixel_probes"]}
+                       if render_chapter is not None else {}),
                 }
+            self.assertNotEqual(
+                observed["render0-native"]["framebuffer"], observed["render0-unscaled"]["framebuffer"],
+            )
+            self.assertEqual(
+                observed["render2-native"]["framebuffer"], observed["render2-unscaled"]["framebuffer"],
+            )
             print(json.dumps({"actual_native_records": observed}, sort_keys=True))

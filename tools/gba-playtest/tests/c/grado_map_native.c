@@ -4,6 +4,7 @@
 #include "bmmap.h"
 #include "bmsave.h"
 #include "chapterdata.h"
+#include "hardware.h"
 #include "m4a.h"
 
 #ifdef GRADO_NATIVE_SOURCE_OWNER
@@ -15,6 +16,15 @@
 extern const u8 GradoNativeMapCH00[];
 extern const u8 GradoNativeMapCH02[];
 extern const u8 GradoNativeTileConfig[];
+#ifdef GRADO_NATIVE_SOURCE_OWNER
+extern const u8 ObjectType5[];
+extern const u8 MapPalette7[];
+#endif
+
+#ifdef GRADO_RENDER_CHAPTER
+static u8 sVisibleFog[12][16];
+static u8 * sVisibleFogRows[12];
+#endif
 
 struct GradoMapRecord
 {
@@ -61,6 +71,10 @@ struct ROMChapterData CONST_DATA gChapterDataTable[] = {
 const void * gChapterDataAssetTable[63] = {
     [4] = GradoNativeMapCH00,
     [11] = GradoNativeMapCH02,
+#ifdef GRADO_NATIVE_SOURCE_OWNER
+    [60] = ObjectType5,
+    [61] = MapPalette7,
+#endif
     [62] = GradoNativeTileConfig,
 };
 
@@ -151,6 +165,27 @@ void AgbMain(void)
             record->terrain[sample] = GetTrueTerrainAt(x, y);
         }
     }
+#ifdef GRADO_RENDER_CHAPTER
+    gGradoMapProbe.phase = 3;
+    gPlaySt.chapterIndex = GRADO_RENDER_CHAPTER;
+    UnpackChapterMap(gBmMapBuffer, GRADO_RENDER_CHAPTER);
+    InitBaseTilesBmMap();
+    for (y = 0; y < 12; ++y)
+    {
+        sVisibleFogRows[y] = sVisibleFog[y];
+        for (x = 0; x < 16; ++x)
+            sVisibleFog[y][x] = 1;
+    }
+    gBmMapFog = sVisibleFogRows;
+    UnpackChapterMapGraphics(GRADO_RENDER_CHAPTER);
+    SetBackgroundMapDataOffset(2, 0xF000);
+    SetBackgroundScreenSize(2, 0);
+    BG_SetColorBpp(2, 4);
+    SetDispEnable(0, 0, 1, 0, 0);
+    RenderBmMapOnBg2();
+    FlushBackgrounds();
+    FlushLCDControl();
+#endif
     gGradoMapProbe.phase = 2;
     for (;;)
         ;

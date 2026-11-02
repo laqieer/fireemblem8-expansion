@@ -114,11 +114,29 @@ selected 16x12 derivative.
 This proves actual C/incbin producer integration, not activation of a
 supported project: chapter/table inputs and the remap entrypoint remain
 owned by the isolated module. The manifest alone still does not select
-CH00 or change its native tileset settings. A game profile, movement,
-palette/rendering and visual qualification remain open.
+CH00 or change its native tileset settings.
 
-**Not yet qualified:** selected production map/palette/movement/coordinate
-consumers, real target screenshots, required early portrait packages,
+The display subcase uses the original `ObjectType5` graphics and
+`MapPalette7` palette, native decompression, `RenderBmMapOnBg2`, background
+and LCD flushes, and real GBA video. Its explicit visible-fog/chapter inputs
+remain fixture-owned. At frame 30, libmGBA captures the actual 240x160
+framebuffer plus 20 visible-pixel probes for CH00 and 16 for CH02.
+Expected colors are independently derived from the worked map indices and
+the public 4bpp tile, flip and BGR555 formats, including libmGBA's bit
+replication; they are not copied from the captured framebuffer or native
+tilemap result.
+
+Both positive maps must match those colors. The unscaled CH00 control must
+match its different input-derived pixels and have a different framebuffer;
+CH02 remains pixel/framebuffer-identical. These are native emulator pixels,
+not a CPU-reconstructed screenshot or a refreshed golden hash. Supplementary
+PNGs can be exported through libmGBA's existing screenshot API. They depict
+instrumented, isolated native modules, not a selected supported game or
+manual artistic acceptance. A game profile, actual movement/EVT coordinates,
+portrait/static-art consumers and complete visual qualification remain open.
+
+**Not yet qualified:** selected-game map/palette/movement/coordinate
+consumers and screenshots, required early portrait packages,
 title/BG/CG carriers and normal/crossfade limits. In particular old ASCII
 deployment/cortege points can land on real walls/doors in the accepted master;
 EVT must establish actual coordinates and route safety after preflight.
