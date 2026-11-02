@@ -47,8 +47,10 @@ file. Warm input dependency bytes remain unchanged during pure capture.
 An implicit main Makefile still loads with preloaded `MAKEFILES`. Actual
 spaced, repeated-space and quoted explicit entrypoint or nested included
 source files must retain bytes, inode and modification time: replay must not
-run their otherwise valid regeneration recipes under `-n`/`-B`. Ambiguous
-source names refuse before replay and preserve a previous valid context.
+run their otherwise valid regeneration recipes under `-n`/`-B`.
+Plain/spaced authored `.d` settings inside native output use the
+same literal protection; suffix or output location cannot authorize a remake.
+Ambiguous source names refuse before replay and preserve a previous valid context.
 The temporary included-name transport is removed on success/failure and is
 not written by ordinary `-n`. Populate the actual canonical object, header
 and asset dependency-file inventories in a valid longer native root, then

@@ -501,12 +501,6 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
     if not command:
         raise GameCatalogError("native text context requires the actual Make plan command")
     included = _included_makefiles(args.makefile_list_file) if args.makefile_list_file else []
-    if args.dependency_root is not None:
-        dependency_root = args.dependency_root.resolve()
-        included = [
-            path for path in included
-            if not (Path(path).suffix == ".d" and Path(path).resolve().is_relative_to(dependency_root))
-        ]
     if args.invoker_pid is not None:
         makefiles = _invocation_makefiles(args.invoker_pid)
         included.extend(makefiles)
@@ -738,7 +732,6 @@ def build_parser() -> argparse.ArgumentParser:
     context_p.add_argument("--invoker-pid", type=int)
     context_p.add_argument("--invoker-goals")
     context_p.add_argument("--makefile-list-file", type=Path)
-    context_p.add_argument("--dependency-root", type=Path)
     context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
     context_p.set_defaults(handler=cmd_describe_make_context)
 

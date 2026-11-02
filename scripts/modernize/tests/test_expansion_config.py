@@ -251,13 +251,16 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-source-replay-", dir=ROOT / "build") as directory:
             output = Path(directory)
-            for name, included in (
-                ("entrypoint selected flags.mk", False),
-                ("nested  selected flags.mk", True),
-                ("entrypoint 'selected' flags.mk", False),
+            for name, included, in_output in (
+                ("entrypoint selected flags.mk", False, False),
+                ("nested  selected flags.mk", True, False),
+                ("entrypoint 'selected' flags.mk", False, False),
+                ("selected-flags.d", True, True),
+                ("selected  flags.d", True, True),
             ):
                 with self.subTest(source=name, included=included):
-                    source = self.project / name
+                    source = (output / "debug/aapcs" if in_output else self.project) / name
+                    source.parent.mkdir(parents=True, exist_ok=True)
                     prerequisite = self.project / "source-prerequisite"
                     executed = self.project / "source-regenerated"
                     prerequisite.write_text("native source input\n", encoding="ascii")

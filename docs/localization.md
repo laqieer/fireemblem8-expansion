@@ -49,9 +49,10 @@ It is not a cache, source snapshot or second selected-input registry.
 The CLI reconstructs actual source filenames, including repeated spaces and
 quotes, and holds those files old before replay. Unavailable or genuinely
 ambiguous names refuse before any replay; source regeneration must never run.
-Canonical dependency products in the native output directory are not copied
-into the source-old arguments; their real dependency graph remains intact.
-This keeps a complete warm dependency family out of a single shell argument,
+All actual included files remain held old, including authored settings with a
+`.d` suffix inside native output. No path/suffix guess drops their protection.
+The CLI constructs argv after reading the transport, keeping the complete
+warm dependency family out of a single shell argument,
 including callers that use GNU Make's `.ONESHELL` recipe mode. Ordinary `-n`
 does not write the temporary transport file.
 The plan traverses the actual original goals before completing its selected

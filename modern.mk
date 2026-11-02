@@ -1002,7 +1002,6 @@ $(MODERN_TEXT_COMPILE_CONTEXT): FORCE | $(dir $(MODERN_TEXT_COMPILE_CONTEXT))
 	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
 		--output "$@" \
 		--makefile-list-file "$(MODERN_TEXT_NATIVE_MAKEFILES)" \
-		--dependency-root "$(MODERN_OUTPUT_DIR)" \
 		--invoker-pid "$(shell echo $$PPID)" \
 		--invoker-goals "$(MAKECMDGOALS)" \
 		-- $(modern_text_native_plan) _expansion-modern-text-object-plan; \
