@@ -920,13 +920,13 @@
       ],
       "purpose": "Prove the existing native live compatibility mechanism and complete input preservation before introducing any project loader policy.",
       "prerequisites": "Python 3, supported ARM toolchain and libmGBA from quickstart; no user ROM, save, savestate or external project.",
-      "actions": "Run the native module command in the procedure. Execute the real metadata/checksum builders, SRAM initialization/read routines and live classifier on thirteen owned 32 KiB-image inputs for each epoch, capturing semantic records and native resources. Keep the existing ARM-enabled CI binding and host-only skip.",
+      "actions": "Run the native module command in the procedure. Execute the real metadata/checksum builders, SRAM initialization/read routines and live classifier on thirteen owned 32 KiB-image inputs for each epoch, capturing semantic records and native resources. Retain source-relative object paths and apply the canonical SRAM IWRAM selectors before remaining BSS; inspect actual ELF workspace bounds and active copied-function pointers. Keep the existing ARM-enabled CI binding and host-only skip.",
       "expected_result": "Uniform blank images are EMPTY; current native metadata is CURRENT only at the configured epoch. Legacy, older/newer, foreign epoch, corrupt header/metadata, false hardware readiness and surviving or mixed erased data retain distinct refusals. Older format precedes foreign epoch. Diagnostic-only changes remain compatible. Every complete input image stays byte-identical after classification.",
       "negative_control": "Foreign epoch, absent metadata, corrupt checksum and surviving payload are real native inputs and cannot be accepted as CURRENT or erased. Default epoch 2 is the unselected profile control; host-only skipping never counts as native evidence.",
       "interactions": "Reuses existing global save compatibility, SRAM and fixed-layout module boot/capture interfaces. No new framework flag, gate, wrapper or prerequisite. Explicit project allocation and guide remain unselected.",
       "save_compatibility": "No production envelope, defaults, epoch, save bytes or persistent RAM change. The owned EWRAM image is a test input, not a save blob or qualified Grado game/profile.",
       "cleanup": "Remove only the fixture's temporary build/compiler/ROM/capture directory; never load or rewrite user saves or source masters.",
-      "limitations": "Release-mode native classification only, not cartridge-bus, full normal/Suspend loading, producer/recovery/checkpoint/resources/retirement, debug or selected-game qualification.",
+      "limitations": "Release-mode native classification and copied SRAM workspace placement only, not cartridge-bus, complete production globals/overlays, full normal/Suspend loading, producer/recovery/checkpoint/resources/retirement, debug or selected-game qualification.",
       "automation": [
         {
           "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v",

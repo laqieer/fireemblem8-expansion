@@ -130,9 +130,14 @@ EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
 payload are actual native inputs, not fabricated success labels or source-text
 checks. The default epoch 2 is the unselected control. The ordinary supported
 native layout is required; forcing an unrelated packed-struct ABI is not this
-profile. The module uses original section placement and the fixed IWRAM map,
-including its named sound-table owner, rather than successful substitute
-functions.
+profile. The module uses the canonical IWRAM selectors for the native SRAM
+workspaces before collecting remaining BSS in EWRAM, including the named
+sound-table owner. Compiler objects retain their original source-relative
+paths so those selectors match. Check the actual ELF workspace bounds and
+live SRAM function pointers as well as native classification; merely
+including the linker script is insufficient. This proves these copied SRAM
+routines' placement, not the complete production game's globals or overlays.
+No successful substitute functions are used.
 
 No production code, defaults, format, epoch, flags or persistent RAM change.
 Actual normal/Suspend loading, producer-sensitive recovery/checkpoints,

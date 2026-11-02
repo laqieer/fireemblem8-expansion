@@ -67,7 +67,8 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     ROOT / "src/bmsave-lib.c", ROOT / "src/bmlib.c",
                     ROOT / "src/agb_sram.c", driver,
                 ):
-                    target = work / source.with_suffix(".o").name
+                    target = (work / source.relative_to(ROOT)).with_suffix(".o")
+                    target.parent.mkdir(parents=True, exist_ok=True)
                     selected = flags
                     if source.name == "agb_sram.c":
                         selected = [
@@ -114,14 +115,14 @@ SECTIONS {{
    __data_start = .; *(.data*) . = ALIGN(4); __data_end = .;
  }} > EWRAM AT> ROM
  __data_load = LOADADDR(.data);
- .ewram (NOLOAD) : {{
-   __ewram_start = .; *(ewram_data*) *(.bss*) *(COMMON) . = ALIGN(4); __ewram_end = .;
- }} > EWRAM
  .iwram (NOLOAD) : {{
    __iwram_start = .;
    INCLUDE {ROOT}/linker/iwram.ld
    *(iwram_data*) . = ALIGN(4); __iwram_end = .;
  }} > IWRAM
+ .ewram (NOLOAD) : {{
+   __ewram_start = .; *(ewram_data*) *(.bss*) *(COMMON) . = ALIGN(4); __ewram_end = .;
+ }} > EWRAM
  /DISCARD/ : {{ *(.comment) *(.note*) }}
 }}
 ASSERT(SIZEOF(.iwram) < 0x7800, "module IWRAM overlaps stack")
@@ -134,6 +135,15 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     "-nostartfiles", "-Wl,--gc-sections", "-Wl,--no-undefined",
                     "-Wl,-T," + str(linker), *objects, "-lc", "-lnosys", "-lgcc", "-o", elf,
                 ], cwd=work)
+                sram_workspaces = {
+                    name: resolve_elf_symbol(elf, name, tools["MODERN_NM"])
+                    for name in (
+                        "readSramFast_Work", "verifySramFast_Work", "verifySramValueFast_Work",
+                    )
+                }
+                for address, extent in sram_workspaces.values():
+                    self.assertGreaterEqual(address, 0x03000000)
+                    self.assertLessEqual(address + extent, 0x03007800)
                 empty_data = (
                     resolve_elf_symbol_address(elf, "__data_start", tools["MODERN_NM"])
                     == resolve_elf_symbol_address(elf, "__data_end", tools["MODERN_NM"])
@@ -153,6 +163,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         "probes": [
                             {"address": f"gGradoSaveCompatProbe+0x{offset:x}", "size": 4}
                             for offset in range(0, size, 4)
+                        ] + [
+                            {"address": name, "size": 4}
+                            for name in ("ReadSramFast", "VerifySramFast", "VerifySramValueFast")
                         ],
                     }],
                 }), encoding="utf-8")
@@ -178,6 +191,12 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     (5, 7, 1), (6, 5, 1), (7, 6, 1), (8, 3, 1), (9, 2, 1),
                     (10, 4, 1), (11, 2, 1), (12, 2, 1),
                 ])
+                self.assertEqual(values["ReadSramFast"], sram_workspaces["readSramFast_Work"][0] | 1)
+                self.assertEqual(values["VerifySramFast"], sram_workspaces["verifySramFast_Work"][0] | 1)
+                self.assertIn(values["VerifySramValueFast"], (
+                    sram_workspaces["verifySramValueFast_Work"][0] | 1,
+                    resolve_elf_symbol_address(elf, "VerifySramValueFast_Core", tools["MODERN_NM"]) | 1,
+                ))
                 resources = {
                     name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
                     - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])
@@ -188,4 +207,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     "rom_bytes": rom.stat().st_size,
                     "ewram_bytes": resources["data"] + resources["ewram"],
                     "iwram_bytes": resources["iwram"], "records": records,
+                    "sram_workspaces": sram_workspaces,
+                    "active_sram_functions": {
+                        name: values[name]
+                        for name in ("ReadSramFast", "VerifySramFast", "VerifySramValueFast")
+                    },
                 }))
