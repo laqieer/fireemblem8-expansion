@@ -349,6 +349,8 @@ class FixtureBuildTests(unittest.TestCase):
                         self._build_fixture(enabled_locales=("ja",), font_metrics=metrics)
 
     def test_generated_cjk_storage_has_one_measured_native_owner(self):
+        from scripts.localization.game_catalog.compiled_fonts import _ArmObject
+
         compiler = shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc"))
         nm = shutil.which(os.environ.get("MODERN_NM", "arm-none-eabi-nm"))
         if compiler is None or nm is None:
@@ -363,24 +365,40 @@ class FixtureBuildTests(unittest.TestCase):
                 )
                 build = self._build_fixture()
                 written = write_build(build, output_dir=output)
-                object_path = output / "catalog.o"
-                compiled = subprocess.run(
-                    [
-                        compiler, "-mcpu=arm7tdmi", "-mthumb", "-mabi=aapcs", "-std=gnu89",
-                        "-DMODERN=1", "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=3u",
-                        "-I" + str(output), "-I" + str(ROOT / "include"), "-I" + str(ROOT),
-                        "-c", str(written["source"]), "-o", str(object_path),
-                    ],
-                    cwd=ROOT, capture_output=True, text=True, timeout=30,
-                )
-                self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-                symbols = subprocess.check_output(
-                    [nm, "-S", "--defined-only", str(object_path)], text=True, timeout=30,
-                )
-                storage = [row.split() for row in symbols.splitlines()
-                           if row.split()[-1] == "sMsgString"]
-                self.assertEqual(len(storage), 1)
-                self.assertEqual(int(storage[0][1], 16), max(0x1600, decoded_bytes))
+                for c_floor in (0x1600, 0x1000, 0x2000):
+                    with self.subTest(c_storage_floor=c_floor):
+                        context = output / "capacity-context.h"
+                        context.write_text(
+                           '#include "localized_game_text.h"\n'
+                           "#undef FE8_LOCALIZED_GAME_TEXT_TARGET_CAPACITY\n"
+                           f"#define FE8_LOCALIZED_GAME_TEXT_TARGET_CAPACITY {c_floor}u\n",
+                           encoding="ascii",
+                        )
+                        object_path = output / "catalog.o"
+                        compiled = subprocess.run(
+                           [
+                               compiler, "-mcpu=arm7tdmi", "-mthumb", "-mabi=aapcs", "-std=gnu89",
+                               "-DMODERN=1", "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=3u",
+                               "-I" + str(output), "-I" + str(ROOT / "include"), "-I" + str(ROOT),
+                               "-include", str(context),
+                               "-c", str(written["source"]), "-o", str(object_path),
+                           ],
+                           cwd=ROOT, capture_output=True, text=True, timeout=30,
+                        )
+                        self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+                        symbols = subprocess.check_output(
+                           [nm, "-S", "--defined-only", str(object_path)], text=True, timeout=30,
+                        )
+                        storage = [row.split() for row in symbols.splitlines()
+                                  if row.split()[-1] == "sMsgString"]
+                        self.assertEqual(len(storage), 1)
+                        storage_bytes = int(storage[0][1], 16)
+                        self.assertEqual(storage_bytes, max(c_floor, decoded_bytes))
+                        native = _ArmObject(object_path)
+                        capacity = int.from_bytes(native.symbol_bytes(native.symbol(
+                           "gLocalizedGameTextStorageCapacity",
+                        )), "little")
+                        self.assertEqual(capacity, storage_bytes)
         probe = output / "consumer.c"
         probe.write_text(
             '#include "global.h"\nchar gPublicMsgSize[sizeof(struct MsgBuffer)];\n',

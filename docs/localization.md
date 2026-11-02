@@ -75,7 +75,9 @@ discarding real dependencies or requiring a global clean.
 (or the Make graph's late `TEXT_HEADER`, including its real producer) and enabled
 locales alone. It does not need payloads or fonts. Only the generated catalog
 owns the complete measured CJK `MsgBuffer`; other consumers use its incomplete
-type, preserved legacy prefix and exported capacity. English/pseudo and
+type, preserved legacy prefix and exported capacity. The allocation owner derives
+that CJK capacity from `sizeof(sMsgString)`, not a duplicate Python floor.
+English/pseudo and
 archival storage remain 4 KiB. CJK storage retains its existing `0x1600` floor
 and grows to the actual generated decoded maximum, including its terminator.
 

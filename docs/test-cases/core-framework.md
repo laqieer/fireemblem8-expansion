@@ -52,6 +52,8 @@ Make command with the real profile arguments.
 Cold English/pseudo and CJK font/message consumers compile before a payload
 exists. Actual ARM objects show one generated CJK storage owner at the `0x1600`
 floor and at a real 6,001-byte decoded maximum. Public CJK storage is incomplete;
+the exported capacity equals the actual ARM storage symbol size even when
+private C-layout inputs change the floor.
 English remains exactly 4 KiB. An isolated declaration command needs only its
 message header, and a changed count changes the compiled declaration contract.
 A late fallback-header producer runs for cold and changed input counts.
