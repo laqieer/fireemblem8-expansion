@@ -108,6 +108,12 @@ The same locale and identity reach literal targets, public aliases and custom
 inherited parents, without maintaining a second list of build-goal names.
 Public modern goals retain early validation, and cleanup/archival/host-only
 requests do not acquire a new configuration prerequisite.
+Every actual native font object and localized preprocessed input depends on
+the selected context, including English/pseudo direct objects and parents
+that reach capture indirectly or through the default goal. That edge is not
+conditioned on locale or a top-level capture-goal spelling. Changed private/
+inherited flags rebuild the actual font input; an unchanged context preserves
+its object modification time. This does not produce an unused catalog payload.
 
 `make expansion-modern-game-localization-declarations` emits
 `game_localization_declarations.h` from the selected project's message header

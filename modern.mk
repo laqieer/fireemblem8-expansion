@@ -2494,9 +2494,7 @@ $(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o: $(MODERN_LOCALIZATION_CATAL
 # writer when the runtime headers and generated source are requested together.
 $(MODERN_OUTPUT_DIR)/src/fontgrp.o: graphics/debug_font.4bpp.h
 
-ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES) $(filter expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT),$(MAKECMDGOALS))),)
 $(MODERN_TEXT_FONT_OBJECTS) $(MODERN_OUTPUT_DIR)/src/data/localized_font_data.pre.c: $(MODERN_TEXT_COMPILE_CONTEXT)
-endif
 
 .PHONY: expansion-modern-game-localization-declarations
 expansion-modern-game-localization-declarations: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)

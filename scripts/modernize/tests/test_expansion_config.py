@@ -779,33 +779,126 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             )
         ]
         default_command.append("MODERN_ROM_SIZE=32M")
-        for width in (14, 15):
-            with self.subTest(default_parent_width=width):
+        for locales, pseudo, label, widths in (
+            ("en,ja", "0", "default", (14, 15)),
+            ("en", "0", "default-en", (17, 18)),
+            ("en,qps-ploc", "1", "default-pseudo", (19, 20)),
+        ):
+            selected_command = [
+                f"EXPANSION_ENABLED_LOCALES={locales}"
+                if argument.startswith("EXPANSION_ENABLED_LOCALES=") else
+                f"EXPANSION_PSEUDO_LOCALE={pseudo}"
+                if argument.startswith("EXPANSION_PSEUDO_LOCALE=") else argument
+                for argument in default_command
+            ]
+            for width in widths:
+                with self.subTest(default_parent_width=width, locales=locales):
+                    makefile.write_text(
+                        "include Makefile\n"
+                        f"MODERN_CFLAGS := -I{headers} $(MODERN_CFLAGS)\n"
+                        "ifeq ($(strip $(MAKECMDGOALS)),)\n"
+                        "MODERN_CFLAGS += -DNATIVE_EMPTY_GOALS=1\n"
+                        "endif\n"
+                        ".DEFAULT_GOAL := native-font-parent\n"
+                        ".PHONY: native-font-parent\n"
+                        f"native-font-parent: MODERN_CFLAGS += -DSELECTED_FONT_WIDTH={width}\n"
+                        f"native-font-parent: expansion-modern-text-inputs {' '.join(sorted(objects))}\n",
+                        encoding="utf-8",
+                    )
+                    rebuilt = subprocess.run(
+                        selected_command, cwd=ROOT, capture_output=True, text=True, timeout=120,
+                    )
+                    self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+                    selected = json.loads(context.read_text())
+                    for unit in selected["units"]:
+                        self.assertIn("-DNATIVE_EMPTY_GOALS=1", unit["compiler_argv"])
+                        if unit["logical_source"] in (
+                            "src/fontgrp.c", "src/fontgrp-data.c", "src/data/localized_font_data.c",
+                        ):
+                            self.assertIn(f"-DSELECTED_FONT_WIDTH={width}", unit["compiler_argv"])
+                    metrics_output = output / f"{label}-{width}"
+                    measured = measure_selected_fonts(context, output_dir=metrics_output)
+                    self.assertEqual(measured["ascii"]["system"], {63: width, 65: width})
+                    self.assertEqual(
+                        read_ascii_widths(
+                            namespace / "src/fontgrp-data.o", "TextGlyphs_System",
+                            layout_object=metrics_output / "selected-font-layout.o",
+                        ),
+                        {63: width, 65: width},
+                    )
+                    if width == widths[-1]:
+                        before = (namespace / "src/fontgrp-data.o").stat().st_mtime_ns
+                        unchanged = subprocess.run(
+                            selected_command, cwd=ROOT, capture_output=True, text=True, timeout=120,
+                        )
+                        self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
+                        self.assertEqual(
+                            (namespace / "src/fontgrp-data.o").stat().st_mtime_ns, before,
+                        )
+        for locales, pseudo, label, widths in (
+            ("en", "0", "inherited-en", (21, 22)),
+            ("en,qps-ploc", "1", "inherited-pseudo", (23, 24)),
+        ):
+            selected_command = [
+                f"EXPANSION_ENABLED_LOCALES={locales}"
+                if argument.startswith("EXPANSION_ENABLED_LOCALES=") else
+                f"EXPANSION_PSEUDO_LOCALE={pseudo}"
+                if argument.startswith("EXPANSION_PSEUDO_LOCALE=") else argument
+                for argument in default_command
+            ]
+            for width in widths:
+                with self.subTest(inherited_parent_width=width, locales=locales):
+                    makefile.write_text(
+                        "include Makefile\n"
+                        f"MODERN_CFLAGS := -I{headers} $(MODERN_CFLAGS)\n"
+                        ".PHONY: native-font-parent\n"
+                        f"native-font-parent: MODERN_CFLAGS += -DSELECTED_FONT_WIDTH={width}\n"
+                        f"native-font-parent: expansion-modern-text-inputs {' '.join(sorted(objects))}\n",
+                        encoding="utf-8",
+                    )
+                    rebuilt = subprocess.run(
+                        [*selected_command, "native-font-parent"], cwd=ROOT,
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+                    metrics_output = output / f"{label}-{width}"
+                    measured = measure_selected_fonts(context, output_dir=metrics_output)
+                    self.assertEqual(measured["ascii"]["system"], {63: width, 65: width})
+                    self.assertEqual(
+                        read_ascii_widths(
+                            namespace / "src/fontgrp-data.o", "TextGlyphs_System",
+                            layout_object=metrics_output / "selected-font-layout.o",
+                        ),
+                        {63: width, 65: width},
+                    )
+        direct_command = [
+            "EXPANSION_ENABLED_LOCALES=en" if argument.startswith("EXPANSION_ENABLED_LOCALES=")
+            else "EXPANSION_PSEUDO_LOCALE=0" if argument.startswith("EXPANSION_PSEUDO_LOCALE=")
+            else argument for argument in default_command
+        ]
+        for width in (25, 26):
+            with self.subTest(direct_object_width=width):
                 makefile.write_text(
                     "include Makefile\n"
-                    f"MODERN_CFLAGS := -I{headers} $(MODERN_CFLAGS)\n"
-                    "ifeq ($(strip $(MAKECMDGOALS)),)\n"
-                    "MODERN_CFLAGS += -DNATIVE_EMPTY_GOALS=1\n"
-                    "endif\n"
-                    ".DEFAULT_GOAL := native-font-parent\n"
-                    ".PHONY: native-font-parent\n"
-                    f"native-font-parent: MODERN_CFLAGS += -DSELECTED_FONT_WIDTH={width}\n"
-                    f"native-font-parent: expansion-modern-text-inputs {' '.join(sorted(objects))}\n",
+                    f"{namespace}/src/fontgrp-data.o: private MODERN_CFLAGS := "
+                    f"-I{headers} $(MODERN_CFLAGS) -DSELECTED_FONT_WIDTH={width}\n",
                     encoding="utf-8",
                 )
                 rebuilt = subprocess.run(
-                    default_command, cwd=ROOT, capture_output=True, text=True, timeout=120,
+                    [*direct_command, str(namespace / "src/fontgrp-data.o")],
+                    cwd=ROOT, capture_output=True, text=True, timeout=120,
                 )
                 self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
-                selected = json.loads(context.read_text())
-                for unit in selected["units"]:
-                    self.assertIn("-DNATIVE_EMPTY_GOALS=1", unit["compiler_argv"])
-                    if unit["logical_source"] in (
-                        "src/fontgrp.c", "src/fontgrp-data.c", "src/data/localized_font_data.c",
-                    ):
-                        self.assertIn(f"-DSELECTED_FONT_WIDTH={width}", unit["compiler_argv"])
-                measured = measure_selected_fonts(context, output_dir=output / f"default-{width}")
+                metrics_output = output / f"direct-en-{width}"
+                measured = measure_selected_fonts(context, output_dir=metrics_output)
                 self.assertEqual(measured["ascii"]["system"], {63: width, 65: width})
+                self.assertEqual(
+                    read_ascii_widths(
+                        namespace / "src/fontgrp-data.o", "TextGlyphs_System",
+                        layout_object=metrics_output / "selected-font-layout.o",
+                    ),
+                    {63: width, 65: width},
+                )
 
     def test_native_payload_preserves_selected_declarations_on_source_mismatch(self):
         if host_only_enabled() or shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:

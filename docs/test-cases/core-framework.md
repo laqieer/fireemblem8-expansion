@@ -114,6 +114,12 @@ native maps. English/pseudo keeps the same selected Latin data. Bad native
 counts, scalar/width bounds, bitmap lengths, missing symbols and wrong-machine
 objects fail. Fake compiler/linker success cannot reuse stale measurement
 objects or pass without emitting fresh native facts.
+Also change only inherited/private System width flags in English and pseudo
+default parents, sole named parents and direct font-object requests without
+an explicit capture goal. The captured measurement AND original ARM font
+object must reflect both changed values. Repeat an unchanged parent request:
+the original object's modification time stays unchanged. Native ownership,
+not top-level goal spelling or CJK selection, supplies the context dependency.
 
 ### Interactions, cleanup and limitations
 
