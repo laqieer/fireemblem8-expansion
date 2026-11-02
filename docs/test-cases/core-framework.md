@@ -89,6 +89,12 @@ for both full and bare old header edges, including an inherited parent with
 changed native compiler arguments. Only those obsolete edges disappear;
 escaped real prerequisites still cause the next changed-header rebuild.
 Cleanup of an owned build tree succeeds even when the catalog migrator refuses.
+Populate an old warm native dependency, make its migrator unavailable and query
+the complete canonical archival goal and object inventories. Both remain
+queryable with the native input's bytes/inode/mtime unchanged and no migrator
+invocation. Add an actual modern font object to that request: migration must
+run and its failure remain explicit. This does not execute or qualify an
+archival ROM build; real archival integration stays in complete CI.
 English/pseudo object compile and unchanged rebuild do not invoke the unused
 declaration generator; explicit declaration requests still work.
 With an owned selected binary font width input, direct catalog/header and

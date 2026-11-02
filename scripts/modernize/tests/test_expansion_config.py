@@ -1002,6 +1002,73 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             self.assertEqual(cleaned.returncode, 0, cleaned.stdout + cleaned.stderr)
             self.assertFalse(build.exists())
 
+    def test_native_archival_requests_preserve_warm_modern_dependencies(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-archival-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            build = output / "owned"
+            dependency = build / "debug/aapcs/src/fontgrp-data.d"
+            dependency.parent.mkdir(parents=True)
+            dependency.write_text(
+                f"{dependency.with_suffix('.o')}: localized_game_text_data.h\n",
+                encoding="ascii",
+            )
+            before = dependency.read_bytes()
+            before_stat = dependency.stat()
+            calls = output / "make-calls"
+            sentinel = output / "unexpected-native-execution"
+            python = output / "no-catalog-migration"
+            python.write_text(
+                f"#!{sys.executable}\nimport os, sys\n"
+                "if sys.argv[1:4] == ['-m', 'scripts.localization.game_catalog', "
+                "'prune-native-font-dependencies']:\n"
+                f"    open({str(calls)!r}, 'a').write(repr(sys.argv[1:]) + '\\n')\n"
+                f"    open({str(sentinel)!r}, 'w').write('called')\n"
+                "    raise SystemExit(79)\n"
+                f"os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n",
+                encoding="ascii",
+            )
+            python.chmod(0o755)
+            command = [
+                "make", "--no-print-directory", "NODEP=1", f"MODERN_BUILD_ROOT={build}",
+                "FE8_PROJECT=default", "MODERN_CONFIG=debug", f"PYTHON={python}",
+            ]
+            database = subprocess.run(
+                [*command, "-pn", "expansion-modern-toolchain-check"],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(database.returncode, 0, database.stdout + database.stderr)
+            known = make_database_variable(database.stdout, "ARCHIVAL_KNOWN_GOALS").split()
+            objects = make_database_variable(database.stdout, "ALL_OBJECTS").split()
+            self.assertIn("legacy", known)
+            self.assertTrue(objects)
+            for label, goals in (("canonical-goals", known), ("canonical-objects", objects)):
+                with self.subTest(archival_request=label):
+                    calls.write_text("")
+                    queried = subprocess.run(
+                        [*command, "-q", *(f"--old-file={goal}" for goal in goals), *goals],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertIn(queried.returncode, (0, 1), queried.stdout + queried.stderr)
+                    self.assertEqual(calls.read_text(), "")
+                    self.assertFalse(sentinel.exists())
+                    self.assertEqual(dependency.read_bytes(), before)
+                    after = dependency.stat()
+                    self.assertEqual(
+                        (after.st_ino, after.st_mtime_ns),
+                        (before_stat.st_ino, before_stat.st_mtime_ns),
+                    )
+            calls.write_text("")
+            mixed = subprocess.run(
+                [*command, "-q", "--old-file=fireemblem8.gba", "fireemblem8.gba",
+                 str(dependency.with_suffix(".o"))],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(mixed.returncode, 2, mixed.stdout + mixed.stderr)
+            self.assertTrue(sentinel.exists())
+            self.assertIn("prune-native-font-dependencies", calls.read_text())
+            self.assertIn("Native font dependency migration failed", mixed.stderr)
+
     def test_native_english_object_does_not_force_declarations(self):
         if host_only_enabled() or shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
             self.skipTest("native compile/no-op proof belongs to the target lane")

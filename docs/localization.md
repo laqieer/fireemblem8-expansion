@@ -71,11 +71,16 @@ measurement, without bootstrapping the full source inventory. Pure source-only
 capture/declaration, toolchain probes and cleanup do not enter that scan.
 Before a real font build reads old dependency products, the existing catalog
 tool removes only obsolete measured-header edges for those font objects.
-Existing owned products trigger this narrow migration regardless of the
-top-level goal name, including inherited-parent builds.
+Existing owned products trigger this narrow migration for real native
+consumers, including default and inherited-parent builds.
 Cleanup-only requests use the existing cleanup classification and skip the
 catalog migration helper, so a failed helper cannot prevent build recovery.
 Pure context/declaration requests also leave warm dependency inputs unchanged.
+Pure archival requests reuse the existing `ARCHIVAL_KNOWN_GOALS` and
+`ALL_OBJECTS` inventories: they neither start the native catalog migrator nor
+rewrite unrelated warm modern dependencies. Mixed archival/native requests
+retain native migration and its explicit failure behavior. This is the same
+nonconsumer classification, not another copied goal registry or a cache service.
 Other escaped prerequisites and phony header rules remain intact. This breaks
 pre-split payload/font cycles without discarding real dependencies or requiring
 a global clean.

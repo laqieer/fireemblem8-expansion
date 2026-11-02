@@ -1559,14 +1559,14 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c
 # Included makefiles are otherwise remade even under GNU Make's -n.
 MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
 MODERN_CLEAN_GOALS := clean clean_fast clean_tools distclean expansion-modern-clean assets-clean
-MODERN_TEXT_METADATA_GOALS := $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
+MODERN_TEXT_NONCONSUMER_GOALS := $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
 	expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT) \
 	expansion-modern-game-localization-declarations $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
-	game_localization_declarations.h
+	game_localization_declarations.h $(ARCHIVAL_KNOWN_GOALS) $(ALL_OBJECTS)
 # Replay target scopes without starting recursive profile builds.
 modern_recursive_make = $(if $(filter 1,$(MODERN_DRY_RUN)),:,$(MAKE))
 ifeq ($(MODERN_DRY_RUN),)
-ifneq (,$(filter-out $(MODERN_TEXT_METADATA_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+ifneq (,$(filter-out $(MODERN_TEXT_NONCONSUMER_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
 ifneq (,$(wildcard $(MODERN_TEXT_FONT_OBJECTS:.o=.d) $(MODERN_TEXT_FONT_OBJECTS:.o=.headers.d)))
 MODERN_TEXT_DEPENDENCY_MIGRATION := $(shell $(PYTHON) -m scripts.localization.game_catalog \
 	prune-native-font-dependencies --objects $(foreach object,$(MODERN_TEXT_FONT_OBJECTS),"$(object)"))
@@ -1581,7 +1581,7 @@ ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
 include $(MODERN_ALL_DATA_ASSET_DEPS)
 else
 ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
-ifneq (,$(filter-out $(MODERN_TEXT_METADATA_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+ifneq (,$(filter-out $(MODERN_TEXT_NONCONSUMER_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
 include $(filter $(MODERN_TEXT_FONT_OBJECTS:.o=.assets.d),$(MODERN_ALL_DATA_ASSET_DEPS))
 endif
 endif
