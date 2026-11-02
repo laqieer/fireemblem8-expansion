@@ -290,5 +290,106 @@ int main(void)
         assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
         assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
     }
+    {
+        struct GradoStateFlagView view;
+        struct GradoStateFlagView invalid;
+        u8 savedPermanent[25];
+        u8 savedChapter[5];
+        u8 savedBeforePermanent[25];
+        u8 savedBeforeChapter[5];
+        u8 corruptPermanent[25];
+        u8 corruptBefore[25];
+        u8 unsetPermanent[25] = {0};
+
+        ResetPermanentFlags();
+        ResetChapterFlags();
+        assert(GradoState_WriteValue(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, 2)
+            == GRADO_STATE_VALUE_VALID);
+        assert(GradoState_WriteValue(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, 2)
+            == GRADO_STATE_VALUE_VALID);
+        assert(GradoState_WriteValue(&choice, GRADO_GUIDE_PROGRESSIVE, 3, 2)
+            == GRADO_STATE_VALUE_VALID);
+        memcpy(savedPermanent, gPermanentFlagBits, sizeof(savedPermanent));
+        memcpy(savedChapter, gChapterFlagBits, sizeof(savedChapter));
+        memcpy(savedBeforePermanent, savedPermanent, sizeof(savedPermanent));
+        memcpy(savedBeforeChapter, savedChapter, sizeof(savedChapter));
+        memset(gPermanentFlagBits, 0xFF, sizeof(gPermanentFlagBits));
+        memset(gChapterFlagBits, 0xFF, sizeof(gChapterFlagBits));
+        memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        view.chapterFlags = savedChapter;
+        view.chapterBytes = sizeof(savedChapter);
+        view.permanentFlags = savedPermanent;
+        view.permanentBytes = sizeof(savedPermanent);
+
+        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
+            == GRADO_STATE_VALUE_VALID && value == 2);
+        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
+            == GRADO_STATE_VALUE_VALID && value == 2);
+        assert(GradoState_ReadValueFrom(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
+            == GRADO_STATE_VALUE_VALID && value == 2);
+        assert(GradoState_ReadValueFrom(&boolean, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
+            == GRADO_STATE_VALUE_VALID && value == 0);
+        invalid = view;
+        invalid.chapterFlags = NULL;
+        invalid.chapterBytes = 0;
+        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_VALID && value == 2);
+
+        value = 0xBEEF;
+        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        invalid = view;
+        invalid.permanentBytes = sizeof(savedPermanent) - 1;
+        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        invalid = view;
+        invalid.permanentFlags = NULL;
+        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        invalid = view;
+        invalid.chapterBytes = sizeof(savedChapter) - 1;
+        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 4, &view, &value)
+            == GRADO_STATE_VALUE_CHAPTER && value == 0xBEEF);
+        assert(GradoState_ReadValueFrom(&reserved, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
+            == GRADO_STATE_VALUE_LAYOUT && value == 0xBEEF);
+        assert(GradoState_ReadValueFrom(&guide[0].field, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
+            == GRADO_STATE_VALUE_LAYOUT && value == 0xBEEF);
+        assert(GradoState_ReadValueFrom(&guide[0].field, GRADO_GUIDE_STATIC, 3, &view, &value)
+            == GRADO_STATE_VALUE_VALID && value == 0);
+        value = 0xBEEF;
+        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, NULL, &value)
+            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &view, NULL)
+            == GRADO_STATE_VALUE_INPUT);
+        invalid = view;
+        invalid.permanentFlags = unsetPermanent;
+        assert(GradoState_ReadValueFrom(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_UNSET && value == 0xBEEF);
+
+        memcpy(gPermanentFlagBits, savedPermanent, sizeof(savedPermanent));
+        SetFlag(143);
+        memcpy(corruptPermanent, gPermanentFlagBits, sizeof(corruptPermanent));
+        memcpy(corruptBefore, corruptPermanent, sizeof(corruptBefore));
+        memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
+        invalid.permanentFlags = corruptPermanent;
+        assert(GradoState_ReadValueFrom(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_CORRUPT && value == 0xBEEF);
+        assert(memcmp(corruptBefore, corruptPermanent, sizeof(corruptBefore)) == 0);
+        memcpy(gPermanentFlagBits, savedPermanent, sizeof(savedPermanent));
+        SetFlag(141);
+        memcpy(corruptPermanent, gPermanentFlagBits, sizeof(corruptPermanent));
+        memcpy(corruptBefore, corruptPermanent, sizeof(corruptBefore));
+        memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
+        assert(GradoState_ReadValueFrom(&bounded, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
+            == GRADO_STATE_VALUE_CORRUPT && value == 0xBEEF);
+        assert(memcmp(corruptBefore, corruptPermanent, sizeof(corruptBefore)) == 0);
+        assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+        assert(memcmp(savedBeforePermanent, savedPermanent, sizeof(savedPermanent)) == 0);
+        assert(memcmp(savedBeforeChapter, savedChapter, sizeof(savedChapter)) == 0);
+    }
     return 0;
 }

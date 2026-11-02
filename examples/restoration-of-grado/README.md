@@ -24,6 +24,18 @@ monotonicity. The explicit permanent-only `GRADO_STATE_MONOTONIC` kind refuses
 clearing a set fact and allows idempotent writes; full retirement producers,
 load/recovery and selected-profile lifecycles remain separate requirements.
 
+`GradoState_ReadValueFrom` accepts a readonly, sized view of the existing
+native chapter/permanent buffers. It uses the same descriptor validation and
+decoder as the live reader and the original packed-bit reader; it neither
+loads temporary bytes into live game flags nor writes its input. Only the
+requested scope needs a full native buffer, so a normal-save permanent view
+does not need chapter bytes. Null/short input, wrong chapter, reserved/owned
+fields, unset and corrupt values retain their explicit results and output
+guards. The view is an ephemeral pair of pointers/sizes, not a save record.
+An owning loader must establish compatible envelope/epoch/checksum and native
+block validity before constructing it. Field decoding alone never authorizes
+loading, migration, recovery or a resource operation.
+
 An unselected static-guide adapter is also available for the existing
 `src/bmguide.c` code slot: `src/static_guide.c` includes that native
 implementation unchanged and routes only its flag operations through the
@@ -289,6 +301,15 @@ No ROM, emulator, save file, credentials or manual judgment is needed.
    permanent, chapter-local and static-guide backing. Compare both complete
    arrays with direct native clearing, then read `UNSET` without changing the
    output guard or any backing byte.
+4. Produce native packed bytes through actual value writes, then make the
+   live buffers deliberately disagree. Read those independent saved-buffer
+   views through `GradoState_ReadValueFrom`: permanent/chapter counters,
+   one-hot and the last permanent bit must reflect the supplied bytes, not
+   live state. A permanent-only view works without chapter storage.
+   Null/short input, wrong chapter, reservations/guide ownership, unset and
+   corrupt one-hot/counter values refuse without changing the output guard,
+   either input or either complete live array. This is native-format field
+   preflight, not real SRAM/envelope compatibility or load/recovery proof.
 
 The absent pre-feature interface is a structural negative control, not
 target execution evidence. The actual host vectors supply the positive and

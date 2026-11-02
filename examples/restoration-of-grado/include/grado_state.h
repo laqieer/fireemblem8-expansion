@@ -64,6 +64,14 @@ struct GradoStateField
     /* 07 */ u8 scope;
 };
 
+struct GradoStateFlagView
+{
+    const void * chapterFlags;
+    unsigned int chapterBytes;
+    const void * permanentFlags;
+    unsigned int permanentBytes;
+};
+
 enum GradoAllocationResult GradoState_ValidateAllocation(
     const struct GradoStateField * fields,
     unsigned int count,
@@ -73,6 +81,13 @@ enum GradoStateValueResult GradoState_ReadValue(
     const struct GradoStateField * field,
     enum GradoGuideStoragePolicy guidePolicy,
     unsigned int chapter,
+    u16 * value);
+
+enum GradoStateValueResult GradoState_ReadValueFrom(
+    const struct GradoStateField * field,
+    enum GradoGuideStoragePolicy guidePolicy,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view,
     u16 * value);
 
 enum GradoStateValueResult GradoState_WriteValue(
