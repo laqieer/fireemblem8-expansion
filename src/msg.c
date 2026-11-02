@@ -34,6 +34,10 @@
 EWRAM_DATA struct MsgBuffer sMsgString = {0};
 EWRAM_DATA int sActiveMsg = 0;
 
+#if defined(MODERN) && !FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+static EWRAM_DATA bool8 sActiveMsgValid = FALSE;
+#endif
+
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 struct MsgTransformScratch
 {
@@ -963,11 +967,18 @@ char * GetStringFromIndexInBuffer(int index, char *buffer)
 #else
 char * GetStringFromIndex(int index)
 {
+#ifdef MODERN
+    if (sActiveMsgValid && index == sActiveMsg)
+#else
     if (index == sActiveMsg)
+#endif
         return (char *)MSG_BUFFER1;
     CallARM_DecompText((const char *)gMsgTable[index], (char *)MSG_BUFFER1);
     SetMsgTerminator((signed char *)MSG_BUFFER1);
     sActiveMsg = index;
+#ifdef MODERN
+    sActiveMsgValid = TRUE;
+#endif
     return (char *)MSG_BUFFER1;
 }
 
