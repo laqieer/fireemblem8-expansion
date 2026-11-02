@@ -201,8 +201,10 @@ newlib-header fallback and the normal `MODERN_CC`,
 `MODERN_TOOLCHAIN_ROOT`/`PREFIX`, and `MODERN_BINUTILS_DIR` overrides. The
 existing full Build job and upstream verifier mirror run this suite after
 their host/ARM dependencies are installed; no new job or tool prerequisite
-is added. Concrete allocation, selected runtime/profile qualification, save
-compatibility and gameplay integrations are intentionally not claimed.
+is added. These generic descriptor controls do not independently qualify
+the concrete candidate campaign allocation exercised above. Selected
+runtime/profile qualification, save compatibility and gameplay integrations
+remain unclaimed by either subcase.
 
 ## TC-GRADO-GUIDE-001
 
