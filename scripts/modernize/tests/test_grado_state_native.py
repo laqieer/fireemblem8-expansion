@@ -151,22 +151,33 @@ class GradoAllocationNativeTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 objects.append(output)
-            for selected in (False, True):
+            for selected, initialized in ((False, False), (True, False), (True, True)):
                 source = EXAMPLE / "src/static_guide.c" if selected else ROOT / "src/bmguide.c"
-                guide = root / f"guide-{int(selected)}.o"
+                guide = root / f"guide-{int(selected)}-{int(initialized)}.o"
                 # The host has no ARM r4 register; native compilation retains the annotation.
                 result = subprocess.run(
                     [*common, "-Dasm(x)=", "-c", str(source), "-o", str(guide)],
                     capture_output=True, text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                binary = root / f"guide-{int(selected)}"
+                backend = objects[0]
+                if initialized:
+                    flags = EXAMPLE / "src/native_flags.c"
+                    backend = root / "native-flags.o"
+                    result = subprocess.run(
+                        [*common, "-c", str(flags), "-o", str(backend)],
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self._arm_compile(flags, root / "native-flags-arm.o")
+                binary = root / f"guide-{int(selected)}-{int(initialized)}"
                 result = subprocess.run(
                     [
                         *common, f"-DEXPECT_STATIC_GUIDE={int(selected)}",
+                        f"-DEXPECT_GUIDE_INITIALIZER={int(initialized)}",
                         "-no-pie", "-Wl,--gc-sections",
                         str(Path(__file__).parent / "fixtures/grado_guide_probe.c"),
-                        str(SOURCE), *(str(path) for path in objects), str(guide),
+                        str(SOURCE), str(backend), str(objects[1]), str(guide),
                         "-o", str(binary),
                     ],
                     capture_output=True, text=True,

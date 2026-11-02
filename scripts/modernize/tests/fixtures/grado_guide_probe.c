@@ -46,7 +46,7 @@ static void VerifyPolicyFlag(int flag, int guideOwned)
         memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
         memcpy(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent));
         memcpy(expectedChapter, gChapterFlagBits, sizeof(expectedChapter));
-        assert(GradoGuide_CheckFlag(flag) == (guideOwned || initialState));
+        assert(GradoGuide_CheckFlag(flag) == (guideOwned ? CheckFlag(181) : initialState));
         assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
         assert(memcmp(expectedChapter, gChapterFlagBits, sizeof(expectedChapter)) == 0);
 
@@ -66,7 +66,7 @@ static void VerifyPolicyFlag(int flag, int guideOwned)
 
             assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
             assert(memcmp(expectedChapter, gChapterFlagBits, sizeof(expectedChapter)) == 0);
-            assert(GradoGuide_CheckFlag(flag) == (guideOwned || CheckFlag(flag)));
+            assert(GradoGuide_CheckFlag(flag) == (guideOwned ? CheckFlag(181) : CheckFlag(flag)));
             assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
             assert(memcmp(expectedChapter, gChapterFlagBits, sizeof(expectedChapter)) == 0);
         }
@@ -85,9 +85,37 @@ int main(void)
 
     assert(GetPermanentFlagBitsSize() == sizeof(beforePermanent));
     assert(GetChapterFlagBitsSize() == sizeof(beforeChapter));
+#if EXPECT_STATIC_GUIDE
+    assert(IsGuideLocked());
+#if EXPECT_GUIDE_INITIALIZER
+    memset(gPermanentFlagBits, 0xFF, sizeof(gPermanentFlagBits));
+    memset(gChapterFlagBits, 0xA6, sizeof(gChapterFlagBits));
+#endif
+#endif
     ResetPermanentFlags();
 
 #if EXPECT_STATIC_GUIDE
+#if EXPECT_GUIDE_INITIALIZER
+    memset(beforePermanent, 0, sizeof(beforePermanent));
+    memset(beforeChapter, 0xA6, sizeof(beforeChapter));
+    beforePermanent[10] = 1;
+    assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    assert(!IsGuideLocked());
+    assert(BmGuideTextShowGreenOrNormal());
+    ClearFlag(181);
+#endif
+    assert(IsGuideLocked());
+    SetFlag(180);
+    SetFlag(240);
+    SetFlag(295);
+    assert(IsGuideLocked());
+    for (entry = gGuideTable; entry->title != 12; ++entry)
+    {
+        assert(!GradoGuide_CheckFlag(entry->displayFlag));
+        assert(!GradoGuide_CheckFlag(entry->readFlag));
+    }
+    SetFlag(181);
     assert(!IsGuideLocked());
     assert(BmGuideTextShowGreenOrNormal());
 
@@ -97,6 +125,7 @@ int main(void)
     for (i = 0; i < sizeof(gChapterFlagBits); ++i)
         gChapterFlagBits[i] = i * 11 + 3;
 
+    SetFlag(181);
     memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
     memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
 

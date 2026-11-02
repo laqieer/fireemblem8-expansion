@@ -28,9 +28,19 @@ An unselected static-guide adapter is also available for the existing
 `src/bmguide.c` code slot: `src/static_guide.c` includes that native
 implementation unchanged and routes only its flag operations through the
 shared ownership policy in `src/state.c`. It does not duplicate guide
-content, scripts, window, navigation or sort code. An eventual project must
-replace that slot and include `src/state.c`; no project preset is activated
-by this reference.
+content, scripts, window, navigation or sort code. Every display/read query
+uses the one truth flag assigned by the campaign definition; uninitialized
+truth keeps the guide locked, regardless of unrelated reclaimed bits.
+`src/native_flags.c` supplies the existing `src/eventinfo.c` replacement
+slot, includes the original implementation and initializes truth after its
+real permanent-flag reset. New-game callers keep that same native reset
+interface. The header derives the internal native ID from the same
+allocation definition, not a second numeric owner.
+
+An eventual project must select both replacements and include `src/state.c`;
+neither replacement is activated by this reference. A permanent reset clears
+the original permanent buffer then sets only truth, leaving chapter bits
+unchanged. This is new-game/reset behavior, not a load-recovery operation.
 
 The candidate campaign allocation now names all 227 FLAG and 16 STATE entries
 in `include/grado_campaign_state.def`. That single C definition owns explicit
@@ -56,12 +66,13 @@ and choice backing use permanent storage even when the old register called
 their immediate use local. True local flags reuse chapter bits with explicit
 project ordinals: CH00..CH05 are 0..5, CH05X is 6, CH06..CH18 are 7..19,
 CH18X is 20 and FINAL is 21. Local access does not reset storage or implement
-new-chapter/Suspend behavior. The allocated guide truth slot and transition
-backing are reserved for their owning initialization/producer, not initialized
-or qualified by the allocation validator.
+new-chapter/Suspend behavior. The allocation validator itself initializes
+neither guide truth nor transition backing. The optional native reset supplies
+guide initialization; the transition producer and selected save/profile
+qualification remain open.
 
 There is still no activated state/guide profile, epoch change, load hook,
-recovery or playable content here. Actual initialized guide consumers,
+recovery or playable content here. Selected guide/save integration,
 Grado schema 1/epoch 256, strict compatible normal/Suspend/legacy loading,
 producer-sensitive lifecycles and target-ROM/RAM proof remain required.
 Framework epoch 2 and its existing envelope are untouched. Do not select or
@@ -176,8 +187,13 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
    linker errors.
 2. The original source is the progressive negative control: an empty flag
    buffer locks the guide; native unlock-all exposes entries but leaves them
-   unread. The selected adapter exposes all 56 entries as read without
-   changing any of the 25 permanent or 5 chapter bytes. Exercise every
+   unread. The adapter also locks with truth unset, even if unrelated
+   reclaimed display/read bits are set. Initializing truth exposes all56
+   as read. Exercise both explicit truth initialization and the optional
+   actual native permanent-reset producer; the latter clears the original
+   permanent bytes then sets exactly the allocated truth bit, preserving
+   the complete chapter buffer. Subsequent guide reads/writes change none
+   of the 25 permanent or 5 chapter bytes. Exercise every
    display/read flag through the real guide consumers and policy operations;
    all 112 bits remain byte-identical.
 3. Check all 240 valid native flag IDs: chapter 1 through 40 and permanent
@@ -185,8 +201,9 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
    not a second copy of the range predicate. The unused gap 236 through 239
    and upper tail 296 through 300 remain ordinary flags, as do sort flag 179
    and chapter flag 7. From both cleared and set starting states, reads must
-   preserve every backing byte; set/clear operations must either preserve
-   guide-owned storage or match the real backend's complete byte changes.
+   preserve every backing byte; guide-owned reads equal the actual truth
+   bit rather than an unconditional success. Set/clear operations must either
+   preserve guide-owned storage or match the real backend's complete byte changes.
    Capture the complete initial backing once and restore it before each
    operation. In particular, clear-from-zero cannot inherit a prior set.
    The ARM object must route every guide flag call
@@ -207,7 +224,8 @@ shared-state probe. With each operation isolated, it still compiles but the
 real native probe aborts on clear-from-zero.
 
 The host compiler removes only the unsupported ARM register annotation;
-native ARM compilation retains it. The unused event-dispatch dependency is
+native ARM compilation retains it, and compiles the original event module
+through its reset adapter too. The unused event-dispatch dependency is
 an explicit abort-only test adapter: unexpected execution fails rather than
 simulating success. Tests use actual native capacities/content and only
 their own memory/temporary directories. The same source still implements

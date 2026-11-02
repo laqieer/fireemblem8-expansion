@@ -1,12 +1,12 @@
 #include "global.h"
 
 #include "eventinfo.h"
-#include "../include/grado_state.h"
+#include "../include/grado_state_internal.h"
 
 int GradoGuide_CheckFlag(int flag)
 {
     if (GradoState_IsProgressiveGuideFlag(flag))
-        return 1;
+        return CheckFlag(GRADO_INTERNAL_GUIDE_TRUTH);
 
     return CheckFlag(flag);
 }
