@@ -62,10 +62,19 @@ of the selected font objects and localized preprocessing output. A warm change
 to target-private compiler or preprocessor arguments rebuilds those inputs;
 an unchanged context adds no mandatory font recompilation or per-object stamp.
 Ordinary English builds not requesting measurement retain their existing path.
+English/pseudo `localized_game_text.o` builds do not force unused declarations;
+the standalone declaration command remains available for those profiles.
+Real measured builds also read/remake only the existing selected font-data
+asset dependencies on direct catalog/header and inherited-parent requests.
+Changing an owned raw `INCBIN` input rebuilds its preprocessing/object before
+measurement, without bootstrapping the full source inventory. Pure source-only
+capture/declaration, toolchain probes and cleanup do not enter that scan.
 Before a real font build reads old dependency products, the existing catalog
 tool removes only obsolete measured-header edges for those font objects.
 Existing owned products trigger this narrow migration regardless of the
 top-level goal name, including inherited-parent builds.
+Cleanup-only requests use the existing cleanup classification and skip the
+catalog migration helper, so a failed helper cannot prevent build recovery.
 Other escaped prerequisites and phony header rules remain intact; dry capture
 does not mutate them. This breaks pre-split payload/font cycles without
 discarding real dependencies or requiring a global clean.

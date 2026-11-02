@@ -61,6 +61,13 @@ An actual warm pre-split `.d`/`.headers.d` build consumes rebuilt font metrics
 for both full and bare old header edges, including an inherited parent with
 changed native compiler arguments. Only those obsolete edges disappear;
 escaped real prerequisites still cause the next changed-header rebuild.
+Cleanup of an owned build tree succeeds even when the catalog migrator refuses.
+English/pseudo object compile and unchanged rebuild do not invoke the unused
+declaration generator; explicit declaration requests still work.
+With an owned selected binary font width input, direct catalog/header and
+custom-parent generation consume the original width and both decremented native values,
+not the stale initial object. Only selected font-data dependency owners enter
+this bootstrap; pure capture/declaration and cleanup remain independent.
 
 Private System/Talk Latin widths are 9/11 pixels, including a real cross-slot
 ARM glyph relocation. Private Japanese System/Talk widths are 13/7; selected

@@ -1557,9 +1557,11 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c
 
 # Included makefiles are otherwise remade even under GNU Make's -n.
 MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
+MODERN_CLEAN_GOALS := clean clean_fast clean_tools distclean expansion-modern-clean assets-clean
 # Replay target scopes without starting recursive profile builds.
 modern_recursive_make = $(if $(filter 1,$(MODERN_DRY_RUN)),:,$(MAKE))
 ifeq ($(MODERN_DRY_RUN),)
+ifneq (,$(filter-out $(MODERN_CLEAN_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
 ifneq (,$(wildcard $(MODERN_TEXT_FONT_OBJECTS:.o=.d) $(MODERN_TEXT_FONT_OBJECTS:.o=.headers.d)))
 MODERN_TEXT_DEPENDENCY_MIGRATION := $(shell $(PYTHON) -m scripts.localization.game_catalog \
 	prune-native-font-dependencies --objects $(foreach object,$(MODERN_TEXT_FONT_OBJECTS),"$(object)"))
@@ -1568,9 +1570,19 @@ $(error Native font dependency migration failed)
 endif
 endif
 endif
-ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
+endif
 ifeq ($(MODERN_DRY_RUN),)
+ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
 include $(MODERN_ALL_DATA_ASSET_DEPS)
+else
+ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+ifneq (,$(filter-out $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
+	expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT) \
+	expansion-modern-game-localization-declarations $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+	game_localization_declarations.h,$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+include $(filter $(MODERN_TEXT_FONT_OBJECTS:.o=.assets.d),$(MODERN_ALL_DATA_ASSET_DEPS))
+endif
+endif
 endif
 endif
 
@@ -1922,7 +1934,7 @@ MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOAL
 		$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
 		$(MODERN_GAME_LOCALIZATION_REPORT_JSON) $(MODERN_GAME_LOCALIZATION_BUDGET_JSON),\
 		$(MAKECMDGOALS))
-MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out clean clean_fast clean_tools distclean expansion-modern-clean assets-clean,$(MAKECMDGOALS)),default))
+MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out $(MODERN_CLEAN_GOALS),$(MAKECMDGOALS)),default))
 
 # Whether this invocation's MODERN_CFLAGS actually receives the
 # FE8_EXPANSION_* -D defines below (both gates below hold). Used again
@@ -2534,10 +2546,10 @@ $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER): FORCE \
 		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(TEXT_HEADER))" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 
-$(MODERN_OUTPUT_DIR)/src/localized_game_text.o: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
 game_localization_declarations.h: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) ;
 
 ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+$(MODERN_OUTPUT_DIR)/src/localized_game_text.o: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
 .PHONY: FORCE_MODERN_GAME_LOCALIZATION
 FORCE_MODERN_GAME_LOCALIZATION:
 
@@ -4926,6 +4938,9 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_public_build_entrypoints_capture_only_c_without_execution \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_metrics_read_selected_private_font_objects \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_warm_presplit_dependencies_use_rebuilt_font_metrics \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cleanup_does_not_import_the_catalog_migrator \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_english_object_does_not_force_declarations \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_catalog_tracks_selected_raw_font_assets_for_direct_and_parent_goals \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cjk_fonts_bootstrap_without_payload_generation \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_regional_metrics_and_cross_slot_relocations_are_native \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_translation_and_mapping_use_the_real_engine_root \

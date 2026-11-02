@@ -149,16 +149,17 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 )
                 self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
-            for locales, pseudo in (("en", "0"), ("en,qps-ploc", "1")):
+            for locales, pseudo in (("en", "0"), ("en,qps-ploc", "1"), ("en,ja", "0")):
                 with self.subTest(locales=locales):
-                    output = Path(directory) / pseudo
+                    output = Path(directory) / locales.replace(",", "-")
                     result = subprocess.run(
                         [
                             "make", "--no-print-directory", "NODEP=1",
                             "expansion-modern-game-localization-declarations",
-                            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug", "MODERN_ROM_SIZE=32M",
                             "FE8_PROJECT=default", f"EXPANSION_ENABLED_LOCALES={locales}",
                             f"EXPANSION_PSEUDO_LOCALE={pseudo}", "MODERN_CC=/missing/compiler",
+                            "MODERN_SCANINC=/missing/scaninc",
                             f"PYTHON={sys.executable}", f"TEXT_HEADER={selected}",
                         ],
                         cwd=ROOT, capture_output=True, text=True, timeout=60,
@@ -733,6 +734,160 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             self.assertEqual(
                 set(json.loads(line) for line in observed.read_text().splitlines()), {12},
             )
+
+    def test_native_cleanup_does_not_import_the_catalog_migrator(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-cleanup-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            build = output / "owned"
+            dependency = build / "debug/aapcs/src/fontgrp-data.d"
+            dependency.parent.mkdir(parents=True)
+            dependency.write_text(
+                f"{dependency.with_suffix('.o')}: localized_game_text_data.h\n",
+                encoding="ascii",
+            )
+            python = output / "no-catalog-migration"
+            python.write_text(
+                f"#!{sys.executable}\n"
+                "import os, sys\n"
+                "if sys.argv[1:4] == ['-m', 'scripts.localization.game_catalog', "
+                "'prune-native-font-dependencies']:\n"
+                "    print('catalog helper is unavailable', file=sys.stderr)\n"
+                "    raise SystemExit(79)\n"
+                f"os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n",
+                encoding="ascii",
+            )
+            python.chmod(0o755)
+            cleaned = subprocess.run(
+                [
+                    "make", "--no-print-directory", "expansion-modern-clean", "NODEP=1",
+                    f"MODERN_BUILD_ROOT={build}", "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                    "FE8_PROJECT=default", "EXPANSION_ENABLED_LOCALES=en,ja",
+                    f"PYTHON={python}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(cleaned.returncode, 0, cleaned.stdout + cleaned.stderr)
+            self.assertFalse(build.exists())
+
+    def test_native_english_object_does_not_force_declarations(self):
+        if host_only_enabled() or shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("native compile/no-op proof belongs to the target lane")
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-en-object-", dir=ROOT / "build") as directory:
+            temporary = Path(directory)
+            python = temporary / "no-unused-declarations"
+            python.write_text(
+                f"#!{sys.executable}\n"
+                "import os, sys\n"
+                "if sys.argv[1:4] == ['-m', 'scripts.localization.game_catalog', 'declare']:\n"
+                "    print('unused declaration generation', file=sys.stderr)\n"
+                "    raise SystemExit(78)\n"
+                f"os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n",
+                encoding="ascii",
+            )
+            python.chmod(0o755)
+            for locales, pseudo in (("en", "0"), ("en,qps-ploc", "1")):
+                with self.subTest(locales=locales):
+                    output = temporary / pseudo
+                    object_path = output / "debug/aapcs/src/localized_game_text.o"
+                    command = [
+                        "make", "--no-print-directory", str(object_path), "NODEP=1",
+                        f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                        "MODERN_ABI=aapcs", "MODERN_ROM_SIZE=32M", "FE8_PROJECT=default",
+                        f"EXPANSION_ENABLED_LOCALES={locales}",
+                        f"EXPANSION_PSEUDO_LOCALE={pseudo}", f"PYTHON={python}",
+                    ]
+                    built = subprocess.run(
+                        command, cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    self.assertTrue(object_path.is_file())
+                    before = object_path.stat().st_mtime_ns
+                    repeated = subprocess.run(
+                        command, cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+                    self.assertEqual(object_path.stat().st_mtime_ns, before)
+                    self.assertEqual(list(output.rglob("game_localization_declarations.h")), [])
+
+    def test_native_catalog_tracks_selected_raw_font_assets_for_direct_and_parent_goals(self):
+        if host_only_enabled() or shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("native selected-asset proof belongs to the target lane")
+        source_asset = ROOT / "graphics/fonts/cjk/ja.system.widths.u8"
+        original = source_asset.read_bytes()
+        index = max(range(len(original)), key=original.__getitem__)
+        self.assertGreaterEqual(original[index], 3)
+        scalars = (ROOT / "graphics/fonts/cjk/ja.system.codepoints.u32le").read_bytes()
+        scalar = int.from_bytes(scalars[index * 4:index * 4 + 4], "little")
+        asset = self.project / "system.widths.u8"
+        asset.write_bytes(original)
+        latin = self.project / "latin.c"
+        latin.write_text((ROOT / "src/fontgrp-data.c").read_text(), encoding="utf-8")
+        regional = self.project / "regional.c"
+        regional.write_text(
+            (ROOT / "src/data/localized_font_data.c").read_text().replace(
+                "graphics/fonts/cjk/ja.system.widths.u8", str(asset.relative_to(ROOT)),
+            ),
+            encoding="utf-8",
+        )
+        with (self.project / "project.mk").open("a", encoding="ascii") as stream:
+            stream.write(
+                "FE8_PROJECT_REPLACE := fonts\n"
+                "FE8_PROJECT_INHERIT := $(filter-out $(FE8_PROJECT_REPLACE),$(FE8_PROJECT_MODULES))\n"
+                f"FE8_PROJECT_FONT_REPLACEMENTS := src/fontgrp-data.c={latin.relative_to(ROOT)} "
+                f"src/data/localized_font_data.c={regional.relative_to(ROOT)}\n",
+            )
+        output = ROOT / "build/projects" / self.project.name
+        self.addCleanup(lambda: shutil.rmtree(output) if output.exists() else None)
+        observed = self.project / "native-asset-widths.jsonl"
+        python = self.project / "record-native-metric"
+        python.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys\n"
+            "if sys.argv[1:4] != ['-m', 'scripts.localization.game_catalog', 'generate']:\n"
+            f"    os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n"
+            f"sys.path.insert(0, {str(ROOT)!r})\n"
+            "from scripts.localization.game_catalog import cli\n"
+            "original = cli.measure_selected_fonts\n"
+            "def measured(context, *, output_dir):\n"
+            "    result = original(context, output_dir=output_dir)\n"
+            f"    with open({str(observed)!r}, 'a') as stream:\n"
+            "        stream.write(json.dumps(result['localized']['ja']['system']"
+            f"[{scalar}]) + '\\n')\n"
+            "    return result\n"
+            "cli.measure_selected_fonts = measured\n"
+            "raise SystemExit(cli.main(sys.argv[3:]))\n",
+            encoding="utf-8",
+        )
+        python.chmod(0o755)
+        makefile = self.project / "native-assets.mk"
+        makefile.write_text(
+            "include Makefile\n"
+            ".PHONY: native-assets-parent\n"
+            "native-assets-parent: $(MODERN_GAME_LOCALIZATION_C)\n",
+            encoding="ascii",
+        )
+        command = [
+            "make", "--no-print-directory", "-j2", "-f", str(makefile), "NODEP=1",
+            f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
+            "EXPANSION_ENABLED_LOCALES=en,ja", f"PYTHON={python}",
+        ]
+        for change, goal in enumerate((
+            "game_localization_catalog.h", "localized_game_text_data.h", "native-assets-parent",
+        )):
+            with self.subTest(direct_or_inherited_goal=goal):
+                current = bytearray(original)
+                current[index] -= change
+                asset.write_bytes(current)
+                observed.unlink(missing_ok=True)
+                built = subprocess.run(
+                    [*command, goal], cwd=ROOT, capture_output=True, text=True, timeout=180,
+                )
+                self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                widths = [json.loads(line) for line in observed.read_text().splitlines()]
+                self.assertTrue(widths)
+                self.assertEqual(set(widths), {current[index]})
 
     def test_native_cjk_fonts_bootstrap_without_payload_generation(self):
         if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
