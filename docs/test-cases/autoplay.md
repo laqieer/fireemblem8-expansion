@@ -362,6 +362,8 @@ policy, player-facing text, or a general expression language.
    only matched current-tree artifacts and no Git input. Repeat with caller
    `EXPANSION_AUTOPLAY_STRATEGIES=1`; absent/disabled sub-builds remain forced
    to `0`, enabled sub-builds remain `1`, and the report is identical.
+6. Run `python3 -m json.tool reports/autoplay_strategy_budget.json` to inspect
+   the actual per-configuration router/reference deltas and symbol evidence.
 
 ### Expected result
 
@@ -398,9 +400,11 @@ and match the generated/ACTIVE counts.
 The structured budget result reports the profiles-disabled shared router
 separately from the enabled references and carries parsed symbol evidence that
 the internal absent ELF omits the router hook/tables while both present ELFs
-contain them. The matched current-tree deltas are +1,560 debug / +1,896
-release bytes for the shared router and +856 debug / +680 release bytes for
-the references.
+contain them. In each debug/release result,
+`profiles_disabled.shared_router_delta_bytes` and
+`references_enabled.reference_incremental_delta_bytes` are positive and equal
+their documented endpoint differences. Use the regenerated report's actual
+values rather than a second, toolchain-dependent byte-count snapshot.
 
 ### Negative control
 
