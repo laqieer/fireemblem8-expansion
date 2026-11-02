@@ -6417,7 +6417,20 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    For a standalone public-CLI replay, run this from the source root. It owns
    and removes only its temporary repository; it changes no source checkout,
    worktree, remote or credentials. Each printed exit is checked against the
-   actual process result, including the immutable pre-fix checker control:
+   actual process result, including the immutable pre-fix checker control.
+   The source checkout must already contain the pinned commit and checker blob.
+   For a shallow or partial checkout, prepare only the missing history first:
+
+   ```bash
+   if ! GIT_NO_LAZY_FETCH=1 git --no-replace-objects cat-file -e \
+       fe4608b334169ed025266d05e79ec3a194983577:scripts/workflow_pilot/raw_diff_check.py
+   then
+       git fetch --depth=1 origin fe4608b334169ed025266d05e79ec3a194983577
+   fi
+   ```
+
+   The replay itself performs no fetch, ignores replacement objects, and fails
+   explicitly if the required local history is still unavailable:
 
    ```bash
    python3 - <<'PY'
@@ -6436,6 +6449,7 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
        env = {
            "PATH": os.environ["PATH"], "HOME": str(home), "LC_ALL": "C",
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_NO_REPLACE_OBJECTS": "1", "GIT_NO_LAZY_FETCH": "1",
        }
        def git(*args):
            return subprocess.check_output(
