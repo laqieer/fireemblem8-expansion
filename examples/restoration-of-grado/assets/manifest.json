@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "GRADO_CH00_MAP",
+      "kind": "chapter-map-layout",
+      "sources": [
+        "examples/restoration-of-grado/assets/maps/CH00.mar",
+        "examples/restoration-of-grado/assets/maps/CH00.json"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "mar",
+        "compression": "lz77"
+      },
+      "ownership": {
+        "seam": "chapter-data-asset-table",
+        "tableSource": "src/data/data_8B363C.c",
+        "chapterSettings": "src/data/chapter_settings.json",
+        "chapterSettingsIndex": 0,
+        "mainLayerId": 4,
+        "symbol": "PrologueMap",
+        "consumer": "GetChapterMapPointer"
+      },
+      "resources": {
+        "mapWidth": 16,
+        "mapHeight": 12,
+        "mapBufferBytes": 2048
+      },
+      "provenance": {
+        "origin": "Original project tile layout supplied to the native adapter.",
+        "license": "No legal-review decision is encoded by this technical record.",
+        "modifications": "Creator metatiles converted to native configuration-entry indices.",
+        "tools": ["scripts.assets", "scripts/mar_to_map.py"]
+      }
+    },
+    {
+      "id": "CH2_MAIN_MAP",
+      "kind": "tiled-tmx-map-layout",
+      "sources": [
+        "examples/restoration-of-grado/assets/maps/CH02.tmx"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "tmx-safe-v1",
+        "compression": "lz77",
+        "layer": "Main",
+        "tilesetId": "fe8-metatiles-16px-4096"
+      },
+      "ownership": {
+        "seam": "chapter-data-asset-table",
+        "tableSource": "src/data/data_8B363C.c",
+        "chapterSettings": "src/data/chapter_settings.json",
+        "chapterSettingsIndex": 2,
+        "mainLayerId": 11,
+        "symbol": "Ch2Map",
+        "consumer": "GetChapterMapPointer"
+      },
+      "resources": {
+        "mapWidth": 16,
+        "mapHeight": 12,
+        "mapBufferBytes": 2048
+      },
+      "provenance": {
+        "origin": "Original project tile layout supplied to the native adapter.",
+        "license": "No legal-review decision is encoded by this technical record.",
+        "modifications": "Safe TMX GIDs retain native four-entry metatile addressing.",
+        "tools": ["scripts.assets", "scripts/mar_to_map.py"]
+      }
+    }
+  ]
+}

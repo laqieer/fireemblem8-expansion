@@ -3,6 +3,7 @@
   "coverage": {
     "mode": "complete",
     "expected_feature_ids": [
+      "grado-native-visuals",
       "tester-case-catalog",
       "meaningful-test-evidence-policy",
       "mechanics-hook-registry",
@@ -61,6 +62,18 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "grado-native-visuals",
+      "title": "Optional Grado native visual source derivatives",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/325"
+      ],
+      "reference": "examples/restoration-of-grado/assets/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GRADO-NATIVE-VISUALS-001"
+      ]
+    },
     {
       "id": "cjk-resource-storage",
       "title": "Bounded lossless CJK resource index storage",
@@ -832,6 +845,34 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-GRADO-NATIVE-VISUALS-001",
+      "title": "Convert optional Grado map sources to native configuration indices",
+      "feature_id": "grado-native-visuals",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/325"
+      ],
+      "document": "examples/restoration-of-grado/assets/README.md",
+      "anchor": "tc-grado-native-visuals-001",
+      "profiles": [
+        "Unselected Grado native-map source derivatives through existing host asset producers"
+      ],
+      "purpose": "Validate real generated native map addressing and source selection without claiming a loaded or qualified game.",
+      "prerequisites": "Repository root, Python3 and tracked project asset inputs; no ROM, emulator, save or external tileset image.",
+      "actions": "Run python3 -B -m unittest scripts.assets.tests.test_grado_visuals -v. Generate the selected manifest, convert both real MAR inputs with mar_to_map.py, parse dimensions/length/alignment and independently worked source samples. Generate default then Grado again in the same owned asset output without cleaning and decode actual selected bytes.",
+      "expected_result": "Both Grado maps are16x12 and386 native bytes. Creator metatiles become four-entry native configuration indices; CH00 altar/door and CH02 road/door/dais samples agree. Default CH02 remains15x15 with initial native520; reselection restores16x12/2604 without stale geometry.",
+      "negative_control": "The missing manifest fails explicitly. Unscaled creator tile numbers violate actual native values/alignment rather than passing on dimensions. The unselected/default command retains original framework sources; existing malformed source/ownership/resource checks remain.",
+      "interactions": "Uses existing asset manifest, chapter asset-table ownership, safe TMX and ordered MAR/JSON. No new framework flag or default C provider. Future code/chapter selections must match the declared map owners and Fort60/61/62 tuple.",
+      "save_compatibility": "Source derivatives only; no save bytes, schema, compatibility epoch or persistent RAM change.",
+      "cleanup": "Remove only the owned temporary build directory; preserve default tracked inputs and original masters.",
+      "limitations": "Source/conversion evidence only. Native compile/link/terrain/movement/event-unit geometry, target visuals, early portrait packages, BG/CG carriers/palette limits and material artistic acceptance remain open under325. Selecting this manifest alone does not load the CH00 map or change native tileset settings.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.assets.tests.test_grado_visuals -v",
+          "evidence": "scripts/assets/tests/test_grado_visuals.py"
+        }
+      ]
+    },
     {
       "id": "TC-TEXT-INITIAL-CACHE-001",
       "title": "Decode the first modern English message-zero lookup",
