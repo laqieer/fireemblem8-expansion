@@ -6413,6 +6413,82 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    pass; trailing whitespace in either file still refuses. A single pair
    above4MiB still refuses before materialization, and the same multi-file
    change still exceeds the independent delegated whole-task aggregate budget.
+
+   For a standalone public-CLI replay, run this from the source root. It owns
+   and removes only its temporary repository; it changes no source checkout,
+   worktree, remote or credentials. Each printed exit is checked against the
+   actual process result, including the immutable pre-fix checker control:
+
+   ```bash
+   python3 - <<'PY'
+   import os
+   from pathlib import Path
+   import subprocess
+   import sys
+   import tempfile
+
+   source = Path.cwd().resolve()
+   checker = source / "scripts/workflow_pilot/raw_diff_check.py"
+   with tempfile.TemporaryDirectory(prefix="fe8-raw-cli-") as directory:
+       home = Path(directory)
+       work = home / "repository"
+       work.mkdir()
+       env = {
+           "PATH": os.environ["PATH"], "HOME": str(home), "LC_ALL": "C",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+       }
+       def git(*args):
+           return subprocess.check_output(
+               ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                "-C", str(work), *args], env=env, stderr=subprocess.PIPE,
+           ).decode().strip()
+       git("init", "--template=", "-b", "master")
+       git("config", "user.name", "Raw CLI fixture")
+       git("config", "user.email", "raw-cli@example.invalid")
+       paths = [work / name for name in ("first.txt", "second.txt")]
+       line = "unchanged payload line\n"
+       payload = line * (4 * 1024 * 1024 // (3 * len(line)) + 1)
+       def commit(label):
+           git("add", "first.txt", "second.txt")
+           git("commit", "-m", label)
+           return git("rev-parse", "HEAD")
+       for path in paths:
+           path.write_text("before\n" + payload)
+       parent = commit("parent")
+       old_checker = home / "pre-fix-checker.py"
+       old_checker.write_bytes(subprocess.check_output(
+           ["git", "-C", str(source), "show",
+            "fe4608b334169ed025266d05e79ec3a194983577:scripts/workflow_pilot/raw_diff_check.py"],
+           env=env,
+       ))
+       def check(label, tool, candidate, expected, diagnostic=""):
+           result = subprocess.run(
+               [sys.executable, "-I", str(tool), "--repository-root", str(work),
+                "--parent", parent, "--candidate", candidate],
+               env=env, capture_output=True, text=True, timeout=30,
+           )
+           output = result.stdout + result.stderr
+           assert result.returncode == expected, output
+           assert diagnostic in output, output
+           print(f"{label}: exit {result.returncode}")
+       for path in paths:
+           path.write_text("after\n" + payload)
+       clean = commit("clean multi-file change")
+       check("clean", checker, clean, 0)
+       check("pre-fix aggregate refusal", old_checker, clean, 2, "4 MiB")
+       paths[1].write_text("after \n" + payload)
+       check("second-file EOL", checker, commit("EOL control"), 1, "blank-at-eol")
+       paths[1].write_text("after\n" + payload + "\n")
+       check("second-file EOF", checker, commit("EOF control"), 1, "blank-at-eof")
+       paths[0].write_text("after\n" + payload * 2)
+       paths[1].write_text("after\n" + payload)
+       check("oversized pair", checker, commit("pair control"), 2, "4 MiB")
+       for path in paths:
+           path.write_text("after\n" + payload.replace("unchanged", "rewritten"))
+       check("aggregate diff", checker, commit("diff control"), 2, "process output exceeds")
+   PY
+   ```
+
 4. Exercise actual parsed protocol and resource inputs. Unknown/non-host
    resources, unquantified binary changes and ROM/RAM/protocol overages reject.
    Schema/runtime controls reject unknown fields, duplicate scope/keys,

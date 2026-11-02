@@ -1259,6 +1259,33 @@ class RawDiffBoundaryTests(unittest.TestCase):
         refused = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
         self.assertEqual(refused.returncode, 1, (refused.stdout + refused.stderr).decode())
         self.assertIn(b"blank-at-eol", refused.stdout + refused.stderr)
+        paths[1].write_text("after\n" + payload + "\n")
+        command[-1] = f.commit_pending()
+        refused = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(refused.returncode, 1, (refused.stdout + refused.stderr).decode())
+        self.assertIn(b"blank-at-eof", refused.stdout + refused.stderr)
+
+    def test_full_pr_raw_cli_still_bounds_combined_diff_output(self):
+        f = self.fixture
+        line = "unchanged payload line\n"
+        payload = line * (raw.MAX_BYTES // (3 * len(line)) + 1)
+        paths = [f.worktree / "docs" / name for name in ("first.txt", "second.txt")]
+        for path in paths:
+            path.write_text(payload)
+        parent = f.commit_pending()
+        for path in paths:
+            path.write_text(payload.replace("unchanged", "rewritten"))
+        revision = f.commit_pending()
+        refused = raw.run_process(
+            [
+                sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/raw_diff_check.py"),
+                "--repository-root", str(f.worktree), "--parent", parent,
+                "--candidate", revision,
+            ],
+            cwd=ROOT, env=raw.git_environment(),
+        )
+        self.assertEqual(refused.returncode, 2, (refused.stdout + refused.stderr).decode())
+        self.assertIn(b"process output exceeds", refused.stdout + refused.stderr)
 
     def test_raw_cli_still_refuses_an_oversized_old_new_pair(self):
         f = self.fixture
