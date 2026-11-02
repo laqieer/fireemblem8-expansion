@@ -31,6 +31,51 @@ class CliTests(unittest.TestCase):
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
 
+    def test_native_context_refuses_ambiguous_source_paths_before_replay(self):
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            source = root / "plan.mk"
+            prerequisite = root / "source-input"
+            executed = root / "source-regenerated"
+            prerequisite.write_text("native input\n", encoding="ascii")
+            source.write_text(
+                f"{source}: {prerequisite}\n"
+                f"\t@touch {executed}\n\t@touch {source}\n"
+                ".PHONY: native-plan\nnative-plan:\n"
+                "\tcc -c sample.c -o out/sample.o\n"
+                "\t: fe8-selected-text-objects out out/sample.o\n"
+                "\t: fe8-selected-text-data \n"
+                "\t: fe8-selected-text-assembly \n"
+                "\t: fe8-selected-text-linker-default ld\n",
+                encoding="ascii",
+            )
+            for name in ("left.mk", "right.mk", "left.mk right.mk"):
+                (root / name).write_text("# existing native source\n", encoding="ascii")
+            inputs = root / "makefiles.list"
+            output = root / "context.json"
+            for raw, valid in ((str(source), True), ("left.mk right.mk", False)):
+                with self.subTest(valid=valid):
+                    inputs.write_text(raw + "\n", encoding="ascii")
+                    before = output.read_bytes() if output.exists() else None
+                    result = subprocess.run(
+                        [
+                            sys.executable, "-B", "-m", "scripts.localization.game_catalog",
+                            "describe-make-context", "--output", str(output),
+                            "--makefile-list-file", str(inputs), "--", "make",
+                            "--no-print-directory", "-n", "-B", "-f", str(source), "native-plan",
+                        ],
+                        cwd=root, env={**os.environ, "PYTHONPATH": str(ROOT)},
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertFalse(executed.exists(), "capture executed a source recipe")
+                    if valid:
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertEqual(len(json.loads(output.read_text())["units"]), 1)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("ambiguous", result.stderr)
+                        self.assertEqual(output.read_bytes(), before)
+
     def test_native_context_selects_and_validates_actual_linker_scopes(self):
         with self._tmpdir() as tmp:
             root = Path(tmp)

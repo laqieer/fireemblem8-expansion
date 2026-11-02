@@ -43,11 +43,22 @@ explicit entrypoint files in order, including spaced paths, and retains the
 original goal-dependent settings without copying the environment. Unreadable
 or malformed invocation data and stdin-only entrypoints fail explicitly rather
 than replaying a different configuration.
+The existing context producer passes GNU Make's literal included-makefile
+names through one temporary transport file, removed after success or failure.
+It is not a cache, source snapshot or second selected-input registry.
+The CLI reconstructs actual source filenames, including repeated spaces and
+quotes, and holds those files old before replay. Unavailable or genuinely
+ambiguous names refuse before any replay; source regeneration must never run.
+Canonical dependency products in the native output directory are not copied
+into the source-old arguments; their real dependency graph remains intact.
+This keeps a complete warm dependency family out of a single shell argument,
+including callers that use GNU Make's `.ONESHELL` recipe mode. Ordinary `-n`
+does not write the temporary transport file.
 The plan traverses the actual original goals before completing its selected
 inventory, so inherited target-specific scopes are evaluated by GNU Make,
 not approximated by a goal-name variable or a second variable snapshot.
 Selected source paths come from those native recipes directly; there is no
-parallel source accumulator or source-list sidefile. The existing event-list
+parallel source accumulator or selected-C-source-list sidefile. The existing event-list
 recovery producer is held old during capture so its recursive repair cannot
 execute under GNU Make's dry-run exception.
 The same boundary covers the existing non-C link/multiboot preparation.

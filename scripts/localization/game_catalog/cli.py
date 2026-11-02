@@ -472,12 +472,44 @@ def _invocation_makefiles(pid: int) -> list[str]:
     return files
 
 
+def _included_makefiles(path: Path) -> list[str]:
+    try:
+        raw = os.fsdecode(path.read_bytes())
+    except OSError as error:
+        raise GameCatalogError(f"native Make file list is unreadable: {error}") from error
+    spans = list(re.finditer(r"[^ \t\r\n]+", raw))
+    partitions: list[list[tuple[str, ...]]] = [[] for _ in range(len(spans) + 1)]
+    partitions[-1] = [()]
+    for start in range(len(spans) - 1, -1, -1):
+        for end in range(start + 1, len(spans) + 1):
+            candidate = raw[spans[start].start():spans[end - 1].end()]
+            if not Path(candidate).parent.is_dir():
+                break
+            if Path(candidate).is_file():
+                partitions[start].extend(
+                    (candidate, *tail) for tail in partitions[end]
+                )
+                if len(partitions[start]) > 1:
+                    break
+    if len(partitions[0]) != 1:
+        raise GameCatalogError("native Make file list is unavailable or ambiguous; cannot safely replay")
+    return list(partitions[0][0])
+
+
 def cmd_describe_make_context(args: argparse.Namespace) -> int:
     command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
     if not command:
         raise GameCatalogError("native text context requires the actual Make plan command")
+    included = _included_makefiles(args.makefile_list_file) if args.makefile_list_file else []
+    if args.dependency_root is not None:
+        dependency_root = args.dependency_root.resolve()
+        included = [
+            path for path in included
+            if not (Path(path).suffix == ".d" and Path(path).resolve().is_relative_to(dependency_root))
+        ]
     if args.invoker_pid is not None:
         makefiles = _invocation_makefiles(args.invoker_pid)
+        included.extend(makefiles)
         if makefiles:
             flags = [argument for path in makefiles for argument in ("-f", path)]
             if "-f" in command:
@@ -485,6 +517,7 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
                 command[position:position + 2] = flags
             else:
                 command[1:1] = flags
+    command[1:1] = [argument for path in dict.fromkeys(included) for argument in ("-o", path)]
     if args.invoker_goals is not None:
         command.append("MAKECMDGOALS=" + args.invoker_goals)
     planned = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -704,6 +737,8 @@ def build_parser() -> argparse.ArgumentParser:
     context_p.add_argument("--preprocessor", help="compatibility hint; selected Make recipes own each tool")
     context_p.add_argument("--invoker-pid", type=int)
     context_p.add_argument("--invoker-goals")
+    context_p.add_argument("--makefile-list-file", type=Path)
+    context_p.add_argument("--dependency-root", type=Path)
     context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
     context_p.set_defaults(handler=cmd_describe_make_context)
 

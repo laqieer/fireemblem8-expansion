@@ -31,7 +31,7 @@ second registry, harness, generated-data schema, or project ruleset.
 3. Run the source-only declaration and measured-storage scenarios:
 
    ```bash
-   python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_selects_and_validates_actual_linker_scopes scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
+   python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_selects_and_validates_actual_linker_scopes scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_refuses_ambiguous_source_paths_before_replay scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
    ```
 
 4. Run `python3 -m unittest scripts.modernize.tests.test_save_compat_epoch_modern_build -v`.
@@ -45,7 +45,18 @@ second registry, harness, generated-data schema, or project ruleset.
 The actual native object inventory appears exactly once after a late dependency
 file. Warm input dependency bytes remain unchanged during pure capture.
 An implicit main Makefile still loads with preloaded `MAKEFILES`. Actual
-target-private compiler/preprocessor paths are recorded without executing
+spaced, repeated-space and quoted explicit entrypoint or nested included
+source files must retain bytes, inode and modification time: replay must not
+run their otherwise valid regeneration recipes under `-n`/`-B`. Ambiguous
+source names refuse before replay and preserve a previous valid context.
+The temporary included-name transport is removed on success/failure and is
+not written by ordinary `-n`. Populate the actual canonical object, header
+and asset dependency-file inventories in a valid longer native root, then
+repeat capture with `.ONESHELL` and real build-goal classification. Cold and
+warm C inputs agree, every dependency input remains byte/inode/time-identical,
+and no single-shell argument overflow or object compilation occurs.
+These are real owned include fixtures, not a compiled full-source ROM.
+Actual target-private compiler/preprocessor paths are recorded without executing
 their sentinels, for both ordinary and spaced filenames. Also request capture
 with missing spaced private compiler/preprocessor/scanner paths: the context
 must preserve the requested tools without requiring their files or execution.

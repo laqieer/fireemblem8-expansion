@@ -983,10 +983,10 @@ modern_empty :=
 modern_space := $(modern_empty) $(modern_empty)
 modern_tool_prerequisite = $(if $(filter 1,$(MODERN_DRY_RUN)),,$(subst $(modern_space),\$(modern_space),$(1)))
 MODERN_TEXT_NATIVE_MAKE := $(MAKE)
+MODERN_TEXT_NATIVE_MAKEFILES := $(MODERN_TEXT_COMPILE_CONTEXT).makefiles
 # Keep C target scopes, but do not enter recursive non-C/link preparation.
 modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n -B \
 	NODEP=1 MODERN_DRY_RUN=1 \
-	$(foreach makefile,$(MAKEFILE_LIST),-o "$(makefile)") \
 	-o expansion-modern-toolchain-check -o expansion-modern-link-prepare \
 	-o "$(MODERN_MGFEMBP_PAYLOAD)" \
 	-o "$(GENERATED_DATA_CH2_EVENTLISTS_C)" \
@@ -994,13 +994,19 @@ modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n 
 .PHONY: expansion-modern-text-inputs _expansion-modern-text-object-plan
 expansion-modern-text-inputs: $(MODERN_TEXT_COMPILE_CONTEXT)
 
-$(MODERN_TEXT_COMPILE_CONTEXT): FORCE
+$(dir $(MODERN_TEXT_COMPILE_CONTEXT)):
 	@mkdir -p "$(@D)"
+
+$(MODERN_TEXT_COMPILE_CONTEXT): FORCE | $(dir $(MODERN_TEXT_COMPILE_CONTEXT))
+	$(if $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS)))),,$(file >$(MODERN_TEXT_NATIVE_MAKEFILES),$(MAKEFILE_LIST)))
 	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
 		--output "$@" \
+		--makefile-list-file "$(MODERN_TEXT_NATIVE_MAKEFILES)" \
+		--dependency-root "$(MODERN_OUTPUT_DIR)" \
 		--invoker-pid "$(shell echo $$PPID)" \
 		--invoker-goals "$(MAKECMDGOALS)" \
-		-- $(modern_text_native_plan) _expansion-modern-text-object-plan
+		-- $(modern_text_native_plan) _expansion-modern-text-object-plan; \
+		status=$$?; rm -f "$(MODERN_TEXT_NATIVE_MAKEFILES)"; exit $$status
 
 _expansion-modern-text-object-plan: $$(filter-out expansion-modern-text-inputs $$(MODERN_TEXT_COMPILE_CONTEXT) _expansion-modern-text-object-plan,$$(or $$(MAKECMDGOALS),$$(.DEFAULT_GOAL))) \
 	$$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)

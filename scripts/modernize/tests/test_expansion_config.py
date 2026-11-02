@@ -247,6 +247,167 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             self.assertTrue(all(unit["logical_source"].endswith(".c") for unit in context["units"]))
             self.assertEqual(list(output.rglob("*.o")), [])
 
+    def test_native_context_preserves_regenerated_source_makefiles(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-source-replay-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            for name, included in (
+                ("entrypoint selected flags.mk", False),
+                ("nested  selected flags.mk", True),
+                ("entrypoint 'selected' flags.mk", False),
+            ):
+                with self.subTest(source=name, included=included):
+                    source = self.project / name
+                    prerequisite = self.project / "source-prerequisite"
+                    executed = self.project / "source-regenerated"
+                    prerequisite.write_text("native source input\n", encoding="ascii")
+                    executed.unlink(missing_ok=True)
+                    escaped = str(source).replace(" ", "\\ ")
+                    source.write_text(
+                        ("" if included else "include Makefile\n")
+                        + "MODERN_CFLAGS += -DNATIVE_SOURCE_INPUT=7\n"
+                        + f"{escaped}: {prerequisite}\n"
+                        + f"\t@printf regenerated > {shlex.quote(str(executed))}\n"
+                        + f"\t@touch {shlex.quote(str(source))}\n",
+                        encoding="ascii",
+                    )
+                    entrypoint = self.project / "source-entry.mk" if included else source
+                    if included:
+                        entrypoint.write_text("include Makefile\n" + f"include {escaped}\n")
+                    before = (source.read_bytes(), source.stat().st_ino, source.stat().st_mtime_ns)
+                    result = subprocess.run(
+                        [
+                            "make", "--no-print-directory", "-f", str(entrypoint),
+                            "expansion-modern-text-inputs", "NODEP=1", "MODERN_DRY_RUN=1",
+                            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                            "FE8_PROJECT=default", f"PYTHON={sys.executable}",
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertFalse(executed.exists(), "capture replay executed source regeneration")
+                    self.assertEqual(
+                        (source.read_bytes(), source.stat().st_ino, source.stat().st_mtime_ns),
+                        before,
+                    )
+                    context = json.loads((output / "debug/aapcs/selected-text-inputs.json").read_text())
+                    self.assertTrue(context["units"])
+                    self.assertTrue(all(
+                        "-DNATIVE_SOURCE_INPUT=7" in unit["compiler_argv"]
+                        for unit in context["units"]
+                    ))
+                    self.assertEqual(list(output.rglob("*.o")), [])
+                    if name == "entrypoint selected flags.mk":
+                        dry_output = output / "ordinary-dry"
+                        dry = subprocess.run(
+                            [
+                                "make", "--no-print-directory", "-n", "-f", str(entrypoint),
+                                "expansion-modern-text-inputs", "NODEP=1", "MODERN_DRY_RUN=1",
+                                f"MODERN_BUILD_ROOT={dry_output}", "FE8_PROJECT=default",
+                                f"PYTHON={sys.executable}",
+                            ],
+                            cwd=ROOT, capture_output=True, text=True, timeout=60,
+                        )
+                        self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+                        self.assertFalse((dry_output / "debug/aapcs/selected-text-inputs.json").exists())
+                        self.assertEqual(list(dry_output.rglob("*.makefiles")), [])
+                        self.assertFalse(executed.exists())
+
+            sources = [self.project / name for name in ("left.mk", "right.mk")]
+            names = [str(path.relative_to(ROOT)) for path in sources]
+            for path in sources:
+                path.write_text("# native included source\n", encoding="ascii")
+            ambiguous = ROOT / " ".join(names)
+            ambiguous.parent.mkdir(parents=True)
+            ambiguous.write_text("# alternative literal source name\n", encoding="ascii")
+            entrypoint = self.project / "ambiguous-native.mk"
+            entrypoint.write_text("include Makefile\n" + "".join(f"include {name}\n" for name in names))
+            context_path = output / "debug/aapcs/selected-text-inputs.json"
+            before_context = context_path.read_bytes()
+            refused = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-f", str(entrypoint),
+                    "expansion-modern-text-inputs", "NODEP=1", "MODERN_DRY_RUN=1",
+                    f"MODERN_BUILD_ROOT={output}", "FE8_PROJECT=default", f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("ambiguous", refused.stderr)
+            self.assertEqual(context_path.read_bytes(), before_context)
+            self.assertFalse(context_path.with_suffix(".json.makefiles").exists())
+
+    def test_native_context_preserves_complete_warm_dependency_inputs(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-warm-replay-", dir=ROOT / "build") as directory:
+            temporary = Path(directory)
+            output = temporary / ("native-" + "x" * max(1, 122 - len(str(temporary))))
+            entrypoint = self.project / "warm-native.mk"
+            entrypoint.write_text(
+                "include Makefile\n.ONESHELL:\n"
+                ".PHONY: native-dependency-inventory\nnative-dependency-inventory:\n"
+                "\t@: native-object-dependencies $(MODERN_ALL_DEPS)\n"
+                "\t@: native-header-dependencies $(MODERN_ALL_C_HEADER_DEPS)\n"
+                "\t@: native-asset-dependencies $(MODERN_ALL_DATA_ASSET_DEPS)\n",
+                encoding="ascii",
+            )
+            arguments = [
+                "make", "--no-print-directory", "-f", str(entrypoint), "NODEP=1",
+                "MODERN_DRY_RUN=1", "FE8_PROJECT=default", "MODERN_ROM_SIZE=32M",
+                "EXPANSION_ENABLED_LOCALES=en,ja", f"MODERN_BUILD_ROOT={output}",
+                f"PYTHON={sys.executable}",
+            ]
+            query = subprocess.run(
+                [*arguments, "-n", "native-dependency-inventory"],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(query.returncode, 0, query.stdout + query.stderr)
+            inventories = {}
+            for line in query.stdout.splitlines():
+                if line.startswith(": native-"):
+                    words = shlex.split(line)
+                    inventories[words[1]] = words[2:]
+            suffixes = {
+                "native-object-dependencies": (".d", ".o"),
+                "native-header-dependencies": (".headers.d", ".o"),
+                "native-asset-dependencies": (".assets.d", ".pre.c"),
+            }
+            self.assertEqual(set(inventories), set(suffixes))
+            self.assertTrue(all(inventories.values()))
+            cold = subprocess.run(
+                [*arguments, "expansion-modern-text-inputs"],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(cold.returncode, 0, cold.stdout + cold.stderr)
+            context_path = output / "debug/aapcs/selected-text-inputs.json"
+            cold_units = json.loads(context_path.read_text())["units"]
+            snapshots = {}
+            for kind, paths in inventories.items():
+                suffix, target_suffix = suffixes[kind]
+                for value in paths:
+                    path = Path(value)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    target = value.removesuffix(suffix) + target_suffix
+                    path.write_text(f"{target}: include/global.h\n", encoding="ascii")
+                    snapshots[path] = (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+            for _ in range(2):
+                result = subprocess.run(
+                    [
+                        *arguments, "MODERN_DRY_RUN=", "MAKECMDGOALS=expansion-modern-all",
+                        "expansion-modern-text-inputs",
+                    ],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(json.loads(context_path.read_text())["units"], cold_units)
+                self.assertEqual(
+                    {path: (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+                     for path in snapshots},
+                    snapshots,
+                )
+                self.assertFalse(context_path.with_suffix(".json.makefiles").exists())
+            self.assertEqual(list(output.rglob("*.o")), [])
+
     def test_native_context_captures_target_specific_native_tools(self):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-private-tools-", dir=ROOT / "build") as directory:
