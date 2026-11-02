@@ -66,6 +66,9 @@ When regenerating the default linked reports, also regenerate their existing
 baseline/router/reference ELFs. Its host structured-budget case checks both
 debug/release baseline addresses and derived deltas; a report matching only its
 own ELF does not establish that cross-report contract.
+Regenerate the existing `expansion-modern-localization-budget` rollups for both
+configurations too. Their parsed regional headroom must match the corresponding
+default linked report, including the validity marker's aligned RAM allocation.
 No new flag, resolver, locale, registry or feature conflict is introduced.
 
 ### Automation and cleanup
