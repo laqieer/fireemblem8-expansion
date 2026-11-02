@@ -14,12 +14,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[5]
 FIXTURES = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "tools/gba-playtest"))
+sys.path.insert(0, str(ROOT / "tools/gba-playtest/tests"))
 
 from probe_bindings import resolve_elf_symbol, resolve_elf_symbol_address
+from host_mode import host_only_enabled
 
 
 @unittest.skipIf(
-    os.environ.get("GBA_PLAYTEST_HOST_ONLY") == "1",
+    host_only_enabled(),
     "explicit host-only lane excludes ARM/libmGBA execution",
 )
 class InitialMessageCacheNativeTests(unittest.TestCase):
@@ -41,6 +43,20 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
             executable = shutil.which(os.environ.get(variable, default))
             self.assertIsNotNone(executable, f"required native tool is missing: {variable}")
             tools[variable] = str(Path(executable).absolute())
+        paths = {
+            name: str((ROOT / os.environ[name]).absolute())
+            for name in ("MODERN_BINUTILS_DIR", "MODERN_NEWLIB_INCLUDE", "MODERN_NEWLIB_LIB")
+            if os.environ.get(name)
+        }
+        driver_flags = []
+        if "MODERN_BINUTILS_DIR" in paths:
+            driver_flags.append("-B" + paths["MODERN_BINUTILS_DIR"] + "/")
+        if "MODERN_NEWLIB_INCLUDE" in paths:
+            driver_flags.extend(("-isystem", paths["MODERN_NEWLIB_INCLUDE"]))
+        library_flags = (
+            ["-L" + paths["MODERN_NEWLIB_LIB"]]
+            if "MODERN_NEWLIB_LIB" in paths else []
+        )
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="initial-cache-native-", dir=ROOT / "build") as directory:
             work = Path(directory)
@@ -59,6 +75,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 source, definitions, generated, header, "utf8",
             ], cwd=ROOT)
             flags = [
+                *driver_flags,
                 "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-mabi=aapcs",
                 "-std=gnu89", "-ffreestanding", "-fno-builtin", "-fno-common",
                 "-fno-pic", "-fno-pie", "-fno-unwind-tables",
@@ -91,6 +108,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 target = work / name
                 self.run_command([
                     tools["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb-interwork",
+                    *driver_flags,
                     "-I" + str(ROOT / "include"), "-I" + str(ROOT),
                     "-c", path, "-o", target,
                 ], cwd=ROOT)
@@ -98,6 +116,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
             (work / "sound").mkdir()
             self.run_command([
                 tools["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb-interwork",
+                *driver_flags,
                 "-I" + str(ROOT), "-c", ROOT / "sound/music_player_table.s",
                 "-o", work / "sound/music_player_table.o",
             ], cwd=ROOT)
@@ -136,6 +155,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             elf, rom = work / "module.elf", work / "module.gba"
             self.run_command([
                 tools["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork",
+                *driver_flags, *library_flags,
                 "-mabi=aapcs", "-nostartfiles", "-Wl,--gc-sections", "-Wl,--no-undefined",
                 "-Wl,-T," + str(linker), *objects, "-lc", "-lnosys", "-lgcc", "-o", elf,
             ], cwd=work)
@@ -205,6 +225,22 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             work = Path(directory)
             driver = work / "driver"
             environment = os.environ.copy()
+            compiler_log = work / "compiler-argv"
+            overrides = {
+                name: work / folder for name, folder in (
+                    ("MODERN_BINUTILS_DIR", "bin tools"),
+                    ("MODERN_NEWLIB_INCLUDE", "target headers"),
+                    ("MODERN_NEWLIB_LIB", "target libraries"),
+                )
+            }
+            for name, path in overrides.items():
+                configured = os.environ.get(name)
+                if configured:
+                    path.symlink_to((ROOT / configured).absolute(), target_is_directory=True)
+                    self.assertTrue(path.samefile(ROOT / configured), name)
+                else:
+                    path.mkdir()
+                environment[name] = str(path.relative_to(ROOT))
             forwarding = []
             for variable, name in (
                 ("MODERN_CC", "arm-none-eabi-gcc"),
@@ -214,7 +250,13 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 executable = shutil.which(os.environ.get(variable, name))
                 self.assertIsNotNone(executable, f"required native tool is missing: {variable}")
                 forwarding.append(
-                    "*/" + name + ") exec "
+                    "*/" + name + ") "
+                    + (
+                        "printf '%s\\0' \"$0\" \"$@\" '' >> "
+                        + shlex.quote(str(compiler_log)) + "; "
+                        if variable == "MODERN_CC" else ""
+                    )
+                    + "exec "
                     + shlex.quote(str(Path(executable).absolute())) + ' "$@";;\n'
                 )
                 selected = work / name
@@ -245,3 +287,20 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 ["4361636865207a65726f", "4361636865207a65726f",
                  "4361636865206f6e65", "4361636865207a65726f"],
             )
+            stages = set()
+            for record in compiler_log.read_bytes().split(b"\0\0"):
+                if not record:
+                    continue
+                argv = [argument.decode() for argument in record.split(b"\0")]
+                self.assertIn("-B" + str(overrides["MODERN_BINUTILS_DIR"]) + "/", argv)
+                self.assertIn("-isystem", argv)
+                self.assertEqual(
+                    argv[argv.index("-isystem") + 1], str(overrides["MODERN_NEWLIB_INCLUDE"]),
+                )
+                if "-nostartfiles" in argv:
+                    stages.add("link")
+                    self.assertIn("-L" + str(overrides["MODERN_NEWLIB_LIB"]), argv)
+                else:
+                    source = Path(argv[argv.index("-c") + 1])
+                    stages.add("assembly" if source.suffix in (".s", ".S") else "compile")
+            self.assertEqual(stages, {"compile", "assembly", "link"})

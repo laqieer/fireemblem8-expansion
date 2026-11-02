@@ -76,6 +76,59 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 f"build.yml step {step_name!r} command {workflow_argv!r}",
             )
 
+    def test_reporter_and_full_game_checks_have_independent_worker_owners(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            _, _, jobs = verify_mod._parse_workflow_structure_text(stream.read())
+        contract = [
+            (job, name, command)
+            for job, _, steps in jobs
+            for _, name, fields in steps
+            for command in verify_mod._semantic_run_commands(fields)
+        ]
+        gates = verify_mod.gates(jobs=2)
+        reporter = next(gate for gate in gates if gate.name == "workflow-pilot-reporter-tests")
+        reporter_owners = [job for job, _, argv in contract if list(argv) == reporter.command]
+        self.assertEqual(len(reporter_owners), 1)
+        for gate in gates:
+            if not gate.name.startswith("game-localization-"):
+                continue
+            with self.subTest(gate=gate.name):
+                owners = [job for job, _, argv in contract if list(argv) == gate.command]
+                self.assertEqual(len(owners), 1)
+                self.assertNotEqual(owners[0], reporter_owners[0])
+
+    def test_setup_cannot_duplicate_mirrored_gate_commands(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            original = stream.read()
+        prefix, legacy = original.split("  legacy:\n", 1)
+        for _, name, command in verify_mod._parse_workflow_gate_contract_text(original):
+            with self.subTest(gate=name, command=command):
+                changed = prefix + "  legacy:\n" + legacy.replace(
+                    "      run: ./build_tools.sh\n",
+                    "      run: |\n        ./build_tools.sh\n        "
+                    + " ".join(command) + "\n",
+                    1,
+                )
+                self.assertNotEqual(changed, original)
+                with self.assertRaisesRegex(ValueError, "exactly once"):
+                    verify_mod._parse_workflow_gate_contract_text(changed)
+
+    def test_setup_helper_cannot_duplicate_mirrored_gate_commands(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            workflow = stream.read()
+        relative = os.path.join("scripts", "ci", "install_archival_compilers.sh")
+        with open(os.path.join(REPO_ROOT, relative), encoding="utf-8") as stream:
+            original = stream.read()
+        with tempfile.TemporaryDirectory() as target:
+            helper = os.path.join(target, relative)
+            os.makedirs(os.path.dirname(helper))
+            for _, name, command in verify_mod._parse_workflow_gate_contract_text(workflow):
+                with self.subTest(gate=name, command=command):
+                    with open(helper, "w", encoding="utf-8") as stream:
+                        stream.write(original + "\n" + " ".join(command) + "\n")
+                    with self.assertRaisesRegex(ValueError, "exactly once"):
+                        verify_mod._parse_workflow_structure_text(workflow, target)
+
     def test_all_locales_gate_mirrors_required_presentation_target(self):
         gate = next(
             gate
@@ -483,10 +536,6 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "workflow-pilot-reporter-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
-                "game-localization-width-contract",
-                "game-localization-catalog-check",
-                "game-localization-crosswalk-check",
-                "game-localization-raw-closure-check",
                 "artifact-guard-tests",
                 "artifact-guard",
                 "codeql-alerts-test",
@@ -506,17 +555,18 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "textprocess-publication-tests",
                 "expansion-config-gates",
                 "linker-budget-gates",
+                "game-localization-width-contract",
+                "game-localization-catalog-check",
+                "game-localization-crosswalk-check",
+                "game-localization-raw-closure-check",
                 "legacy-build",
                 "legacy-payload-identity",
             ],
         )
         # The merged CI runs the fast `host-tests` lane textually before the
         # ROM `build` job, so the host-only gates are first. The first six
-        # remain pure Python/native checks; the seventh runs the full-game
-        # localization Make target but still never builds a ROM.
-        # stay host-only -- never a ROM/linker `make` build (that belongs
-        # solely to the modern-linker gates) -- so the fast host job and the
-        # ROM build job never duplicate work.
+        # remain pure Python/native checks. Full-game host checks use the
+        # independent worker before its archival toolchain setup.
         for g in verify_mod.gates()[:6]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
@@ -538,10 +588,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 self.assertIn(clause, text)
 
     def test_artifact_guard_command(self):
-        # Full-game closure and artifact-guard unit checks precede the
-        # immutable-tree check in the mirrored Build gate order.
-        g = verify_mod.gates()[11]
-        self.assertEqual(g.name, "artifact-guard")
+        g = next(gate for gate in verify_mod.gates() if gate.name == "artifact-guard")
         self.assertEqual(g.command, ["python3", "scripts/artifact_guard.py", "--revision", "HEAD"])
 
     def test_debug_and_release_configs_differ(self):

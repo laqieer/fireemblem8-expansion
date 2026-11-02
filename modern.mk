@@ -4835,6 +4835,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 ifeq ($(MODERN_CONFIG),debug)
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL -u GBA_PLAYTEST_HOST_ONLY \
 		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+		MODERN_BINUTILS_DIR="$(MODERN_BINUTILS_DIR)" MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
+		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
 		"$(PYTHON)" -m unittest \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \

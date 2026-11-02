@@ -29,6 +29,11 @@ It captures the real0,0,1,0 lookup records after60frames.
 The same native case runs through selected compiler, symbol-reader and
 objcopy symlink facades. Their entrypoints are kept rather than dereferenced,
 matching basename-sensitive drivers such as ccache.
+Existing `MODERN_BINUTILS_DIR`, `MODERN_NEWLIB_INCLUDE` and
+`MODERN_NEWLIB_LIB` overrides reach C compilation, assembly and linking;
+the fixture checks actual forwarded argv, including paths with spaces.
+The shared strict host-only parser recognizes all supported true values and
+refuses invalid values without starting native work.
 
 ### Expected result
 

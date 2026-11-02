@@ -370,44 +370,50 @@ substitute. Setup is not another gate and `verify` remains network-independent.
 6. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)
-7. `make game-localization-test`
-8. `python3 -m scripts.localization.game_locales check`
-9. `python3 -m scripts.localization.game_locales check-crosswalk`
-10. `python3 -m scripts.localization.game_locales check-raw-closure`
-11. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
-12. `python3 scripts/artifact_guard.py --revision HEAD`
-13. `make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1`
-14. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
-15. `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
-16. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
-17. `make generated-data-test`
-18. `make generated-data-check`
-19. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-20. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-21. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-22. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-23. `make expansion-modern-map-menu-presentation-check -j1`
+7. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
+8. `python3 scripts/artifact_guard.py --revision HEAD`
+9. `make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1`
+10. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
+11. `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
+12. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
+13. `make generated-data-test`
+14. `make generated-data-check`
+15. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+16. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+19. `make expansion-modern-map-menu-presentation-check -j1`
     (builds the all-locales/all-features profile once, then verifies the
     localized Danger map-menu/help framebuffer and semantic overlay lifecycle)
-24. `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`
+20. `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`
     (the complete native probe suite, owned once by the parallel extended
     host worker rather than duplicated in serial workflow discovery)
-25. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
-26. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
-27. `python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v`
+21. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
+22. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
+23. `python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v`
     (atomic shared text publication with real buffered producers, complete-file
     compiler readers, forced same-input overlap and failure cleanup)
-28. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
-29. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
+24. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
+25. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
+26. `make game-localization-test`
+27. `python3 -m scripts.localization.game_locales check`
+28. `python3 -m scripts.localization.game_locales check-crosswalk`
+29. `python3 -m scripts.localization.game_locales check-raw-closure`
 30. `make legacy -j2`
 31. `make -C mgfembp compare`
 
-Gates 19-20 aggregate the complete modern debug/release ROM, linker, budget,
+Gates 15-16 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 21-22 reuse the item-expansion runtime
+`expansion-modern-linker-check`. Gates 17-18 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No additional
 item-expansion ROM build or gate is added.
+
+Gates26-29 run on the existing `legacy` CI worker before installing archival
+tools, with the original host-only dependencies and fresh owned environment.
+They remain independent of the reporter's worker and do not require agbcc.
+Both groups keep their original commands and the existing90/90/60-minute
+worker bounds; no job or correctness gate is added or omitted.
 
 ### Standalone workflow check
 
