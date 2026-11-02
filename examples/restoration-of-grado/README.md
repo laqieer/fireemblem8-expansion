@@ -118,13 +118,28 @@ EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
 3. Current native metadata classifies `CURRENT` only for its configured
    epoch. The other profile's epoch refuses as incompatible. Valid legacy
    headers without metadata, older/newer formats, bad header/metadata checksum
-   and a false hardware-ready flag retain their distinct non-current results.
+   and a false hardware-ready flag retain the named results below.
    An older format wins over a simultaneously foreign epoch, preserving the
    framework's existing classification order.
 4. ABI/version/fingerprint/build diagnostics with a valid recomputed checksum
    remain compatible. Compare every byte of the complete owned image after
    every classification; both positive and refusal paths must leave it intact.
    Capture the actual 13 semantic records per epoch and measured ROM/EWRAM/IWRAM.
+
+The results use the existing `SaveCompatState` categories; they are not a
+unique error code for every input cause.
+
+| Input group | Native result |
+| --- | --- |
+| Uniform all-zero or erased image | `EMPTY` |
+| Valid header without expansion metadata | `VALID_LEGACY_OR_VANILLA` |
+| Current format and configured epoch | `CURRENT` |
+| Current format with the other epoch | `SAVE_CONFIG_INCOMPATIBLE` |
+| Older format, including a foreign epoch | `MIGRATABLE_OLDER` |
+| Newer format | `NEWER_UNSUPPORTED` |
+| Bad metadata checksum | `METADATA_CORRUPT` |
+| Bad header, false hardware readiness, surviving payload or mixed erased regions | `HEADER_CORRUPT` |
+| Diagnostic-only changes with a valid checksum | `CURRENT` |
 
 **Controls and limits:** wrong epoch, missing/corrupt metadata and surviving
 payload are actual native inputs, not fabricated success labels or source-text
