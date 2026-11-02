@@ -68,6 +68,9 @@ must never mask the compiler's failure status.
 Generated/reinstated/synthetic/locale/catalog C owners use the same publisher;
 assembler and filtered SIO outputs publish only after their successful
 producer/filter. No dependency edge is removed or whole build serialized.
+The SIO fixture supplies an already-ready owned opaque payload and executes
+the actual native assembler/filter; it does not qualify multiboot runtime or
+an archival ROM build.
 Actual target-private compiler/preprocessor paths are recorded without executing
 their sentinels, for both ordinary and spaced filenames. Also request capture
 with missing spaced private compiler/preprocessor/scanner paths: the context

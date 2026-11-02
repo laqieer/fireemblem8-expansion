@@ -433,6 +433,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             for slot, fails, oneshell in (
                 ("src/bmunit.o", False, False), ("src/data/data_8B363C.o", False, False),
                 ("asm/arm_call.o", False, False), ("src/bmunit.o", True, False),
+                ("asm/fe6sio.o", False, False), ("asm/fe6sio.o", True, False),
                 ("asm/arm_call.o", True, False), ("src/bmunit.o", False, True),
                 ("asm/arm_call.o", False, True), ("src/bmunit.o", True, True),
                 ("asm/arm_call.o", True, True),
@@ -507,6 +508,16 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                         "make", "--no-print-directory", "-f", str(entrypoint), "NODEP=1",
                         f"MODERN_BUILD_ROOT={output}", "FE8_PROJECT=default",
                     ]
+                    if slot == "asm/fe6sio.o":
+                        sio = work / "sio"
+                        sio.mkdir()
+                        payload = sio / "fe6sio_payload.bin.lz"
+                        payload.write_bytes(bytes((0x10, 0, 0, 0)))
+                        arguments.extend((
+                            f"MODERN_MGFEMBP_DIR={sio}",
+                            f"MODERN_MGFEMBP_PAYLOAD={payload}",
+                            "--old-file=" + str(payload),
+                        ))
                     built = raw.run_process(
                         [*arguments, str(object_path), f"PYTHON={sys.executable}",
                          f"MODERN_CC={compiler}"],
