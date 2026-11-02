@@ -20,6 +20,77 @@ from probe_bindings import resolve_elf_symbol, resolve_elf_symbol_address
 from host_mode import host_only_enabled
 
 
+_NATIVE_TOOLS = (
+    ("MODERN_CC", "gcc"), ("MODERN_NM", "nm"), ("MODERN_OBJCOPY", "objcopy"),
+)
+
+
+def _selected_tools(environment):
+    prefix = environment.get("PREFIX", "arm-none-eabi-")
+    root = environment.get("MODERN_TOOLCHAIN_ROOT", "")
+    selected = {}
+    for variable, suffix in _NATIVE_TOOLS:
+        requested = environment.get(variable)
+        if requested is None:
+            requested = prefix + suffix + environment.get("EXE", "")
+            if root:
+                requested = str(ROOT / root / "bin") + "/" + requested
+        if os.path.dirname(requested):
+            requested = str((ROOT / requested).absolute())
+        executable = shutil.which(requested, path=environment.get("PATH", os.defpath))
+        if executable is None:
+            raise FileNotFoundError(f"required native tool is missing: {variable}={requested!r}")
+        selected[variable] = str((ROOT / executable).absolute())
+    return selected
+
+
+class NativeToolSelectionTests(unittest.TestCase):
+    def test_explicit_overrides_win_and_preserve_entrypoints(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-tool-select-", dir=ROOT / "build") as directory:
+            work = Path(directory)
+            environment = {"MODERN_TOOLCHAIN_ROOT": "/missing/root", "PREFIX": "missing-", "PATH": ""}
+            expected = {}
+            for variable, suffix in _NATIVE_TOOLS:
+                entrypoint = work / ("selected-" + suffix)
+                entrypoint.symlink_to(sys.executable)
+                environment[variable] = str(entrypoint.relative_to(ROOT))
+                expected[variable] = str(entrypoint)
+            self.assertEqual(_selected_tools(environment), expected)
+
+    def test_partial_overrides_keep_the_other_selected_root_tools(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-tool-partial-", dir=ROOT / "build") as directory:
+            work = Path(directory)
+            binaries = work / "bin"
+            binaries.mkdir()
+            expected = {}
+            for variable, suffix in _NATIVE_TOOLS:
+                entrypoint = binaries / ("selected-" + suffix)
+                entrypoint.symlink_to(sys.executable)
+                expected[variable] = str(entrypoint)
+            override = work / "override"
+            override.symlink_to(sys.executable)
+            baseline = {
+                "MODERN_TOOLCHAIN_ROOT": str(work.relative_to(ROOT)),
+                "PREFIX": "selected-", "PATH": "",
+            }
+            for variable, _suffix in _NATIVE_TOOLS:
+                with self.subTest(variable=variable):
+                    self.assertEqual(
+                        _selected_tools({**baseline, variable: str(override)}),
+                        {**expected, variable: str(override)},
+                    )
+
+    def test_invalid_or_empty_explicit_tool_is_not_replaced_by_a_default(self):
+        baseline = {variable: sys.executable for variable, _suffix in _NATIVE_TOOLS}
+        for variable, _suffix in _NATIVE_TOOLS:
+            for invalid in ("", "/missing/selected-native-tool"):
+                with self.subTest(variable=variable, invalid=invalid):
+                    with self.assertRaisesRegex(FileNotFoundError, variable):
+                        _selected_tools({**os.environ, **baseline, variable: invalid})
+
+
 @unittest.skipIf(
     host_only_enabled(),
     "explicit host-only lane excludes ARM/libmGBA execution",
@@ -34,15 +105,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
         return result.stdout
 
     def test_cold_zero_lookup_and_valid_cache_transitions(self):
-        tools = {}
-        for variable, default in (
-            ("MODERN_CC", "arm-none-eabi-gcc"),
-            ("MODERN_NM", "arm-none-eabi-nm"),
-            ("MODERN_OBJCOPY", "arm-none-eabi-objcopy"),
-        ):
-            executable = shutil.which(os.environ.get(variable, default))
-            self.assertIsNotNone(executable, f"required native tool is missing: {variable}")
-            tools[variable] = str(Path(executable).absolute())
+        tools = _selected_tools(os.environ)
         paths = {
             name: str((ROOT / os.environ[name]).absolute())
             for name in ("MODERN_BINUTILS_DIR", "MODERN_NEWLIB_INCLUDE", "MODERN_NEWLIB_LIB")
@@ -220,12 +283,21 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ])
 
     def test_selected_tools_keep_their_symlink_entrypoints(self):
+        self._check_tool_facades("root")
+
+    def test_selected_prefix_tools_on_path_keep_their_entrypoints(self):
+        self._check_tool_facades("path")
+
+    def _check_tool_facades(self, location):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-compiler-entry-", dir=ROOT / "build") as directory:
             work = Path(directory)
             driver = work / "driver"
             environment = os.environ.copy()
             compiler_log = work / "compiler-argv"
+            toolchain = work / "toolchain root"
+            binaries = toolchain / "bin"
+            binaries.mkdir(parents=True)
             overrides = {
                 name: work / folder for name, folder in (
                     ("MODERN_BINUTILS_DIR", "bin tools"),
@@ -242,13 +314,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     path.mkdir()
                 environment[name] = str(path.relative_to(ROOT))
             forwarding = []
-            for variable, name in (
-                ("MODERN_CC", "arm-none-eabi-gcc"),
-                ("MODERN_NM", "arm-none-eabi-nm"),
-                ("MODERN_OBJCOPY", "arm-none-eabi-objcopy"),
-            ):
-                executable = shutil.which(os.environ.get(variable, name))
-                self.assertIsNotNone(executable, f"required native tool is missing: {variable}")
+            real_tools = _selected_tools(os.environ)
+            for variable, suffix in _NATIVE_TOOLS:
+                name = "selected-" + suffix + environment.get("EXE", "")
                 forwarding.append(
                     "*/" + name + ") "
                     + (
@@ -257,11 +325,17 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         if variable == "MODERN_CC" else ""
                     )
                     + "exec "
-                    + shlex.quote(str(Path(executable).absolute())) + ' "$@";;\n'
+                    + shlex.quote(real_tools[variable]) + ' "$@";;\n'
                 )
-                selected = work / name
+                selected = binaries / name
                 selected.symlink_to(driver)
-                environment[variable] = str(selected)
+                environment.pop(variable, None)
+            if location == "root":
+                environment["MODERN_TOOLCHAIN_ROOT"] = str(toolchain.relative_to(ROOT))
+            else:
+                environment.pop("MODERN_TOOLCHAIN_ROOT", None)
+                environment["PATH"] = str(binaries) + os.pathsep + environment.get("PATH", os.defpath)
+            environment["PREFIX"] = "selected-"
             driver.write_text(
                 '#!/bin/sh\ncase "$0" in\n' + "".join(forwarding)
                 + '*) echo "selected tool entrypoint was lost" >&2; exit 64;;\nesac\n',
@@ -278,6 +352,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 cwd=ROOT, env=environment, capture_output=True, text=True, timeout=90,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(compiler_log.is_file(), "selected root/prefix compiler was not executed")
             observations = [
                 json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")
             ]

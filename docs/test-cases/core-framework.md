@@ -26,9 +26,13 @@ The existing English text generator emits two original fixture messages and
 their header. The test compiles the real message consumer, RAM-copy helper
 and ARM decoder, then links and boots its owned module ROM in libmGBA.
 It captures the real0,0,1,0 lookup records after60frames.
-The same native case runs through selected compiler, symbol-reader and
-objcopy symlink facades. Their entrypoints are kept rather than dereferenced,
-matching basename-sensitive drivers such as ccache.
+One closed selector serves both the direct case and its compiler,
+symbol-reader and objcopy facades. Explicit `MODERN_CC`/`MODERN_NM`/
+`MODERN_OBJCOPY` win; otherwise use `MODERN_TOOLCHAIN_ROOT/bin` plus `PREFIX`,
+or the prefixed tool on `PATH`. The facades exercise both root/custom-prefix
+and prefix/PATH forms. Entrypoints are kept rather than dereferenced,
+matching basename-sensitive drivers such as ccache. Partial explicit overrides
+retain the other selected tools; empty/missing explicit tools fail.
 Existing `MODERN_BINUTILS_DIR`, `MODERN_NEWLIB_INCLUDE` and
 `MODERN_NEWLIB_LIB` overrides reach C compilation, assembly and linking;
 the fixture checks actual forwarded argv, including paths with spaces.
