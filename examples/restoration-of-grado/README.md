@@ -57,6 +57,9 @@ four separate monotonic facts; their counts are read-only cardinalities, not
 mutable totals. `RecordRescue` records an explicit fact, not evidence that an
 evacuation/category producer's conditions were satisfied. The eventual native
 event adapter must establish those conditions and a coherent checkpoint.
+Count declarations select only their typed collection; they have no unused
+field target that could contradict the reader. Ending declarations instead
+name the field actually read by that projection.
 An unset semantic one-hot reports `UNSET`; its Boolean backing views are false.
 Corrupt one-hot storage refuses both views rather than exposing partial truth.
 Call `GradoState_ValidateCampaign` before using this immutable allocation.
@@ -93,8 +96,11 @@ save, credentials or manual judgment.
    ARM7TDMI/Thumb AAPCS. The previous absent campaign interface failed host
    compilation; that structural negative does not claim target-ROM evidence.
 2. The complete physical allocation must pass the existing reservation,
-   capacity, scope and overlap validator. Every logical symbol must resolve
-   without an unknown-input result from its cleared starting state. Exercise
+   capacity, scope and overlap validator. An independent C consumer names
+   every required public symbol from the owning 16-STATE/227-FLAG register;
+   it is not generated from the definition being tested. Missing names fail
+   compilation, extras/duplicates reject, and every required symbol resolves
+   from its cleared starting state. Exercise
    a semantic choice and both true/false backing views, all four-direction
    ending values, permanent wyvern and guard fields, the bounded CH13
    local count and a monotonic retirement fact.
@@ -113,11 +119,24 @@ save, credentials or manual judgment.
    preserve the output guard. Keep the unselected default as the negative
    profile: this example still supplies no default build source or hook.
 
+The same native corpus exercises all14 public one-hot fields and all8 stored
+counter bindings using independent source-domain bounds, not descriptor
+metadata. Every legal value round-trips; zero is `UNSET` for one-hot and
+valid for counters. All31 choice/direction backing views agree across their
+full domains, and all4 retirement facts refuse clearing. An upper-bound
+write preserves both complete native arrays.
+
 The owning source inventory is the accepted state register in
 [Design main](https://github.com/laqieer/Restoration_of_Grado-Design/blob/578bcc136581c52c537f0cacb0591cb840626e89/docs/06_technical/EVENT_FLAGS_AND_STATE_FLOW.md).
 Name coverage is structural inventory evidence, not state/save/runtime proof.
 The C definition is the implementation's sole allocation authority, not a
 second mutable storage ledger. Original engine/debug/sort reservations remain.
+The named static contract is the **public Grado logical C-symbol inventory**:
+an otherwise unused deleted interface cannot be exercised without an independent
+C consumer retaining its name. Compiler-checked public identifiers are therefore
+necessary here; raw tracked-text matches, Git content or private implementation
+spelling are not behavioral evidence. Reordering definition rows preserves the
+named consumer and explicit native positions.
 
 ### Generic descriptor controls
 

@@ -7,12 +7,14 @@ enum GradoStateSymbol
 {
 #define GRADO_FIELD(symbol, first, bits, kind, maximum, chapter, scope) symbol,
 #define GRADO_ALIAS(symbol, target, value) symbol,
-#define GRADO_DERIVED(symbol, kind, target) symbol,
+#define GRADO_COUNT(symbol, group) symbol,
+#define GRADO_ENDING(symbol, target) symbol,
 #define GRADO_PRIVATE(symbol, first, bits, kind, maximum)
 #include "grado_campaign_state.def"
 #undef GRADO_FIELD
 #undef GRADO_ALIAS
-#undef GRADO_DERIVED
+#undef GRADO_COUNT
+#undef GRADO_ENDING
 #undef GRADO_PRIVATE
     GRADO_STATE_SYMBOL_COUNT,
 };

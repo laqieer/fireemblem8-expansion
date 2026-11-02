@@ -6,12 +6,14 @@ enum GradoCampaignField
 {
 #define GRADO_FIELD(symbol, first, bits, kind, maximum, chapter, scope) FIELD_##symbol,
 #define GRADO_ALIAS(symbol, target, value)
-#define GRADO_DERIVED(symbol, kind, target)
+#define GRADO_COUNT(symbol, group)
+#define GRADO_ENDING(symbol, target)
 #define GRADO_PRIVATE(symbol, first, bits, kind, maximum) FIELD_##symbol,
 #include "../include/grado_campaign_state.def"
 #undef GRADO_FIELD
 #undef GRADO_ALIAS
-#undef GRADO_DERIVED
+#undef GRADO_COUNT
+#undef GRADO_ENDING
 #undef GRADO_PRIVATE
     CAMPAIGN_FIELD_COUNT,
 };
@@ -20,13 +22,15 @@ static const struct GradoStateField sCampaignFields[] = {
 #define GRADO_FIELD(symbol, first, bits, kind, maximum, chapter, scope) \
     { first, bits, kind, maximum, chapter, scope },
 #define GRADO_ALIAS(symbol, target, value)
-#define GRADO_DERIVED(symbol, kind, target)
+#define GRADO_COUNT(symbol, group)
+#define GRADO_ENDING(symbol, target)
 #define GRADO_PRIVATE(symbol, first, bits, kind, maximum) \
     GRADO_FIELD(symbol, first, bits, kind, maximum, GRADO_STATE_NO_CHAPTER, GRADO_STATE_PERMANENT)
 #include "../include/grado_campaign_state.def"
 #undef GRADO_FIELD
 #undef GRADO_ALIAS
-#undef GRADO_DERIVED
+#undef GRADO_COUNT
+#undef GRADO_ENDING
 #undef GRADO_PRIVATE
 };
 
@@ -34,8 +38,8 @@ enum GradoBindingKind
 {
     BINDING_DIRECT,
     BINDING_ALIAS,
-    BINDING_CIVILIAN_COUNT,
-    BINDING_ARCHIVE_COUNT,
+    BINDING_COUNT_CIVILIAN,
+    BINDING_COUNT_ARCHIVE,
     BINDING_ENDING,
 };
 
@@ -50,12 +54,14 @@ static const struct GradoStateBinding sCampaignBindings[] = {
 #define GRADO_FIELD(symbol, first, bits, kind, maximum, chapter, scope) \
     { FIELD_##symbol, BINDING_DIRECT, 0 },
 #define GRADO_ALIAS(symbol, target, value) { FIELD_##target, BINDING_ALIAS, value },
-#define GRADO_DERIVED(symbol, kind, target) { FIELD_##target, BINDING_##kind, 0 },
+#define GRADO_COUNT(symbol, group) { 0, BINDING_COUNT_##group, 0 },
+#define GRADO_ENDING(symbol, target) { FIELD_##target, BINDING_ENDING, 0 },
 #define GRADO_PRIVATE(symbol, first, bits, kind, maximum)
 #include "../include/grado_campaign_state.def"
 #undef GRADO_FIELD
 #undef GRADO_ALIAS
-#undef GRADO_DERIVED
+#undef GRADO_COUNT
+#undef GRADO_ENDING
 #undef GRADO_PRIVATE
 };
 
@@ -130,9 +136,9 @@ enum GradoStateValueResult GradoState_ReadSymbol(
         return GRADO_STATE_VALUE_INPUT;
 
     binding = sCampaignBindings + symbol;
-    if (binding->kind == BINDING_CIVILIAN_COUNT || binding->kind == BINDING_ARCHIVE_COUNT)
+    if (binding->kind == BINDING_COUNT_CIVILIAN || binding->kind == BINDING_COUNT_ARCHIVE)
     {
-        first = binding->kind == BINDING_CIVILIAN_COUNT
+        first = binding->kind == BINDING_COUNT_CIVILIAN
             ? GRADO_RESCUE_CIV_01 : GRADO_RESCUE_MILITARY_ORDERS;
         total = 0;
         for (i = first; i < first + 4; ++i)
