@@ -61,6 +61,11 @@ change the public lookup interface, valid cache transitions, 4KiB buffer,
 archival code/data path or separate localized consumer. It is transient,
 not a save/config/epoch field. Its alignment and total ROM/RAM impact remain
 subject to existing linked budgets and complete candidate/master profiles.
+When regenerating the default linked reports, also regenerate their existing
+`make expansion-modern-autoplay-strategy-budget` consumer from coherent
+baseline/router/reference ELFs. Its host structured-budget case checks both
+debug/release baseline addresses and derived deltas; a report matching only its
+own ELF does not establish that cross-report contract.
 No new flag, resolver, locale, registry or feature conflict is introduced.
 
 ### Automation and cleanup
