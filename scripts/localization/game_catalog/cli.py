@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import shlex
+import struct
 import subprocess
 import sys
 from dataclasses import replace
@@ -313,13 +315,59 @@ def cmd_declare(args: argparse.Namespace) -> int:
     return 0
 
 
-def _invocation_makefiles(path: Path) -> list[str]:
+def _invocation_arguments(pid: int) -> list[str]:
+    if pid <= 0:
+        raise GameCatalogError("native Make invocation requires a positive process ID")
     try:
-        arguments = [os.fsdecode(value) for value in path.read_bytes().split(b"\0") if value]
+        if sys.platform == "darwin":
+            native = ctypes.CDLL(None, use_errno=True).sysctl
+            native.argtypes = (
+                ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t,
+            )
+            native.restype = ctypes.c_int
+
+            def read(selector, value, size):
+                if native((ctypes.c_int * len(selector))(*selector), len(selector),
+                          value, ctypes.byref(size), None, 0) != 0:
+                    error = ctypes.get_errno()
+                    raise OSError(error, os.strerror(error))
+
+            maximum = ctypes.c_int()
+            size = ctypes.c_size_t(ctypes.sizeof(maximum))
+            read((1, 8), ctypes.byref(maximum), size)  # CTL_KERN, KERN_ARGMAX
+            if size.value != ctypes.sizeof(maximum) or maximum.value <= 0:
+                raise GameCatalogError("native Make argument capacity is malformed")
+            data = ctypes.create_string_buffer(maximum.value)
+            size = ctypes.c_size_t(len(data))
+            read((1, 49, pid), data, size)  # CTL_KERN, KERN_PROCARGS2
+            if size.value > len(data):
+                raise GameCatalogError("native Make argument vector exceeds its buffer")
+            raw = data.raw[:size.value]
+            if len(raw) < 4:
+                raise GameCatalogError("native Make invocation is truncated")
+            count = struct.unpack_from("=i", raw)[0]
+            executable_end = raw.find(b"\0", 4)
+            if executable_end < 0:
+                raise GameCatalogError("native Make executable is unterminated")
+            values = raw[executable_end + 1:].lstrip(b"\0").split(b"\0")
+            if count <= 0 or len(values) <= count:
+                raise GameCatalogError("native Make argument vector is truncated")
+            arguments = [os.fsdecode(value) for value in values[:count]]
+        else:
+            data = Path(f"/proc/{pid}/cmdline").read_bytes()
+            if not data.endswith(b"\0"):
+                raise GameCatalogError("native Make argument vector is truncated")
+            arguments = [os.fsdecode(value) for value in data.split(b"\0")[:-1]]
     except OSError as error:
         raise GameCatalogError(f"native Make invocation is unreadable: {error}") from error
     if not arguments:
         raise GameCatalogError("native Make invocation is empty")
+    return arguments
+
+
+def _invocation_makefiles(pid: int) -> list[str]:
+    arguments = _invocation_arguments(pid)
     files = []
     index = 1
     while index < len(arguments):
@@ -373,8 +421,8 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
     command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
     if not command:
         raise GameCatalogError("native text context requires the actual Make plan command")
-    if args.make_invocation is not None:
-        makefiles = _invocation_makefiles(args.make_invocation)
+    if args.invoker_pid is not None:
+        makefiles = _invocation_makefiles(args.invoker_pid)
         if makefiles:
             flags = [argument for path in makefiles for argument in ("-f", path)]
             if "-f" in command:
@@ -574,7 +622,7 @@ def build_parser() -> argparse.ArgumentParser:
     context_p.add_argument("--sources-file", type=Path, required=True)
     context_p.add_argument("--compiler", required=True)
     context_p.add_argument("--preprocessor", required=True)
-    context_p.add_argument("--make-invocation", type=Path)
+    context_p.add_argument("--invoker-pid", type=int)
     context_p.add_argument("--invoker-goals")
     context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
     context_p.set_defaults(handler=cmd_describe_make_context)

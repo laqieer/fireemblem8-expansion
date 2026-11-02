@@ -37,13 +37,21 @@ physical and compiler-input paths, exact private compiler/preprocessor argv,
 and the selected linker. It neither compiles all units nor emits per-object
 sidecars. Late dependency-file settings and data-preprocessor steps remain part
 of that actual plan.
-On the supported Linux/GNU Make path, capture reads its own invoker's process
-arguments to preserve all explicit entrypoint files in order, and retains the
-original goal-dependent settings. Unreadable invocation data or stdin-only
-entrypoints fail explicitly rather than replaying a different configuration.
+Capture reads its own GNU Make invoker's argument vector through Linux procfs
+or macOS `sysctl`, using only Python's standard library. It preserves all
+explicit entrypoint files in order, including spaced paths, and retains the
+original goal-dependent settings without copying the environment. Unreadable
+or malformed invocation data and stdin-only entrypoints fail explicitly rather
+than replaying a different configuration.
+For measurement builds the existing content-stable context is a prerequisite
+of the selected font objects and localized preprocessing output. A warm change
+to target-private compiler or preprocessor arguments rebuilds those inputs;
+an unchanged context adds no mandatory font recompilation or per-object stamp.
+Ordinary English builds not requesting measurement retain their existing path.
 
 `make expansion-modern-game-localization-declarations` emits
-`game_localization_declarations.h` from the selected message header and enabled
+`game_localization_declarations.h` from the selected project's message header
+(or the Make graph's `TEXT_HEADER`) and enabled
 locales alone. It does not need payloads or fonts. Only the generated catalog
 owns the complete measured CJK `MsgBuffer`; other consumers use its incomplete
 type, preserved legacy prefix and exported capacity. English/pseudo and

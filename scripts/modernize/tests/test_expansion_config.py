@@ -128,6 +128,10 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
     def test_source_only_make_declarations_cover_english_and_pseudo(self):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="source-only-declarations-", dir=ROOT / "build") as directory:
+            selected = Path(directory) / "selected-msg.h"
+            selected.write_text("#define MSG_COUNT 0x0003\n", encoding="ascii")
+            unrelated = Path(directory) / "unrelated-msg.h"
+            unrelated.write_text("#define MSG_COUNT 0x0007\n", encoding="ascii")
             for locales, pseudo in (("en", "0"), ("en,qps-ploc", "1")):
                 with self.subTest(locales=locales):
                     output = Path(directory) / pseudo
@@ -138,14 +142,29 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                             f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
                             "FE8_PROJECT=default", f"EXPANSION_ENABLED_LOCALES={locales}",
                             f"EXPANSION_PSEUDO_LOCALE={pseudo}", "MODERN_CC=/missing/compiler",
-                            f"PYTHON={sys.executable}",
+                            f"PYTHON={sys.executable}", f"TEXT_HEADER={selected}",
                         ],
                         cwd=ROOT, capture_output=True, text=True, timeout=60,
+                        env={**os.environ, "MSG_HEADER": str(unrelated)},
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     header = output / "game-localization/generated/game_localization_declarations.h"
                     self.assertTrue(header.is_file(), result.stdout + result.stderr)
                     self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
+                    checked = subprocess.run(
+                        [
+                            os.environ.get("CC", "cc"), "-std=c89", "-pedantic-errors",
+                            "-I", str(ROOT / "scripts/localization/game_catalog/tests/host_include"),
+                            "-I", str(header.parent), "-x", "c", "-fsyntax-only", "-",
+                        ],
+                        input=(
+                            '#include "game_localization_declarations.h"\n'
+                            "typedef char HeaderMatches[(GAME_LOCALIZATION_TARGET_COUNT == 3)"
+                            " ? 1 : -1];\n"
+                        ),
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
     def test_native_renderer_make_graph_owns_its_generated_debug_font(self):
         (ROOT / "build").mkdir(exist_ok=True)
@@ -449,6 +468,18 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         for folder in ("no-link-output", "pseudo-metrics"):
             with self.subTest(noop_linker=folder), self.assertRaises(CompiledFontError):
                 measure_selected_fonts(context, output_dir=output / folder)
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace("SELECTED_FONT_WIDTH=9", "SELECTED_FONT_WIDTH=10"),
+            encoding="utf-8",
+        )
+        warm = subprocess.run(
+            pseudo.args, cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(warm.returncode, 0, warm.stdout + warm.stderr)
+        measured = measure_selected_fonts(context, output_dir=output / "warm-metrics")
+        self.assertEqual(measured["ascii"], {
+            "system": {63: 10, 65: 10}, "talk": {63: 11, 65: 11},
+        })
 
     def test_native_cjk_fonts_bootstrap_without_payload_generation(self):
         if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
@@ -643,6 +674,41 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
                 with self.assertRaises(CompiledFontError):
                     measure_selected_fonts(context, output_dir=namespace / defect)
+        regional.write_text(source, encoding="ascii")
+        preprocessor = self.project / "regional-preprocessor"
+        preprocessor.write_text(
+            f"#!{sys.executable}\n"
+            "import subprocess, sys\n"
+            f"result = subprocess.run([{str(ROOT / 'tools/preproc/preproc')!r}, *sys.argv[2:]], "
+            "capture_output=True, text=True)\n"
+            "sys.stderr.write(result.stderr)\n"
+            "if result.returncode:\n"
+            "    raise SystemExit(result.returncode)\n"
+            'sys.stdout.write(result.stdout.replace("PRIVATE_SYSTEM_WIDTH", sys.argv[1]))\n',
+            encoding="utf-8",
+        )
+        preprocessor.chmod(0o755)
+        preprocessed = (namespace / "src/data/localized_font_data.pre.c").relative_to(ROOT)
+        configured = (
+            makefile.read_text(encoding="ascii")
+            + f"MODERN_PREPROC := {preprocessor}\n"
+            + f"{preprocessed}: private MODERN_PREPROC_FLAGS := 13 $(MODERN_PREPROC_FLAGS)\n"
+        )
+        makefile.write_text(configured, encoding="utf-8")
+        rebuild = [*command, "expansion-modern-text-inputs",
+                   *(str(path.relative_to(ROOT)) for path in objects)]
+        for width in (13, 14):
+            with self.subTest(private_preprocessor_width=width):
+                makefile.write_text(
+                    configured.replace("MODERN_PREPROC_FLAGS := 13 ", f"MODERN_PREPROC_FLAGS := {width} "),
+                    encoding="utf-8",
+                )
+                rebuilt = subprocess.run(
+                    rebuild, cwd=ROOT, capture_output=True, text=True, timeout=120,
+                )
+                self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+                measured = measure_selected_fonts(context, output_dir=namespace / f"preprocessor-{width}")
+                self.assertEqual(measured["localized"]["ja"]["system"], {0x4E00: width})
         self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
         self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])
 

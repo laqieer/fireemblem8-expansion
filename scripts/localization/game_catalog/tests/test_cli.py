@@ -1,10 +1,13 @@
+import ctypes
 import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[4]
 TEST_DIR = Path(__file__).resolve().parent
@@ -27,6 +30,72 @@ def run_cli(args):
 class CliTests(unittest.TestCase):
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
+
+    def test_native_context_replays_macos_invoker_without_procfs(self):
+        from scripts.localization.game_catalog import cli
+
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            primary = root / "first makefile.mk"
+            secondary = root / "second makefile.mk"
+            primary.write_text(
+                "WIDTH := 9\n"
+                ".PHONY: native-plan\n"
+                "native-plan:\n"
+                "\tcc -DWIDTH=$(WIDTH) -c sample.c -o out/sample.o\n"
+                "\t: fe8-selected-text-objects out out/sample.o\n"
+                "\t: fe8-selected-text-data \n"
+                "\t: fe8-selected-text-linker ld\n",
+                encoding="ascii",
+            )
+            secondary.write_text("WIDTH := 11\n", encoding="ascii")
+            sources = root / "sources"
+            sources.write_text("sample.c\n", encoding="ascii")
+            output = root / "context.json"
+            arguments = [
+                "gmake", "--file", str(primary), "--makefile=" + str(secondary), "native-plan",
+            ]
+            wire = (
+                struct.pack("=i", len(arguments)) + b"/opt/homebrew/bin/gmake\0\0\0"
+                + b"\0".join(os.fsencode(value) for value in arguments)
+                + b"\0UNRELATED_ENV=not-an-argument\0"
+            )
+
+            def native_sysctl(names, count, value, size, new_value, new_size):
+                self.assertIsNone(new_value)
+                self.assertEqual(new_size, 0)
+                lengths = ctypes.cast(size, ctypes.POINTER(ctypes.c_size_t))
+                selector = tuple(names[index] for index in range(count))
+                if selector == (1, 8):
+                    ctypes.cast(value, ctypes.POINTER(ctypes.c_int))[0] = len(wire) + 32
+                    lengths[0] = ctypes.sizeof(ctypes.c_int)
+                else:
+                    self.assertEqual(selector, (1, 49, 424242))
+                    self.assertGreaterEqual(lengths[0], len(wire))
+                    ctypes.memmove(value, wire, len(wire))
+                    lengths[0] = len(wire)
+                return 0
+
+            with mock.patch.object(sys, "platform", "darwin"), mock.patch(
+                "ctypes.CDLL", return_value=mock.Mock(sysctl=native_sysctl),
+            ):
+                command = [
+                    "describe-make-context", "--output", str(output),
+                    "--sources-file", str(sources), "--compiler", "cc", "--preprocessor", "pp",
+                    "--invoker-pid", "424242", "--", "make", "-n",
+                    "-f", str(primary), "native-plan",
+                ]
+                self.assertEqual(cli.main(command), 0)
+                captured = json.loads(output.read_text(encoding="utf-8"))
+                self.assertEqual(len(captured["units"]), 1)
+                self.assertIn("-DWIDTH=11", captured["units"][0]["compiler_argv"])
+                self.assertNotIn("UNRELATED_ENV", output.read_text(encoding="utf-8"))
+                for malformed in (b"\x01", struct.pack("=i", 99) + b"make\0\0make\0"):
+                    with self.subTest(malformed_native_arguments=malformed):
+                        wire = malformed
+                        output.unlink(missing_ok=True)
+                        self.assertEqual(cli.main(command), 1)
+                        self.assertFalse(output.exists())
 
     def test_declarations_require_only_the_actual_message_header(self):
         with self._tmpdir() as tmp:
