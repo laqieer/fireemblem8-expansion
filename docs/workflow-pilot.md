@@ -76,7 +76,7 @@ not imported or executed by that verifier; comments/formatting remain neutral.
 Raw pre-checkout identity/bootstrap and closed no-checkout metadata/security/
 summary adapters stay at their existing workflow authority boundary. Moving
 them into checkout helpers would change that contract and is outside this
-extraction. The eight Build jobs, 31 mirrored validation commands and existing
+extraction. The eight Build jobs, every mirrored validation command and existing
 master-only build-once patch publisher remain unchanged.
 
 Dependencies: delivered workflow, upstream CLI/constants, existing verifier

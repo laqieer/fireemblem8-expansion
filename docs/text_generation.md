@@ -52,8 +52,8 @@ python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
 ```
 
 It is not hidden in the `test_multilang_codec*.py` pattern and does not
-rediscover unrelated text suites. The upstream mirror retains all prior 30
-gates and adds this gate, for **31 gates and the same eight jobs**. Job
+rediscover unrelated text suites. The upstream mirror retains every prior
+gate and adds this gate, with **the same eight jobs**. Job
 conditions, timeouts, required contexts, approvals and master-only build-once
 patch publication remain unchanged.
 
