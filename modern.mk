@@ -1014,14 +1014,26 @@ _expansion-modern-text-object-plan: $$(filter-out expansion-modern-text-inputs $
 	@: fe8-selected-text-assembly $(foreach object,$(sort $(MODERN_ALL_ASM_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_FE6SIO_OBJ)),"$(object)")
 	@: fe8-selected-text-linker-default "$(MODERN_LD)"
 
+define modern_compile_c
+@set -e
+"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d).tmp" -MQ "$@" -c "$<" -o "$@"
+@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
+endef
+
+define modern_compile_asm
+@set -e
+"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d).tmp" -c "$<" -o "$@"
+@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
+endef
+
 $(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 ifneq ($(strip $(MODERN_UI_PRESENTATION_AVAILABLE)),)
 $(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o: $(MODERN_UI_PRESENTATION_MANIFEST_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 $(MODERN_UI_PRESENTATION_MANIFEST_C): $(or $(call generated_data_source,ui_presentation,src/data/ui_presentation.json),src/data/ui_presentation.json) \
 	scripts/generated_data/ui_presentation/schema.py \
@@ -1039,7 +1051,7 @@ $(MODERN_BGM_REGISTRY_C): $(MODERN_BGM_REGISTRY_JSON) \
 $(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(call modern_c_source,$(MODERN_BGM_REGISTRY_C)) \
 	$(if $(filter $(MODERN_BGM_REGISTRY_C),$(call modern_c_source,$(MODERN_BGM_REGISTRY_C))),expansion-modern-bgm-registry-check)
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 expansion-modern-bgm-registry-check: $(MODERN_BGM_REGISTRY_C)
 	$(PYTHON) $(MODERN_BGM_REGISTRY_SCRIPT) check
@@ -1075,7 +1087,7 @@ bgm-registry-check:
 define GENERATED_DATA_MODERN_OVERRIDE_RULES
 $(MODERN_OUTPUT_DIR)/src/data_$(1).o: $(GENERATED_DATA_OUT_DIR)/data_$(1).c
 	@mkdir -p $$(@D)
-	"$$(MODERN_CC)" $$(MODERN_CFLAGS) -MMD -MP -MF "$$(@:.o=.d)" -MQ "$$@" -c "$$<" -o "$$@"
+	$$(modern_compile_c)
 endef
 
 $(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_OVERRIDE_RULES,$(t))))
@@ -1109,7 +1121,7 @@ endif
 # since nothing adds this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # Issue #5 Batch 3b: same reasoning as the units synthetic-slot rule just
 # above, for the traps table's synthetic slot object. A safe no-op target
@@ -1118,7 +1130,7 @@ $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # Issue #5 Batch 3c: same reasoning as the units/traps synthetic-slot
 # rules above, for the shops table's synthetic slot object. A safe no-op
@@ -1127,7 +1139,7 @@ $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # Issue #5 Batch 3d: same reasoning as the units/traps/shops
 # synthetic-slot rules above, for the eventlists table's synthetic slot
@@ -1137,15 +1149,15 @@ $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 # case.
 $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLISTS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o: $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 .PHONY: expansion-modern-autoplay-strategies-objects
 expansion-modern-autoplay-strategies-objects: \
@@ -1257,7 +1269,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # Issue #5 Batch 2 (mechanics): same reasoning as the terrainstats
 # synthetic-slot rule above, for the movecost table's synthetic slot
@@ -1267,7 +1279,7 @@ $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
 # that case.
 $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # Issue #5 Batch 3 (mechanics): same reasoning as the terrainstats/
 # movecost synthetic-slot rules above, for the weapontriangle table's
@@ -1277,7 +1289,7 @@ $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # IWRAM-placed symbols need per-symbol BSS sections. agb_sram.c additionally
 # subtracts adjacent function addresses when copying routines into IWRAM.
@@ -1293,7 +1305,7 @@ $(MODERN_OUTPUT_DIR)/src/banim-ekrbattle.o: MODERN_CFLAGS += $(MODERN_BANIM_OVER
 # gba.inc), so no cpp preprocessing or scaninc invocation is needed here.
 $(MODERN_OUTPUT_DIR)/%.o: %.s
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d)" -c "$<" -o "$@"
+	$(modern_compile_asm)
 
 # Data C sources embed INCBIN_U8/INCBIN_U16 binary/graphics assets and cannot
 # be handed to modern GCC directly. This explicit static pattern rule (bound
@@ -1319,7 +1331,7 @@ $(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$
 
 $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre.c
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # ---------------------------------------------------------------------------
 # Asset dependency bootstrap (issue #3): first-invocation INCBIN readiness
@@ -2491,7 +2503,7 @@ endif
 # case.
 $(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o: $(MODERN_LOCALIZATION_CATALOG_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # The full-game CJK catalog plus its single shared modern English bundle are
 # generated and linked only when the production profile enables real CJK.
@@ -2539,7 +2551,7 @@ localized_game_text_data.h: $(MODERN_GAME_LOCALIZATION_CONFIG_H) ;
 $(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: $(MODERN_GAME_LOCALIZATION_C) \
 	$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 else
 # Do not invoke the catalog generator for EN/qps-only profiles. These
 # no-recipe targets only absorb full-path prerequisites retained in old CJK
@@ -2638,9 +2650,10 @@ $(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
 		$(MODERN_DRIVER_FLAGS) $(MODERN_ARCH_FLAGS) \
 		-I"$(CURDIR)/include" -I"$(CURDIR)" \
 		$(MODERN_ABI_FLAGS) \
-		-Wa,--MD,"$(abspath $(@:.o=.d))" \
+		-Wa,--MD,"$(abspath $(@:.o=.d)).tmp" \
 		-c "$(CURDIR)/$<" -o "$(abspath $@)"
-	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(abspath $(@:.o=.d))"
+	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(abspath $(@:.o=.d)).tmp"
+	@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
 
 # Manifest: source-relative paths of every modern-built object.
 $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF_FE6SIO)

@@ -411,6 +411,137 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 self.assertFalse(context_path.with_suffix(".json.makefiles").exists())
             self.assertEqual(list(output.rglob("*.o")), [])
 
+    def test_native_parallel_capture_reads_only_complete_dependency_products(self):
+        from scripts.workflow_pilot import raw_diff_check as raw
+
+        compiler = shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc"))
+        if compiler is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("the deterministic native parallel writer uses POSIX FIFOs")
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-publish-", dir=ROOT / "build") as directory:
+            temporary = Path(directory)
+            headers = temporary / "headers"
+            headers.mkdir()
+            for index in range(160):
+                (headers / f"native_{index:03}.h").write_text(f"#define NATIVE_{index:03} 1\n")
+            selected = headers / "selected.h"
+            selected.write_text("".join(
+                f'#include "native_{index:03}.h"\n' for index in range(160)
+            ))
+            for slot, fails, oneshell in (
+                ("src/bmunit.o", False, False), ("src/data/data_8B363C.o", False, False),
+                ("asm/arm_call.o", False, False), ("src/bmunit.o", True, False),
+                ("asm/arm_call.o", True, False), ("src/bmunit.o", False, True),
+                ("asm/arm_call.o", False, True), ("src/bmunit.o", True, True),
+                ("asm/arm_call.o", True, True),
+            ):
+                with self.subTest(slot=slot, compiler_failure=fails, oneshell=oneshell):
+                    work = temporary / (
+                        slot.replace("/", "-") + ("-failure" if fails else "")
+                        + ("-oneshell" if oneshell else "")
+                    )
+                    work.mkdir()
+                    output = work / "native"
+                    object_path = output / "debug/aapcs" / slot
+                    ready, done = work / "ready", work / "done"
+                    os.mkfifo(ready)
+                    os.mkfifo(done)
+                    observed = work / "producer.json"
+                    fixture = work / "fixture.py"
+                    fixture.write_text(
+                        f"#!{sys.executable}\n"
+                        "import json, os, subprocess, sys\nfrom pathlib import Path\n"
+                        f"compiler={compiler!r}; python={sys.executable!r}\n"
+                        f"ready={str(ready)!r}; done={str(done)!r}\n"
+                        "mode=Path(sys.argv[0]).name; args=sys.argv[1:]\n"
+                        "if mode=='native-wait':\n"
+                        "    with open(ready,'rb') as stream: assert stream.read(1)==b'1'\n"
+                        "    raise SystemExit(0)\n"
+                        "if mode=='native-python':\n"
+                        "    if 'describe-make-context' not in args: os.execv(python,[python,*args])\n"
+                        "    try: result=subprocess.run([python,*args])\n"
+                        "    finally:\n"
+                        "        with open(done,'wb') as stream: stream.write(b'1')\n"
+                        "    raise SystemExit(result.returncode)\n"
+                        "if '-MF' in args:\n"
+                        "    position=args.index('-MF')+1; target=Path(args[position]); gas=False\n"
+                        "else:\n"
+                        "    positions=[i for i,arg in enumerate(args) if arg.startswith('-Wa,--MD,')]\n"
+                        "    if not positions: os.execv(compiler,[compiler,*args])\n"
+                        "    position=positions[0]; target=Path(args[position].split(',',2)[2]); gas=True\n"
+                        "captured=target.with_name(target.name+'.producer')\n"
+                        "args[position]=('-Wa,--MD,' if gas else '')+str(captured)\n"
+                        "result=subprocess.run([compiler,*args])\n"
+                        "if result.returncode: raise SystemExit(result.returncode)\n"
+                        "data=captured.read_bytes(); prefix=min(4096,max(1,len(data)//2))\n"
+                        "with target.open('wb') as stream:\n"
+                        "    stream.write(data[:prefix]); stream.flush()\n"
+                        "    with open(ready,'wb') as signal: signal.write(b'1')\n"
+                        "    with open(done,'rb') as signal: assert signal.read(1)==b'1'\n"
+                        "    stream.write(data[prefix:])\n"
+                        f"Path({str(observed)!r}).write_text(json.dumps({{'requested_mf':str(target),"
+                        "'bytes':len(data),'prefix':prefix,'complete':target.read_bytes()==data}))\n"
+                        f"raise SystemExit({73 if fails else 0})\n",
+                        encoding="ascii",
+                    )
+                    fixture.chmod(0o755)
+                    programs = {}
+                    for name in ("native-gcc", "native-python", "native-wait"):
+                        path = work / name
+                        path.symlink_to(fixture)
+                        programs[name] = path
+                    entrypoint = work / "native.mk"
+                    entrypoint.write_text(
+                        "include Makefile\n" + (".ONESHELL:\n" if oneshell else "")
+                        + f"{object_path}: private MODERN_CFLAGS += -include {selected}\n"
+                        + f"{object_path}: FORCE\n"
+                        + "$(MODERN_TEXT_COMPILE_CONTEXT): native-writer-ready\n"
+                        + ".PHONY: native-race native-writer-ready\n"
+                        + f"native-race: {object_path} expansion-modern-text-inputs\n"
+                        + f"native-writer-ready:\n\t@{programs['native-wait']}\n",
+                        encoding="ascii",
+                    )
+                    arguments = [
+                        "make", "--no-print-directory", "-f", str(entrypoint), "NODEP=1",
+                        f"MODERN_BUILD_ROOT={output}", "FE8_PROJECT=default",
+                    ]
+                    built = raw.run_process(
+                        [*arguments, str(object_path), f"PYTHON={sys.executable}",
+                         f"MODERN_CC={compiler}"],
+                        cwd=ROOT, env=raw.git_environment(), timeout=90,
+                    )
+                    self.assertEqual(built.returncode, 0, (built.stdout + built.stderr).decode())
+                    dependency = object_path.with_suffix(".d")
+                    before = dependency.read_bytes()
+                    raced = raw.run_process(
+                        [
+                            *arguments, "-j2", "native-race", "MODERN_DRY_RUN=1",
+                            f"PYTHON={programs['native-python']}",
+                            f"MODERN_CC={programs['native-gcc']}",
+                        ],
+                        cwd=ROOT, env=raw.git_environment(), timeout=90,
+                    )
+                    facts = json.loads(observed.read_text())
+                    self.assertTrue(facts["complete"])
+                    self.assertNotEqual(Path(facts["requested_mf"]), dependency)
+                    self.assertEqual(dependency.read_bytes(), before)
+                    if fails:
+                        self.assertEqual(raced.returncode, 2)
+                        self.assertIn(b"Error 73", raced.stderr)
+                    else:
+                        self.assertEqual(raced.returncode, 0, (raced.stdout + raced.stderr).decode())
+                    context = json.loads((output / "debug/aapcs/selected-text-inputs.json").read_text())
+                    self.assertTrue(context["units"])
+                    for unit in context["units"]:
+                        argv = unit["compiler_argv"]
+                        self.assertIn("-MF", argv)
+                        self.assertNotEqual(
+                            Path(argv[argv.index("-MF") + 1]),
+                            Path(unit["object"]).with_suffix(".d"),
+                        )
+
     def test_native_context_captures_target_specific_native_tools(self):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-private-tools-", dir=ROOT / "build") as directory:

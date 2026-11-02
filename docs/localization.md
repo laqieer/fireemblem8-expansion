@@ -55,6 +55,16 @@ The CLI constructs argv after reading the transport, keeping the complete
 warm dependency family out of a single shell argument,
 including callers that use GNU Make's `.ONESHELL` recipe mode. Ordinary `-n`
 does not write the temporary transport file.
+Native C and assembly dependency producers write a same-directory staging
+file and publish it only after successful compilation. The filtered SIO
+dependency is likewise published only after filtering succeeds. This reuses
+the existing header/asset dependency publication pattern: a parallel capture
+reads an old complete dependency or its complete replacement, never an
+in-progress compiler flush. Compiler refusal preserves the old dependency
+and remains an explicit build failure; no global serialization or new lock
+is used.
+The same success-only rule holds with `.ONESHELL`: recipe-local fail-fast
+handling prevents a successful rename from masking a compiler refusal.
 The plan traverses the actual original goals before completing its selected
 inventory, so inherited target-specific scopes are evaluated by GNU Make,
 not approximated by a goal-name variable or a second variable snapshot.

@@ -58,6 +58,16 @@ repeat capture with `.ONESHELL` and real build-goal classification. Cold and
 warm C inputs agree, every dependency input remains byte/inode/time-identical,
 and no single-shell argument overflow or object compilation occurs.
 These are real owned include fixtures, not a compiled full-source ROM.
+Run actual ordinary C, preprocessed-data C and assembler producers alongside
+capture under `-j2`, synchronizing their real dependency output between
+flushes. Replay must succeed using complete dependencies and every selected
+C compiler command must stage its dependency output. A refused compiler
+remains an explicit error and preserves the previous good dependency.
+Repeat C/GAS success and refusal with `.ONESHELL`; successful publication
+must never mask the compiler's failure status.
+Generated/reinstated/synthetic/locale/catalog C owners use the same publisher;
+assembler and filtered SIO outputs publish only after their successful
+producer/filter. No dependency edge is removed or whole build serialized.
 Actual target-private compiler/preprocessor paths are recorded without executing
 their sentinels, for both ordinary and spaced filenames. Also request capture
 with missing spaced private compiler/preprocessor/scanner paths: the context
