@@ -310,7 +310,10 @@ No ROM, emulator, save file, credentials or manual judgment is needed.
    live state. A permanent-only view works without chapter storage.
    Null/short input, wrong chapter, reservations/guide ownership, unset and
    corrupt one-hot/counter values refuse without changing the output guard,
-   either input or either complete live array. This is native-format field
+   either input or either complete live array. Snapshot and compare each
+   call's input/view metadata and live buffers immediately, before any later
+   fixture preparation or restoration can hide an invalid call's writes.
+   This is native-format field
    preflight, not real SRAM/envelope compatibility or load/recovery proof.
 
 The absent pre-feature interface is a structural negative control, not
@@ -324,6 +327,11 @@ Hard-coding either guide policy also compiles, but the same native probe
 aborts on the opposite policy's read/write contract.
 Returning success without clearing a valid one-hot zero write compiles and
 survived the former vectors; the current native probe rejects that mutation.
+Null/short-view controls that clear live permanent flags also compiled and
+survived the former end-of-sequence checks, because later fixture preparation
+restored those bytes. Immediate per-call preservation now rejects both through
+native assertions. The short-buffer admission control was already detected;
+its original bounds-rejection evidence is retained.
 Alternative fixture descriptors are not a production physical assignment.
 The suites remove only their own temporary files. Default linking, the
 native buffers/envelope and framework epoch remain unchanged; complete

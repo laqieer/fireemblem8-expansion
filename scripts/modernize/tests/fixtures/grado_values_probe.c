@@ -21,6 +21,54 @@ int GetUnitItemSlot(struct Unit * unit, int item)
     abort();
 }
 
+static void CheckReadOnlyView(
+    const struct GradoStateField * field,
+    enum GradoGuideStoragePolicy policy,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view,
+    enum GradoStateValueResult expectedResult,
+    u16 expectedValue,
+    int omitOutput)
+{
+    struct GradoStateFlagView beforeView;
+    u8 beforePermanent[25];
+    u8 beforeChapter[5];
+    u8 beforeInputPermanent[25];
+    u8 beforeInputChapter[5];
+    enum GradoStateValueResult result;
+    u16 value;
+
+    memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+    memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+    if (view != NULL)
+    {
+        beforeView = *view;
+        /* Even short declared views use complete, owned backing in this fixture. */
+        if (view->permanentFlags != NULL)
+            memcpy(beforeInputPermanent, view->permanentFlags, sizeof(beforeInputPermanent));
+        if (view->chapterFlags != NULL)
+            memcpy(beforeInputChapter, view->chapterFlags, sizeof(beforeInputChapter));
+    }
+    value = 0xBEEF;
+    result = GradoState_ReadValueFrom(field, policy, chapter, view, omitOutput ? NULL : &value);
+    assert(result == expectedResult);
+    assert(value == (expectedResult == GRADO_STATE_VALUE_VALID ? expectedValue : 0xBEEF));
+    assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    if (view != NULL)
+    {
+        assert(view->permanentFlags == beforeView.permanentFlags);
+        assert(view->permanentBytes == beforeView.permanentBytes);
+        assert(view->chapterFlags == beforeView.chapterFlags);
+        assert(view->chapterBytes == beforeView.chapterBytes);
+        if (view->permanentFlags != NULL)
+            assert(memcmp(beforeInputPermanent, view->permanentFlags,
+                sizeof(beforeInputPermanent)) == 0);
+        if (view->chapterFlags != NULL)
+            assert(memcmp(beforeInputChapter, view->chapterFlags, sizeof(beforeInputChapter)) == 0);
+    }
+}
+
 int main(void)
 {
     const struct GradoStateField permanent = {
@@ -322,52 +370,50 @@ int main(void)
         view.permanentFlags = savedPermanent;
         view.permanentBytes = sizeof(savedPermanent);
 
-        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
-            == GRADO_STATE_VALUE_VALID && value == 2);
-        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
-            == GRADO_STATE_VALUE_VALID && value == 2);
-        assert(GradoState_ReadValueFrom(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
-            == GRADO_STATE_VALUE_VALID && value == 2);
-        assert(GradoState_ReadValueFrom(&boolean, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
-            == GRADO_STATE_VALUE_VALID && value == 0);
+        CheckReadOnlyView(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_VALID, 2, 0);
+        CheckReadOnlyView(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_VALID, 2, 0);
+        CheckReadOnlyView(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_VALID, 2, 0);
+        CheckReadOnlyView(&boolean, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_VALID, 0, 0);
         invalid = view;
         invalid.chapterFlags = NULL;
         invalid.chapterBytes = 0;
-        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_VALID && value == 2);
+        CheckReadOnlyView(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_VALID, 2, 0);
 
-        value = 0xBEEF;
-        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        CheckReadOnlyView(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_INPUT, 0, 0);
         invalid = view;
         invalid.permanentBytes = sizeof(savedPermanent) - 1;
-        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        CheckReadOnlyView(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_INPUT, 0, 0);
         invalid = view;
         invalid.permanentFlags = NULL;
-        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
+        CheckReadOnlyView(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_INPUT, 0, 0);
         invalid = view;
         invalid.chapterBytes = sizeof(savedChapter) - 1;
-        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
-        assert(GradoState_ReadValueFrom(&chapter, GRADO_GUIDE_PROGRESSIVE, 4, &view, &value)
-            == GRADO_STATE_VALUE_CHAPTER && value == 0xBEEF);
-        assert(GradoState_ReadValueFrom(&reserved, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
-            == GRADO_STATE_VALUE_LAYOUT && value == 0xBEEF);
-        assert(GradoState_ReadValueFrom(&guide[0].field, GRADO_GUIDE_PROGRESSIVE, 3, &view, &value)
-            == GRADO_STATE_VALUE_LAYOUT && value == 0xBEEF);
-        assert(GradoState_ReadValueFrom(&guide[0].field, GRADO_GUIDE_STATIC, 3, &view, &value)
-            == GRADO_STATE_VALUE_VALID && value == 0);
-        value = 0xBEEF;
-        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, NULL, &value)
-            == GRADO_STATE_VALUE_INPUT && value == 0xBEEF);
-        assert(GradoState_ReadValueFrom(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &view, NULL)
-            == GRADO_STATE_VALUE_INPUT);
+        CheckReadOnlyView(&chapter, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_INPUT, 0, 0);
+        CheckReadOnlyView(&chapter, GRADO_GUIDE_PROGRESSIVE, 4, &view,
+            GRADO_STATE_VALUE_CHAPTER, 0, 0);
+        CheckReadOnlyView(&reserved, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_LAYOUT, 0, 0);
+        CheckReadOnlyView(&guide[0].field, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_LAYOUT, 0, 0);
+        CheckReadOnlyView(&guide[0].field, GRADO_GUIDE_STATIC, 3, &view,
+            GRADO_STATE_VALUE_VALID, 0, 0);
+        CheckReadOnlyView(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, NULL,
+            GRADO_STATE_VALUE_INPUT, 0, 0);
+        CheckReadOnlyView(&permanent, GRADO_GUIDE_PROGRESSIVE, 3, &view,
+            GRADO_STATE_VALUE_INPUT, 0, 1);
         invalid = view;
         invalid.permanentFlags = unsetPermanent;
-        assert(GradoState_ReadValueFrom(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_UNSET && value == 0xBEEF);
+        CheckReadOnlyView(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_UNSET, 0, 0);
 
         memcpy(gPermanentFlagBits, savedPermanent, sizeof(savedPermanent));
         SetFlag(143);
@@ -375,16 +421,16 @@ int main(void)
         memcpy(corruptBefore, corruptPermanent, sizeof(corruptBefore));
         memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
         invalid.permanentFlags = corruptPermanent;
-        assert(GradoState_ReadValueFrom(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_CORRUPT && value == 0xBEEF);
+        CheckReadOnlyView(&choice, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_CORRUPT, 0, 0);
         assert(memcmp(corruptBefore, corruptPermanent, sizeof(corruptBefore)) == 0);
         memcpy(gPermanentFlagBits, savedPermanent, sizeof(savedPermanent));
         SetFlag(141);
         memcpy(corruptPermanent, gPermanentFlagBits, sizeof(corruptPermanent));
         memcpy(corruptBefore, corruptPermanent, sizeof(corruptBefore));
         memcpy(gPermanentFlagBits, beforePermanent, sizeof(beforePermanent));
-        assert(GradoState_ReadValueFrom(&bounded, GRADO_GUIDE_PROGRESSIVE, 3, &invalid, &value)
-            == GRADO_STATE_VALUE_CORRUPT && value == 0xBEEF);
+        CheckReadOnlyView(&bounded, GRADO_GUIDE_PROGRESSIVE, 3, &invalid,
+            GRADO_STATE_VALUE_CORRUPT, 0, 0);
         assert(memcmp(corruptBefore, corruptPermanent, sizeof(corruptBefore)) == 0);
         assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
         assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
