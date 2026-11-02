@@ -402,7 +402,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/102",
         "https://github.com/laqieer/fireemblem8-expansion/issues/197",
         "https://github.com/laqieer/fireemblem8-expansion/issues/236",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/365"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/365",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/363"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
@@ -410,7 +411,8 @@
         "TC-CORE-001",
         "TC-TEXT-NATIVE-METRICS-001",
         "TC-BUILD-HOST-DEPENDENCIES-001",
-        "TC-BUILD-GCC14-MENU-RETURN-001"
+        "TC-BUILD-GCC14-MENU-RETURN-001",
+        "TC-TEXT-INITIAL-CACHE-001"
       ]
     },
     {
@@ -832,6 +834,34 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-TEXT-INITIAL-CACHE-001",
+      "title": "Decode the first modern English message-zero lookup",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/363"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-text-initial-cache-001-decode-the-first-modern-english-message-zero-lookup",
+      "profiles": [
+        "Modern ARM7TDMI Thumb/AAPCS English-only module ROM under libmGBA"
+      ],
+      "purpose": "Decode a valid first message0 lookup before accepting a cache hit, without changing valid later transitions or archival behavior.",
+      "prerequisites": "Existing ARM GCC/binutils, Python and libmGBA; preserve work. No base ROM, save fixture, GUI, external asset or package is needed.",
+      "actions": "Boot an owned clean module ROM using generated two-message English input and the real RAM-copied ARM text decoder. Capture actual0,0,1,0 lookup records, completion, message count, buffer size and decoder address.",
+      "expected_result": "All four records contain Cache zero10, Cache zero10, Cache one9 and Cache zero10 bytes respectively. Native execution completes with two active messages, a4096-byte buffer and a decoder in IWRAM below the stack.",
+      "negative_control": "The original native consumer returns empty first and second0 records, then correctly decodes1 and returns to0. Missing content, decoder setup failure, a host stub or a phase marker alone is not this negative control.",
+      "interactions": "One modern non-CJK validity marker; unchanged public lookup, valid later cache transitions, localized consumer, archival code/data and buffer layout. Existing debug linker gate invokes the native case; release/locale/archival budgets remain complete CI criteria.",
+      "save_compatibility": "Transient marker only; no gameplay, save/config/epoch, serialized layout, locale or production generated-content change.",
+      "cleanup": "Remove only the owned temporary source/object/ELF/ROM/capture tree; preserve existing builds and shared environments.",
+      "limitations": "Module-native cache proof, not full-game qualification. Invalid IDs, English control/width safety, Huffman corpus, translations/glyphs and Grado gameplay remain separate. No manual-only criterion.",
+      "automation": [
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -m unittest scripts.localization.game_catalog.tests.runtime.initial_cache_native -v",
+          "evidence": "scripts/localization/game_catalog/tests/runtime/initial_cache_native.py"
+        }
+      ]
+    },
     {
       "id": "TC-PROJECT-SELECTION-001",
       "title": "Select real project providers without default-content leakage",
@@ -3582,7 +3612,7 @@
       "purpose": "Prove typed registry validation, deterministic chapter/group/unit precedence, capability failures, safe event activation/deactivation, and default Unit.ai fallback.",
       "prerequisites": "Repository root with Python 3, host C compiler, and modern ARM toolchain; no save or savestate.",
       "actions": "Run the focused strategy schema/bundle, host dispatch, and ARM symbol-omission selectors.",
-      "expected_result": "Aggressive selects legal combat, Objective-first scans the whole authored rectangle and advances through the stable lowest path-cost/projection-distance/Y/X legal target, unit overrides group before chapter, non-overlapping group assignments route independently of source order, enabled typed activation/deactivation applies at the safe boundary, selected downstream records remain available, and matched current-tree full-link evidence separates the +1560/+1896-byte debug/release shared router from the +856/+680-byte enabled reference increment.",
+      "expected_result": "Aggressive selects legal combat, Objective-first scans the whole authored rectangle and advances through the stable lowest path-cost/projection-distance/Y/X legal target, unit overrides group before chapter, non-overlapping group assignments route independently of source order, enabled typed activation/deactivation applies at the safe boundary, selected downstream records remain available, and the regenerated structured budget reports positive debug/release shared-router and enabled-reference increments equal to their matched endpoint differences, with the required absent/present symbol states.",
       "negative_control": "Default empty/disabled data returns fallback without an action; overlapping strategy-assigned groups fail by character or unit-group identity even for equal strategies or unit overrides; unassigned objective-only overlap remains valid; disabled reference helpers are rejected before event C generation and their flags are not reserved; malformed registry/assignment records and unsupported objectives fail explicitly before action commit.",
       "interactions": "Depends on #85 blue computer execution and #89 objectives/groups; no player UI, project chapter policy, alternate router, or extra taxonomy is introduced.",
       "save_compatibility": "No save bytes, migration, epoch, or preference; the bounded pending operation is EWRAM-only, cleared on Suspend resume, and assignments reconstruct from generated data and existing event flags.",

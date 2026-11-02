@@ -4935,7 +4935,8 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests \
+		scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \

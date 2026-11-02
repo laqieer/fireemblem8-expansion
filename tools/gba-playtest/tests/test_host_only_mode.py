@@ -638,6 +638,27 @@ class HostOnlyEnvContractTests(unittest.TestCase):
         self.assertIn("expansion-modern-linker-check", reason)
         self.assertIn("expansion-modern-itemexpansion-check", reason)
 
+    def test_initial_cache_module_uses_the_shared_strict_switch(self):
+        module = importlib.import_module(
+            "scripts.localization.game_catalog.tests.runtime.initial_cache_native"
+        )
+        try:
+            for value in ("1", "true", "yes", "on", " TRUE "):
+                with self.subTest(value=value), mock.patch.dict(
+                    os.environ,
+                    {host_mode.ENV_VAR: value, "MODERN_CC": "/missing/native-compiler"},
+                ):
+                    importlib.reload(module)
+                    result = _run_case(module.InitialMessageCacheNativeTests)
+                    self.assertGreater(result.testsRun, 0)
+                    self.assertTrue(result.wasSuccessful(), (result.errors, result.failures))
+                    self.assertEqual(len(result.skipped), result.testsRun)
+            with mock.patch.dict(os.environ, {host_mode.ENV_VAR: "invalid-native-mode"}):
+                with self.assertRaises(RuntimeError):
+                    importlib.reload(module)
+        finally:
+            importlib.reload(module)
+
 
 class HostOnlyClassificationTests(unittest.TestCase):
     """Category A vs. Category B is explicit, complete and enforced."""

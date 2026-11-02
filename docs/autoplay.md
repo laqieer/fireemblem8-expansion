@@ -693,9 +693,11 @@ Every recursive router-absent and profiles-disabled build explicitly forces
 `EXPANSION_AUTOPLAY_STRATEGIES=0`; references-enabled builds force `=1`.
 Therefore a persisted `./configure` choice, environment value, or caller
 override cannot contaminate the matched variants.
-The current matched result is +1,560 debug / +1,896 release ROM bytes for the
-profiles-disabled shared router, then another +856 debug / +680 release bytes
-for the enabled reference descriptors/callbacks.
+Read the current debug/release results from that report's
+`profiles_disabled.shared_router_delta_bytes` and
+`references_enabled.reference_incremental_delta_bytes`. Both increments must
+be positive; their measured byte counts depend on the matched build inputs
+and are not separate fixed numeric acceptance limits.
 
 ### Strategy compatibility and budgets
 
@@ -716,8 +718,8 @@ for the enabled reference descriptors/callbacks.
   no IWRAM; the focused object gate enforces that exact bound and a 4 KiB text
   cap. Parsed full-link evidence records the profiles-disabled shared router
   separately from the incremental enabled references using matched
-  current-tree technical variants (+1,560/+1,896 debug/release router bytes,
-  then +856/+680 reference bytes).
+  current-tree technical variants. The structured report is the single
+  source for those measured deltas, not a copied byte-count oracle here.
 - **Runtime evidence:** the debug strategy profile and default-disabled ROMs
   execute bounded fixed-seed `CpDecide_Main` scenarios twice; their action and
   telemetry captures must repeat exactly.
