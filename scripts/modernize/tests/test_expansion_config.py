@@ -283,7 +283,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         inventory = subprocess.run(
             ["make", "--no-print-directory", "-f", str(makefile), "-f", str(secondary),
              "-E", "NATIVE_EVAL_FLAG:=1",
-             "native-object-inventory", *settings],
+             "native-object-inventory", "MODERN_DRY_RUN=1", *settings],
             cwd=ROOT, capture_output=True, text=True, timeout=30,
         )
         self.assertEqual(inventory.returncode, 0, inventory.stderr)
