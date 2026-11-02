@@ -132,6 +132,23 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             selected.write_text("#define MSG_COUNT 0x0003\n", encoding="ascii")
             unrelated = Path(directory) / "unrelated-msg.h"
             unrelated.write_text("#define MSG_COUNT 0x0007\n", encoding="ascii")
+
+            def check_count(header, count):
+                checked = subprocess.run(
+                    [
+                        os.environ.get("CC", "cc"), "-std=c89", "-pedantic-errors",
+                        "-I", str(ROOT / "scripts/localization/game_catalog/tests/host_include"),
+                        "-I", str(header.parent), "-x", "c", "-fsyntax-only", "-",
+                    ],
+                    input=(
+                        '#include "game_localization_declarations.h"\n'
+                        f"typedef char HeaderMatches[(GAME_LOCALIZATION_TARGET_COUNT == {count})"
+                        " ? 1 : -1];\n"
+                    ),
+                    capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
             for locales, pseudo in (("en", "0"), ("en,qps-ploc", "1")):
                 with self.subTest(locales=locales):
                     output = Path(directory) / pseudo
@@ -151,20 +168,35 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                     header = output / "game-localization/generated/game_localization_declarations.h"
                     self.assertTrue(header.is_file(), result.stdout + result.stderr)
                     self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
-                    checked = subprocess.run(
-                        [
-                            os.environ.get("CC", "cc"), "-std=c89", "-pedantic-errors",
-                            "-I", str(ROOT / "scripts/localization/game_catalog/tests/host_include"),
-                            "-I", str(header.parent), "-x", "c", "-fsyntax-only", "-",
-                        ],
-                        input=(
-                            '#include "game_localization_declarations.h"\n'
-                            "typedef char HeaderMatches[(GAME_LOCALIZATION_TARGET_COUNT == 3)"
-                            " ? 1 : -1];\n"
-                        ),
-                        capture_output=True, text=True, timeout=30,
+                    check_count(header, 3)
+            source = Path(directory) / "fallback-input.h"
+            fallback = Path(directory) / "generated-msg.h"
+            makefile = self.project / "fallback-header.mk"
+            makefile.write_text(
+                "include Makefile\n"
+                f"TEXT_HEADER := {fallback}\n"
+                f"$(TEXT_HEADER): {source}\n"
+                '\tcp "$<" "$@"\n',
+                encoding="utf-8",
+            )
+            output = Path(directory) / "fallback"
+            command = [
+                argument for argument in result.args
+                if not argument.startswith(("TEXT_HEADER=", "MODERN_BUILD_ROOT="))
+            ]
+            command[1:1] = ["-f", str(makefile)]
+            command.append(f"MODERN_BUILD_ROOT={output}")
+            for count in (5, 6):
+                with self.subTest(generated_fallback_count=count):
+                    source.write_text(f"#define MSG_COUNT 0x{count:04X}\n", encoding="ascii")
+                    built = subprocess.run(
+                        command, cwd=ROOT, capture_output=True, text=True, timeout=60,
+                        env={**os.environ, "MSG_HEADER": str(unrelated)},
                     )
-                    self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    check_count(
+                        output / "game-localization/generated/game_localization_declarations.h", count,
+                    )
 
     def test_native_renderer_make_graph_owns_its_generated_debug_font(self):
         (ROOT / "build").mkdir(exist_ok=True)
@@ -320,6 +352,84 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 context.write_text(json.dumps(invalid), encoding="utf-8")
                 with self.assertRaises(CompiledInputError):
                     load_compile_context(context)
+
+    def test_native_public_build_entrypoints_capture_only_c_without_execution(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-public-inputs-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            calls = output / "make-calls"
+            executed = output / "unexpected-native-execution"
+            make = output / "native-make"
+            make.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' call >> {shlex.quote(str(calls))}\n"
+                f'exec {shlex.quote(shutil.which("make"))} "$@"\n',
+                encoding="ascii",
+            )
+            make.chmod(0o755)
+            compiler = output / "no-native-execution"
+            compiler.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' called >> {shlex.quote(str(executed))}\n"
+                "exit 73\n",
+                encoding="ascii",
+            )
+            compiler.chmod(0o755)
+            entrypoint = self.project / "public-inputs.mk"
+            entrypoint.write_text(
+                "include Makefile\n"
+                "expansion-modern-all expansion-modern-elf expansion-modern-rom "
+                "expansion-modern-linker-check: "
+                "MODERN_CFLAGS += -fpack-struct=1\n",
+                encoding="ascii",
+            )
+            for goal in (
+                "expansion-modern-all", "expansion-modern-elf", "expansion-modern-rom",
+                "expansion-modern-linker-check",
+            ):
+                with self.subTest(public_build_goal=goal):
+                    calls.unlink(missing_ok=True)
+                    build = output / goal
+                    result = subprocess.run(
+                        [
+                            "make", "--no-print-directory", "-f", str(entrypoint),
+                            "expansion-modern-text-inputs", f"MAKECMDGOALS={goal}",
+                            "MODERN_DRY_RUN=1", "NODEP=1", f"MODERN_BUILD_ROOT={build}",
+                            "MODERN_CONFIG=debug", "MODERN_ABI=aapcs", "MODERN_ROM_SIZE=32M",
+                            "EXPANSION_ENABLED_LOCALES=en,ja", "FE8_PROJECT=default",
+                            f"MODERN_CC={compiler}", f"MODERN_PREPROC={compiler}",
+                            f"PYTHON={sys.executable}", f"MAKE={make}",
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=90,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    context = json.loads((build / "debug/aapcs/selected-text-inputs.json").read_text())
+                    self.assertTrue(context["units"])
+                    self.assertTrue(all(unit["logical_source"].endswith(".c") for unit in context["units"]))
+                    self.assertTrue(all("-fpack-struct=1" in unit["compiler_argv"] for unit in context["units"]))
+                    self.assertEqual(calls.read_text().splitlines(), ["call"])
+                    self.assertFalse(executed.exists(), result.stdout + result.stderr)
+
+            normal_calls = output / "normal-recursive-arguments"
+            normal_make = output / "normal-recursive-make"
+            normal_make.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' \"$@\" > {shlex.quote(str(normal_calls))}\n",
+                encoding="ascii",
+            )
+            normal_make.chmod(0o755)
+            normal = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-n",
+                    "expansion-modern-hq-mixer-profile-rom", "NODEP=1",
+                    f"MAKE={normal_make}", f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=90,
+            )
+            self.assertEqual(normal.returncode, 0, normal.stdout + normal.stderr)
+            normal_arguments = normal_calls.read_text().splitlines()
+            self.assertEqual(normal_arguments[0], "expansion-modern-rom")
+            self.assertIn("EXPANSION_HQ_MIXER=1", normal_arguments)
 
     def test_native_text_metrics_read_selected_private_font_objects(self):
         compiler = os.environ.get("MODERN_CC", "arm-none-eabi-gcc")
@@ -480,6 +590,149 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(measured["ascii"], {
             "system": {63: 10, 65: 10}, "talk": {63: 11, 65: 11},
         })
+        objects = {
+            str(namespace / f"src/{name}.o")
+            for name in ("fontgrp", "fontgrp-data", "data/localized_font_data")
+        }
+        inherited_command = [argument for argument in pseudo.args if argument not in objects]
+        inherited_command.append("native-font-parent")
+        for width in (12, 13):
+            with self.subTest(inherited_compiler_width=width):
+                makefile.write_text(
+                    "include Makefile\n"
+                    f"MODERN_CFLAGS := -I{headers} $(MODERN_CFLAGS)\n"
+                    ".PHONY: native-font-parent\n"
+                    f"native-font-parent: MODERN_CFLAGS += -DSELECTED_FONT_WIDTH={width}\n"
+                    f"native-font-parent: {' '.join(sorted(objects))}\n",
+                    encoding="utf-8",
+                )
+                rebuilt = subprocess.run(
+                    inherited_command, cwd=ROOT, capture_output=True, text=True, timeout=120,
+                )
+                self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+                inherited = measure_selected_fonts(context, output_dir=output / f"inherited-{width}")
+                self.assertEqual(inherited["ascii"]["system"], {63: width, 65: width})
+
+    def test_native_warm_presplit_dependencies_use_rebuilt_font_metrics(self):
+        if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
+            self.skipTest("selected ARM compiler is unavailable")
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-warm-font-", dir=ROOT / "build") as directory:
+            output = Path(directory)
+            namespace = output / "debug/aapcs"
+            headers = output / "headers"
+            glyph = headers / "src/data/fonts/glyphs_1.h"
+            glyph.parent.mkdir(parents=True)
+            original = (ROOT / "src/data/fonts/glyphs_1.h").read_text(encoding="utf-8")
+            before, separator, after = original.partition("struct Glyph *TextGlyphs_System[] =\n{\n    NULL,")
+            self.assertTrue(separator)
+
+            def glyph_source(width):
+                return (
+                    before + f"struct Glyph sWarmProbe = {{0, 0, {width}, {{0}}}};\n"
+                    + "struct Glyph *TextGlyphs_System[] =\n{\n    &sWarmProbe," + after
+                )
+
+            glyph.write_text(glyph_source(9), encoding="utf-8")
+            font_object = namespace / "src/fontgrp-data.o"
+            makefile = self.project / "warm-font.mk"
+            makefile.write_text(
+                "include Makefile\n"
+                f"{font_object}: private MODERN_CFLAGS := -I{headers} $(MODERN_CFLAGS)\n",
+                encoding="utf-8",
+            )
+            observed = output / "measured-widths.jsonl"
+            python = output / "python3"
+            python.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                "if sys.argv[1:4] != ['-m', 'scripts.localization.game_catalog', 'generate']:\n"
+                f"    os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n"
+                f"sys.path.insert(0, {str(ROOT)!r})\n"
+                "from scripts.localization.game_catalog import cli\n"
+                "original = cli.measure_selected_fonts\n"
+                "def measured(context, *, output_dir):\n"
+                "    result = original(context, output_dir=output_dir)\n"
+                f"    with open({str(observed)!r}, 'a') as stream:\n"
+                "        stream.write(json.dumps(result['ascii']['system'].get(0)) + '\\n')\n"
+                "    return result\n"
+                "cli.measure_selected_fonts = measured\n"
+                "raise SystemExit(cli.main(sys.argv[3:]))\n",
+                encoding="utf-8",
+            )
+            python.chmod(0o755)
+            catalog = output / "game-localization/generated/game_localization_catalog.c"
+            command = [
+                "make", "--no-print-directory", "-j2", "-f", str(makefile), "NODEP=1",
+                str(catalog), f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs", "MODERN_ROM_SIZE=32M", "FE8_PROJECT=default",
+                "EXPANSION_ENABLED_LOCALES=en,ja", f"PYTHON={python}",
+                f"MODERN_ALL_SOURCE_GOALS={catalog} {font_object}",
+                f"MODERN_ALL_C_HEADER_DEPS={font_object.with_suffix('.headers.d')}",
+                "MODERN_ALL_DATA_ASSET_DEPS=",
+            ]
+            cold = subprocess.run(
+                command, cwd=ROOT, capture_output=True, text=True, timeout=180,
+            )
+            self.assertEqual(cold.returncode, 0, cold.stdout + cold.stderr)
+            self.assertEqual([json.loads(line) for line in observed.read_text().splitlines()], [9])
+            warm_command = list(command)
+            warm_command.insert(warm_command.index(str(catalog)), str(font_object))
+            inherited_command = [
+                argument for argument in command if argument != str(catalog)
+            ] + ["expansion-modern-text-inputs", "native-warm-parent"]
+            for width, edge in (
+                (10, str(catalog.parent / "localized_game_text_data.h")),
+                (11, "localized_game_text_data.h"),
+            ):
+                with self.subTest(presplit_header=edge):
+                    dependency = font_object.with_suffix(".d")
+                    dependency.write_text(
+                        f"{font_object}: {edge}\n" + dependency.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
+                    font_object.with_suffix(".headers.d").write_text(
+                        f"{font_object}: {edge} {glyph}\n", encoding="utf-8",
+                    )
+                    if width == 11:
+                        makefile.write_text(
+                            "include Makefile\n"
+                            ".PHONY: native-warm-parent\n"
+                            "native-warm-parent: MODERN_CFLAGS := "
+                            f"-I{headers} -DNATIVE_WARM_WIDTH={width} $(MODERN_CFLAGS)\n"
+                            f"native-warm-parent: {font_object} {catalog}\n",
+                            encoding="utf-8",
+                        )
+                        glyph.write_text(glyph_source("NATIVE_WARM_WIDTH"), encoding="utf-8")
+                    else:
+                        glyph.write_text(glyph_source(width), encoding="utf-8")
+                    observed.unlink()
+                    built = subprocess.run(
+                        inherited_command if width == 11 else warm_command,
+                        cwd=ROOT, capture_output=True, text=True, timeout=180,
+                    )
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    widths = [json.loads(line) for line in observed.read_text().splitlines()]
+                    self.assertTrue(widths)
+                    self.assertEqual(set(widths), {width})
+                    if width == 11:
+                        context = json.loads(
+                            (namespace / "selected-text-inputs.json").read_text(),
+                        )
+                        selected = next(
+                            unit for unit in context["units"]
+                            if unit["logical_source"] == "src/fontgrp-data.c"
+                        )
+                        self.assertIn("-DNATIVE_WARM_WIDTH=11", selected["compiler_argv"])
+            glyph.write_text(glyph_source(12), encoding="utf-8")
+            observed.unlink()
+            built = subprocess.run(
+                inherited_command, cwd=ROOT, capture_output=True, text=True, timeout=180,
+            )
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            self.assertEqual(
+                set(json.loads(line) for line in observed.read_text().splitlines()), {12},
+            )
 
     def test_native_cjk_fonts_bootstrap_without_payload_generation(self):
         if shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc")) is None:
@@ -708,6 +961,27 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 )
                 self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
                 measured = measure_selected_fonts(context, output_dir=namespace / f"preprocessor-{width}")
+                self.assertEqual(measured["localized"]["ja"]["system"], {0x4E00: width})
+        inherited = "\n".join(
+            line for line in configured.splitlines() if not line.startswith(f"{preprocessed}:")
+        ) + "\n"
+        relative_objects = {str(path.relative_to(ROOT)) for path in objects}
+        inherited_command = [argument for argument in rebuild if argument not in relative_objects]
+        inherited_command.append("native-preprocessor-parent")
+        for width in (15, 16):
+            with self.subTest(inherited_preprocessor_width=width):
+                makefile.write_text(
+                    inherited
+                    + ".PHONY: native-preprocessor-parent\n"
+                    + f"native-preprocessor-parent: MODERN_PREPROC_FLAGS := {width} $(MODERN_PREPROC_FLAGS)\n"
+                    + f"native-preprocessor-parent: {' '.join(sorted(relative_objects))}\n",
+                    encoding="utf-8",
+                )
+                rebuilt = subprocess.run(
+                    inherited_command, cwd=ROOT, capture_output=True, text=True, timeout=120,
+                )
+                self.assertEqual(rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr)
+                measured = measure_selected_fonts(context, output_dir=namespace / f"inherited-preprocessor-{width}")
                 self.assertEqual(measured["localized"]["ja"]["system"], {0x4E00: width})
         self.assertEqual(list(output.rglob("game_localization_catalog.c")), [])
         self.assertEqual(list(output.rglob("localized_game_text_data.h")), [])

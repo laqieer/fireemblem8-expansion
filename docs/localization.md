@@ -43,15 +43,36 @@ explicit entrypoint files in order, including spaced paths, and retains the
 original goal-dependent settings without copying the environment. Unreadable
 or malformed invocation data and stdin-only entrypoints fail explicitly rather
 than replaying a different configuration.
+The plan traverses the actual original goals before completing its selected
+inventory, so inherited target-specific scopes are evaluated by GNU Make,
+not approximated by a goal-name variable or a second variable snapshot.
+Selected source paths come from those native recipes directly; there is no
+parallel source accumulator or source-list sidefile. The existing event-list
+recovery producer is held old during capture so its recursive repair cannot
+execute under GNU Make's dry-run exception.
+The same boundary covers the existing non-C link/multiboot preparation.
+All/ELF/ROM and linker-check planning retain C scopes while separating the
+declared assembly inventory; they neither enter recursive asset/profile builds
+nor expand linker library-discovery compiler queries. The shared recursive
+recipe adapter skips child Make commands only in metadata mode, and compound
+recursive checks omit their complete action. Ordinary dry links and real builds
+keep their existing recursive commands and jobserver behavior.
 For measurement builds the existing content-stable context is a prerequisite
 of the selected font objects and localized preprocessing output. A warm change
 to target-private compiler or preprocessor arguments rebuilds those inputs;
 an unchanged context adds no mandatory font recompilation or per-object stamp.
 Ordinary English builds not requesting measurement retain their existing path.
+Before a real font build reads old dependency products, the existing catalog
+tool removes only obsolete measured-header edges for those font objects.
+Existing owned products trigger this narrow migration regardless of the
+top-level goal name, including inherited-parent builds.
+Other escaped prerequisites and phony header rules remain intact; dry capture
+does not mutate them. This breaks pre-split payload/font cycles without
+discarding real dependencies or requiring a global clean.
 
 `make expansion-modern-game-localization-declarations` emits
 `game_localization_declarations.h` from the selected project's message header
-(or the Make graph's `TEXT_HEADER`) and enabled
+(or the Make graph's late `TEXT_HEADER`, including its real producer) and enabled
 locales alone. It does not need payloads or fonts. Only the generated catalog
 owns the complete measured CJK `MsgBuffer`; other consumers use its incomplete
 type, preserved legacy prefix and exported capacity. English/pseudo and

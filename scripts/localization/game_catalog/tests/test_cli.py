@@ -31,6 +31,51 @@ class CliTests(unittest.TestCase):
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
 
+    def test_native_font_dependency_migration_preserves_real_make_edges(self):
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            object_path = root / "font output.o"
+            source = root / "real header # value.txt"
+            extra = root / 'quoted"header.txt'
+            source.write_text("first\n", encoding="ascii")
+            extra.write_text("extra\n", encoding="ascii")
+            legacy = root / "localized_game_text_data.h"
+
+            def escaped(path):
+                return str(path).replace("\\", "\\\\").replace("$", "$$").replace(
+                    " ", "\\ "
+                ).replace("#", "\\#").replace(":", "\\:")
+
+            for suffix in (".d", ".headers.d"):
+                object_path.with_suffix(suffix).write_text(
+                    f"{escaped(object_path)}: {escaped(source)} \\\n"
+                    f" {escaped(legacy)} {escaped(extra)}\n"
+                    f"{escaped(legacy)}:\n"
+                    f"{escaped(source)}:\n",
+                    encoding="utf-8",
+                )
+            makefile = root / "dependencies.mk"
+            makefile.write_text(
+                f"include {escaped(object_path.with_suffix('.d'))}\n"
+                f"include {escaped(object_path.with_suffix('.headers.d'))}\n"
+                f"{escaped(object_path)}:\n"
+                '\t@$(if $(filter %localized_game_text_data.h,$^),$(error obsolete measured-header edge),true)\n'
+                '\tcat "$<" > "$@"\n',
+                encoding="utf-8",
+            )
+            command = ["make", "--no-print-directory", "-f", str(makefile), str(object_path)]
+            original = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(original.returncode, 0)
+            migrated = run_cli([
+                "prune-native-font-dependencies", "--objects", str(object_path),
+            ])
+            self.assertEqual(migrated.returncode, 0, migrated.stdout)
+            for value in ("first\n", "second\n"):
+                source.write_text(value, encoding="ascii")
+                built = subprocess.run(command, capture_output=True, text=True, timeout=30)
+                self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                self.assertEqual(object_path.read_text(encoding="ascii"), value)
+
     def test_native_context_replays_macos_invoker_without_procfs(self):
         from scripts.localization.game_catalog import cli
 
@@ -45,12 +90,11 @@ class CliTests(unittest.TestCase):
                 "\tcc -DWIDTH=$(WIDTH) -c sample.c -o out/sample.o\n"
                 "\t: fe8-selected-text-objects out out/sample.o\n"
                 "\t: fe8-selected-text-data \n"
+                "\t: fe8-selected-text-assembly \n"
                 "\t: fe8-selected-text-linker ld\n",
                 encoding="ascii",
             )
             secondary.write_text("WIDTH := 11\n", encoding="ascii")
-            sources = root / "sources"
-            sources.write_text("sample.c\n", encoding="ascii")
             output = root / "context.json"
             arguments = [
                 "gmake", "--file", str(primary), "--makefile=" + str(secondary), "native-plan",
@@ -81,7 +125,7 @@ class CliTests(unittest.TestCase):
             ):
                 command = [
                     "describe-make-context", "--output", str(output),
-                    "--sources-file", str(sources), "--compiler", "cc", "--preprocessor", "pp",
+                    "--compiler", "cc", "--preprocessor", "pp",
                     "--invoker-pid", "424242", "--", "make", "-n",
                     "-f", str(primary), "native-plan",
                 ]

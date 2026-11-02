@@ -6,6 +6,7 @@ import argparse
 import ctypes
 import json
 import os
+import re
 import shlex
 import struct
 import subprocess
@@ -315,6 +316,66 @@ def cmd_declare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prune_measured_font_dependencies(data: bytes) -> bytes:
+    lines = []
+    changed = False
+
+    def obsolete(token):
+        decoded = re.sub(rb"\\(.)", rb"\1", token)
+        return decoded.rsplit(b"/", 1)[-1] == b"localized_game_text_data.h"
+
+    for line in data.replace(b"\\\r\n", b" ").replace(b"\\\n", b" ").splitlines():
+        escaped = False
+        separator = None
+        for index, value in enumerate(line):
+            if escaped:
+                escaped = False
+            elif value == ord("\\"):
+                escaped = True
+            elif value == ord(":"):
+                separator = index
+                break
+        if separator is None or line.lstrip().startswith(b"#"):
+            lines.append(line)
+            continue
+        targets = re.findall(rb"(?:\\.|[^\s\\])+", line[:separator])
+        dependencies = re.findall(rb"(?:\\.|[^\s\\])+", line[separator + 1:])
+        kept_targets = [token for token in targets if not obsolete(token)]
+        kept_dependencies = [token for token in dependencies if not obsolete(token)]
+        if kept_targets == targets and kept_dependencies == dependencies:
+            lines.append(line)
+        else:
+            changed = True
+            if kept_targets:
+                lines.append(b" ".join(kept_targets) + b": " + b" ".join(kept_dependencies))
+    return b"\n".join(lines) + b"\n" if changed else data
+
+
+def cmd_prune_native_font_dependencies(args: argparse.Namespace) -> int:
+    for object_path in args.objects:
+        if object_path.suffix != ".o":
+            raise GameCatalogError(f"{object_path}: expected a native font object path")
+        for suffix in (".d", ".headers.d"):
+            path = object_path.with_suffix(suffix)
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise GameCatalogError(f"{path}: native font dependencies are unreadable: {error}") from error
+            updated = _prune_measured_font_dependencies(data)
+            if updated != data:
+                temporary = path.with_name(path.name + ".native.tmp")
+                try:
+                    temporary.write_bytes(updated)
+                    temporary.replace(path)
+                except OSError as error:
+                    raise GameCatalogError(f"{path}: cannot migrate native font dependencies: {error}") from error
+                finally:
+                    temporary.unlink(missing_ok=True)
+    return 0
+
+
 def _invocation_arguments(pid: int) -> list[str]:
     if pid <= 0:
         raise GameCatalogError("native Make invocation requires a positive process ID")
@@ -412,12 +473,6 @@ def _invocation_makefiles(pid: int) -> list[str]:
 
 
 def cmd_describe_make_context(args: argparse.Namespace) -> int:
-    try:
-        sources = args.sources_file.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as error:
-        raise GameCatalogError(f"native Make source inventory is unreadable: {error}") from error
-    if not sources or any(not source for source in sources):
-        raise GameCatalogError("native Make source inventory is empty or malformed")
     command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
     if not command:
         raise GameCatalogError("native text context requires the actual Make plan command")
@@ -432,10 +487,7 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
                 command[1:1] = flags
     if args.invoker_goals is not None:
         command.append("MAKECMDGOALS=" + args.invoker_goals)
-    planned = subprocess.run(
-        [*command, *(argument for source in sources for argument in ("-o", source))],
-        capture_output=True, text=True, check=False,
-    )
+    planned = subprocess.run(command, capture_output=True, text=True, check=False)
     if planned.returncode:
         raise GameCatalogError("native Make compile plan failed:\n" + planned.stdout + planned.stderr)
     lines = planned.stdout.replace("\\\n", " ").splitlines()
@@ -450,6 +502,22 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
         except ValueError as error:
             raise GameCatalogError("native Make emitted invalid command quoting") from error
 
+    def inventory(marker):
+        rows = [words(line) for line in lines if line.startswith(": " + marker + " ")]
+        if len(rows) != 1:
+            raise GameCatalogError(f"native Make must report exactly one {marker} inventory")
+        return rows[0][2:]
+
+    selected = inventory("fe8-selected-text-objects")
+    data_objects = set(inventory("fe8-selected-text-data"))
+    assembly_objects = set(inventory("fe8-selected-text-assembly"))
+    linkers = inventory("fe8-selected-text-linker")
+    if len(selected) < 2:
+        raise GameCatalogError("native Make selected C inventory is empty")
+    root, *objects = selected
+    if assembly_objects & set(objects):
+        raise GameCatalogError("native Make C and assembly inventories overlap")
+
     compiler = {}
     preprocessors = {}
     for line in matching(args.compiler):
@@ -458,6 +526,8 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
             continue
         if len(argv) < 5 or argv[-2] != "-o" or argv.count("-c") != 1:
             raise GameCatalogError("native Make emitted an unsupported object compile")
+        if argv[-1] in assembly_objects:
+            continue
         if argv[-1] in compiler:
             raise GameCatalogError(f"native Make planned two compiles for {argv[-1]}")
         compiler[argv[-1]] = argv
@@ -472,18 +542,6 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
             raise GameCatalogError(f"native Make planned two preprocessors for {target[0]}")
         preprocessors[target[0]] = words(invocation)
 
-    def inventory(marker):
-        rows = [words(line) for line in lines if line.startswith(": " + marker + " ")]
-        if len(rows) != 1:
-            raise GameCatalogError(f"native Make must report exactly one {marker} inventory")
-        return rows[0][2:]
-
-    selected = inventory("fe8-selected-text-objects")
-    data_objects = set(inventory("fe8-selected-text-data"))
-    linkers = inventory("fe8-selected-text-linker")
-    if len(selected) < 2:
-        raise GameCatalogError("native Make selected C inventory is empty")
-    root, *objects = selected
     if (len(linkers) != 1 or not linkers[0] or len(objects) != len(set(objects))
             or set(compiler) != set(objects) or not data_objects <= set(objects)):
         raise GameCatalogError("native Make compile plan differs from the selected C inventory")
@@ -615,11 +673,16 @@ def cmd_check_width(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    dependencies_p = sub.add_parser(
+        "prune-native-font-dependencies",
+        help="remove obsolete measured-header edges from owned native font dependency products",
+    )
+    dependencies_p.add_argument("--objects", type=Path, nargs="+", required=True)
+    dependencies_p.set_defaults(handler=cmd_prune_native_font_dependencies)
     context_p = sub.add_parser(
         "describe-make-context", help="capture selected C inputs from one nonexecuting native Make plan",
     )
     context_p.add_argument("--output", type=Path, required=True)
-    context_p.add_argument("--sources-file", type=Path, required=True)
     context_p.add_argument("--compiler", required=True)
     context_p.add_argument("--preprocessor", required=True)
     context_p.add_argument("--invoker-pid", type=int)
