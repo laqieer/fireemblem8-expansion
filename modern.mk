@@ -37,6 +37,7 @@ MODERN_GOALS := \
 	expansion-modern-overlay-audit \
 	expansion-modern-shifted-check \
 	expansion-modern-linker-check \
+	expansion-modern-review-arm-check \
 	expansion-modern-localization-budget \
 	expansion-modern-localization-budget-check \
 	expansion-modern-localization-profile-headroom-check \
@@ -4843,6 +4844,11 @@ expansion-modern-custom-spell-check: expansion-modern-rom
 		--enabled "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 		--out-dir "$(MODERN_CUSTOM_SPELL_TEST_DIR)"
 
+.PHONY: expansion-modern-review-arm-check
+expansion-modern-review-arm-check: expansion-modern-toolchain-check
+	MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
+		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
+
 ifeq ($(MODERN_CONFIG),debug)
 MODERN_LINKER_CHECK_ACCELERATED_FIDELITY := \
 		expansion-modern-autoplay-accelerated-fidelity-check
@@ -4850,7 +4856,8 @@ else
 MODERN_LINKER_CHECK_ACCELERATED_FIDELITY :=
 endif
 
-expansion-modern-linker-check: expansion-modern-budget-check \
+expansion-modern-linker-check: expansion-modern-review-arm-check \
+		expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
@@ -4886,8 +4893,6 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-localization-runtime-prefs-check \
 		expansion-modern-localization-runtime-save-check \
 		expansion-modern-localization-runtime-shifted-check
-	MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
-		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
 ifeq ($(MODERN_CONFIG),debug)
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
 		-u GBA_PLAYTEST_HOST_ONLY \

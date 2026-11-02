@@ -1499,8 +1499,8 @@ jobs:
     - name: Build and verify modern target ROMs and linker
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
-        make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
-        make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2
+        make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2 -o expansion-modern-review-arm-check
+        make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2 -o expansion-modern-review-arm-check
 
     # Issue #10 acceptance ("Boundary, serialization, and migration tests
     # gate CI"): runs the real, booted expansion ROM's item-ID-expansion
@@ -1661,6 +1661,11 @@ jobs:
 
     - name: Build tools
       run: ./build_tools.sh
+
+    - name: Run native ARM review profiles
+      run: |
+        make expansion-modern-review-arm-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+        make expansion-modern-review-arm-check MODERN_CONFIG=release MODERN_ABI=aapcs
 
     - name: Build archival lane without a copyrighted baserom
       run: |
