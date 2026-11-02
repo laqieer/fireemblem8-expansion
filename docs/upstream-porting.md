@@ -415,6 +415,11 @@ Gates30-31 retain the existing native ARM review contract on the required,
 already ARM-equipped archival worker. Gates15-16 mark only that shared
 prerequisite already made; standalone public linker checks still require it.
 The mirror preserves both profiles and the same complete combined join.
+The archival worker preserves the original host-package installation and
+installs its explicit ARM C compiler/binutils/newlib packages separately with
+APT recommendations disabled. Target C++ newlib is not used by these C/assembly
+contracts and must not consume their existing deadline through an implicit
+recommended download. No explicit prerequisite, check or deadline is removed.
 
 Gates26-29 run on the existing `legacy` CI worker before installing archival
 tools, with the original host-only dependencies and fresh owned environment.
