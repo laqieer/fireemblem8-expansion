@@ -100,12 +100,12 @@ not any newly activated loader, recovery policy or save ABI.
 This subcase of `TEST-SAVE-COMPAT` executes the original live global
 classifier, metadata/checksum builders and SRAM initialization/read routines
 in an ARM7TDMI/Thumb AAPCS release-mode module under libmGBA. It builds the
-same native code with configured epochs2 and256; the existing envelope stays2.
+same native code with configured epochs 2 and 256; the existing envelope stays 2.
 This is not a Grado game profile or a separate save record.
 
-**Prerequisites:** repository root, Python3, the supported ARM toolchain and
+**Prerequisites:** repository root, Python 3, the supported ARM toolchain and
 libmGBA from quickstart. No user ROM, save, savestate or external project is
-read. The fixture redirects the native `gSram` pointer to an owned32KiB
+read. The fixture redirects the native `gSram` pointer to an owned 32 KiB
 EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
 
 1. Run
@@ -124,11 +124,11 @@ EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
 4. ABI/version/fingerprint/build diagnostics with a valid recomputed checksum
    remain compatible. Compare every byte of the complete owned image after
    every classification; both positive and refusal paths must leave it intact.
-   Capture the actual13 semantic records per epoch and measured ROM/EWRAM/IWRAM.
+   Capture the actual 13 semantic records per epoch and measured ROM/EWRAM/IWRAM.
 
 **Controls and limits:** wrong epoch, missing/corrupt metadata and surviving
 payload are actual native inputs, not fabricated success labels or source-text
-checks. The default epoch2 is the unselected control. The ordinary supported
+checks. The default epoch 2 is the unselected control. The ordinary supported
 native layout is required; forcing an unrelated packed-struct ABI is not this
 profile. The module uses original section placement and the fixed IWRAM map,
 including its named sound-table owner, rather than successful substitute
@@ -178,18 +178,18 @@ save, credentials or manual judgment.
    preserve the output guard. Keep the unselected default as the negative
    profile: this example still supplies no default build source or hook.
 
-The same native corpus exercises all14 public one-hot fields and all8 stored
+The same native corpus exercises all 14 public one-hot fields and all 8 stored
 counter bindings using independent source-domain bounds, not descriptor
 metadata. Every legal value round-trips; zero is `UNSET` for one-hot and
-valid for counters. All34 choice/direction/transition backing views agree
+valid for counters. All 34 choice/direction/transition backing views agree
 with their native values, refuse corrupt input and remain read-only.
-Exercise all16 native direction/ending bit patterns and all8 private
+Exercise all 16 native direction/ending bit patterns and all 8 private
 transition patterns: unset semantic direction/ending preserves the output
 guard, unset Boolean views are false, valid one-hot values project exactly,
 and every multi-bit pattern refuses without exposing a default ending or
 partial alias truth. After every read/refusal, compare both complete native
 arrays immediately; do not let later fixture preparation hide a write.
-All4 retirement facts refuse clearing. An upper-bound write preserves both
+All 4 retirement facts refuse clearing. An upper-bound write preserves both
 complete native arrays.
 
 The four one-variable wrong-transition-target, unset-ending-default,
@@ -281,7 +281,7 @@ allocation case, plus the normal ARM binutils; no ROM or save is required.
 2. The original source is the progressive negative control: an empty flag
    buffer locks the guide; native unlock-all exposes entries but leaves them
    unread. The adapter also locks with truth unset, even if unrelated
-   reclaimed display/read bits are set. Initializing truth exposes all56
+   reclaimed display/read bits are set. Initializing truth exposes all 56
    as read. Exercise both explicit truth initialization and the optional
    actual native permanent-reset producer; the latter clears the original
    permanent bytes then sets exactly the allocated truth bit, preserving
@@ -395,5 +395,5 @@ its original bounds-rejection evidence is retained.
 Alternative fixture descriptors are not a production physical assignment.
 The suites remove only their own temporary files. Default linking, the
 native buffers/envelope and framework epoch remain unchanged; complete
-Grado normal/Suspend/legacy loading, schema1/epoch256, atomic checkpoints,
+Grado normal/Suspend/legacy loading, schema 1/epoch 256, atomic checkpoints,
 producer-sensitive recovery, retirement, profiles and ROM/RAM remain open.
