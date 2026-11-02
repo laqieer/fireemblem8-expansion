@@ -91,7 +91,54 @@ recovery or playable content here. Selected guide/save integration,
 Grado schema 1/epoch 256, strict compatible normal/Suspend/legacy loading,
 producer-sensitive lifecycles and target-ROM/RAM proof remain required.
 Framework epoch 2 and its existing envelope are untouched. Do not select or
-save this unfinished allocation as a supported game.
+save this unfinished allocation as a supported game. The bounded native
+compatibility subcase below proves the existing classification mechanism,
+not any newly activated loader, recovery policy or save ABI.
+
+## TC-GRADO-SAVE-COMPAT-001
+
+This subcase of `TEST-SAVE-COMPAT` executes the original live global
+classifier, metadata/checksum builders and SRAM initialization/read routines
+in an ARM7TDMI/Thumb AAPCS release-mode module under libmGBA. It builds the
+same native code with configured epochs2 and256; the existing envelope stays2.
+This is not a Grado game profile or a separate save record.
+
+**Prerequisites:** repository root, Python3, the supported ARM toolchain and
+libmGBA from quickstart. No user ROM, save, savestate or external project is
+read. The fixture redirects the native `gSram` pointer to an owned32KiB
+EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
+
+1. Run
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
+   The existing debug ARM-enabled linker invocation runs this module in
+   candidate/master Build CI. Explicit host-only discovery skips it.
+2. Both uniformly zeroed and erased images classify `EMPTY` after the real
+   hardware-probe initialization. Erased-looking headers with a surviving
+   payload, or inconsistent erased header/metadata patterns, refuse as corrupt.
+3. Current native metadata classifies `CURRENT` only for its configured
+   epoch. The other profile's epoch refuses as incompatible. Valid legacy
+   headers without metadata, older/newer formats, bad header/metadata checksum
+   and a false hardware-ready flag retain their distinct non-current results.
+   An older format wins over a simultaneously foreign epoch, preserving the
+   framework's existing classification order.
+4. ABI/version/fingerprint/build diagnostics with a valid recomputed checksum
+   remain compatible. Compare every byte of the complete owned image after
+   every classification; both positive and refusal paths must leave it intact.
+   Capture the actual13 semantic records per epoch and measured ROM/EWRAM/IWRAM.
+
+**Controls and limits:** wrong epoch, missing/corrupt metadata and surviving
+payload are actual native inputs, not fabricated success labels or source-text
+checks. The default epoch2 is the unselected control. The ordinary supported
+native layout is required; forcing an unrelated packed-struct ABI is not this
+profile. The module uses original section placement and the fixed IWRAM map,
+including its named sound-table owner, rather than successful substitute
+functions.
+
+No production code, defaults, format, epoch, flags or persistent RAM change.
+Actual normal/Suspend loading, producer-sensitive recovery/checkpoints,
+resources/retirement, selected guide/game profiles and complete target
+qualification remain open in #315. Temporary compiler/ROM/capture files are
+removed only from the fixture's owned build directory.
 
 ## TC-GRADO-ALLOCATION-001
 

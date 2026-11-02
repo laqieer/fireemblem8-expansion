@@ -420,6 +420,17 @@ class SubjectTests(SubjectTestCase):
                      "MODERN_SIZE=$(MODERN_SIZE)", "$(PYTHON)", "-m", "unittest",
                      "scripts.workflow_pilot.tests.arm_review_subjects", "-v"],
                     commands)
+                if config == "debug":
+                    native_save = [
+                        command for command in commands
+                        if "tools.gba-playtest.tests.test_grado_save_compat_native" in command
+                    ]
+                    self.assertEqual(len(native_save), 1)
+                    self.assertEqual(native_save[0][0], "env")
+                    self.assertIn(
+                        ("-u", "GBA_PLAYTEST_HOST_ONLY"),
+                        tuple(zip(native_save[0], native_save[0][1:])),
+                    )
 
     def remediation(self, kind, path, broken, member, *, fixed=None):
         original = (self.repo.root / path).read_bytes()
