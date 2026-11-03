@@ -111,6 +111,44 @@ class CliTests(unittest.TestCase):
                         self.assertEqual(result.returncode, 0, result.stdout)
                         self.assertEqual(json.loads(output.read_text())["linker"], expected)
 
+    def test_native_context_uses_original_level_and_refuses_negative_level(self):
+        with self._tmpdir() as tmp:
+            root = Path(tmp)
+            source = root / "level.mk"
+            marker = root / "make-executed"
+            output = root / "context.json"
+            source.write_text(
+                f"$(file >{marker},started)\n"
+                "ifeq ($(MAKELEVEL),0)\nifeq ($(origin MAKELEVEL),environment)\n"
+                "WIDTH := 9\nendif\nendif\n"
+                ".PHONY: native-plan\nnative-plan:\n"
+                "\tcc -DSELECTED_FONT_WIDTH=$(WIDTH) -c sample.c -o out/sample.o\n"
+                "\t: fe8-selected-text-objects out out/sample.o\n"
+                "\t: fe8-selected-text-data \n"
+                "\t: fe8-selected-text-assembly \n"
+                "\t: fe8-selected-text-linker-default ld\n",
+                encoding="ascii",
+            )
+            arguments = [
+                "describe-make-context", "--output", str(output), "--invoker-level", "0",
+                "--", "make", "--no-print-directory", "-n", "-f", str(source), "native-plan",
+            ]
+            with mock.patch.dict(os.environ, {"MAKELEVEL": "1"}):
+                result = run_cli(arguments)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertTrue(marker.exists())
+            self.assertIn(
+                "-DSELECTED_FONT_WIDTH=9",
+                json.loads(output.read_text())["units"][0]["compiler_argv"],
+            )
+            before = output.read_bytes()
+            marker.unlink()
+            arguments[arguments.index("--invoker-level") + 1] = "-1"
+            refused = run_cli(arguments)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertFalse(marker.exists())
+            self.assertEqual(output.read_bytes(), before)
+
     def test_native_font_dependency_migration_preserves_real_make_edges(self):
         with self._tmpdir() as tmp:
             root = Path(tmp)

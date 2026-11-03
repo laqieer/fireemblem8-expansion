@@ -497,6 +497,8 @@ def _included_makefiles(path: Path) -> list[str]:
 
 
 def cmd_describe_make_context(args: argparse.Namespace) -> int:
+    if args.invoker_level is not None and args.invoker_level < 0:
+        raise GameCatalogError("native Make invocation level must be nonnegative")
     command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
     if not command:
         raise GameCatalogError("native text context requires the actual Make plan command")
@@ -514,7 +516,10 @@ def cmd_describe_make_context(args: argparse.Namespace) -> int:
     command[1:1] = [argument for path in dict.fromkeys(included) for argument in ("-o", path)]
     if args.invoker_goals is not None:
         command.append("MAKECMDGOALS=" + args.invoker_goals)
-    planned = subprocess.run(command, capture_output=True, text=True, check=False)
+    environment = None
+    if args.invoker_level is not None:
+        environment = {**os.environ, "MAKELEVEL": str(args.invoker_level)}
+    planned = subprocess.run(command, capture_output=True, text=True, check=False, env=environment)
     if planned.returncode:
         raise GameCatalogError("native Make compile plan failed:\n" + planned.stdout + planned.stderr)
     lines = planned.stdout.replace("\\\n", " ").splitlines()
@@ -731,6 +736,7 @@ def build_parser() -> argparse.ArgumentParser:
     context_p.add_argument("--preprocessor", help="compatibility hint; selected Make recipes own each tool")
     context_p.add_argument("--invoker-pid", type=int)
     context_p.add_argument("--invoker-goals")
+    context_p.add_argument("--invoker-level", type=int, help="original nonnegative GNU Make level")
     context_p.add_argument("--makefile-list-file", type=Path)
     context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
     context_p.set_defaults(handler=cmd_describe_make_context)

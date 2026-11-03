@@ -44,8 +44,15 @@ second registry, harness, generated-data schema, or project ruleset.
 
 The actual native object inventory appears exactly once after a late dependency
 file. Warm input dependency bytes remain unchanged during pure capture.
-An implicit main Makefile still loads with preloaded `MAKEFILES`. Actual
-spaced, repeated-space and quoted explicit entrypoint or nested included
+An implicit main Makefile still loads with preloaded `MAKEFILES`.
+direct/inherited and recursive callers at levels 0/1/2 retain the original
+level and ordinary environment origin, not the recipe child's incremented
+level. Top-level-conditioned native font flags, real objects and measured
+widths must agree before and after a selected-width change. A negative
+explicit invocation level refuses before replay, preserving prior context.
+The existing standalone CLI behavior remains when original-level metadata
+is absent; no context JSON schema or save/profile setting changes.
+Actual spaced, repeated-space and quoted explicit entrypoint or nested included
 source files must retain bytes, inode and modification time: replay must not
 run their otherwise valid regeneration recipes under `-n`/`-B`.
 Plain/spaced authored `.d` settings inside native output use the

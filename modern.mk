@@ -1004,6 +1004,7 @@ $(MODERN_TEXT_COMPILE_CONTEXT): FORCE | $(dir $(MODERN_TEXT_COMPILE_CONTEXT))
 		--makefile-list-file "$(MODERN_TEXT_NATIVE_MAKEFILES)" \
 		--invoker-pid "$(shell echo $$PPID)" \
 		--invoker-goals "$(MAKECMDGOALS)" \
+		--invoker-level "$(MAKELEVEL)" \
 		-- $(modern_text_native_plan) _expansion-modern-text-object-plan; \
 		status=$$?; rm -f "$(MODERN_TEXT_NATIVE_MAKEFILES)"; exit $$status
 

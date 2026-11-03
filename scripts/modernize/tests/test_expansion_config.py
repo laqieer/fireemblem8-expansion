@@ -290,6 +290,64 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                     self.assertEqual(list(output.rglob("*.makefiles")), [])
                     self.assertEqual(list(output.rglob("*.o")), [])
 
+    def test_native_context_preserves_original_make_level(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-level-", dir=ROOT / "build") as directory:
+            for index, (goal, level) in enumerate((
+                ("expansion-modern-text-inputs", 0), ("native-level-parent", 0),
+                ("native-recurse-one", 1), ("native-recurse-two", 2),
+            )):
+                with self.subTest(goal=goal, level=level):
+                    output = Path(directory) / str(index)
+                    original = Path(directory) / ("flags-" + str(index))
+                    entrypoint = Path(directory) / ("level-" + str(index) + ".mk")
+                    entrypoint.write_text(
+                        "include Makefile\n"
+                        "ifeq ($(origin MAKELEVEL),environment)\n"
+                        + "".join(
+                            f"ifeq ($(MAKELEVEL),{value})\n"
+                            f"MODERN_CFLAGS += -DSELECTED_FONT_WIDTH={9 + value}\n"
+                            "endif\n" for value in range(3)
+                        )
+                        + "endif\n"
+                        ".PHONY: native-level-live native-level-parent "
+                        "native-recurse-one native-recurse-two\n"
+                        "native-level-live:\n"
+                        f"\t@printf '%s\\n' '$(MODERN_CFLAGS)' > {shlex.quote(str(original))}\n"
+                        "native-level-parent: native-level-live expansion-modern-text-inputs\n"
+                        "native-recurse-one:\n"
+                        f"\t+$(MAKE) --no-print-directory -f {shlex.quote(str(entrypoint))} native-level-parent\n"
+                        "native-recurse-two:\n"
+                        f"\t+$(MAKE) --no-print-directory -f {shlex.quote(str(entrypoint))} native-recurse-one\n",
+                        encoding="ascii",
+                    )
+                    result = subprocess.run(
+                        [
+                            "make", "--no-print-directory", "-f", str(entrypoint),
+                            *(["native-level-live"] if index == 0 else []), goal,
+                            "NODEP=1", "MODERN_DRY_RUN=1", f"MODERN_BUILD_ROOT={output}",
+                            "MODERN_CONFIG=debug", "FE8_PROJECT=default",
+                            "MODERN_CC=/missing/compiler", "MODERN_PREPROC=/missing/preprocessor",
+                            f"PYTHON={sys.executable}",
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60,
+                        env={
+                            key: value for key, value in os.environ.items()
+                            if key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL"}
+                        },
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    width = "-DSELECTED_FONT_WIDTH=" + str(9 + level)
+                    self.assertIn(width, shlex.split(original.read_text()))
+                    context = json.loads(
+                        (output / "debug/aapcs/selected-text-inputs.json").read_text(),
+                    )
+                    self.assertTrue(context["units"])
+                    self.assertTrue(all(
+                        width in unit["compiler_argv"] for unit in context["units"]
+                    ))
+                    self.assertEqual(list(output.rglob("*.o")), [])
+
     def test_native_context_preserves_regenerated_source_makefiles(self):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-source-replay-", dir=ROOT / "build") as directory:
@@ -981,8 +1039,10 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         makefile = self.project / "native-font.mk"
         makefile.write_text(
             "include Makefile\n"
+            "ifeq ($(MAKELEVEL),0)\nifeq ($(origin MAKELEVEL),environment)\n"
             f"{namespace}/src/fontgrp-data.o: private MODERN_CFLAGS := "
-            f"-I{headers} $(MODERN_CFLAGS) -DSELECTED_FONT_WIDTH=9\n",
+            f"-I{headers} $(MODERN_CFLAGS) -DSELECTED_FONT_WIDTH=9\n"
+            "endif\nendif\n",
             encoding="utf-8",
         )
         context = namespace / "selected-text-inputs.json"
@@ -1000,6 +1060,10 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         from scripts.localization.game_catalog.compiled_fonts import measure_selected_fonts
+        self.assertIn("-DSELECTED_FONT_WIDTH=9", next(
+            unit for unit in json.loads(context.read_text())["units"]
+            if unit["logical_source"] == "src/fontgrp-data.c"
+        )["compiler_argv"])
         metrics = measure_selected_fonts(context, output_dir=output / "metrics")
         self.assertEqual(metrics["ascii"], {
             "system": {63: 9, 65: 9}, "talk": {63: 11, 65: 11},
@@ -1112,6 +1176,10 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             pseudo.args, cwd=ROOT, capture_output=True, text=True, timeout=120,
         )
         self.assertEqual(warm.returncode, 0, warm.stdout + warm.stderr)
+        self.assertIn("-DSELECTED_FONT_WIDTH=10", next(
+            unit for unit in json.loads(context.read_text())["units"]
+            if unit["logical_source"] == "src/fontgrp-data.c"
+        )["compiler_argv"])
         measured = measure_selected_fonts(context, output_dir=output / "warm-metrics")
         self.assertEqual(measured["ascii"], {
             "system": {63: 10, 65: 10}, "talk": {63: 11, 65: 11},
