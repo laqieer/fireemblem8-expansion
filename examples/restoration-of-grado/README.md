@@ -114,6 +114,8 @@ EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
    candidate/master Build CI. Explicit host-only discovery skips it.
    Both physical and symlink-discovered test sources must execute the same
    native probe; all compiler source paths use the canonical repository root.
+   The linked control imports a fresh module through the symlink before
+   running the actual native case; a skipped or missing case is not evidence.
 2. Both uniformly zeroed and erased images classify `EMPTY` after the real
    hardware-probe initialization. Erased-looking headers with a surviving
    payload, or inconsistent erased header/metadata patterns, refuse as corrupt.

@@ -1,5 +1,6 @@
 """Execute the existing live compatibility mechanism for default and Grado epochs."""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools/gba-playtest"))
@@ -35,8 +35,22 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
             linked = Path(directory) / "checkout"
             linked.symlink_to(ROOT, target_is_directory=True)
             source = linked / Path(__file__).resolve().relative_to(ROOT)
-            with patch.dict(globals(), __file__=str(source)):
-                self.test_native_compatible_and_refused_histories_preserve_all_input_bytes()
+            specification = importlib.util.spec_from_file_location("grado_save_linked", source)
+            self.assertIsNotNone(specification)
+            self.assertIsNotNone(specification.loader)
+            module = importlib.util.module_from_spec(specification)
+            specification.loader.exec_module(module)
+            self.assertTrue(module.ROOT.samefile(ROOT))
+            result = unittest.TestResult()
+            module.GradoSaveCompatNativeTests(
+                "test_native_compatible_and_refused_histories_preserve_all_input_bytes",
+            ).run(result)
+            self.assertEqual(result.testsRun, 1)
+            self.assertFalse(result.skipped)
+            self.assertTrue(
+                result.wasSuccessful(),
+                "\n".join(text for _, text in (*result.errors, *result.failures)),
+            )
 
     def test_native_compatible_and_refused_histories_preserve_all_input_bytes(self):
         tools = _selected_tools(os.environ)
