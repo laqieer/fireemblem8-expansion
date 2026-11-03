@@ -998,7 +998,7 @@ $(dir $(MODERN_TEXT_COMPILE_CONTEXT)):
 	@mkdir -p "$(@D)"
 
 $(MODERN_TEXT_COMPILE_CONTEXT): FORCE | $(dir $(MODERN_TEXT_COMPILE_CONTEXT))
-	$(if $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS)))),,$(file >$(MODERN_TEXT_NATIVE_MAKEFILES),$(MAKEFILE_LIST)))
+	$(if $(findstring n,$(filter-out -%,$(firstword $(MAKEFLAGS)))),,$(file >$(MODERN_TEXT_NATIVE_MAKEFILES),$(MAKEFILE_LIST)))
 	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
 		--output "$@" \
 		--makefile-list-file "$(MODERN_TEXT_NATIVE_MAKEFILES)" \
@@ -1574,7 +1574,8 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c
 	@mv -f "$@.tmp" "$@"
 
 # Included makefiles are otherwise remade even under GNU Make's -n.
-MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
+# A leading-dash word contains an option argument, not the short flag letters.
+MODERN_DRY_RUN := $(findstring n,$(filter-out -%,$(firstword $(MAKEFLAGS))))
 MODERN_CLEAN_GOALS := clean clean_fast clean_tools distclean expansion-modern-clean assets-clean
 MODERN_TEXT_NONCONSUMER_GOALS := $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
 	expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT) \

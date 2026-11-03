@@ -248,6 +248,48 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             self.assertTrue(all(unit["logical_source"].endswith(".c") for unit in context["units"]))
             self.assertEqual(list(output.rglob("*.o")), [])
 
+    def test_native_context_distinguishes_make_flags_from_option_values(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="native-make-flags-", dir=ROOT / "build") as directory:
+            for index, (flags, dry) in enumerate((
+                ((), False),
+                (("-Otarget",), False),
+                (("-Oline",), False),
+                (("-Onone",), False),
+                (("--output-sync=line",), False),
+                (("-Iinclude",), False),
+                (("--include-dir=include",), False),
+                (("--warn-undefined-variables",), False),
+                (("-sn",), True),
+                (("-n", "-Oline"), True),
+                (("--just-print", "--output-sync=line"), True),
+                (("--dry-run", "--include-dir=include"), True),
+            )):
+                with self.subTest(flags=flags):
+                    output = Path(directory) / str(index)
+                    result = subprocess.run(
+                        [
+                            "make", *flags, "--no-print-directory", "expansion-modern-text-inputs",
+                            f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                            "FE8_PROJECT=default", "MODERN_CC=/missing/compiler",
+                            "MODERN_PREPROC=/missing/preprocessor", "NODEP=1",
+                            f"PYTHON={sys.executable}",
+                        ],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60,
+                        env={
+                            key: value for key, value in os.environ.items()
+                            if key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL"}
+                        },
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    context = output / "debug/aapcs/selected-text-inputs.json"
+                    if dry:
+                        self.assertFalse(context.exists(), result.stdout + result.stderr)
+                    else:
+                        self.assertTrue(json.loads(context.read_text())["units"])
+                    self.assertEqual(list(output.rglob("*.makefiles")), [])
+                    self.assertEqual(list(output.rglob("*.o")), [])
+
     def test_native_context_preserves_regenerated_source_makefiles(self):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-source-replay-", dir=ROOT / "build") as directory:
@@ -1588,7 +1630,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
             encoding="ascii",
         )
         command = [
-            "make", "--no-print-directory", "-j2", "-f", str(makefile), "NODEP=1",
+            "make", "--no-print-directory", "-f", str(makefile), "NODEP=1",
             f"FE8_PROJECT={self.project.name}", "MODERN_CONFIG=debug",
             "EXPANSION_ENABLED_LOCALES=en,ja", f"PYTHON={python}",
         ]
@@ -1601,7 +1643,8 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 asset.write_bytes(current)
                 observed.unlink(missing_ok=True)
                 built = subprocess.run(
-                    [*command, goal], cwd=ROOT, capture_output=True, text=True, timeout=180,
+                    [*command, *(["--output-sync=line"] if change == 1 else ["-j2"]), goal],
+                    cwd=ROOT, capture_output=True, text=True, timeout=180,
                 )
                 self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
                 widths = [json.loads(line) for line in observed.read_text().splitlines()]

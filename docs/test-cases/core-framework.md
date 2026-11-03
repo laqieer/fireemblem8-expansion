@@ -52,7 +52,13 @@ Plain/spaced authored `.d` settings inside native output use the
 same literal protection; suffix or output location cannot authorize a remake.
 Ambiguous source names refuse before replay and preserve a previous valid context.
 The temporary included-name transport is removed on success/failure and is
-not written by ordinary `-n`. Populate the actual canonical object, header
+not written by ordinary `-n`. Normal output-sync and include-directory options
+whose values contain `n` must still capture the complete native context and
+reload changed raw font inputs. Repeat with short/long spellings and with
+actual `-n`/`--just-print` controls: a flag value is not a dry-run flag.
+The native raw-font scenario retains parallel direct/inherited controls and
+also checks an actual serial `--output-sync=line` header request.
+Populate the actual canonical object, header
 and asset dependency-file inventories in a valid longer native root, then
 repeat capture with `.ONESHELL` and real build-goal classification. Cold and
 warm C inputs agree, every dependency input remains byte/inode/time-identical,
