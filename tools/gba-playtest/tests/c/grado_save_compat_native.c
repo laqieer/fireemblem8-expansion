@@ -170,6 +170,11 @@ static void ProbeFlagSaves(void)
     unsigned int pattern;
 
     PrepareCurrent();
+    for (slot = 0; slot < 2; ++slot)
+    {
+        gSram->suspendSaveBlocks[slot].chapterFlags[5] = 0xA5;
+        gSram->suspendSaveBlocks[slot].chapterFlags[6] = 0x5A;
+    }
     memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
     gGradoSaveFlagsProbe.phase = 1;
     gGradoSaveFlagsProbe.permanentBytes = GetPermanentFlagBitsSize();

@@ -182,7 +182,9 @@ the canonical linker supplies the actual IWRAM flag arrays.
 3. Execute the real write functions. All 25 permanent bytes and, for Suspend,
    five chapter bytes must match. Compare the entire 32 KiB image against an
    independent rolling snapshot updated only at those fields; the two unused
-   bytes in the Suspend struct's seven-byte chapter field remain unchanged.
+   bytes in each Suspend struct's seven-byte chapter field are seeded with
+   `0xA5` / `0x5A` before the snapshot and must remain unchanged. A seven-byte
+   native write must fail this boundary, not hide in zero-filled padding.
 4. Overwrite live arrays with `0xC3` / `0x3C`; they must now differ from the
    saved vectors. The original non-destructive permanent view returns the
    saved bytes without changing either live array. Original reads restore
