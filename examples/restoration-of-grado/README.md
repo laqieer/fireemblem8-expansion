@@ -164,6 +164,42 @@ resources/retirement, selected guide/game profiles and complete target
 qualification remain open in #315. Temporary compiler/ROM/capture files are
 removed only from the fixture's owned build directory.
 
+## TC-GRADO-SAVE-FLAGS-001
+
+This bounded `TEST-SAVELOAD` / `TEST-SUSPEND` subcase uses the same native
+module, prerequisites, source command and owned image as the compatibility
+case. It links the original `eventinfo.c` getters and native flag serializers;
+the canonical linker supplies the actual IWRAM flag arrays.
+
+1. Run
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
+   Both epochs and physical/fresh-linked imports must execute.
+2. Exercise all three normal slots and both Suspend slots. Virtual slots 0..2
+   denote normal fields; 3..4 denote Suspend fields. For each, use seeds
+   `0`, `0xFF`, `0xAA`, `0x55` with byte vectors
+   `permanent[i] = seed ^ (29*i) ^ (3*slot)` and
+   `chapter[i] = ~seed ^ (17*i) ^ (3*slot)`, reduced to eight bits.
+3. Execute the real write functions. All 25 permanent bytes and, for Suspend,
+   five chapter bytes must match. Compare the entire 32 KiB image against an
+   independent rolling snapshot updated only at those fields; the two unused
+   bytes in the Suspend struct's seven-byte chapter field remain unchanged.
+4. Overwrite live arrays with `0xC3` / `0x3C`; they must now differ from the
+   saved vectors. The original non-destructive permanent view returns the
+   saved bytes without changing either live array. Original reads restore
+   every saved byte, preserve the other scope and never mutate the image.
+5. Inspect all 20 distinct slot/pattern records per epoch, actual flag-storage
+   bounds, copied SRAM function pointers and measured native resources.
+   The existing thirteen classification records still pass. Explicit
+   host-only skipping is not proof; a no-op read fails the clobber control.
+
+**Boundary:** this proves existing flag-transfer primitives and typed slot
+fields, not complete normal/Suspend entrypoints, block checksums/metadata,
+cartridge-bus timing, legal semantic state combinations, producer recovery,
+guide consumers or a supported Grado profile. No production source, save
+layout, defaults, epoch, feature flag or persistent allocation changes.
+The existing ARM-enabled module invocation covers this case; no new job,
+timeout, framework service or registry is introduced.
+
 ## TC-GRADO-ALLOCATION-001
 
 ### Complete campaign bindings

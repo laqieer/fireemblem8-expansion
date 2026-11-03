@@ -88,7 +88,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                 ]
                 objects = []
                 for source in (
-                    ROOT / "src/bmsave-lib.c", ROOT / "src/bmlib.c",
+                    ROOT / "src/bmsave-lib.c", ROOT / "src/bmlib.c", ROOT / "src/eventinfo.c",
                     ROOT / "src/agb_sram.c", driver,
                 ):
                     target = (work / source.relative_to(ROOT)).with_suffix(".o")
@@ -179,6 +179,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 self.assertLessEqual(rom.stat().st_size, 1024 * 1024)
                 _, size = resolve_elf_symbol(elf, "gGradoSaveCompatProbe", tools["MODERN_NM"])
                 self.assertEqual(size, 16 + 13 * 12)
+                _, flag_size = resolve_elf_symbol(elf, "gGradoSaveFlagsProbe", tools["MODERN_NM"])
+                self.assertEqual(flag_size, 24 + 20 * 32)
                 scenario = work / "scenario.json"
                 scenario.write_text(json.dumps({
                     "schema_version": 1, "name": "grado-save-compat", "frames": [],
@@ -190,6 +192,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         ] + [
                             {"address": name, "size": 4}
                             for name in ("ReadSramFast", "VerifySramFast", "VerifySramValueFast")
+                        ] + [
+                            {"address": f"gGradoSaveFlagsProbe+0x{offset:x}", "size": 4}
+                            for offset in range(0, flag_size, 4)
                         ],
                     }],
                 }), encoding="utf-8")
@@ -215,6 +220,25 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     (5, 7, 1), (6, 5, 1), (7, 6, 1), (8, 3, 1), (9, 2, 1),
                     (10, 4, 1), (11, 2, 1), (12, 2, 1),
                 ])
+                flag_data = b"".join(
+                    values[f"gGradoSaveFlagsProbe+0x{offset:x}"].to_bytes(4, "little")
+                    for offset in range(0, flag_size, 4)
+                )
+                self.assertEqual(struct.unpack_from("<4I", flag_data), (2, 20, 25, 5))
+                flag_addresses = struct.unpack_from("<2I", flag_data, 16)
+                for address, extent in zip(flag_addresses, (25, 5)):
+                    self.assertGreaterEqual(address, 0x03000000)
+                    self.assertLessEqual(address + extent, 0x03007800)
+                flag_records = [
+                    struct.unpack_from("<8I", flag_data, 24 + index * 32)
+                    for index in range(20)
+                ]
+                flag_results = {(row[0], row[1]): row[2:] for row in flag_records}
+                self.assertEqual(len(flag_results), 20)
+                self.assertEqual(flag_results, {
+                    (slot, pattern): (1, 1, 1, 1, 1, 1)
+                    for slot in range(5) for pattern in range(4)
+                })
                 self.assertEqual(values["ReadSramFast"], sram_workspaces["readSramFast_Work"][0] | 1)
                 self.assertEqual(values["VerifySramFast"], sram_workspaces["verifySramFast_Work"][0] | 1)
                 self.assertIn(values["VerifySramValueFast"], (
@@ -231,6 +255,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     "rom_bytes": rom.stat().st_size,
                     "ewram_bytes": resources["data"] + resources["ewram"],
                     "iwram_bytes": resources["iwram"], "records": records,
+                    "flag_records": flag_records,
+                    "flag_storage": dict(zip(("permanent", "chapter"), flag_addresses)),
                     "sram_workspaces": sram_workspaces,
                     "active_sram_functions": {
                         name: values[name]

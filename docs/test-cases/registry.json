@@ -74,7 +74,8 @@
         "TC-GRADO-ALLOCATION-001",
         "TC-GRADO-GUIDE-001",
         "TC-GRADO-STATE-VALUES-001",
-        "TC-GRADO-SAVE-COMPAT-001"
+        "TC-GRADO-SAVE-COMPAT-001",
+        "TC-GRADO-SAVE-FLAGS-001"
       ]
     },
     {
@@ -935,6 +936,34 @@
         {
           "command": "python3 -B -m unittest scripts.workflow_pilot.tests.test_review_subjects.SubjectTests.test_modern_linker_recipe_runs_mandatory_arm_positives -v",
           "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-SAVE-FLAGS-001",
+      "title": "Round-trip native flag bytes through normal and Suspend fields",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-save-flags-001",
+      "profiles": [
+        "ARM7TDMI/Thumb AAPCS release-mode module, epochs 2 and 256, libmGBA"
+      ],
+      "purpose": "Prove existing native flag-transfer primitives preserve the 40 chapter/200 permanent bits and every byte outside their typed save fields.",
+      "prerequisites": "Same supported tools and owned 32 KiB image as TC-GRADO-SAVE-COMPAT-001; no user save, ROM or external project.",
+      "actions": "Run the existing native save module. For all three normal and both Suspend slots, write four slot/byte-varying vectors through the original functions, compare stored fields and entire image with an independent rolling snapshot, clobber live arrays, execute non-destructive view and actual reads, and capture all twenty records per epoch plus real flag/SRAM/resource bounds.",
+      "expected_result": "Every permanent span is 25 bytes and every serialized chapter span five bytes; all source bytes round-trip, other scopes and complete image stay unchanged outside permitted writes. Both unused Suspend chapter-field bytes remain intact. Non-destructive view preserves live arrays. All thirteen compatibility records remain valid.",
+      "negative_control": "Live arrays are deliberately overwritten with differing 0xC3/0x3C before reads; a missing/no-op read cannot restore them. Slot/byte-varying complementary vectors distinguish stale, wrong-slot, truncated and cross-scope copies. Explicit host-only skipping is not native evidence.",
+      "interactions": "Reuses original eventinfo storage getters, bmsave-lib serializers, canonical IWRAM labels and copied SRAM routines through the existing ARM-enabled CI module. No new framework flag, gate, service or job.",
+      "save_compatibility": "No production source, save layout, default envelope/epoch or allocation changes. Raw byte vectors are owned native transfer inputs, not legal semantic Grado histories or a new save blob/profile.",
+      "cleanup": "Only the module's owned temporary compiler/ROM/capture directory; never load or rewrite user saves.",
+      "limitations": "Flag-transfer primitives only, not complete normal/Suspend entrypoints or block metadata/checksums, cartridge bus, producer-sensitive recovery/resources, guide consumers, legal state combinations or selected-game/profile qualification.",
+      "automation": [
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
         }
       ]
     },

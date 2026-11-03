@@ -2,6 +2,7 @@
 
 #include "agb_sram.h"
 #include "bmsave.h"
+#include "eventinfo.h"
 
 #include <string.h>
 
@@ -21,6 +22,29 @@ struct GradoSaveCompatProbe
     struct GradoSaveCompatRecord records[13];
 };
 
+struct GradoSaveFlagsRecord
+{
+    u32 slot;
+    u32 pattern;
+    u32 stored;
+    u32 bounded;
+    u32 restored;
+    u32 otherScope;
+    u32 readonlyView;
+    u32 clobbered;
+};
+
+struct GradoSaveFlagsProbe
+{
+    u32 phase;
+    u32 count;
+    u32 permanentBytes;
+    u32 chapterBytes;
+    u32 permanentAddress;
+    u32 chapterAddress;
+    struct GradoSaveFlagsRecord records[20];
+};
+
 static union
 {
     struct SaveBlocks native;
@@ -28,6 +52,7 @@ static union
 } sSaveImage;
 static u8 sBefore[CART_SRAM_SIZE];
 volatile struct GradoSaveCompatProbe gGradoSaveCompatProbe;
+volatile struct GradoSaveFlagsProbe gGradoSaveFlagsProbe;
 extern bool gBoolSramWorking;
 
 static void PrepareBlank(u8 fill)
@@ -69,6 +94,97 @@ static void Record(unsigned int input)
     record->state = ClassifySramSaveCompat();
     record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
     gGradoSaveCompatProbe.count++;
+}
+
+static int BytesAre(const u8 * bytes, unsigned int size, u8 value)
+{
+    unsigned int i;
+
+    for (i = 0; i < size; ++i)
+        if (bytes[i] != value)
+            return 0;
+    return 1;
+}
+
+static void RecordFlagSave(unsigned int slot, unsigned int pattern)
+{
+    static const u8 seeds[] = { 0, 0xFF, 0xAA, 0x55 };
+    u8 permanent[25];
+    u8 chapter[5];
+    u8 view[25];
+    u8 * savedPermanent;
+    u8 * savedChapter;
+    unsigned int i;
+    volatile struct GradoSaveFlagsRecord * record;
+
+    for (i = 0; i < sizeof(permanent); ++i)
+        permanent[i] = seeds[pattern] ^ (i * 29) ^ (slot * 3);
+    for (i = 0; i < sizeof(chapter); ++i)
+        chapter[i] = (u8)~seeds[pattern] ^ (i * 17) ^ (slot * 3);
+    memcpy(GetPermanentFlagBits(), permanent, sizeof(permanent));
+    memcpy(GetChapterFlagBits(), chapter, sizeof(chapter));
+
+    savedPermanent = slot < 3 ? gSram->gameSaveBlocks[slot].permanentFlags
+        : gSram->suspendSaveBlocks[slot - 3].permanentFlags;
+    savedChapter = slot < 3 ? 0 : gSram->suspendSaveBlocks[slot - 3].chapterFlags;
+    WritePermanentFlags(savedPermanent);
+    if (savedChapter != 0)
+        WriteChapterFlags(savedChapter);
+    memcpy(sBefore + (savedPermanent - sSaveImage.bytes), permanent, sizeof(permanent));
+    if (savedChapter != 0)
+        memcpy(sBefore + (savedChapter - sSaveImage.bytes), chapter, sizeof(chapter));
+
+    record = &gGradoSaveFlagsProbe.records[gGradoSaveFlagsProbe.count];
+    record->slot = slot;
+    record->pattern = pattern;
+    record->stored = memcmp(savedPermanent, permanent, sizeof(permanent)) == 0
+        && (savedChapter == 0 || memcmp(savedChapter, chapter, sizeof(chapter)) == 0);
+    record->bounded = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+
+    memset(GetPermanentFlagBits(), 0xC3, sizeof(permanent));
+    memset(GetChapterFlagBits(), 0x3C, sizeof(chapter));
+    record->clobbered = memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) != 0
+        && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) != 0;
+    ReadPermanentFlags_ret(savedPermanent, view);
+    record->readonlyView = memcmp(view, permanent, sizeof(permanent)) == 0
+        && BytesAre(GetPermanentFlagBits(), sizeof(permanent), 0xC3)
+        && BytesAre(GetChapterFlagBits(), sizeof(chapter), 0x3C);
+    ReadPermanentFlags(savedPermanent);
+    record->otherScope = BytesAre(GetChapterFlagBits(), sizeof(chapter), 0x3C);
+    if (savedChapter != 0)
+    {
+        ReadChapterFlags(savedChapter);
+        record->otherScope = record->otherScope
+            && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0;
+    }
+    record->restored = memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+        && (savedChapter == 0 || memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0);
+    record->bounded = record->bounded
+        && memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+    gGradoSaveFlagsProbe.count++;
+}
+
+static void ProbeFlagSaves(void)
+{
+    unsigned int slot;
+    unsigned int pattern;
+
+    PrepareCurrent();
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    gGradoSaveFlagsProbe.phase = 1;
+    gGradoSaveFlagsProbe.permanentBytes = GetPermanentFlagBitsSize();
+    gGradoSaveFlagsProbe.chapterBytes = GetChapterFlagBitsSize();
+    gGradoSaveFlagsProbe.permanentAddress = (uintptr_t)GetPermanentFlagBits();
+    gGradoSaveFlagsProbe.chapterAddress = (uintptr_t)GetChapterFlagBits();
+    if (gGradoSaveFlagsProbe.permanentBytes != 25 || gGradoSaveFlagsProbe.chapterBytes != 5)
+    {
+        gGradoSaveFlagsProbe.phase = 3;
+        return;
+    }
+    for (slot = 0; slot < 5; ++slot)
+        for (pattern = 0; pattern < 4; ++pattern)
+            RecordFlagSave(slot, pattern);
+    gGradoSaveFlagsProbe.phase = 2;
 }
 
 void AgbMain(void)
@@ -134,6 +250,7 @@ void AgbMain(void)
     Record(12);
 
     gGradoSaveCompatProbe.phase = 2;
+    ProbeFlagSaves();
     for (;;)
         __asm__ volatile ("nop");
 }
