@@ -112,6 +112,8 @@ EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
    `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
    The existing debug ARM-enabled linker invocation runs this module in
    candidate/master Build CI. Explicit host-only discovery skips it.
+   Both physical and symlink-discovered test sources must execute the same
+   native probe; all compiler source paths use the canonical repository root.
 2. Both uniformly zeroed and erased images classify `EMPTY` after the real
    hardware-probe initialization. Erased-looking headers with a surviving
    payload, or inconsistent erased header/metadata patterns, refuse as corrupt.

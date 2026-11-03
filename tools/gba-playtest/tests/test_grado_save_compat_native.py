@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools/gba-playtest"))
@@ -28,10 +29,19 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
+    def test_native_compatibility_probe_under_symlinked_source_path(self):
+        _selected_tools(os.environ)
+        with tempfile.TemporaryDirectory(prefix="grado-save-link-") as directory:
+            linked = Path(directory) / "checkout"
+            linked.symlink_to(ROOT, target_is_directory=True)
+            source = linked / Path(__file__).resolve().relative_to(ROOT)
+            with patch.dict(globals(), __file__=str(source)):
+                self.test_native_compatible_and_refused_histories_preserve_all_input_bytes()
+
     def test_native_compatible_and_refused_histories_preserve_all_input_bytes(self):
         tools = _selected_tools(os.environ)
         boot = ROOT / "scripts/localization/game_catalog/tests/runtime/module_native_boot.S"
-        driver = Path(__file__).parent / "c/grado_save_compat_native.c"
+        driver = ROOT / "tools/gba-playtest/tests/c/grado_save_compat_native.c"
         driver_flags = (
             ["-B" + str((ROOT / os.environ["MODERN_BINUTILS_DIR"]).absolute()) + "/"]
             if os.environ.get("MODERN_BINUTILS_DIR") else []
