@@ -1032,9 +1032,17 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
    ```
 
-   The existing `expansion-modern-linker-check` recipe also runs this selector
-   in both modern Build configurations, without a new workflow job or verifier
-   gate. Missing tools fail rather than skip. The host reporter suite needs no
+   The existing `expansion-modern-linker-check` dependency graph also runs this
+   selector in both configurations through the public
+   `expansion-modern-review-arm-check` helper. To repeat that complete contract
+   directly, run the helper once with `MODERN_CONFIG=debug` and once with
+   `MODERN_CONFIG=release`, both with `MODERN_ABI=aapcs`. Combined Build CI uses
+   existing legacy-worker headroom for those two invocations after its already
+   required ARM/libmGBA/tools setup; the modern worker marks only this helper
+   already made. Both workers remain required by the fail-closed summary, all
+   ROM/profile/archival gates and deadlines stay unchanged, and no new job,
+   optional flag or verifier requirement is added. Missing tools fail rather
+   than skip. The host reporter suite needs no
    ARM installation and retains all native/source-backed family coverage;
    its parsed Make contract verifies that both configurations retain the
    mandatory ARM selector and resolved tool paths. The owned non-system

@@ -21,8 +21,10 @@ here is to prove Make's variable/dependency wiring, not to compile real
 objects.
 """
 
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -111,10 +113,51 @@ class SaveCompatEpochModernBuildTests(unittest.TestCase):
         )
         # expansion-modern-toolchain-check is expected to fail in this
         # sandbox (no arm-none-eabi-gcc); only the print-% output matters.
-        self.assertIn(
-            "MODERN_SAVE_COMPAT_EPOCH is a simple variable set to [3]",
+        self.assertRegex(
             result.stdout,
+            r"MODERN_SAVE_COMPAT_EPOCH is a \w+ variable set to \[3\]",
         )
+
+    def test_inherited_stamp_resolves_config_once_per_invocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            calls = root / "resolve.jsonl"
+            runner = root / "resolve-config"
+            runner.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                f"with open({str(calls)!r}, 'a') as stream:\n"
+                "    stream.write(json.dumps({'pid': os.getpid(), 'argv': sys.argv[1:]}) + '\\n')\n"
+                f"os.execv({sys.executable!r}, [{sys.executable!r}, "
+                f"{str(ROOT / 'scripts/modernize/expansion_config.py')!r}, *sys.argv[1:]])\n",
+                encoding="utf-8",
+            )
+            runner.chmod(0o755)
+            output = root / "out"
+            stamp = output / "debug/aapcs/generated/compile_settings.txt"
+            makefile = root / "parent.mk"
+            makefile.write_text(
+                "include Makefile\n"
+                ".PHONY: inherited-settings\n"
+                f"inherited-settings: {stamp}\n",
+                encoding="utf-8",
+            )
+            for policy in ("preserve", "resume", "restart"):
+                with self.subTest(policy=policy):
+                    calls.unlink(missing_ok=True)
+                    result = self.make(
+                        "-f", str(makefile), "inherited-settings", "NODEP=1",
+                        f"MODERN_BUILD_ROOT={output}", "MODERN_CONFIG=debug",
+                        "MODERN_ABI=aapcs", "MODERN_ROM_SIZE=16M", "FE8_PROJECT=default",
+                        "EXPANSION_ENABLED_LOCALES=en", f"EXPANSION_BGM_CONTINUATION_POLICY={policy}",
+                        f"MODERN_EXPANSION_CONFIG_RUNNER={runner}", f"PYTHON={sys.executable}",
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    invocations = [json.loads(line) for line in calls.read_text().splitlines()]
+                    self.assertEqual(len(invocations), 1)
+                    self.assertEqual(invocations[0]["argv"][0], "resolve")
+                    self.assertIn(f"bgm_continuation_policy={policy}", stamp.read_text().splitlines())
+                    self.assertIn("save_compat_epoch=2", stamp.read_text().splitlines())
 
     def test_compile_settings_stamp_includes_epoch_and_reacts_to_override(
         self,

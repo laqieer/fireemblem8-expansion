@@ -27,29 +27,18 @@ typedef s8 bool;
 #include "expansion_config.h"
 #include "localized_game_text.h"
 
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+struct MsgBuffer;
+#else
 struct MsgBuffer
 {
-#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
-    union
-    {
-        struct
-        {
-            u8 buffer1[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER1_BYTES];
-            u8 buffer2[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER2_BYTES];
-            u8 buffer3[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER3_BYTES];
-            u8 buffer4[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER4_BYTES];
-            u8 buffer5[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER5_BYTES];
-        } legacy;
-        u8 localized[FE8_LOCALIZED_GAME_TEXT_REQUIRED_STORAGE_BYTES];
-    } storage;
-#else
     u8 buffer1[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER1_BYTES];
     u8 buffer2[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER2_BYTES];
     u8 buffer3[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER3_BYTES];
     u8 buffer4[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER4_BYTES];
     u8 buffer5[FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER5_BYTES];
-#endif
 };
+#endif
 
 struct ActionData
 {

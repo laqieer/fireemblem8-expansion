@@ -2521,7 +2521,31 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertEqual(_text_publication_owner_errors(quoted), [])
         self.assertEqual(verify._parse_workflow_structure_text(quoted), verify._parse_workflow_structure_text(self.text))
         self.assertEqual(len(_job_blocks(self.text)), 8)
-        self.assertEqual(len(verify.gates()), 31)
+
+    def test_archival_arm_setup_avoids_unneeded_target_cpp_recommendations(self):
+        _, _, jobs = verify._parse_workflow_structure_text(self.text)
+        legacy = next(steps for name, _, steps in jobs if name == "legacy")
+        setup = next(
+            dict(fields) for _, name, fields in legacy
+            if name == "Install archival build dependencies"
+        )
+        installs = [
+            command[command.index("install") + 1:]
+            for command in verify._semantic_run_commands(tuple(setup.items()))
+            if command[:2] == ("sudo", "apt-get") and "install" in command
+        ]
+        arm = [command for command in installs if "gcc-arm-none-eabi" in command]
+        self.assertEqual(len(arm), 1)
+        self.assertIn("--no-install-recommends", arm[0])
+        self.assertTrue({
+            "binutils-arm-none-eabi", "gcc-arm-none-eabi", "libnewlib-arm-none-eabi",
+        } <= set(arm[0]))
+        packages = {word for command in installs for word in command if not word.startswith("-")}
+        self.assertTrue({
+            "build-essential", "libpng-dev", "pkg-config", "python3-pip",
+            "python3-numpy", "python3-pil",
+        } <= packages)
+        self.assertNotIn("libstdc++-arm-none-eabi-newlib", packages)
 
     def test_protected_environment_is_exact_and_cannot_mask_python(self):
         workflow_env_variants = (

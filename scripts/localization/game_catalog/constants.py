@@ -20,6 +20,7 @@ REPORT_KIND = "fe8u-game-localization-report"
 BUDGET_KIND = "fe8u-game-localization-budget"
 
 OUTPUT_HEADER_NAME = "game_localization_catalog.h"
+OUTPUT_DECLARATIONS_HEADER_NAME = "game_localization_declarations.h"
 OUTPUT_CONFIG_HEADER_NAME = "localized_game_text_data.h"
 OUTPUT_SOURCE_NAME = "game_localization_catalog.c"
 OUTPUT_REPORT_NAME = "game_localization_report.json"

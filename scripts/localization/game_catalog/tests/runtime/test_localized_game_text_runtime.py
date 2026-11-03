@@ -17,6 +17,7 @@ from scripts.texttools.multilang_codec import build_catalog  # noqa: E402
 from scripts.localization.game_catalog.build import (  # noqa: E402
     generate as generate_game_catalog,
 )
+from scripts.localization.game_catalog.c_emitter import render_declarations  # noqa: E402
 
 RUNTIME_DRIVER = TEST_DIR / "runtime_driver.c"
 ENGLISH_PROBE = TEST_DIR / "layout_english_probe.c"
@@ -160,57 +161,12 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
             encoding="ascii",
         )
         catalog_header.write_text(
-            "#ifndef GUARD_GAME_LOCALIZATION_CATALOG_H\n"
-            "#define GUARD_GAME_LOCALIZATION_CATALOG_H\n\n"
-            "#define GAME_LOCALIZATION_LOCALE_JA 0u\n"
-            "#define GAME_LOCALIZATION_LOCALE_ZH_HANS 1u\n"
-            "#define GAME_LOCALIZATION_LOCALE_COUNT 2u\n\n"
-            "#define GAME_LOCALIZATION_JA_ENABLED 1u\n"
-            "#define GAME_LOCALIZATION_ZH_HANS_ENABLED 0u\n"
-            "#define GAME_LOCALIZATION_JA_DISPLAY_ALIAS_COUNT 1u\n"
-            "#define GAME_LOCALIZATION_ZH_HANS_DISPLAY_ALIAS_COUNT 0u\n\n"
-            "struct GameLocalizationCatalogEntry\n"
-            "{\n"
-            "    const u8 *data;\n"
-            "    u32 compressedSize;\n"
-            "    u32 bitLength;\n"
-            "    u32 maxDecodedBytes;\n"
-            "    u8 present;\n"
-            "    u8 providerKind;\n"
-            "    u8 fallbackKind;\n"
-            "    u8 reserved;\n"
-            "};\n\n"
-            "struct GameLocalizationDisplayAlias\n"
-            "{\n"
-            "    u16 targetId;\n"
-            "    u8 surface;\n"
-            "    u8 reserved;\n"
-            "    const char *text;\n"
-            "};\n\n"
-            "extern const struct GameLocalizationDisplayAlias\n"
-            "    gGameLocalizationJaDisplayAliases[];\n"
-            "extern const struct GameLocalizationDisplayAlias\n"
-            "    gGameLocalizationZhHansDisplayAliases[];\n\n"
-            "struct GameLocalizationLocaleCatalog\n"
-            "{\n"
-            "    const u32 *nodes;\n"
-            "    u32 nodeCount;\n"
-            "    u32 rootIndex;\n"
-            "    const u8 *compressedBlob;\n"
-            "    u32 compressedSize;\n"
-            "    const struct GameLocalizationCatalogEntry *entries;\n"
-            "    u32 entryCount;\n"
-            "    u32 maxDecodedBytes;\n"
-            "    u32 presentCount;\n"
-            "    u32 explicitFallbackCount;\n"
-            "    u32 providerUnavailableCount;\n"
-            "};\n\n"
-            "extern const struct GameLocalizationLocaleCatalog *const\n"
-            "    gGameLocalizationCatalogs[GAME_LOCALIZATION_LOCALE_COUNT];\n\n"
-            "extern const struct GameLocalizationLocaleCatalog\n"
-            "    gGameLocalizationEnglishCatalog;\n\n"
-            "#endif\n",
+            '#include "game_localization_declarations.h"\n'
+            '#include "localized_game_text_data.h"\n',
             encoding="ascii",
+        )
+        (build_dir / "game_localization_declarations.h").write_text(
+            render_declarations(len(JA_MESSAGES), ("ja",)), encoding="ascii",
         )
         english_nodes = ", ".join(
             "0x{:08X}u".format(node) for node in english_catalog.nodes
@@ -233,7 +189,12 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
         source_text = (
             "#include \"global.h\"\n"
             "#include \"localized_game_text.h\"\n"
+            "#include \"localized_game_text_storage.h\"\n"
             "#include \"game_localization_catalog.h\"\n\n"
+            "struct MsgBuffer sMsgString = {{0}};\n"
+            "const u32 gLocalizedGameTextStorageCapacity = sizeof(sMsgString);\n"
+            "const u32 gGameLocalizationJaDisplayAliasCount = 1u;\n"
+            "const u32 gGameLocalizationZhHansDisplayAliasCount = 0u;\n"
             "static const u32 gEnglishNodes[] = {{{english_nodes}}};\n"
             "static const u8 gEnglishCompressed[] = {{{english_blob}}};\n"
             "static const struct GameLocalizationCatalogEntry "

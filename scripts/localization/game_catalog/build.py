@@ -8,7 +8,10 @@ import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Tuple
+
+if TYPE_CHECKING:
+    from .compiled_fonts import SelectedFontMetrics
 
 from scripts.localization.game_locales.controls import (
     ControlSyntaxError,
@@ -45,7 +48,7 @@ from scripts.localization.game_locales.raw_providers import (
 from scripts.texttools.multilang_codec import build_catalog
 from scripts.texttools.multilang_codec.codec import SCHEMA as CODEC_SCHEMA
 
-from .c_emitter import render_config_header, render_header, render_source
+from .c_emitter import render_config_header, render_declarations, render_header, render_source
 from .constants import (
     BUDGET_KIND,
     BUDGET_SCHEMA_VERSION,
@@ -60,6 +63,7 @@ from .constants import (
     LOCALE_POINTER_ARRAY_BYTES,
     OUTPUT_BUDGET_NAME,
     OUTPUT_CONFIG_HEADER_NAME,
+    OUTPUT_DECLARATIONS_HEADER_NAME,
     OUTPUT_HEADER_NAME,
     OUTPUT_REPORT_NAME,
     OUTPUT_SOURCE_NAME,
@@ -776,12 +780,15 @@ def _validate_final_catalog_payloads(
     english_entries,
     portrait_map,
     font_root_path: Path = Path("."),
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Dict[str, int]:
     totals = Counter()
     max_talk_line_width = 0
     for bundle in locale_bundles:
         try:
-            talk_metrics = load_talk_font_metrics(bundle.locale, repo_root=font_root_path)
+            talk_metrics = load_talk_font_metrics(
+                bundle.locale, repo_root=font_root_path, font_metrics=font_metrics,
+            )
         except ControlStreamError as error:
             raise GameCatalogError(str(error)) from error
         for entry in bundle.entries:
@@ -1097,6 +1104,7 @@ def _build_budget(
             "locale_catalog_struct_bytes": len(locale_bundles) * LOCALE_CATALOG_STRUCT_SIZE_BYTES,
             "shared_english_catalog_struct_bytes": LOCALE_CATALOG_STRUCT_SIZE_BYTES,
             "locale_pointer_array_bytes": LOCALE_POINTER_ARRAY_BYTES,
+            "runtime_scalar_bytes": 4 * (len(locale_bundles) + 1),
             "shared_english_bytes": english_estimated_bytes,
             "estimated_total_c_bytes": (
                 total_node_bytes
@@ -1104,6 +1112,7 @@ def _build_budget(
                 + total_entry_bytes
                 + (len(locale_bundles) + 1) * LOCALE_CATALOG_STRUCT_SIZE_BYTES
                 + LOCALE_POINTER_ARRAY_BYTES
+                + 4 * (len(locale_bundles) + 1)
             ),
         },
     }
@@ -1130,6 +1139,7 @@ def build_game_catalog(
     portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
     portrait_root_path: Path = Path("."),
     font_root_path: Path = Path("."),
+    font_metrics: SelectedFontMetrics | None = None,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
@@ -1253,6 +1263,7 @@ def build_game_catalog(
                         entry.encoded_bytes for entry in bundle.entries
                     ),
                     registry=width_registry,
+                    font_metrics=font_metrics,
                 )
                 entries = tuple(
                     replace(entry, encoded_bytes=payload)
@@ -1291,6 +1302,7 @@ def build_game_catalog(
                     for bundle in cjk_locale_bundles
                 },
                 aliases_path=alias_path,
+                font_metrics=font_metrics,
             )
             all_aliases = load_fixed_width_aliases(alias_path)
         except FixedWidthLabelError as error:
@@ -1313,6 +1325,7 @@ def build_game_catalog(
         english_entries=english_entries,
         portrait_map=portrait_map,
         font_root_path=font_root_path,
+        font_metrics=font_metrics,
     )
     try:
         control_validation = validate_event_continuations(
@@ -1433,18 +1446,23 @@ def _write_bytes_if_changed(path: Path, content: bytes) -> bool:
 def write_build(build: GameCatalogBuild, *, output_dir: Path) -> Dict[str, Path]:
     output_dir = Path(output_dir)
     config_header_path = output_dir / OUTPUT_CONFIG_HEADER_NAME
+    declarations_path = output_dir / OUTPUT_DECLARATIONS_HEADER_NAME
     header_path = output_dir / OUTPUT_HEADER_NAME
     source_path = output_dir / OUTPUT_SOURCE_NAME
     report_path = output_dir / OUTPUT_REPORT_NAME
     budget_path = output_dir / OUTPUT_BUDGET_NAME
 
     _write_text_if_changed(config_header_path, render_config_header(build))
+    _write_text_if_changed(
+        declarations_path, render_declarations(build.target_count, build.enabled_locales),
+    )
     _write_text_if_changed(header_path, render_header(build))
     _write_text_if_changed(source_path, render_source(build))
     _write_bytes_if_changed(report_path, canonical_json_bytes(build.report))
     _write_bytes_if_changed(budget_path, canonical_json_bytes(build.budget))
     return {
         "config_header": config_header_path,
+        "declarations_header": declarations_path,
         "header": header_path,
         "source": source_path,
         "report_json": report_path,
@@ -1469,6 +1487,7 @@ def generate(
     authored_paths: Optional[Mapping[str, Path]] = None,
     enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Dict[str, Path]:
     build = build_game_catalog(
         english_texts_path=english_texts_path,
@@ -1485,5 +1504,6 @@ def generate(
         authored_paths=authored_paths,
         enabled_locales=enabled_locales,
         suffix_share=suffix_share,
+        font_metrics=font_metrics,
     )
     return write_build(build, output_dir=output_dir)

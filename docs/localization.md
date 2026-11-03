@@ -27,6 +27,157 @@ they do not create a second registry or change this framework contract.
 
 ## Architecture
 
+### Selected native text inputs and font metrics
+
+Projects can measure their selected native fonts rather than the stock source
+inventory. `make expansion-modern-text-inputs` emits one
+`selected-text-inputs.json` in the selected config/ABI output directory. It
+captures one nonexecuting native Make plan: logical source slots, selected
+physical and compiler-input paths, exact private compiler/preprocessor argv,
+and the selected linker. It neither compiles all units nor emits per-object
+sidecars. Late dependency-file settings and data-preprocessor steps remain part
+of that actual plan.
+Capture reads its own GNU Make invoker's argument vector through Linux procfs
+or macOS `sysctl`, using only Python's standard library. It preserves all
+explicit entrypoint files in order, including spaced paths, and retains the
+original goal-dependent settings without copying the environment. Unreadable
+or malformed invocation data and stdin-only entrypoints fail explicitly rather
+than replaying a different configuration.
+The existing context producer passes GNU Make's literal included-makefile
+names through one temporary transport file, removed after success or failure.
+It is not a cache, source snapshot or second selected-input registry.
+The CLI reconstructs actual source filenames, including repeated spaces and
+quotes, and holds those files old before replay. Unavailable or genuinely
+ambiguous names refuse before any replay; source regeneration must never run.
+All actual included files remain held old, including authored settings with a
+`.d` suffix inside native output. No path/suffix guess drops their protection.
+The CLI constructs argv after reading the transport, keeping the complete
+warm dependency family out of a single shell argument,
+including callers that use GNU Make's `.ONESHELL` recipe mode. Ordinary `-n`
+does not write the temporary transport file.
+Native C and assembly dependency producers write a same-directory staging
+file and publish it only after successful compilation. The filtered SIO
+dependency is likewise published only after filtering succeeds. This reuses
+the existing header/asset dependency publication pattern: a parallel capture
+reads an old complete dependency or its complete replacement, never an
+in-progress compiler flush. Compiler refusal preserves the old dependency
+and remains an explicit build failure; no global serialization or new lock
+is used.
+The same success-only rule holds with `.ONESHELL`: recipe-local fail-fast
+handling prevents a successful rename from masking a compiler refusal.
+The SIO assembler's payload-directory change is confined to its compiler
+subshell. Filtering and publication retain the repository working directory
+for both absolute and relative build roots in either shell mode.
+The plan traverses the actual original goals before completing its selected
+inventory, so inherited target-specific scopes are evaluated by GNU Make,
+not approximated by a goal-name variable or a second variable snapshot.
+Selected source paths come from those native recipes directly; there is no
+parallel source accumulator or selected-C-source-list sidefile. The existing event-list
+recovery producer is held old during capture so its recursive repair cannot
+execute under GNU Make's dry-run exception.
+The same boundary covers the existing non-C link/multiboot preparation.
+All/ELF/ROM and linker-check planning retain C scopes while separating the
+declared assembly inventory; they neither enter recursive asset/profile builds
+nor expand linker library-discovery compiler queries. The shared recursive
+recipe adapter skips child Make commands only in metadata mode, and compound
+recursive checks omit their complete action. Ordinary dry links and real builds
+keep their existing recursive commands and jobserver behavior.
+For measurement builds the existing content-stable context is a prerequisite
+of the selected font objects and localized preprocessing output. A warm change
+to target-private compiler or preprocessor arguments rebuilds those inputs;
+an unchanged context adds no mandatory font recompilation or per-object stamp.
+Ordinary English builds not requesting measurement retain their existing path.
+English/pseudo `localized_game_text.o` builds do not force unused declarations;
+the standalone declaration command remains available for those profiles.
+Real measured builds also read/remake only the existing selected font-data
+asset dependencies on direct catalog/header and inherited-parent requests.
+Changing an owned raw `INCBIN` input rebuilds its preprocessing/object before
+measurement, without bootstrapping the full source inventory. Pure source-only
+capture/declaration, toolchain probes and cleanup do not enter that scan.
+Before a real font build reads old dependency products, the existing catalog
+tool removes only obsolete measured-header edges for those font objects.
+Existing owned products trigger this narrow migration for real native
+consumers, including default and inherited-parent builds.
+Cleanup-only requests use the existing cleanup classification and skip the
+catalog migration helper, so a failed helper cannot prevent build recovery.
+Pure context/declaration requests also leave warm dependency inputs unchanged.
+Pure archival requests reuse the existing `ARCHIVAL_KNOWN_GOALS` and
+`ALL_OBJECTS` inventories: they neither start the native catalog migrator nor
+rewrite unrelated warm modern dependencies. Mixed archival/native requests
+retain native migration and its explicit failure behavior. This is the same
+nonconsumer classification, not another copied goal registry or a cache service.
+Other escaped prerequisites and phony header rules remain intact. This breaks
+pre-split payload/font cycles without discarding real dependencies or requiring
+a global clean.
+Capture still evaluates trusted project Makefiles; it is not an OS sandbox
+for arbitrary authored Make expressions.
+Implicit main Makefiles use GNU Make's normal discovery even with preloaded
+`MAKEFILES`; explicit entrypoints still replay in their actual order.
+The canonical selected outputs identify compiler/preprocessor recipes, so each
+unit records its actual target-scoped tool, not a global program-name match.
+The CLI's older global tool options remain compatibility hints only.
+Data preprocessing and asset-dependency products depend on the actual
+target-scoped preprocessor/scanner files, including changes at the same path.
+Each executable remains one literal Make prerequisite even when its path has
+spaces. Existing metadata mode omits those tool-file edges entirely: capture
+does not need either global or target-private executables to exist, and never
+executes compiler/preprocessor/scanner sentinels. Real builds retain the file
+dependencies and warm rebuilds; no global word-splitting ignore list is used.
+With no explicit goals, capture traverses the actual `.DEFAULT_GOAL` while
+retaining empty `MAKECMDGOALS` for caller conditionals. Native link targets
+report their own selected linker, including private and inherited settings;
+conflicting link selections fail rather than choosing an unrelated global.
+
+Compiler flags and identity consumers share one cached configuration resolver.
+The same locale and identity reach literal targets, public aliases and custom
+inherited parents, without maintaining a second list of build-goal names.
+Public modern goals retain early validation, and cleanup/archival/host-only
+requests do not acquire a new configuration prerequisite.
+Every actual native font object and localized preprocessed input depends on
+the selected context, including English/pseudo direct objects and parents
+that reach capture indirectly or through the default goal. That edge is not
+conditioned on locale or a top-level capture-goal spelling. Changed private/
+inherited flags rebuild the actual font input; an unchanged context preserves
+its object modification time. This does not produce an unused catalog payload.
+
+`make expansion-modern-game-localization-declarations` emits
+`game_localization_declarations.h` from the selected project's message header
+(or the Make graph's late `TEXT_HEADER`, including its real producer) and enabled
+locales alone. It does not need payloads or fonts. The payload and declaration
+writers share that same selected-header expression, so later
+payload generation cannot silently replace a consumer's declared count.
+An incompatible English-source/header range fails explicitly and preserves
+the declarations instead of generating stock-bound fallback output.
+Only the generated catalog
+owns the complete measured CJK `MsgBuffer`; other consumers use its incomplete
+type, preserved legacy prefix and exported capacity. The allocation owner derives
+that CJK capacity from `sizeof(sMsgString)`, not a duplicate Python floor.
+English/pseudo and
+archival storage remain 4 KiB. CJK storage retains its existing `0x1600` floor
+and grows to the actual generated decoded maximum, including its terminator.
+
+`measure_selected_fonts(context_path, output_dir=...)` in
+`scripts/localization/game_catalog/compiled_fonts.py` measures the selected
+renderer ABI and relocatably links both selected font-data slots. Build those
+three object paths from the context before calling it. The typed result has
+System/Talk ASCII maps, enabled regional maps and input references.
+`load_width_metrics`, `apply_width_contract`, `load_talk_font_metrics`,
+`build_fixed_width_label_metrics`, and `build_game_catalog` accept its optional
+`font_metrics` argument. Without it their existing source-derived path remains.
+
+The normal localized catalog Make recipe builds just those font inputs and
+passes `--compile-context` through the existing CLI. This foundation does not
+add an all-source native scan on every catalog build, validate retained message
+references/events, qualify English decoder safety, or regenerate glyph corpora.
+It adds no feature flag, locale, save/epoch change, toolchain service or archival
+prerequisite. Missing/malformed ARM facts and stale/no-output compiler or linker
+results are errors, never measurements. Compiler-dependent Make-generation
+scenarios run in the existing ARM-equipped debug linker group; source-derived
+catalog and host-C/runtime coverage stays independent of ARM GCC. See
+[`TC-TEXT-NATIVE-METRICS-001`](test-cases/core-framework.md#tc-text-native-metrics-001-capture-selected-native-fonts-without-a-payload-cycle).
+
+### Existing runtime layers
+
 The framework is layered, each layer independently testable:
 
 1. **Stable ID contract** (`scripts/localization/schema.py`,

@@ -26,15 +26,31 @@ def recursive_make_targets(rule: str) -> tuple[str, ...]:
     targets = []
     for line in rule.splitlines():
         stripped = line.strip()
-        if not stripped.startswith("+$(MAKE) "):
+        invocation = re.match(r"\+\$\(([A-Za-z0-9_]+)\)\s+(.*)", stripped)
+        if invocation is None:
             continue
-        for word in stripped.split()[1:]:
+        for word in invocation.group(2).split():
             if word.startswith("expansion-modern-"):
                 targets.append(word)
                 continue
             if "=" in word:
                 break
     return tuple(dict.fromkeys(targets))
+
+
+def recursive_make_definitions(database: str, rules: list[str]) -> str:
+    definitions = {}
+    for rule in rules:
+        for line in rule.splitlines():
+            invocation = re.match(r"\s*\+\$\(([A-Za-z0-9_]+)\)\s+", line)
+            if invocation is None or invocation.group(1) == "MAKE":
+                continue
+            name = invocation.group(1)
+            value = make_database_variable(database, name)
+            if value is None:
+                raise AssertionError(f"recursive recipe variable is not defined: {name}")
+            definitions[name] = value
+    return "\n".join(f"{name} = {value}" for name, value in definitions.items())
 
 
 class ArchivalDependencyFixture:
@@ -493,9 +509,11 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
                 + " ".join((headroom_target, *helper_targets))
                 + "\n"
             )
-            for target in (*helper_targets, headroom_target):
-                rule = make_database_rule(database, target)
-                self.assertIsNotNone(rule, target)
+            rules = [make_database_rule(database, target)
+                     for target in (*helper_targets, headroom_target)]
+            self.assertTrue(all(rule is not None for rule in rules))
+            makefile.write(recursive_make_definitions(database, rules) + "\n\n")
+            for rule in rules:
                 makefile.write(rule + "\n\n")
             makefile.write(
                 "expansion-modern-rom:\n"
@@ -522,6 +540,8 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         fixture.scan_log.unlink(missing_ok=True)
         control = fixture.make(
             headroom_target,
+            "asm/scan_fixture.o",
+            "src/data/scan_fixture.o",
             "NODEP=",
             "ARCHIVAL_SCANINC_NODEP=",
             "MAKECMDGOALS_NOSCANINC=expansion-modern-localization-profile-headroom-check",
@@ -626,7 +646,10 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         include = fixture.root / "include/native.inc"
         include.write_text(".byte 1\n", encoding="utf-8")
         with (fixture.root / "Makefile").open("a", encoding="utf-8") as makefile:
-            makefile.write("\n" + "\n\n".join(rules) + "\n")
+            makefile.write(
+                "\n" + recursive_make_definitions(database, rules) + "\n"
+                + "\n\n".join(rules) + "\n",
+            )
             makefile.write(dedent("""\
                 .PHONY: expansion-modern-boot-check expansion-modern-legacy-ready
                 expansion-modern-boot-check: expansion-modern-legacy-ready
