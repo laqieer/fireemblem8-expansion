@@ -132,8 +132,32 @@ CH02 remains pixel/framebuffer-identical. These are native emulator pixels,
 not a CPU-reconstructed screenshot or a refreshed golden hash. Supplementary
 PNGs can be exported through libmGBA's existing screenshot API. They depict
 instrumented, isolated native modules, not a selected supported game or
-manual artistic acceptance. A game profile, actual movement/EVT coordinates,
+manual artistic acceptance. A game profile, production movement/EVT coordinates,
 portrait/static-art consumers and complete visual qualification remain open.
+
+The mobility subcase links the existing generated `movecost` synthetic
+object for CommonT2, Civilian and Fly normal profiles. It runs the original
+terrain lookup, movement-cost setup and handwritten ARM flood code, loaded
+by `StoreRoutinesToIRAM`; the actual dispatch pointer must match that
+relocation inside IWRAM. Aligned padded map rows are fixture-owned input,
+not a replacement flood routine or exposure of the private map initializer.
+
+For each chapter, inspect all 192 cells for the three real profiles plus
+an enemy-collision control. Starts are CH00 `(2,4)` and CH02 `(7,4)`; the
+owned enemy `0x81` blocks CH00 `(4,3)` or CH02 `(7,5)` against actor index
+`1`. Independent weighted-path expectations use only converted map bytes,
+the original Fort terrain lookup and typed movement-cost JSON, never
+the native movement result. The ordinary reachable blocker becomes
+unreachable with collision; removing the actor collision input must fail.
+Unscaled CH00 changes its native costs while every CH02 matrix stays equal.
+Existing map records, pixel expectations and frame/resource bounds remain.
+
+**Retained route warning:** in the current terrain state CH02 `(7,10)` is
+unreachable from `(7,4)` for the ordinary profile, independently confirmed
+by source/native cost matrices. Using adjacent `(7,5)` for an owned
+collision control does not fix that source route or qualify actual EVT
+coordinates. Real project classes/units, events, door changes and playable
+routes remain outside this instrumented module.
 
 **Not yet qualified:** selected-game map/palette/movement/coordinate
 consumers and screenshots, required early portrait packages,

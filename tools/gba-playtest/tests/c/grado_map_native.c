@@ -2,6 +2,7 @@
 
 #include "agb_sram.h"
 #include "bmmap.h"
+#include "bmidoten.h"
 #include "bmsave.h"
 #include "chapterdata.h"
 #include "hardware.h"
@@ -48,6 +49,26 @@ struct GradoMapProbe
 };
 
 EWRAM_DATA volatile struct GradoMapProbe gGradoMapProbe;
+#ifdef GRADO_MOVEMENT
+struct GradoMovementRecord
+{
+    u32 chapter;
+    u32 profile;
+    u32 collision;
+    u8 cells[16 * 12];
+};
+
+struct GradoMovementProbe
+{
+    u32 phase;
+    u32 count;
+    struct GradoMovementRecord records[8];
+};
+
+EWRAM_DATA volatile struct GradoMovementProbe gGradoMovementProbe;
+static u32 sMovementMaps[3][72];
+static u8 * sMovementRows[3][16];
+#endif
 EWRAM_DATA u8 gGenericBuffer[0x2000];
 CONST_DATA struct ExtraMapInfo * gExtraMapInfo;
 /* Decompress's legacy data section retains unused audio callbacks; those trap below. */
@@ -128,6 +149,67 @@ u32 GetExtraMapMapSize(void)
     UnexpectedRoute();
 }
 
+#ifdef GRADO_MOVEMENT
+static void ProbeMovement(void)
+{
+    const s8 * costs[] = {
+        TerrainTable_MovCost_CommonT2Normal,
+        TerrainTable_MovCost_CivilianNormal,
+        TerrainTable_MovCost_FlyNormal,
+    };
+    const u8 starts[2][2] = {{2, 4}, {7, 4}};
+    const u8 blockers[2][2] = {{4, 3}, {7, 5}};
+    volatile struct GradoMovementRecord * record;
+    unsigned int map;
+    unsigned int profile;
+    unsigned int grid;
+    unsigned int x;
+    unsigned int y;
+
+    StoreRoutinesToIRAM();
+    gGradoMovementProbe.phase = 1;
+    for (map = 0; map < 2; ++map)
+    {
+        UnpackChapterMap(gBmMapBuffer, map * 2);
+        InitBaseTilesBmMap();
+        if (gBmMapSize.x != 16 || gBmMapSize.y != 12)
+            UnexpectedRoute();
+        for (grid = 0; grid < 3; ++grid)
+            for (y = 0; y < 16; ++y)
+                sMovementRows[grid][y] = (u8 *)sMovementMaps[grid] + y * 18;
+        gBmMapTerrain = sMovementRows[0] + 2;
+        gBmMapMovement = sMovementRows[1] + 2;
+        gBmMapUnit = sMovementRows[2] + 2;
+        BmMapFill(gBmMapUnit, 0);
+        BmMapFill(gBmMapTerrain, 0);
+        for (y = 0; y < 12; ++y)
+            for (x = 0; x < 16; ++x)
+                gBmMapTerrain[y][x] = GetTrueTerrainAt(x, y);
+        for (profile = 0; profile < 4; ++profile)
+        {
+            if (profile < 3)
+                GenerateExtendedMovementMap(starts[map][0], starts[map][1], costs[profile]);
+            else
+            {
+                gBmMapUnit[blockers[map][1]][blockers[map][0]] = 0x81;
+                SetWorkingMoveCosts(costs[0]);
+                SetWorkingBmMap(gBmMapMovement);
+                GenerateMovementMap(starts[map][0], starts[map][1], MAP_MOVEMENT_EXTENDED, 1);
+            }
+            record = &gGradoMovementProbe.records[gGradoMovementProbe.count];
+            record->chapter = map * 2;
+            record->profile = profile < 3 ? profile : 0;
+            record->collision = profile == 3;
+            for (y = 0; y < 12; ++y)
+                for (x = 0; x < 16; ++x)
+                    record->cells[y * 16 + x] = gBmMapMovement[y][x];
+            gGradoMovementProbe.count++;
+        }
+    }
+    gGradoMovementProbe.phase = 2;
+}
+#endif
+
 void AgbMain(void)
 {
     const u8 coordinates[2][5][2] = {
@@ -165,6 +247,9 @@ void AgbMain(void)
             record->terrain[sample] = GetTrueTerrainAt(x, y);
         }
     }
+#ifdef GRADO_MOVEMENT
+    ProbeMovement();
+#endif
 #ifdef GRADO_RENDER_CHAPTER
     gGradoMapProbe.phase = 3;
     gPlaySt.chapterIndex = GRADO_RENDER_CHAPTER;
