@@ -206,6 +206,53 @@ layout, defaults, epoch, feature flag or persistent allocation changes.
 The existing ARM-enabled module invocation covers this case; no new job,
 timeout, framework service or registry is introduced.
 
+## TC-GRADO-SAVE-PATHS-001
+
+This `TEST-SAVELOAD` / `TEST-SUSPEND` subcase extends the same ARM/libmGBA
+module builder to the original whole writer/loader paths. It uses owned
+valid generic unit/class/item providers, not the unfinished Grado roster.
+All save, flag, unit, world-map, preference, SRAM and handwritten ARM checksum
+functions come from their original source owners; no function is stubbed.
+The existing `gbagfx` helper builds only the original data required for linking.
+
+1. With the compatibility case's toolchain/emulator prerequisites, run
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
+   The additional whole-save case must execute at epochs 2 and 256, not skip.
+2. For every normal slot 0..2, prepare a current owned image and valid native
+   unit/play state. Use `permanent[i] = 0xA5 ^ (29*i) ^ (7*input)` and
+   `chapter[i] = 0x5A ^ (17*i) ^ (7*input)`, reduced to eight bits.
+   Call original `WriteGameSave` and require `ReadSaveBlockInfo` acceptance.
+   Clobber live permanent flags, gold/chapter and the first complete unit,
+   then call `ReadGameSave`.
+   All 25 permanent bytes, saved gold/chapter and unit identity, class,
+   level 7, experience 33 and position (2,3) return; chapter flags stay intact.
+3. Create a valid backing normal slot, then call original `WriteSuspendSave`
+   twice through its real alternating-slot selection. Validate the selected
+   Suspend with the original API, clobber both flag scopes and live state,
+   then call `ReadSuspendSave`. Both physical slots 3 and 4 must execute and
+   restore every permanent/chapter byte and the saved play/unit observations.
+4. After each valid path, flip one stored permanent byte. The original block
+   checksum validator must now refuse without changing any of the owned
+   32 KiB input image. Restore the byte. This checks native recognition of
+   corruption, not refusal by the unchecked raw loader or a new load policy.
+5. Inspect all five distinct records per epoch and measured ROM/EWRAM/IWRAM.
+   Omit actual permanent restores from the normal/Suspend call chains: all
+   five paths fail. Omit only the chapter restore: both Suspend paths fail.
+   Restore the original functions before running the complete module.
+
+The existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds remain.
+Native normal loading intentionally invalidates Suspend metadata; the case
+does not falsely require the whole image to remain unchanged on a valid load.
+All original compatibility/transfer cases still execute. Cleanup removes only
+owned temporary modules; no user save or clean ROM is used.
+
+**Boundary:** this qualifies representative original whole-function
+save/load and block-checksum paths with controlled native data, not cartridge
+bus timing, complete game state, strict Grado semantic/legacy loading,
+producer checkpoints/recovery/resources, retirement, guide UI or supported
+game/debug/release/locale profiles. No production source, default, format,
+epoch, allocation or framework gate changes.
+
 ## TC-GRADO-ALLOCATION-001
 
 ### Complete campaign bindings

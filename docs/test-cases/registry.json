@@ -75,7 +75,8 @@
         "TC-GRADO-GUIDE-001",
         "TC-GRADO-STATE-VALUES-001",
         "TC-GRADO-SAVE-COMPAT-001",
-        "TC-GRADO-SAVE-FLAGS-001"
+        "TC-GRADO-SAVE-FLAGS-001",
+        "TC-GRADO-SAVE-PATHS-001"
       ]
     },
     {
@@ -962,6 +963,34 @@
       "save_compatibility": "No production source, save layout, default envelope/epoch or allocation changes. Raw byte vectors are owned native transfer inputs, not legal semantic Grado histories or a new save blob/profile.",
       "cleanup": "Only the module's owned temporary compiler/ROM/capture directory; never load or rewrite user saves.",
       "limitations": "Flag-transfer primitives only, not complete normal/Suspend entrypoints or block metadata/checksums, cartridge bus, producer-sensitive recovery/resources, guide consumers, legal state combinations or selected-game/profile qualification.",
+      "automation": [
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-SAVE-PATHS-001",
+      "title": "Execute original normal and Suspend writer/loader paths",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-save-paths-001",
+      "profiles": [
+        "Owned native ARM/AAPCS release modules at epochs 2 and 256"
+      ],
+      "purpose": "Qualify representative original whole save/load and native block-checksum paths beyond direct flag serializers, without activating Grado loading policy.",
+      "prerequisites": "Existing compatibility-case ARM/libmGBA tools and normal source-build dependencies. The existing gbagfx helper builds only required original text/tree and map data; no ROM or user save is needed.",
+      "actions": "Run env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v. For all three normal and both alternated physical Suspend slots use original writers, native block validation, live flag/gold/unit clobbers and original loaders. Flip a stored permanent byte after each valid path and recheck the original checksum validator and complete 32 KiB input image.",
+      "expected_result": "All five distinct records per epoch restore every applicable flag byte and saved gold/chapter, identity/class, level 7, experience 33 and position (2,3). Normal loading preserves chapter flags; Suspend restores them. Native-written blocks validate; payload corruption refuses without altering input bytes. Original compatibility/transfer records and existing 120-frame/ROM/RAM bounds remain.",
+      "negative_control": "Omitting actual normal/Suspend permanent-restore calls fails all five native paths; omitting chapter restoration fails both physical Suspend paths at both epochs. Live clobbers prevent no-op readers from passing; host-only skipping is not native evidence. Restore original production calls after mutation controls.",
+      "interactions": "Reuses the existing module builder and ARM-enabled CI invocation. All production functions and handwritten ARM checksum code are original; generic owned data providers are not the Grado roster. No new framework flag, service, job or deadline.",
+      "save_compatibility": "No production source, save ABI, default epoch/envelope or project allocation changes. Epoch 2 is the default control; 256 is an unselected candidate module, not a released game profile.",
+      "cleanup": "Remove only owned temporary build/capture directories. Restore mutation controls; never access user saves or cartridge images.",
+      "limitations": "Representative whole functions and native corruption recognition only, not cartridge-bus timing, complete game state, strict semantic/legacy routing, producer/checkpoint/resource/recovery/retirement/guide UI or selected-game/profile qualification. Valid normal loading may invalidate Suspend metadata by design.",
       "automation": [
         {
           "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v",

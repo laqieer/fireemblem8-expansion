@@ -53,9 +53,51 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
             )
 
     def test_native_compatible_and_refused_histories_preserve_all_input_bytes(self):
+        self._native_case(full_paths=False)
+
+    def test_native_whole_normal_and_suspend_paths_restore_saved_state(self):
+        self._native_case(full_paths=True)
+
+    def _native_case(self, *, full_paths):
         tools = _selected_tools(os.environ)
         boot = ROOT / "scripts/localization/game_catalog/tests/runtime/module_native_boot.S"
-        driver = ROOT / "tools/gba-playtest/tests/c/grado_save_compat_native.c"
+        driver = ROOT / "tools/gba-playtest/tests/c" / (
+            "grado_save_paths_native.c" if full_paths else "grado_save_compat_native.c"
+        )
+        sources = [
+            ROOT / "src/bmsave-lib.c", ROOT / "src/bmlib.c", ROOT / "src/eventinfo.c",
+            ROOT / "src/agb_sram.c",
+        ]
+        assembly = [
+            (ROOT / "src/rom_header.s", "header.o"), (boot, "boot.o"),
+            (ROOT / "src/libagbsyscall.s", "syscalls.o"),
+        ]
+        if full_paths:
+            self.run_command(["make", "-C", ROOT / "tools/gbagfx"], cwd=ROOT)
+            self.run_command([
+                "make", "src/msg_data.c",
+                "graphics/misc/gImg_WorldmapNodeRevealEffect.4bpp.lz",
+                "graphics/misc/gPal_WorldmapNodeRevealEffect.gbapal",
+                "graphics/misc/Img_GmapPath.4bpp.lz",
+                *(
+                    "graphics/misc/" + name + ".4bpp" for name in (
+                        "gUnknown_08A97FA4", "gUnknown_08A98104", "gUnknown_08A9819C",
+                        "gUnknown_08A982D4", "gUnknown_08A985FC",
+                    )
+                ),
+            ], cwd=ROOT)
+            sources.extend(ROOT / "src" / (name + ".c") for name in (
+                "bmsave", "bmsave-bwl", "bmsave-gmap", "bmunit", "bmdifficulty",
+                "bmcontainer", "bmmind", "time", "uimenu", "expansion_ui_prefs",
+                "expansion_save_prefs", "rng", "bm", "bmitem", "worldmap_path",
+                "banim_presentation", "bmtrick", "hardware", "event", "bmmap", "msg_data",
+            ))
+            assembly.extend((
+                (ROOT / "asm/arm.s", "arm.o"),
+                (ROOT / "asm/arm_call.s", "arm_call.o"),
+                (ROOT / "src/data/worldmap/anim_worldmap_sprite.s", "worldmap-data.o"),
+            ))
+        sources.append(driver)
         driver_flags = (
             ["-B" + str((ROOT / os.environ["MODERN_BINUTILS_DIR"]).absolute()) + "/"]
             if os.environ.get("MODERN_BINUTILS_DIR") else []
@@ -87,10 +129,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types",
                 ]
                 objects = []
-                for source in (
-                    ROOT / "src/bmsave-lib.c", ROOT / "src/bmlib.c", ROOT / "src/eventinfo.c",
-                    ROOT / "src/agb_sram.c", driver,
-                ):
+                for source in sources:
                     target = (work / source.relative_to(ROOT)).with_suffix(".o")
                     target.parent.mkdir(parents=True, exist_ok=True)
                     selected = flags
@@ -102,10 +141,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                         [tools["MODERN_CC"], *selected, "-c", source, "-o", target], cwd=ROOT,
                     )
                     objects.append(target)
-                for source, name in (
-                    (ROOT / "src/rom_header.s", "header.o"), (boot, "boot.o"),
-                    (ROOT / "src/libagbsyscall.s", "syscalls.o"),
-                ):
+                for source, name in assembly:
                     target = work / name
                     self.run_command([
                         tools["MODERN_CC"], *driver_flags, "-mcpu=arm7tdmi", "-mthumb-interwork",
@@ -177,6 +213,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     *(["--remove-section=.data"] if empty_data else []), elf, rom,
                 ], cwd=work)
                 self.assertLessEqual(rom.stat().st_size, 1024 * 1024)
+                if full_paths:
+                    self._assert_native_save_paths(epoch, work, tools, elf, rom)
+                    continue
                 _, size = resolve_elf_symbol(elf, "gGradoSaveCompatProbe", tools["MODERN_NM"])
                 self.assertEqual(size, 16 + 13 * 12)
                 _, flag_size = resolve_elf_symbol(elf, "gGradoSaveFlagsProbe", tools["MODERN_NM"])
@@ -268,3 +307,49 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         for name in ("ReadSramFast", "VerifySramFast", "VerifySramValueFast")
                     },
                 }))
+
+    def _assert_native_save_paths(self, epoch, work, tools, elf, rom):
+        _, size = resolve_elf_symbol(elf, "gGradoSavePathProbe", tools["MODERN_NM"])
+        self.assertEqual(size, 8 + 5 * 36)
+        scenario = work / "scenario.json"
+        scenario.write_text(json.dumps({
+            "schema_version": 1, "name": "grado-original-save-paths", "frames": [],
+            "checkpoints": [{
+                "name": "original-normal-and-suspend", "frame": 120, "framebuffer": False,
+                "probes": [
+                    {"address": f"gGradoSavePathProbe+0x{offset:x}", "size": 4}
+                    for offset in range(0, size, 4)
+                ],
+            }],
+        }), encoding="utf-8")
+        output = work / "capture.json"
+        self.run_command([
+            sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
+            "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
+            "--scenario", scenario, "--output", output,
+        ], cwd=ROOT)
+        capture = json.loads(output.read_text())
+        values = {
+            probe["address"]: int(probe["value"], 16)
+            for probe in capture["checkpoints"][0]["probes"]
+        }
+        data = b"".join(
+            values[f"gGradoSavePathProbe+0x{offset:x}"].to_bytes(4, "little")
+            for offset in range(0, size, 4)
+        )
+        self.assertEqual(struct.unpack_from("<2I", data), (2, 5))
+        records = [struct.unpack_from("<9I", data, 8 + index * 36) for index in range(5)]
+        results = {record[0]: record[1:] for record in records}
+        self.assertEqual(len(results), 5)
+        self.assertEqual(results, {slot: (1,) * 8 for slot in range(5)})
+        resources = {
+            name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
+            - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])
+            for name in ("data", "ewram", "iwram")
+        }
+        print(json.dumps({
+            "epoch": epoch, "profile": "native release whole-save module",
+            "rom_bytes": rom.stat().st_size, "records": records,
+            "ewram_bytes": resources["data"] + resources["ewram"],
+            "iwram_bytes": resources["iwram"],
+        }))
