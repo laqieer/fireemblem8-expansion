@@ -2807,6 +2807,10 @@ growth and use the greatest observed value, not a sum of repeated measurements.
 Missing measurements and overages reject.
 The raw checker pins whitespace/diff/config behavior, disables hooks/fsmonitor/
 textconv/external diff, bounds object/output bytes, and rechecks Git after checks.
+The object-content bound is4MiB per complete old/new blob pair, so a full PR
+may contain several individually bounded pairs without omitting any file.
+Delegated `task_changes` still enforces its separate4MiB aggregate assignment
+budget; coordinator full-PR validation does not replace that budget.
 Combined stdout/stderr is bounded to 4 MiB and raw processes to 30 seconds.
 
 ### Rotation, watchers and preserved recovery

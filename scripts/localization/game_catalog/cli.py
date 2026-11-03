@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
+import os
+import re
+import shlex
+import struct
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from scripts.localization.game_locales.authored import (
     AuthoredCatalogError,
     check_authored_catalogs,
 )
 from scripts.localization.game_locales.fixed_width_labels import ALIASES_PATH
+from scripts.localization.game_locales.coverage import load_fe8u_target_ids
+from scripts.localization.game_locales.mapping import MappingError
 from scripts.localization.game_locales.width_contract import DEFAULT_WIDTH_REGISTRY_PATH
 
 from .build import (
@@ -29,7 +38,10 @@ from .build import (
     GameCatalogError,
     build_game_catalog,
     write_build,
+    _normalize_enabled_locales,
 )
+from .c_emitter import render_declarations
+from .compiled_fonts import measure_selected_fonts
 from .constants import CJK_LOCALE_IDS, LOCALE_IDS
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
@@ -76,6 +88,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
+    parser.add_argument(
+        "--compile-context", type=Path,
+        help="measure fonts through the selected native Make context",
+    )
     parser.add_argument("--eu-mapping", type=Path, default=DEFAULT_EU_MAPPING_PATH)
     parser.add_argument("--eu-indexed", action="append", metavar="LOCALE=PATH")
     parser.add_argument("--eu-authored", action="append", metavar="LOCALE=PATH")
@@ -167,6 +183,10 @@ def _build_from_args(args: argparse.Namespace):
     )
     if inherited:
         check_authored_catalogs(Path("."), locales=inherited)
+    font_metrics = None
+    if args.compile_context is not None:
+        with TemporaryDirectory(prefix="selected-font-metrics-") as directory:
+            font_metrics = measure_selected_fonts(args.compile_context, output_dir=Path(directory))
     return build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
@@ -184,6 +204,7 @@ def _build_from_args(args: argparse.Namespace):
         authored_paths=authored_paths,
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),
+        font_metrics=font_metrics,
     )
 
 
@@ -280,6 +301,321 @@ def _write_bytes_if_changed(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists() or path.read_bytes() != content:
         path.write_bytes(content)
+
+def cmd_declare(args: argparse.Namespace) -> int:
+    try:
+        target_count = len(load_fe8u_target_ids(args.target_header))
+    except MappingError as error:
+        raise GameCatalogError(str(error)) from error
+    locales = (
+        _normalize_enabled_locales(args.enabled_locales) if args.enabled_locales.strip() else ()
+    )
+    _write_bytes_if_changed(
+        args.output, render_declarations(target_count, locales).encode("utf-8"),
+    )
+    return 0
+
+
+def _prune_measured_font_dependencies(data: bytes) -> bytes:
+    lines = []
+    changed = False
+
+    def obsolete(token):
+        decoded = re.sub(rb"\\(.)", rb"\1", token)
+        return decoded.rsplit(b"/", 1)[-1] == b"localized_game_text_data.h"
+
+    for line in data.replace(b"\\\r\n", b" ").replace(b"\\\n", b" ").splitlines():
+        escaped = False
+        separator = None
+        for index, value in enumerate(line):
+            if escaped:
+                escaped = False
+            elif value == ord("\\"):
+                escaped = True
+            elif value == ord(":"):
+                separator = index
+                break
+        if separator is None or line.lstrip().startswith(b"#"):
+            lines.append(line)
+            continue
+        targets = re.findall(rb"(?:\\.|[^\s\\])+", line[:separator])
+        dependencies = re.findall(rb"(?:\\.|[^\s\\])+", line[separator + 1:])
+        kept_targets = [token for token in targets if not obsolete(token)]
+        kept_dependencies = [token for token in dependencies if not obsolete(token)]
+        if kept_targets == targets and kept_dependencies == dependencies:
+            lines.append(line)
+        else:
+            changed = True
+            if kept_targets:
+                lines.append(b" ".join(kept_targets) + b": " + b" ".join(kept_dependencies))
+    return b"\n".join(lines) + b"\n" if changed else data
+
+
+def cmd_prune_native_font_dependencies(args: argparse.Namespace) -> int:
+    for object_path in args.objects:
+        if object_path.suffix != ".o":
+            raise GameCatalogError(f"{object_path}: expected a native font object path")
+        for suffix in (".d", ".headers.d"):
+            path = object_path.with_suffix(suffix)
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise GameCatalogError(f"{path}: native font dependencies are unreadable: {error}") from error
+            updated = _prune_measured_font_dependencies(data)
+            if updated != data:
+                temporary = path.with_name(path.name + ".native.tmp")
+                try:
+                    temporary.write_bytes(updated)
+                    temporary.replace(path)
+                except OSError as error:
+                    raise GameCatalogError(f"{path}: cannot migrate native font dependencies: {error}") from error
+                finally:
+                    temporary.unlink(missing_ok=True)
+    return 0
+
+
+def _invocation_arguments(pid: int) -> list[str]:
+    if pid <= 0:
+        raise GameCatalogError("native Make invocation requires a positive process ID")
+    try:
+        if sys.platform == "darwin":
+            native = ctypes.CDLL(None, use_errno=True).sysctl
+            native.argtypes = (
+                ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t,
+            )
+            native.restype = ctypes.c_int
+
+            def read(selector, value, size):
+                if native((ctypes.c_int * len(selector))(*selector), len(selector),
+                          value, ctypes.byref(size), None, 0) != 0:
+                    error = ctypes.get_errno()
+                    raise OSError(error, os.strerror(error))
+
+            maximum = ctypes.c_int()
+            size = ctypes.c_size_t(ctypes.sizeof(maximum))
+            read((1, 8), ctypes.byref(maximum), size)  # CTL_KERN, KERN_ARGMAX
+            if size.value != ctypes.sizeof(maximum) or maximum.value <= 0:
+                raise GameCatalogError("native Make argument capacity is malformed")
+            data = ctypes.create_string_buffer(maximum.value)
+            size = ctypes.c_size_t(len(data))
+            read((1, 49, pid), data, size)  # CTL_KERN, KERN_PROCARGS2
+            if size.value > len(data):
+                raise GameCatalogError("native Make argument vector exceeds its buffer")
+            raw = data.raw[:size.value]
+            if len(raw) < 4:
+                raise GameCatalogError("native Make invocation is truncated")
+            count = struct.unpack_from("=i", raw)[0]
+            executable_end = raw.find(b"\0", 4)
+            if executable_end < 0:
+                raise GameCatalogError("native Make executable is unterminated")
+            values = raw[executable_end + 1:].lstrip(b"\0").split(b"\0")
+            if count <= 0 or len(values) <= count:
+                raise GameCatalogError("native Make argument vector is truncated")
+            arguments = [os.fsdecode(value) for value in values[:count]]
+        else:
+            data = Path(f"/proc/{pid}/cmdline").read_bytes()
+            if not data.endswith(b"\0"):
+                raise GameCatalogError("native Make argument vector is truncated")
+            arguments = [os.fsdecode(value) for value in data.split(b"\0")[:-1]]
+    except OSError as error:
+        raise GameCatalogError(f"native Make invocation is unreadable: {error}") from error
+    if not arguments:
+        raise GameCatalogError("native Make invocation is empty")
+    return arguments
+
+
+def _invocation_makefiles(pid: int) -> list[str]:
+    arguments = _invocation_arguments(pid)
+    files = []
+    index = 1
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            break
+        option, separator, value = argument.partition("=")
+        if option.startswith("--") and any(
+                name.startswith(option) for name in ("--file", "--makefile")):
+            if not separator:
+                index += 1
+                if index >= len(arguments):
+                    raise GameCatalogError("native Make entrypoint has no filename")
+                value = arguments[index]
+            files.append(value)
+        elif argument in (
+            "--directory", "--eval", "--include-dir", "--old-file", "--assume-old",
+            "--what-if", "--new-file", "--assume-new",
+        ):
+            index += 1
+        elif argument.startswith("-") and not argument.startswith("--"):
+            for position, flag in enumerate(argument[1:], 1):
+                if flag == "f":
+                    value = argument[position + 1:]
+                    if not value:
+                        index += 1
+                        if index >= len(arguments):
+                            raise GameCatalogError("native Make entrypoint has no filename")
+                        value = arguments[index]
+                    files.append(value)
+                    break
+                if flag in "CEIoW":
+                    if position + 1 == len(argument):
+                        index += 1
+                    break
+                if flag in "jlO":
+                    break
+        index += 1
+    if any(path == "-" or not Path(path).is_file() for path in files):
+        raise GameCatalogError("native Make capture cannot replay an unavailable entrypoint")
+    return files
+
+
+def _included_makefiles(path: Path) -> list[str]:
+    try:
+        raw = os.fsdecode(path.read_bytes())
+    except OSError as error:
+        raise GameCatalogError(f"native Make file list is unreadable: {error}") from error
+    spans = list(re.finditer(r"[^ \t\r\n]+", raw))
+    partitions: list[list[tuple[str, ...]]] = [[] for _ in range(len(spans) + 1)]
+    partitions[-1] = [()]
+    for start in range(len(spans) - 1, -1, -1):
+        for end in range(start + 1, len(spans) + 1):
+            candidate = raw[spans[start].start():spans[end - 1].end()]
+            if not Path(candidate).parent.is_dir():
+                break
+            if Path(candidate).is_file():
+                partitions[start].extend(
+                    (candidate, *tail) for tail in partitions[end]
+                )
+                if len(partitions[start]) > 1:
+                    break
+    if len(partitions[0]) != 1:
+        raise GameCatalogError("native Make file list is unavailable or ambiguous; cannot safely replay")
+    return list(partitions[0][0])
+
+
+def cmd_describe_make_context(args: argparse.Namespace) -> int:
+    if args.invoker_level is not None and args.invoker_level < 0:
+        raise GameCatalogError("native Make invocation level must be nonnegative")
+    command = args.make_argv[1:] if args.make_argv[:1] == ["--"] else args.make_argv
+    if not command:
+        raise GameCatalogError("native text context requires the actual Make plan command")
+    included = _included_makefiles(args.makefile_list_file) if args.makefile_list_file else []
+    if args.invoker_pid is not None:
+        makefiles = _invocation_makefiles(args.invoker_pid)
+        included.extend(makefiles)
+        if makefiles:
+            flags = [argument for path in makefiles for argument in ("-f", path)]
+            if "-f" in command:
+                position = command.index("-f")
+                command[position:position + 2] = flags
+            else:
+                command[1:1] = flags
+    command[1:1] = [argument for path in dict.fromkeys(included) for argument in ("-o", path)]
+    if args.invoker_goals is not None:
+        command.append("MAKECMDGOALS=" + args.invoker_goals)
+    environment = None
+    if args.invoker_level is not None:
+        environment = {**os.environ, "MAKELEVEL": str(args.invoker_level)}
+    planned = subprocess.run(command, capture_output=True, text=True, check=False, env=environment)
+    if planned.returncode:
+        raise GameCatalogError("native Make compile plan failed:\n" + planned.stdout + planned.stderr)
+    lines = planned.stdout.replace("\\\n", " ").splitlines()
+
+    def words(line):
+        try:
+            return shlex.split(line)
+        except ValueError as error:
+            raise GameCatalogError("native Make emitted invalid command quoting") from error
+
+    def inventory(marker):
+        rows = [words(line) for line in lines if line.startswith(": " + marker + " ")]
+        if len(rows) != 1:
+            raise GameCatalogError(f"native Make must report exactly one {marker} inventory")
+        return rows[0][2:]
+
+    selected = inventory("fe8-selected-text-objects")
+    data_objects = set(inventory("fe8-selected-text-data"))
+    assembly_objects = set(inventory("fe8-selected-text-assembly"))
+    scoped_linkers = {
+        tuple(words(line)[2:]) for line in lines
+        if line.startswith(": fe8-selected-text-linker ")
+    }
+    if len(scoped_linkers) > 1:
+        raise GameCatalogError("native Make selected conflicting linker scopes")
+    linkers = (next(iter(scoped_linkers)) if scoped_linkers else
+               inventory("fe8-selected-text-linker-default"))
+    if len(selected) < 2:
+        raise GameCatalogError("native Make selected C inventory is empty")
+    root, *objects = selected
+    if assembly_objects & set(objects):
+        raise GameCatalogError("native Make C and assembly inventories overlap")
+
+    def quoted_forms(value):
+        return (value, '"' + value + '"', "'" + value + "'")
+
+    object_outputs = {value for path in objects for value in quoted_forms(path)}
+    compiler = {}
+    preprocessors = {}
+    for line in lines:
+        if line.rpartition(" -o ")[2].strip() not in object_outputs:
+            continue
+        argv = words(line)
+        if "-c" not in argv:
+            continue
+        if len(argv) < 5 or argv[-2] != "-o" or argv.count("-c") != 1:
+            raise GameCatalogError("native Make emitted an unsupported object compile")
+        if argv[-1] in assembly_objects:
+            continue
+        if argv[-1] in compiler:
+            raise GameCatalogError(f"native Make planned two compiles for {argv[-1]}")
+        compiler[argv[-1]] = argv
+    data_inputs = {
+        compiler[path][compiler[path].index("-c") + 1]
+        for path in data_objects if path in compiler
+    }
+    data_outputs = {value for path in data_inputs for value in quoted_forms(path)}
+    for line in lines:
+        invocation, separator, after = line.rpartition(" > ")
+        if not separator:
+            continue
+        if not any(after.strip() == value or after.lstrip().startswith(value + " ")
+                   for value in data_outputs):
+            continue
+        target = words(after)
+        if not target:
+            raise GameCatalogError("native Make data preprocessor has no output")
+        if target[0] in preprocessors:
+            raise GameCatalogError(f"native Make planned two preprocessors for {target[0]}")
+        preprocessors[target[0]] = words(invocation)
+
+    if (len(linkers) != 1 or not linkers[0] or len(objects) != len(set(objects))
+            or set(compiler) != set(objects) or not data_objects <= set(objects)):
+        raise GameCatalogError("native Make compile plan differs from the selected C inventory")
+    units = []
+    for object_path in objects:
+        argv = compiler[object_path]
+        compiler_input = argv[argv.index("-c") + 1]
+        preprocessing = preprocessors.get(compiler_input, [])
+        if (object_path in data_objects) != bool(preprocessing):
+            raise GameCatalogError(f"native Make data preprocessing differs for {object_path}")
+        try:
+            logical = Path(object_path).relative_to(root).with_suffix(".c").as_posix()
+        except ValueError as error:
+            raise GameCatalogError(f"native Make object is outside selected output: {object_path}") from error
+        units.append({
+            "logical_source": logical,
+            "selected_source": preprocessing[-1] if preprocessing else compiler_input,
+            "compiler_input": compiler_input, "object": object_path,
+            "compiler_argv": argv, "preprocessor_argv": preprocessing,
+        })
+    _write_bytes_if_changed(args.output, canonical_json_bytes({
+        "schema_version": 1, "kind": "fe8-selected-text-inputs",
+        "source_root": str(Path.cwd().resolve()), "linker": linkers[0], "units": units,
+    }))
+    return 0
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -386,6 +722,32 @@ def cmd_check_width(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    dependencies_p = sub.add_parser(
+        "prune-native-font-dependencies",
+        help="remove obsolete measured-header edges from owned native font dependency products",
+    )
+    dependencies_p.add_argument("--objects", type=Path, nargs="+", required=True)
+    dependencies_p.set_defaults(handler=cmd_prune_native_font_dependencies)
+    context_p = sub.add_parser(
+        "describe-make-context", help="capture selected C inputs from one nonexecuting native Make plan",
+    )
+    context_p.add_argument("--output", type=Path, required=True)
+    context_p.add_argument("--compiler", help="compatibility hint; selected Make recipes own each tool")
+    context_p.add_argument("--preprocessor", help="compatibility hint; selected Make recipes own each tool")
+    context_p.add_argument("--invoker-pid", type=int)
+    context_p.add_argument("--invoker-goals")
+    context_p.add_argument("--invoker-level", type=int, help="original nonnegative GNU Make level")
+    context_p.add_argument("--makefile-list-file", type=Path)
+    context_p.add_argument("make_argv", nargs=argparse.REMAINDER)
+    context_p.set_defaults(handler=cmd_describe_make_context)
+
+    declare_p = sub.add_parser(
+        "declare", help="emit source-known catalog types and counts without fonts or payloads",
+    )
+    declare_p.add_argument("--output", type=Path, required=True)
+    declare_p.add_argument("--target-header", type=Path, required=True)
+    declare_p.add_argument("--enabled-locales", default="ja,zh-Hans")
+    declare_p.set_defaults(handler=cmd_declare)
 
     validate_p = sub.add_parser("validate", help="validate inputs and in-memory catalogs")
     _add_common_args(validate_p)

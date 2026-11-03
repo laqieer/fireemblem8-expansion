@@ -20,7 +20,7 @@ UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 32-gate candidate mirror.
+# below; localization remains part of the complete candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
@@ -207,7 +207,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 32-gate candidate mirror
+        """Docs governance stays outside the complete candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -560,6 +560,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "game-localization-catalog-check",
                 "game-localization-crosswalk-check",
                 "game-localization-raw-closure-check",
+                "modern-review-arm-check-debug",
+                "modern-review-arm-check-release",
                 "legacy-build",
                 "legacy-payload-identity",
             ],
@@ -1315,7 +1317,13 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 32)
+        self.assertEqual(
+            len(verify_mod.gates()),
+            sum(
+                name != _DOCS_GOVERNANCE_STEP_NAME
+                for _, name, _ in verify_mod._workflow_gate_contract(structure)
+            ),
+        )
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(

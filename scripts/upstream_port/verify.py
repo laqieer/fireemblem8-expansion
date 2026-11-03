@@ -1161,6 +1161,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", "Preflight archival toolchain executables"),
         ("setup", "Install pinned archival agbcc compilers"),
         ("setup", "Build tools"),
+        ("gate", "Run native ARM review profiles"),
         ("gate", "Build archival lane without a copyrighted baserom"),
         ("gate", "Validate pinned archival payload identities"),
     ),
@@ -2554,6 +2555,7 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "MODERN_CONFIG=debug",
                 "MODERN_ABI=aapcs",
                 f"-j{jobs}",
+                "-o", "expansion-modern-review-arm-check",
             ],
             applicable_note=(
                 "aggregates the full modern DEBUG ROM/ELF runtime + linker "
@@ -2581,6 +2583,7 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "MODERN_CONFIG=release",
                 "MODERN_ABI=aapcs",
                 f"-j{jobs}",
+                "-o", "expansion-modern-review-arm-check",
             ],
             applicable_note=(
                 "release-config counterpart of the debug gate above: the same "
@@ -2746,6 +2749,30 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "python3", "-m", "scripts.localization.game_locales", "check-raw-closure",
             ],
             applicable_note="unresolved raw full-game locale closure before archival setup",
+        ),
+        Gate(
+            name="modern-review-arm-check-debug",
+            command=[
+                "make",
+                "expansion-modern-review-arm-check",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+            ],
+            applicable_note=(
+                "existing native ARM review contract, owned by the required "
+                "ARM-equipped archival worker instead of the modern ROM "
+                "critical path; the public debug linker prerequisite remains"
+            ),
+        ),
+        Gate(
+            name="modern-review-arm-check-release",
+            command=[
+                "make",
+                "expansion-modern-review-arm-check",
+                "MODERN_CONFIG=release",
+                "MODERN_ABI=aapcs",
+            ],
+            applicable_note="release counterpart of the same required native ARM contract",
         ),
         Gate(
             name="legacy-build",

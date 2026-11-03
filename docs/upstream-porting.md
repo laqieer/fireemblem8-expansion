@@ -183,14 +183,14 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 you manually applied whatever you accepted) — it never builds, checks out,
 or executes the upstream ref/tree.** It orchestrates all current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same commands with argv/order preserved across its combined
+carries the same complete commands with argv/order preserved across its combined
 host, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
 below. A no-checkout event identity validator, event router, and mode-specific
 classifier check precede the four combined workers in CI; the four combined
 workers run in parallel after that decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
-workers. Local `verify` runs the same gates in its
+workers. Local `verify` runs the same complete gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
 Every mirrored command uses repository-relative argv, so all subprocesses
 run at one resolved target repository root. Launch the source-tree module from
@@ -210,7 +210,7 @@ the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
 The complete job-name order must also match, so extra jobs fail. All three
-setup jobs are parsed and never become an additional local gate. The gate
+setup jobs are parsed and never become an additional local gate. The complete gate
 commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
@@ -274,8 +274,8 @@ or condition substitutions, deployment environment, concurrency, reusable-job
 or reordered keys fail before dry-run.
 The complete eight-job structure retains all four validation workers,
 identity/router/classifier and summary. The normal `build` job additionally
-contains two authenticated master-push-only packaging/upload steps, not local
-gates. Their conditions,
+contains two authenticated master-push-only packaging/upload steps, not new
+local gates: the mirror still executes every required gate. Their conditions,
 secret scope, existing-output packaging invocation and pinned patch-only
 upload remain parsed contracts.
 
@@ -381,8 +381,8 @@ substitute. Setup is not another gate and `verify` remains network-independent.
     no selectable game, save/lifecycle or target-ROM qualification is implied)
 14. `make generated-data-test`
 15. `make generated-data-check`
-16. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-17. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+16. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -o expansion-modern-review-arm-check`
+17. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -o expansion-modern-review-arm-check`
 18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 19. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 20. `make expansion-modern-map-menu-presentation-check -j1`
@@ -402,8 +402,10 @@ substitute. Setup is not another gate and `verify` remains network-independent.
 28. `python3 -m scripts.localization.game_locales check`
 29. `python3 -m scripts.localization.game_locales check-crosswalk`
 30. `python3 -m scripts.localization.game_locales check-raw-closure`
-31. `make legacy -j2`
-32. `make -C mgfembp compare`
+31. `make expansion-modern-review-arm-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+32. `make expansion-modern-review-arm-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+33. `make legacy -j2`
+34. `make -C mgfembp compare`
 
 Gates 16-17 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
@@ -411,6 +413,16 @@ shift, save, starter-feature, and localization runtime matrices through
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No additional
 item-expansion ROM build or gate is added.
+
+Gates31-32 retain the existing native ARM review contract on the required,
+already ARM-equipped archival worker. Gates16-17 mark only that shared
+prerequisite already made; standalone public linker checks still require it.
+The mirror preserves both profiles and the same complete combined join.
+The archival worker preserves the original host-package installation and
+installs its explicit ARM C compiler/binutils/newlib packages separately with
+APT recommendations disabled. Target C++ newlib is not used by these C/assembly
+contracts and must not consume their existing deadline through an implicit
+recommended download. No explicit prerequisite, check or deadline is removed.
 
 Gates27-30 run on the existing `legacy` CI worker before installing archival
 tools, with the original host-only dependencies and fresh owned environment.

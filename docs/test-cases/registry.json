@@ -419,12 +419,14 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/102",
         "https://github.com/laqieer/fireemblem8-expansion/issues/197",
         "https://github.com/laqieer/fireemblem8-expansion/issues/236",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/365",
         "https://github.com/laqieer/fireemblem8-expansion/issues/363"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
       "required_cases": [
         "TC-CORE-001",
+        "TC-TEXT-NATIVE-METRICS-001",
         "TC-BUILD-HOST-DEPENDENCIES-001",
         "TC-BUILD-GCC14-MENU-RETURN-001",
         "TC-TEXT-INITIAL-CACHE-001"
@@ -1211,7 +1213,7 @@
       "purpose": "Prevent readers from observing truncated or in-progress generated header/C files while retaining all serial bytes, message IDs and Huffman formats.",
       "prerequisites": "Python 3, a host cc compiler/preprocessor, and owned temporary synthetic text/control roots with complete prior header/C outputs and a minimal global.h.",
       "actions": "Run python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v. Observe the actual unmodified renderers at naturally visible buffered-write boundaries, force two actual producer processes to overlap through IPC barriers, and read/compile each final path at publication boundaries. Compare serial bytes and encodings, exercise other-cwd/space paths, modes/umask and unchanged regeneration, then inject parse/render/stage/write/close/replace/cleanup failures.",
-      "expected_result": "Both final files are always complete old or complete new per-file versions, both same-input producers succeed with serial-equivalent bytes, both stages finish rendering/closing before publication, and no owned staging remains after ordinary success/failure. Existing permission bits and unchanged-output inode/mtime are preserved. The explicit extended-host step runs exactly once while every prior gate remains in the eight-job workflow.",
+      "expected_result": "Both final files are always complete old or complete new per-file versions, both same-input producers succeed with serial-equivalent bytes, both stages finish rendering/closing before publication, and no owned staging remains after ordinary success/failure. Existing permission bits and unchanged-output inode/mtime are preserved. The explicit extended-host step runs exactly once while every other required gate and the same eight jobs remain.",
       "negative_control": "The exact preimage producer or a disposable removal of atomic publication exposes naturally buffered partial-header/C data and real reader compiler failures. Pre-publication failures cannot alter old outputs; a later per-file replace failure cannot roll back another writer's complete committed file.",
       "interactions": "Depends only on existing text/Huffman/Make interfaces and host compiler. Independent issue180 consumes the production fix after integration; its profiles and workflow are not modified here. No other feature conflicts.",
       "save_compatibility": "No message-ID, codec/layout, game rule, save, ABI, locale catalog, item-cap or profile-identity change.",
@@ -2301,6 +2303,46 @@
       ]
     },
     {
+      "id": "TC-TEXT-NATIVE-METRICS-001",
+      "title": "Capture selected native fonts without a payload cycle",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/365"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-text-native-metrics-001-capture-selected-native-fonts-without-a-payload-cycle",
+      "profiles": [
+        "Modern ARM GCC/AAPCS selected English/pseudo and CJK/EU input objects"
+      ],
+      "purpose": "Capture actual selected native inputs and measure fonts without a payload/type bootstrap cycle.",
+      "prerequisites": "Run from the root with ARM GCC/binutils, Python and existing repository build helpers; no base ROM.",
+      "actions": "Run the two public Make capture/declaration targets and the exact native/declaration/storage commands in the procedure. Exercise the finite32 ordinary/data C, GAS and filtered SIO producer combinations over standard/ONESHELL recipes, absolute/relative roots and success/refusal, with synchronized buffer flushes during -j2 capture and complete selected compiler dependency argv.",
+      "expected_result": "One exact C-only context preserves original inherited/private scopes through actual all/ELF/ROM and linker-check entrypoints with no native execution or recursive non-C/profile plans; ordinary dry profile recursion retains its real arguments. Spaced/repeated-space/quoted source entrypoints, nested includes and authored .d settings inside native output never regenerate; all remain held old without suffix/location guessing. Actual source and complete canonical warm dependency bytes/inodes/times stay unchanged, including longer-root .ONESHELL capture through CLI-constructed argv. Temporary name transport is removed and ordinary -n writes none. Late generated fallback headers, private measured storage and selected native width consumers succeed. English/pseudo default/sole-parent/direct font requests without an explicit capture goal rebuild both original ARM input and measurements for changed scoped flags; unchanged requests preserve object mtime. Warm pre-split cycles migrate without losing real escaped prerequisites. Canonical archival-only queries preserve unrelated native bytes/inode/mtime without its migrator; mixed native requests retain explicit failures.",
+      "negative_control": "Ambiguous source filenames refuse before replay and preserve the prior context; the former source-word splitting executes real source regeneration and former complete warm .ONESHELL argv fails before capture. Ambiguous inputs, bad native resources, missing/fake compiler/linker output, stale inherited flags and pre-split font metrics fail, including their inherited-parent interaction. MAKEFILES must not replace the implicit main, and target-private tools must not be recorded as global tools. Same-path tool changes must rebuild native preprocessing/scanner products. Private/inherited link scopes must select the actual linker; conflicting choices refuse without replacing context. Empty-goal parents must preserve empty MAKECMDGOALS and changed native widths. Payload/declaration writers must keep the same selected fallback header count. Pure capture must preserve warm dependency input bytes. Changed selected raw font assets must reach direct/header/custom-parent native measurements; stale initial values refuse. Both default-project catalog/header aliases and their inherited parent must retain selected Japanese/Chinese compiled System/Talk maps, not an English-only fallback. Exported CJK capacity must match actual storage under changed C floors. Cleanup must not import a failed migrator, and English/pseudo compile/no-op must not force unused declarations; explicit declaration/count and next-header-change controls remain.",
+      "interactions": "Existing project/font/message and localization interfaces only; actual shared-interface edits require integration.",
+      "save_compatibility": "No save bytes, schema, locale identity or compatibility epoch change.",
+      "cleanup": "Automation removes only owned temporary project/build directories. Compiler staging is not an included dependency; failed producers preserve the previous final dependency and remain failed. SIO's payload-directory change never escapes the compiler subshell into filtering or publication.",
+      "limitations": "Not whole-game/reference/event/liveness/corpus or English-decoder-safety qualification; no manual criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests -k native -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_selects_and_validates_actual_linker_scopes scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_refuses_ambiguous_source_paths_before_replay scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_cli.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_build_fixture.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_save_compat_epoch_modern_build -v",
+          "evidence": "scripts/modernize/tests/test_save_compat_epoch_modern_build.py"
+        }
+      ]
+    },
+    {
       "id": "TC-CORE-001",
       "title": "Modern default build and archival split",
       "feature_id": "modern-framework-build",
@@ -2974,18 +3016,18 @@
       "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
       "title": "Validate bounded exact-SHA agent handoffs",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178"],
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178", "https://github.com/laqieer/fireemblem8-expansion/issues/367"],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
       "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
       "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
-      "prerequisites": "Start at the exact source root with the unchanged #176 baseline and #216 environment; no token, live workflow, ROM or emulator is required.",
-      "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute documented CLI positive/negative commands and optional reporting.",
-      "expected_result": "Only an exact clean measured descendant is locally ready. Task trailers exclude imported upstream history; incremental budgets remain separate from full-PR review size. Lifecycle states are independently observed, owners rotate, one watcher owns each exact run/attempt, GitHub success/failure remains authoritative, and one replacement reuses the retained locked original worktree.",
+      "prerequisites": "Start at the exact reviewed source root with the unchanged #176 baseline and #216 inherited locked interpreter; use build/host-python/bin/python3 -I for both replay contexts rather than system python3. No token, live workflow, ROM or emulator is required. The current standalone raw CLI replay needs only its checked-out checker and owns its temporary inputs. Execute the same fixture separately from an already available pristinefe4608b source context for the pre-fix failure; the replay performs no historical-code acquisition, history probe or fetch.",
+      "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute the current standalone raw CLI replay: clean0, second-file EOL/EOF1, oversizedpair2 and aggregate-diff2. In the separate pre-fix context its first clean CLI call returns2 and the always-on expectation check must fail, including under Python optimization. Execute other documented CLI positive/negative commands and optional reporting.",
+      "expected_result": "Only an exact clean measured descendant is locally ready. Task trailers exclude imported upstream history; incremental budgets remain separate from full-PR review size. The complete-PR raw CLI accepts multiple changed text pairs below the4MiB per-pair bound without skipping whitespace checks; oversized pairs still refuse and the delegated aggregate task budget remains unchanged. Lifecycle states are independently observed, owners rotate, one watcher owns each exact run/attempt, GitHub success/failure remains authoritative, and one replacement reuses the retained locked original worktree.",
       "negative_control": "Stale/wrong-parent/non-HEAD/unrelated results, dirty/conflicting/hidden-index trees, missing trailers/evidence, failed or incomplete checks, unknown/over-budget resources, oversized/duplicate/invalid JSON, candidate checker substitution, tool-success/printed-exit labels, reused/opaque PID, missing RSS, overlapping ownership/watchers, wrong run identities, unknown OOM, lost recovery locks and unavailable coordinators fail or remain explicitly unknown.",
       "interactions": "Depends on #176 and #216/#217; dependent #181. #179 is independent and #205/#211 is not required. Preserve #199 metadata events, #207 immediate publication, #208 cleanup and original final gates; no broker or generic runtime is introduced.",
       "save_compatibility": "No game/runtime, save/configuration, locale, generated data, ROM/RAM content, modern debug/release, archival or Build topology change.",
-      "cleanup": "Fixtures remove only their own build/test-artifacts/agent-handoff-* directories and reap their own children. No remote state, unrelated process or Dev Box setting changes.",
+      "cleanup": "Automated fixtures remove only their owned directories and reap their own children. The standalone public replay removes its printed fixture path only after all checks succeed; errors/timeouts/interruptions retain it until owned processes are confirmed stopped, never as success or a cleanup guarantee. No remote state, unrelated process or Dev Box setting changes.",
       "limitations": "GitHub/kernel responses are inert fixtures at external boundaries; production adapters execute. Opaque runtime handles and absent OS/RSS/OOM authority remain unknown. Coordinator records are trusted operational input, not authenticated offline proof or publication authority. No manual-only criterion applies.",
       "automation": [
         {
@@ -3009,7 +3051,7 @@
       "purpose": "Preserve selected post-checkout workflow program effects, parsed helper ownership and actual build-once master publication without changing trust boundaries or gates.",
       "prerequisites": "Source root; exclusively owned host fixtures. No host credential, ROM, network fetch or ARM compiler for fixture tests; real publication uses the existing CI environment.",
       "actions": "Run actual helper and drift suites, parsed mirror/helper-drift tests and actionlint. Compare remote identity/refusal, fresh-ref/report/status preservation and compiler pins/destinations/failure cutoffs. After merge require real exact-master patch creation/upload and remote completion.",
-      "expected_result": "All helper effects and failure behavior agree with the original programs; eight jobs and every mirrored command remain. Drift summaries stay below 1 MiB with valid UTF-8 previews limited to 256 KiB per report, closed fences and an artifact notice; full JSON reports and scan-error diagnostics remain intact and 0/2/3 signals are preserved. Small reports remain complete inline. Parsed target helper bodies bind to the reviewed source. Actual exact-master Build publishes the SHA-bound patch-only BPS artifact.",
+      "expected_result": "All helper effects and failure behavior agree with the original programs; eight jobs and the complete required command mirror remain. Drift summaries stay below 1 MiB with valid UTF-8 previews limited to 256 KiB per report, closed fences and an artifact notice; full JSON reports and scan-error diagnostics remain intact and 0/2/3 signals are preserved. Small reports remain complete inline. Parsed target helper bodies bind to the reviewed source. Actual exact-master Build publishes the SHA-bound patch-only BPS artifact.",
       "negative_control": "Wrong remote URL remains unchanged and refuses; missing state signals 3; drift/failed scan preserve reports. Failed fetch/wrong pin stop before compiler execution. No-op, missing, final/parent-symlinked or oversized helper refuses equivalence. CRLF and other non-LF separators cannot normalize away behavior drift; real CRLF Bash execution fails, while ordinary/Unicode comments remain neutral. Removing/changing variable, path, pin, destination or command-substitution quotes refuses equivalence; actual unquoted runner paths fail with spaces. Concatenating quoted pin-test/directory words with following arguments refuses; actual pin-test mutation stops before compilation, ordinary word spacing stays neutral. Candidate or skipped publisher cannot supply master publication proof.",
       "interactions": "Delivered workflow/publisher, upstream CLI/constants and parsed verifier only. Real shared-helper changes require normal refresh of affected open heads, not cancellation of unaffected immutable runs. No global ownership/SDK prerequisite or new gate/platform.",
       "save_compatibility": "No ROM/RAM/save/configuration identity/generated game data/localization/default modern debug-release/archival payload/fingerprint change.",

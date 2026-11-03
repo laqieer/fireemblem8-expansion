@@ -13,12 +13,13 @@
 
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 #undef GetStringFromIndexInBuffer
-#define MSG_BUFFER1 (sMsgString.storage.legacy.buffer1)
-#define MSG_BUFFER2 (sMsgString.storage.legacy.buffer2)
-#define MSG_BUFFER3 (sMsgString.storage.legacy.buffer3)
-#define MSG_BUFFER4 (sMsgString.storage.legacy.buffer4)
-#define MSG_BUFFER5 (sMsgString.storage.legacy.buffer5)
-#define MSG_LOCALIZED_STORAGE (sMsgString.storage.localized)
+extern struct MsgBuffer sMsgString;
+#define MSG_BUFFER1 ((u8 *)&sMsgString)
+#define MSG_BUFFER2 (MSG_BUFFER1 + FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER1_BYTES)
+#define MSG_BUFFER3 (MSG_BUFFER2 + FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER2_BYTES)
+#define MSG_BUFFER4 (MSG_BUFFER3 + FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER3_BYTES)
+#define MSG_BUFFER5 (MSG_BUFFER4 + FE8_LOCALIZED_GAME_TEXT_LEGACY_BUFFER4_BYTES)
+#define MSG_LOCALIZED_STORAGE MSG_BUFFER1
 #define MSG_TRANSFORM_OUTPUT_CAPACITY \
     FE8_LOCALIZED_GAME_TEXT_TRANSFORM_OUTPUT_BYTES
 #define MSG_TRANSFORM_INSERTION_CAPACITY \
@@ -31,7 +32,9 @@
 #define MSG_BUFFER5 (sMsgString.buffer5)
 #endif
 
+#if !FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 EWRAM_DATA struct MsgBuffer sMsgString = {0};
+#endif
 EWRAM_DATA int sActiveMsg = 0;
 
 #if defined(MODERN) && !FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
@@ -946,7 +949,7 @@ char * GetStringFromIndex(int index)
     }
 
     ResolveStringIntoBuffer(index, (char *)MSG_LOCALIZED_STORAGE,
-        (u32)sizeof(MSG_LOCALIZED_STORAGE));
+        gLocalizedGameTextStorageCapacity);
     sActiveMsg = index;
     sActiveMsgLocale = locale;
     sActiveMsgStatus = sLastMsgStatus;
@@ -1008,7 +1011,7 @@ char * StringInsertSpecialPrefixByCtrl(void)
     MsgStreamWriter_Init(
         &writer, MSG_TRANSFORM_OUTPUT, MSG_TRANSFORM_OUTPUT_CAPACITY);
     cursor = (const char *)MSG_LOCALIZED_STORAGE;
-    remaining = (u32)sizeof(MSG_LOCALIZED_STORAGE);
+    remaining = gLocalizedGameTextStorageCapacity;
     for (;;)
     {
         next = TextUtf8_NextBounded(cursor, remaining, &token);
@@ -1172,7 +1175,7 @@ char * StrInsertTact(void)
     MsgStreamWriter_Init(
         &writer, MSG_TRANSFORM_OUTPUT, MSG_TRANSFORM_OUTPUT_CAPACITY);
     cursor = (const char *)MSG_LOCALIZED_STORAGE;
-    remaining = (u32)sizeof(MSG_LOCALIZED_STORAGE);
+    remaining = gLocalizedGameTextStorageCapacity;
     for (;;)
     {
         next = TextUtf8_NextBounded(cursor, remaining, &token);

@@ -6,7 +6,10 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Sequence, Tuple
+
+if TYPE_CHECKING:
+    from scripts.localization.game_catalog.compiled_fonts import SelectedFontMetrics
 
 from .ending_metrics import (
     EndingLayoutError,
@@ -403,6 +406,7 @@ def build_fixed_width_label_metrics(
     *,
     localized_payloads: Mapping[str, Mapping[int, str]],
     aliases_path: Path | None = None,
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> Dict[str, Any]:
     repo_root = Path(repo_root)
     aliases_path = (
@@ -413,7 +417,9 @@ def build_fixed_width_label_metrics(
     if not _SHA256_RE.fullmatch(_sha256(alias_raw)):
         raise FixedWidthLabelError("alias registry SHA-256 generation failed")
     source_contract = _source_contract(repo_root)
-    ascii_widths = _ascii_widths(repo_root)
+    ascii_widths = (
+        _ascii_widths(repo_root) if font_metrics is None else font_metrics["ascii"]["system"]
+    )
     locales = {}
     font_inputs = {}
     total_aliases = 0
@@ -421,7 +427,11 @@ def build_fixed_width_label_metrics(
     for locale in ("ja", "zh-Hans"):
         if locale not in localized_payloads:
             continue
-        cjk_widths, font_input = _cjk_widths(repo_root, locale)
+        if font_metrics is None:
+            cjk_widths, font_input = _cjk_widths(repo_root, locale)
+        else:
+            cjk_widths = font_metrics["localized"].get(locale, {}).get("system", {})
+            font_input = font_metrics["inputs"]
         font_inputs[locale] = font_input
         surfaces = {}
         for surface, specification in SURFACES.items():
