@@ -228,7 +228,8 @@ The existing `gbagfx` helper builds only the original data required for linking.
    level 7, experience 33 and position (2,3) return; chapter flags stay intact.
 3. Create a valid backing normal slot, then call original `WriteSuspendSave`
    twice through its real alternating-slot selection. Validate the selected
-   Suspend with the original API, clobber both flag scopes and live state,
+   Suspend with the original API and require its successful return, then
+   clobber both flag scopes and live state,
    then call `ReadSuspendSave`. Both physical slots 3 and 4 must execute and
    restore every permanent/chapter byte and the saved play/unit observations.
 4. After each valid path, flip one stored permanent byte. The original block
@@ -238,6 +239,8 @@ The existing `gbagfx` helper builds only the original data required for linking.
 5. Inspect all five distinct records per epoch and measured ROM/EWRAM/IWRAM.
    Omit actual permanent restores from the normal/Suspend call chains: all
    five paths fail. Omit only the chapter restore: both Suspend paths fail.
+   Force `IsValidSuspendSave` to refuse while retaining the correct resolved
+   slot: both Suspend validity records must fail, not merely load that slot.
    Restore the original functions before running the complete module.
 
 The existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds remain.

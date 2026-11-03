@@ -107,6 +107,7 @@ static void RecordPath(unsigned int input, int suspend)
     u8 * savedPermanent;
     unsigned int gold;
     unsigned int slot;
+    bool suspendValid = true;
     volatile struct GradoSavePathRecord * record;
 
     PrepareLive(input, permanent, chapter);
@@ -115,7 +116,7 @@ static void RecordPath(unsigned int input, int suspend)
     {
         WriteSuspendSave(SAVE_ID_SUSPEND);
         slot = SAVE_ID_SUSPEND + GetLastSuspendSaveId();
-        IsValidSuspendSave(SAVE_ID_SUSPEND);
+        suspendValid = IsValidSuspendSave(SAVE_ID_SUSPEND);
         savedPermanent = gSram->suspendSaveBlocks[slot - SAVE_ID_SUSPEND].permanentFlags;
     }
     else
@@ -127,7 +128,7 @@ static void RecordPath(unsigned int input, int suspend)
 
     record = &gGradoSavePathProbe.records[gGradoSavePathProbe.count];
     record->slot = slot;
-    record->valid = ReadSaveBlockInfo(0, slot);
+    record->valid = suspendValid && ReadSaveBlockInfo(0, slot);
     memset(GetPermanentFlagBits(), 0, 25);
     if (suspend)
         memset(GetChapterFlagBits(), 0xC3, 5);
