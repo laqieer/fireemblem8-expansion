@@ -228,7 +228,12 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 flag_addresses = struct.unpack_from("<2I", flag_data, 16)
                 for address, extent in zip(flag_addresses, (25, 5)):
                     self.assertGreaterEqual(address, 0x03000000)
-                    self.assertLessEqual(address + extent, 0x03007800)
+                    self.assertLess(address + extent, 0x03007800)
+                self.assertLess(flag_addresses[0] + 25, flag_addresses[1])
+                self.assertLess(
+                    flag_addresses[1] + 5,
+                    resolve_elf_symbol_address(elf, "gGMData", tools["MODERN_NM"]),
+                )
                 flag_records = [
                     struct.unpack_from("<8I", flag_data, 24 + index * 32)
                     for index in range(20)

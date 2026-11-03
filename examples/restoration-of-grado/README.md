@@ -189,6 +189,10 @@ the canonical linker supplies the actual IWRAM flag arrays.
    saved vectors. The original non-destructive permanent view returns the
    saved bytes without changing either live array. Original reads restore
    every saved byte, preserve the other scope and never mutate the image.
+   Guard the native live-array ends with `0xD6` / `0x6D` in the module's
+   verified IWRAM padding and the view output with `0xE2` / `0x2E` before/after
+   its 25 bytes. Check guards immediately after each original read. Oversized
+   permanent/view 26-byte and chapter seven-byte reads must all fail.
 5. Inspect all 20 distinct slot/pattern records per epoch, actual flag-storage
    bounds, copied SRAM function pointers and measured native resources.
    The existing thirteen classification records still pass. Explicit

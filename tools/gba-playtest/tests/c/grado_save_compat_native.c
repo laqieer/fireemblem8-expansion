@@ -111,9 +111,16 @@ static void RecordFlagSave(unsigned int slot, unsigned int pattern)
     static const u8 seeds[] = { 0, 0xFF, 0xAA, 0x55 };
     u8 permanent[25];
     u8 chapter[5];
-    u8 view[25];
+    struct
+    {
+        volatile u8 before;
+        u8 bytes[25];
+        volatile u8 after;
+    } view;
     u8 * savedPermanent;
     u8 * savedChapter;
+    volatile u8 * permanentGuard;
+    volatile u8 * chapterGuard;
     unsigned int i;
     volatile struct GradoSaveFlagsRecord * record;
 
@@ -123,6 +130,10 @@ static void RecordFlagSave(unsigned int slot, unsigned int pattern)
         chapter[i] = (u8)~seeds[pattern] ^ (i * 17) ^ (slot * 3);
     memcpy(GetPermanentFlagBits(), permanent, sizeof(permanent));
     memcpy(GetChapterFlagBits(), chapter, sizeof(chapter));
+    permanentGuard = (volatile u8 *)((uintptr_t)GetPermanentFlagBits() + sizeof(permanent));
+    chapterGuard = (volatile u8 *)((uintptr_t)GetChapterFlagBits() + sizeof(chapter));
+    *permanentGuard = 0xD6;
+    *chapterGuard = 0x6D;
 
     savedPermanent = slot < 3 ? gSram->gameSaveBlocks[slot].permanentFlags
         : gSram->suspendSaveBlocks[slot - 3].permanentFlags;
@@ -145,15 +156,21 @@ static void RecordFlagSave(unsigned int slot, unsigned int pattern)
     memset(GetChapterFlagBits(), 0x3C, sizeof(chapter));
     record->clobbered = memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) != 0
         && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) != 0;
-    ReadPermanentFlags_ret(savedPermanent, view);
-    record->readonlyView = memcmp(view, permanent, sizeof(permanent)) == 0
+    view.before = 0xE2;
+    view.after = 0x2E;
+    ReadPermanentFlags_ret(savedPermanent, view.bytes);
+    record->readonlyView = memcmp(view.bytes, permanent, sizeof(permanent)) == 0
+        && view.before == 0xE2 && view.after == 0x2E
+        && *permanentGuard == 0xD6 && *chapterGuard == 0x6D
         && BytesAre(GetPermanentFlagBits(), sizeof(permanent), 0xC3)
         && BytesAre(GetChapterFlagBits(), sizeof(chapter), 0x3C);
     ReadPermanentFlags(savedPermanent);
+    record->bounded = record->bounded && *permanentGuard == 0xD6 && *chapterGuard == 0x6D;
     record->otherScope = BytesAre(GetChapterFlagBits(), sizeof(chapter), 0x3C);
     if (savedChapter != 0)
     {
         ReadChapterFlags(savedChapter);
+        record->bounded = record->bounded && *permanentGuard == 0xD6 && *chapterGuard == 0x6D;
         record->otherScope = record->otherScope
             && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0;
     }
