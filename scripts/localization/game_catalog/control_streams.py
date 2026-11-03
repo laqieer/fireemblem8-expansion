@@ -7,7 +7,10 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+
+if TYPE_CHECKING:
+    from .compiled_fonts import SelectedFontMetrics
 
 from scripts.localization.game_locales.ending_metrics import (
     EndingLayoutError,
@@ -476,7 +479,13 @@ def load_talk_font_metrics(
     locale: str,
     *,
     repo_root: Path = Path("."),
+    font_metrics: SelectedFontMetrics | None = None,
 ) -> TalkFontMetrics:
+    if font_metrics is not None:
+        return TalkFontMetrics(
+            locale=locale, ascii_widths=font_metrics["ascii"]["talk"],
+            cjk_widths=font_metrics["localized"].get(locale, {}).get("talk", {}),
+        )
     try:
         ascii_widths = _ascii_widths(repo_root, style="talk")
         if locale in ("fr", "de", "es", "it"):

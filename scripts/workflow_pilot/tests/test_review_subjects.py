@@ -412,14 +412,80 @@ class SubjectTests(SubjectTestCase):
                 self.assertNotEqual(completed.returncode, 0)
                 rule = make_database_rule(completed.stdout, "expansion-modern-linker-check")
                 self.assertIsNotNone(rule, completed.stderr)
+                self.assertIn("expansion-modern-review-arm-check", shlex.split(rule.splitlines()[0]))
+                arm_rule = make_database_rule(completed.stdout, "expansion-modern-review-arm-check")
+                self.assertIsNotNone(arm_rule, completed.stderr)
                 commands = [shlex.split(line.lstrip("\t").lstrip("@+"))
-                            for line in rule.replace("\\\n", " ").splitlines()
+                            for line in arm_rule.replace("\\\n", " ").splitlines()
                             if line.startswith("\t")]
                 self.assertIn(
                     ["MODERN_CC=$(MODERN_CC)", "MODERN_NM=$(MODERN_NM)",
                      "MODERN_SIZE=$(MODERN_SIZE)", "$(PYTHON)", "-m", "unittest",
                      "scripts.workflow_pilot.tests.arm_review_subjects", "-v"],
                     commands)
+                if config == "debug":
+                    commands = [
+                        shlex.split(line.lstrip("\t").lstrip("@+"))
+                        for line in rule.replace("\\\n", " ").splitlines()
+                        if line.startswith("\t")
+                    ]
+                    publication = [
+                        command for command in commands
+                        if "scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests."
+                        "test_native_parallel_capture_reads_only_complete_dependency_products" in command
+                    ]
+                    self.assertEqual(len(publication), 1)
+                    self.assertEqual(publication[0][0], "env")
+                    self.assertIn(
+                        ("-u", "GBA_PLAYTEST_HOST_ONLY"),
+                        tuple(zip(publication[0], publication[0][1:])),
+                    )
+
+    def test_ci_keeps_both_arm_review_profiles_in_existing_legacy_headroom(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text()
+
+        def commands(job):
+            block = re.search(
+                rf"^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z][A-Za-z0-9_-]*:\s*$|\Z)",
+                workflow, re.M | re.S,
+            )
+            self.assertIsNotNone(block)
+            scripts = re.findall(
+                r"^      run: (?:\|\n((?:        [^\n]*\n)*)|([^\n]+)\n)",
+                block.group(1), re.M,
+            )
+            return [
+                shlex.split(line.strip())
+                for multiline, single in scripts
+                for line in (multiline or single).splitlines()
+                if line.strip().startswith("make ")
+            ]
+
+        helper = "expansion-modern-review-arm-check"
+        legacy = [argv for argv in commands("legacy") if helper in argv]
+        self.assertEqual(len(legacy), 2)
+        self.assertEqual(
+            {next(word for word in argv if word.startswith("MODERN_CONFIG=")) for argv in legacy},
+            {"MODERN_CONFIG=debug", "MODERN_CONFIG=release"},
+        )
+        for argv in legacy:
+            self.assertFalse(any(
+                word in {"-n", "--just-print", "--dry-run", "--recon",
+                         "-q", "--question", "-t", "--touch"}
+                or word.startswith(("-o", "--old-file", "--assume-old"))
+                for word in argv[1:]
+            ), argv)
+        modern = [
+            argv for argv in commands("build") if "expansion-modern-linker-check" in argv
+        ]
+        self.assertEqual(len(modern), 2)
+        self.assertEqual(
+            {next(word for word in argv if word.startswith("MODERN_CONFIG=")) for argv in modern},
+            {"MODERN_CONFIG=debug", "MODERN_CONFIG=release"},
+        )
+        for argv in modern:
+            self.assertIn("-o", argv)
+            self.assertEqual(argv[argv.index("-o") + 1], helper)
 
     def remediation(self, kind, path, broken, member, *, fixed=None):
         original = (self.repo.root / path).read_bytes()

@@ -1,5 +1,6 @@
 #include "localized_game_text.h"
 #include "types.h"
+#include "localized_game_text_storage.h"
 
 typedef char cjk_profile_enabled[
     (FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED == 1) ? 1 : -1];

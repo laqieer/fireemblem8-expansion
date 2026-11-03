@@ -1,5 +1,6 @@
 #include "localized_game_text.h"
 #include "types.h"
+#include "localized_game_text_storage.h"
 
 typedef char cjk_growth_storage[
     (sizeof(struct MsgBuffer) == 0x1601u) ? 1 : -1];

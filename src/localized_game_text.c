@@ -4,7 +4,7 @@
 
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 
-#include "game_localization_catalog.h"
+#include "game_localization_declarations.h"
 #include "localized_text_codec.h"
 
 static int LocalizedGameText_UsesLocalizedCatalog(ExpansionLocaleId locale)
@@ -114,7 +114,7 @@ static enum LocalizedGameTextStatus LocalizedGameText_Select(
     enum LocalizedGameTextStatus successStatus;
 
     if (selection == 0 || msgIndex < 0
-        || (u32)msgIndex >= FE8_GAME_LOCALIZATION_TARGET_COUNT)
+        || (u32)msgIndex >= GAME_LOCALIZATION_TARGET_COUNT)
         return LOCALIZED_GAME_TEXT_STATUS_DECODE_INVALID;
 
     locale = ExpansionLocale_GetCurrent();
@@ -348,7 +348,7 @@ const char * LocalizedGameText_GetDisplayAliasForWidth(
     {
 #if GAME_LOCALIZATION_JA_ENABLED
         aliases = gGameLocalizationJaDisplayAliases;
-        aliasCount = GAME_LOCALIZATION_JA_DISPLAY_ALIAS_COUNT;
+        aliasCount = gGameLocalizationJaDisplayAliasCount;
 #else
         return 0;
 #endif
@@ -357,7 +357,7 @@ const char * LocalizedGameText_GetDisplayAliasForWidth(
     {
 #if GAME_LOCALIZATION_ZH_HANS_ENABLED
         aliases = gGameLocalizationZhHansDisplayAliases;
-        aliasCount = GAME_LOCALIZATION_ZH_HANS_DISPLAY_ALIAS_COUNT;
+        aliasCount = gGameLocalizationZhHansDisplayAliasCount;
 #else
         return 0;
 #endif
