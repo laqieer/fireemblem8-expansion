@@ -3,6 +3,7 @@
 from pathlib import Path
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -165,6 +166,71 @@ class GradoVisualAssetTests(unittest.TestCase):
                     if words and words[0] == "rm":
                         removals.update(words[1:])
                 self.assertTrue(partitions <= removals, partitions - removals)
+
+    def test_carrier_rules_retain_png_input_with_native_sibling_ordering(self):
+        for prefix in (
+            "graphics/bg/grado_imperial_tomb", "graphics/bg/grado_council_hall",
+            "graphics/cg/grado_funeral_omen", "graphics/cg/grado_title",
+        ):
+            with self.subTest(prefix=prefix):
+                result = subprocess.run(
+                    ["make", "--no-print-directory", "-n", "-W", prefix + ".png",
+                     "--eval", f"{prefix}.fetsa2.bin: {prefix}.feimg2.bin",
+                     prefix + ".feimg2.bin", "FE8_PROJECT=restoration-of-grado",
+                     "FE8_PROJECT_PROFILE=primary", "MODERN_CONFIG=release"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                commands = [
+                    shlex.split(line) for line in result.stdout.splitlines()
+                    if line.startswith("scripts/gfxtools/tsa_generator.py ")
+                ]
+                self.assertEqual(commands, [[
+                    "scripts/gfxtools/tsa_generator.py", prefix + ".png",
+                    prefix + ".feimg2.bin", prefix + ".fetsa2.bin",
+                ]])
+
+    def test_splitter_changes_invalidate_both_partition_families(self):
+        with tempfile.TemporaryDirectory(prefix="grado-partition-make-") as directory:
+            work = Path(directory)
+            script = Path("examples/restoration-of-grado/assets/static/derive_visuals.py")
+            (work / script).parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / script, work / script)
+            (work / "graphics/cg").mkdir(parents=True)
+            for carrier in ("grado_funeral_omen", "grado_title"):
+                with self.subTest(carrier=carrier):
+                    raw = f"graphics/cg/{carrier}.feimg2.bin"
+                    prefix = f"graphics/cg/{carrier}_part"
+                    data = bytes(range(256)) * 10
+                    (work / raw).write_bytes(data)
+                    command = [
+                        "make", "--no-print-directory", "-f", str(ROOT / "graphics_file_rules.mk"),
+                        "-o", raw, prefix + "_0.bin",
+                    ]
+                    built = subprocess.run(
+                        command, cwd=work, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                    self.assertEqual(
+                        b"".join((work / f"{prefix}_{part}.bin").read_bytes() for part in range(10)),
+                        data + bytes(10 * 0x800 - len(data)),
+                    )
+                    fresh = subprocess.run(
+                        [*command, "-q"], cwd=work, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(fresh.returncode, 0, fresh.stdout + fresh.stderr)
+                    stale = subprocess.run(
+                        [*command, "-n", "-W", str(script)],
+                        cwd=work, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(stale.returncode, 0, stale.stdout + stale.stderr)
+                    commands = [
+                        shlex.split(line) for line in stale.stdout.splitlines()
+                        if line.startswith("python3 -B ")
+                    ]
+                    self.assertEqual(commands, [[
+                        "python3", "-B", str(script), "split-cg", raw, prefix,
+                    ]])
 
     def test_map_derivatives_produce_native_configuration_indices(self):
         samples = {

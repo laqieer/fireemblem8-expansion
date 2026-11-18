@@ -196,7 +196,11 @@ The committed project PNGs are:
 * `grado_title.png`: title-master carrier for a six-bank special transition.
 
 The existing `tsa_generator.py` remains the tile/TSA converter. The selected
-`restoration-of-grado/primary` project replaces only the four existing BG/CG
+carriers declare their paired outputs explicitly so native sibling-ordering
+dependencies cannot discard the PNG input of an implicit multi-target rule.
+The regression invokes actual GNU Make with that ordering edge and checks
+all four converter argument vectors.
+The `restoration-of-grado/primary` project replaces only the four existing BG/CG
 code/data owners; default consumers and ROM data are unchanged. Its ordinary
 BGs enter `gConvoBackgroundData` with a 1,202-byte TSA and a 512-byte
 256-color palette file. The CG/title raw owners are split into ten 2,048-byte
@@ -205,6 +209,10 @@ rule and a selected `gCGDataTable` entry. The public focused test regenerates
 the tile/TSA bytes, validates bank IDs and partitions, and rejects an ordinary
 carrier over eight banks or a crossfade carrier over six. Both CG partition
 families are ignored build output owned by `clean` and `clean_fast`.
+Changing the splitter invalidates both families without changing the source
+image. The regression builds real partitions in a temporary directory, checks
+their bytes and fresh state, then forces only the splitter prerequisite newer
+and requires another actual Make conversion command with the image first.
 The source-only suite checks actual Make cleanup commands without deleting
 the current workspace. The coordinate/configuration subcase runs in the
 existing ARM-enabled native suite, which assembles the tracked tileset
