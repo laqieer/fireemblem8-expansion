@@ -208,3 +208,17 @@ graphics/statscreen/StatscreenEquipmentBG.bin: %.bin: %.tmap
 
 graphics/statscreen/StatscreenEquipedWeaponHighlight.bin: %.bin: %.tmap
 	$(TMAP2TSA) $< $@ --width 15 --height 0
+
+define grado_cg_parts
+graphics/cg/$(1)_part_0.bin graphics/cg/$(1)_part_1.bin \
+graphics/cg/$(1)_part_2.bin graphics/cg/$(1)_part_3.bin \
+graphics/cg/$(1)_part_4.bin graphics/cg/$(1)_part_5.bin \
+graphics/cg/$(1)_part_6.bin graphics/cg/$(1)_part_7.bin \
+graphics/cg/$(1)_part_8.bin graphics/cg/$(1)_part_9.bin &: \
+graphics/cg/$(1).feimg2.bin
+	python3 -B examples/restoration-of-grado/assets/static/derive_visuals.py split-cg $$< \
+		graphics/cg/$(1)_part
+endef
+
+$(eval $(call grado_cg_parts,grado_funeral_omen))
+$(eval $(call grado_cg_parts,grado_title))

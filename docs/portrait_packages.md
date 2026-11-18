@@ -51,7 +51,10 @@ class generated-data validation reads this live manifest registration rather
 than parsing a stale C table. The `EIRIKA_FORMATTED_PORTRAIT` package proves
 the migration seam: it aliases the already-shipped Eirika components, so the
 default resolver result, minimug, palette, blink state, IDs, and ROM behavior
-are unchanged.
+are unchanged. The Grado reference also registers its shipped Amelia, Duessel,
+Natasha and Knoll entries as explicit aliases. Their selected manifest keeps
+the same live FaceData IDs and component pointers; the source packages do not
+add new portrait art or reserve IDs.
 
 ## Build and generated-output policy
 

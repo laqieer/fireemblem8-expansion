@@ -33,7 +33,12 @@ Neither map should be treated as loaded gameplay content yet.
 
 **Issue and scope:** #325, native-map source subcase of `TEST-ASSET-MAP`.
 The original portrait/visual-source/decreasecolor contracts remain separate
-open work in that issue.
+work in that issue. This slice adds explicit standard packages for the four
+shipped FE8 speakers used by CH00/CH02 (Amelia, Duessel, Natasha and Knoll).
+Those package records are `existing-components` aliases: the live FaceData
+table, palette, talk mouth, blink and minimug bytes remain the original
+validated symbols. The empty 128x112 package sheets are structural migration
+inputs, not newly authored artwork.
 
 **Prerequisites:** repository root, Python3 and the existing asset sources.
 No ROM, alternate project, save or external art installation is required for
@@ -60,6 +65,14 @@ four-entry conversion must fail the native-value/alignment checks rather
 than being accepted from dimensions alone. The unselected/default command
 uses the original framework assets. Existing adapter malformed XML,
 ownership, resource and generated-output controls remain unchanged.
+
+The same command registers the four early portrait packages through
+`GetPortraitData`. Their metadata anchors and blink kinds must equal registry
+IDs 25, 37, 17 and 41, and the aliased main/minimug/palette/mouth symbols must
+be byte-identical to the shipped components. This does not supply the
+unresolved Odo, Perrin, Roderich or Ingrid native portrait adaptation; those
+require real 128x112 indexed art with approved talk/blink frames, not a
+downsampled concept sheet.
 
 **Interactions and compatibility:** existing asset manifest, chapter asset
 table ownership, safe TMX and ordered MAR/JSON only. No new framework flag,
@@ -160,10 +173,55 @@ coordinates. Real project classes/units, events, door changes and playable
 routes remain outside this instrumented module.
 
 **Not yet qualified:** selected-game map/palette/movement/coordinate
-consumers and screenshots, required early portrait packages,
-title/BG/CG carriers and normal/crossfade limits. In particular old ASCII
-deployment/cortege points can land on real walls/doors in the accepted master;
-EVT must establish actual coordinates and route safety after preflight.
-These warnings are retained, not converted into approval or a generic human
-review gate. Remaining consumer/effect evidence and precise material artistic
-criteria still block issue completion.
+consumers and screenshots. `coordinates.json` binds every retained CH00/CH02
+unit, reinforcement and event point to its actual Fort terrain byte. The
+accepted inputs still place CH00 `(1,4)/(1,3)/(1,7)/(6,1)` and multiple CH02
+deployment/unit/event coordinates on walls or a door. The native CommonT2
+matrix explicitly retains CH02 `(7,10)` as unreachable from `(7,4)`. These
+are visible preflight warnings, not silently repaired coordinates.
+
+### Static BG/title/CG carrier subcase
+
+The project-owned source masters remain in the accepted visual-source
+repository. `derive_visuals.py` performs only the derived 240x160 resize and
+deterministic tile-row palette partition; it does not overwrite those masters.
+The committed project PNGs are:
+
+* `grado_imperial_tomb.png` and `grado_council_hall.png`: ordinary dialogue BG
+  carriers, at most eight 16-color banks;
+* `grado_funeral_omen.png`: CH00 event CG/carrier for a six-bank crossfade;
+* `grado_title.png`: title-master carrier for a six-bank special transition.
+
+The existing `tsa_generator.py` remains the tile/TSA converter. The selected
+`restoration-of-grado/primary` project replaces only the four existing BG/CG
+code/data owners; default consumers and ROM data are unchanged. Its ordinary
+BGs enter `gConvoBackgroundData` with 19,168-byte raw tile owners, 1,202-byte
+TSA and a 512-byte 256-color palette file; their GBA-LZ tile payloads are
+16,916 and 16,912 bytes. The CG/title raw owners are split into ten 2,048-byte
+partitions expected by `DisplayCGfx`, then each uses the existing gbagfx LZ
+rule and a selected `gCGDataTable` entry. The public focused test regenerates
+the tile/TSA bytes, validates bank IDs and partitions, and rejects an ordinary
+carrier over eight banks or a crossfade carrier over six. A screenshot is
+supplementary only.
+
+For the selected compile proof, run:
+
+```sh
+make FE8_PROJECT=restoration-of-grado FE8_PROJECT_PROFILE=primary \
+  MODERN_CONFIG=release \
+  build/projects/restoration-of-grado/primary/release/aapcs/src/cg.o \
+  build/projects/restoration-of-grado/primary/release/aapcs/src/eventscr2.o \
+  build/projects/restoration-of-grado/primary/release/aapcs/src/data/data_bg.o \
+  build/projects/restoration-of-grado/primary/release/aapcs/src/data/ending/ending_cg.o
+```
+
+The negative controls are the default project (none of these owners or data
+symbols is linked) and a carrier whose TSA requests a ninth ordinary or
+seventh crossfade palette bank.
+
+The conversion evidence and compile/link binding do not establish subjective
+art acceptance. Material blockers remain: the four original CH00/CH02 portrait
+packages named above need approved face/talk/blink/minimug art; final title/BG/
+CG artistic composition, palette quality and transition appearance require
+actual selected-profile emulator capture. Preserve the original masters and
+authored effects until those exact criteria are accepted.

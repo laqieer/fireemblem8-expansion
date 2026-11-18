@@ -472,4 +472,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     native_movement[str((2, profile, collision))],
                     unscaled_movement[str((2, profile, collision))],
                 )
+            self.assertEqual(
+                native_movement[str((2, 0, 0))][10 * 16 + 7],
+                255,
+                "accepted CH02 (7,10) route is now reachable; update the retained warning",
+            )
             print(json.dumps({"actual_native_records": observed}, sort_keys=True))
