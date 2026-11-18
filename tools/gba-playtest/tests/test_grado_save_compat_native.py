@@ -313,7 +313,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
 
     def _assert_native_save_paths(self, epoch, work, tools, elf, rom):
         _, size = resolve_elf_symbol(elf, "gGradoSavePathProbe", tools["MODERN_NM"])
-        self.assertEqual(size, 8 + 5 * 36)
+        self.assertEqual(size, 8 + 9 * 48)
         scenario = work / "scenario.json"
         scenario.write_text(json.dumps({
             "schema_version": 1, "name": "grado-original-save-paths", "frames": [],
@@ -340,51 +340,83 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             values[f"gGradoSavePathProbe+0x{offset:x}"].to_bytes(4, "little")
             for offset in range(0, size, 4)
         )
-        self.assertEqual(struct.unpack_from("<2I", data), (2, 5))
-        records = [struct.unpack_from("<9I", data, 8 + index * 36) for index in range(5)]
-        results = {record[0]: record[1:] for record in records}
-        self.assertEqual(len(results), 5)
-        self.assertEqual(results, {slot: (1,) * 8 for slot in range(5)})
+        self.assertEqual(struct.unpack_from("<2I", data), (2, 9))
+        records = [struct.unpack_from("<12I", data, 8 + index * 48) for index in range(9)]
+        results = {(record[0], record[1]): record[2:] for record in records}
+        expected_paths = {(slot, slot) for slot in range(3)} | {
+            (slot, backing) for slot in (3, 4) for backing in range(3)
+        }
+        with self.subTest(save_family="native-paths"):
+            self.assertEqual(len(results), 9)
+            self.assertEqual(results, {path: (1,) * 10 for path in expected_paths})
         _, semantic_size = resolve_elf_symbol(
             elf, "gGradoSemanticSaveProbe", tools["MODERN_NM"])
-        expected_semantic = 7 if epoch == 256 else 2
-        self.assertEqual(semantic_size, 8 + 8 * 16)
-        semantic_scenario = work / "semantic-scenario.json"
-        semantic_scenario.write_text(json.dumps({
-            "schema_version": 1, "name": "grado-semantic-save-policy", "frames": [],
-            "checkpoints": [{
-                "name": "strict-normal-suspend-legacy", "frame": 120,
-                "framebuffer": False,
-                "probes": [
-                    {"address": f"gGradoSemanticSaveProbe+0x{offset:x}", "size": 4}
-                    for offset in range(0, semantic_size, 4)
-                ],
-            }],
-        }), encoding="utf-8")
-        semantic_output = work / "semantic-capture.json"
-        self.run_command([
-            sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
-            "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
-            "--scenario", semantic_scenario, "--output", semantic_output,
-        ], cwd=ROOT)
-        semantic_capture = json.loads(semantic_output.read_text())
-        semantic_values = {
-            probe["address"]: int(probe["value"], 16)
-            for probe in semantic_capture["checkpoints"][0]["probes"]
+        self.assertEqual(semantic_size, 44 + 9 * 36)
+
+        def capture_semantic(name, keys, count):
+            semantic_scenario = work / f"semantic-{name}-scenario.json"
+            semantic_scenario.write_text(json.dumps({
+                "schema_version": 1, "name": f"grado-semantic-{name}",
+                "frames": [{"start": 0, "end": 120, "keys": keys}],
+                "checkpoints": [{
+                    "name": name, "frame": 120, "framebuffer": False,
+                    "probes": [
+                        {"address": f"gGradoSemanticSaveProbe+0x{offset:x}", "size": 4}
+                        for offset in range(0, semantic_size, 4)
+                    ],
+                }],
+            }), encoding="utf-8")
+            semantic_output = work / f"semantic-{name}-capture.json"
+            self.run_command([
+                sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
+                "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
+                "--scenario", semantic_scenario, "--output", semantic_output,
+            ], cwd=ROOT)
+            semantic_capture = json.loads(semantic_output.read_text())
+            semantic_values = {
+                probe["address"]: int(probe["value"], 16)
+                for probe in semantic_capture["checkpoints"][0]["probes"]
+            }
+            semantic_data = b"".join(
+                semantic_values[f"gGradoSemanticSaveProbe+0x{offset:x}"].to_bytes(4, "little")
+                for offset in range(0, semantic_size, 4)
+            )
+            header = struct.unpack_from("<11I", semantic_data)
+            self.assertEqual(header[:2], (2, count))
+            return header[2:], [
+                struct.unpack_from("<9I", semantic_data, 44 + index * 36)
+                for index in range(count)
+            ]
+
+        symbols, saved = capture_semantic("backed", ["A"], 9)
+        (normal, suspend, legacy, valid, incompatible,
+         missing, conflict, recovery, reopen) = symbols
+        no_slot = 0xFFFFFFFF
+        expected_saved = {(normal, slot, slot) for slot in range(3)} | {
+            (suspend, slot, backing) for slot in (3, 4) for backing in range(3)
         }
-        semantic_data = b"".join(
-            semantic_values[f"gGradoSemanticSaveProbe+0x{offset:x}"].to_bytes(4, "little")
-            for offset in range(0, semantic_size, 4)
-        )
-        self.assertEqual(struct.unpack_from("<2I", semantic_data), (2, expected_semantic))
-        semantic_records = [
-            struct.unpack_from("<4I", semantic_data, 8 + index * 16)
-            for index in range(expected_semantic)
-        ]
-        self.assertTrue(
-            all(record[1:] == (1, 1, 1) for record in semantic_records),
-            semantic_records,
-        )
+        with self.subTest(save_family="semantic-backed"):
+            self.assertEqual({record[:3] for record in saved}, expected_saved)
+            self.assertTrue(
+                all(record[3:] == ((valid if epoch == 256 else incompatible), 1, 1, 1, 1, 1)
+                    for record in saved),
+                saved,
+            )
+        negative = []
+        if epoch == 256:
+            negative_symbols, negative = capture_semantic("refused", ["A", "B"], 5)
+            expected_negative = {
+                (normal, missing), (suspend, conflict), (normal, recovery),
+                (legacy, incompatible), (suspend, reopen),
+            }
+            with self.subTest(save_family="semantic-refusal"):
+                self.assertEqual(negative_symbols, symbols)
+                self.assertEqual({(record[0], record[3]) for record in negative}, expected_negative)
+                self.assertTrue(all(
+                    record[1:3] == (no_slot, no_slot)
+                    and record[4:] == (1, 1, no_slot, no_slot, 1)
+                    for record in negative
+                ), negative)
         resources = {
             name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
             - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])
@@ -393,6 +425,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         print(json.dumps({
             "epoch": epoch, "profile": "native release whole-save module",
             "rom_bytes": rom.stat().st_size, "records": records,
+            "semantic_records": saved, "refusal_records": negative,
             "ewram_bytes": resources["data"] + resources["ewram"],
             "iwram_bytes": resources["iwram"],
         }))

@@ -26,12 +26,15 @@ struct GMapNodeLink gUnk_10[ARRAY_COUNT(gGMData.nodes)];
 struct GradoSavePathRecord
 {
     u32 slot;
+    u32 backing;
     u32 valid;
+    u32 backingValid;
     u32 clobbered;
     u32 permanent;
     u32 chapter;
     u32 play;
     u32 unit;
+    u32 bonus;
     u32 corruptRefused;
     u32 refusalPreserved;
 };
@@ -40,22 +43,36 @@ struct GradoSavePathProbe
 {
     u32 phase;
     u32 count;
-    struct GradoSavePathRecord records[5];
+    struct GradoSavePathRecord records[9];
 };
 
 struct GradoSemanticSaveRecord
 {
     u32 route;
+    u32 slot;
+    u32 backing;
     u32 result;
-    u32 restored;
+    u32 state;
     u32 preserved;
+    u32 valid;
+    u32 backingValid;
+    u32 bonus;
 };
 
 struct GradoSemanticSaveProbe
 {
     u32 phase;
     u32 count;
-    struct GradoSemanticSaveRecord records[8];
+    u32 normalRoute;
+    u32 suspendRoute;
+    u32 legacyRoute;
+    u32 validResult;
+    u32 incompatibleResult;
+    u32 missingResult;
+    u32 conflictResult;
+    u32 recoveryResult;
+    u32 reopenResult;
+    struct GradoSemanticSaveRecord records[9];
 };
 
 static union
@@ -117,23 +134,32 @@ static void PrepareLive(unsigned int input, u8 * permanent, u8 * chapter)
     memcpy(GetChapterFlagBits(), chapter, 5);
 }
 
-static void RecordPath(unsigned int input, int suspend)
+static u32 BonusForBacking(unsigned int backing)
+{
+    return 0x9248A113u ^ (0x12345678u * backing);
+}
+
+static void RecordPath(unsigned int input, int suspend, unsigned int backing)
 {
     u8 permanent[25];
     u8 chapter[5];
     u8 * savedPermanent;
+    u32 bonus = BonusForBacking(backing);
     unsigned int gold;
     unsigned int slot;
     bool suspendValid = true;
     volatile struct GradoSavePathRecord * record;
 
     PrepareLive(input, permanent, chapter);
+    gPlaySt.gameSaveSlot = backing;
+    SetBonusContentClaimFlags(suspend ? ~bonus : bonus);
     gold = gPlaySt.partyGoldAmount;
     if (suspend)
     {
         WriteSuspendSave(SAVE_ID_SUSPEND);
         slot = SAVE_ID_SUSPEND + GetLastSuspendSaveId();
-        suspendValid = IsValidSuspendSave(SAVE_ID_SUSPEND);
+        suspendValid = IsValidSuspendSave(SAVE_ID_SUSPEND)
+            && SAVE_ID_SUSPEND + gSuspendSaveIdOffset == slot;
         savedPermanent = gSram->suspendSaveBlocks[slot - SAVE_ID_SUSPEND].permanentFlags;
     }
     else
@@ -145,28 +171,38 @@ static void RecordPath(unsigned int input, int suspend)
 
     record = &gGradoSavePathProbe.records[gGradoSavePathProbe.count];
     record->slot = slot;
+    record->backing = backing;
     record->valid = suspendValid && ReadSaveBlockInfo(0, slot);
+    record->backingValid = ReadSaveBlockInfo(NULL, backing)
+        && gSram->gameSaveBlocks[backing].bonusClaimFlags == bonus
+        && (!suspend || gSram->suspendSaveBlocks[
+            slot - SAVE_ID_SUSPEND].playSt.gameSaveSlot == backing);
     memset(GetPermanentFlagBits(), 0, 25);
     if (suspend)
         memset(GetChapterFlagBits(), 0xC3, 5);
+    SetBonusContentClaimFlags(~bonus);
     gPlaySt.partyGoldAmount = 0;
     gPlaySt.chapterIndex = 0;
+    gPlaySt.gameSaveSlot = (backing + 1) % 3;
     memset(&gUnitArrayBlue[0], 0, sizeof(gUnitArrayBlue[0]));
     gUnitArrayBlue[0].level = 1;
     record->clobbered = memcmp(GetPermanentFlagBits(), permanent, 25) != 0
         && gPlaySt.partyGoldAmount != gold && gPlaySt.chapterIndex != 10
+        && GetBonusContentClaimFlags() != bonus
         && gUnitArrayBlue[0].pCharacterData == 0 && gUnitArrayBlue[0].level != 7;
-    if (suspend)
+    if (suspend && suspendValid)
         ReadSuspendSave(SAVE_ID_SUSPEND);
-    else
+    else if (!suspend)
         ReadGameSave(slot);
     record->permanent = memcmp(GetPermanentFlagBits(), permanent, 25) == 0;
     record->chapter = memcmp(GetChapterFlagBits(), chapter, 5) == 0;
-    record->play = gPlaySt.partyGoldAmount == gold && gPlaySt.chapterIndex == 10;
+    record->play = gPlaySt.partyGoldAmount == gold && gPlaySt.chapterIndex == 10
+        && gPlaySt.gameSaveSlot == backing;
     record->unit = gUnitArrayBlue[0].pCharacterData == gCharacterData
         && gUnitArrayBlue[0].pClassData == gClassData
         && gUnitArrayBlue[0].level == 7 && gUnitArrayBlue[0].exp == 33
         && gUnitArrayBlue[0].xPos == 2 && gUnitArrayBlue[0].yPos == 3;
+    record->bonus = GetBonusContentClaimFlags() == bonus;
     savedPermanent[0] ^= 1;
     memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
     record->corruptRefused = !ReadSaveBlockInfo(0, slot);
@@ -191,24 +227,45 @@ static void PrepareSemanticState(void)
     GradoState_WriteSymbol(GRADO_STATE_RAUSTEN_MED, 16, 1);
     GradoState_WriteSymbol(GRADO_STATE_RAUSTEN_DATA, 16, 2);
     GradoState_WriteSymbol(GRADO_STATE_DIRECTION, 19, 4);
+    GradoState_WriteSymbol(GRADO_FLAG_FINAL_WITNESS, 21, 1);
 }
 
-static void RecordSemantic(
-    enum GradoStateLoadRoute route,
-    enum GradoStateLoadResult expected)
+static void PrepareSemanticSaves(void)
+{
+    unsigned int backing;
+    u8 permanent[25];
+    u8 chapter[5];
+
+    PrepareCurrent();
+    for (backing = SAVE_ID_GAME0; backing <= SAVE_ID_GAME2; ++backing)
+    {
+        PrepareLive(backing, permanent, chapter);
+        PrepareSemanticState();
+        gPlaySt.chapterIndex = 21;
+        SetBonusContentClaimFlags(BonusForBacking(backing));
+        WriteGameSave(backing);
+    }
+}
+
+static void RecordSemantic(enum GradoStateLoadRoute route, unsigned int backing)
 {
     struct GradoStateFlagView saved;
     struct GradoStateLoadDiagnostic diagnostic;
     volatile struct GradoSemanticSaveRecord * record;
+    struct PlaySt livePlay;
+    struct Unit liveUnit;
     unsigned int slot;
     u8 permanent[25];
     u8 chapter[5];
     enum GradoStateLoadResult result;
+    u32 bonus = BonusForBacking(backing);
+    u16 witness = 0;
 
-    PrepareCurrent();
-    PrepareLive(0, permanent, chapter);
+    PrepareLive(backing, permanent, chapter);
     PrepareSemanticState();
     gPlaySt.chapterIndex = 21;
+    gPlaySt.gameSaveSlot = backing;
+    SetBonusContentClaimFlags(~bonus);
     if (route == GRADO_LOAD_SUSPEND)
     {
         WriteSuspendSave(SAVE_ID_SUSPEND);
@@ -222,44 +279,73 @@ static void RecordSemantic(
     }
     else
     {
-        slot = SAVE_ID_GAME0;
-        WriteGameSave(slot);
+        slot = backing;
         saved.chapterFlags = NULL;
         saved.chapterBytes = 0;
         saved.permanentFlags = gSram->gameSaveBlocks[slot].permanentFlags;
         saved.permanentBytes = 25;
     }
+    memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+    memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
+    livePlay = gPlaySt;
+    liveUnit = gUnitArrayBlue[0];
     memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
     record = &gGradoSemanticSaveProbe.records[gGradoSemanticSaveProbe.count++];
     record->route = route;
+    record->slot = slot;
+    record->backing = backing;
+    record->valid = ReadSaveBlockInfo(NULL, slot)
+        && (route != GRADO_LOAD_SUSPEND
+            || (IsValidSuspendSave(SAVE_ID_SUSPEND)
+                && SAVE_ID_SUSPEND + gSuspendSaveIdOffset == slot));
+    record->backingValid = ReadSaveBlockInfo(NULL, backing)
+        && gSram->gameSaveBlocks[backing].bonusClaimFlags == bonus
+        && (route != GRADO_LOAD_SUSPEND
+            || gSram->suspendSaveBlocks[
+                slot - SAVE_ID_SUSPEND].playSt.gameSaveSlot == backing);
     result = GradoState_PreflightSave(
         ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
         route, 21, &saved, &diagnostic);
-    record->result = result == expected ? 1 : 100 + result;
+    record->result = result;
     record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
     if (result == GRADO_STATE_LOAD_VALID)
     {
-        enum GradoStateLoadResult endingResult;
+        enum GradoStateLoadResult endingResult = GRADO_STATE_LOAD_CORRUPT;
 
         memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
         memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
+        SetBonusContentClaimFlags(~bonus);
+        gPlaySt.gameSaveSlot = (backing + 1) % 3;
         if (route == GRADO_LOAD_SUSPEND)
         {
             if (!IsValidSuspendSave(SAVE_ID_SUSPEND))
                 result = GRADO_STATE_LOAD_CORRUPT;
-            ReadSuspendSave(SAVE_ID_SUSPEND);
+            else
+                ReadSuspendSave(SAVE_ID_SUSPEND);
         }
         else
             ReadGameSave(slot);
-        endingResult = GradoState_ResolveEnding(21, &diagnostic.missingSymbol);
-        record->restored = result == GRADO_STATE_LOAD_VALID
+        if (result == GRADO_STATE_LOAD_VALID)
+            endingResult = GradoState_ResolveEnding(21, &diagnostic.missingSymbol);
+        record->state = result == GRADO_STATE_LOAD_VALID
             && endingResult == GRADO_STATE_LOAD_VALID
             && diagnostic.missingSymbol == 4
-            ? 1 : 100 + diagnostic.missingSymbol;
+            && gPlaySt.gameSaveSlot == backing
+            && memcmp(GetPermanentFlagBits(), saved.permanentFlags, 25) == 0
+            && (route != GRADO_LOAD_SUSPEND
+                || (GradoState_ReadSymbol(GRADO_FLAG_FINAL_WITNESS, 21, &witness)
+                        == GRADO_STATE_VALUE_VALID
+                    && witness == 1
+                    && memcmp(GetChapterFlagBits(), saved.chapterFlags, 5) == 0));
+        record->bonus = GetBonusContentClaimFlags() == bonus;
     }
     else
     {
-        record->restored = 1;
+        record->state = memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+            && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+            && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+            && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0;
+        record->bonus = GetBonusContentClaimFlags() == ~bonus;
     }
 }
 
@@ -274,10 +360,12 @@ static void RecordSemanticNegative(
     };
     struct GradoStateLoadDiagnostic diagnostic;
     volatile struct GradoSemanticSaveRecord * record;
+    struct PlaySt livePlay;
     u8 permanent[25];
     u8 chapter[5];
     enum GradoStateLoadResult result;
-    unsigned int gold;
+    u32 bonus;
+    u16 recoveredValue;
     struct Unit unit;
 
     PrepareCurrent();
@@ -322,36 +410,56 @@ static void RecordSemanticNegative(
     }
     if (route == GRADO_LOAD_LEGACY)
         memset(&gSram->expansionSaveMeta, 0, sizeof(gSram->expansionSaveMeta));
+    memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+    memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
     memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
-    gold = gPlaySt.partyGoldAmount;
+    livePlay = gPlaySt;
     unit = gUnitArrayBlue[0];
+    bonus = GetBonusContentClaimFlags();
     result = GradoState_PreflightSave(
         ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
         route, 21, &live, &diagnostic);
     record = &gGradoSemanticSaveProbe.records[gGradoSemanticSaveProbe.count++];
     record->route = route;
-    record->result = result == expected
+    record->slot = ~0u;
+    record->backing = ~0u;
+    record->result = result;
+    record->state = memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+        && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+        && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+        && memcmp(&unit, &gUnitArrayBlue[0], sizeof(unit)) == 0
         && (route != GRADO_LOAD_LEGACY
-            || ClassifySramSaveCompat() == SAVE_COMPAT_VALID_LEGACY_OR_VANILLA);
-    record->restored = !roderichRecovery
-        || (diagnostic.recovery == GRADO_STATE_RECOVERY_RODERICH_EXILED
-            && GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID
-            && gPlaySt.partyGoldAmount == gold
-            && memcmp(&unit, &gUnitArrayBlue[0], sizeof(unit)) == 0);
+            || ClassifySramSaveCompat() == SAVE_COMPAT_VALID_LEGACY_OR_VANILLA)
+        && (!roderichRecovery
+            || (diagnostic.recovery == GRADO_STATE_RECOVERY_RODERICH_EXILED
+                && GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID
+                && GradoState_ReadSymbol(GRADO_STATE_RODERICH, 21, &recoveredValue)
+                    == GRADO_STATE_VALUE_VALID
+                && recoveredValue == GRADO_RODERICH_EXILED
+                && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+                && memcmp(&unit, &gUnitArrayBlue[0], sizeof(unit)) == 0));
     record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+    record->valid = ~0u;
+    record->backingValid = ~0u;
+    record->bonus = GetBonusContentClaimFlags() == bonus;
 }
 
-static void ProbeSemanticSaves(void)
+static void ProbeSemanticSaves(int negative)
 {
-    unsigned int epoch;
+    unsigned int backing;
+    unsigned int pass;
 
     gGradoSemanticSaveProbe.phase = 1;
-    epoch = FE8_EXPANSION_SAVE_COMPAT_EPOCH;
-    RecordSemantic(GRADO_LOAD_NORMAL,
-        epoch == 256 ? GRADO_STATE_LOAD_VALID : GRADO_STATE_LOAD_INCOMPATIBLE);
-    RecordSemantic(GRADO_LOAD_SUSPEND,
-        epoch == 256 ? GRADO_STATE_LOAD_VALID : GRADO_STATE_LOAD_INCOMPATIBLE);
-    if (epoch == 256)
+    gGradoSemanticSaveProbe.normalRoute = GRADO_LOAD_NORMAL;
+    gGradoSemanticSaveProbe.suspendRoute = GRADO_LOAD_SUSPEND;
+    gGradoSemanticSaveProbe.legacyRoute = GRADO_LOAD_LEGACY;
+    gGradoSemanticSaveProbe.validResult = GRADO_STATE_LOAD_VALID;
+    gGradoSemanticSaveProbe.incompatibleResult = GRADO_STATE_LOAD_INCOMPATIBLE;
+    gGradoSemanticSaveProbe.missingResult = GRADO_STATE_LOAD_MISSING;
+    gGradoSemanticSaveProbe.conflictResult = GRADO_STATE_LOAD_CONFLICT;
+    gGradoSemanticSaveProbe.recoveryResult = GRADO_STATE_LOAD_RECOVERY;
+    gGradoSemanticSaveProbe.reopenResult = GRADO_STATE_LOAD_REOPEN;
+    if (negative)
     {
         RecordSemanticNegative(GRADO_LOAD_NORMAL, GRADO_STATE_LOAD_MISSING, 0);
         RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_CONFLICT, 0);
@@ -359,29 +467,37 @@ static void ProbeSemanticSaves(void)
         RecordSemanticNegative(GRADO_LOAD_LEGACY, GRADO_STATE_LOAD_INCOMPATIBLE, 0);
         RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_REOPEN, 0);
     }
+    else
+    {
+        PrepareSemanticSaves();
+        for (backing = SAVE_ID_GAME0; backing <= SAVE_ID_GAME2; ++backing)
+            RecordSemantic(GRADO_LOAD_NORMAL, backing);
+        for (backing = SAVE_ID_GAME0; backing <= SAVE_ID_GAME2; ++backing)
+            for (pass = 0; pass < 2; ++pass)
+                RecordSemantic(GRADO_LOAD_SUSPEND, backing);
+    }
     gGradoSemanticSaveProbe.phase = 2;
 }
 
 void AgbMain(void)
 {
+    unsigned int pass;
     unsigned int slot;
-    u8 permanent[25];
-    u8 chapter[5];
 
-    gGradoSavePathProbe.phase = 1;
     gSram = &sSaveImage.native;
-    for (slot = 0; slot < 3; ++slot)
+    if (!(REG_KEYINPUT & A_BUTTON))
+        ProbeSemanticSaves(!(REG_KEYINPUT & B_BUTTON));
+    else
     {
+        gGradoSavePathProbe.phase = 1;
         PrepareCurrent();
-        RecordPath(slot, 0);
+        for (slot = 0; slot < 3; ++slot)
+            RecordPath(slot, 0, slot);
+        for (slot = 0; slot < 3; ++slot)
+            for (pass = 0; pass < 2; ++pass)
+                RecordPath(3 + 2 * slot + pass, 1, slot);
+        gGradoSavePathProbe.phase = 2;
     }
-    PrepareCurrent();
-    PrepareLive(0, permanent, chapter);
-    WriteGameSave(SAVE_ID_GAME0);
-    RecordPath(3, 1);
-    RecordPath(4, 1);
-    ProbeSemanticSaves();
-    gGradoSavePathProbe.phase = 2;
     for (;;)
         __asm__ volatile ("nop");
 }

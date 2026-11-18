@@ -247,44 +247,55 @@ The existing `gbagfx` helper builds only the original data required for linking.
 1. With the compatibility case's toolchain/emulator prerequisites, run
    `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
    The additional whole-save case must execute at epochs 2 and 256, not skip.
-2. For every normal slot 0..2, prepare a current owned image and valid native
-   unit/play state. Use `permanent[i] = 0xA5 ^ (29*i) ^ (7*input)` and
-   `chapter[i] = 0x5A ^ (17*i) ^ (7*input)`, reduced to eight bits.
-   Call original `WriteGameSave` and require `ReadSaveBlockInfo` acceptance.
-   Clobber live permanent flags, gold/chapter and the first complete unit,
-   then call `ReadGameSave`.
-   All 25 permanent bytes, saved gold/chapter and unit identity, class,
-   level 7, experience 33 and position (2,3) return; chapter flags stay intact.
-3. Create a valid backing normal slot, then call original `WriteSuspendSave`
-   twice through its real alternating-slot selection. Validate the selected
-   Suspend with the original API and require its successful return, then
-   clobber both flag scopes and live state,
-   then call `ReadSuspendSave`. Both physical slots 3 and 4 must execute and
-   restore every permanent/chapter byte and the saved play/unit observations.
+2. In one current owned image, save valid native unit/play state in every
+   normal slot 0..2. Use `permanent[i] = 0xA5 ^ (29*i) ^ (7*input)` and
+   `chapter[i] = 0x5A ^ (17*i) ^ (7*input)`, reduced to eight bits. Give
+   each backing slot a distinct saved bonus-claim value. Call original
+   `WriteGameSave` and require `ReadSaveBlockInfo` acceptance. Clobber live
+   permanent flags, gold/chapter, backing-slot identity, bonus flags and the
+   first complete unit, then call `ReadGameSave`. All 25 permanent bytes,
+   saved gold/chapter, slot and bonus flags, and unit identity, class, level
+   7, experience 33 and position (2,3) return; chapter flags stay intact.
+3. Keep all three normal blocks valid and call original `WriteSuspendSave`
+   twice for each referenced backing slot through its real alternating-slot
+   selection. Check the stored backing identity, normal block checksum and
+   its distinct bonus value, and validate each Suspend through the original
+   API. Clobber both flag scopes, slot identity, bonus flags and live state,
+   then call `ReadSuspendSave`. Both physical slots 3 and 4 must execute
+   against all three normal slots, restoring the saved observations and the
+   bonus flags from the referenced normal block rather than another slot.
 4. After each valid path, flip one stored permanent byte. The original block
    checksum validator must now refuse without changing any of the owned
    32 KiB input image. Restore the byte. This checks native recognition of
    corruption, not refusal by the unchecked raw loader or a new load policy.
-5. Inspect all five distinct records per epoch and measured ROM/EWRAM/IWRAM.
+5. Inspect all nine distinct records per epoch and measured ROM/EWRAM/IWRAM.
    Omit actual permanent restores from the normal/Suspend call chains: all
-   five paths fail. Omit only the chapter restore: both Suspend paths fail.
+   nine paths fail. Omit only the chapter restore: all six Suspend paths fail.
    Force `IsValidSuspendSave` to refuse while retaining the correct resolved
-   slot: both Suspend validity records must fail, not merely load that slot.
+   slot: all six Suspend validity records must fail, not merely load that slot.
    Restore the original functions before running the complete module.
-6. After the original-path records, run the same target module's semantic
-   records. At epoch 2, normal and Suspend preflight must refuse Grado schema
-   identity without touching the image. At epoch 256, preflight valid
-   typed histories, clear the live typed state, require successful public
-   Suspend validation, and then allow the original normal/Suspend loaders to
-   restore the saved ending. Omitting either semantic loader independently
-   must fail its restored record; earlier unrelated load cases cannot mask it.
-   The legacy case retains a valid native header but removes expansion
-   metadata: the real classifier must report legacy and preflight must refuse.
-   The recorded-absence/missing-state, one-hot conflict, legacy refusal, Roderich EXILED
-   recovery and missing-direction reopen records must all preserve their
-   input image. Recovery performs no resource or unit mutation.
+6. In a separate reset of the same target module, hold synthetic A throughout
+   the capture to select the semantic fixture. It uses three real,
+   independently valid backing normal saves with distinct bonus values.
+   Cover each normal slot and both physical Suspend
+   slots for every backing slot. At epoch 2, preflight must refuse Grado schema
+   identity without touching the image or live state. At epoch 256, preflight
+   valid typed histories, clear the live typed state, require successful public
+   Suspend validation, and allow the original normal/Suspend loaders to restore
+   the saved ending and referenced bonus value. Suspend also restores the set
+   final-witness chapter flag and the complete chapter bitmap. Omitting either
+   loader or its bonus restore must fail that route's records; earlier unrelated
+   load cases cannot mask it.
+   In another reset, hold synthetic A+B to select the epoch-256 refusal and
+   recovery cases. The legacy case retains a valid native header but removes
+   expansion metadata: the real classifier must report legacy and preflight
+   must refuse. The recorded-absence/missing-state, one-hot conflict, legacy
+   refusal, Roderich EXILED recovery and missing-direction reopen preflights
+   preserve their input image and live state. Recovery changes the intended
+   Roderich state without resource or unit mutation. These refusal/recovery
+   cases use a live flag view; they do not claim a physical save was loaded.
 
-The existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds remain.
+Each capture retains the existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds.
 Native normal loading intentionally invalidates Suspend metadata; the case
 does not falsely require the whole image to remain unchanged on a valid load.
 All original compatibility/transfer cases still execute. Cleanup removes only
