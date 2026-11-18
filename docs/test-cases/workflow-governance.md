@@ -1032,9 +1032,17 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
    ```
 
-   The existing `expansion-modern-linker-check` recipe also runs this selector
-   in both modern Build configurations, without a new workflow job or verifier
-   gate. Missing tools fail rather than skip. The host reporter suite needs no
+   The existing `expansion-modern-linker-check` dependency graph also runs this
+   selector in both configurations through the public
+   `expansion-modern-review-arm-check` helper. To repeat that complete contract
+   directly, run the helper once with `MODERN_CONFIG=debug` and once with
+   `MODERN_CONFIG=release`, both with `MODERN_ABI=aapcs`. Combined Build CI uses
+   existing legacy-worker headroom for those two invocations after its already
+   required ARM/libmGBA/tools setup; the modern worker marks only this helper
+   already made. Both workers remain required by the fail-closed summary, all
+   ROM/profile/archival gates and deadlines stay unchanged, and no new job,
+   optional flag or verifier requirement is added. Missing tools fail rather
+   than skip. The host reporter suite needs no
    ARM installation and retains all native/source-backed family coverage;
    its parsed Make contract verifies that both configurations retain the
    mandatory ARM selector and resolved tool paths. The owned non-system
@@ -6377,7 +6385,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
+  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6407,6 +6416,99 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    whitespace/checker replacement, and incremental line-budget controls.
    Remove only the failing condition and confirm success returns. Candidate
    `passed` fields and printed `exit 0` cannot replace a failing OS exit.
+   In the public raw CLI, use two changed text files whose aggregate old/new
+   bytes exceed4MiB while each complete pair stays below4MiB. Clean changes
+   pass; trailing whitespace in either file still refuses. A single pair
+   above4MiB still refuses before materialization, and the same multi-file
+   change still exceeds the independent delegated whole-task aggregate budget.
+
+   For a standalone public-CLI replay, run this from the source root. It owns
+   and removes only its temporary repository after all checks succeed; it changes no source checkout,
+   worktree, remote or credentials. Each printed exit is checked against the
+   actual process result. Both source contexts use the already-required
+   issue #216 locked interpreter below, not an implicit system `python3`.
+   It runs only the checker already present in this
+   reviewed source checkout: it does not acquire or execute a historical blob,
+   probe history, or fetch. No partial-clone or Git-version fetch control is
+   part of the replay.
+   The printed fixture path is retained on any error, timeout or interruption;
+   do not delete it until its owned processes are confirmed stopped. Retention
+   is a failed/incomplete replay, never success or a cleanup guarantee.
+
+   For the pre-fix negative control, run the **same program separately** from
+   an already available pristine `fe4608b334169ed025266d05e79ec3a194983577`
+   source context. Its first clean CLI call must print `clean: exit 2` with
+   `changed blob bytes exceed 4 MiB`, then fail the expectation check. That nonzero
+   wrapper result is the expected pre-fix failure, not a passing replay.
+   Preparing a trusted source version is the normal source-control task,
+   outside this program; no history availability is needed for the current
+   positive/whitespace/pair/diff controls:
+
+   ```bash
+   build/host-python/bin/python3 -I - <<'PY'
+   import os
+   from pathlib import Path
+   import shutil
+   import subprocess
+   import sys
+   import tempfile
+
+   source = Path.cwd().resolve()
+   checker = source / "scripts/workflow_pilot/raw_diff_check.py"
+   home = Path(tempfile.mkdtemp(prefix="fe8-raw-cli-"))
+   print(f"fixture: {home}", flush=True)
+   work = home / "repository"
+   work.mkdir()
+   env = {
+       "PATH": os.environ["PATH"], "HOME": str(home), "LC_ALL": "C",
+       "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+   }
+   def git(*args):
+       return subprocess.check_output(
+           ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+            "-C", str(work), *args], env=env, stderr=subprocess.PIPE,
+       ).decode().strip()
+   git("init", "--template=", "-b", "master")
+   git("config", "user.name", "Raw CLI fixture")
+   git("config", "user.email", "raw-cli@example.invalid")
+   paths = [work / name for name in ("first.txt", "second.txt")]
+   line = "unchanged payload line\n"
+   payload = line * (4 * 1024 * 1024 // (3 * len(line)) + 1)
+   def commit(label):
+       git("add", "first.txt", "second.txt")
+       git("commit", "-m", label)
+       return git("rev-parse", "HEAD")
+   for path in paths:
+       path.write_text("before\n" + payload)
+   parent = commit("parent")
+   def check(label, tool, candidate, expected, diagnostic=""):
+       result = subprocess.run(
+           [sys.executable, "-I", str(tool), "--repository-root", str(work),
+            "--parent", parent, "--candidate", candidate],
+           env=env, capture_output=True, text=True, timeout=30,
+       )
+       output = result.stdout + result.stderr
+       print(f"{label}: exit {result.returncode}", flush=True)
+       if result.returncode != expected or diagnostic not in output:
+           raise RuntimeError(output)
+   for path in paths:
+       path.write_text("after\n" + payload)
+   clean = commit("clean multi-file change")
+   check("clean", checker, clean, 0)
+   paths[1].write_text("after \n" + payload)
+   check("second-file EOL", checker, commit("EOL control"), 1, "blank-at-eol")
+   paths[1].write_text("after\n" + payload + "\n")
+   check("second-file EOF", checker, commit("EOF control"), 1, "blank-at-eof")
+   paths[0].write_text("after\n" + payload * 2)
+   paths[1].write_text("after\n" + payload)
+   check("oversized pair", checker, commit("pair control"), 2, "4 MiB")
+   for path in paths:
+       path.write_text("after\n" + payload.replace("unchanged", "rewritten"))
+   check("aggregate diff", checker, commit("diff control"), 2, "process output exceeds")
+   shutil.rmtree(home)
+   PY
+   ```
+
 4. Exercise actual parsed protocol and resource inputs. Unknown/non-host
    resources, unquantified binary changes and ROM/RAM/protocol overages reject.
    Schema/runtime controls reject unknown fields, duplicate scope/keys,

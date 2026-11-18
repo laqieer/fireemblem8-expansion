@@ -3,7 +3,7 @@
     {
       "corpus": {
         "path": "corpora/ja.system.txt",
-        "sha256": "0602748c9793155bfc48a80027468d5c8d0dc1c79f28e9adea63c5f5d2789ea9"
+        "sha256": "23850c6d196c81ecd445c6bcd980ad631773929b6420a89558d412d9474118e3"
       },
       "font": {
         "byteLength": 4533028,
@@ -39,7 +39,7 @@
     {
       "corpus": {
         "path": "corpora/ja.talk.txt",
-        "sha256": "115e3265aeeb9a812cffe4153cb636ff6ae1706867fef96ef94dc7f55eb716db"
+        "sha256": "af1f29accd967f6ca105ff3a17e734df0807195fb6307d18db4ed63a01e918fb"
       },
       "font": {
         "byteLength": 4533028,
@@ -75,7 +75,7 @@
     {
       "corpus": {
         "path": "corpora/zh-Hans.system.txt",
-        "sha256": "4808cabf3aba0dabe2e9ef0efd5bf0ccf5d692771c2bc7226b4fbfbe3b44515e"
+        "sha256": "cc7aee893cc045faee7d9eefcd53d36e031e12552f21a59bd08e97358ece0e84"
       },
       "font": {
         "byteLength": 8331336,

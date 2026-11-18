@@ -49,12 +49,18 @@ def _tokenize_payload(payload: bytes, *, source_name: str):
     return tokenize_payload(payload, source_name=source_name)
 
 
-def _event_models(event_root: Path, message_ids: Mapping[str, int] | None = None):
+def _event_models(
+    event_root: Path,
+    message_ids: Mapping[str, int] | None = None,
+    event_sources: Iterable[Path] | None = None,
+):
     from scripts.localization.game_catalog.control_streams import (
         build_event_continuation_models,
     )
 
-    return build_event_continuation_models(event_root, message_ids=message_ids)
+    return build_event_continuation_models(
+        event_root, message_ids=message_ids, event_sources=event_sources,
+    )
 
 
 @dataclass(frozen=True)
@@ -213,7 +219,27 @@ def load_width_metrics(
     try:
         if font_metrics is None:
             ascii_widths = _ascii_widths(repo_root, style=style)
-            cjk_widths = {} if locale == "en" else _cjk_widths(repo_root, locale, style=style)[0]
+            if locale == "en":
+                cjk_widths = {}
+            elif locale in ("fr", "de", "es", "it"):
+                codepoint_data = (
+                    repo_root / "graphics/fonts/eu/eu.{style}.codepoints.u32le"
+                    .format(style=style)
+                ).read_bytes()
+                width_data = (
+                    repo_root / "graphics/fonts/eu/eu.{style}.widths.u8"
+                    .format(style=style)
+                ).read_bytes()
+                if len(codepoint_data) != len(width_data) * 4:
+                    raise TextWidthContractError(
+                        f"{locale}/{style}: EU codepoint/width count mismatch"
+                    )
+                cjk_widths = {
+                    int.from_bytes(codepoint_data[index * 4:index * 4 + 4], "little"): width
+                    for index, width in enumerate(width_data)
+                }
+            else:
+                cjk_widths = _cjk_widths(repo_root, locale, style=style)[0]
         else:
             ascii_widths = font_metrics["ascii"][style]
             cjk_widths = {} if locale == "en" else font_metrics["localized"][locale][style]
@@ -621,7 +647,9 @@ def classify_targets(
     event_root: Path | None = None,
     message_ids: Mapping[str, int] | None = None,
     fixed_label_ids: Iterable[int] | None = None,
+    description_target_ids: Iterable[int] | None = None,
     target_payloads: Sequence[bytes] | None = None,
+    event_sources: Iterable[Path] | None = None,
 ) -> Tuple[Mapping[int, Tuple[RendererRequirement, ...]], Dict[str, int]]:
     """Retain every known native renderer/resource requirement for each target."""
 
@@ -655,7 +683,11 @@ def classify_targets(
     for target_id in label_ids:
         add(target_id, registry.fixed_context, TextRenderer.TEXT,
             "fixed-width label allocation; surface aliases belong to fixed_width_label_metrics")
-    for target_id in _description_target_ids(repo_root, target_count):
+    description_ids = (
+        _description_target_ids(repo_root, target_count)
+        if description_target_ids is None else frozenset(description_target_ids)
+    )
+    for target_id in description_ids:
         add(target_id, registry.default_context, TextRenderer.TEXT,
             "data description UI/help consumer")
         add(target_id, registry.talk_context, TextRenderer.TALK,
@@ -663,6 +695,7 @@ def classify_targets(
     for target_id, models in _event_models(
         repo_root / "src/events" if event_root is None else event_root,
         message_ids,
+        event_sources=event_sources,
     ).items():
         for model in models:
             if is_dynamic_event_message(model.start_kind, target_id):
@@ -729,7 +762,11 @@ def apply_width_contract(
     event_root: Path | None = None,
     message_ids: Mapping[str, int] | None = None,
     fixed_label_ids: Iterable[int] | None = None,
+    description_target_ids: Iterable[int] | None = None,
+    event_sources: Iterable[Path] | None = None,
     font_metrics: SelectedFontMetrics | None = None,
+    rewrite: bool = True,
+    preserve_canonical_english_box_layout: bool = False,
 ) -> Tuple[Tuple[bytes | None, ...], Dict[str, Any]]:
     """Wrap then validate a complete locale payload table against all contexts."""
 
@@ -747,7 +784,9 @@ def apply_width_contract(
         event_root=event_root,
         message_ids=message_ids,
         fixed_label_ids=fixed_label_ids,
+        description_target_ids=description_target_ids,
         target_payloads=effective,
+        event_sources=event_sources,
     )
     metrics_by_style = {
         style: load_width_metrics(
@@ -765,7 +804,7 @@ def apply_width_contract(
         requirements = assignments[target_id]
         rewritten = effective[target_id]
         inserted = 0
-        may_wrap = not fallback and all(
+        may_wrap = rewrite and not fallback and all(
             registry.contexts[item.context].allow_generated_wrap
             for item in requirements if not item.measure_only
         )
@@ -788,9 +827,16 @@ def apply_width_contract(
             if item.renderer == TextRenderer.SUBTITLE:
                 stats = {"line_count": 0, "max_line_width": 0}
             else:
+                max_pixels = None if item.measure_only else context.max_pixels
+                if (
+                    locale == "en"
+                    and item.renderer == TextRenderer.BOX
+                    and preserve_canonical_english_box_layout
+                ):
+                    max_pixels = None
                 stats = validate_payload_width(
                     rewritten, metrics=metrics_by_style[item.style],
-                    max_pixels=None if item.measure_only else context.max_pixels,
+                    max_pixels=max_pixels,
                     source_name=f"{locale} target 0x{target_id:04X} "
                                 f"({item.context}/{item.style}/{item.renderer.value})",
                     renderer=item.renderer,

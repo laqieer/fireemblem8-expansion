@@ -5,6 +5,180 @@ authoring capabilities listed by issue [#57](https://github.com/laqieer/fireembl
 They reuse existing commands and semantic scenarios. They do not introduce a
 second registry, harness, generated-data schema, or project ruleset.
 
+## TC-TEXT-NATIVE-METRICS-001: Capture selected native fonts without a payload cycle
+
+- **Feature / issue:** `modern-framework-build` /
+  [#365](https://github.com/laqieer/fireemblem8-expansion/issues/365), extracted
+  from [#314](https://github.com/laqieer/fireemblem8-expansion/issues/314).
+- **Profiles and prerequisites:** supported ARM GCC/AAPCS source build, Python
+  and existing repository build helpers. Run at the repository root. No ROM,
+  save, external asset, libmGBA session or manual judgment is needed for this
+  compile/measurement contract. A skipped ARM test is not completed evidence.
+- **Starting state:** the automation owns fresh project/build directories.
+  Preserve user work; no global clean is needed.
+
+### Actions
+
+1. Run `make expansion-modern-text-inputs expansion-modern-game-localization-declarations MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+   Inspect the selected output directory's single context and declaration
+   header; neither command needs a compiled payload or measured font.
+2. Run the native Make/font scenarios:
+
+   ```bash
+   python3 -m unittest scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests -k native -v
+   ```
+
+3. Run the source-only declaration and measured-storage scenarios:
+
+   ```bash
+   python3 -m unittest scripts.localization.game_catalog.tests.test_cli.CliTests.test_declarations_require_only_the_actual_message_header scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_replays_macos_invoker_without_procfs scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_selects_and_validates_actual_linker_scopes scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_context_refuses_ambiguous_source_paths_before_replay scripts.localization.game_catalog.tests.test_cli.CliTests.test_native_font_dependency_migration_preserves_real_make_edges scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_build_uses_supplied_talk_widths -v
+   ```
+
+4. Run `python3 -m unittest scripts.modernize.tests.test_save_compat_epoch_modern_build -v`.
+   An inherited identity-stamp parent resolves configuration exactly once per
+   invocation for each BGM continuation policy. Its actual stamp retains the
+   requested policy and default save epoch; changed epochs still invalidate the
+   stamp without changing the configuration fingerprint.
+
+### Expected result and controls
+
+The actual native object inventory appears exactly once after a late dependency
+file. Warm input dependency bytes remain unchanged during pure capture.
+An implicit main Makefile still loads with preloaded `MAKEFILES`.
+direct/inherited and recursive callers at levels 0/1/2 retain the original
+level and ordinary environment origin, not the recipe child's incremented
+level. Top-level-conditioned native font flags, real objects and measured
+widths must agree before and after a selected-width change. A negative
+explicit invocation level refuses before replay, preserving prior context.
+The existing standalone CLI behavior remains when original-level metadata
+is absent; no context JSON schema or save/profile setting changes.
+Actual spaced, repeated-space and quoted explicit entrypoint or nested included
+source files must retain bytes, inode and modification time: replay must not
+run their otherwise valid regeneration recipes under `-n`/`-B`.
+Plain/spaced authored `.d` settings inside native output use the
+same literal protection; suffix or output location cannot authorize a remake.
+Ambiguous source names refuse before replay and preserve a previous valid context.
+The temporary included-name transport is removed on success/failure and is
+not written by ordinary `-n`. Normal output-sync and include-directory options
+whose values contain `n` must still capture the complete native context and
+reload changed raw font inputs. Repeat with short/long spellings and with
+actual `-n`/`--just-print` controls: a flag value is not a dry-run flag.
+The native raw-font scenario retains parallel direct/inherited controls and
+also checks an actual serial `--output-sync=line` header request.
+Populate the actual canonical object, header
+and asset dependency-file inventories in a valid longer native root, then
+repeat capture with `.ONESHELL` and real build-goal classification. Cold and
+warm C inputs agree, every dependency input remains byte/inode/time-identical,
+and no single-shell argument overflow or object compilation occurs.
+These are real owned include fixtures, not a compiled full-source ROM.
+Run actual ordinary C, preprocessed-data C and assembler producers alongside
+capture under `-j2`, synchronizing their real dependency output between
+flushes. Replay must succeed using complete dependencies and every selected
+C compiler command must stage its dependency output. A refused compiler
+remains an explicit error and preserves the previous good dependency.
+Exercise ordinary C, preprocessed C, GAS and filtered SIO with both absolute
+and relative build roots, standard recipes and `.ONESHELL`, and compiler
+success/refusal. All32 combinations preserve the old complete dependency
+until successful publication; successful rename must never mask refusal.
+The SIO compiler's directory change must not escape into filtering or
+publication, including the default relative filter-helper command.
+Generated/reinstated/synthetic/locale/catalog C owners use the same publisher;
+assembler and filtered SIO outputs publish only after their successful
+producer/filter. No dependency edge is removed or whole build serialized.
+The SIO fixture supplies an already-ready owned opaque payload and executes
+the actual native assembler/filter; it does not qualify multiboot runtime or
+an archival ROM build.
+The existing debug ARM-enabled linker invocation runs this complete matrix in
+Build CI with the host-only switch removed. Explicit host-only requests skip
+before native tool discovery, even when an ARM compiler is installed.
+Actual target-private compiler/preprocessor paths are recorded without executing
+their sentinels, for both ordinary and spaced filenames. Also request capture
+with missing spaced private compiler/preprocessor/scanner paths: the context
+must preserve the requested tools without requiring their files or execution.
+Changing a selected tool file at an unchanged path rebuilds
+its native data product: the ARM version symbol changes14-to-15, and the
+generated scanner dependency changes to the corresponding real input.
+Repeat both real preprocessor and scanner transitions with spaced paths; each
+is one literal prerequisite, not a split implicit target.
+Private and spaced flags, physical source selection, ordinary/data/
+reinstated/synthetic slots, and data preprocessing are retained. Capturing it
+executes one native Make plan, no compiler/preprocessor/catalog and no hundreds
+of sidecars. Ambiguous objects, wrong outputs and relative roots are refused.
+Inherited compiler/preprocessor settings follow the original goal traversal;
+warm width transitions and their captured native inputs agree.
+Actual all/ELF/ROM and linker-check entrypoints still yield exactly the selected C inventory
+and one plan. Compiler/preprocessor sentinels must not execute even for
+library discovery; assembly and unrelated non-C preparation remain outside
+the context. An ordinary dry profile request still invokes its recursive
+Make command with the real profile arguments.
+Private ELF and inherited ROM/link-check linker choices match the actual link
+scope. Repeated identical choices are valid; conflicting choices refuse
+without replacing a previous context. Non-linking plans retain their default
+linker. A real no-goal CJK parent retains empty `MAKECMDGOALS`, inherits
+changed widths 14/15 and rebuilds the measured native font data accordingly.
+
+Cold English/pseudo and CJK font/message consumers compile before a payload
+exists. Actual ARM objects show one generated CJK storage owner at the `0x1600`
+floor and at a real 6,001-byte decoded maximum. Public CJK storage is incomplete;
+the exported capacity equals the actual ARM storage symbol size even when
+private C-layout inputs change the floor.
+English remains exactly 4 KiB. An isolated declaration command needs only its
+message header, and a changed count changes the compiled declaration contract.
+A late fallback-header producer runs for cold and changed input counts.
+Request a payload after compiling its declaration consumer with a fallback
+header one entry larger than the unchanged stock English source. The actual
+source/header range mismatch must fail explicitly, preserve every declaration
+byte and keep its compiled count, without generating stock-bound fallback
+output. Valid selected-project message/header pairs still generate normally.
+An actual warm pre-split `.d`/`.headers.d` build consumes rebuilt font metrics
+for both full and bare old header edges, including an inherited parent with
+changed native compiler arguments. Only those obsolete edges disappear;
+escaped real prerequisites still cause the next changed-header rebuild.
+Cleanup of an owned build tree succeeds even when the catalog migrator refuses.
+Populate an old warm native dependency, make its migrator unavailable and query
+the complete canonical archival goal and object inventories. Both remain
+queryable with the native input's bytes/inode/mtime unchanged and no migrator
+invocation. Add an actual modern font object to that request: migration must
+run and its failure remain explicit. This does not execute or qualify an
+archival ROM build; real archival integration stays in complete CI.
+English/pseudo object compile and unchanged rebuild do not invoke the unused
+declaration generator; explicit declaration requests still work.
+With an owned selected binary font width input, direct catalog/header and
+custom-parent generation consume the original width and both decremented native values,
+not the stale initial object. Only selected font-data dependency owners enter
+this bootstrap; pure capture/declaration and cleanup remain independent.
+Both public catalog/header aliases and an inherited catalog parent also work
+for the default project with `en,ja` or `en,zh-Hans` in a 32 MiB debug build.
+Their compiled System/Talk maps match the selected binary codepoint/width inputs
+instead of using an English-only configuration fallback.
+
+Private System/Talk Latin widths are 9/11 pixels, including a real cross-slot
+ARM glyph relocation. Private Japanese System/Talk widths are 13/7; selected
+European styles and counts are measured too. Existing width, Talk and fixed-name
+consumers accept fitting data and refuse the next overflowing glyph using those
+native maps. English/pseudo keeps the same selected Latin data. Bad native
+counts, scalar/width bounds, bitmap lengths, missing symbols and wrong-machine
+objects fail. Fake compiler/linker success cannot reuse stale measurement
+objects or pass without emitting fresh native facts.
+Also change only inherited/private System width flags in English and pseudo
+default parents, sole named parents and direct font-object requests without
+an explicit capture goal. The captured measurement AND original ARM font
+object must reflect both changed values. Repeat an unchanged parent request:
+the original object's modification time stays unchanged. Native ownership,
+not top-level goal spelling or CJK selection, supplies the context dependency.
+
+### Interactions, cleanup and limitations
+
+This reuses project code/font/message selection and existing localization
+interfaces. Conflicts are actual edits to those interfaces; there is no new
+feature flag, locale, save field/epoch or archival prerequisite. The test removes
+only its owned temporary directories. Production debug/release/default/
+localized/archival ROM and RAM integration stays in complete Build CI.
+
+This is native input/layout/measurement coverage, not retained-reference,
+event/liveness/control, English-buffer-safety, corpus/glyph completeness or
+whole-game qualification. It does not fix or close those dependent contracts.
+
 ## TC-TEXT-INITIAL-CACHE-001: Decode the first modern English message-zero lookup
 
 - **Feature / originating issue:** `modern-framework-build` /

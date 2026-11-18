@@ -453,14 +453,16 @@ def render_source(build: GameCatalogBuild) -> str:
         "#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED",
         '#include "localized_game_text_storage.h"',
         "EWRAM_DATA struct MsgBuffer sMsgString = {0};",
-        "#endif",
-        "",
+        "const u32 GAME_LOCALIZATION_SECTION gLocalizedGameTextStorageCapacity = "
+        "sizeof(sMsgString);",
+        "#else",
         "const u32 GAME_LOCALIZATION_SECTION gLocalizedGameTextStorageCapacity = %uu;"
         % max(
             TARGET_STORAGE_BYTES,
             *(bundle.catalog.budget.max_decoded_bytes
               for bundle in (build.english, *build.locales)),
         ),
+        "#endif",
         "",
     ]
     lines.extend(_render_node_array(build.english))

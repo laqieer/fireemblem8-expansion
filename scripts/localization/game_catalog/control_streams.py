@@ -47,8 +47,11 @@ _MOUTH_TOPOLOGY_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
 )
 
 _MESSAGE_START_RE = re.compile(
-    r"\b(?P<kind>TEXTSHOW|WM_TEXT|EvtTextShow2)\s*\(\s*"
+    r"\b(?P<kind>TEXTSHOW|WM_TEXT|EvtTextShow2|Text)\s*\(\s*"
     r"(?P<target>[^,)\r\n]*)(?:,\s*(?P<extra>[^)\r\n]*))?\)"
+)
+_BG_MESSAGE_RE = re.compile(
+    r"\b(?P<kind>Text_BG)\s*\(\s*[^,)\r\n]*,\s*(?P<target>[^,)\r\n]*)\s*\)"
 )
 _POPUP_MESSAGE_RE = re.compile(r"\b(?:BROWNBOXTEXT|NOTIFY)\s*\(\s*([^,)]*)")
 _POPUP_MESSAGE_COMMANDS = frozenset(("BROWNBOXTEXT", "NOTIFY"))
@@ -70,7 +73,7 @@ _TEXT_MODE_COMMANDS = {
 _FLOW_COMMANDS = frozenset(
     ("TEXTSHOW", "WM_TEXT", "EvtTextShow2", "LABEL", "GOTO", "BEQ", "BNE",
      "BGE", "BGT", "BLE", "BLT", "BEQ_EVFLAG", "BNE_EVFLAG", "TEXTCONT",
-     "REMA", "WM_REMOVETEXT", "ENDA", "CHECK_EVBIT")
+     "REMA", "WM_REMOVETEXT", "ENDA", "CHECK_EVBIT", "Text", "Text_BG")
 ) | frozenset(_TEXT_MODE_COMMANDS)
 _BARE_FLOW_COMMANDS = (
     frozenset(("TEXTCONT", "REMA", "WM_REMOVETEXT", "ENDA")) | frozenset(_TEXT_MODE_COMMANDS)
@@ -738,7 +741,8 @@ def validate_final_payload(
             "FE8U target: "
             f"{speakers_after_break} != {english_speakers_after_break}"
         )
-    validate_mouth_toggle_balance(payload, source_name=name)
+    if locale != "en":
+        validate_mouth_toggle_balance(payload, source_name=name)
     mouth_topology_comparable = 0
     if control_domain == CONTROL_DOMAIN_FE8U and locale not in (
         "fr",
@@ -774,7 +778,7 @@ def validate_final_payload(
         "break_talk_count": _break_talk_count(tokens),
         "fe8u_mouth_topology_validated_payload_count": mouth_topology_comparable,
         "face_operand_count": len(faces),
-        "mouth_balance_validated_payload_count": 1,
+        "mouth_balance_validated_payload_count": int(locale != "en"),
         "token_count": len(tokens),
         **talk_stats,
     }
@@ -806,7 +810,9 @@ def _event_commands(
     return commands
 
 
-def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[SourceEventCommand]]]:
+def _event_arrays(
+    event_root: Path, *, event_sources: Iterable[Path] | None = None,
+) -> Iterable[Tuple[Path, List[SourceEventCommand]]]:
     if not Path(event_root).is_dir():
         raise ControlStreamError(f"{event_root}: event source directory is unavailable")
     alias_path = Path(__file__).resolve().parents[3] / "include/EAstdlib.h"
@@ -823,7 +829,10 @@ def _event_arrays(event_root: Path) -> Iterable[Tuple[Path, List[SourceEventComm
             aliases[public] = short
         elif public in commands:
             aliases[short] = public
-    for path in sorted(Path(event_root).rglob("*")):
+    paths = {path for path in Path(event_root).rglob("*")}
+    if event_sources is not None:
+        paths.update(Path(path) for path in event_sources)
+    for path in sorted(paths):
         if path.suffix not in (".c", ".h") or not path.is_file():
             continue
         source = _strip_comments(path.read_text(encoding="utf-8"))
@@ -872,11 +881,28 @@ def _resolve_message_start(
         message.group("target").strip(), message_ids, path,
         dynamic_slot=message.group("kind") in ("TEXTSHOW", "EvtTextShow2"),
     )
-    if message.group("kind") == "WM_TEXT" and message.group("extra") is not None:
+    if (
+        message.group("kind") == "WM_TEXT"
+        and message.groupdict().get("extra") is not None
+    ):
         target_id |= _resolve_event_message_id(
             message.group("extra").strip(), message_ids, path, dynamic_slot=False,
         )
     return target_id
+
+
+def _selected_message_start(
+    command: str, message_ids: Mapping[str, int], path: Path,
+) -> tuple[str, int] | None:
+    match = _MESSAGE_START_RE.search(command)
+    if match is None:
+        match = _BG_MESSAGE_RE.search(command)
+    if match is None:
+        return None
+    return (
+        match.group("kind"),
+        _resolve_message_start(match, message_ids, path),
+    )
 
 
 def _array_continuations(
@@ -914,19 +940,23 @@ def _array_continuations(
         line = lines[pc].text
         if line in _TEXT_MODE_COMMANDS:
             next_mode = EventTextMode(_TEXT_MODE_COMMANDS[line])
-            if next_mode != active_mode and next_mode != EventTextMode.BOX_TYPE5:
+            if (
+                line != "REMOVEPORTRAITS"
+                and next_mode != active_mode
+                and next_mode != EventTextMode.BOX_TYPE5
+            ):
                 if target_id is not None and start_kind is not None:
                     results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
                 target_id, start_kind, continuations, dialogue_skipped = None, None, 0, False
             active_mode = next_mode
-        message = _MESSAGE_START_RE.search(line)
-        if message:
-            next_target_id = _resolve_message_start(message, message_ids, path)
-            if not (message.group("kind") in ("TEXTSHOW", "EvtTextShow2") and next_target_id == 0):
+        selected_message = _selected_message_start(line, message_ids, path)
+        if selected_message:
+            selected_kind, next_target_id = selected_message
+            if not (selected_kind in ("TEXTSHOW", "EvtTextShow2") and next_target_id == 0):
                 if target_id is not None and start_kind is not None:
                     results.add((target_id, start_kind, continuations, dialogue_skipped, text_mode))
                 target_id = next_target_id
-                start_kind = message.group("kind")
+                start_kind = selected_kind
                 text_mode = EventTextMode.TALK if start_kind == "WM_TEXT" else active_mode
                 continuations = 0
                 dialogue_skipped = False
@@ -984,9 +1014,11 @@ def build_event_continuation_models(
     event_root: Path = DEFAULT_EVENT_ROOT,
     *,
     message_ids: Optional[Mapping[str, int]] = None,
+    event_sources: Iterable[Path] | None = None,
 ) -> Mapping[int, Tuple[EventContinuationModel, ...]]:
     return _event_continuation_models(
-        _event_arrays(event_root), {} if message_ids is None else message_ids,
+        _event_arrays(event_root, event_sources=event_sources),
+        {} if message_ids is None else message_ids,
     )
 
 
@@ -1024,6 +1056,7 @@ def validate_event_continuations(
     localized_payloads: Mapping[str, Sequence[Optional[bytes]]],
     event_root: Path = DEFAULT_EVENT_ROOT,
     message_ids: Optional[Mapping[str, int]] = None,
+    event_sources: Iterable[Path] | None = None,
 ) -> Dict[str, int]:
     for locale, payloads in localized_payloads.items():
         if len(payloads) != len(english_payloads):
@@ -1031,15 +1064,15 @@ def validate_event_continuations(
                 f"{locale}: final payload count {len(payloads)} != "
                 f"active English count {len(english_payloads)}"
             )
-    arrays = tuple(_event_arrays(event_root))
+    arrays = tuple(_event_arrays(event_root, event_sources=event_sources))
     message_ids = {} if message_ids is None else message_ids
     for path, commands in arrays:
         for command in commands:
-            message = _MESSAGE_START_RE.search(command.text)
+            selected_message = _selected_message_start(command.text, message_ids, path)
             popup = _POPUP_MESSAGE_RE.search(command.text)
-            if message is not None:
-                target_id = _resolve_message_start(message, message_ids, path)
-                dynamic_slot = message.group("kind") in ("TEXTSHOW", "EvtTextShow2")
+            if selected_message is not None:
+                start_kind, target_id = selected_message
+                dynamic_slot = start_kind in ("TEXTSHOW", "EvtTextShow2")
             elif popup is not None:
                 target_id = _resolve_event_message_id(
                     popup.group(1).strip(), message_ids, path, dynamic_slot=True,

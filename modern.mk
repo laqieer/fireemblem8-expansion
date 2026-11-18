@@ -2,7 +2,8 @@
 
 MODERN_GOALS := \
 	expansion-modern-toolchain-check \
-	_expansion-modern-text-object-plan \
+	expansion-modern-text-inputs \
+	expansion-modern-game-localization-declarations \
 	expansion-modern-cohort \
 	expansion-modern-all \
 	expansion-modern-elf \
@@ -36,6 +37,7 @@ MODERN_GOALS := \
 	expansion-modern-overlay-audit \
 	expansion-modern-shifted-check \
 	expansion-modern-linker-check \
+	expansion-modern-review-arm-check \
 	expansion-modern-localization-budget \
 	expansion-modern-localization-budget-check \
 	expansion-modern-localization-profile-headroom-check \
@@ -54,8 +56,6 @@ MODERN_GOALS := \
 	expansion-modern-localization-runtime-save-check \
 	expansion-modern-localization-runtime-shifted-check \
 	expansion-modern-game-localization-config-check \
-	expansion-modern-game-localization-declarations \
-	expansion-modern-text-inputs \
 	expansion-modern-starter-hook-check \
 	expansion-modern-starter-qol-check \
 	expansion-modern-starter-runtime-check \
@@ -288,8 +288,8 @@ MODERN_CFLAGS := \
 # running instance of make parsed modern.mk (an ambient shell environment
 # variable, or a `make FE8_ITEM_ID_CAP=... <goal>` command-line assignment
 # for this very invocation) via MODERN_DEFINE_FLAGS above -- MODERN_CFLAGS
-# itself is a plain `:=` snapshot, taken once, not re-evaluated per recipe
-# line. expansion-modern-idspace-active-check needs to compile three
+# base is a `:=` snapshot, taken once before configuration is consumed.
+# expansion-modern-idspace-active-check needs to compile three
 # DIFFERENT, explicit cap states (no cap define at all, -DFE8_ITEM_ID_CAP=0xCE,
 # and "the 0xCE-record table with no cap define") in the course of ONE gate
 # run, regardless of whatever ambient value the *caller* happened to invoke
@@ -443,7 +443,7 @@ MODERN_SCANINC ?= tools/scaninc/scaninc$(EXE)
 # is still treated as already up to date instead of failing with "No rule
 # to make target tools/scaninc/scaninc.cpp".
 tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h tools/scaninc/Makefile)
-	$(MAKE) -C tools/scaninc
+	+$(modern_recursive_make) -C tools/scaninc
 
 # --- Localization catalog availability/paths (issue #18 sprint 1) ----------
 # Computed here (early, before MODERN_ALL_C_OBJECTS/MODERN_ALL_OBJECTS are
@@ -555,7 +555,7 @@ MODERN_GAME_LOCALIZATION_AVAILABLE := $(and \
 	$(wildcard texts/locales/fixed_width_display_aliases.json),\
 	$(wildcard texts/locales/mapping/fe8u_target_map.json),\
 	$(wildcard texts/locales/mapping/fe8eu_to_fe8u.json))
-MODERN_GAME_LOCALIZATION_ROOT := $(MODERN_OUTPUT_DIR)/game-localization
+MODERN_GAME_LOCALIZATION_ROOT := $(if $(filter-out default,$(FE8_PROJECT)),$(MODERN_OUTPUT_DIR)/game-localization,$(MODERN_BUILD_ROOT)/game-localization)
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated
 MODERN_GAME_LOCALIZATION_CONFIG_H := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/localized_game_text_data.h
 MODERN_GAME_LOCALIZATION_HEADER := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/game_localization_catalog.h
@@ -595,9 +595,10 @@ endif
 
 MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.o))
 MODERN_TEXT_COMPILE_CONTEXT := $(MODERN_OUTPUT_DIR)/selected-text-inputs.json
-MODERN_TEXT_FONT_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,src/fontgrp-data.o src/data/localized_font_data.o)
-MODERN_TEXT_INPUT_REQUESTED := $(filter $(MODERN_OUTPUT_DIR)/%.text-input.json $(MODERN_TEXT_COMPILE_CONTEXT),$(MAKECMDGOALS))
-modern_compile_family = $(1) $(filter $(MODERN_ALL_C_HEADER_DEPS),$(patsubst %.o,%.headers.d,$(1)))
+MODERN_TEXT_FONT_OBJECTS := \
+	$(MODERN_OUTPUT_DIR)/src/fontgrp.o \
+	$(MODERN_OUTPUT_DIR)/src/fontgrp-data.o \
+	$(MODERN_OUTPUT_DIR)/src/data/localized_font_data.o
 
 # Reinstate a linked table's object at exactly its *original* (hand
 # source's) output path, e.g. $(MODERN_OUTPUT_DIR)/src/data_classes.o --
@@ -978,58 +979,62 @@ expansion-modern-all: expansion-modern-toolchain-check \
 $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 
 .SECONDEXPANSION:
+modern_empty :=
+modern_space := $(modern_empty) $(modern_empty)
+modern_tool_prerequisite = $(if $(filter 1,$(MODERN_DRY_RUN)),,$(subst $(modern_space),\$(modern_space),$(1)))
 MODERN_TEXT_NATIVE_MAKE := $(MAKE)
-MODERN_TEXT_NATIVE_MAKEFILE := $(firstword $(MAKEFILE_LIST))
-# A dependency created after parent parsing must not gain a builtin .d.o remake.
+MODERN_TEXT_NATIVE_MAKEFILES := $(MODERN_TEXT_COMPILE_CONTEXT).makefiles
+# Keep C target scopes, but do not enter recursive non-C/link preparation.
 modern_text_native_plan = $(MODERN_TEXT_NATIVE_MAKE) --no-print-directory -r -n -B \
-	-f "$(MODERN_TEXT_NATIVE_MAKEFILE)" NODEP=1 MODERN_DRY_RUN=1 \
-	$(foreach makefile,$(MAKEFILE_LIST),-o "$(makefile)") \
-	-o expansion-modern-toolchain-check -o "$(MODERN_PREPROC)" \
-	$(foreach prerequisite,$(MODERN_PREPROC),-o "$(prerequisite)") \
+	NODEP=1 MODERN_DRY_RUN=1 \
+	-o expansion-modern-toolchain-check -o expansion-modern-link-prepare \
+	-o "$(MODERN_MGFEMBP_PAYLOAD)" \
+	-o "$(GENERATED_DATA_CH2_EVENTLISTS_C)" \
 	-o "$(MODERN_TEXT_COMPILE_CONTEXT)" expansion-modern-toolchain-check
-define MODERN_TEXT_INPUT_RULE
-ifneq ($(and $(strip $(3)),$(filter $(1),$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS))),)
-MODERN_TEXT_COMPILE_DESCRIPTORS += $(patsubst %.o,%.text-input.json,$(1))
-MODERN_TEXT_SELECTED_SOURCES += $(3)
-$(patsubst %.o,%.text-input.json,$(1)): FORCE
-	@mkdir -p "$$(@D)"
-	@$$(PYTHON) -m scripts.localization.game_catalog describe-make-compile \
-		--output "$$@" --object "$(1)" --logical-source "$(2)" \
-		--selected-source "$(3)" --cc-input "$(4)" \
-		--compiler "$$(MODERN_CC)" $(if $(5),--preprocessor "$$(MODERN_PREPROC)") \
-		-- $$(modern_text_native_plan) "$(1)"
-endif
-endef
-
-$(foreach source,$(MODERN_ALL_C_SOURCES),$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/$(source:.c=.o),$(source),$(call modern_c_source,$(source)),$(call modern_c_source,$(source)))))
-$(foreach source,$(MODERN_ALL_DATA_C_SOURCES),$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/$(source:.c=.o),$(source),$(call modern_c_source,$(source)),$(MODERN_OUTPUT_DIR)/$(source:.c=.pre.c),1)))
-
+.PHONY: expansion-modern-text-inputs _expansion-modern-text-object-plan
 expansion-modern-text-inputs: $(MODERN_TEXT_COMPILE_CONTEXT)
 
-$(MODERN_TEXT_FONT_OBJECTS): $(MODERN_TEXT_COMPILE_CONTEXT)
-
-$(MODERN_TEXT_COMPILE_CONTEXT): FORCE
+$(dir $(MODERN_TEXT_COMPILE_CONTEXT)):
 	@mkdir -p "$(@D)"
-	@printf '%s\n' $(foreach source,$(sort $(MODERN_TEXT_SELECTED_SOURCES)),"$(source)") > "$@.sources"
-	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
-		--output "$@" --sources-file "$@.sources" \
-		--compiler "$(MODERN_CC)" --preprocessor "$(MODERN_PREPROC)" \
-		-- $(modern_text_native_plan) _expansion-modern-text-object-plan
 
-_expansion-modern-text-object-plan: $$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)
+$(MODERN_TEXT_COMPILE_CONTEXT): FORCE | $(dir $(MODERN_TEXT_COMPILE_CONTEXT))
+	$(if $(findstring n,$(filter-out -%,$(firstword $(MAKEFLAGS)))),,$(file >$(MODERN_TEXT_NATIVE_MAKEFILES),$(MAKEFILE_LIST)))
+	@$(PYTHON) -m scripts.localization.game_catalog describe-make-context \
+		--output "$@" \
+		--makefile-list-file "$(MODERN_TEXT_NATIVE_MAKEFILES)" \
+		--invoker-pid "$(shell echo $$PPID)" \
+		--invoker-goals "$(MAKECMDGOALS)" \
+		--invoker-level "$(MAKELEVEL)" \
+		-- $(modern_text_native_plan) _expansion-modern-text-object-plan; \
+		status=$$?; rm -f "$(MODERN_TEXT_NATIVE_MAKEFILES)"; exit $$status
+
+_expansion-modern-text-object-plan: $$(filter-out expansion-modern-text-inputs $$(MODERN_TEXT_COMPILE_CONTEXT) _expansion-modern-text-object-plan,$$(or $$(MAKECMDGOALS),$$(.DEFAULT_GOAL))) \
+	$$(MODERN_ALL_C_OBJECTS) $$(MODERN_ALL_DATA_OBJECTS)
 	@: fe8-selected-text-objects "$(MODERN_OUTPUT_DIR)" $(foreach object,$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS),"$(object)")
 	@: fe8-selected-text-data $(foreach object,$(MODERN_ALL_DATA_OBJECTS),"$(object)")
-	@: fe8-selected-text-linker "$(MODERN_LD)"
+	@: fe8-selected-text-assembly $(foreach object,$(sort $(MODERN_ALL_ASM_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_FE6SIO_OBJ)),"$(object)")
+	@: fe8-selected-text-linker-default "$(MODERN_LD)"
+
+define modern_compile_c
+@set -e
+"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d).tmp" -MQ "$@" -c "$<" -o "$@"
+@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
+endef
+
+define modern_compile_asm
+@set -e
+"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d).tmp" -c "$<" -o "$@"
+@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
+endef
 
 $(MODERN_OUTPUT_DIR)/%.o: $$(call modern_c_source,$$*.c)
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 ifneq ($(strip $(MODERN_UI_PRESENTATION_AVAILABLE)),)
 $(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o: $(MODERN_UI_PRESENTATION_MANIFEST_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o,src/expansion_ui_presentation_manifest.c,$(MODERN_UI_PRESENTATION_MANIFEST_C),$(MODERN_UI_PRESENTATION_MANIFEST_C)))
+	$(modern_compile_c)
 
 $(MODERN_UI_PRESENTATION_MANIFEST_C): $(or $(call generated_data_source,ui_presentation,src/data/ui_presentation.json),src/data/ui_presentation.json) \
 	scripts/generated_data/ui_presentation/schema.py \
@@ -1047,7 +1052,7 @@ $(MODERN_BGM_REGISTRY_C): $(MODERN_BGM_REGISTRY_JSON) \
 $(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(call modern_c_source,$(MODERN_BGM_REGISTRY_C)) \
 	$(if $(filter $(MODERN_BGM_REGISTRY_C),$(call modern_c_source,$(MODERN_BGM_REGISTRY_C))),expansion-modern-bgm-registry-check)
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 expansion-modern-bgm-registry-check: $(MODERN_BGM_REGISTRY_C)
 	$(PYTHON) $(MODERN_BGM_REGISTRY_SCRIPT) check
@@ -1083,12 +1088,10 @@ bgm-registry-check:
 define GENERATED_DATA_MODERN_OVERRIDE_RULES
 $(MODERN_OUTPUT_DIR)/src/data_$(1).o: $(GENERATED_DATA_OUT_DIR)/data_$(1).c
 	@mkdir -p $$(@D)
-	"$$(MODERN_CC)" $$(MODERN_CFLAGS) -MMD -MP -MF "$$(@:.o=.d)" -MQ "$$@" -c "$$<" -o "$$@"
+	$$(modern_compile_c)
 endef
 
-$(foreach t,$(GENERATED_DATA_LINKED_TABLES),\
-	$(eval $(call GENERATED_DATA_MODERN_OVERRIDE_RULES,$(t)))\
-	$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/data_$(t).o,src/data_$(t).c,$(GENERATED_DATA_OUT_DIR)/data_$(t).c,$(GENERATED_DATA_OUT_DIR)/data_$(t).c)))
+$(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_OVERRIDE_RULES,$(t))))
 
 # Issue #6: in the content profile the bundled content module compiles the
 # BUILD-LOCAL generated authored-text header, so make it an explicit
@@ -1119,8 +1122,7 @@ endif
 # since nothing adds this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o,src/events_u-ch2units.c,$(GENERATED_DATA_CH2_UNITS_C),$(GENERATED_DATA_CH2_UNITS_C)))
+	$(modern_compile_c)
 
 # Issue #5 Batch 3b: same reasoning as the units synthetic-slot rule just
 # above, for the traps table's synthetic slot object. A safe no-op target
@@ -1129,8 +1131,7 @@ $(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_u-ch2units.
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o,src/events_t-ch2traps.c,$(GENERATED_DATA_CH2_TRAPS_C),$(GENERATED_DATA_CH2_TRAPS_C)))
+	$(modern_compile_c)
 
 # Issue #5 Batch 3c: same reasoning as the units/traps synthetic-slot
 # rules above, for the shops table's synthetic slot object. A safe no-op
@@ -1139,8 +1140,7 @@ $(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o,src/events_sh-ch2shops.c,$(GENERATED_DATA_CH2_SHOPS_C),$(GENERATED_DATA_CH2_SHOPS_C)))
+	$(modern_compile_c)
 
 # Issue #5 Batch 3d: same reasoning as the units/traps/shops
 # synthetic-slot rules above, for the eventlists table's synthetic slot
@@ -1150,18 +1150,15 @@ $(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops
 # case.
 $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLISTS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o,src/events_i-ch2eventlists.c,$(GENERATED_DATA_CH2_EVENTLISTS_C),$(GENERATED_DATA_CH2_EVENTLISTS_C)))
+	$(modern_compile_c)
 
 $(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o: $(GENERATED_DATA_CHAPTEROBJECTIVES_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/expansion_chapter_objectives-data.o,src/expansion_chapter_objectives-data.c,$(GENERATED_DATA_CHAPTEROBJECTIVES_C),$(GENERATED_DATA_CHAPTEROBJECTIVES_C)))
+	$(modern_compile_c)
 
 $(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o: $(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_strategies-data.o,src/expansion_autoplay_strategies-data.c,$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C),$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)))
+	$(modern_compile_c)
 
 .PHONY: expansion-modern-autoplay-strategies-objects
 expansion-modern-autoplay-strategies-objects: \
@@ -1213,7 +1210,7 @@ expansion-modern-autoplay-planner-objects: \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)' '$(EXPANSION_AUTOPLAY_PLANNER)'
 
 expansion-modern-autoplay-planner-profile-rom:
-	+$(MAKE) expansion-modern-rom expansion-modern-budget \
+	+$(modern_recursive_make) expansion-modern-rom expansion-modern-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_ROOT) \
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_PLANNER_ENABLED_BUDGET) \
@@ -1221,7 +1218,7 @@ expansion-modern-autoplay-planner-profile-rom:
 
 expansion-modern-autoplay-planner-disabled-profile-rom: \
 	expansion-modern-autoplay-planner-profile-rom
-	+$(MAKE) expansion-modern-rom expansion-modern-budget \
+	+$(modern_recursive_make) expansion-modern-rom expansion-modern-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_PLANNER_DISABLED_ROOT) \
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_PLANNER_DISABLED_BUDGET) \
@@ -1239,7 +1236,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 		--disabled-elf "$(MODERN_AUTOPLAY_PLANNER_DISABLED_ELF)" \
 		--nm "$(MODERN_NM)" --objdump "$(MODERN_OBJDUMP)" --limit 12288 \
 		--output "$(MODERN_AUTOPLAY_PLANNER_LINKED_BUDGET)"
-	+$(MAKE) expansion-modern-autoplay-planner-objects \
+	+$(modern_recursive_make) expansion-modern-autoplay-planner-objects \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_AUTOPLAY_PLANNER=1
 	PLANNER_PRODUCTION_ROM="$(MODERN_AUTOPLAY_PLANNER_ROM)" \
 		PLANNER_PRODUCTION_ELF="$(MODERN_AUTOPLAY_PLANNER_ELF)" \
@@ -1273,8 +1270,7 @@ expansion-modern-autoplay-planner-check: expansion-modern-autoplay-planner-profi
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o,src/data_t-terrainstats.c,$(GENERATED_DATA_TERRAINSTATS_C),$(GENERATED_DATA_TERRAINSTATS_C)))
+	$(modern_compile_c)
 
 # Issue #5 Batch 2 (mechanics): same reasoning as the terrainstats
 # synthetic-slot rule above, for the movecost table's synthetic slot
@@ -1284,8 +1280,7 @@ $(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/data_t-terrainstat
 # that case.
 $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/data_t-movecost.o,src/data_t-movecost.c,$(GENERATED_DATA_MOVECOST_C),$(GENERATED_DATA_MOVECOST_C)))
+	$(modern_compile_c)
 
 # Issue #5 Batch 3 (mechanics): same reasoning as the terrainstats/
 # movecost synthetic-slot rules above, for the weapontriangle table's
@@ -1295,24 +1290,23 @@ $(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/data_t-movecost.o,
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o,src/bmb-weapontriangle.c,$(GENERATED_DATA_WEAPONTRIANGLE_C),$(GENERATED_DATA_WEAPONTRIANGLE_C)))
+	$(modern_compile_c)
 
 # IWRAM-placed symbols need per-symbol BSS sections. agb_sram.c additionally
 # subtracts adjacent function addresses when copying routines into IWRAM.
-$(call modern_compile_family,$(MODERN_OUTPUT_DIR)/src/agb_sram.o): private MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
-$(call modern_compile_family,$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
-$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o): private MODERN_CFLAGS += -Os
-$(call modern_compile_family,$(MODERN_OUTPUT_DIR)/src/m4a.o): private MODERN_CFLAGS += -fdata-sections
-$(call modern_compile_family,$(MODERN_OUTPUT_DIR)/src/bmshop.o): private MODERN_CFLAGS += -fdata-sections
-$(call modern_compile_family,$(MODERN_ALL_DATA_OBJECTS)): private MODERN_CFLAGS += $(MODERN_DATA_LAYOUT_FLAGS)
-$(call modern_compile_family,$(MODERN_OUTPUT_DIR)/src/banim-ekrbattle.o): private MODERN_CFLAGS += $(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)
+$(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
+$(MODERN_OUTPUT_DIR)/src/action_semantics.o \
+$(MODERN_OUTPUT_DIR)/src/expansion_autoplay_planner.o: MODERN_CFLAGS += -Os
+$(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS += -fdata-sections
+$(MODERN_OUTPUT_DIR)/src/bmshop.o: MODERN_CFLAGS += -fdata-sections
+$(MODERN_ALL_DATA_OBJECTS): MODERN_CFLAGS += $(MODERN_DATA_LAYOUT_FLAGS)
+$(MODERN_OUTPUT_DIR)/src/banim-ekrbattle.o: MODERN_CFLAGS += $(MODERN_BANIM_OVERLAY_LAYOUT_FLAGS)
 
 # GAS's own --MD tracks uppercase .INCLUDE directives (e.g. macro.inc,
 # gba.inc), so no cpp preprocessing or scaninc invocation is needed here.
 $(MODERN_OUTPUT_DIR)/%.o: %.s
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d)" -c "$<" -o "$@"
+	$(modern_compile_asm)
 
 # Data C sources embed INCBIN_U8/INCBIN_U16 binary/graphics assets and cannot
 # be handed to modern GCC directly. This explicit static pattern rule (bound
@@ -1328,7 +1322,7 @@ $(MODERN_OUTPUT_DIR)/%.o: %.s
 # top-level Makefile's own generation rules (e.g. %.4bpp: %.png) before
 # preproc is ever invoked, on the very first invocation -- rather than
 # preproc failing hard on the first unresolved INCBIN it hits.
-$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $(MODERN_PREPROC)
+$(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$*.c) $$(call modern_tool_prerequisite,$$(MODERN_PREPROC))
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_PREPROC)" ]; then \
 		printf '%s\n' "error: modern preprocessor not found or not executable: $(MODERN_PREPROC)" >&2; \
@@ -1338,7 +1332,7 @@ $(MODERN_ALL_DATA_PRE): $(MODERN_OUTPUT_DIR)/%.pre.c: $$(call modern_c_source,$$
 
 $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre.c
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+	$(modern_compile_c)
 
 # ---------------------------------------------------------------------------
 # Asset dependency bootstrap (issue #3): first-invocation INCBIN readiness
@@ -1517,7 +1511,7 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 	' _
   FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
 endif
-$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $(MODERN_SCANINC)
+$(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $$(call modern_tool_prerequisite,$$(MODERN_SCANINC))
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_SCANINC)" ]; then \
 		printf '%s\n' "error: modern scaninc not found or not executable: $(MODERN_SCANINC)" >&2; \
@@ -1581,10 +1575,35 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c
 	@mv -f "$@.tmp" "$@"
 
 # Included makefiles are otherwise remade even under GNU Make's -n.
-MODERN_DRY_RUN := $(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))
-ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
+# A leading-dash word contains an option argument, not the short flag letters.
+MODERN_DRY_RUN := $(findstring n,$(filter-out -%,$(firstword $(MAKEFLAGS))))
+MODERN_CLEAN_GOALS := clean clean_fast clean_tools distclean expansion-modern-clean assets-clean
+MODERN_TEXT_NONCONSUMER_GOALS := $(MODERN_CLEAN_GOALS) expansion-modern-toolchain-check \
+	expansion-modern-text-inputs $(MODERN_TEXT_COMPILE_CONTEXT) \
+	expansion-modern-game-localization-declarations $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
+	game_localization_declarations.h $(ARCHIVAL_KNOWN_GOALS) $(ALL_OBJECTS)
+# Replay target scopes without starting recursive profile builds.
+modern_recursive_make = $(if $(filter 1,$(MODERN_DRY_RUN)),:,$(MAKE))
 ifeq ($(MODERN_DRY_RUN),)
+ifneq (,$(filter-out $(MODERN_TEXT_NONCONSUMER_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+ifneq (,$(wildcard $(MODERN_TEXT_FONT_OBJECTS:.o=.d) $(MODERN_TEXT_FONT_OBJECTS:.o=.headers.d)))
+MODERN_TEXT_DEPENDENCY_MIGRATION := $(shell $(PYTHON) -m scripts.localization.game_catalog \
+	prune-native-font-dependencies --objects $(foreach object,$(MODERN_TEXT_FONT_OBJECTS),"$(object)"))
+ifneq ($(.SHELLSTATUS),0)
+$(error Native font dependency migration failed)
+endif
+endif
+endif
+endif
+ifeq ($(MODERN_DRY_RUN),)
+ifneq (,$(filter $(MODERN_ALL_SOURCE_GOALS),$(MAKECMDGOALS)))
 include $(MODERN_ALL_DATA_ASSET_DEPS)
+else
+ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+ifneq (,$(filter-out $(MODERN_TEXT_NONCONSUMER_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))))
+include $(filter $(MODERN_TEXT_FONT_OBJECTS:.o=.assets.d),$(MODERN_ALL_DATA_ASSET_DEPS))
+endif
+endif
 endif
 endif
 
@@ -1917,42 +1936,15 @@ else
 	@printf '%s\n' '{"expansion_config_available": false}' > "$@"
 endif
 
-# The eager $(shell ...) resolution below (needed only to feed MODERN_CFLAGS
-# -D defines for actual C compilation) stays gated on
-# MODERN_CONFIG_RESOLVE_GOALS -- MODERN_GOALS with expansion-modern-clean
-# excluded -- like NODEP above (so a legacy-only invocation of `make` never
-# shells out to Python for it), and on MODERN_EXPANSION_CONFIG_AVAILABLE (so
-# the minimal synthetic modern.mk-only fixtures described above are
-# unaffected). expansion-modern-clean must be excluded from this gate: it
-# only removes build output, never compiles or embeds anything
-# expansion-config-related, so an invalid EXPANSION_* value (e.g. an
-# over-length title) must not block `make expansion-modern-clean` -- clean
-# has to keep working precisely so a bad config's build tree can be
-# recovered from without hand-deleting it.
-MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOALS)) $(MODERN_TEXT_INPUT_REQUESTED)
-MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out clean clean_fast clean_tools distclean expansion-modern-clean assets-clean,$(MAKECMDGOALS)),default))
-
-# Whether this invocation's MODERN_CFLAGS actually receives the
-# FE8_EXPANSION_* -D defines below (both gates below hold). Used again
-# further down to keep MODERN_COMPILE_SETTINGS -- the content-addressed
-# recompilation stamp for every modern C/data object that observes
-# include/expansion_config.h -- a single source of truth with the defines
-# it is stamping, instead of re-deriving the same two gates a second time.
-MODERN_EXPANSION_DEFINES_ACTIVE :=
-# Selected standalone producers share the compiled configuration's validation.
-ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT_CONFIG_REQUESTED))
- ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
-  MODERN_EXPANSION_DEFINES_ACTIVE := 1
-  # Every version/ROM-identity value is passed explicitly here as the
-  # *current* Make variable value (config.mk's ?= default, or a
-  # command-line/environment override -- Make itself resolves which wins).
-  # This is what keeps this tool, the -D defines below, and the generated
-  # metadata JSON as a single source of truth: whatever `make ...
-  # EXPANSION_ROM_TITLE=...` resolves to is exactly what gets validated,
-  # embedded in the ROM, and checked by the verifier -- never re-derived
-  # from config.mk alone (which would silently ignore a command-line
-  # override and desync the compiled ROM from the generated metadata).
-  MODERN_EXPANSION_CONFIG_RESOLVE := $(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve \
+# Resolve once when flags or identity consumers need configuration, including
+# arbitrary inherited parents. Public goals retain their early validation.
+MODERN_PROJECT_CONFIG_REQUESTED := $(if $(filter-out default,$(FE8_PROJECT)),$(if $(strip $(MAKECMDGOALS)),$(filter-out $(MODERN_CLEAN_GOALS),$(MAKECMDGOALS)),default))
+MODERN_EXPANSION_DEFINES_ACTIVE := $(if $(MODERN_EXPANSION_CONFIG_AVAILABLE),1)
+ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
+MODERN_EXPANSION_BASE_CFLAGS := $(MODERN_CFLAGS)
+define modern_resolve_config
+$(if $(MODERN_EXPANSION_CONFIG_RESOLVED),,\
+  $(eval MODERN_EXPANSION_CONFIG_RESOLVE := $(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve \
 	--project "$(or $(FE8_PROJECT),default)" \
 	--project-profile "$(or $(FE8_PROJECT_PROFILE),default)" \
 	--config-mk config.mk \
@@ -1986,65 +1978,54 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT
 	--autoplay-planner "$(EXPANSION_AUTOPLAY_PLANNER)" \
 	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
-	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
-  ifneq (,$(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-    $(error $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
-  MODERN_BUILD_COMMIT := $(patsubst MODERN_BUILD_COMMIT=%,%,$(filter MODERN_BUILD_COMMIT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_CONFIG_FINGERPRINT := $(patsubst MODERN_CONFIG_FINGERPRINT=%,%,$(filter MODERN_CONFIG_FINGERPRINT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_VERSION_PACKED := $(patsubst MODERN_VERSION_PACKED=%,%,$(filter MODERN_VERSION_PACKED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_VERSION_STRING := $(patsubst MODERN_VERSION_STRING=%,%,$(filter MODERN_VERSION_STRING=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1))\
+  $(eval MODERN_EXPANSION_CONFIG_STATUS := $(.SHELLSTATUS))\
+  $(if $(filter 0,$(MODERN_EXPANSION_CONFIG_STATUS)),,$(error $(MODERN_EXPANSION_CONFIG_RESOLVE)))\
+  $(if $(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)),$(error $(MODERN_EXPANSION_CONFIG_RESOLVE)))\
+  $(foreach name,MODERN_BUILD_COMMIT MODERN_SAVE_COMPAT_EPOCH MODERN_EXPANSION_ENABLED_LOCALE_MASK,\
+    $(if $(filter $(name)=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)),,\
+      $(error modern.mk: failed to resolve $(name) from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))))\
+  $(eval MODERN_EXPANSION_CONFIG_RESOLVED := 1))
+endef
+modern_config_value = $(strip $(call modern_resolve_config)$(patsubst $(1)=%,%,$(filter $(1)=%,$(MODERN_EXPANSION_CONFIG_RESOLVE))))
+  MODERN_BUILD_COMMIT = $(call modern_config_value,MODERN_BUILD_COMMIT)
+  MODERN_CONFIG_FINGERPRINT = $(call modern_config_value,MODERN_CONFIG_FINGERPRINT)
+  MODERN_VERSION_PACKED = $(call modern_config_value,MODERN_VERSION_PACKED)
+  MODERN_VERSION_STRING = $(call modern_config_value,MODERN_VERSION_STRING)
   # Issue #2 slice 1 (review fix #4): the save-compatibility epoch is a
   # separate compatibility gate from the #8 fingerprint above (see
   # docs/config_identity.md) -- resolved the exact same way (config.mk
-  # default, or a command-line/environment MODERN_CONFIG_RESOLVE_GOALS
-  # override) so `make ... EXPANSION_SAVE_COMPAT_EPOCH=2` changes the
+  # default, or a command-line/environment override) so
+  # `make ... EXPANSION_SAVE_COMPAT_EPOCH=2` changes the
   # embedded ROM metadata without requiring `make clean` first.
-  MODERN_SAVE_COMPAT_EPOCH := $(patsubst MODERN_SAVE_COMPAT_EPOCH=%,%,$(filter MODERN_SAVE_COMPAT_EPOCH=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_SAVE_COMPAT_EPOCH = $(call modern_config_value,MODERN_SAVE_COMPAT_EPOCH)
   # Issue #18 sprint 1: locale identity tokens, resolved and validated the
   # exact same way (config.mk default, or a command-line/environment
-  # MODERN_CONFIG_RESOLVE_GOALS override) as every other identity field
+  # override) as every other identity field
   # above -- see scripts/modernize/expansion_config.py's
   # validate_enabled_locales/validate_default_locale/validate_pseudo_locale
   # (an invalid or inconsistent combination already made
   # MODERN_EXPANSION_CONFIG_RESOLVE start with "error:" above, which the
   # $(error ...) a few lines up already caught).
-  MODERN_EXPANSION_ENABLED_LOCALE_MASK := $(patsubst MODERN_EXPANSION_ENABLED_LOCALE_MASK=%,%,$(filter MODERN_EXPANSION_ENABLED_LOCALE_MASK=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_DEFAULT_LOCALE_ID := $(patsubst MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,%,$(filter MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED := $(patsubst MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,%,$(filter MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_AOE_REFERENCE := $(patsubst MODERN_EXPANSION_AOE_REFERENCE=%,%,$(filter MODERN_EXPANSION_AOE_REFERENCE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS := $(patsubst MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,%,$(filter MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_HQ_MIXER := $(patsubst MODERN_EXPANSION_HQ_MIXER=%,%,$(filter MODERN_EXPANSION_HQ_MIXER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_AUTOPLAY_STRATEGIES := $(patsubst MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_STRATEGIES=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_AUTOPLAY_PLANNER := $(patsubst MODERN_EXPANSION_AUTOPLAY_PLANNER=%,%,$(filter MODERN_EXPANSION_AUTOPLAY_PLANNER=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
-  ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
-    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
-  else ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),resume)
-    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 1
-  else ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),restart)
-    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 2
-  else
-    $(error modern.mk: unresolved BGM continuation policy '$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)')
-  endif
-  ifeq ($(strip $(MODERN_BUILD_COMMIT)),)
-    $(error modern.mk: failed to resolve MODERN_BUILD_COMMIT from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
-  ifeq ($(strip $(MODERN_SAVE_COMPAT_EPOCH)),)
-    $(error modern.mk: failed to resolve MODERN_SAVE_COMPAT_EPOCH from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
-  ifeq ($(strip $(MODERN_EXPANSION_ENABLED_LOCALE_MASK)),)
-    $(error modern.mk: failed to resolve MODERN_EXPANSION_ENABLED_LOCALE_MASK from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
-  endif
+  MODERN_EXPANSION_ENABLED_LOCALE_MASK = $(call modern_config_value,MODERN_EXPANSION_ENABLED_LOCALE_MASK)
+  MODERN_EXPANSION_DEFAULT_LOCALE_ID = $(call modern_config_value,MODERN_EXPANSION_DEFAULT_LOCALE_ID)
+  MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED = $(call modern_config_value,MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED)
+  MODERN_EXPANSION_AOE_REFERENCE = $(call modern_config_value,MODERN_EXPANSION_AOE_REFERENCE)
+  MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS = $(call modern_config_value,MODERN_EXPANSION_CUSTOM_SPELL_EFFECTS)
+  MODERN_EXPANSION_CASUAL_MODE = $(call modern_config_value,MODERN_EXPANSION_CASUAL_MODE)
+  MODERN_EXPANSION_HQ_MIXER = $(call modern_config_value,MODERN_EXPANSION_HQ_MIXER)
+  MODERN_EXPANSION_AUTOPLAY_STRATEGIES = $(call modern_config_value,MODERN_EXPANSION_AUTOPLAY_STRATEGIES)
+  MODERN_EXPANSION_AUTOPLAY_PLANNER = $(call modern_config_value,MODERN_EXPANSION_AUTOPLAY_PLANNER)
+  MODERN_EXPANSION_BGM_CONTINUATION_POLICY = $(call modern_config_value,MODERN_EXPANSION_BGM_CONTINUATION_POLICY)
+  MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID = $(if $(filter preserve,$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)),0,$(if $(filter resume,$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)),1,$(if $(filter restart,$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)),2,$(error modern.mk: unresolved BGM continuation policy '$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'))))
 
-  MODERN_COMPILED_ENABLED_LOCALE_MASK := $(MODERN_EXPANSION_ENABLED_LOCALE_MASK)
+  MODERN_COMPILED_ENABLED_LOCALE_MASK = $(MODERN_EXPANSION_ENABLED_LOCALE_MASK)
 
   # Modern-only compiler defines feeding include/expansion_config.h. These
   # are never added to the legacy Makefile's CFLAGS, so the legacy build
   # keeps that header's hardcoded #ifndef fallbacks (today's exact ROM
   # identity) unchanged.
-  MODERN_CFLAGS += \
+  MODERN_EXPANSION_CPPFLAGS = \
 	-DFE8_EXPANSION_VERSION_MAJOR=$(EXPANSION_VERSION_MAJOR) \
 	-DFE8_EXPANSION_VERSION_MINOR=$(EXPANSION_VERSION_MINOR) \
 	-DFE8_EXPANSION_VERSION_PATCH=$(EXPANSION_VERSION_PATCH) \
@@ -2076,6 +2057,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT
 	-DFE8_EXPANSION_AUTOPLAY_PLANNER=$(EXPANSION_AUTOPLAY_PLANNER) \
 	-DFE8_EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID=$(EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID) \
 	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
+  MODERN_CFLAGS = $(MODERN_EXPANSION_BASE_CFLAGS) $(MODERN_EXPANSION_CPPFLAGS)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
   # NOT folded into MODERN_CONFIG_FINGERPRINT / save identity): defined for
@@ -2084,7 +2066,10 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT
   # present in every modern build, while the legacy build keeps
   # include/expansion_config.h's 0 fallback and emits no orphan ewram_data.
   MODERN_CFLAGS += -DFE8_EXPANSION_MODERN_BUILD=1
- endif
+ifneq (,$(filter-out expansion-modern-clean,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS))$(MODERN_PROJECT_CONFIG_REQUESTED))
+  $(call modern_resolve_config)
+  MODERN_CFLAGS := $(MODERN_CFLAGS)
+endif
 endif
 
 .PHONY: expansion-modern-game-localization-config-check
@@ -2153,40 +2138,40 @@ MODERN_PATCH_RELEASE_FLAGS := \
 	FE8_ITEM_ID_CAP=0xCE
 
 expansion-modern-localization-profile-en-ja:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_JA_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,ja
 
 expansion-modern-localization-profile-en-zh-hans:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,zh-Hans
 
 expansion-modern-localization-profile-en-ja-zh-hans:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans
 
 expansion-modern-localization-profile-en-ja-zh-hans-qps:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M \
 		MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,qps-ploc \
 		EXPANSION_PSEUDO_LOCALE=1
 
 expansion-modern-localization-profile-en-fr-de-es-it:
-	+$(MAKE) expansion-modern-rom expansion-modern-game-localization-config-check \
+	+$(modern_recursive_make) expansion-modern-rom expansion-modern-game-localization-config-check \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_EU_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,fr,de,es,it
 
 expansion-modern-localization-profile-all:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_ALL_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,fr,de,es,it
 
 expansion-modern-all-locales-all-features-check:
-	+$(MAKE) expansion-modern-boot-check expansion-modern-overlay-audit \
+	+$(modern_recursive_make) expansion-modern-boot-check expansion-modern-overlay-audit \
 		expansion-modern-relocs expansion-modern-localization-budget-check \
 		expansion-modern-game-localization-config-check $(MODERN_PATCH_RELEASE_FLAGS) \
 		MODERN_BUDGET_REPORT=$(MODERN_PATCH_RELEASE_BUDGET) \
@@ -2218,7 +2203,7 @@ CLEAN_DIRS += $(MODERN_MAP_MENU_NINE_ROW_ROOT)
 
 expansion-modern-map-menu-presentation-check: \
 		expansion-modern-all-locales-all-features-check
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT=$(MODERN_MAP_MENU_NINE_ROW_ROOT) \
 		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_MAP_MENU_NINE_ROW_GENERATED_DATA_DIR)) \
@@ -2266,7 +2251,7 @@ expansion-modern-all-locales-all-features-patch-check: \
 # user-stack margin below __sp_usr; neither gate can be satisfied by a
 # source-only aggregate budget or by physical IWRAM space reserved for stacks.
 expansion-modern-localization-profile-headroom-check:
-	+$(MAKE) expansion-modern-localization-profile-en-ja \
+	+$(modern_recursive_make) expansion-modern-localization-profile-en-ja \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
 	READELF="$(MODERN_READELF)" "$(PYTHON)" scripts/linker_report/budget.py \
 		--map "$(MODERN_LOCALE_PROFILE_EN_JA_OUTPUT_DIR)/fireemblem8.map" \
@@ -2274,7 +2259,7 @@ expansion-modern-localization-profile-headroom-check:
 		--output "$(MODERN_LOCALE_PROFILE_EN_JA_OUTPUT_DIR)/linker-budget.json" \
 		--validate-elf --require-positive-headroom ewram \
 		--require-positive-headroom iwram
-	+$(MAKE) expansion-modern-localization-profile-en-zh-hans \
+	+$(modern_recursive_make) expansion-modern-localization-profile-en-zh-hans \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
 	READELF="$(MODERN_READELF)" "$(PYTHON)" scripts/linker_report/budget.py \
 		--map "$(MODERN_LOCALE_PROFILE_EN_ZH_HANS_OUTPUT_DIR)/fireemblem8.map" \
@@ -2282,7 +2267,7 @@ expansion-modern-localization-profile-headroom-check:
 		--output "$(MODERN_LOCALE_PROFILE_EN_ZH_HANS_OUTPUT_DIR)/linker-budget.json" \
 		--validate-elf --require-positive-headroom ewram \
 		--require-positive-headroom iwram
-	+$(MAKE) expansion-modern-localization-profile-en-ja-zh-hans \
+	+$(modern_recursive_make) expansion-modern-localization-profile-en-ja-zh-hans \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
 	READELF="$(MODERN_READELF)" "$(PYTHON)" scripts/linker_report/budget.py \
 		--map "$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_OUTPUT_DIR)/fireemblem8.map" \
@@ -2290,7 +2275,7 @@ expansion-modern-localization-profile-headroom-check:
 		--output "$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_OUTPUT_DIR)/linker-budget.json" \
 		--validate-elf --require-positive-headroom ewram \
 		--require-positive-headroom iwram
-	+$(MAKE) expansion-modern-localization-profile-en-ja-zh-hans-qps \
+	+$(modern_recursive_make) expansion-modern-localization-profile-en-ja-zh-hans-qps \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
 	READELF="$(MODERN_READELF)" "$(PYTHON)" scripts/linker_report/budget.py \
 		--map "$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_OUTPUT_DIR)/fireemblem8.map" \
@@ -2520,26 +2505,31 @@ endif
 # case.
 $(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o: $(MODERN_LOCALIZATION_CATALOG_C)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o,src/expansion_locale-catalog.c,$(MODERN_LOCALIZATION_CATALOG_C),$(MODERN_LOCALIZATION_CATALOG_C)))
-
-expansion-modern-game-localization-declarations: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
-
-$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER): FORCE \
-	$(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
-	@mkdir -p "$(@D)"
-	$(PYTHON) -m scripts.localization.game_catalog declare --output "$@" \
-		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(MSG_HEADER),include/constants/msg.h)" \
-		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
-
-$(MODERN_OUTPUT_DIR)/src/localized_game_text.o: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
-game_localization_declarations.h: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) ;
+	$(modern_compile_c)
 
 # The full-game CJK catalog plus its single shared modern English bundle are
 # generated and linked only when the production profile enables real CJK.
 # Grouped outputs prevent parallel compiles from racing the deterministic
 # writer when the runtime headers and generated source are requested together.
+$(MODERN_OUTPUT_DIR)/src/fontgrp.o: graphics/debug_font.4bpp.h
+
+$(MODERN_TEXT_FONT_OBJECTS) $(MODERN_OUTPUT_DIR)/src/data/localized_font_data.pre.c: $(MODERN_TEXT_COMPILE_CONTEXT)
+
+.PHONY: expansion-modern-game-localization-declarations
+expansion-modern-game-localization-declarations: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
+
+$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER): FORCE \
+	$$(or $$(MODERN_PROJECT_MSG_HEADER),$$(TEXT_HEADER)) $(FE8_PROJECT_DECLARATION)
+	$(call modern_resolve_config)
+	@mkdir -p "$(@D)"
+	$(PYTHON) -m scripts.localization.game_catalog declare --output "$@" \
+		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(TEXT_HEADER))" \
+		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
+
+game_localization_declarations.h: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) ;
+
 ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+$(MODERN_OUTPUT_DIR)/src/localized_game_text.o: $(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER)
 .PHONY: FORCE_MODERN_GAME_LOCALIZATION
 FORCE_MODERN_GAME_LOCALIZATION:
 
@@ -2548,25 +2538,22 @@ $(MODERN_GAME_LOCALIZATION_C) $(MODERN_GAME_LOCALIZATION_REPORT_JSON) \
 $(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION \
 	$(MODERN_GAME_LOCALIZATION_DECLARATIONS_HEADER) \
 	$(MODERN_TEXT_COMPILE_CONTEXT) $(MODERN_TEXT_FONT_OBJECTS) graphics/debug_font.4bpp.h \
-	$(MODERN_ALL_DATA_PRE) \
-	$$(filter-out $$(MODERN_GAME_LOCALIZATION_C),$$(sort $$(MODERN_TEXT_SELECTED_SOURCES))) \
 	$(FE8_PROJECT_GAME_INPUTS) $(MODERN_PROJECT_MSG_HEADER) $(FE8_PROJECT_DECLARATION)
 	@mkdir -p "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)"
-	@python3 -m scripts.localization.game_catalog generate \
+	@$(PYTHON) -m scripts.localization.game_catalog generate \
 		$(FE8_PROJECT_GAME_ARGS) \
+		--target-header "$(or $(MODERN_PROJECT_MSG_HEADER),$(TEXT_HEADER))" \
 		--compile-context "$(MODERN_TEXT_COMPILE_CONTEXT)" \
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 
-$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: \
-	$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER)
 game_localization_catalog.h: $(MODERN_GAME_LOCALIZATION_HEADER) ;
 localized_game_text_data.h: $(MODERN_GAME_LOCALIZATION_CONFIG_H) ;
 
-$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: $(MODERN_GAME_LOCALIZATION_C)
+$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: $(MODERN_GAME_LOCALIZATION_C) \
+	$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER)
 	@mkdir -p $(@D)
-	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
-$(eval $(call MODERN_TEXT_INPUT_RULE,$(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o,src/localized_game_text-catalog.c,$(MODERN_GAME_LOCALIZATION_C),$(MODERN_GAME_LOCALIZATION_C)))
+	$(modern_compile_c)
 else
 # Do not invoke the catalog generator for EN/qps-only profiles. These
 # no-recipe targets only absorb full-path prerequisites retained in old CJK
@@ -2660,14 +2647,15 @@ $(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
 	*) cc=$$(command -v "$$cc" 2>/dev/null) || { \
 		printf '%s\n' "error: cannot resolve modern CC: $(MODERN_CC)" >&2; \
 		exit 1; } ;; esac; \
-	cd "$(abspath $(MODERN_MGFEMBP_DIR))" && \
+	(cd "$(abspath $(MODERN_MGFEMBP_DIR))" && \
 	"$$cc" \
 		$(MODERN_DRIVER_FLAGS) $(MODERN_ARCH_FLAGS) \
 		-I"$(CURDIR)/include" -I"$(CURDIR)" \
 		$(MODERN_ABI_FLAGS) \
-		-Wa,--MD,"$(abspath $(@:.o=.d))" \
-		-c "$(CURDIR)/$<" -o "$(abspath $@)"
-	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(abspath $(@:.o=.d))"
+		-Wa,--MD,"$(abspath $(@:.o=.d)).tmp" \
+		-c "$(CURDIR)/$<" -o "$(abspath $@)")
+	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(abspath $(@:.o=.d)).tmp"
+	@mv -f "$(@:.o=.d).tmp" "$(@:.o=.d)"
 
 # Manifest: source-relative paths of every modern-built object.
 $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF_FE6SIO)
@@ -2713,14 +2701,12 @@ $(MODERN_ELF_LINK_SETTINGS): FORCE_MODERN_ELF_LINK_SETTINGS
 # Ensure legacy non-C objects are fresh with full scaninc tracking.
 # A pure expansion-modern-elf request inherits implicit NODEP=1, which
 # suppresses legacy scaninc in the outer invocation. This phony step invokes
-# a single recursive
-# $(MAKE) with NODEP=0 to rebuild only the non-C assembly and MIDI
-# objects with proper asset dependency tracking.  The standard recursive
-# $(MAKE) invocation propagates the jobserver without forcing execution
-# during a dry run. No legacy C objects or mgfembp are invoked.
+# a single recursive Make with NODEP=0 to rebuild only non-C assembly and MIDI
+# objects with proper asset dependency tracking. The shared recursive adapter
+# preserves the jobserver but does not recurse during metadata capture.
 .PHONY: expansion-modern-legacy-ready
 expansion-modern-legacy-ready:
-	$(MAKE) NODEP=0 $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
+	+$(modern_recursive_make) NODEP=0 $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
 
 # Link preparation: FE6 SIO build output, banim via scheduler, legacy
 # freshness, sidecar recovery, then the clean static linker inputs.
@@ -2731,6 +2717,7 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 		expansion-modern-legacy-ready \
 		$(MODERN_ELF_OBJECTS_LST) $(BANIM_OBJECT) \
 		$(MODERN_CLEAN_LDSCRIPT) $(MODERN_CLEAN_IWRAM)
+ifneq ($(MODERN_DRY_RUN),1)
 	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
 		printf '%s\n' \
 			"Sidecar missing; forcing banim rebuild..." >&2; \
@@ -2752,6 +2739,7 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 			"error: $(MODERN_ELF_BANIM_SYM) not produced" >&2; \
 		exit 1; \
 	fi
+endif
 
 # Link the modern ELF with the clean, section-oriented expansion linker.
 # Legacy objects and banim are owned by expansion-modern-link-prepare.
@@ -2787,6 +2775,8 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 # reproduction log and regression coverage added alongside this).
 $(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_LINK_SETTINGS) \
 		$(MODERN_ALL_OBJECTS) $(MODERN_COMPILE_SETTINGS)
+# Library discovery expands shell compiler queries even when Make prints recipes.
+ifneq ($(MODERN_DRY_RUN),1)
 	@set -eu; \
 	libgcc_dir="$(MODERN_LIBGCC_DIR)"; \
 	libc_dir="$(MODERN_LIBC_DIR)"; \
@@ -2820,6 +2810,9 @@ $(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_LINK_SETTINGS) \
 		-o "$@" \
 		-lc -lnosys -lgcc
 	@printf 'Linked modern ELF: %s\n' "$@"
+else
+	@: fe8-selected-text-linker "$(MODERN_LD)"
+endif
 
 expansion-modern-elf: expansion-modern-mgfembp expansion-modern-all \
 		$(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF)
@@ -2891,7 +2884,7 @@ MODERN_GDB_SMOKE_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_BUILD_ROOT
 MODERN_GDB_SMOKE := scripts/modernize/gdb_smoke.py
 
 expansion-modern-gdb-smoke:
-	+$(MAKE) --no-print-directory expansion-modern-rom \
+	+$(modern_recursive_make) --no-print-directory expansion-modern-rom \
 		MODERN_BUILD_ROOT="$(MODERN_BUILD_ROOT)" MODERN_CONFIG=debug MODERN_ABI=aapcs
 	"$(PYTHON)" "$(MODERN_GDB_SMOKE)" \
 		--elf "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.elf" \
@@ -2909,11 +2902,11 @@ MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT := \
 
 .PHONY: expansion-modern-banim-presentation-check
 expansion-modern-banim-presentation-check: expansion-modern-boot-preflight
-	+$(MAKE) --no-print-directory expansion-modern-rom \
+	+$(modern_recursive_make) --no-print-directory expansion-modern-rom \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)" \
 		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=0
-	+$(MAKE) --no-print-directory expansion-modern-rom \
+	+$(modern_recursive_make) --no-print-directory expansion-modern-rom \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)" \
 		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=3
@@ -3164,7 +3157,7 @@ MODERN_DEBUGTOOLS_DIAGNOSTICS_ELF := \
 ifeq ($(MODERN_CONFIG),debug)
 expansion-modern-debugtools-diagnostics-check: expansion-modern-boot-preflight \
 		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_BUILD_ROOT="$(MODERN_DEBUGTOOLS_DIAGNOSTICS_BUILD_ROOT)" \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_INTERNAL_TEST_DEFINES="-DFE8_DEBUGTOOLS_DIAGNOSTICS_RUNTIME_TEST=1"
@@ -3197,7 +3190,7 @@ MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT := \
 
 .PHONY: expansion-modern-portrait-package-runtime-check
 expansion-modern-portrait-package-runtime-check:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_BUILD_ROOT="$(MODERN_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT)" \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_INTERNAL_TEST_DEFINES="-DFE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1"
@@ -3458,6 +3451,7 @@ MODERN_SAVEFMT_FIXTURE_DIR := $(MODERN_OUTPUT_DIR)/savefmt-fixtures
 #      combination, because it is that child's own command line.
 .PHONY: expansion-modern-idspace-active-check
 expansion-modern-idspace-active-check: expansion-modern-toolchain-check
+ifneq ($(MODERN_DRY_RUN),1)
 	@set -e; \
 	OUT="$(MODERN_OUTPUT_DIR)/idspace-active-check"; mkdir -p "$$OUT"; \
 	C=$(GENERATED_DATA_OUT_DIR)/data_items.c; H=$(GENERATED_DATA_ACTIVE_HEADER); \
@@ -3491,6 +3485,7 @@ expansion-modern-idspace-active-check: expansion-modern-toolchain-check
 	$(MAKE) --no-print-directory FE8_ITEM_ID_CAP= $$C >/dev/null; \
 	grep -q "ITEM_ID_ACTIVE_RECORD_COUNT 206" $$H || { echo "FAIL: default-cap state was not restored" >&2; exit 1; }; \
 	echo "PASS: expansion-modern-idspace-active-check"
+endif
 
 expansion-modern-savefmt-check: expansion-modern-boot-preflight expansion-modern-rom
 	"$(PYTHON)" "$(MODERN_SAVEFMT_CHECKS)" \
@@ -3539,7 +3534,7 @@ endif
 MODERN_BANIM_PACKAGE_RUNTIME_ROOT := $(call fe8_project_aux_root,banim-package-runtime,build/banim-package-runtime)
 MODERN_BANIM_PACKAGE_RUNTIME_OUTPUT_DIR := $(call fe8_project_output_dir,$(MODERN_BANIM_PACKAGE_RUNTIME_ROOT),debug,aapcs)
 expansion-modern-banim-package-runtime-check:
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		MODERN_BUILD_ROOT="$(MODERN_BANIM_PACKAGE_RUNTIME_ROOT)" FE8_BANIM_PACKAGE_RUNTIME_TEST=1
 	"$(PYTHON)" tools/gba-playtest/run_banim_package_runtime_check.py \
 		--rom "$(MODERN_BANIM_PACKAGE_RUNTIME_OUTPUT_DIR)/fireemblem8.gba" \
@@ -3583,7 +3578,7 @@ MODERN_STARTER_QOL_NEG_SCENARIO := tools/gba-playtest/scenarios/starter-danger-o
 MODERN_STARTER_QOL_NEG_FINGERPRINT := tools/gba-playtest/fingerprints/starter-danger-overlay-negative-modern-$(MODERN_CONFIG).json
 
 expansion-modern-starter-profile-rom:
-	$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_STARTER_PROFILE_ROOT) \
 		EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1 \
@@ -3771,35 +3766,35 @@ CLEAN_DIRS += $(MODERN_HQ_MIXER_DISABLED_ROOT)
 CLEAN_DIRS += $(MODERN_HQ_MIXER_LISTENING_ROOT)
 
 expansion-modern-hq-mixer-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_PROFILE_ROOT) \
 		EXPANSION_HQ_MIXER=1 \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
 
 expansion-modern-hq-mixer-disabled-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_DISABLED_ROOT) \
 		EXPANSION_HQ_MIXER=0 \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_HQ_MIXER_TEST_FIXTURE=1
 
 expansion-modern-hq-mixer-listening-enabled-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_LISTENING_ENABLED_ROOT) \
 		EXPANSION_HQ_MIXER=1 MODERN_INTERNAL_TEST_DEFINES=
 
 expansion-modern-hq-mixer-listening-control-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_HQ_MIXER_LISTENING_CONTROL_ROOT) \
 		EXPANSION_HQ_MIXER=0 MODERN_INTERNAL_TEST_DEFINES=
 
 expansion-modern-hq-mixer-listening-roms:
-	+$(MAKE) expansion-modern-hq-mixer-listening-enabled-rom \
+	+$(modern_recursive_make) expansion-modern-hq-mixer-listening-enabled-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
-	+$(MAKE) expansion-modern-hq-mixer-listening-control-rom \
+	+$(modern_recursive_make) expansion-modern-hq-mixer-listening-control-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI)
 	@printf 'HQ mixer normal-game listening ROMs built (no automation fixture):\n  enabled: %s\n  stock control: %s\n' \
 		'$(MODERN_HQ_MIXER_LISTENING_ENABLED_ROM)' \
@@ -3840,13 +3835,13 @@ CLEAN_DIRS += $(MODERN_AOE_PROFILE_ROOT)
 CLEAN_DIRS += $(MODERN_AOE_DISABLED_PROFILE_ROOT)
 
 expansion-modern-aoe-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AOE_PROFILE_ROOT) \
 		EXPANSION_AOE_REFERENCE=1
 
 expansion-modern-aoe-disabled-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AOE_DISABLED_PROFILE_ROOT) \
 		EXPANSION_AOE_REFERENCE=0
@@ -3929,7 +3924,7 @@ CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT)
 CLEAN_DIRS += $(MODERN_AUTOPLAY_STRATEGY_BUDGET_ROOT)
 
 expansion-modern-autoplay-strategy-router-absent-budget:
-	+$(MAKE) expansion-modern-budget \
+	+$(modern_recursive_make) expansion-modern-budget \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_BUILD_ROOT) \
 		MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT=1 \
@@ -3938,7 +3933,7 @@ expansion-modern-autoplay-strategy-router-absent-budget:
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ABSENT_REPORT)
 
 expansion-modern-autoplay-strategy-enabled-budget:
-	+$(MAKE) expansion-modern-budget \
+	+$(modern_recursive_make) expansion-modern-budget \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_BUILD_ROOT) \
 		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_GENERATED_DIR)) \
@@ -3947,17 +3942,17 @@ expansion-modern-autoplay-strategy-enabled-budget:
 		MODERN_BUDGET_REPORT=$(MODERN_AUTOPLAY_STRATEGY_BUDGET_ENABLED_REPORT)
 
 expansion-modern-autoplay-strategy-budget:
-	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
+	+$(modern_recursive_make) expansion-modern-autoplay-strategy-router-absent-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-autoplay-strategy-router-absent-budget \
+	+$(modern_recursive_make) expansion-modern-autoplay-strategy-router-absent-budget \
 		MODERN_CONFIG=release MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs \
+	+$(modern_recursive_make) expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs \
 		EXPANSION_AUTOPLAY_STRATEGIES=0
-	+$(MAKE) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs \
+	+$(modern_recursive_make) expansion-modern-budget MODERN_CONFIG=release MODERN_ABI=aapcs \
 		EXPANSION_AUTOPLAY_STRATEGIES=0
-	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
+	+$(modern_recursive_make) expansion-modern-autoplay-strategy-enabled-budget \
 		MODERN_CONFIG=debug MODERN_ABI=aapcs
-	+$(MAKE) expansion-modern-autoplay-strategy-enabled-budget \
+	+$(modern_recursive_make) expansion-modern-autoplay-strategy-enabled-budget \
 		MODERN_CONFIG=release MODERN_ABI=aapcs
 	"$(PYTHON)" "$(MODERN_AUTOPLAY_STRATEGY_BUDGET_SCRIPT)" \
 		--nm "$(MODERN_NM)" \
@@ -3986,7 +3981,7 @@ expansion-modern-autoplay-check: expansion-modern-boot-preflight expansion-moder
 		--out-dir "$(MODERN_AUTOPLAY_RUNTIME_OUTDIR)"
 
 expansion-modern-autoplay-strategy-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_ROOT) \
 		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_PROFILE_GENERATED_DIR)) \
@@ -4001,7 +3996,7 @@ expansion-modern-autoplay-strategy-profile-rom:
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_STRATEGY_RUNTIME_TEST=1
 
 expansion-modern-autoplay-strategy-disabled-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_ROOT) \
 		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_AUTOPLAY_STRATEGY_DISABLED_GENERATED_DIR)) \
@@ -4046,7 +4041,7 @@ MODERN_BLUE_PHASE_DELEGATE_RUNTIME_OUTDIR := \
 	$(MODERN_BLUE_PHASE_DELEGATE_OUTPUT_DIR)/runtime-check
 
 expansion-modern-blue-phase-delegate-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_BLUE_PHASE_DELEGATE_ROOT) \
 		EXPANSION_BLUE_PHASE_DELEGATE=1
@@ -4084,7 +4079,7 @@ MODERN_DEBUGTOOLS_PHASE_CONTROL_RUNTIME_OUTDIR := \
 	$(MODERN_DEBUGTOOLS_PHASE_CONTROL_OUTPUT_DIR)/runtime-check
 
 expansion-modern-debugtools-phase-control-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=debug MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_DEBUGTOOLS_PHASE_CONTROL_ROOT) \
 		EXPANSION_BLUE_PHASE_DELEGATE=1
@@ -4165,7 +4160,7 @@ CLEAN_DIRS += $(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT)
 
 ifeq ($(MODERN_CONFIG),debug)
 expansion-modern-autoplay-accelerated-fidelity-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_AUTOPLAY_ACCELERATED_PROFILE_ROOT) \
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_AUTOPLAY_EVENT_TRACE_TEST=1
@@ -4190,7 +4185,7 @@ expansion-modern-autoplay-accelerated-fidelity-check:
 endif
 
 expansion-modern-chapter-objectives-profile-rom:
-	+$(MAKE) expansion-modern-rom \
+	+$(modern_recursive_make) expansion-modern-rom \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
 		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR)) \
@@ -4200,7 +4195,7 @@ expansion-modern-chapter-objectives-profile-rom:
 		MODERN_INTERNAL_TEST_DEFINES=-DFE8_CHAPTER_OBJECTIVES_RUNTIME_TEST=1
 
 expansion-modern-chapter-objectives-profile-boot-check:
-	+$(MAKE) expansion-modern-boot-check \
+	+$(modern_recursive_make) expansion-modern-boot-check \
 		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_BUILD_ROOT=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_ROOT) \
 		$(if $(filter-out default,$(FE8_PROJECT)),,GENERATED_DATA_OUT_DIR=$(MODERN_CHAPTER_OBJECTIVES_PROFILE_GENERATED_DIR)) \
@@ -4565,7 +4560,7 @@ expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflig
 		$(MODERN_LOCALE_FIXTURE_DIR)/unknown.sav \
 		$(MODERN_LOCALE_FIXTURE_DIR)/disabled_on_multi.sav \
 		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
-	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) \
+	+$(modern_recursive_make) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) \
 		MODERN_BUILD_ROOT=$(MODERN_LOCALE_MULTI_BUILD_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,qps-ploc EXPANSION_PSEUDO_LOCALE=1
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
@@ -4869,6 +4864,11 @@ expansion-modern-custom-spell-check: expansion-modern-rom
 		--enabled "$(EXPANSION_CUSTOM_SPELL_EFFECTS)" \
 		--out-dir "$(MODERN_CUSTOM_SPELL_TEST_DIR)"
 
+.PHONY: expansion-modern-review-arm-check
+expansion-modern-review-arm-check: expansion-modern-toolchain-check
+	MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
+		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
+
 ifeq ($(MODERN_CONFIG),debug)
 MODERN_LINKER_CHECK_ACCELERATED_FIDELITY := \
 		expansion-modern-autoplay-accelerated-fidelity-check
@@ -4876,7 +4876,8 @@ else
 MODERN_LINKER_CHECK_ACCELERATED_FIDELITY :=
 endif
 
-expansion-modern-linker-check: expansion-modern-budget-check \
+expansion-modern-linker-check: expansion-modern-review-arm-check \
+		expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-autoplay-check \
 		expansion-modern-autoplay-bounds-check \
@@ -4912,31 +4913,38 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-localization-runtime-prefs-check \
 		expansion-modern-localization-runtime-save-check \
 		expansion-modern-localization-runtime-shifted-check
-	MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
-		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
 ifeq ($(MODERN_CONFIG),debug)
 	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
-		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
+		-u GBA_PLAYTEST_HOST_ONLY \
+		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" \
+		MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+		MODERN_BINUTILS_DIR="$(MODERN_BINUTILS_DIR)" \
+		MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
+		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
 		"$(PYTHON)" -m unittest \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_context_records_actual_recipes_without_catalog \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_context_keeps_implicit_makefile_with_preloaded_input \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_context_captures_target_specific_native_tools \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_parallel_capture_reads_only_complete_dependency_products \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_data_dependencies_follow_target_specific_tools \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_public_build_entrypoints_capture_only_c_without_execution \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_metrics_read_selected_private_font_objects \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_warm_presplit_dependencies_use_rebuilt_font_metrics \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cleanup_does_not_import_the_catalog_migrator \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_english_object_does_not_force_declarations \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_catalog_tracks_selected_raw_font_assets_for_direct_and_parent_goals \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_default_catalog_header_aliases_resolve_cjk_locales \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_payload_preserves_selected_declarations_on_source_mismatch \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_cjk_fonts_bootstrap_without_payload_generation \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_regional_metrics_and_cross_slot_relocations_are_native \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_translation_and_mapping_use_the_real_engine_root \
+		scripts.localization.game_catalog.tests.test_modern_integration.ModernGameLocalizationIntegrationTests.test_modern_generation_passes_the_selected_catalog_profile \
+		scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_generated_cjk_storage_has_one_measured_native_owner \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_code_is_compiled_in_the_original_logical_object_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_english_source_generates_and_compiles_its_own_message_header \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compile_context_plans_all_c_slots_once_without_catalog_build \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_compiled_font_metrics_use_real_private_include_and_macro_context \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_cjk_metrics_use_compiled_counts_widths_and_enabled_locale \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_metrics_resolve_glyphs_across_both_native_font_slots \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_default_english_resolver_compiles_with_source_only_declarations \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_pseudo_locale_metrics_keep_the_native_latin_path_without_an_atlas \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_cjk_font_compiles_before_measured_game_catalog \
-		scripts.localization.game_catalog.tests.test_modern_integration.ModernGameLocalizationIntegrationTests.test_modern_generation_passes_the_selected_catalog_profile \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
-		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests -v
-	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL -u GBA_PLAYTEST_HOST_ONLY \
-		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
-		MODERN_BINUTILS_DIR="$(MODERN_BINUTILS_DIR)" MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
-		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
-		"$(PYTHON)" -m unittest \
-		scripts.localization.game_catalog.tests.runtime.selected_text_native \
+		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests \
 		scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \

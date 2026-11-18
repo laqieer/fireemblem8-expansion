@@ -329,6 +329,12 @@ def main(args):
     allocated_ids = set()
     allocated_names = {"MSG_H", "MSG_COUNT"}
     for position, message in enumerate(messages):
+        decoded_bytes = sum(1 if value <= 0xFF else 2 for value in message.data)
+        if decoded_bytes > 0x1000:
+            sys.exit(
+                f"{input_fpath}: message allocation 0x{message.idx:04X} "
+                "exceeds the 4096-byte English runtime buffer"
+            )
         if message.idx in allocated_ids:
             sys.exit(f"{input_fpath}: duplicate message allocation 0x{message.idx:04X}")
         if message.definiation in allocated_names:

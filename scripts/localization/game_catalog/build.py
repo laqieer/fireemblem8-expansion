@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from scripts.generated_data.schema import SchemaInputs
+from scripts.generated_data.diagnostics import GeneratedDataError
 
 from scripts.localization.game_locales.controls import (
     ControlSyntaxError,
@@ -790,6 +791,24 @@ def _validate_final_catalog_payloads(
     totals = Counter()
     max_talk_line_width = 0
     validated_fallback_payload_count = 0
+    try:
+        english_talk_metrics = load_talk_font_metrics(
+            "en", repo_root=font_root_path, font_metrics=font_metrics,
+        )
+        for entry in english_entries:
+            stats = validate_final_payload(
+                entry.encoded_bytes,
+                english_payload=entry.encoded_bytes,
+                target_id=entry.target_id,
+                locale="en",
+                control_domain=CONTROL_DOMAIN_FE8U,
+                portrait_map=portrait_map,
+                talk_metrics=english_talk_metrics,
+            )
+            totals.update(stats)
+            max_talk_line_width = max(max_talk_line_width, stats["max_talk_line_width"])
+    except ControlStreamError as error:
+        raise GameCatalogError(str(error)) from error
     for bundle in locale_bundles:
         try:
             talk_metrics = load_talk_font_metrics(
@@ -1281,6 +1300,7 @@ def build_game_catalog(
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
     engine_root_path: Path | None = None,
     event_root_path: Path = DEFAULT_EVENT_ROOT,
+    event_source_paths: Sequence[Path] | None = None,
     portrait_map_path: Path = DEFAULT_PORTRAIT_MAP_PATH,
     portrait_root_path: Path = Path("."),
     font_root_path: Path = Path("."),
@@ -1348,19 +1368,17 @@ def build_game_catalog(
     alias_path = Path(fixed_width_aliases_path)
     if not alias_path.is_absolute():
         alias_path = repo_root / alias_path
-    cjk_locale_bundles = tuple(
-        bundle for bundle in locale_bundles if bundle.locale in CJK_LOCALE_IDS
-    )
+    localized_payloads = {
+        bundle.locale: {
+            entry.target_id: entry.encoded_bytes
+            for entry in bundle.entries if entry.encoded_bytes is not None
+        }
+        for bundle in locale_bundles
+    }
     try:
         fixed_width_metrics = build_fixed_width_label_metrics(
             repo_root,
-            localized_payloads={
-                bundle.locale: {
-                    entry.target_id: entry.encoded_bytes
-                    for entry in bundle.entries if entry.encoded_bytes is not None
-                }
-                for bundle in cjk_locale_bundles
-            },
+            localized_payloads=localized_payloads,
             aliases_path=alias_path,
             fallback_payloads={
                 entry.target_id: entry.encoded_bytes for entry in english_entries
@@ -1376,22 +1394,61 @@ def build_game_catalog(
         for target in contract["target_ids"]
         if int(target, 16) < target_count
     )
+    description_label_ids = None
+    if schema_inputs is not None:
+        description_label_ids = set()
+        for table in ("characters", "classes", "items"):
+            if table not in schema_inputs.sources:
+                continue
+            schema = schema_inputs.resolve(table)
+            source = Path(schema_inputs.source(schema))
+            if not source.is_absolute():
+                source = repo_root / source
+            try:
+                records = schema.load_records(str(source))
+            except GeneratedDataError as error:
+                raise GameCatalogError(str(error)) from error
+            for record in records:
+                for value in (
+                    record.desc_text_id,
+                    getattr(record, "use_desc_text_id", 0),
+                ):
+                    if value:
+                        if value >= target_count:
+                            raise GameCatalogError(
+                                f"{table}: selected description ID 0x{value:04X} "
+                                "is outside the active set"
+                            )
+                        description_label_ids.add(value)
+        description_label_ids = frozenset(description_label_ids)
     width_validation = None
     unwrapped_locale_entries = {
         bundle.locale: bundle.entries for bundle in locale_bundles
     }
-    if locale_bundles:
-        registry_path = Path(width_registry_path)
-        if not registry_path.is_absolute():
-            registry_path = repo_root / registry_path
-        try:
-            width_registry = load_width_registry(registry_path)
-            rewritten_bundles = []
-            width_validation = {}
-            for bundle in locale_bundles:
-                if bundle.locale not in CJK_LOCALE_IDS:
-                    rewritten_bundles.append(bundle)
-                    continue
+    registry_path = Path(width_registry_path)
+    if not registry_path.is_absolute():
+        registry_path = repo_root / registry_path
+    try:
+        width_registry = load_width_registry(registry_path)
+        _, english_width_validation = apply_width_contract(
+            repo_root=repo_root,
+            locale="en",
+            target_payloads=tuple(entry.encoded_bytes for entry in english_entries),
+            registry=width_registry,
+            event_root=event_root_path,
+            event_sources=event_source_paths,
+            message_ids=message_ids,
+            fixed_label_ids=fixed_label_ids,
+            description_target_ids=description_label_ids,
+            font_metrics=font_metrics,
+            rewrite=False,
+            preserve_canonical_english_box_layout=(
+                target_count >= 3414
+            ),
+        )
+        width_validation = {"en": english_width_validation}
+        rewritten_bundles = []
+        for bundle in locale_bundles:
                 payloads, validation = apply_width_contract(
                     repo_root=repo_root,
                     locale=bundle.locale,
@@ -1401,8 +1458,10 @@ def build_game_catalog(
                     registry=width_registry,
                     fallback_payloads=tuple(entry.encoded_bytes for entry in english_entries),
                     event_root=event_root_path,
+                    event_sources=event_source_paths,
                     message_ids=message_ids,
                     fixed_label_ids=fixed_label_ids,
+                    description_target_ids=description_label_ids,
                     font_metrics=font_metrics,
                 )
                 entries = tuple(
@@ -1417,9 +1476,9 @@ def build_game_catalog(
                     )
                 )
                 width_validation[bundle.locale] = validation
-            locale_bundles = tuple(rewritten_bundles)
-        except (TextWidthContractError, ControlStreamError) as error:
-            raise GameCatalogError(str(error)) from error
+        locale_bundles = tuple(rewritten_bundles)
+    except (TextWidthContractError, ControlStreamError) as error:
+        raise GameCatalogError(str(error)) from error
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
     display_aliases = {
         locale: {
@@ -1454,6 +1513,7 @@ def build_game_catalog(
             },
             event_root=event_root_path,
             message_ids=message_ids,
+            event_sources=event_source_paths,
         )
     except ControlStreamError as error:
         raise GameCatalogError(str(error)) from error

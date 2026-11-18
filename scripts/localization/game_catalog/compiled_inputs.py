@@ -58,6 +58,7 @@ def load_compile_context(path: Path) -> CompileContext:
         raise CompiledInputError(f"{path}: invalid selected compilation context")
     units: list[CompileUnit] = []
     names = set()
+    objects = set()
     for unit in context["units"]:
         if (not isinstance(unit, dict) or any(
                 not isinstance(unit.get(field), str) or not unit[field]
@@ -70,11 +71,14 @@ def load_compile_context(path: Path) -> CompileContext:
             raise CompiledInputError(f"{path}: invalid selected compilation unit")
         name = unit["logical_source"]
         argv = unit["compiler_argv"]
-        if (name in names or argv.count("-c") != 1 or len(argv) < 5
+        if (name in names or unit["object"] in objects
+                or argv.count("-c") != 1 or len(argv) < 5 or not argv[0]
+                or argv.index("-c") >= len(argv) - 2
                 or argv[-2:] != ["-o", unit["object"]]
                 or argv[argv.index("-c") + 1] != unit["compiler_input"]):
             raise CompiledInputError(f"{path}: ambiguous selected compilation unit {name}")
         names.add(name)
+        objects.add(unit["object"])
         units.append({
             "logical_source": name, "selected_source": unit["selected_source"],
             "compiler_input": unit["compiler_input"], "object": unit["object"],
@@ -146,10 +150,63 @@ def _initializer_declaration_end(masked: str, closing: int) -> int:
     raise CompiledInputError("native initializer declaration has no statement terminator")
 
 
+def _initializer_entries(body: str) -> list[tuple[int, int]]:
+    entries = []
+    start = 0
+    depth = 0
+    for index, char in enumerate(body):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            if body[start:index].strip():
+                entries.append((start, index))
+            start = index + 1
+    if body[start:].strip():
+        entries.append((start, len(body)))
+    return entries
+
+
+def _struct_message_positions(declaration: str, fields: tuple[str, ...]) -> dict[str, int]:
+    positions = {}
+    member = 0
+    start = 0
+    depth = 0
+    for index, char in enumerate(declaration + ";"):
+        if char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+        elif char == ";" and depth == 0:
+            declarators = declaration[start:index]
+            if declarators.strip():
+                split = _initializer_entries(declarators)
+                declarator_count = len(split) or 1
+                for field in fields:
+                    match = re.search(rf"\b{re.escape(field)}\b", declarators)
+                    if match:
+                        prior = sum(
+                            1 for begin, end in split
+                            if end <= match.start()
+                        )
+                        positions[field] = member + prior
+                member += declarator_count
+            start = index + 1
+    return positions
+
+
 def _checked_initializers(source: str, target_count: int) -> str:
     masked = _mask_c_comments_and_strings(source)
     references = []
     owners = []
+    referenced_arrays = set()
+    for _, _, _, operands in _iter_named_calls(masked, _MESSAGE_CALL_ARGUMENTS):
+        for operand in operands:
+            match = re.match(r"\s*([A-Za-z_]\w*)\s*\[", operand)
+            if match:
+                referenced_arrays.add(match.group(1))
+    referenced_owners = []
     for match in re.finditer(
         r"(?<![\w.])\b([A-Za-z_]\w*)\s*((?:\[[^\]]*\]\s*)*)"
         r"(?:__attribute__\([^=;]*\)\s*)?=\s*\{", masked,
@@ -158,6 +215,69 @@ def _checked_initializers(source: str, target_count: int) -> str:
         _, closing = _scan_balanced(masked, opening)
         owners.append((
             opening, closing, match.group(1), match.group(2).count("["),
+            _initializer_declaration_end(masked, closing),
+        ))
+        if match.group(1) in referenced_arrays and match.group(2):
+            body = masked[opening + 1:closing]
+            entries = _initializer_entries(body)
+            referenced_owners.append((
+                match.group(1),
+                tuple(source[opening + 1 + begin:opening + 1 + end] for begin, end in entries),
+                _initializer_declaration_end(masked, closing),
+            ))
+    typed_owners = []
+    field_names = (
+        "nameTextId", "nameMsgId", "descTextId", "useDescTextId", "helpTextId",
+        "helpMsgId", "textId", "msgId", "messageId", "itemName",
+        "goalWindowTextId", "goalTextId", "labelTextId", "optionTextId", "details", "msg",
+    )
+    type_fields: dict[str, tuple[str, ...]] = {}
+    type_positions: dict[str, dict[str, int]] = {}
+    for match in re.finditer(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", masked):
+        _, closing = _scan_balanced(masked, match.end() - 1)
+        declaration = masked[match.end():closing]
+        fields = tuple(
+            field for field in field_names
+            if re.search(rf"\b{re.escape(field)}\b", declaration)
+        )
+        if fields:
+            type_fields[match.group(1)] = fields
+            type_positions[match.group(1)] = _struct_message_positions(declaration, fields)
+    for match in re.finditer(
+        r"\bstruct\s+([A-Za-z_]\w*)\s+([A-Za-z_]\w*)"
+        r"\s*((?:\[[^\]]*\]\s*)*)=\s*\{",
+        masked,
+    ):
+        opening = masked.index("{", match.start())
+        _, closing = _scan_balanced(masked, opening)
+        fields = type_fields.get(match.group(1), ())
+        if not fields:
+            continue
+        array_count = 1
+        if "[" in match.group(3):
+            bounds = re.findall(r"\[([^\]]*)\]", match.group(3))
+            body = masked[opening + 1:closing]
+            if all(bound.strip().isdigit() for bound in bounds):
+                array_count = max(1, int(bounds[-1]))
+            else:
+                array_count = 0
+                depth = 0
+                item_start = 0
+                for index, char in enumerate(body):
+                    if char in "([{":
+                        depth += 1
+                    elif char in ")]}":
+                        depth -= 1
+                    elif char == "," and depth == 0:
+                        if body[item_start:index].strip():
+                            array_count += 1
+                        item_start = index + 1
+                if body[item_start:].strip():
+                    array_count += 1
+        typed_owners.append((
+            match.group(2), match.group(3).count("["), array_count,
+            fields, type_positions[match.group(1)],
+            source[opening + 1:closing],
             _initializer_declaration_end(masked, closing),
         ))
     for kind, start, end in _iter_message_fields(masked):
@@ -199,6 +319,103 @@ def _checked_initializers(source: str, target_count: int) -> str:
             after, "\n__extension__ typedef char "
             f"__fe8_message_reference_outside_active_set_{index}[({condition}) ? 1 : -1];\n",
         ))
+    reference_index = len(insertions)
+    for owner, values, after in referenced_owners:
+        for element, operand in enumerate(values):
+            member = f"{owner}[{element}]"
+            integer = f"(__builtin_classify_type(({member})) == 1)"
+            destination = f"__typeof__(__builtin_choose_expr({integer}, ({member}), 0))"
+            converted = (
+                f"({destination})(__builtin_choose_expr({integer}, ({operand}), 0))"
+            )
+            condition = (
+                f"__builtin_choose_expr({integer} && __builtin_constant_p(({converted})), "
+                f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
+            )
+            insertions.append((
+                after,
+                "\n__extension__ typedef char "
+                f"__fe8_message_reference_outside_active_set_{reference_index}"
+                f"[({condition}) ? 1 : -1];\n",
+            ))
+            reference_index += 1
+    for owner, rank, count, fields, positions, initializer, after in typed_owners:
+        for element in range(count):
+            prefix = owner + (f"[{element}]" if rank else "")
+            for field in fields:
+                member = prefix + "." + field
+                integer = f"(__builtin_classify_type(({member})) == 1)"
+                destination = (
+                    f"__typeof__(__builtin_choose_expr({integer}, ({member}), 0))"
+                )
+                converted = (
+                    f"({destination})(__builtin_choose_expr({integer}, ({member}), 0))"
+                )
+                condition = (
+                    f"__builtin_choose_expr({integer} && "
+                    f"__builtin_constant_p(({converted})), "
+                    f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
+                )
+                insertions.append((
+                    after,
+                    "\n__extension__ typedef char "
+                    f"__fe8_message_reference_outside_active_set_{reference_index}"
+                    f"[({condition}) ? 1 : -1];\n",
+                ))
+                reference_index += 1
+        outer_entries = _initializer_entries(initializer)
+        for position, field in ((position, field) for field, position in positions.items()):
+            entries = outer_entries
+            value_owner = owner
+            if rank:
+                if not outer_entries:
+                    continue
+                for element_index, (outer_begin, outer_end) in enumerate(outer_entries):
+                    aggregate = initializer[outer_begin:outer_end].strip()
+                    if not (aggregate.startswith("{") and aggregate.endswith("}")):
+                        continue
+                    entries = _initializer_entries(aggregate[1:-1])
+                    if position >= len(entries):
+                        continue
+                    begin, end = entries[position]
+                    operand = aggregate[begin + 1:end + 1].strip()
+                    if re.match(r"\s*(?:\.|\[)", operand):
+                        continue
+                    value_owner = f"{owner}[{element_index}]"
+                    destination = f"__typeof__({value_owner}.{field})"
+                    converted = f"({destination})({operand})"
+                    condition = (
+                        f"__builtin_choose_expr(__builtin_constant_p(({converted})), "
+                        f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
+                    )
+                    insertions.append((
+                        after,
+                        "\n__extension__ typedef char "
+                        f"__fe8_message_reference_outside_active_set_{reference_index}"
+                        f"[({condition}) ? 1 : -1];\n",
+                    ))
+                    reference_index += 1
+                continue
+            if position >= len(entries):
+                continue
+            begin, end = entries[position]
+            operand = initializer[begin:end].strip()
+            if re.match(r"\s*(?:\.|\[)", operand):
+                continue
+            member = value_owner + "." + field
+            destination = f"__typeof__({member})"
+            converted = f"({destination})({operand})"
+            condition = (
+                f"__builtin_choose_expr(__builtin_constant_p(({converted})), "
+                f"(unsigned long long)({converted}) < {target_count}ULL, 1)"
+            )
+            insertions.append((
+                after,
+                "\n__extension__ typedef char "
+                f"__fe8_message_reference_outside_active_set_{reference_index}"
+                f"[({condition}) ? 1 : -1];\n",
+            ))
+            reference_index += 1
     for offset, text in sorted(insertions, reverse=True):
         source = source[:offset] + text + source[offset:]
     return source

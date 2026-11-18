@@ -93,8 +93,8 @@ static int IsRendererValid(const u8 *text, u32 capacity)
 
 int main(void)
 {
-    char actual[FE8_LOCALIZED_GAME_TEXT_REQUIRED_STORAGE_BYTES];
-    char expected[FE8_LOCALIZED_GAME_TEXT_REQUIRED_STORAGE_BYTES];
+    char actual[FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES];
+    char expected[FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES];
     const struct GameLocalizationCatalogEntry *entry;
     enum LocalizedGameTextStatus status;
     enum LocalizedTextCodecStatus codecStatus;

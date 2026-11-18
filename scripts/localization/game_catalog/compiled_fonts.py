@@ -53,7 +53,12 @@ class _Symbol:
 class _ArmObject:
     def __init__(self, path: Path):
         self.path = Path(path)
-        self.data = self.path.read_bytes()
+        try:
+            self.data = self.path.read_bytes()
+        except OSError as error:
+            raise CompiledFontError(
+                f"{self.path}: native font object is unavailable: {error}"
+            ) from error
         header = self._unpack("<16sHHIIIIIHHHHHH", 0)
         ident, kind, machine, version = header[:4]
         if ident[:7] != b"\x7fELF\x01\x01\x01" or (kind, machine, version) != (1, 40, 1):
@@ -234,7 +239,6 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
     source = output_dir / "selected-font-layout.c"
     layout_path = output_dir / "selected-font-layout.o"
     source.write_text(
-        f'#include {json.dumps(str(source_root / renderer["compiler_input"]))}\n'
         "const unsigned int gSelectedTextGlyphLayout[] = {\n"
         "    sizeof(struct Glyph *), sizeof(struct Glyph),\n"
         "    __builtin_offsetof(struct Glyph, width), sizeof(((struct Glyph *)0)->width)\n"
@@ -250,9 +254,11 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
     command = list(renderer["compiler_argv"])
     command[command.index("-c") + 1] = str(source)
     command[-1] = str(layout_path)
+    command.extend(("-include", str(source_root / renderer["compiler_input"])))
     for index, argument in enumerate(command[:-1]):
         if argument in ("-MF", "-MQ", "-MT"):
             command[index + 1] = str(layout_path.with_suffix(".d") if argument == "-MF" else layout_path)
+    layout_path.unlink(missing_ok=True)
     compiled = subprocess.run(
         command, cwd=source_root, capture_output=True, text=True, check=False,
     )
@@ -262,6 +268,7 @@ def measure_selected_fonts(context_path: Path, *, output_dir: Path) -> SelectedF
             + compiled.stdout + compiled.stderr
         )
     font_path = output_dir / "selected-font-data.o"
+    font_path.unlink(missing_ok=True)
     linked = subprocess.run(
         [
             context["linker"], "-r", "-o", str(font_path),

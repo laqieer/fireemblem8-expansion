@@ -466,11 +466,28 @@ def build_fixed_width_label_metrics(
     font_inputs = {}
     total_aliases = 0
     total_labels = 0
-    for locale in ("ja", "zh-Hans"):
+    for locale in ("ja", "zh-Hans", "fr", "de", "es", "it"):
         if locale not in localized_payloads:
             continue
-        if font_metrics is None:
+        if font_metrics is None and locale in ("ja", "zh-Hans"):
             cjk_widths, font_input = _cjk_widths(repo_root, locale)
+        elif font_metrics is None:
+            codepoint_path = repo_root / "graphics/fonts/eu/eu.system.codepoints.u32le"
+            width_path = repo_root / "graphics/fonts/eu/eu.system.widths.u8"
+            codepoint_data = codepoint_path.read_bytes()
+            width_data = width_path.read_bytes()
+            if len(codepoint_data) != len(width_data) * 4:
+                raise FixedWidthLabelError(
+                    f"{locale}: EU codepoint/width count mismatch"
+                )
+            cjk_widths = {
+                int.from_bytes(codepoint_data[index * 4:index * 4 + 4], "little"): width
+                for index, width in enumerate(width_data)
+            }
+            font_input = {
+                "codepoints_path": codepoint_path.relative_to(repo_root).as_posix(),
+                "widths_path": width_path.relative_to(repo_root).as_posix(),
+            }
         else:
             try:
                 cjk_widths = font_metrics["localized"][locale]["system"]
@@ -546,7 +563,10 @@ def build_fixed_width_label_metrics(
                         for scalar in scalars
                     )
                 effective_payloads[target] = payload
-            scoped_aliases = parsed_aliases[locale][surface]
+            scoped_aliases = (
+                parsed_aliases[locale][surface]
+                if locale in parsed_aliases else {}
+            )
             if fallback_payloads is not None:
                 scoped_aliases = {
                     target: text for target, text in scoped_aliases.items()

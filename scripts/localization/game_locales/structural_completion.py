@@ -46,13 +46,18 @@ _INTEGER_RE = re.compile(
     r"^(?:MSG_([0-9A-Fa-f]+)|(?:0[xX]([0-9A-Fa-f]+)|([0-9]+))[uUlL]*)$"
 )
 _MESSAGE_FIELD_RE = re.compile(
-    r"\.(nameTextId|descTextId|useDescTextId|helpTextId|textId|msgId|messageId|itemName|"
-    r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*=(?!=)"
+    r"\.(nameTextId|nameMsgId|descTextId|useDescTextId|helpTextId|helpMsgId|textId|msgId|"
+    r"messageId|itemName|goalWindowTextId|goalTextId|labelTextId|optionTextId|details|msg)"
+    r"\s*=(?!=)"
 )
 _MESSAGE_CALL_ARGUMENTS = {
     "GetStringFromIndex": (0,),
+    "GetStringFromIndexInBuffer": (0,),
+    "GetStringFromIndexInBufferWithLimit": (0,),
     "StartTalkMsg": (2,),
     "StartTalkMsgExt": (2,),
+    "StartArenaDialogue": (0,),
+    "StartShopDialogue": (0,),
     "PutSioText": (0,),
     "StartCgText": (4,),
     "StartHelpBox": (2,),
@@ -61,8 +66,10 @@ _MESSAGE_CALL_ARGUMENTS = {
 }
 _DIRECT_EVENT_MESSAGES = {
     "BROWNBOXTEXT": 0,
+    "NOTIFY": 0,
     "TEXTSHOW": 0,
     "Text": 0,
+    "Text_BG": 1,
     "WM_TEXT": 0,
 }
 _EVENT_OPCODE_ALIASES = {

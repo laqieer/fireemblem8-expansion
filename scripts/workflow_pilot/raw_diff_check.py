@@ -578,8 +578,8 @@ def raw_diff_errors(
         "--no-renames", "--abbrev=40", "-z", parent_sha, candidate_sha, "--",
     ).split(b"\0")
     changes = []
-    total = 0
     for index in range(0, len(records) - 1, 2):
+        total = 0
         old_mode, new_mode, old_oid, new_oid, _status = records[index].split()
         oids = []
         for mode, oid in ((old_mode[1:], old_oid), (new_mode, new_oid)):

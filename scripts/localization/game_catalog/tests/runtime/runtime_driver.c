@@ -209,7 +209,7 @@ const struct CharacterData *GetCharacterData(int id)
 
 static void ResetHarness(ExpansionLocaleId locale)
 {
-    memset(&sMsgString, 0, sizeof(sMsgString));
+    memset(&sMsgString, 0, gLocalizedGameTextStorageCapacity);
     memset(gBufPrep, 0, sizeof(gBufPrep));
     sCurrentLocale = locale;
     sArmDecompCalls = 0;
@@ -513,7 +513,7 @@ static void TestDerivedTextDoesNotMutateActiveCache(void)
 
     ResetHarness(EXPANSION_LOCALE_JA);
     active = GetStringFromIndex(14);
-    CHECK(active == (const char *)sMsgString.storage.localized);
+    CHECK(active == (const char *)&sMsgString);
 
     sTacticianNameOverride = tactOne;
     derived = StrInsertTact();
@@ -617,14 +617,14 @@ static void TestCacheLocaleSwitchAndExplicitInvalidation(void)
     CHECK(strcmp(result, "猫") == 0);
     CHECK(sArmDecompCalls == 0);
 
-    strcpy((char *)sMsgString.storage.localized, "stale-ja");
+    strcpy((char *)&sMsgString, "stale-ja");
     sCurrentLocale = EXPANSION_LOCALE_EN;
     result = GetStringFromIndex(0);
     CHECK(strcmp(result, "Cat") == 0);
     CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_ENGLISH_DEFAULT);
     CHECK(sArmDecompCalls == 0);
 
-    strcpy((char *)sMsgString.storage.localized, "stale-en");
+    strcpy((char *)&sMsgString, "stale-en");
     LocalizedGameText_InvalidateCache();
     result = GetStringFromIndex(0);
     CHECK(strcmp(result, "Cat") == 0);

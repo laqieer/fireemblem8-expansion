@@ -41,7 +41,7 @@ from .build import (
 from .c_emitter import render_declarations
 from .constants import CJK_LOCALE_IDS, LOCALE_IDS
 from .compiled_fonts import measure_selected_fonts
-from .compiled_inputs import validate_compiled_references
+from .compiled_inputs import load_compile_context, validate_compiled_references
 from .control_streams import DEFAULT_EVENT_ROOT
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
@@ -190,7 +190,17 @@ def _build_from_args(args: argparse.Namespace):
     if inherited:
         check_authored_catalogs(Path("."), locales=inherited)
     font_metrics = None
+    event_source_paths = None
     if args.compile_context is not None:
+        compile_context = load_compile_context(args.compile_context)
+        source_root = Path(compile_context["source_root"])
+        event_source_paths = tuple(
+            Path(unit["selected_source"])
+            if Path(unit["selected_source"]).is_absolute()
+            else source_root / unit["selected_source"]
+            for unit in compile_context["units"]
+            if Path(unit["selected_source"]).suffix in (".c", ".h")
+        )
         with TemporaryDirectory(prefix="selected-text-font-") as directory:
             font_metrics = measure_selected_fonts(
                 args.compile_context, output_dir=Path(directory),
@@ -210,6 +220,7 @@ def _build_from_args(args: argparse.Namespace):
         eu_authored_paths=_locale_path_map(args.eu_authored),
         target_header_path=args.target_header,
         event_root_path=args.event_root,
+        event_source_paths=event_source_paths,
         width_registry_path=args.width_registry,
         fixed_width_aliases_path=args.fixed_width_aliases,
         schema_inputs=SchemaInputs(sources, message_header=str(args.target_header)),

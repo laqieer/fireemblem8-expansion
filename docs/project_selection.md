@@ -267,9 +267,15 @@ The executor kind is selected before shared frontend setup, so unavailable
 resource work remains `arm-object` evidence with zero semantic checks.
 Host-only source checks skip the four ARM-positive methods when their
 configured `MODERN_CC`, `MODERN_NM` or `MODERN_SIZE` executable is unavailable.
-The existing mandatory modern linker check collects the same project tests
-through `arm_review_subjects`, after its toolchain prerequisites; a host skip
-is not ARM evidence. Recursive `make -n` namespace inspection requires neither
+The mandatory modern linker check depends on
+`expansion-modern-review-arm-check` in both configurations. That helper collects
+the same project tests through `arm_review_subjects` after its toolchain
+prerequisites; a host skip is not ARM evidence. Combined Build CI runs both
+helper profiles in the existing legacy worker after its ARM/libmGBA/tools
+setup, and marks only that independently required helper already made in the
+modern worker. The fail-closed summary still requires both workers; no ARM,
+ROM/profile or archival gate is removed and no deadline or job is added.
+Recursive `make -n` namespace inspection requires neither
 the compiler nor scaninc and creates no header or asset dependency files.
 Ordinary builds retain both dependency bootstraps, including with `NODEP=1`.
 

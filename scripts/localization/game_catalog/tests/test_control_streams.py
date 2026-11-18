@@ -49,6 +49,22 @@ def structural_sequence(text):
 
 
 class SelectedEventContinuationTests(unittest.TestCase):
+    def test_public_text_helpers_join_the_selected_event_set(self):
+        english = (b"Zero\0", b"One\x80\x04Two\0", b"Last\0")
+        with tempfile.TemporaryDirectory() as directory:
+            event_root = Path(directory)
+            for command in ("Text(3)", "Text_BG(7, 3)"):
+                with self.subTest(command=command):
+                    (event_root / "selected.c").write_text(
+                        f"EventScr Selected[] = {{ {command} TEXTCONT ENDA }};\n"
+                    )
+                    with self.assertRaisesRegex(ControlStreamError, "active"):
+                        validate_event_continuations(
+                            english_payloads=english,
+                            localized_payloads={"ja": english},
+                            event_root=event_root,
+                        )
+
     def test_branch_join_retains_both_native_renderer_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             event_root = Path(directory)
@@ -415,14 +431,14 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertEqual(
             self.build.report["control_stream_validation"],
             {
-                "fe8u_mouth_topology_validated_payload_count": 656,
+                "fe8u_mouth_topology_validated_payload_count": 4070,
                 "max_talk_line_width": 237,
-                "model_count": 581,
-                "modeled_target_count": 567,
+                "model_count": 693,
+                "modeled_target_count": 676,
                 "mouth_balance_validated_payload_count": 6828,
                 "portrait_remapped_target_count": 187,
-                "talk_line_count": 54714,
-                "talk_payload_count": 1976,
+                "talk_line_count": 76195,
+                "talk_payload_count": 2964,
                 "validated_payload_count": 6828,
             },
         )

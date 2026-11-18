@@ -370,11 +370,14 @@ class FixtureBuildTests(unittest.TestCase):
                 "locale_mask": 3,
             },
         }
+        with self.assertRaisesRegex(GameCatalogError, "260px"):
+            build_game_catalog(**inputs, font_metrics=metrics)
+        metrics["ascii"]["system"] = {scalar: 18 for scalar in range(0x20, 0x7F)}
         build = build_game_catalog(**inputs, font_metrics=metrics)
-        self.assertEqual(build.report["width_validation"]["ja"]["max_line_width"], 236)
+        self.assertEqual(build.report["width_validation"]["ja"]["max_line_width"], 214)
         self.assertIsNone(build.locales[0].entries[2].encoded_bytes)
-        metrics["ascii"]["system"] = {scalar: 24 for scalar in range(0x20, 0x7F)}
-        with self.assertRaisesRegex(GameCatalogError, "280px"):
+        metrics["ascii"]["system"] = {scalar: 20 for scalar in range(0x20, 0x7F)}
+        with self.assertRaisesRegex(GameCatalogError, "260px"):
             build_game_catalog(**inputs, font_metrics=metrics)
 
     def selected_native_inputs(self, *, locale="ja"):
@@ -755,6 +758,21 @@ class FixtureBuildTests(unittest.TestCase):
                             CompiledInputError, "outside the active message set",
                         ):
                             validate_compiled_references(context, target_count=3)
+        for body in (
+            "struct MenuItemDef item = {0, 0, 3, 0, 0, 0, 0, 0};",
+            "const u16 gIds[] = {1, 3}; void Read(void) { GetStringFromIndex(gIds[1]); }",
+            "struct GuideEnt guide = {.details = 3};",
+        ):
+            with self.subTest(positional_table_or_field=body):
+                source.write_text(
+                    '#include "global.h"\n#include "uimenu.h"\n#include "bmguide.h"\n'
+                    + body + "\n",
+                    encoding="ascii",
+                )
+                with self.assertRaisesRegex(
+                    CompiledInputError, "outside the active message set",
+                ):
+                    validate_compiled_references(context, target_count=3)
         for value, valid in (("1u", True), ("3u", False)):
             for operand in (
                 "SELECTED_MESSAGE", "(enum MessageId)SELECTED_MESSAGE",
@@ -878,6 +896,9 @@ class FixtureBuildTests(unittest.TestCase):
                 data = json.loads((ROOT / schema.default_source).read_bytes())
                 data[table] = data[table][:1]
                 data[table][0]["nameTextId"] = 1
+                data[table][0]["descTextId"] = 0
+                if table == "items":
+                    data[table][0]["useDescTextId"] = 0
                 source = self.fixture_dir / (table + ".json")
                 source.write_text(json.dumps(data), encoding="utf-8")
                 context = SchemaInputs({table: str(source)}, message_header=str(inputs["target_header_path"]))
