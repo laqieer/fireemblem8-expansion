@@ -263,14 +263,15 @@ The negative controls are the default project (none of these project owners or
 data symbols is linked) and a carrier whose TSA requests a seventh palette
 bank. Restoring either former eight-bank BG must fail the carrier regression.
 
-The native suite also runs `GradoVisualNativeTests.test_selected_static_consumers`.
-This explicitly selects the `build` output root and debug/AAPCS profile through
-Make, regardless of inherited build-root or ABI settings, and uses the existing ARM GDB
-and mGBA SDL frontend, including the distribution's `/usr/games/mgba` location.
-These are already supported quickstart tools; the modern CI job installs them
-for this case. Using the full compiled ROM avoids source extraction, replacement
-event functions or a parallel renderer fixture. The original engine initializes
-SRAM, RAM routines and game state before the `StartGame` breakpoint.
+The native suite runs both `test_selected_static_consumers` and
+`test_default_static_consumers`. Each explicitly selects its project/profile,
+the `build` output root and debug/AAPCS through Make, regardless of inherited
+settings. They use the existing ARM GDB and mGBA SDL frontend, including the
+distribution's `/usr/games/mgba` location. These are supported quickstart tools;
+the modern CI job installs them for this case. Using the full compiled ROMs
+avoids source extraction, replacement event functions or a parallel renderer
+fixture. The original engine initializes SRAM, RAM routines and game state
+before the `StartGame` breakpoint.
 
 Each of the four carriers, stock BGs `0`/`0x35`, stock CGs `0`/`9`, and
 the minimum/maximum RNG inputs runs through direct loading, both fade loaders,
@@ -283,6 +284,15 @@ buffers and persisted CG bookkeeping, including its checksum. Expected pixels'
 encoded tile bytes, bottom-to-top TSA rows and palette bytes come from the real
 asset producers, not captured output. Guarded unused RAM stays unchanged;
 unused VRAM is compared with its captured pre-call state.
+
+The default ROM independently executes the same five routes for the six stock
+and RNG-endpoint inputs, for 30 executions. Its linked ELF must contain none of
+the four project carrier symbol families; the selected ELF must contain all
+of them. Feeding the selected ELF to the default-symbol check is a required
+failing control. Both ELFs' native BG/CG table sizes, ROM size and static
+EWRAM/IWRAM bounds are checked and reported, together with the linked project
+carrier bytes. These measurements describe the built debug profiles, not an
+unbuilt release or complete playable campaign.
 
 For each project carrier, the same case also executes the original BG2 and BG3
 loaders followed by their corresponding outgoing copy. It compares all
@@ -309,10 +319,9 @@ processes and temporary files; an occupied GDB port fails without stopping anoth
 Only one inferior call is made per boot because repeated inferior calls are
 unreliable with the supported mGBA 0.10 frontend.
 
-This is instrumented selected-ROM memory/save evidence, not non-instrumented
-artistic acceptance or framebuffer evidence. Default-profile selection/resource
-proof remains required before this unfinished package is qualified; stock
-entries in the selected ROM do not replace default-ROM proof.
+This is instrumented selected/default-ROM memory, save and static-resource
+evidence, not non-instrumented artistic acceptance, framebuffer evidence or
+qualification of the unfinished playable project.
 
 The conversion evidence and compile/link binding do not establish subjective
 art acceptance. Material blockers remain: the four original CH00/CH02 portrait

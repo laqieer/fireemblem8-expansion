@@ -499,14 +499,75 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             )
             print(json.dumps({"actual_native_records": observed}, sort_keys=True))
 
+    def assert_static_profile(self, elf, rom, selected):
+        tools = _selected_tools(os.environ)
+        result = subprocess.run(
+            [tools["MODERN_NM"], "-S", "--defined-only", "--format=posix", str(elf)],
+            capture_output=True, text=True, timeout=300,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        symbols = {}
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            self.assertIn(len(fields), (3, 4), line)
+            symbols[fields[0]] = (
+                int(fields[2], 16), int(fields[3], 16) if len(fields) == 4 else None,
+            )
+
+        carriers = {
+            f"bg_Grado_{name}_{part}"
+            for name in ("Imperial_Tomb", "Council_Hall")
+            for part in ("tiles", "map", "palette")
+        } | {
+            f"cg_grado_{name}_{part}"
+            for name in ("funeral_omen", "title")
+            for part in ("tiles", "map", "palette", *(f"part_{i}_tiles" for i in range(10)))
+        }
+        linked = carriers & symbols.keys()
+        if selected:
+            self.assertEqual(linked, carriers)
+        else:
+            self.assertFalse(linked, f"project carrier symbols linked in default: {sorted(linked)}")
+        self.assertEqual(symbols["gConvoBackgroundData"][1], (58 if selected else 54) * 12)
+        self.assertEqual(symbols["gCGDataTable"][1], (12 if selected else 10) * 12)
+
+        ewram = symbols["__ewram_used_end"][0] - symbols["__ewram_start"][0]
+        iwram = symbols["__iwram_static_end"][0] - symbols["__iwram_start"][0]
+        iwram_limit = symbols["__iwram_static_limit"][0] - symbols["__iwram_start"][0]
+        self.assertGreater(ewram, 0)
+        self.assertLessEqual(ewram, 256 * 1024)
+        self.assertGreater(iwram, 0)
+        self.assertLessEqual(iwram, iwram_limit)
+        self.assertEqual(rom.stat().st_size, symbols["__rom_size"][0])
+        return {
+            "rom_bytes": rom.stat().st_size, "ewram_bytes": ewram,
+            "iwram_bytes": iwram, "iwram_limit": iwram_limit,
+            "project_carrier_bytes": sum(symbols[name][1] for name in linked),
+        }
+
     def test_selected_static_consumers(self):
-        output = ROOT / "build/projects/restoration-of-grado/primary/debug/aapcs"
+        self.check_static_consumers(selected=True)
+
+    def test_default_static_consumers(self):
+        self.check_static_consumers(selected=False)
+
+    def check_static_consumers(self, *, selected):
+        project = "restoration-of-grado" if selected else "default"
+        profile = "primary" if selected else "default"
+        output = ROOT / (
+            "build/projects/restoration-of-grado/primary/debug/aapcs"
+            if selected else "build/debug/aapcs"
+        )
         self.run_command([
-            "make", "--no-print-directory", "-j2", "FE8_PROJECT=restoration-of-grado",
-            "FE8_PROJECT_PROFILE=primary", "MODERN_BUILD_ROOT=build",
+            "make", "--no-print-directory", "-j2", "FE8_PROJECT=" + project,
+            "FE8_PROJECT_PROFILE=" + profile, "MODERN_BUILD_ROOT=build",
             "MODERN_CONFIG=debug", "MODERN_ABI=aapcs", "expansion-modern-rom",
         ], cwd=ROOT, timeout=900)
         elf, rom = output / "fireemblem8.elf", output / "fireemblem8.gba"
+        resources = self.assert_static_profile(elf, rom, selected)
+        if selected:
+            with self.assertRaisesRegex(AssertionError, "project carrier symbols linked in default"):
+                self.assert_static_profile(elf, rom, selected=False)
         gdb = gdb_smoke.select_command(("arm-none-eabi-gdb", "gdb-multiarch"), "ARM GDB")
         mgba = gdb_smoke.select_command(("mgba", "/usr/games/mgba"), "mGBA SDL frontend")
         records = []
@@ -597,11 +658,13 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         }),
                     }
 
-            carriers = (
+            project_carriers = (
                 (1, 0x38, "bg/grado_imperial_tomb"),
                 (1, 0x39, "bg/grado_council_hall"),
                 (2, 10, "cg/grado_funeral_omen"),
                 (2, 11, "cg/grado_title"),
+            )
+            stock_carriers = (
                 (1, 0, "bg/bg_House"),
                 (1, 0x35, "bg/bg_Blank"),
                 (2, 0, "cg/cg_0"),
@@ -609,6 +672,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 (1, 0x37, "bg/bg_House"),
                 (1, 0x37, "bg/bg_Black_Temple_Inside"),
             )
+            carriers = project_carriers + stock_carriers if selected else stock_carriers
             for kind, index, carrier in carriers:
                 prefix = ROOT / "graphics" / carrier
                 if carrier.startswith("cg/cg_"):
@@ -704,7 +768,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         })
 
             copies = []
-            for kind, index, carrier in carriers[:4]:
+            for kind, index, carrier in project_carriers if selected else ():
                 prefix = ROOT / "graphics" / carrier
                 raw = prefix.with_suffix(".feimg2.bin").read_bytes()
                 tsa = prefix.with_suffix(".fetsa2.bin").read_bytes()
@@ -763,5 +827,6 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         self.assertEqual(saved, (expected_bits, 0, 0, 0, 2 * expected_bits, 0))
                         copies.append({"carrier": carrier, "source": source_bg, "target": target_bg})
         print(json.dumps({
-            "selected_static_consumers": records, "outgoing_fade_copies": copies,
+            ("selected" if selected else "default") + "_static_consumers": records,
+            "outgoing_fade_copies": copies, "resources": resources,
         }, sort_keys=True))
