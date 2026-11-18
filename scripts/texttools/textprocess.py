@@ -16,9 +16,10 @@ class TextControlError(ValueError):
     """A message contains an unknown or malformed named control."""
 
 class Msg:
-    def __init__(self, idx, data, definiation=None):
+    def __init__(self, idx, data, definiation=None, source_name=None):
         self.idx = idx
         self.data = data
+        self.source_name = source_name
         if definiation is not None:
             self.definiation = definiation
         else:
@@ -206,11 +207,12 @@ def process_file(file_path, control_chars, encoding_method, index=0):
 
     def finish_message():
         nonlocal current_index, text, definition
+        source_name = f"{file_path}: message 0x{current_index:04X}"
         data = text_to_u16_array(
             ''.join(text), control_chars, encoding_method,
-            source_name=f"{file_path}: message 0x{current_index:04X}",
+            source_name=source_name,
         )
-        messages.append(Msg(current_index, data, definition))
+        messages.append(Msg(current_index, data, definition, source_name))
         all_data.extend(data)
         current_index += 1
         text = None
@@ -265,6 +267,32 @@ def process_file(file_path, control_chars, encoding_method, index=0):
     if text is not None:
         finish_message()
     return messages
+
+def order_messages(messages, source_name):
+    if not messages:
+        raise ValueError(f"{source_name}: no messages")
+
+    by_id = {}
+    by_name = {}
+    for msg in messages:
+        if msg.idx in by_id:
+            raise ValueError(f"{msg.source_name}: duplicate message ID 0x{msg.idx:04X}")
+        if msg.definiation in ("MSG_H", "MSG_COUNT"):
+            raise ValueError(f"{msg.source_name}: reserved message definition {msg.definiation}")
+        if msg.definiation in by_name:
+            raise ValueError(f"{msg.source_name}: duplicate message definition {msg.definiation}")
+        by_id[msg.idx] = msg
+        by_name[msg.definiation] = msg
+
+    ordered = []
+    for expected, idx in enumerate(sorted(by_id)):
+        if idx != expected:
+            raise ValueError(
+                f"{by_id[idx].source_name}: missing message ID 0x{expected:04X} "
+                f"before 0x{idx:04X}"
+            )
+        ordered.append(by_id[idx])
+    return ordered
 
 def write_header(messages, header_file):
     header_file.write("#ifndef MSG_H\n#define MSG_H\n\n")
@@ -381,7 +409,9 @@ def main(args):
         sys.exit(f"Usage: {sys.argv[0]} <text-main> <defs> <output_data> <output_header> <'cp932' or 'utf8'>")
 
     control_chars = load_control_chars(input_parse_ref)
-    messages = process_file(input_fpath, control_chars, encoding_method)
+    messages = order_messages(
+        process_file(input_fpath, control_chars, encoding_method), input_fpath,
+    )
 
     # generate huffman
     freq_table = GenerateFreqTable(all_data)

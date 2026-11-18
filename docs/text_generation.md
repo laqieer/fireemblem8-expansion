@@ -43,6 +43,12 @@ line, and `/* ... */` comments may span lines. Brackets inside comments are
 ignored. Removing a comment cannot create a directive, and comment markers
 inside quoted include paths remain literal. This syntax check does not by
 itself qualify control ordering, native references or storage capacity.
+Message IDs across the main source and its includes must be unique and dense
+from zero; generated message definitions must also be unique and cannot use
+the header's reserved `MSG_H` or `MSG_COUNT` names. Declarations may appear out
+of order: output is ordered by numeric ID so `gMsgTable[id]` matches the
+declared message. Gaps, duplicates and reserved names are rejected before
+either output is published.
 
 This is **per-file atomicity**, not a multi-file transaction. A replace failure
 after the header was committed can leave a complete new header and complete
@@ -102,6 +108,9 @@ patch publication remain unchanged.
    with the independent decoder and check literal characters plus controls.
    The old producer silently published unknown controls, including after a
    line comment; dropping CP932 literals must fail the decode assertion.
+   Also reject missing or duplicate message IDs and duplicate definitions
+   across direct and included inputs. Independently decode the generated table
+   after reordered declarations and verify each message remains at its ID.
 5. The same regression command also runs a deliberately direct-to-final
    buffered writer using the current serial renderers. Its ordinary buffered
    line writes must expose partial header/C bytes and real compiler-reader

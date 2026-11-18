@@ -127,7 +127,7 @@ class TextPublicationTests(unittest.TestCase):
 
     def inputs(self, count=32, text="[X][Y][X]"):
         self.source.write_text(
-            "".join(f"#{index:04X}\n{text}\n" for index in range(1, count + 1)), encoding="utf-8")
+            "".join(f"#{index:04X}\n{text}\n" for index in range(count)), encoding="utf-8")
 
     def arguments(self, encoding="utf8"):
         return [str(self.source), str(self.definitions), str(self.data), str(self.header), encoding]
@@ -158,6 +158,27 @@ class TextPublicationTests(unittest.TestCase):
 
     def pair(self):
         return self.header.read_bytes(), self.data.read_bytes()
+
+    def decoded_messages(self):
+        generated = self.data.read_text(encoding="utf-8")
+        table = re.search(r"gMsgHuffmanTable\[\] = \{([^}]*)\}", generated).group(1)
+        nodes = [int(value, 16) for value in re.findall(r"0x[0-9A-Fa-f]+", table)]
+        arrays = {
+            name: bytes(int(value, 16) for value in re.findall(r"0x[0-9A-Fa-f]+", values))
+            for name, values in re.findall(
+                r"CompressedText_(\w+)\[\] = \{([^}]*)\}", generated
+            )
+        }
+        pointers = re.search(r"gMsgTable\[\] = \{([^}]*)\}", generated).group(1)
+        names = re.findall(r"CompressedText_(\w+)", pointers)
+        spec = importlib.util.spec_from_file_location(
+            "publication_textdecoder", SCRIPT.with_name("textdecoder.py")
+        )
+        decoder = importlib.util.module_from_spec(spec)
+        with mock.patch.object(sys, "path", [str(SCRIPT.parent), *sys.path]):
+            spec.loader.exec_module(decoder)
+        with mock.patch.object(decoder, "ROOT_NODE", len(nodes) - 1):
+            return [decoder.decode_data(arrays[name], nodes, 0) for name in names]
 
     def seed(self):
         self.inputs(3)
@@ -346,6 +367,82 @@ class TextPublicationTests(unittest.TestCase):
         self.assertEqual(self.pair(), previous)
         self.assert_no_staging()
 
+    def test_invalid_message_ids_and_names_reject_before_publication(self):
+        previous = self.seed()
+        included = self.work / "selected messages.txt"
+        for encoding in ("utf8", "cp932"):
+            for use_include in (False, True):
+                for source, diagnostic in (
+                    ("#0001\n[Y][X]\n", "missing message ID 0x0000"),
+                    ("#0000\n[Y][X]\n#0002\n[X]\n", "missing message ID 0x0001"),
+                    ("#0000\n[Y][X]\n#0000\n[X]\n", "duplicate message ID 0x0000"),
+                    (
+                        "#0000\n[X]\n## SAME\n[Y][X]\n## SAME\n[X]\n",
+                        "duplicate message definition SAME",
+                    ),
+                    ("#0000\n[X]\n## MSG_H\n[Y][X]\n", "reserved message definition MSG_H"),
+                    (
+                        "#0000\n[X]\n## MSG_COUNT\n[Y][X]\n",
+                        "reserved message definition MSG_COUNT",
+                    ),
+                ):
+                    with self.subTest(encoding=encoding, include=use_include, source=source):
+                        selected = included if use_include else self.source
+                        selected.write_text(source, encoding="utf-8")
+                        if use_include:
+                            self.source.write_text(f'#include "{included.name}"\n', encoding="utf-8")
+                        self.header.write_bytes(previous[0])
+                        self.data.write_bytes(previous[1])
+                        result = subprocess.run(
+                            [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                            cwd=self.work, capture_output=True, text=True, timeout=15,
+                        )
+                        self.assertNotEqual(result.returncode, 0, result.stdout)
+                        self.assertIn(diagnostic, result.stderr)
+                        self.assertIn(str(selected), result.stderr)
+                        self.assertEqual(self.pair(), previous)
+                        self.assert_no_staging()
+
+    def test_duplicates_between_main_source_and_include_reject(self):
+        previous = self.seed()
+        included = self.work / "selected messages.txt"
+        for encoding in ("utf8", "cp932"):
+            for main, child, diagnostic in (
+                ("#0000\n[X]\n", "#0000\n[Y][X]\n", "duplicate message ID 0x0000"),
+                ("## SAME\n[X]\n", "## SAME\n[Y][X]\n", "duplicate message definition SAME"),
+            ):
+                with self.subTest(encoding=encoding, diagnostic=diagnostic):
+                    self.source.write_text(main + f'#include "{included.name}"\n', encoding="utf-8")
+                    included.write_text(child, encoding="utf-8")
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                        cwd=self.work, capture_output=True, text=True, timeout=15,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertIn(str(included), result.stderr)
+                    self.assertEqual(self.pair(), previous)
+                    self.assert_no_staging()
+
+    def test_out_of_order_message_ids_decode_at_their_declared_indexes(self):
+        included = self.work / "selected messages.txt"
+        for encoding in ("utf8", "cp932"):
+            with self.subTest(encoding=encoding):
+                self.source.write_text("#0000\n[Y][X]\n#0001\n[X]\n", encoding="utf-8")
+                self.generate(encoding=encoding)
+                expected = self.pair()
+                self.assertEqual(self.decoded_messages(), [[1, 0], [0]])
+                for use_include in (False, True):
+                    if use_include:
+                        included.write_text("#0000\n[Y][X]\n", encoding="utf-8")
+                        tail = f'#include "{included.name}"\n'
+                    else:
+                        tail = "#0000\n[Y][X]\n"
+                    self.source.write_text("#0001\n[X]\n" + tail, encoding="utf-8")
+                    self.generate(encoding=encoding)
+                    self.assertEqual(self.decoded_messages(), [[1, 0], [0]])
+                    self.assertEqual(self.pair(), expected)
+
     def test_unknown_and_malformed_controls_reject_before_publication(self):
         previous = self.seed()
         included = self.work / "selected messages.txt"
@@ -367,7 +464,7 @@ class TextPublicationTests(unittest.TestCase):
                         self.header.write_bytes(previous[0])
                         self.data.write_bytes(previous[1])
                         selected.write_text(
-                            f"#0001\n{text}\n#0002\n[Y][X]\n", encoding="utf-8"
+                            f"#0000\n{text}\n#0001\n[Y][X]\n", encoding="utf-8"
                         )
                         if use_include:
                             self.source.write_text(
@@ -380,18 +477,18 @@ class TextPublicationTests(unittest.TestCase):
                         self.assertNotEqual(result.returncode, 0, result.stdout)
                         self.assertIn(diagnostic, result.stderr)
                         self.assertIn(str(selected), result.stderr)
-                        self.assertIn("0x0001", result.stderr)
+                        self.assertIn("0x0000", result.stderr)
                         self.assertEqual(self.pair(), previous)
                         self.assert_no_staging()
 
     def test_controls_inside_comments_do_not_change_generated_output(self):
         for encoding in ("utf8", "cp932"):
             with self.subTest(encoding=encoding):
-                self.source.write_text("#0001\n[Y][X]\n", encoding="utf-8")
+                self.source.write_text("#0000\n[Y][X]\n", encoding="utf-8")
                 self.generate(encoding=encoding)
                 expected = self.pair()
                 self.source.write_text(
-                    "#0001\n/* [NOT_A_CONTROL] */[Y][X]\n", encoding="utf-8"
+                    "#0000\n/* [NOT_A_CONTROL] */[Y][X]\n", encoding="utf-8"
                 )
                 self.generate(encoding=encoding)
                 self.assertEqual(self.pair(), expected)
@@ -405,14 +502,14 @@ class TextPublicationTests(unittest.TestCase):
         )
         for encoding in ("utf8", "cp932"):
             for use_include in (False, True):
-                for directive in ("#0001", "## CUSTOM"):
+                for directive in ("#0000", "## CUSTOM"):
                     selected = included if use_include else self.source
                     if use_include:
                         self.source.write_text(f'#include "{included.name}"\n', encoding="utf-8")
 
                     def run(body):
                         selected.write_text(
-                            f"{directive}\n{body}\n#0002\n[Y][X]\n", encoding="utf-8"
+                            f"{directive}\n{body}\n#0001\n[Y][X]\n", encoding="utf-8"
                         )
                         return subprocess.run(
                             [sys.executable, str(SCRIPT), *self.arguments(encoding)],
@@ -435,11 +532,11 @@ class TextPublicationTests(unittest.TestCase):
     def test_include_path_can_contain_comment_like_characters(self):
         included = self.work / "dir" / "*draft*" / "message.txt"
         included.parent.mkdir(parents=True)
-        included.write_text("#0001\n[Y][X]\n", encoding="utf-8")
+        included.write_text("#0000\n[Y][X]\n", encoding="utf-8")
         for encoding in ("utf8", "cp932"):
             for indentation in ("", "  "):
                 with self.subTest(encoding=encoding, indentation=indentation):
-                    self.source.write_text("#0001\n[Y][X]\n", encoding="utf-8")
+                    self.source.write_text("#0000\n[Y][X]\n", encoding="utf-8")
                     baseline = subprocess.run(
                         [sys.executable, str(SCRIPT), *self.arguments(encoding)],
                         cwd=self.work, capture_output=True, text=True, timeout=15,
@@ -460,9 +557,9 @@ class TextPublicationTests(unittest.TestCase):
     def test_comments_do_not_join_directive_fragments(self):
         for encoding in ("utf8", "cp932"):
             for plain, commented in (
-                ("#0001", "#0001/*note*/2"),
+                ("#0000", "#0000/*note*/2"),
                 ("## CUSTOM", "## CUSTOM/*note*/_SUFFIX"),
-                ("#0001", '#incl/*note*/ude "missing.txt"\n#0001'),
+                ("#0000", '#incl/*note*/ude "missing.txt"\n#0000'),
             ):
                 with self.subTest(encoding=encoding, directive=commented):
                     self.source.write_text(f"{plain}\n[Y][X]\n", encoding="utf-8")
@@ -480,11 +577,11 @@ class TextPublicationTests(unittest.TestCase):
     def test_indented_include_like_message_text_still_removes_comments(self):
         for encoding in ("utf8", "cp932"):
             with self.subTest(encoding=encoding):
-                self.source.write_text('#0001\n #include ""[Y][X]\n', encoding="utf-8")
+                self.source.write_text('#0000\n #include ""[Y][X]\n', encoding="utf-8")
                 self.generate(encoding=encoding)
                 expected = self.pair()
                 self.source.write_text(
-                    '#0001\n #include "/*[MISSING]*/"[Y][X]\n', encoding="utf-8"
+                    '#0000\n #include "/*[MISSING]*/"[Y][X]\n', encoding="utf-8"
                 )
                 result = subprocess.run(
                     [sys.executable, str(SCRIPT), *self.arguments(encoding)],
@@ -495,30 +592,13 @@ class TextPublicationTests(unittest.TestCase):
                 self.assert_no_staging()
 
     def test_cp932_cli_preserves_literal_characters_and_controls(self):
-        self.source.write_text("#0001\n日本[Y]語[X]\n", encoding="utf-8")
+        self.source.write_text("#0000\n日本[Y]語[X]\n", encoding="utf-8")
         result = subprocess.run(
             [sys.executable, str(SCRIPT), *self.arguments("cp932")],
             cwd=self.work, capture_output=True, text=True, timeout=15,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        generated = self.data.read_text(encoding="utf-8")
-        compressed = re.search(
-            r"CompressedText_MSG_001\[\] = \{([^}]*)\}", generated
-        ).group(1)
-        table = re.search(r"gMsgHuffmanTable\[\] = \{([^}]*)\}", generated).group(1)
-        encoded = bytes(int(value, 16) for value in re.findall(r"0x[0-9A-Fa-f]+", compressed))
-        nodes = [int(value, 16) for value in re.findall(r"0x[0-9A-Fa-f]+", table)]
-        spec = importlib.util.spec_from_file_location(
-            "publication_textdecoder", SCRIPT.with_name("textdecoder.py")
-        )
-        decoder = importlib.util.module_from_spec(spec)
-        with mock.patch.object(sys, "path", [str(SCRIPT.parent), *sys.path]):
-            spec.loader.exec_module(decoder)
-        with mock.patch.object(decoder, "ROOT_NODE", len(nodes) - 1):
-            self.assertEqual(
-                decoder.decode_data(encoded, nodes, 0),
-                [0xFA93, 0x7B96, 1, 0xEA8C, 0],
-            )
+        self.assertEqual(self.decoded_messages(), [[0xFA93, 0x7B96, 1, 0xEA8C, 0]])
 
     def test_actual_write_and_close_failures_do_not_publish(self):
         previous = self.seed()
