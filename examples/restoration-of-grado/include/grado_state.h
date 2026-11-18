@@ -84,6 +84,9 @@ enum
 {
     GRADO_STATE_CHAPTER_COUNT = 22,
     GRADO_STATE_NO_CHAPTER = 0xFF,
+    GRADO_STATE_PERMANENT_BYTES = 25,
+    GRADO_STATE_CHAPTER_BYTES = 5,
+    GRADO_STATE_MAX_RECOVERIES = 14,
 };
 
 struct GradoStateField
@@ -112,6 +115,11 @@ struct GradoStateLoadDiagnostic
     u16 producerSymbol;
     enum GradoStateLoadRoute route;
     unsigned int chapter;
+    u8 preflightPermanent[GRADO_STATE_PERMANENT_BYTES];
+    u8 preflightChapter[GRADO_STATE_CHAPTER_BYTES];
+    u16 recoveredSymbols[GRADO_STATE_MAX_RECOVERIES];
+    u8 recoveredCount;
+    u8 guideTruthInitialized;
 };
 
 enum GradoAllocationResult GradoState_ValidateAllocation(

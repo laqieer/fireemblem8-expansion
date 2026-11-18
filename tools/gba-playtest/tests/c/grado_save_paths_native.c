@@ -349,6 +349,168 @@ static void RecordSemantic(enum GradoStateLoadRoute route, unsigned int backing)
     }
 }
 
+static int WasRecovered(
+    const struct GradoStateLoadDiagnostic * diagnostic, enum GradoStateSymbol symbol)
+{
+    unsigned int i;
+
+    for (i = 0; i < diagnostic->recoveredCount; ++i)
+        if (diagnostic->recoveredSymbols[i] == symbol)
+            return 1;
+    return 0;
+}
+
+static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
+{
+    const struct GradoStateFlagView live = {
+        GetChapterFlagBits(), GetChapterFlagBitsSize(),
+        GetPermanentFlagBits(), GetPermanentFlagBitsSize(),
+    };
+    struct GradoStateFlagView saved;
+    struct GradoStateLoadDiagnostic diagnostic;
+    struct GradoStateLoadDiagnostic liveDiagnostic;
+    volatile struct GradoSemanticSaveRecord * record;
+    struct PlaySt livePlay;
+    struct Unit liveUnit;
+    enum GradoStateLoadResult preflight;
+    enum GradoStateLoadResult applied;
+    u8 expectedPermanent[25];
+    u8 permanent[25];
+    u8 chapter[5];
+    u32 bonus = BonusForBacking(0);
+    u16 legitimacy = 0;
+    u16 renais = 0;
+    unsigned int slot;
+    int preparedExpected;
+    int liveValid;
+    int preflightPreserved;
+    int firstRecovery;
+    int clobbered;
+    int loaded;
+    int correction;
+
+    PrepareCurrent();
+    PrepareLive(0, permanent, chapter);
+    PrepareSemanticState();
+    GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 2, 0);
+    GradoState_WriteSymbol(GRADO_STATE_RENAIS, 7, 0);
+    GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
+    GradoState_WriteSymbol(GRADO_FLAG_CH06_CLEAR, 0, 1);
+    gPlaySt.chapterIndex = 21;
+    gPlaySt.gameSaveSlot = 0;
+    SetBonusContentClaimFlags(bonus);
+    WriteGameSave(0);
+
+    if (route == GRADO_LOAD_SUSPEND)
+    {
+        WriteSuspendSave(SAVE_ID_SUSPEND);
+        slot = SAVE_ID_SUSPEND + GetLastSuspendSaveId();
+        saved.chapterFlags = gSram->suspendSaveBlocks[
+            slot - SAVE_ID_SUSPEND].chapterFlags;
+        saved.chapterBytes = 5;
+        saved.permanentFlags = gSram->suspendSaveBlocks[
+            slot - SAVE_ID_SUSPEND].permanentFlags;
+    }
+    else
+    {
+        slot = 0;
+        saved.chapterFlags = NULL;
+        saved.chapterBytes = 0;
+        saved.permanentFlags = gSram->gameSaveBlocks[0].permanentFlags;
+    }
+    saved.permanentBytes = 25;
+
+    record = &gGradoSemanticSaveProbe.records[gGradoSemanticSaveProbe.count++];
+    record->route = route;
+    record->slot = slot;
+    record->backing = 0;
+    record->valid = ReadSaveBlockInfo(NULL, slot)
+        && (route != GRADO_LOAD_SUSPEND
+            || (IsValidSuspendSave(SAVE_ID_SUSPEND)
+                && SAVE_ID_SUSPEND + gSuspendSaveIdOffset == slot));
+    record->backingValid = ReadSaveBlockInfo(NULL, 0)
+        && gSram->gameSaveBlocks[0].bonusClaimFlags == bonus;
+    preparedExpected = GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 21, 2)
+            == GRADO_STATE_VALUE_VALID
+        && GradoState_WriteSymbol(GRADO_STATE_RENAIS, 21, 2) == GRADO_STATE_VALUE_VALID;
+    if (route == GRADO_LOAD_SUSPEND)
+        preparedExpected = preparedExpected
+            && GradoState_WriteSymbol(GRADO_FLAG_FINAL_ABANDON, 21, 1)
+                == GRADO_STATE_VALUE_VALID;
+    memcpy(expectedPermanent, GetPermanentFlagBits(), sizeof(expectedPermanent));
+    memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+    memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
+    livePlay = gPlaySt;
+    liveUnit = gUnitArrayBlue[0];
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    liveValid = GradoState_PreflightSave(
+        ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
+        route, 21, &live, &liveDiagnostic) == GRADO_STATE_LOAD_VALID;
+    preflight = GradoState_PreflightSave(
+        ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
+        route, 21, &saved, &diagnostic);
+    firstRecovery = diagnostic.missingSymbol == GRADO_STATE_LEGITIMACY
+        || diagnostic.missingSymbol == GRADO_STATE_RENAIS;
+    preflightPreserved = preparedExpected && liveValid
+        && memcmp(expectedPermanent, saved.permanentFlags, sizeof(expectedPermanent)) != 0
+        && (route != GRADO_LOAD_SUSPEND
+            || memcmp(chapter, saved.chapterFlags, sizeof(chapter)) != 0)
+        && memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+        && memcmp(permanent, GetPermanentFlagBits(), sizeof(permanent)) == 0
+        && memcmp(chapter, GetChapterFlagBits(), sizeof(chapter)) == 0
+        && memcmp(&livePlay, &gPlaySt, sizeof(livePlay)) == 0
+        && memcmp(&liveUnit, &gUnitArrayBlue[0], sizeof(liveUnit)) == 0;
+
+    memset(GetPermanentFlagBits(), 0, sizeof(permanent));
+    memset(GetChapterFlagBits(), 0, sizeof(chapter));
+    gPlaySt.gameSaveSlot = 2;
+    memset(&gUnitArrayBlue[0], 0, sizeof(gUnitArrayBlue[0]));
+    SetBonusContentClaimFlags(~bonus);
+    clobbered = memcmp(GetPermanentFlagBits(), saved.permanentFlags, sizeof(permanent)) != 0
+        && gPlaySt.gameSaveSlot != 0 && gUnitArrayBlue[0].pCharacterData == NULL
+        && GetBonusContentClaimFlags() != bonus;
+    if (route == GRADO_LOAD_SUSPEND)
+        ReadSuspendSave(SAVE_ID_SUSPEND);
+    else
+        ReadGameSave(slot);
+    loaded = memcmp(GetPermanentFlagBits(), saved.permanentFlags, sizeof(permanent)) == 0
+        && gPlaySt.gameSaveSlot == 0 && gUnitArrayBlue[0].pCharacterData == gCharacterData
+        && GetBonusContentClaimFlags() == bonus
+        && (route != GRADO_LOAD_SUSPEND
+            || memcmp(GetChapterFlagBits(), saved.chapterFlags, sizeof(chapter)) == 0);
+
+    if (stale)
+        loaded = loaded && GradoState_WriteSymbol(
+            route == GRADO_LOAD_SUSPEND ? GRADO_FLAG_FINAL_ABANDON : GRADO_FLAG_CH00_OMEN,
+            21, 1) == GRADO_STATE_VALUE_VALID;
+    memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+    memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
+    livePlay = gPlaySt;
+    liveUnit = gUnitArrayBlue[0];
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    applied = GradoState_ApplyLoadRecovery(&diagnostic);
+    if (stale)
+        correction = applied == GRADO_STATE_LOAD_CONFLICT && diagnostic.recoveredCount == 0
+            && memcmp(permanent, GetPermanentFlagBits(), sizeof(permanent)) == 0;
+    else
+        correction = applied == GRADO_STATE_LOAD_VALID && diagnostic.recoveredCount == 2
+            && WasRecovered(&diagnostic, GRADO_STATE_LEGITIMACY)
+            && WasRecovered(&diagnostic, GRADO_STATE_RENAIS)
+            && GradoState_ReadSymbol(GRADO_STATE_LEGITIMACY, 21, &legitimacy)
+                == GRADO_STATE_VALUE_VALID && legitimacy == 2
+            && GradoState_ReadSymbol(GRADO_STATE_RENAIS, 21, &renais)
+                == GRADO_STATE_VALUE_VALID && renais == 2
+            && memcmp(expectedPermanent, GetPermanentFlagBits(), sizeof(expectedPermanent)) == 0;
+    record->result = stale ? applied : preflight;
+    record->state = preflight == GRADO_STATE_LOAD_RECOVERY && firstRecovery
+        && preflightPreserved && clobbered && loaded && correction
+        && memcmp(chapter, GetChapterFlagBits(), sizeof(chapter)) == 0
+        && memcmp(&livePlay, &gPlaySt, sizeof(livePlay)) == 0
+        && memcmp(&liveUnit, &gUnitArrayBlue[0], sizeof(liveUnit)) == 0;
+    record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+    record->bonus = GetBonusContentClaimFlags() == bonus;
+}
+
 static void RecordSemanticNegative(
     enum GradoStateLoadRoute route,
     enum GradoStateLoadResult expected,
@@ -466,6 +628,10 @@ static void ProbeSemanticSaves(int negative)
         RecordSemanticNegative(GRADO_LOAD_NORMAL, GRADO_STATE_LOAD_RECOVERY, 1);
         RecordSemanticNegative(GRADO_LOAD_LEGACY, GRADO_STATE_LOAD_INCOMPATIBLE, 0);
         RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_REOPEN, 0);
+        RecordBackedRecovery(GRADO_LOAD_NORMAL, 0);
+        RecordBackedRecovery(GRADO_LOAD_SUSPEND, 0);
+        RecordBackedRecovery(GRADO_LOAD_NORMAL, 1);
+        RecordBackedRecovery(GRADO_LOAD_SUSPEND, 1);
     }
     else
     {

@@ -46,6 +46,9 @@ static const struct GradoStateRequirement sRequirements[] = {
         GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_RECOVERY_REOPEN_DIRECTION },
 };
 
+typedef char GradoRecoveryCapacityCheck[
+    sizeof(sRequirements) / sizeof(sRequirements[0]) <= GRADO_STATE_MAX_RECOVERIES ? 1 : -1];
+
 static enum GradoStateValueResult GradoState_ReadProducer(
     const struct GradoStateRequirement * requirement,
     const struct GradoStateFlagView * view, u16 * value)
@@ -97,6 +100,7 @@ static enum GradoStateLoadResult GradoState_CheckHistory(
     u16 producer;
     u16 value;
 
+    memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->route = route;
     diagnostic->chapter = chapter;
     valueResult = GradoState_ValidateCampaignView(route, chapter, view);
@@ -112,6 +116,7 @@ static enum GradoStateLoadResult GradoState_CheckHistory(
             GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
     }
 
+    memset(&pending, 0, sizeof(pending));
     pending.route = route;
     pending.chapter = chapter;
     GradoState_SetLoadResult(&pending, GRADO_STATE_LOAD_VALID,
@@ -186,8 +191,16 @@ enum GradoStateLoadResult GradoState_PreflightSave(
     const struct GradoStateFlagView * view,
     struct GradoStateLoadDiagnostic * diagnostic)
 {
+    struct GradoStateFlagView snapshot;
+    enum GradoStateLoadResult result;
+    const volatile u8 * source;
+    u8 permanent[GRADO_STATE_PERMANENT_BYTES];
+    u8 chapterFlags[GRADO_STATE_CHAPTER_BYTES];
+    unsigned int i;
+
     if (diagnostic == NULL)
         return GRADO_STATE_LOAD_INPUT;
+    memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->route = route;
     diagnostic->chapter = chapter;
     if (route != GRADO_LOAD_NORMAL && route != GRADO_LOAD_SUSPEND
@@ -201,50 +214,57 @@ enum GradoStateLoadResult GradoState_PreflightSave(
                 || view->chapterBytes < (unsigned int)GetChapterFlagBitsSize())))
         return GradoState_SetLoadResult(diagnostic, GRADO_STATE_LOAD_INCOMPATIBLE,
             GRADO_STATE_RECOVERY_NONE, GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
-    return GradoState_CheckHistory(route, chapter, view, diagnostic);
+    if (GetPermanentFlagBitsSize() != GRADO_STATE_PERMANENT_BYTES
+        || GetChapterFlagBitsSize() != GRADO_STATE_CHAPTER_BYTES
+        || view->permanentFlags == NULL
+        || view->permanentBytes < GRADO_STATE_PERMANENT_BYTES)
+        return GradoState_SetLoadResult(diagnostic, GRADO_STATE_LOAD_INPUT,
+            GRADO_STATE_RECOVERY_NONE, GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
+
+    snapshot = *view;
+    source = view->permanentFlags;
+    for (i = 0; i < sizeof(permanent); ++i)
+        permanent[i] = source[i];
+    snapshot.permanentFlags = permanent;
+    snapshot.permanentBytes = sizeof(permanent);
+    if (route == GRADO_LOAD_SUSPEND)
+    {
+        source = view->chapterFlags;
+        for (i = 0; i < sizeof(chapterFlags); ++i)
+            chapterFlags[i] = source[i];
+        snapshot.chapterFlags = chapterFlags;
+        snapshot.chapterBytes = sizeof(chapterFlags);
+    }
+
+    result = GradoState_CheckHistory(route, chapter, &snapshot, diagnostic);
+    if (result == GRADO_STATE_LOAD_RECOVERY)
+    {
+        memcpy(diagnostic->preflightPermanent, permanent, sizeof(permanent));
+        if (route == GRADO_LOAD_SUSPEND)
+            memcpy(diagnostic->preflightChapter, chapterFlags, sizeof(chapterFlags));
+    }
+    return result;
 }
 
-enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
-    struct GradoStateLoadDiagnostic * diagnostic)
+static int GradoState_ApplyRecoveryStep(
+    const struct GradoStateLoadDiagnostic * diagnostic,
+    const struct GradoStateFlagView * view)
 {
-    const struct GradoStateFlagView view = {
-        GetChapterFlagBits(), GetChapterFlagBitsSize(),
-        GetPermanentFlagBits(), GetPermanentFlagBitsSize(),
-    };
     const struct GradoStateRequirement * requirement;
-    struct GradoStateLoadDiagnostic current;
     enum GradoStateValueResult result;
     unsigned int i;
     u16 value;
 
-    if (diagnostic == NULL || diagnostic->chapter >= GRADO_STATE_CHAPTER_COUNT
-        || (diagnostic->route != GRADO_LOAD_NORMAL && diagnostic->route != GRADO_LOAD_SUSPEND
-            && diagnostic->route != GRADO_LOAD_LEGACY))
-        return GRADO_STATE_LOAD_INPUT;
-
-    if (diagnostic->result != GRADO_STATE_LOAD_RECOVERY)
-        return GRADO_STATE_LOAD_INCOMPATIBLE;
-
-    GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, &current);
-    if (current.result != diagnostic->result || current.recovery != diagnostic->recovery
-        || current.missingSymbol != diagnostic->missingSymbol
-        || current.producerSymbol != diagnostic->producerSymbol)
-        return GRADO_STATE_LOAD_CONFLICT;
-
     if (diagnostic->recovery == GRADO_STATE_RECOVERY_INITIALIZE_GUIDE)
     {
-        result = GradoState_ReadGuideTruthFrom(&view, &value);
-        if (result == GRADO_STATE_VALUE_VALID && value == 0)
+        result = GradoState_ReadGuideTruthFrom(view, &value);
+        if ((result == GRADO_STATE_VALUE_VALID && value == 0)
+            || result == GRADO_STATE_VALUE_UNSET)
         {
             SetFlag(GRADO_INTERNAL_GUIDE_TRUTH);
-            return GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, diagnostic);
+            return 1;
         }
-        if (result == GRADO_STATE_VALUE_UNSET)
-        {
-            SetFlag(GRADO_INTERNAL_GUIDE_TRUTH);
-            return GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, diagnostic);
-        }
-        return GRADO_STATE_LOAD_CONFLICT;
+        return 0;
     }
 
     for (i = 0; i < sizeof(sRequirements) / sizeof(sRequirements[0]); ++i)
@@ -255,28 +275,108 @@ enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
             || diagnostic->recovery != requirement->recovery
             || requirement->recoveryValue == 0)
             continue;
-        result = GradoState_ReadProducer(requirement, &view, &value);
+        result = GradoState_ReadProducer(requirement, view, &value);
         if (result != GRADO_STATE_VALUE_VALID || value != 1)
-            return GRADO_STATE_LOAD_CONFLICT;
-        result = GradoState_ReadSymbol(
-            requirement->value, GRADO_STATE_NO_CHAPTER, &value);
+            return 0;
+        result = GradoState_ReadSymbolFrom(
+            requirement->value, GRADO_STATE_NO_CHAPTER, view, &value);
         if (result != GRADO_STATE_VALUE_UNSET)
-            return GRADO_STATE_LOAD_CONFLICT;
+            return 0;
         if (requirement->absence != GRADO_STATE_SYMBOL_COUNT)
         {
-            result = GradoState_ReadSymbol(
-                requirement->absence, GRADO_STATE_NO_CHAPTER, &value);
+            result = GradoState_ReadSymbolFrom(
+                requirement->absence, GRADO_STATE_NO_CHAPTER, view, &value);
             if (result != GRADO_STATE_VALUE_VALID || value != 0)
-                return GRADO_STATE_LOAD_CONFLICT;
+                return 0;
         }
         result = GradoState_WriteSymbol(
             requirement->value, GRADO_STATE_NO_CHAPTER, requirement->recoveryValue);
-        if (result != GRADO_STATE_VALUE_VALID)
-            return GRADO_STATE_LOAD_CONFLICT;
-        return GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, diagnostic);
+        return result == GRADO_STATE_VALUE_VALID;
     }
 
-    return GRADO_STATE_LOAD_INCOMPATIBLE;
+    return 0;
+}
+
+enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
+    struct GradoStateLoadDiagnostic * diagnostic)
+{
+    const struct GradoStateFlagView view = {
+        GetChapterFlagBits(), GetChapterFlagBitsSize(),
+        GetPermanentFlagBits(), GetPermanentFlagBitsSize(),
+    };
+    struct GradoStateLoadDiagnostic current;
+    u8 originalPermanent[GRADO_STATE_PERMANENT_BYTES];
+    u8 originalChapter[GRADO_STATE_CHAPTER_BYTES];
+    u16 recovered[GRADO_STATE_MAX_RECOVERIES];
+    unsigned int recoveredCount;
+    unsigned int i;
+    int guideInitialized;
+
+    if (diagnostic == NULL || diagnostic->chapter >= GRADO_STATE_CHAPTER_COUNT
+        || (diagnostic->route != GRADO_LOAD_NORMAL && diagnostic->route != GRADO_LOAD_SUSPEND
+            && diagnostic->route != GRADO_LOAD_LEGACY))
+        return GRADO_STATE_LOAD_INPUT;
+    if (diagnostic->result != GRADO_STATE_LOAD_RECOVERY)
+        return GRADO_STATE_LOAD_INCOMPATIBLE;
+    if (view.permanentBytes != sizeof(originalPermanent)
+        || view.chapterBytes != sizeof(originalChapter))
+        return GRADO_STATE_LOAD_INPUT;
+    if (memcmp(view.permanentFlags, diagnostic->preflightPermanent, sizeof(originalPermanent)) != 0
+        || (diagnostic->route == GRADO_LOAD_SUSPEND
+            && memcmp(view.chapterFlags, diagnostic->preflightChapter, sizeof(originalChapter)) != 0))
+        return GRADO_STATE_LOAD_CONFLICT;
+
+    GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, &current);
+    if (current.result != diagnostic->result || current.recovery != diagnostic->recovery
+        || current.missingSymbol != diagnostic->missingSymbol
+        || current.producerSymbol != diagnostic->producerSymbol)
+        return GRADO_STATE_LOAD_CONFLICT;
+
+    memcpy(originalPermanent, view.permanentFlags, sizeof(originalPermanent));
+    memcpy(originalChapter, view.chapterFlags, sizeof(originalChapter));
+    recoveredCount = 0;
+    guideInitialized = 0;
+
+    while (current.result == GRADO_STATE_LOAD_RECOVERY)
+    {
+        if (current.recovery == GRADO_STATE_RECOVERY_INITIALIZE_GUIDE)
+        {
+            if (guideInitialized)
+                goto rollback;
+        }
+        else
+        {
+            if (current.missingSymbol >= GRADO_STATE_SYMBOL_COUNT
+                || recoveredCount >= GRADO_STATE_MAX_RECOVERIES)
+                goto rollback;
+            for (i = 0; i < recoveredCount; ++i)
+                if (recovered[i] == current.missingSymbol)
+                    goto rollback;
+        }
+
+        if (!GradoState_ApplyRecoveryStep(&current, &view))
+            goto rollback;
+        if (current.recovery == GRADO_STATE_RECOVERY_INITIALIZE_GUIDE)
+            guideInitialized = 1;
+        else
+            recovered[recoveredCount++] = current.missingSymbol;
+
+        GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, &current);
+        if (current.result != GRADO_STATE_LOAD_VALID
+            && current.result != GRADO_STATE_LOAD_RECOVERY)
+            goto rollback;
+    }
+
+    *diagnostic = current;
+    memcpy(diagnostic->recoveredSymbols, recovered, recoveredCount * sizeof(recovered[0]));
+    diagnostic->recoveredCount = recoveredCount;
+    diagnostic->guideTruthInitialized = guideInitialized;
+    return GRADO_STATE_LOAD_VALID;
+
+rollback:
+    memcpy(GetPermanentFlagBits(), originalPermanent, sizeof(originalPermanent));
+    memcpy(GetChapterFlagBits(), originalChapter, sizeof(originalChapter));
+    return GRADO_STATE_LOAD_CONFLICT;
 }
 
 enum GradoStateLoadResult GradoState_ResolveEnding(

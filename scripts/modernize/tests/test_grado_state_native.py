@@ -253,7 +253,7 @@ class GradoAllocationNativeTests(unittest.TestCase):
                     "-Werror=incompatible-pointer-types",
                     "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
                     "-I", str(ROOT / "include"), "-I", str(EXAMPLE / "include"),
-                    "-no-pie", "-Wl,--gc-sections",
+                    "-no-pie", "-Wl,--gc-sections", "-Wl,--wrap=GradoState_WriteSymbol",
                     str(Path(__file__).parent / "fixtures/grado_campaign_probe.c"),
                     str(SOURCE), str(EXAMPLE / "src/values.c"), str(campaign),
                     str(EXAMPLE / "src/lifecycle.c"),

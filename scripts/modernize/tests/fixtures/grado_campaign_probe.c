@@ -15,6 +15,28 @@ u8 gPermanentFlagBits[25];
 struct PlaySt gPlaySt;
 struct Unit * gActiveUnit;
 
+static unsigned int sRecoveryWriteFailure;
+static unsigned int sRecoveryWriteNoOp;
+static unsigned int sRecoveryWriteCount;
+
+enum GradoStateValueResult __real_GradoState_WriteSymbol(
+    enum GradoStateSymbol symbol, unsigned int chapter, u16 value);
+
+enum GradoStateValueResult __wrap_GradoState_WriteSymbol(
+    enum GradoStateSymbol symbol, unsigned int chapter, u16 value)
+{
+    enum GradoStateValueResult result;
+
+    if ((sRecoveryWriteFailure != 0 || sRecoveryWriteNoOp != 0)
+        && ++sRecoveryWriteCount == sRecoveryWriteNoOp)
+        return GRADO_STATE_VALUE_VALID;
+    result = __real_GradoState_WriteSymbol(symbol, chapter, value);
+    if (sRecoveryWriteFailure != 0 && result == GRADO_STATE_VALUE_VALID
+        && sRecoveryWriteCount == sRecoveryWriteFailure)
+        return GRADO_STATE_VALUE_CORRUPT;
+    return result;
+}
+
 static const enum GradoStateSymbol sRequiredSymbols[] = {
     GRADO_STATE_LEGITIMACY,
     GRADO_STATE_RENAIS,
@@ -575,6 +597,21 @@ static void WriteRequiredChoice(enum GradoStateSymbol symbol, unsigned int chapt
     assert(GradoState_WriteSymbol(symbol, chapter, value) == GRADO_STATE_VALUE_VALID);
 }
 
+static int WasRecovered(
+    const struct GradoStateLoadDiagnostic * diagnostic, enum GradoStateSymbol symbol)
+{
+    unsigned int i;
+
+    for (i = 0; i < diagnostic->recoveredCount; ++i)
+        if (diagnostic->recoveredSymbols[i] == symbol)
+            return 1;
+    return 0;
+}
+
+static const enum GradoStateLoadRoute sSaveRoutes[] = {
+    GRADO_LOAD_NORMAL, GRADO_LOAD_SUSPEND, GRADO_LOAD_LEGACY,
+};
+
 static void CheckLoadLifecycle(void)
 {
     const struct GradoStateFlagView view = {
@@ -622,10 +659,10 @@ static void CheckLoadLifecycle(void)
 
     memcpy(permanent, gPermanentFlagBits, sizeof(permanent));
     memcpy(chapter, gChapterFlagBits, sizeof(chapter));
-    for (i = GRADO_LOAD_NORMAL; i <= GRADO_LOAD_LEGACY; ++i)
+    for (i = 0; i < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++i)
     {
         assert(GradoState_PreflightSave(
-            SAVE_COMPAT_CURRENT, &meta, (enum GradoStateLoadRoute)i, 21, &view, &diagnostic)
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[i], 21, &view, &diagnostic)
             == GRADO_STATE_LOAD_VALID);
         assert(memcmp(permanent, gPermanentFlagBits, sizeof(permanent)) == 0);
         assert(memcmp(chapter, gChapterFlagBits, sizeof(chapter)) == 0);
@@ -682,6 +719,7 @@ static void CheckLoadLifecycle(void)
         == GRADO_STATE_LOAD_RECOVERY);
     assert(diagnostic.recovery == GRADO_STATE_RECOVERY_RODERICH_EXILED);
     assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+    assert(diagnostic.recoveredCount == 1 && WasRecovered(&diagnostic, GRADO_STATE_RODERICH));
     assert(GradoState_ReadSymbol(GRADO_STATE_RODERICH, 21, &value)
         == GRADO_STATE_VALUE_VALID);
     assert(value == GRADO_RODERICH_EXILED);
@@ -763,8 +801,10 @@ static void CheckMissingChoiceRecovery(void)
     struct ExpansionSaveMeta meta;
     struct GradoStateLoadDiagnostic diagnostic;
     u8 before[sizeof(gPermanentFlagBits)];
+    u8 beforeChapter[sizeof(gChapterFlagBits)];
     u8 expected[sizeof(gPermanentFlagBits)];
     unsigned int i;
+    unsigned int route;
     u16 value;
 
     memset(&meta, 0, sizeof(meta));
@@ -791,6 +831,8 @@ static void CheckMissingChoiceRecovery(void)
         memcpy(expected, gPermanentFlagBits, sizeof(expected));
         memcpy(gPermanentFlagBits, before, sizeof(before));
         assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+        assert(diagnostic.recoveredCount == 1 && WasRecovered(&diagnostic, cases[i].value));
+        assert(!diagnostic.guideTruthInitialized);
         assert(memcmp(expected, gPermanentFlagBits, sizeof(expected)) == 0);
         assert(GradoState_ReadSymbol(cases[i].value, 21, &value)
             == GRADO_STATE_VALUE_VALID && value == cases[i].expected);
@@ -818,6 +860,95 @@ static void CheckMissingChoiceRecovery(void)
         }
     }
 
+    for (i = 0; i < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++i)
+    {
+        assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+        WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[i], 21, &view, &diagnostic)
+            == GRADO_STATE_LOAD_RECOVERY);
+        WriteRequiredChoice(GRADO_FLAG_CH00_OMEN, 21, 1);
+        memcpy(before, gPermanentFlagBits, sizeof(before));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_CONFLICT);
+        assert(memcmp(before, gPermanentFlagBits, sizeof(before)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    }
+
+    for (route = 0; route < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++route)
+    {
+        assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+        WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+        WriteRequiredChoice(GRADO_FLAG_CH06_CLEAR, 21, 1);
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[route], 21, &view, &diagnostic)
+            == GRADO_STATE_LOAD_RECOVERY);
+        memcpy(before, gPermanentFlagBits, sizeof(before));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        sRecoveryWriteCount = 0;
+        sRecoveryWriteNoOp = 2;
+        assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_CONFLICT);
+        sRecoveryWriteNoOp = 0;
+        assert(sRecoveryWriteCount == 2);
+        assert(memcmp(before, gPermanentFlagBits, sizeof(before)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
+        assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+        ClearFlag(GRADO_INTERNAL_GUIDE_TRUTH);
+        WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[route], 21, &view, &diagnostic)
+            == GRADO_STATE_LOAD_RECOVERY);
+        memcpy(before, gPermanentFlagBits, sizeof(before));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        sRecoveryWriteCount = 0;
+        sRecoveryWriteFailure = 1;
+        assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_CONFLICT);
+        sRecoveryWriteFailure = 0;
+        assert(sRecoveryWriteCount == 1);
+        assert(memcmp(before, gPermanentFlagBits, sizeof(before)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
+        assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+        WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+        WriteRequiredChoice(GRADO_FLAG_CH06_CLEAR, 21, 1);
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[route], 21, &view, &diagnostic)
+            == GRADO_STATE_LOAD_RECOVERY);
+        memcpy(before, gPermanentFlagBits, sizeof(before));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        sRecoveryWriteCount = 0;
+        sRecoveryWriteFailure = 2;
+        assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_CONFLICT);
+        sRecoveryWriteFailure = 0;
+        assert(sRecoveryWriteCount == 2);
+        assert(diagnostic.recoveredCount == 0 && !diagnostic.guideTruthInitialized);
+        assert(memcmp(before, gPermanentFlagBits, sizeof(before)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    }
+
+    assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+    WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+    assert(GradoState_PreflightSave(
+        SAVE_COMPAT_CURRENT, &meta, GRADO_LOAD_NORMAL, 21, &view, &diagnostic)
+        == GRADO_STATE_LOAD_RECOVERY);
+    WriteRequiredChoice(GRADO_FLAG_FINAL_WITNESS, 21, 1);
+    memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+    assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
+    assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+    WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+    assert(GradoState_PreflightSave(
+        SAVE_COMPAT_CURRENT, &meta, GRADO_LOAD_SUSPEND, 21, &view, &diagnostic)
+        == GRADO_STATE_LOAD_RECOVERY);
+    WriteRequiredChoice(GRADO_FLAG_FINAL_WITNESS, 21, 1);
+    memcpy(before, gPermanentFlagBits, sizeof(before));
+    memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+    assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_CONFLICT);
+    assert(memcmp(before, gPermanentFlagBits, sizeof(before)) == 0);
+    assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
     assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
     ClearFlag(GRADO_INTERNAL_GUIDE_TRUTH);
     WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
@@ -833,9 +964,55 @@ static void CheckMissingChoiceRecovery(void)
         SAVE_COMPAT_CURRENT, &meta, GRADO_LOAD_NORMAL, 21, &view, &diagnostic)
         == GRADO_STATE_LOAD_RECOVERY);
     assert(diagnostic.recovery == GRADO_STATE_RECOVERY_INITIALIZE_GUIDE);
-    assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_RECOVERY);
-    assert(diagnostic.missingSymbol == GRADO_STATE_LEGITIMACY);
     assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+    assert(diagnostic.guideTruthInitialized);
+    assert(diagnostic.recoveredCount == 1 && WasRecovered(&diagnostic, GRADO_STATE_LEGITIMACY));
+    assert(CheckFlag(GRADO_INTERNAL_GUIDE_TRUTH));
+    assert(GradoState_ReadSymbol(GRADO_STATE_LEGITIMACY, 21, &value)
+        == GRADO_STATE_VALUE_VALID && value == 2);
+
+    for (route = 0; route < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++route)
+    {
+        assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+        WriteRequiredChoice(GRADO_STATE_DIRECTION, 19, 4);
+        for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+        {
+            WriteRequiredChoice(cases[i].producer, 21, 1);
+            WriteRequiredChoice(cases[i].value, 21, cases[i].expected);
+        }
+        WriteRequiredChoice(GRADO_STATE_RODERICH, 19, GRADO_RODERICH_KILLED);
+        WriteRequiredChoice(GRADO_STATE_LUND, 19, 1);
+        assert(GradoState_RecordResolution(GRADO_STATE_RODERICH, 19) == GRADO_STATE_VALUE_VALID);
+        assert(GradoState_RecordResolution(GRADO_STATE_LUND, 19) == GRADO_STATE_VALUE_VALID);
+        WriteRequiredChoice(GRADO_STATE_RODERICH, 19, GRADO_RODERICH_EXILED);
+        WriteRequiredChoice(GRADO_STATE_LUND, 19, 3);
+        memcpy(expected, gPermanentFlagBits, sizeof(expected));
+        ClearFlag(GRADO_INTERNAL_GUIDE_TRUTH);
+        for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+            WriteRequiredChoice(cases[i].value, 21, 0);
+        WriteRequiredChoice(GRADO_STATE_RODERICH, 19, 0);
+        WriteRequiredChoice(GRADO_STATE_LUND, 19, 0);
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[route], 21, &view, &diagnostic)
+            == GRADO_STATE_LOAD_RECOVERY);
+        assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+        assert(diagnostic.guideTruthInitialized && diagnostic.recoveredCount == 11);
+        for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+        {
+            assert(WasRecovered(&diagnostic, cases[i].value));
+            assert(GradoState_ReadSymbol(cases[i].value, 21, &value)
+                == GRADO_STATE_VALUE_VALID && value == cases[i].expected);
+        }
+        assert(WasRecovered(&diagnostic, GRADO_STATE_RODERICH));
+        assert(WasRecovered(&diagnostic, GRADO_STATE_LUND));
+        assert(GradoState_ReadSymbol(GRADO_STATE_RODERICH, 21, &value)
+            == GRADO_STATE_VALUE_VALID && value == GRADO_RODERICH_EXILED);
+        assert(GradoState_ReadSymbol(GRADO_STATE_LUND, 21, &value)
+            == GRADO_STATE_VALUE_VALID && value == 3);
+        assert(memcmp(expected, gPermanentFlagBits, sizeof(expected)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    }
 
     assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
     WriteRequiredChoice(GRADO_STATE_RODERICH, 19, GRADO_RODERICH_KILLED);
@@ -845,9 +1022,25 @@ static void CheckMissingChoiceRecovery(void)
     assert(GradoState_PreflightSave(
         SAVE_COMPAT_CURRENT, &meta, GRADO_LOAD_NORMAL, 21, &view, &diagnostic)
         == GRADO_STATE_LOAD_RECOVERY);
-    assert(diagnostic.missingSymbol == GRADO_STATE_RATION);
-    assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_RECOVERY);
-    assert(diagnostic.missingSymbol == GRADO_STATE_RODERICH);
+    assert(diagnostic.missingSymbol == GRADO_STATE_RATION
+        || diagnostic.missingSymbol == GRADO_STATE_RODERICH);
+    assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+    assert(diagnostic.recoveredCount == 2);
+    assert(WasRecovered(&diagnostic, GRADO_STATE_RATION));
+    assert(WasRecovered(&diagnostic, GRADO_STATE_RODERICH));
+    assert(GradoState_ReadSymbol(GRADO_STATE_RATION, 21, &value)
+        == GRADO_STATE_VALUE_VALID && value == 3);
+    assert(GradoState_ReadSymbol(GRADO_STATE_RODERICH, 21, &value)
+        == GRADO_STATE_VALUE_VALID && value == GRADO_RODERICH_EXILED);
+
+    assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+    WriteRequiredChoice(GRADO_STATE_RODERICH, 19, GRADO_RODERICH_KILLED);
+    assert(GradoState_RecordResolution(GRADO_STATE_RODERICH, 19) == GRADO_STATE_VALUE_VALID);
+    WriteRequiredChoice(GRADO_STATE_RODERICH, 19, 0);
+    WriteRequiredChoice(GRADO_FLAG_CH11_CLEAR, 21, 1);
+    assert(GradoState_PreflightSave(
+        SAVE_COMPAT_CURRENT, &meta, GRADO_LOAD_NORMAL, 21, &view, &diagnostic)
+        == GRADO_STATE_LOAD_RECOVERY);
     WriteRequiredChoice(GRADO_FLAG_CH18_CLEAR, 21, 1);
     memcpy(before, gPermanentFlagBits, sizeof(before));
     assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_CONFLICT);
@@ -855,6 +1048,69 @@ static void CheckMissingChoiceRecovery(void)
         SAVE_COMPAT_CURRENT, &meta, GRADO_LOAD_NORMAL, 21, &view, &diagnostic)
         == GRADO_STATE_LOAD_REOPEN);
     assert(memcmp(before, gPermanentFlagBits, sizeof(before)) == 0);
+}
+
+static void CheckSavedViewRecovery(void)
+{
+    u8 savedPermanent[sizeof(gPermanentFlagBits)];
+    u8 savedChapter[sizeof(gChapterFlagBits)];
+    u8 expectedPermanent[sizeof(gPermanentFlagBits)];
+    u8 beforePermanent[sizeof(gPermanentFlagBits)];
+    u8 beforeChapter[sizeof(gChapterFlagBits)];
+    const struct GradoStateFlagView saved = {
+        savedChapter, sizeof(savedChapter), savedPermanent, sizeof(savedPermanent),
+    };
+    const struct GradoStateFlagView live = {
+        gChapterFlagBits, sizeof(gChapterFlagBits),
+        gPermanentFlagBits, sizeof(gPermanentFlagBits),
+    };
+    struct GradoStateLoadDiagnostic diagnostic;
+    struct GradoStateLoadDiagnostic liveDiagnostic;
+    struct ExpansionSaveMeta meta;
+    unsigned int route;
+
+    memset(&meta, 0, sizeof(meta));
+    memcpy(meta.magic, EXPANSION_SAVE_META_MAGIC, EXPANSION_SAVE_META_MAGIC_SIZE);
+    meta.formatVersion = SAVE_FORMAT_VERSION_CURRENT;
+    meta.compatEpoch = 256;
+    for (route = 0; route < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++route)
+    {
+        assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
+        WriteRequiredChoice(GRADO_STATE_DIRECTION, 19, 4);
+        WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
+        WriteRequiredChoice(GRADO_FLAG_CH06_CLEAR, 21, 1);
+        memcpy(savedPermanent, gPermanentFlagBits, sizeof(savedPermanent));
+        memcpy(savedChapter, gChapterFlagBits, sizeof(savedChapter));
+        WriteRequiredChoice(GRADO_STATE_LEGITIMACY, 21, 2);
+        WriteRequiredChoice(GRADO_STATE_RENAIS, 21, 2);
+        if (sSaveRoutes[route] == GRADO_LOAD_SUSPEND)
+            WriteRequiredChoice(GRADO_FLAG_FINAL_ABANDON, 21, 1);
+        memcpy(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent));
+        memcpy(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        assert(memcmp(savedPermanent, beforePermanent, sizeof(savedPermanent)) != 0);
+        if (sSaveRoutes[route] == GRADO_LOAD_SUSPEND)
+            assert(memcmp(savedChapter, beforeChapter, sizeof(savedChapter)) != 0);
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[route], 21, &live, &liveDiagnostic)
+            == GRADO_STATE_LOAD_VALID);
+        assert(GradoState_PreflightSave(
+            SAVE_COMPAT_CURRENT, &meta, sSaveRoutes[route], 21, &saved, &diagnostic)
+            == GRADO_STATE_LOAD_RECOVERY);
+        assert(memcmp(beforePermanent, gPermanentFlagBits, sizeof(beforePermanent)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+
+        memcpy(gPermanentFlagBits, savedPermanent, sizeof(savedPermanent));
+        if (sSaveRoutes[route] == GRADO_LOAD_SUSPEND)
+            memcpy(gChapterFlagBits, savedChapter, sizeof(savedChapter));
+        memcpy(beforeChapter, gChapterFlagBits, sizeof(beforeChapter));
+        assert(GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID);
+        assert(diagnostic.recoveredCount == 2);
+        assert(WasRecovered(&diagnostic, GRADO_STATE_LEGITIMACY));
+        assert(WasRecovered(&diagnostic, GRADO_STATE_RENAIS));
+        assert(memcmp(expectedPermanent, gPermanentFlagBits, sizeof(expectedPermanent)) == 0);
+        assert(memcmp(beforeChapter, gChapterFlagBits, sizeof(beforeChapter)) == 0);
+    }
 }
 
 int main(void)
@@ -945,5 +1201,6 @@ int main(void)
 
     CheckLoadLifecycle();
     CheckMissingChoiceRecovery();
+    CheckSavedViewRecovery();
     return 0;
 }

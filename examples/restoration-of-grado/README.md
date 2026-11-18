@@ -107,9 +107,15 @@ absence markers, which report and preserve the missing state. Post-resolution
 Roderich/Lund recover to EXILED/ABANDONED, with no item/unit/resource operation.
 Preflight checks the complete history before returning a recovery action;
 unrecoverable missing choices and direction reopening take precedence.
-`GradoState_ApplyLoadRecovery` rechecks the live history and updates its
-diagnostic after one correction. `RECOVERY` means another correction remains,
-not a valid history; only complete revalidation returns `VALID`.
+Preflight binds its diagnostic to the 25 permanent flag bytes and, for Suspend,
+the five chapter flag bytes it inspected. `GradoState_ApplyLoadRecovery` refuses
+stale live flags, then completes every recoverable correction without yielding.
+Its successful diagnostic lists recovered symbols in `recoveredSymbols` up to
+`recoveredCount` and reports guide initialization separately. If a correction
+fails or makes no progress, it restores both live flag scopes and reports a
+conflict. A normal-load recovery does not bind unrelated chapter flags.
+This rollback covers the optional flag consumer only; it does not make the
+original loader or its SRAM writes transactional.
 A completed final-direction
 producer with no direction returns the reopen action instead of choosing an
 ending. `GradoState_ResolveEnding` therefore never invents a default ending.
@@ -294,6 +300,17 @@ The existing `gbagfx` helper builds only the original data required for linking.
    preserve their input image and live state. Recovery changes the intended
    Roderich state without resource or unit mutation. These refusal/recovery
    cases use a live flag view; they do not claim a physical save was loaded.
+7. In that same epoch-256 capture, write two missing choices and their
+   producers into valid normal and Suspend blocks backed by normal slot 0.
+   Make the live choices valid, and make live Suspend chapter flags differ
+   from the saved flags. Preflight must still diagnose the saved view without
+   changing either view. Clobber live state and call the corresponding original
+   loader. A single recovery must report both symbols and match the complete
+   expected permanent bitmap, preserving every other valid choice, the post-load
+   image, chapter flags, unit, play state and bonus. Repeat both routes after
+   changing an unrelated permanent flag for normal or a chapter flag for
+   Suspend: recovery must refuse and preserve both live flag scopes and the
+   post-load image. The test-owned preflight is not production caller integration.
 
 Each capture retains the existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds.
 Native normal loading intentionally invalidates Suspend metadata; the case
@@ -307,7 +324,7 @@ controlled native data, including producer/missing/conflict/recovery and
 normal/Suspend/legacy boundaries. It is not cartridge-bus, complete game,
 selected UI, locale, or playable-profile qualification. The module is
 release-mode; the host campaign case separately compiles the lifecycle C for
-both debug and release settings. No production source, default, format, epoch,
+both debug and release settings. No core engine source, default, format, epoch,
 allocation or framework gate changes.
 
 ## TC-GRADO-ALLOCATION-001
@@ -356,8 +373,15 @@ save, credentials or manual judgment.
    reopen. CH10 clearance must leave Roderich unset; record actual valid CH18
    resolutions before simulating a missing Roderich/Lund outcome. Recover
    EXILED/ABANDONED without resource writes. Combine missing guide truth and
-   required choices, and combine Roderich recovery with missing ration or
-   direction: no partial correction may report the whole history valid.
+   all nine recoverable choices plus Roderich/Lund on normal, Suspend and
+   legacy routes; one successful call must report all eleven symbols and guide
+   initialization while preserving every other permanent flag. Preflight saved
+   views that differ from valid live flags, then load and recover those saved
+   views. Inject a failed or no-op later write on every route, including after
+   guide initialization, and compare both complete flag scopes after refusal.
+   A changed permanent snapshot must refuse on every route; a changed chapter
+   snapshot must refuse Suspend but must not alone refuse normal recovery.
+   Missing direction still reopens.
    Valid choices and the derived ending must survive. New game resets
    both scopes and initializes guide truth, while new chapter resets only
    chapter flags. Compile the same lifecycle module for ARM with debug values

@@ -404,19 +404,33 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             )
         negative = []
         if epoch == 256:
-            negative_symbols, negative = capture_semantic("refused", ["A", "B"], 5)
+            negative_symbols, negative = capture_semantic("refused", ["A", "B"], 9)
             expected_negative = {
                 (normal, missing), (suspend, conflict), (normal, recovery),
                 (legacy, incompatible), (suspend, reopen),
             }
             with self.subTest(save_family="semantic-refusal"):
                 self.assertEqual(negative_symbols, symbols)
-                self.assertEqual({(record[0], record[3]) for record in negative}, expected_negative)
+                unbacked = [record for record in negative if record[1] == no_slot]
+                backed = [record for record in negative if record[1] != no_slot]
+                self.assertEqual(len(unbacked), 5)
+                self.assertEqual({(record[0], record[3]) for record in unbacked}, expected_negative)
                 self.assertTrue(all(
                     record[1:3] == (no_slot, no_slot)
                     and record[4:] == (1, 1, no_slot, no_slot, 1)
-                    for record in negative
-                ), negative)
+                    for record in unbacked
+                ), unbacked)
+                self.assertEqual(len(backed), 4)
+                self.assertEqual(
+                    {(record[0], record[3]) for record in backed},
+                    {(normal, recovery), (suspend, recovery), (normal, conflict), (suspend, conflict)},
+                )
+                self.assertTrue(all(
+                    record[2] == 0
+                    and (record[1] == 0 if record[0] == normal else record[1] in (3, 4))
+                    and record[4:] == (1, 1, 1, 1, 1)
+                    for record in backed
+                ), backed)
         resources = {
             name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
             - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])
