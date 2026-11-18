@@ -49,7 +49,8 @@ class GradoVisualNativeTests(unittest.TestCase):
         )
         self.run_command([
             "make", "--no-print-directory", "-f", entrypoint, "-j2", target,
-            "NODEP=1", "FE8_PROJECT=default", "MODERN_BUILD_ROOT=" + str(output),
+            "NODEP=1", "FE8_PROJECT=default", "FE8_PROJECT_PROFILE=default",
+            "MODERN_CONFIG=debug", "MODERN_ABI=aapcs", "MODERN_BUILD_ROOT=" + str(output),
             "ASSET_MANIFEST=examples/restoration-of-grado/assets/manifest.json",
             "PYTHON=" + sys.executable, "MODERN_CC=" + tools["MODERN_CC"],
         ], cwd=ROOT)
@@ -166,7 +167,9 @@ class GradoVisualNativeTests(unittest.TestCase):
             movement_object = movement_root / "debug/aapcs/src/data_t-movecost.o"
             self.run_command([
                 "make", "--no-print-directory", "-j2", movement_object, "NODEP=1",
-                "FE8_PROJECT=default", "MODERN_BUILD_ROOT=" + str(movement_root),
+                "FE8_PROJECT=default", "FE8_PROJECT_PROFILE=default",
+                "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                "MODERN_BUILD_ROOT=" + str(movement_root),
                 "GENERATED_DATA_OUT_DIR=" + str(work / "mc"), "PYTHON=" + sys.executable,
                 "MODERN_CC=" + tools["MODERN_CC"],
             ], cwd=ROOT)

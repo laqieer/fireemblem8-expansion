@@ -120,9 +120,11 @@ canonical generated dependency fragment. The fixture's existing `-R`
 preprocessor remap selects the owned CH00 carrier and declares it as an
 input; CH02 uses the manifest's existing generated path. Native readers
 consume the original `PrologueMap`, `Ch2Map` and `TileConfiguration5`
-symbols directly. The same correct/unscaled semantics must hold. Without
-the fixture remap, the actual original CH00 owner remains 15x10, not the
-selected 16x12 derivative.
+symbols directly. The source-owner and movement objects explicitly use the
+default project/profile and debug AAPCS, even if a different project profile,
+configuration or ABI is inherited. The same correct/unscaled semantics must
+hold. Without the fixture remap, the actual original CH00 owner remains 15x10,
+not the selected 16x12 derivative.
 
 This proves actual C/incbin producer integration, not activation of a
 supported project: chapter/table inputs and the remap entrypoint remain
