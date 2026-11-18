@@ -185,6 +185,9 @@ are visible preflight warnings, not silently repaired coordinates.
 The project-owned source masters remain in the accepted visual-source
 repository. `derive_visuals.py` performs only the derived 240x160 resize and
 deterministic tile-row palette partition; it does not overwrite those masters.
+Each bank reserves index zero for transparency and uses indices 1-15 for
+opaque artwork. The source PNG and referenced native TSA tiles must contain
+no transparent pixels.
 The committed project PNGs are:
 
 * `grado_imperial_tomb.png` and `grado_council_hall.png`: ordinary dialogue BG
@@ -195,14 +198,24 @@ The committed project PNGs are:
 The existing `tsa_generator.py` remains the tile/TSA converter. The selected
 `restoration-of-grado/primary` project replaces only the four existing BG/CG
 code/data owners; default consumers and ROM data are unchanged. Its ordinary
-BGs enter `gConvoBackgroundData` with 19,168-byte raw tile owners, 1,202-byte
-TSA and a 512-byte 256-color palette file; their GBA-LZ tile payloads are
-16,916 and 16,912 bytes. The CG/title raw owners are split into ten 2,048-byte
+BGs enter `gConvoBackgroundData` with a 1,202-byte TSA and a 512-byte
+256-color palette file. The CG/title raw owners are split into ten 2,048-byte
 partitions expected by `DisplayCGfx`, then each uses the existing gbagfx LZ
 rule and a selected `gCGDataTable` entry. The public focused test regenerates
 the tile/TSA bytes, validates bank IDs and partitions, and rejects an ordinary
-carrier over eight banks or a crossfade carrier over six. A screenshot is
-supplementary only.
+carrier over eight banks or a crossfade carrier over six. Both CG partition
+families are ignored build output owned by `clean` and `clean_fast`.
+The source-only suite checks actual Make cleanup commands without deleting
+the current workspace. The coordinate/configuration subcase runs in the
+existing ARM-enabled native suite, which assembles the tracked tileset
+source in its temporary directory; it does not require a prior ROM build.
+A screenshot is supplementary only.
+
+Run the focused asset suite and native case documented above. A derivation
+using all 16 visible indices must fail the generated opaque-pixel checks for
+both bank limits and all four carriers. Removing either partition family's
+ignore or cleanup entry must fail its corresponding output-ownership check.
+Restore those mutations before normal builds.
 
 For the selected compile proof, run:
 

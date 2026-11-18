@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -74,6 +75,7 @@ class GradoVisualAssetTests(unittest.TestCase):
                     self.assertEqual(image.mode, "P")
                     self.assertEqual(image.size, (240, 160))
                     self.assertLessEqual(image.getextrema()[1] // 16 + 1, bank_limit)
+                    self.assertTrue(all(pixel & 15 for pixel in image.tobytes()))
                     raw = output / (source.stem + ".feimg2.bin")
                     tsa = output / (source.stem + ".fetsa2.bin")
                     converted = subprocess.run(
@@ -93,6 +95,12 @@ class GradoVisualAssetTests(unittest.TestCase):
                         for offset in range(2, len(tilemap), 2)
                     }
                     self.assertLessEqual(max(banks) + 1, bank_limit)
+                    tiles = raw.read_bytes()
+                    for offset in range(2, len(tilemap), 2):
+                        tile = int.from_bytes(tilemap[offset:offset + 2], "little") & 0x3FF
+                        pixels = tiles[tile * 32:(tile + 1) * 32]
+                        self.assertEqual(len(pixels), 32)
+                        self.assertTrue(all(value & 15 and value >> 4 for value in pixels))
                     if source.parent.name == "cg":
                         split = subprocess.run(
                             [
@@ -110,46 +118,53 @@ class GradoVisualAssetTests(unittest.TestCase):
                         self.assertTrue(all(len(part) == 0x800 for part in parts))
                         self.assertEqual(b"".join(parts)[:len(raw.read_bytes())], raw.read_bytes())
 
-    def test_accepted_coordinates_bind_to_native_terrain_and_retain_warnings(self):
-        contract = json.loads((ASSETS / "coordinates.json").read_text())
-        terrain_lookup = (ROOT / "graphics/map/TileConfiguration5.bin").read_bytes()[8192:]
-        sources = {
-            "CH00": ROOT / "graphics/map/layout/grado/CH00.mar",
-            "CH02": None,
+    def test_derivation_reserves_transparent_index_in_every_bank(self):
+        with tempfile.TemporaryDirectory(prefix="grado-opaque-") as directory:
+            output = Path(directory)
+            source = output / "source.png"
+            image = Image.new("RGB", (240, 160))
+            image.putdata([
+                (x % 256, y % 256, (x + y) % 256)
+                for y in range(160) for x in range(240)
+            ])
+            image.save(source)
+            for banks in (6, 8):
+                with self.subTest(banks=banks):
+                    target = output / f"banks-{banks}.png"
+                    result = subprocess.run(
+                        [sys.executable, "-B", str(ASSETS / "static/derive_visuals.py"),
+                         "derive", str(source), str(target), "--banks", str(banks)],
+                        cwd=ROOT, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    with Image.open(target) as derived:
+                        pixels = derived.tobytes()
+                    self.assertEqual({value // 16 for value in pixels}, set(range(banks)))
+                    self.assertTrue(all(value & 15 for value in pixels))
+
+    def test_generated_cg_partitions_are_ignored_and_owned_by_both_clean_targets(self):
+        partitions = {
+            f"graphics/cg/{carrier}_part_{index}.bin"
+            for carrier in ("grado_funeral_omen", "grado_title") for index in range(10)
         }
-        (ROOT / "build").mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="grado-coordinate-map-", dir=ROOT / "build") as directory:
-            output = Path(directory) / "generated/assets"
-            generated = subprocess.run(
-                [
-                    sys.executable, "-B", "-m", "scripts.assets",
-                    "--manifest", str(ASSETS / "manifest.json"), "--out-dir", str(output),
-                    "--item-id-cap", "0xCD", "generate",
-                ],
-                cwd=ROOT, capture_output=True, text=True, timeout=30,
-            )
-            self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
-            sources["CH02"] = output / "tmx/CH2_MAIN_MAP.mar"
-            for chapter, source in sources.items():
-                native = Path(directory) / f"{chapter}.bin"
-                converted = subprocess.run(
-                    [sys.executable, "-B", str(ROOT / "scripts/mar_to_map.py"),
-                     str(source), str(native)],
-                    cwd=ROOT, capture_output=True, text=True, timeout=30,
+        ignored = subprocess.run(
+            ["git", "check-ignore", "--stdin"], input="\n".join(sorted(partitions)) + "\n",
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(set(ignored.stdout.splitlines()), partitions, ignored.stderr)
+        for target in ("clean", "clean_fast"):
+            with self.subTest(target=target):
+                result = subprocess.run(
+                    ["make", "--no-print-directory", "-n", target, "NODEP=1"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60,
                 )
-                self.assertEqual(converted.returncode, 0, converted.stdout + converted.stderr)
-                payload = native.read_bytes()
-                for identity, role, coordinate, expected in contract["chapters"][chapter]["coordinates"]:
-                    x, y = coordinate
-                    offset = 2 + 2 * (payload[0] * y + x)
-                    value = int.from_bytes(payload[offset:offset + 2], "little")
-                    with self.subTest(chapter=chapter, identity=identity, role=role):
-                        self.assertEqual(terrain_lookup[value >> 2], expected)
-            warnings = contract["chapters"]["CH02"]["retainedWarnings"]
-            self.assertIn(
-                "CH02 deployment (7,10) is unreachable from (7,4) in the accepted terrain",
-                warnings,
-            )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                removals = set()
+                for line in result.stdout.splitlines():
+                    words = shlex.split(line)
+                    if words and words[0] == "rm":
+                        removals.update(words[1:])
+                self.assertTrue(partitions <= removals, partitions - removals)
 
     def test_map_derivatives_produce_native_configuration_indices(self):
         samples = {

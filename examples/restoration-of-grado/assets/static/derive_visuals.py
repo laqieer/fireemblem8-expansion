@@ -23,15 +23,16 @@ def derive(source: Path, output: Path, banks: int) -> None:
         last = rows * (bank + 1) // banks
         strip = image.crop((0, first * TILE, WIDTH, last * TILE))
         indexed = strip.convert(
-            "P", palette=Image.Palette.ADAPTIVE, colors=PALETTE_COLORS, dither=Image.Dither.NONE
+            "P", palette=Image.Palette.ADAPTIVE, colors=PALETTE_COLORS - 1,
+            dither=Image.Dither.NONE
         )
         colors = indexed.getpalette() or [0] * 768
-        palette[bank * 48:(bank + 1) * 48] = colors[:48]
+        palette[bank * 48 + 3:(bank + 1) * 48] = colors[:45]
         pixels = indexed.load()
         target = result.load()
         for y in range(last * TILE - first * TILE):
             for x in range(WIDTH):
-                target[x, first * TILE + y] = bank * PALETTE_COLORS + pixels[x, y]
+                target[x, first * TILE + y] = bank * PALETTE_COLORS + pixels[x, y] + 1
     result.putpalette(palette)
     output.parent.mkdir(parents=True, exist_ok=True)
     result.save(output, optimize=True)

@@ -209,6 +209,20 @@ class GradoVisualNativeTests(unittest.TestCase):
             ], cwd=ROOT)
             config = config_binary.read_bytes()
             self.assertEqual(len(config), 9216)
+            coordinates = json.loads(
+                (ROOT / "examples/restoration-of-grado/assets/coordinates.json").read_text()
+            )
+            for chapter, payload in zip(("CH00", "CH02"), binaries):
+                for identity, role, coordinate, expected in coordinates["chapters"][chapter]["coordinates"]:
+                    x, y = coordinate
+                    offset = 2 + 2 * (payload[0] * y + x)
+                    value = int.from_bytes(payload[offset:offset + 2], "little")
+                    with self.subTest(chapter=chapter, identity=identity, role=role):
+                        self.assertEqual(config[8192 + (value >> 2)], expected)
+            self.assertIn(
+                "CH02 deployment (7,10) is unreachable from (7,4) in the accepted terrain",
+                coordinates["chapters"]["CH02"]["retainedWarnings"],
+            )
             linker = work / "module.ld"
             linker.write_text(f"""
 OUTPUT_ARCH(arm)

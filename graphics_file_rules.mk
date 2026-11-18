@@ -210,6 +210,7 @@ graphics/statscreen/StatscreenEquipedWeaponHighlight.bin: %.bin: %.tmap
 	$(TMAP2TSA) $< $@ --width 15 --height 0
 
 define grado_cg_parts
+CLEAN_FILES += $(foreach part,0 1 2 3 4 5 6 7 8 9,graphics/cg/$(1)_part_$(part).bin)
 graphics/cg/$(1)_part_0.bin graphics/cg/$(1)_part_1.bin \
 graphics/cg/$(1)_part_2.bin graphics/cg/$(1)_part_3.bin \
 graphics/cg/$(1)_part_4.bin graphics/cg/$(1)_part_5.bin \
