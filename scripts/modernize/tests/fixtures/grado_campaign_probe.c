@@ -984,7 +984,6 @@ static void CheckMissingChoiceRecovery(void)
     for (route = 0; route < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++route)
     {
         assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
-        WriteRequiredChoice(GRADO_STATE_DIRECTION, 19, 4);
         for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
             WriteRequiredChoice(cases[i].producer, 21, 1);
         WriteRequiredChoice(GRADO_STATE_RODERICH, 19, GRADO_RODERICH_KILLED);
@@ -994,6 +993,9 @@ static void CheckMissingChoiceRecovery(void)
         ClearFlag(GRADO_INTERNAL_GUIDE_TRUTH);
         WriteRequiredChoice(GRADO_STATE_RODERICH, 19, 0);
         WriteRequiredChoice(GRADO_STATE_LUND, 19, 0);
+        GradoTestSetPermanentFlag(gPermanentFlagBits, GRADO_TEST_FIRST_GRADO_STATE_DIRECTION + 3);
+        assert(GradoState_ReadSymbol(GRADO_STATE_DIRECTION, 19, &value)
+            == GRADO_STATE_VALUE_VALID && value == 4);
         memcpy(expected, gPermanentFlagBits, sizeof(expected));
         GradoTestSetPermanentFlag(expected, GRADO_INTERNAL_GUIDE_TRUTH);
         for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
@@ -1077,6 +1079,7 @@ static void CheckSavedViewRecovery(void)
     struct GradoStateLoadDiagnostic liveDiagnostic;
     struct ExpansionSaveMeta meta;
     unsigned int route;
+    u16 direction;
 
     memset(&meta, 0, sizeof(meta));
     memcpy(meta.magic, EXPANSION_SAVE_META_MAGIC, EXPANSION_SAVE_META_MAGIC_SIZE);
@@ -1085,11 +1088,13 @@ static void CheckSavedViewRecovery(void)
     for (route = 0; route < sizeof(sSaveRoutes) / sizeof(sSaveRoutes[0]); ++route)
     {
         assert(GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME) == GRADO_STATE_LOAD_VALID);
-        WriteRequiredChoice(GRADO_STATE_DIRECTION, 19, 4);
         WriteRequiredChoice(GRADO_FLAG_CH02_CLEAR, 21, 1);
         WriteRequiredChoice(GRADO_FLAG_CH06_CLEAR, 21, 1);
+        GradoTestSetPermanentFlag(gPermanentFlagBits, GRADO_TEST_FIRST_GRADO_STATE_DIRECTION + 3);
         memcpy(savedPermanent, gPermanentFlagBits, sizeof(savedPermanent));
         memcpy(savedChapter, gChapterFlagBits, sizeof(savedChapter));
+        assert(GradoState_ReadSymbolFrom(GRADO_STATE_DIRECTION, 21, &saved, &direction)
+            == GRADO_STATE_VALUE_VALID && direction == 4);
         GradoTestExpectedTwoRecoveries(expectedPermanent, savedPermanent);
         WriteRequiredChoice(GRADO_STATE_LEGITIMACY, 21, 2);
         WriteRequiredChoice(GRADO_STATE_RENAIS, 21, 2);

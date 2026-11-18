@@ -383,6 +383,7 @@ static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
     u32 bonus = BonusForBacking(0);
     u16 legitimacy = 0;
     u16 renais = 0;
+    u16 direction = 0;
     unsigned int slot;
     int preparedExpected;
     int liveValid;
@@ -399,6 +400,7 @@ static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
     GradoState_WriteSymbol(GRADO_STATE_RENAIS, 7, 0);
     GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
     GradoState_WriteSymbol(GRADO_FLAG_CH06_CLEAR, 0, 1);
+    GradoTestSetPermanentFlag(GetPermanentFlagBits(), GRADO_TEST_FIRST_GRADO_STATE_DIRECTION + 3);
     gPlaySt.chapterIndex = 21;
     gPlaySt.gameSaveSlot = 0;
     SetBonusContentClaimFlags(bonus);
@@ -455,6 +457,8 @@ static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
     firstRecovery = diagnostic.missingSymbol == GRADO_STATE_LEGITIMACY
         || diagnostic.missingSymbol == GRADO_STATE_RENAIS;
     preflightPreserved = preparedExpected && liveValid
+        && GradoState_ReadSymbolFrom(GRADO_STATE_DIRECTION, 21, &saved, &direction)
+            == GRADO_STATE_VALUE_VALID && direction == 4
         && memcmp(expectedPermanent, saved.permanentFlags, sizeof(expectedPermanent)) != 0
         && (route != GRADO_LOAD_SUSPEND
             || memcmp(chapter, saved.chapterFlags, sizeof(chapter)) != 0)

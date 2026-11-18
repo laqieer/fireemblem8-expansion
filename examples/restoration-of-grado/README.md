@@ -302,6 +302,8 @@ The existing `gbagfx` helper builds only the original data required for linking.
    cases use a live flag view; they do not claim a physical save was loaded.
 7. In that same epoch-256 capture, write two missing choices and their
    producers into valid normal and Suspend blocks backed by normal slot 0.
+   Seed a valid unrelated direction directly after the other setup writes,
+   and verify it is present in the saved view.
    Make the live choices valid, and make live Suspend chapter flags differ
    from the saved flags. Preflight must still diagnose the saved view without
    changing either view. Clobber live state and call the corresponding original
@@ -384,10 +386,12 @@ save, credentials or manual judgment.
    EXILED/ABANDONED without resource writes. Combine missing guide truth and
    all nine recoverable choices plus Roderich/Lund on normal, Suspend and
    legacy routes; one successful call must report all eleven symbols and guide
-   initialization while preserving every other permanent flag. Preflight saved
-   views that differ from valid live flags, then load and recover those saved
-   views. Construct expected permanent bytes directly from the pre-recovery
-   bytes and the specified recovery bits, not by using the writer under test.
+   initialization while preserving every other permanent flag. Seed a valid
+   unrelated direction after the other setup writes and verify it in each
+   pre-recovery view. Preflight saved views that differ from valid live flags,
+   then load and recover those saved views. Construct expected permanent bytes
+   directly from the pre-recovery bytes and the specified recovery bits, not
+   by using the writer under test.
    For chapter 14, give saved and live CH13 guard counters opposite validity
    in both directions: Suspend follows the saved counter, while normal and
    legacy ignore chapter flags. Inject a failed or no-op later write on every
