@@ -516,7 +516,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ):
                 (work / name).write_bytes(data)
 
-            def capture(setup, call, bg, palette_source=None):
+            def capture(setup, call, bg, palette_source=None, source_bg=None):
                 self.assertTrue(gdb_smoke.port_is_available(2345), "mGBA GDB port is occupied")
                 # One inferior call per fresh boot: repeated calls are not reliable in mGBA 0.10.
                 with tempfile.TemporaryDirectory(prefix="boot-", dir=work) as boot_directory:
@@ -534,12 +534,24 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                             f"dump binary memory {boot / 'palette-source'} &{palette_source} ((char *)&{palette_source}+256)",
                         ]),
                         f"dump binary memory {boot / 'graphics-before'} {address:#x} {address + 0x5000:#x}",
+                        *([] if source_bg is None else [
+                            f"dump binary memory {boot / 'source-graphics-before'} "
+                            f"{(0x06008000 if source_bg == 3 else 0x06000000):#x} "
+                            f"{(0x0600D000 if source_bg == 3 else 0x06005000):#x}",
+                        ]),
                         'printf "SRAM_OFFSET=%u\\n", ((char *)&gSram->unkstruct2-(char *)gSram)',
                         "set $sp = $sp - 512",
                         *setup, call,
                         f"dump binary memory {boot / 'graphics'} {address:#x} {address + 0x5000:#x}",
                         f"dump binary memory {boot / 'tilemap'} &gBG{bg}TilemapBuffer ((char *)&gBG{bg}TilemapBuffer+0x800)",
                         f"dump binary memory {boot / 'palette'} &gPaletteBuffer ((char *)&gPaletteBuffer+0x400)",
+                        *([] if source_bg is None else [
+                            f"dump binary memory {boot / 'source-graphics'} "
+                            f"{(0x06008000 if source_bg == 3 else 0x06000000):#x} "
+                            f"{(0x0600D000 if source_bg == 3 else 0x06005000):#x}",
+                            f"dump binary memory {boot / 'source-tilemap'} "
+                            f"&gBG{source_bg}TilemapBuffer ((char *)&gBG{source_bg}TilemapBuffer+0x800)",
+                        ]),
                         "disconnect",
                     ]
                     script = boot / "commands.gdb"
@@ -575,6 +587,10 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         "saved-cg": save[offset:offset + 20],
                         **({} if palette_source is None else {
                             "palette-source": (boot / "palette-source").read_bytes(),
+                        }),
+                        **({} if source_bg is None else {
+                            name: (boot / name).read_bytes()
+                            for name in ("source-graphics-before", "source-graphics", "source-tilemap")
                         }),
                     }
 
@@ -683,4 +699,66 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                             "palette_bytes": len(actual["palette"]),
                             "saved_cg_bits": saved[0],
                         })
-        print(json.dumps({"selected_static_consumers": records}, sort_keys=True))
+
+            copies = []
+            for kind, index, carrier in carriers[:4]:
+                prefix = ROOT / "graphics" / carrier
+                raw = prefix.with_suffix(".feimg2.bin").read_bytes()
+                tsa = prefix.with_suffix(".fetsa2.bin").read_bytes()
+                palette = prefix.with_suffix(".gbapal").read_bytes()[:6 * 32]
+                self.assertEqual(len(palette), 6 * 32)
+                entries = struct.unpack_from("<600H", tsa, 2)
+                for source_bg, target_bg in ((3, 2), (2, 3)):
+                    with self.subTest(carrier=carrier, source=source_bg, target=target_bg):
+                        source_pal = 8 if source_bg == 3 else 0
+                        target_pal = 8 if target_bg == 3 else 0
+                        source_map = bytearray(tilemap_guard)
+                        for y in range(20):
+                            for x in range(30):
+                                struct.pack_into(
+                                    "<H", source_map, 2 * (y * 32 + x),
+                                    entries[(19 - y) * 30 + x] + (source_pal << 12),
+                                )
+                        setup = [
+                            f"restore {work / 'tilemap-input'} binary &gBG{source_bg}TilemapBuffer",
+                            "set $fade = (struct ConvoBackgroundFadeProc *)$sp",
+                            f"set $fade->unkType = {kind}",
+                            f"set $fade->bgIndex = {index}",
+                            "set $r0 = $fade",
+                            "set $lr = (unsigned int)&StartGame | 1",
+                            "tbreak StartGame",
+                            f"set $pc = (unsigned int)&ConvoBackgroundFade_LoadBg{source_bg}",
+                            "continue",
+                        ]
+                        actual = capture(
+                            setup, f"call ConvoBackgroundFade_CopyBg{source_bg}ToBg{target_bg}(0)",
+                            target_bg, source_bg=source_bg,
+                        )
+                        expected_map = bytearray(source_map)
+                        for offset in range(0, len(expected_map), 2):
+                            value = struct.unpack_from("<H", source_map, offset)[0]
+                            bank = ((value >> 12) + target_pal - source_pal) & 15
+                            struct.pack_into("<H", expected_map, offset, (value & 0xFFF) | (bank << 12))
+                        expected_palette = bytearray(palette_guard)
+                        expected_palette[source_pal * 32:(source_pal + 6) * 32] = palette
+                        if kind == 1:
+                            expected_palette[:2] = b"\x00\x00"
+                        expected_palette[target_pal * 32:(target_pal + 6) * 32] = (
+                            expected_palette[source_pal * 32:(source_pal + 6) * 32]
+                        )
+                        graphics = (
+                            raw.ljust(0x5000, b"\x00") if kind == 2
+                            else raw + actual["source-graphics-before"][len(raw):]
+                        )
+                        self.assertEqual(actual["graphics"], graphics)
+                        self.assertEqual(actual["source-graphics"], graphics)
+                        self.assertEqual(actual["tilemap"], expected_map)
+                        self.assertEqual(actual["source-tilemap"], source_map)
+                        self.assertEqual(actual["palette"], expected_palette)
+                        saved = struct.unpack("<4I2H", actual["saved-cg"])
+                        expected_bits = (1 << index) if kind == 2 else 0
+                        self.assertEqual(saved, (expected_bits, 0, 0, 0, 2 * expected_bits, 0))
+                        copies.append({"carrier": carrier, "source": source_bg, "target": target_bg})
+        print(json.dumps({
+            "selected_static_consumers": records, "outgoing_fade_copies": copies,
+        }, sort_keys=True))

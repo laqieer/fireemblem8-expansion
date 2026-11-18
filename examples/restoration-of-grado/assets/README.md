@@ -282,6 +282,14 @@ encoded tile bytes, bottom-to-top TSA rows and palette bytes come from the real
 asset producers, not captured output. Guarded unused RAM stays unchanged;
 unused VRAM is compared with its captured pre-call state.
 
+For each project carrier, the same case also executes the original BG2 and BG3
+loaders followed by their corresponding outgoing copy. It compares all
+20,480 destination and source graphics bytes, both complete tilemaps with the
+actual palette-bank translation, all palette-buffer bytes, and CG save
+bookkeeping. The loader runs as normal target execution before the one
+debugger inferior call to the copy; source pixels are not injected through the
+debugger's byte writes to VRAM.
+
 The stock CG palette files contain six banks, but their inherited direct
 loader copies eight. Those two cases compare against the immutable linked-ROM
 input span captured before execution, first checking its declared six-bank
@@ -292,15 +300,17 @@ it does not repair or endorse the extra-bank read.
 Swap the two project BG table entries: all ten BG cases must fail their native
 graphics comparison. Swap the title CG's first two partitions: all five title
 cases must fail while the funeral carrier remains correct. Restore both
-mutations before normal builds. The test removes its own emulator processes
-and temporary files; an occupied GDB port fails without stopping another user.
+mutations before normal builds. Change either outgoing copy from six palette
+banks to five: its four carrier cases must fail the full palette comparison;
+restore the original copy sizes afterward. The test removes its own emulator
+processes and temporary files; an occupied GDB port fails without stopping another user.
 Only one inferior call is made per boot because repeated inferior calls are
 unreliable with the supported mGBA 0.10 frontend.
 
 This is instrumented selected-ROM memory/save evidence, not non-instrumented
 artistic acceptance or framebuffer evidence. Default-profile selection/resource
-proof and outgoing-copy coverage remain required before this unfinished package
-is qualified; stock entries in the selected ROM do not replace default-ROM proof.
+proof remains required before this unfinished package is qualified; stock
+entries in the selected ROM do not replace default-ROM proof.
 
 The conversion evidence and compile/link binding do not establish subjective
 art acceptance. Material blockers remain: the four original CH00/CH02 portrait
