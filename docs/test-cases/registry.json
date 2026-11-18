@@ -575,11 +575,13 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/346",
         "https://github.com/laqieer/fireemblem8-expansion/issues/354",
         "https://github.com/laqieer/fireemblem8-expansion/issues/356",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/359"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/359",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/371"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
+        "TC-WORKFLOW-HOST-PLATFORM-001",
         "TC-WORKFLOW-PRIVATE-CI-001",
         "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
@@ -3090,6 +3092,30 @@
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",
           "evidence": "scripts/workflow_pilot/tests/test_worktree_cleanup.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-HOST-PLATFORM-001",
+      "title": "Retain the supported Build host",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/371"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-host-platform-001-retain-the-supported-build-host",
+      "profiles": ["Linux source checkout with Python 3; candidate and master Build CI on Ubuntu 24.04"],
+      "purpose": "Preserve the accepted Python 3.12, Make 4.3 and locked-wheel platform when ubuntu-latest changes.",
+      "prerequisites": "Run from the repository root; local structural checks need no network, credentials or ROM.",
+      "actions": "Parse the actual eight-job workflow and individually mutate each runner to ubuntu-latest and ubuntu-26.04, then exercise the existing topology and command-mirror checks.",
+      "expected_result": "Every actual Build job selects Ubuntu 24.04, changed runners reject, and all existing jobs, mirrored commands, version checks and hashes remain unchanged.",
+      "negative_control": "The original workflow selects Ubuntu 26.04 through ubuntu-latest and fails the Python profile, native Make ABI and wheel integrity gates in Build 44266252322. Each mutated runner is rejected independently.",
+      "interactions": "Uses the existing Build topology and upstream verifier. No new gate or implementation dependency; the read-only drift scanner does not use this host ABI and remains unchanged.",
+      "save_compatibility": "No product ROM/RAM, save/config, generated-data, localization or debug/release/archival behavior changes.",
+      "cleanup": "In-memory mutations require no cleanup.",
+      "limitations": "Parsed selection is not hosted execution. Exact candidate and automatic master full Build, review/security and remote completion remain required. No manual criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_supported_host_platform_is_pinned_for_every_build_job tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_real_workflow_consolidates_candidate_and_master_evidence tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_gate_argv_matches_workflow_commands_in_order -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
         }
       ]
     },
