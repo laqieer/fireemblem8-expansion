@@ -4,10 +4,14 @@ import io
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
+from pathlib import Path
 from unittest import mock
 
 CHECK_DOCS_PATH = os.path.join(
@@ -955,6 +959,344 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_real_repository_complete_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
 
+    def _host_platform_commands(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        case, = [item for item in registry["cases"]
+                 if item["id"] == "TC-WORKFLOW-HOST-PLATFORM-001"]
+        automation, = case["automation"]
+        procedure = check_docs.read_text(os.path.join(REAL_REPO_ROOT, case["document"]))
+        section = markdown_section(procedure, case["id"] + ": " + case["title"])
+        actions = markdown_section(section, "Actions")
+        documented_command, = check_docs.iter_fenced_block_bodies(actions)
+        return automation["command"], documented_command
+
+    def _run_host_platform_selection(
+        self, workflow_text, makefile_text, args, module_index, mutation=None,
+        collect_only=False,
+    ):
+        from tests.upstream_port import test_verify as upstream_tests
+        from tests.workflows import test_build_ci_topology as topology
+
+        test_args = args[module_index + 2:]
+        output = io.StringIO()
+        selected = []
+        active_method = getattr(type(self), self._testMethodName)
+        active_code = getattr(active_method, "__code__", None)
+
+        def collect(suite):
+            for test in suite:
+                if isinstance(test, unittest.TestSuite):
+                    collect(test)
+                else:
+                    method = getattr(type(test), getattr(test, "_testMethodName", ""), None)
+                    code = getattr(method, "__code__", None)
+                    if (
+                        active_code is not None and code is not None
+                        and code.co_qualname == active_code.co_qualname
+                        and os.path.realpath(code.co_filename)
+                        == os.path.realpath(active_code.co_filename)
+                    ):
+                        self.fail("catalog command recursively selects the running test")
+                    selected.append(test.id())
+
+        class SelectedRunner(unittest.TextTestRunner):
+            def run(self, suite):
+                collect(suite)
+                if collect_only:
+                    return unittest.TestResult()
+                return super().run(suite)
+
+        with tempfile.TemporaryDirectory() as temp:
+            workflow_path = Path(temp) / "build.yml"
+            makefile_path = Path(temp) / "Makefile"
+            workflow_path.write_text(workflow_text, encoding="utf-8")
+            makefile_path.write_text(makefile_text, encoding="utf-8")
+            parse_commands = upstream_tests._parse_workflow_gate_commands
+            parse_workflow = topology.verify._parse_workflow_structure_text
+
+            def gate_commands():
+                commands = parse_commands(workflow_path)
+                if mutation != "mirror":
+                    return commands
+                changed = 0
+                result = []
+                for name, argv in commands:
+                    if name == "Run localization host test suite (issue #18)":
+                        self.assertEqual(argv.count("scripts/localization/tests"), 1)
+                        argv = [
+                            "scripts/modernize/tests" if word == "scripts/localization/tests" else word
+                            for word in argv
+                        ]
+                        changed += 1
+                    result.append((name, argv))
+                self.assertEqual(changed, 1)
+                return result
+
+            def workflow_structure(text, *args, **kwargs):
+                return parse_workflow(
+                    text.replace("runs-on: ubuntu-latest", "runs-on: ubuntu-24.04")
+                    .replace("runs-on: ubuntu-26.04", "runs-on: ubuntu-24.04"),
+                    *args, **kwargs,
+                )
+
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(topology, "WORKFLOW", workflow_path))
+                stack.enter_context(mock.patch.object(topology, "MAKEFILE", makefile_path))
+                stack.enter_context(mock.patch.object(
+                    upstream_tests, "_parse_workflow_gate_commands",
+                    side_effect=gate_commands,
+                ))
+                if mutation == "host":
+                    stack.enter_context(mock.patch.object(
+                        topology.verify, "_parse_workflow_structure_text",
+                        side_effect=workflow_structure,
+                    ))
+                if mutation in {"modern", "archival"}:
+                    targets = {
+                        "modern": ("build", "Install dependencies"),
+                        "archival": ("legacy", "Install archival build dependencies"),
+                    }
+                    target_job, target_step = targets[mutation]
+                    _, _, jobs = parse_workflow(workflow_text)
+                    steps = next(steps for name, _, steps in jobs if name == target_job)
+                    fields = next(fields for _, name, fields in steps if name == target_step)
+                    semantic_commands = topology.verify._semantic_run_commands
+                    installs = [
+                        command for command in semantic_commands(fields)
+                        if command[:2] == ("sudo", "apt-get")
+                        and "install" in command and "gcc-arm-none-eabi" in command
+                    ]
+                    self.assertEqual(len(installs), 1)
+                    target, = installs
+                    self.assertEqual(target.count("--no-install-recommends"), 1)
+
+                    def without_recommendation(fields):
+                        for command in semantic_commands(fields):
+                            if command == target:
+                                command = tuple(
+                                    word for word in command
+                                    if word != "--no-install-recommends"
+                                )
+                            yield command
+
+                    stack.enter_context(mock.patch.object(
+                        topology.verify, "_semantic_run_commands",
+                        side_effect=without_recommendation,
+                    ))
+                if mutation == "topology":
+                    retired_workflow = Path(temp) / "retired.yml"
+                    retired_workflow.touch()
+                    stack.enter_context(mock.patch.object(
+                        topology, "RETIRED_WORKFLOW", retired_workflow,
+                    ))
+                result = unittest.main(
+                    module=None, argv=["unittest", *test_args], exit=False,
+                    testLoader=unittest.TestLoader(),
+                    testRunner=SelectedRunner(stream=output),
+                ).result
+        return result, output.getvalue(), selected
+
+    def _assert_host_platform_coverage(self, automation_command, documented_command, workflow, makefile):
+        from tests.workflows import test_build_ci_topology as topology
+
+        def invocation(command):
+            args = shlex.split(command)
+            self.assertIn("-m", args)
+            module_index = args.index("-m")
+            self.assertGreater(module_index, 0)
+            self.assertLess(module_index + 1, len(args))
+            self.assertEqual(args[module_index + 1], "unittest")
+            executable = shutil.which(args[0])
+            self.assertIsNotNone(executable, args[0])
+            self.assertRegex(
+                Path(executable).resolve().name,
+                r"^(?:python(?:3(?:\.\d+)?)?|pypy3(?:\.\d+)?)$",
+            )
+            self.assertFalse(
+                any(arg.startswith(("-c", "-m")) for arg in args[1:module_index])
+            )
+            return args, module_index
+
+        automation_args, automation_module = invocation(automation_command)
+        documented_args, documented_module = invocation(documented_command)
+        _, _, selected = self._run_host_platform_selection(
+            workflow, makefile, automation_args, automation_module, collect_only=True,
+        )
+        _, _, documented_tests = self._run_host_platform_selection(
+            workflow, makefile, documented_args, documented_module, collect_only=True,
+        )
+        self.assertTrue(selected)
+        self.assertCountEqual(selected, documented_tests)
+
+        invocations = {
+            (tuple(args), module_index)
+            for args, module_index in (
+                (automation_args, automation_module),
+                (documented_args, documented_module),
+            )
+        }
+        for args, module_index in invocations:
+            completed = subprocess.run(
+                args, cwd=REAL_REPO_ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            invalid = subprocess.run(
+                [*args[:module_index + 2], "unittest.TestCase.__host_platform_missing__"],
+                cwd=REAL_REPO_ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertNotEqual(invalid.returncode, 0)
+
+        result, output, selected = self._run_host_platform_selection(
+            workflow, makefile, automation_args, automation_module,
+        )
+        self.assertFalse(result.errors, output)
+        self.assertGreater(result.testsRun, 0)
+        self.assertTrue(result.wasSuccessful(), output)
+        documented, output, documented_tests = self._run_host_platform_selection(
+            workflow, makefile, documented_args, documented_module,
+        )
+        self.assertFalse(documented.errors, output)
+        self.assertGreater(documented.testsRun, 0)
+        self.assertTrue(documented.wasSuccessful(), output)
+        self.assertCountEqual(selected, documented_tests)
+
+        recipe = topology._make_recipe(makefile, "remote-completion-check")
+        changed_recipe = recipe.replace("--branch master", "--branch candidate", 1)
+        self.assertNotEqual(changed_recipe, recipe)
+        changed_makefile = makefile.replace(recipe, changed_recipe, 1)
+        controls = (
+            ("host parser", makefile, "host"),
+            ("workflow topology", makefile, "topology"),
+            ("remote completion", changed_makefile, None),
+            ("gate mirror", makefile, "mirror"),
+            ("modern ARM install", makefile, "modern"),
+            ("archival ARM install", makefile, "archival"),
+        )
+        for name, makefile_text, mutation in controls:
+            result, output, _ = self._run_host_platform_selection(
+                workflow, makefile_text, automation_args, automation_module, mutation=mutation,
+            )
+            self.assertFalse(result.errors, f"{name}:\n{output}")
+            self.assertFalse(result.wasSuccessful(), f"{name}:\n{output}")
+
+    def test_host_platform_catalog_detects_each_arm_setup_regression(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        automation, documented = self._host_platform_commands()
+        self._assert_host_platform_coverage(
+            automation, documented,
+            topology.WORKFLOW.read_text(encoding="utf-8"),
+            topology.MAKEFILE.read_text(encoding="utf-8"),
+        )
+
+    def test_host_platform_selection_filters_do_not_leak_between_commands(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        workflow = topology.WORKFLOW.read_text(encoding="utf-8")
+        makefile = topology.MAKEFILE.read_text(encoding="utf-8")
+        selector = "scripts.docs_check_tests.test_check_docs.HeadingSlugTests"
+        prefix = ["python3", "-m", "unittest", selector]
+        filtered, output, filtered_tests = self._run_host_platform_selection(
+            workflow, makefile, [*prefix, "-k", "simple_heading"], 1,
+        )
+        self.assertTrue(filtered.wasSuccessful(), output)
+        complete, output, complete_tests = self._run_host_platform_selection(
+            workflow, makefile, prefix, 1,
+        )
+        self.assertTrue(complete.wasSuccessful(), output)
+        self.assertEqual(len(filtered_tests), 1)
+        self.assertGreater(len(complete_tests), len(filtered_tests))
+
+    def test_host_platform_catalog_rejects_executable_drift(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        automation, documented = self._host_platform_commands()
+        workflow = topology.WORKFLOW.read_text(encoding="utf-8")
+        makefile = topology.MAKEFILE.read_text(encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            self._assert_host_platform_coverage(
+                automation, documented.replace("python3", "echo", 1), workflow, makefile,
+            )
+
+    def test_host_platform_catalog_detects_missing_topology_assertion(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        automation, documented = self._host_platform_commands()
+        with mock.patch.object(topology, "_errors", return_value=[]):
+            with self.assertRaisesRegex(AssertionError, "workflow topology"):
+                self._assert_host_platform_coverage(
+                    automation, documented,
+                    topology.WORKFLOW.read_text(encoding="utf-8"),
+                    topology.MAKEFILE.read_text(encoding="utf-8"),
+                )
+
+    def test_host_platform_catalog_rejects_recursive_selection_before_spawning(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        workflow = topology.WORKFLOW.read_text(encoding="utf-8")
+        makefile = topology.MAKEFILE.read_text(encoding="utf-8")
+        selector = f"{__name__}.TesterCaseRegistryTests.{self._testMethodName}"
+        commands = (
+            f"python3 -m unittest {selector}",
+            "python3 -m unittest discover -s scripts/docs_check_tests -p test_check_docs.py",
+        )
+        for command in commands:
+            with self.subTest(command=command), mock.patch.object(subprocess, "run") as spawn:
+                with self.assertRaisesRegex(AssertionError, "recursively selects"):
+                    self._assert_host_platform_coverage(command, command, workflow, makefile)
+                spawn.assert_not_called()
+
+    def test_host_platform_catalog_accepts_equivalent_selection_and_install_commands(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        automation, documented = self._host_platform_commands()
+        automation += " -k test"
+        documented += " -k test"
+        args = shlex.split(automation)
+        module_index = args.index("-m")
+        test_args = args[module_index + 2:]
+        workflow = topology.WORKFLOW.read_text(encoding="utf-8")
+        makefile = topology.MAKEFILE.read_text(encoding="utf-8")
+        _, _, selected = self._run_host_platform_selection(
+            workflow, makefile, args, module_index, collect_only=True,
+        )
+        positions = [
+            index for index, arg in enumerate(test_args)
+            if arg in selected and (index == 0 or test_args[index - 1] != "-k")
+        ]
+        reordered_args = list(test_args)
+        for index, arg in zip(positions, reversed([test_args[index] for index in positions])):
+            reordered_args[index] = arg
+        reordered = shlex.join([
+            sys.executable, "-B", *args[1:module_index], "-m", "unittest", *reordered_args,
+        ])
+
+        modern = topology._job_blocks(workflow)["build"]
+        continued = modern.replace(
+            "--no-install-recommends ", '--no-install-"recommends" \\\n          ', 1,
+        )
+        self.assertNotEqual(continued, modern)
+        workflow = workflow.replace(modern, continued, 1)
+        legacy = topology._job_blocks(workflow)["legacy"]
+        quoted = legacy.replace(
+            "--no-install-recommends", "'--no-install-recommends'", 1,
+        )
+        self.assertNotEqual(quoted, legacy)
+        workflow = workflow.replace(legacy, quoted, 1)
+        mirror_step, = [
+            step
+            for job in topology._job_blocks(workflow).values()
+            for step in topology._step_blocks(job)
+            if topology._step_name(step) == "Run localization host test suite (issue #18)"
+        ]
+        quoted_mirror = mirror_step.replace(
+            "scripts/localization/tests", 'scripts/localization/"tests"', 1,
+        )
+        self.assertNotEqual(quoted_mirror, mirror_step)
+        workflow = workflow.replace(mirror_step, quoted_mirror, 1)
+        self._assert_host_platform_coverage(reordered, documented, workflow, makefile)
+
     def test_runtime_inputs_case_is_indexed_with_focused_procedure(self):
         registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
         self.assertEqual(errors, [])
@@ -1435,15 +1777,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     },
                     "TC-WORKFLOW-HOST-PLATFORM-001": {
                         "document": "docs/test-cases/workflow-governance.md",
-                        "commands": {
-                            "python3 -m unittest "
-                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
-                            "test_supported_host_platform_is_pinned_for_every_build_job "
-                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
-                            "test_real_workflow_consolidates_candidate_and_master_evidence "
-                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests."
-                            "test_gate_argv_matches_workflow_commands_in_order -v",
-                        },
+                        "commands": set(),
                     },
                     "TC-WORKFLOW-ASSET-DISCOVERY-001": {
                         "document": "docs/test-cases/workflow-governance.md",

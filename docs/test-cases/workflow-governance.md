@@ -38,7 +38,8 @@ supplies the original behavioral failure: Ubuntu 26.04.1 selected through
 `ubuntu-latest` rejected the supported Python profile, GNU Make observation ABI,
 and Python wheel hash. The existing topology, command mirror, dependency hashes,
 version checks, security controls and full job set must remain intact.
-Removing the modern recommendation policy fails its parsed-command regression.
+Removing either ARM install's recommendation policy fails its parsed-command
+regression.
 [Build 44270407132](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44270407132)
 records the coupled setup failure: a 463 MB optional ARM C++ library download
 consumed the remaining modern job window before any compiler check ran.
@@ -58,10 +59,11 @@ install these wheels or execute the host/ABI gates, so its runner is unchanged.
 ### Automation
 
 The command above proves parsed runner selection, rejection of changed-runner
-controls, and unchanged mirrored gate commands, not hosted execution. Require
-the exact-candidate full Build and automatic exact-master Build: all four broad
-workers and summary must succeed on the selected platform before completion.
-Normal review and remote-completion gates remain required.
+controls, both ARM install contracts, and unchanged mirrored gate commands, not
+hosted execution. Require the exact-candidate full Build and automatic
+exact-master Build: all four broad workers and summary must succeed on the
+selected platform before completion. Normal review and remote-completion gates
+remain required.
 
 ### Cleanup and limitations
 
