@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` on `ubuntu-latest`, with parallel broader host and archival lanes on both PR and master runs |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` on `ubuntu-24.04`, with parallel broader host and archival lanes on both PR and master runs |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -23,6 +23,15 @@ Windows package-manager path; Windows users go through WSL (which is the
 Ubuntu/`apt` path above). Do not read this as a native-Windows guarantee —
 none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
+
+All eight Build jobs select `ubuntu-24.04` explicitly: the supported host
+requires CPython 3.12, the native-check observation ABI requires GNU Make 4.3,
+and Python dependency hashes identify the supported Python 3.12/x86_64 wheels.
+The moving `ubuntu-latest` alias is not this contract; its Ubuntu 26.04 rollout
+caused [issue #371](https://github.com/laqieer/fireemblem8-expansion/issues/371).
+Changing the image must not weaken tool-version, wheel-integrity, ABI or full
+Build gates. See the positive and changed-runner regression procedure,
+[`TC-WORKFLOW-HOST-PLATFORM-001`](test-cases/workflow-governance.md#tc-workflow-host-platform-001-retain-the-supported-build-host).
 
 **Automatic Build CI is the only host this repository re-verifies on every
 source-changing push/PR.** A PR candidate uses the complete combined Build

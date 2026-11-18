@@ -229,7 +229,7 @@ permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
 absent. The identity validator, router, and mode-classifier contain only their
 reviewed names, runner, timeout, outputs, environment,
 dependencies/conditions, and steps. Each combined job contains only its
-identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
+identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-24.04`,
 its exact allowlisted environment, and `steps`. The comprehensive `build` job
 and both comprehensive host jobs have `timeout-minutes: 90`; `legacy`
 remains 60 minutes, while identity/router/classifier and summary remain 5.

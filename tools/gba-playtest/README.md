@@ -628,7 +628,7 @@ similarity alone.
 
 ### Supported CI host matrix
 
-CI (`.github/workflows/build.yml`) runs on `ubuntu-latest` only, in two
+CI (`.github/workflows/build.yml`) runs on `ubuntu-24.04` only, in two
 separate jobs: a fast `host-tests` lane (this test suite only, no
 `arm-none-eabi` toolchain) and a `build` lane (the full modern ROM/linker
 gate, both `debug` and `release`, `MODERN_ABI=aapcs` only -- see

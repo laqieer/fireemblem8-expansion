@@ -1628,7 +1628,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
     expected_direct = [
         f"    {WORKER_NEEDS}",
         f"    if: {expected_condition}",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         f"    timeout-minutes: {expected_timeout}",
         "    env:",
         "    steps:",
@@ -1675,7 +1675,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
 def _identity_contract_errors(job: str) -> list[str]:
     required = (
         "    name: event-identity",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "      classifier_available: ${{ "
         "steps.identity.outputs.classifier_available }}",
@@ -1738,7 +1738,7 @@ def _identity_contract_errors(job: str) -> list[str]:
     ]
     if direct != [
         "    name: event-identity",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "    env:",
@@ -1768,7 +1768,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "    name: event-router",
         "    if: ${{ always() && needs.event-identity.result == 'success' }}",
         "    needs: [event-identity]",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "      classification: ${{ steps.classify.outputs.classification }}",
@@ -1841,7 +1841,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "    name: event-router",
         "    if: ${{ always() && needs.event-identity.result == 'success' }}",
         "    needs: [event-identity]",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "    env:",
@@ -2024,7 +2024,7 @@ def _mode_contract_errors(job: str) -> list[str]:
         f"    name: {EVENT_CLASSIFIER_DYNAMIC_NAME}",
         "    if: always()",
         "    needs: [event-identity, event-router]",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "    env:",
@@ -2493,6 +2493,27 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_supported_host_platform_is_pinned_for_every_build_job(self):
+        _, _, jobs = verify._parse_workflow_structure_text(self.text)
+        self.assertEqual(
+            {name: dict(context)["runs-on"] for name, context, _ in jobs},
+            {name: "ubuntu-24.04" for name in CANDIDATE_FULL_JOBS},
+        )
+        for job_name, job in _job_blocks(self.text).items():
+            for runner in ("ubuntu-latest", "ubuntu-26.04"):
+                with self.subTest(job=job_name, runner=runner):
+                    changed_job = job.replace(
+                        "    runs-on: ubuntu-24.04",
+                        f"    runs-on: {runner}",
+                        1,
+                    )
+                    self.assertNotEqual(changed_job, job)
+                    changed = self.text.replace(job, changed_job, 1)
+                    with self.assertRaisesRegex(
+                        ValueError, "runs-on must be ubuntu-24.04"
+                    ):
+                        verify._parse_workflow_structure_text(changed)
 
     def test_text_publication_has_one_closed_extended_host_owner(self):
         self.assertEqual(_text_publication_owner_errors(self.text), [])
@@ -5404,7 +5425,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     if job_name in METADATA_ADAPTER_JOBS
                     else WORKER_CONDITION
                 ),
-                "runs-on": "ubuntu-latest",
+                "runs-on": "ubuntu-24.04",
                 "timeout-minutes": "60" if job_name == "legacy" else "90",
                 "env": "",
                 "steps": "",
@@ -5529,7 +5550,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         )
                     )
             for allowed_line in (
-                "    runs-on: ubuntu-latest",
+                "    runs-on: ubuntu-24.04",
                 f"    timeout-minutes: {timeout}",
                 "    env:",
                 "    steps:",
@@ -5552,13 +5573,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             job = _job_blocks(self.text)[job_name]
             reordered = (
                 job.replace(
-                    "    runs-on: ubuntu-latest",
+                    "    runs-on: ubuntu-24.04",
                     "    __RUNS_ON__",
                     1,
                 )
                 .replace(
                     f"    timeout-minutes: {timeout}",
-                    "    runs-on: ubuntu-latest",
+                    "    runs-on: ubuntu-24.04",
                     1,
                 )
                 .replace(
@@ -5577,7 +5598,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
             for original, replacement in (
-                ("    runs-on: ubuntu-latest", "    runs-on: self-hosted"),
+                ("    runs-on: ubuntu-24.04", "    runs-on: self-hosted"),
                 (
                     f"    timeout-minutes: {timeout}",
                     f"    timeout-minutes: {int(timeout) - 1}",

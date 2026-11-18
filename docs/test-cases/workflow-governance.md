@@ -4,6 +4,54 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-HOST-PLATFORM-001: Retain the supported Build host
+
+- **Bug / originating issue:** [issue #371](https://github.com/laqieer/fireemblem8-expansion/issues/371).
+- **Configuration and prerequisites:** a clean Linux source checkout and Python 3.
+  Local structural checks need no network, credentials, toolchain or ROM.
+  Live integration uses the normal exact-candidate and automatic master Build.
+
+### Actions
+
+From the repository root, run:
+
+```bash
+python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_supported_host_platform_is_pinned_for_every_build_job tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_real_workflow_consolidates_candidate_and_master_evidence tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_gate_argv_matches_workflow_commands_in_order -v
+```
+
+### Expected result and negative control
+
+The production workflow parser reads the actual eight-job mapping, accepting
+`ubuntu-24.04` for every job. Independently changing each job to `ubuntu-latest`
+or `ubuntu-26.04` is rejected by the production parser in the topology regression.
+The pre-fix workflow fails the positive mapping assertion.
+[Build 44266252322](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44266252322)
+supplies the original behavioral failure: Ubuntu 26.04.1 selected through
+`ubuntu-latest` rejected the supported Python profile, GNU Make observation ABI,
+and Python wheel hash. The existing topology, command mirror, dependency hashes,
+version checks, security controls and full job set must remain intact.
+
+### Interactions and save compatibility
+
+Depends on the existing CPython 3.12/Linux x86_64 host profile, GNU Make 4.3
+native observation ABI and hash-locked Python wheels. No implementation
+dependencies or feature conflicts. No ROM/RAM, save/config, generated-data,
+localization or modern/debug/release/archival product changes. Both modern and
+archival CI use the restored host. The separate upstream drift workflow only
+fetches Git objects and runs read-only textual drift/scan commands; it does not
+install these wheels or execute the host/ABI gates, so its runner is unchanged.
+
+### Automation, cleanup and limitations
+
+The command above proves parsed runner selection, rejection of changed-runner
+controls, and unchanged mirrored gate commands, not hosted execution. Require
+the exact-candidate full Build and automatic exact-master Build: all four broad
+workers and summary must succeed on the selected platform before completion.
+Normal review and remote-completion gates remain required. No manual visual
+criterion; the in-memory mutations need no cleanup. A future host upgrade needs
+separate validation of these existing contracts, not merely a runner-label edit.
+Reverting this fix restores the demonstrated moving-alias failure.
+
 ## TC-WORKFLOW-PRIVATE-CI-001: Preserve CI for private repositories
 
 - **Bug / originating issue:** `workflow-governance` /
