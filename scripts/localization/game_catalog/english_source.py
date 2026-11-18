@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Tuple
+
+from scripts.texttools import textprocess
 
 from .control_streams import ControlStreamError, tokenize_payload
 from .model import EnglishSourceEntry, GameCatalogError
 
 
 _DEFINITION_RE = re.compile(r"^\[([^\]]+)\]\s*=\s*(.+?)\s*$")
-_EXPLICIT_ID_RE = re.compile(r"^#([0-9A-Fa-fx]+)\s*$")
-_MACRO_RE = re.compile(r"^##\s*(\w+)\s*$")
-_INCLUDE_RE = re.compile(r'^#include\s+"([^"]+)"\s*$')
 _TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
 
 _PRINTABLE_REPLACEMENTS = {
@@ -116,7 +115,19 @@ def encode_english_source_text(
     *,
     source_name: str,
 ) -> bytes:
-    text = _strip_comments(text, source_name=source_name)
+    return _encode_preprocessed_english_text(
+        _strip_comments(text, source_name=source_name),
+        definitions,
+        source_name=source_name,
+    )
+
+
+def _encode_preprocessed_english_text(
+    text: str,
+    definitions: Mapping[str, Tuple[int, ...]],
+    *,
+    source_name: str,
+) -> bytes:
     text = text.replace("\r", "").replace("\n", "")
     payload = bytearray()
     position = 0
@@ -151,79 +162,6 @@ def encode_english_source_text(
     return data
 
 
-def _parse_source_file(
-    path: Path,
-    definitions: Mapping[str, Tuple[int, ...]],
-    entries: List[EnglishSourceEntry],
-    current_id: int,
-    include_stack: Sequence[Path],
-) -> int:
-    path = path.resolve()
-    if path in include_stack:
-        chain = " -> ".join(str(item) for item in (*include_stack, path))
-        raise GameCatalogError(f"English text include cycle: {chain}")
-
-    lines = _strict_utf8_text(path).splitlines()
-    stack = (*include_stack, path)
-    index = 0
-    while index < len(lines):
-        stripped = lines[index].strip()
-        include_match = _INCLUDE_RE.match(stripped)
-        explicit_match = _EXPLICIT_ID_RE.match(stripped)
-        macro_match = _MACRO_RE.match(stripped)
-
-        if include_match is not None:
-            include_path = path.parent / include_match.group(1)
-            if not include_path.is_file():
-                raise GameCatalogError(
-                    f"{path}:{index + 1}: included file does not exist: "
-                    f"{include_match.group(1)!r}"
-                )
-            current_id = _parse_source_file(
-                include_path, definitions, entries, current_id, stack
-            )
-            index += 1
-            continue
-
-        definition: Optional[str]
-        if explicit_match is not None:
-            current_id = int(explicit_match.group(1), 16)
-            definition = None
-        elif macro_match is not None:
-            definition = macro_match.group(1)
-        else:
-            if stripped.startswith("#"):
-                raise GameCatalogError(
-                    f"{path}:{index + 1}: unknown text directive {stripped!r}"
-                )
-            index += 1
-            continue
-
-        directive_line = index + 1
-        index += 1
-        body: List[str] = []
-        while index < len(lines) and not lines[index].startswith("#"):
-            body.append(lines[index])
-            index += 1
-
-        source_name = f"{path}:{directive_line}: message 0x{current_id:04X}"
-        source_text = "\n".join(body)
-        encoded = encode_english_source_text(
-            source_text, definitions, source_name=source_name
-        )
-        entries.append(
-            EnglishSourceEntry(
-                target_id=current_id,
-                definition=definition,
-                source_text=source_text,
-                encoded_bytes=encoded,
-            )
-        )
-        current_id += 1
-
-    return current_id
-
-
 def load_english_source_entries(
     texts_path: Path,
     definitions_path: Path,
@@ -231,23 +169,28 @@ def load_english_source_entries(
     target_count: int,
 ) -> Tuple[EnglishSourceEntry, ...]:
     definitions = load_english_definitions(definitions_path)
-    parsed: List[EnglishSourceEntry] = []
-    _parse_source_file(texts_path, definitions, parsed, 0, ())
+    try:
+        parsed = textprocess.order_messages(
+            textprocess.parse_source_messages(texts_path), str(texts_path)
+        )
+    except (OSError, UnicodeError, ValueError) as error:
+        raise GameCatalogError(f"{texts_path}: {error}") from error
 
     by_id: Dict[int, EnglishSourceEntry] = {}
-    definitions_seen = set()
-    for entry in parsed:
-        if entry.target_id in by_id:
-            raise GameCatalogError(
-                f"{texts_path}: duplicate English message ID 0x{entry.target_id:04X}"
-            )
-        if entry.definition is not None:
-            if entry.definition in definitions_seen:
-                raise GameCatalogError(
-                    f"{texts_path}: duplicate English macro {entry.definition!r}"
-                )
-            definitions_seen.add(entry.definition)
-        by_id[entry.target_id] = entry
+    for message in parsed:
+        source_name = (
+            f"{message.file_path}:{message.line_number}: "
+            f"message 0x{message.idx:04X}"
+        )
+        by_id[message.idx] = EnglishSourceEntry(
+            target_id=message.idx,
+            definition=message.definition,
+            source_text=message.source_text,
+            message_text=message.text,
+            encoded_bytes=_encode_preprocessed_english_text(
+                message.text, definitions, source_name=source_name
+            ),
+        )
 
     expected = set(range(target_count))
     actual = set(by_id)

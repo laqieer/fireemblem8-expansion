@@ -1,8 +1,9 @@
 # Text generation and atomic publication
 
 The shared text producer is `scripts/texttools/textprocess.py`. Modern and
-archival builds use its existing message-ID and Huffman formats; this is
-separate from authoring expansion localization catalogs.
+archival builds use its existing message-ID and Huffman formats. Localized
+English catalogs share its selected-source parser and ID/name validation, but
+retain their own UTF-8/control encoder.
 
 ```bash
 python3 scripts/texttools/textprocess.py texts/texts.txt texts/textdefs.txt \
@@ -42,8 +43,10 @@ and message ID before either output is published. Comments are removed before
 splitting messages: line comments begin with `//` at the start of a source
 line, and `/* ... */` comments may span lines. Brackets inside comments are
 ignored. Removing a comment cannot create a directive, and comment markers
-inside quoted include paths remain literal. This syntax check does not by
-itself qualify control ordering, native references or storage capacity.
+inside quoted include paths remain literal. A `//` elsewhere in a message is
+literal text. Cyclic includes are rejected with their path chain. This syntax
+check does not by itself qualify control ordering, native references or
+storage capacity.
 Message IDs across the main source and its includes must be unique and dense
 from zero; generated message definitions must also be unique and cannot use
 the header's reserved `MSG_H` or `MSG_COUNT` names. Declarations may appear out
@@ -93,6 +96,7 @@ texttools codec suite:
 
 ```bash
 python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
+python3 -m unittest scripts.localization.game_catalog.tests.test_modern_english_bundle.SelectedSourceCompatibilityTests -v
 ```
 
 It is not hidden in the `test_multilang_codec*.py` pattern and does not
@@ -140,6 +144,10 @@ patch publication remain unchanged.
    Also reject missing or duplicate message IDs and duplicate definitions
    across direct and included inputs. Independently decode the generated table
    after reordered declarations and verify each message remains at its ID.
+   The selected-source compatibility case also compares native and localized
+   payloads for literal `//`, commented-out directives, reordered IDs and
+   includes; both paths reject invalid controls, IDs, names and include cycles,
+   and translation-queue text follows the same parsed message.
    Decode odd-length UTF-8 literals, named and split UTF-8 glyphs, CP932
    trail bytes, both face-operand byte positions and zero extended-control
    operands; each representable stream must retain its bytes and final

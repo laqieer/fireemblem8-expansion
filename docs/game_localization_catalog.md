@@ -51,8 +51,10 @@ resolve through `texts/locales/authored/catalog.{ja,zh-Hans}.json` by default;
 those catalogs are byte-identical deterministic merges of queue/hash-pinned
 reviewed shards. The English
 parser handles explicit `#` IDs, `##` macro IDs, relative includes, named
-controls/FIDs, and source comments deterministically. It encodes literal text
-as UTF-8 while preserving engine control payload bytes. Legacy printable
+controls/FIDs, and source comments using the native generator's parser and
+ID/name checks. It encodes literal text as UTF-8 while preserving engine
+control payload bytes; the translation queue uses that same parsed message
+while retaining the original source text as metadata. Legacy printable
 tokens are normalized during generation: `DashedLine` to `-`, `TAB` to UTF-8
 U+3000, `LQuote`/`RQuote` to `"`, and `AccentedE` to `e`. An unknown high-byte
 printable token is rejected rather than emitted as invalid UTF-8.

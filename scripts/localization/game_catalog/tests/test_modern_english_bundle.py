@@ -5,16 +5,126 @@ from pathlib import Path
 
 from scripts.localization.game_catalog.build import build_game_catalog
 from scripts.localization.game_catalog.english_source import (
+    load_english_definitions,
     load_english_source_entries,
 )
 from scripts.localization.game_catalog.model import GameCatalogError
+from scripts.localization.game_locales.final_mapping import _canonical_english
 from scripts.texttools.multilang_codec import pack_bytes
+from scripts.texttools.tests.test_textprocess_publication import load_generator
 
 
 ROOT = Path(__file__).resolve().parents[4]
 TEST_DIR = Path(__file__).resolve().parent
 MAPPING = ROOT / "texts" / "locales" / "mapping" / "fe8u_target_map.json"
 REGRESSION_IDS = (0xD4D, 0xD4E, 0xD4F, 0xD50, 0xD54)
+
+
+class SelectedSourceCompatibilityTests(unittest.TestCase):
+    def test_native_and_localized_read_the_same_selected_messages(self):
+        examples = (
+            "#0000\nhttp://example[X]\n#0001\nB[X]\n",
+            "#0000\n/* removed *///literal[X]\n#0001\nB[X]\n",
+            "#0000\nA/* note\n#000F\n[UNKNOWN]\n*/B[X]\n#0001\nC[X]\n",
+            "#0000/* note */2\nA[X]\n#0001\nB[X]\n",
+            "#0001\nB[X]\n#0000\nA[X]\n",
+            "## CUSTOM\nA[X]\n#0001\nB[X]\n",
+        )
+        for use_include in (False, True):
+            for source in examples:
+                with self.subTest(include=use_include, source=source), \
+                     tempfile.TemporaryDirectory(dir=TEST_DIR) as tmp:
+                    root = Path(tmp)
+                    definitions = root / "defs.txt"
+                    definitions.write_text("[X] = 0\n", encoding="utf-8")
+                    selected = root / ("included.txt" if use_include else "texts.txt")
+                    selected.write_text(source, encoding="utf-8")
+                    main = root / "texts.txt"
+                    if use_include:
+                        main.write_text('#include "included.txt"\n', encoding="utf-8")
+
+                    native = load_generator()
+                    messages = native.order_messages(
+                        native.process_file(main, native.load_control_chars(definitions), "utf8"),
+                        str(main),
+                    )
+                    expected = []
+                    for message in messages:
+                        raw = bytearray()
+                        for symbol in message.data:
+                            raw.append(symbol & 0xFF)
+                            if symbol >> 8:
+                                raw.append(symbol >> 8)
+                        expected.append(bytes(raw))
+
+                    localized = load_english_source_entries(main, definitions, target_count=2)
+                    self.assertEqual(
+                        [entry.encoded_bytes for entry in localized],
+                        expected,
+                    )
+
+    def test_native_and_localized_reject_invalid_ids_and_names(self):
+        examples = (
+            "#0000\nA[X]\n#0000\nB[X]\n",
+            "#0000\nA[X]\n## MSG_000\nB[X]\n",
+            "#0000\nA[X]\n## MSG_H\nB[X]\n",
+            "#0000\nA[UNKNOWN][X]\n#0001\nB[X]\n",
+            "#0000\nA[BROKEN[X]\n#0001\nB[X]\n",
+        )
+        for use_include in (False, True):
+            for source in examples:
+                with self.subTest(include=use_include, source=source), \
+                     tempfile.TemporaryDirectory(dir=TEST_DIR) as tmp:
+                    root = Path(tmp)
+                    definitions = root / "defs.txt"
+                    definitions.write_text("[X] = 0\n", encoding="utf-8")
+                    selected = root / ("included.txt" if use_include else "texts.txt")
+                    selected.write_text(source, encoding="utf-8")
+                    main = root / "texts.txt"
+                    if use_include:
+                        main.write_text('#include "included.txt"\n', encoding="utf-8")
+                    native = load_generator()
+                    with self.assertRaises(ValueError):
+                        native.order_messages(
+                            native.process_file(main, native.load_control_chars(definitions), "utf8"),
+                            str(main),
+                        )
+                    with self.assertRaises(GameCatalogError):
+                        load_english_source_entries(main, definitions, target_count=2)
+
+    def test_native_and_localized_report_include_cycles(self):
+        with tempfile.TemporaryDirectory(dir=TEST_DIR) as tmp:
+            root = Path(tmp)
+            definitions = root / "defs.txt"
+            definitions.write_text("[X] = 0\n", encoding="utf-8")
+            selected = root / "texts.txt"
+            selected.write_text('#include "child.txt"\n', encoding="utf-8")
+            (root / "child.txt").write_text('#include "texts.txt"\n', encoding="utf-8")
+            native = load_generator()
+            with self.assertRaisesRegex(ValueError, "include cycle"):
+                native.process_file(selected, native.load_control_chars(definitions), "utf8")
+            with self.assertRaisesRegex(GameCatalogError, "include cycle"):
+                load_english_source_entries(selected, definitions, target_count=1)
+
+    def test_translation_queue_uses_the_same_parsed_message(self):
+        with tempfile.TemporaryDirectory(dir=TEST_DIR) as tmp:
+            root = Path(tmp)
+            definitions = root / "defs.txt"
+            definitions.write_text("[X] = 0\n[LF] = 1\n", encoding="utf-8")
+            selected = root / "texts.txt"
+            selected.write_text(
+                "#0000\nhttp://example[LF]A/* note\n#000F\n"
+                "[UNKNOWN]\n*/B[X]\n",
+                encoding="utf-8",
+            )
+            entry, = load_english_source_entries(selected, definitions, target_count=1)
+            canonical = _canonical_english(entry, load_english_definitions(definitions))
+            self.assertEqual(canonical["english_canonical_text"], "http://exampleAB")
+            self.assertEqual(
+                [(control["name"], control["bytes_hex"]) for control in canonical["controls"]],
+                [("LF", "01")],
+            )
+            self.assertEqual(canonical["source_text"], entry.source_text)
 
 
 def _is_renderer_valid(data):

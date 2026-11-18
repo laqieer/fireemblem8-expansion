@@ -4,7 +4,11 @@ import os, re, sys, struct
 import secrets
 import stat
 from contextlib import contextmanager
-import huffman
+
+if __package__:
+    from . import huffman
+else:
+    import huffman
 
 RE_MSGIDX = re.compile(r"^#([0-9a-fA-Fx]+)")
 RE_MACRO = re.compile(r"^##\s*(\w+)")
@@ -24,6 +28,17 @@ class Msg:
             self.definiation = definiation
         else:
             self.definiation = f"MSG_{idx:03X}"
+
+class SourceMessage:
+    def __init__(self, idx, definition, file_path, line_number, text, source_text):
+        self.idx = idx
+        self.definition = definition
+        self.definiation = definition if definition is not None else f"MSG_{idx:03X}"
+        self.file_path = file_path
+        self.line_number = line_number
+        self.source_name = f"{file_path}: message 0x{idx:04X}"
+        self.text = text
+        self.source_text = source_text
 
 all_data = []
 
@@ -277,32 +292,40 @@ def text_to_u16_array(text, control_chars, encoding_method, *, source_name=None)
             raise
         raise TextControlError(f"{source_name}: {error}") from error
 
-def process_file(file_path, control_chars, encoding_method, index=0):
+def parse_source_messages(file_path, index=0, include_stack=()):
+    resolved = os.path.realpath(file_path)
+    if resolved in include_stack:
+        chain = " -> ".join((*include_stack, resolved))
+        raise ValueError(f"text include cycle: {chain}")
+    include_stack = (*include_stack, resolved)
+
     messages = []
     current_index = index
     text = None
     definition = None
+    raw_lines = None
+    directive_line = None
 
     with open(file_path, 'r', encoding='utf-8') as f:
         source = f.read()
 
     def finish_message():
-        nonlocal current_index, text, definition
-        source_name = f"{file_path}: message 0x{current_index:04X}"
-        data = text_to_u16_array(
-            ''.join(text), control_chars, encoding_method,
-            source_name=source_name,
+        nonlocal current_index, text, definition, raw_lines
+        messages.append(
+            SourceMessage(
+                current_index, definition, file_path, directive_line,
+                ''.join(text), '\n'.join(raw_lines),
+            )
         )
-        messages.append(Msg(current_index, data, definition, source_name))
-        all_data.extend(data)
         current_index += 1
         text = None
         definition = None
+        raw_lines = None
 
     last_close = source.rfind("*/")
     in_comment = False
     offset = 0
-    for line in source.split("\n"):
+    for line_number, line in enumerate(source.split("\n"), 1):
         if text is not None and not in_comment and line.startswith("#"):
             finish_message()
 
@@ -318,6 +341,7 @@ def process_file(file_path, control_chars, encoding_method, index=0):
 
         if text is not None:
             text.append(cleaned)
+            raw_lines.append(line)
             continue
 
         if include_match:
@@ -327,7 +351,9 @@ def process_file(file_path, control_chars, encoding_method, index=0):
             if not os.path.isfile(include_path):
                 raise FileNotFoundError(f"Error: File '{include_path}' does not exist.")
 
-            messages.extend(process_file(include_path, control_chars, encoding_method, current_index))
+            messages.extend(
+                parse_source_messages(include_path, current_index, include_stack)
+            )
             current_index = messages[-1].idx + 1 if messages else current_index
             continue
 
@@ -337,16 +363,33 @@ def process_file(file_path, control_chars, encoding_method, index=0):
         if directive_match:
             current_index = int(directive_match.group(1), 16)
             text = []
+            raw_lines = []
+            directive_line = line_number
         elif stripped.startswith('##'):
             macro_match = RE_MACRO.match(stripped)
             if macro_match:
                 text = []
+                raw_lines = []
+                directive_line = line_number
                 definition = macro_match.group(1)
             else:
                 raise ValueError(f"{file_path}: malformed message directive")
 
     if text is not None:
+        if source.endswith("\n") and raw_lines and raw_lines[-1] == "":
+            raw_lines.pop()
         finish_message()
+    return messages
+
+def process_file(file_path, control_chars, encoding_method, index=0):
+    messages = []
+    for source in parse_source_messages(file_path, index):
+        data = text_to_u16_array(
+            source.text, control_chars, encoding_method,
+            source_name=source.source_name,
+        )
+        messages.append(Msg(source.idx, data, source.definition, source.source_name))
+        all_data.extend(data)
     return messages
 
 def order_messages(messages, source_name):
