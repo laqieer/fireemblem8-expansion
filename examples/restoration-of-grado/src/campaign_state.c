@@ -1,5 +1,6 @@
 #include "global.h"
 
+#include "eventinfo.h"
 #include "../include/grado_campaign_state.h"
 
 enum GradoCampaignField
@@ -104,6 +105,49 @@ enum GradoAllocationResult GradoState_ValidateCampaign(void)
     return GRADO_ALLOCATION_VALID;
 }
 
+enum GradoStateValueResult GradoState_ReadGuideTruthFrom(
+    const struct GradoStateFlagView * view, u16 * value)
+{
+    if (view == NULL || value == NULL)
+        return GRADO_STATE_VALUE_INPUT;
+
+    return GradoState_ReadValueFrom(
+        sCampaignFields + FIELD_GRADO_INTERNAL_GUIDE_TRUTH,
+        GRADO_GUIDE_STATIC, GRADO_STATE_NO_CHAPTER, view, value);
+}
+
+enum GradoStateValueResult GradoState_ValidateCampaignView(
+    enum GradoStateLoadRoute route,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view)
+{
+    enum GradoStateValueResult result;
+    unsigned int i;
+    u16 value;
+
+    if (view == NULL || (route != GRADO_LOAD_NORMAL && route != GRADO_LOAD_SUSPEND
+        && route != GRADO_LOAD_LEGACY))
+        return GRADO_STATE_VALUE_INPUT;
+
+    for (i = 0; i < CAMPAIGN_FIELD_COUNT; ++i)
+    {
+        if (sCampaignFields[i].scope == GRADO_STATE_CHAPTER)
+        {
+            if (route != GRADO_LOAD_SUSPEND || sCampaignFields[i].chapter != chapter)
+                continue;
+        }
+
+        result = GradoState_ReadValueFrom(
+            sCampaignFields + i, GRADO_GUIDE_STATIC, chapter, view, &value);
+        if (result != GRADO_STATE_VALUE_VALID && result != GRADO_STATE_VALUE_UNSET)
+            return result == GRADO_STATE_VALUE_CORRUPT
+                && sCampaignFields[i].kind == GRADO_STATE_ONE_HOT
+                ? GRADO_STATE_VALUE_CONFLICT : result;
+    }
+
+    return GRADO_STATE_VALUE_VALID;
+}
+
 enum GradoStateValueResult GradoState_ReadRescue(enum GradoRescueFact fact, u16 * value)
 {
     if ((unsigned int)fact >= GRADO_RESCUE_COUNT)
@@ -125,6 +169,20 @@ enum GradoStateValueResult GradoState_RecordRescue(enum GradoRescueFact fact)
 enum GradoStateValueResult GradoState_ReadSymbol(
     enum GradoStateSymbol symbol, unsigned int chapter, u16 * value)
 {
+    const struct GradoStateFlagView view = {
+        GetChapterFlagBits(), GetChapterFlagBitsSize(),
+        GetPermanentFlagBits(), GetPermanentFlagBitsSize(),
+    };
+
+    return GradoState_ReadSymbolFrom(symbol, chapter, &view, value);
+}
+
+enum GradoStateValueResult GradoState_ReadSymbolFrom(
+    enum GradoStateSymbol symbol,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view,
+    u16 * value)
+{
     const struct GradoStateBinding * binding;
     enum GradoStateValueResult result;
     unsigned int i;
@@ -143,7 +201,8 @@ enum GradoStateValueResult GradoState_ReadSymbol(
         total = 0;
         for (i = first; i < first + 4; ++i)
         {
-            result = GradoState_ReadRescue(i, &stored);
+            result = GradoState_ReadValueFrom(
+                sCampaignFields + sRescueFields[i], GRADO_GUIDE_STATIC, 0, view, &stored);
             if (result != GRADO_STATE_VALUE_VALID)
                 return result;
             total += stored;
@@ -152,8 +211,8 @@ enum GradoStateValueResult GradoState_ReadSymbol(
         return GRADO_STATE_VALUE_VALID;
     }
 
-    result = GradoState_ReadValue(
-        sCampaignFields + binding->field, GRADO_GUIDE_STATIC, chapter, &stored);
+    result = GradoState_ReadValueFrom(
+        sCampaignFields + binding->field, GRADO_GUIDE_STATIC, chapter, view, &stored);
     if (binding->kind == BINDING_ALIAS && result == GRADO_STATE_VALUE_UNSET)
     {
         *value = 0;

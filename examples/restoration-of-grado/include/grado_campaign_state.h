@@ -2,6 +2,7 @@
 #define GUARD_GRADO_CAMPAIGN_STATE_H
 
 #include "grado_state.h"
+#include "save_format.h"
 
 enum GradoStateSymbol
 {
@@ -32,15 +33,60 @@ enum GradoRescueFact
     GRADO_RESCUE_COUNT,
 };
 
+enum GradoRoderichState
+{
+    GRADO_RODERICH_UNSET,
+    GRADO_RODERICH_DUTY,
+    GRADO_RODERICH_RELIEF,
+    GRADO_RODERICH_EXILED,
+};
+
+enum
+{
+    GRADO_SAVE_SCHEMA_VERSION = 1,
+    GRADO_SAVE_COMPAT_EPOCH = 256,
+};
+
 enum GradoAllocationResult GradoState_ValidateCampaign(void);
+
+enum GradoStateValueResult GradoState_ValidateCampaignView(
+    enum GradoStateLoadRoute route,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view);
+
+enum GradoStateValueResult GradoState_ReadGuideTruthFrom(
+    const struct GradoStateFlagView * view, u16 * value);
 
 enum GradoStateValueResult GradoState_ReadSymbol(
     enum GradoStateSymbol symbol, unsigned int chapter, u16 * value);
+
+enum GradoStateValueResult GradoState_ReadSymbolFrom(
+    enum GradoStateSymbol symbol,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view,
+    u16 * value);
 
 enum GradoStateValueResult GradoState_WriteSymbol(
     enum GradoStateSymbol symbol, unsigned int chapter, u16 value);
 
 enum GradoStateValueResult GradoState_ReadRescue(enum GradoRescueFact fact, u16 * value);
 enum GradoStateValueResult GradoState_RecordRescue(enum GradoRescueFact fact);
+
+enum GradoStateLoadResult GradoState_PreflightSave(
+    enum SaveCompatState compatibility,
+    const struct ExpansionSaveMeta * meta,
+    enum GradoStateLoadRoute route,
+    unsigned int chapter,
+    const struct GradoStateFlagView * view,
+    struct GradoStateLoadDiagnostic * diagnostic);
+
+enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
+    const struct GradoStateLoadDiagnostic * diagnostic);
+
+enum GradoStateLoadResult GradoState_ResolveEnding(
+    unsigned int chapter, u16 * ending);
+
+enum GradoStateLoadResult GradoState_BeginLifecycle(
+    enum GradoStateLoadRoute route);
 
 #endif

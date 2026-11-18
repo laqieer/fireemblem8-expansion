@@ -6,6 +6,7 @@
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
+#include "grado_campaign_state.h"
 #include "worldmap.h"
 
 #include <string.h>
@@ -42,6 +43,21 @@ struct GradoSavePathProbe
     struct GradoSavePathRecord records[5];
 };
 
+struct GradoSemanticSaveRecord
+{
+    u32 route;
+    u32 result;
+    u32 restored;
+    u32 preserved;
+};
+
+struct GradoSemanticSaveProbe
+{
+    u32 phase;
+    u32 count;
+    struct GradoSemanticSaveRecord records[8];
+};
+
 static union
 {
     struct SaveBlocks native;
@@ -49,6 +65,7 @@ static union
 } sSaveImage;
 static u8 sBefore[CART_SRAM_SIZE];
 volatile struct GradoSavePathProbe gGradoSavePathProbe;
+volatile struct GradoSemanticSaveProbe gGradoSemanticSaveProbe;
 
 static void PrepareCurrent(void)
 {
@@ -158,6 +175,185 @@ static void RecordPath(unsigned int input, int suspend)
     ++gGradoSavePathProbe.count;
 }
 
+static void PrepareSemanticState(void)
+{
+    GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME);
+    GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 2, 1);
+    GradoState_WriteSymbol(GRADO_STATE_RENAIS, 7, 2);
+    GradoState_WriteSymbol(GRADO_FLAG_CH07_GUARD_KEPT, 8, 2);
+    GradoState_WriteSymbol(GRADO_STATE_SALTROAD, 9, 1);
+    GradoState_WriteSymbol(GRADO_FLAG_CH09_MEDNET, 10, 2);
+    GradoState_WriteSymbol(GRADO_STATE_TRUTH, 11, 3);
+    GradoState_WriteSymbol(GRADO_STATE_RODERICH, 11, 2);
+    GradoState_WriteSymbol(GRADO_STATE_RATION, 12, 1);
+    GradoState_WriteSymbol(GRADO_STATE_WYVERN, 14, 1);
+    GradoState_WriteSymbol(GRADO_STATE_VILLAGE, 15, 2);
+    GradoState_WriteSymbol(GRADO_STATE_RAUSTEN_MED, 16, 1);
+    GradoState_WriteSymbol(GRADO_STATE_RAUSTEN_DATA, 16, 2);
+    GradoState_WriteSymbol(GRADO_STATE_DIRECTION, 19, 4);
+}
+
+static void RecordSemantic(
+    enum GradoStateLoadRoute route,
+    enum GradoStateLoadResult expected)
+{
+    struct GradoStateFlagView saved;
+    struct GradoStateLoadDiagnostic diagnostic;
+    volatile struct GradoSemanticSaveRecord * record;
+    unsigned int slot;
+    u8 permanent[25];
+    u8 chapter[5];
+    enum GradoStateLoadResult result;
+
+    PrepareCurrent();
+    PrepareLive(0, permanent, chapter);
+    PrepareSemanticState();
+    gPlaySt.chapterIndex = 21;
+    if (route == GRADO_LOAD_SUSPEND)
+    {
+        WriteSuspendSave(SAVE_ID_SUSPEND);
+        slot = SAVE_ID_SUSPEND + GetLastSuspendSaveId();
+        saved.chapterFlags = gSram->suspendSaveBlocks[
+            slot - SAVE_ID_SUSPEND].chapterFlags;
+        saved.chapterBytes = 5;
+        saved.permanentFlags = gSram->suspendSaveBlocks[
+            slot - SAVE_ID_SUSPEND].permanentFlags;
+        saved.permanentBytes = 25;
+    }
+    else
+    {
+        slot = SAVE_ID_GAME0;
+        WriteGameSave(slot);
+        saved.chapterFlags = NULL;
+        saved.chapterBytes = 0;
+        saved.permanentFlags = gSram->gameSaveBlocks[slot].permanentFlags;
+        saved.permanentBytes = 25;
+    }
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    record = &gGradoSemanticSaveProbe.records[gGradoSemanticSaveProbe.count++];
+    record->route = route;
+    result = GradoState_PreflightSave(
+        ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
+        route, 21, &saved, &diagnostic);
+    record->result = result == expected ? 1 : 100 + result;
+    record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+    if (result == GRADO_STATE_LOAD_VALID)
+    {
+        enum GradoStateLoadResult endingResult;
+
+        if (route == GRADO_LOAD_SUSPEND)
+        {
+            if (!IsValidSuspendSave(SAVE_ID_SUSPEND))
+                result = GRADO_STATE_LOAD_CORRUPT;
+            ReadSuspendSave(SAVE_ID_SUSPEND);
+        }
+        else
+            ReadGameSave(slot);
+        endingResult = GradoState_ResolveEnding(21, &diagnostic.missingSymbol);
+        record->restored = result == GRADO_STATE_LOAD_VALID
+            && endingResult == GRADO_STATE_LOAD_VALID
+            && diagnostic.missingSymbol == 4
+            ? 1 : 100 + diagnostic.missingSymbol;
+    }
+    else
+    {
+        record->restored = 1;
+    }
+}
+
+static void RecordSemanticNegative(
+    enum GradoStateLoadRoute route,
+    enum GradoStateLoadResult expected,
+    int roderichRecovery)
+{
+    const struct GradoStateFlagView live = {
+        GetChapterFlagBits(), GetChapterFlagBitsSize(),
+        GetPermanentFlagBits(), GetPermanentFlagBitsSize(),
+    };
+    struct GradoStateLoadDiagnostic diagnostic;
+    volatile struct GradoSemanticSaveRecord * record;
+    u8 permanent[25];
+    u8 chapter[5];
+    enum GradoStateLoadResult result;
+    unsigned int gold;
+    struct Unit unit;
+
+    PrepareCurrent();
+    PrepareLive(0, permanent, chapter);
+    PrepareSemanticState();
+    if (roderichRecovery)
+    {
+        GradoState_WriteSymbol(GRADO_STATE_RODERICH, 11, 0);
+        GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH06_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH07_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH08_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH09_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH10_CLEAR, 0, 1);
+    }
+    else if (expected == GRADO_STATE_LOAD_CONFLICT)
+    {
+        SetFlag(139);
+        SetFlag(140);
+    }
+    else if (expected == GRADO_STATE_LOAD_MISSING)
+    {
+        GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 2, 0);
+        GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
+    }
+    else if (expected == GRADO_STATE_LOAD_REOPEN)
+    {
+        GradoState_WriteSymbol(GRADO_STATE_DIRECTION, 19, 0);
+        GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH06_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH07_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH08_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH09_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH10_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH11_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH13_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH14_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH15_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH18_CLEAR, 0, 1);
+    }
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    gold = gPlaySt.partyGoldAmount;
+    unit = gUnitArrayBlue[0];
+    result = GradoState_PreflightSave(
+        ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
+        route, 21, &live, &diagnostic);
+    record = &gGradoSemanticSaveProbe.records[gGradoSemanticSaveProbe.count++];
+    record->route = route;
+    record->result = result == expected;
+    record->restored = !roderichRecovery
+        || (diagnostic.recovery == GRADO_STATE_RECOVERY_RODERICH_EXILED
+            && GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID
+            && gPlaySt.partyGoldAmount == gold
+            && memcmp(&unit, &gUnitArrayBlue[0], sizeof(unit)) == 0);
+    record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+}
+
+static void ProbeSemanticSaves(void)
+{
+    unsigned int epoch;
+
+    gGradoSemanticSaveProbe.phase = 1;
+    epoch = FE8_EXPANSION_SAVE_COMPAT_EPOCH;
+    RecordSemantic(GRADO_LOAD_NORMAL,
+        epoch == 256 ? GRADO_STATE_LOAD_VALID : GRADO_STATE_LOAD_INCOMPATIBLE);
+    RecordSemantic(GRADO_LOAD_SUSPEND,
+        epoch == 256 ? GRADO_STATE_LOAD_VALID : GRADO_STATE_LOAD_INCOMPATIBLE);
+    if (epoch == 256)
+    {
+        RecordSemanticNegative(GRADO_LOAD_NORMAL, GRADO_STATE_LOAD_MISSING, 0);
+        RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_CONFLICT, 0);
+        RecordSemanticNegative(GRADO_LOAD_NORMAL, GRADO_STATE_LOAD_RECOVERY, 1);
+        RecordSemanticNegative(GRADO_LOAD_LEGACY, GRADO_STATE_LOAD_RECOVERY, 1);
+        RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_REOPEN, 0);
+    }
+    gGradoSemanticSaveProbe.phase = 2;
+}
+
 void AgbMain(void)
 {
     unsigned int slot;
@@ -176,6 +372,7 @@ void AgbMain(void)
     WriteGameSave(SAVE_ID_GAME0);
     RecordPath(3, 1);
     RecordPath(4, 1);
+    ProbeSemanticSaves();
     gGradoSavePathProbe.phase = 2;
     for (;;)
         __asm__ volatile ("nop");

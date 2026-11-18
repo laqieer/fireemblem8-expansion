@@ -86,14 +86,33 @@ neither guide truth nor transition backing. The optional native reset supplies
 guide initialization; the transition producer and selected save/profile
 qualification remain open.
 
-There is still no activated state/guide profile, epoch change, load hook,
-recovery or playable content here. Selected guide/save integration,
-Grado schema 1/epoch 256, strict compatible normal/Suspend/legacy loading,
-producer-sensitive lifecycles and target-ROM/RAM proof remain required.
-Framework epoch 2 and its existing envelope are untouched. Do not select or
-save this unfinished allocation as a supported game. The bounded native
-compatibility subcase below proves the existing classification mechanism,
-not any newly activated loader, recovery policy or save ABI.
+`src/lifecycle.c` is the real optional consumer policy for this reference.
+Epoch 256 denotes Grado schema 1; it still uses the framework's existing
+format/envelope version 2 and no additional save bytes. Every normal, Suspend
+and legacy-compatibility consumer must run `GradoState_PreflightSave` on a
+readonly view before calling an original loader. It requires the existing
+global classifier to report `CURRENT`, validates every applicable permanent
+field and the current Suspend chapter, and returns without changing the view,
+metadata or live flags on refusal. Vanilla/legacy metadata, the default epoch
+2 and any non-current history are incompatible rather than migrated.
+
+Producer checkpoints are the chapter-clear facts in the campaign definition.
+A completed producer makes its semantic choice required. Valid stored choices
+are preserved; multi-hot choices conflict; ordinary missing choices are
+reported; only missing Roderich state after its producer is recoverable, as
+EXILED, with no item/unit/resource operation. A completed final-direction
+producer with no direction returns the reopen action instead of choosing an
+ending. `GradoState_ResolveEnding` therefore never invents a default ending.
+New-game and new-chapter lifecycle calls reset their native scopes and are
+separate from Suspend resume and normal loads. New game also restores static
+guide ownership, while a chapter reset preserves permanent history.
+
+This remains an unselected optional reference. The project slot is not wired
+to the framework by default, and no selected game UI or playable campaign is
+claimed. Framework epoch 2 remains the negative/default profile. Do not add a
+second save blob or bypass the preflight when adapting this source. The native
+compatibility subcase below proves the shared classifier; the whole-path case
+proves representative strict Grado preflight followed by original loading.
 
 ## TC-GRADO-SAVE-COMPAT-001
 
@@ -242,6 +261,14 @@ The existing `gbagfx` helper builds only the original data required for linking.
    Force `IsValidSuspendSave` to refuse while retaining the correct resolved
    slot: both Suspend validity records must fail, not merely load that slot.
    Restore the original functions before running the complete module.
+6. After the original-path records, run the same target module's semantic
+   records. At epoch 2, normal and Suspend preflight must refuse Grado schema
+   identity without touching the image. At epoch 256, preflight valid
+   typed histories, require successful public Suspend validation, and then
+   allow the original normal/Suspend loaders to restore the ending. The
+   missing-producer, one-hot conflict, legacy refusal, Roderich EXILED
+   recovery and missing-direction reopen records must all preserve their
+   input image. Recovery performs no resource or unit mutation.
 
 The existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds remain.
 Native normal loading intentionally invalidates Suspend metadata; the case
@@ -250,11 +277,13 @@ All original compatibility/transfer cases still execute. Cleanup removes only
 owned temporary modules; no user save or clean ROM is used.
 
 **Boundary:** this qualifies representative original whole-function
-save/load and block-checksum paths with controlled native data, not cartridge
-bus timing, complete game state, strict Grado semantic/legacy loading,
-producer checkpoints/recovery/resources, retirement, guide UI or supported
-game/debug/release/locale profiles. No production source, default, format,
-epoch, allocation or framework gate changes.
+save/load, block-checksum and strict Grado semantic preflight paths with
+controlled native data, including producer/missing/conflict/recovery and
+normal/Suspend/legacy boundaries. It is not cartridge-bus, complete game,
+selected UI, locale, or playable-profile qualification. The module is
+release-mode; the host campaign case separately compiles the lifecycle C for
+both debug and release settings. No production source, default, format, epoch,
+allocation or framework gate changes.
 
 ## TC-GRADO-ALLOCATION-001
 
@@ -293,6 +322,16 @@ save, credentials or manual judgment.
    without changing either complete native backing array. Invalid reads
    preserve the output guard. Keep the unselected default as the negative
    profile: this example still supplies no default build source or hook.
+5. Populate a complete valid schema-1/epoch-256 history and preflight it on
+   normal, Suspend and legacy-compatible routes. At each call, compare both
+   complete native buffers and the caller's metadata/view. Refuse default
+   epoch 2 and legacy classifier state without mutation. Advance the actual
+   chapter-clear producers to prove missing choices, multi-hot conflicts,
+   Roderich EXILED recovery without resource writes, and missing-direction
+   reopen; valid choices and the derived ending must survive. New game resets
+   both scopes and initializes guide truth, while new chapter resets only
+   chapter flags. Compile the same lifecycle module for ARM with debug values
+   0 and 1 in addition to the release-mode target save cases.
 
 The same native corpus exercises all 14 public one-hot fields and all 8 stored
 counter bindings using independent source-domain bounds, not descriptor

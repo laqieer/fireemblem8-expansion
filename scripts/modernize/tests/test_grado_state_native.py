@@ -256,6 +256,7 @@ class GradoAllocationNativeTests(unittest.TestCase):
                     "-no-pie", "-Wl,--gc-sections",
                     str(Path(__file__).parent / "fixtures/grado_campaign_probe.c"),
                     str(SOURCE), str(EXAMPLE / "src/values.c"), str(campaign),
+                    str(EXAMPLE / "src/lifecycle.c"),
                     str(ROOT / "src/eventinfo.c"), "-o", str(binary),
                 ],
                 capture_output=True, text=True,
@@ -264,6 +265,14 @@ class GradoAllocationNativeTests(unittest.TestCase):
             result = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self._arm_compile(campaign, root / "campaign.o", ("-Werror",))
+            self._arm_compile(
+                EXAMPLE / "src/lifecycle.c", root / "lifecycle-release.o",
+                ("-Werror", "-DFE8_EXPANSION_DEBUG=0"),
+            )
+            self._arm_compile(
+                EXAMPLE / "src/lifecycle.c", root / "lifecycle-debug.o",
+                ("-Werror", "-DFE8_EXPANSION_DEBUG=1"),
+            )
 
 
 if __name__ == "__main__":

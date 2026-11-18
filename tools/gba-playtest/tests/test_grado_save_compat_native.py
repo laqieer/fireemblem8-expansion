@@ -92,6 +92,8 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                 "expansion_save_prefs", "rng", "bm", "bmitem", "worldmap_path",
                 "banim_presentation", "bmtrick", "hardware", "event", "bmmap", "msg_data",
             ))
+            sources.extend(ROOT / "examples/restoration-of-grado/src" / name
+                for name in ("state.c", "values.c", "campaign_state.c", "lifecycle.c"))
             assembly.extend((
                 (ROOT / "asm/arm.s", "arm.o"),
                 (ROOT / "asm/arm_call.s", "arm_call.o"),
@@ -125,6 +127,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     "-DFE8_EXPANSION_SAVE_COMPAT_EPOCH=" + str(epoch),
                     "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=1u", "-DFE8_EXPANSION_DEFAULT_LOCALE_ID=0",
                     "-DFE8_EXPANSION_STARTER_CONTENT=0", "-I" + str(ROOT / "include"),
+                    "-I" + str(ROOT / "examples/restoration-of-grado/include"),
                     "-I" + str(ROOT), *(("-isystem", newlib) if newlib else ()),
                     "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types",
                 ]
@@ -342,6 +345,46 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         results = {record[0]: record[1:] for record in records}
         self.assertEqual(len(results), 5)
         self.assertEqual(results, {slot: (1,) * 8 for slot in range(5)})
+        _, semantic_size = resolve_elf_symbol(
+            elf, "gGradoSemanticSaveProbe", tools["MODERN_NM"])
+        expected_semantic = 7 if epoch == 256 else 2
+        self.assertEqual(semantic_size, 8 + 8 * 16)
+        semantic_scenario = work / "semantic-scenario.json"
+        semantic_scenario.write_text(json.dumps({
+            "schema_version": 1, "name": "grado-semantic-save-policy", "frames": [],
+            "checkpoints": [{
+                "name": "strict-normal-suspend-legacy", "frame": 120,
+                "framebuffer": False,
+                "probes": [
+                    {"address": f"gGradoSemanticSaveProbe+0x{offset:x}", "size": 4}
+                    for offset in range(0, semantic_size, 4)
+                ],
+            }],
+        }), encoding="utf-8")
+        semantic_output = work / "semantic-capture.json"
+        self.run_command([
+            sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
+            "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
+            "--scenario", semantic_scenario, "--output", semantic_output,
+        ], cwd=ROOT)
+        semantic_capture = json.loads(semantic_output.read_text())
+        semantic_values = {
+            probe["address"]: int(probe["value"], 16)
+            for probe in semantic_capture["checkpoints"][0]["probes"]
+        }
+        semantic_data = b"".join(
+            semantic_values[f"gGradoSemanticSaveProbe+0x{offset:x}"].to_bytes(4, "little")
+            for offset in range(0, semantic_size, 4)
+        )
+        self.assertEqual(struct.unpack_from("<2I", semantic_data), (2, expected_semantic))
+        semantic_records = [
+            struct.unpack_from("<4I", semantic_data, 8 + index * 16)
+            for index in range(expected_semantic)
+        ]
+        self.assertTrue(
+            all(record[1:] == (1, 1, 1) for record in semantic_records),
+            semantic_records,
+        )
         resources = {
             name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
             - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])

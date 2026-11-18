@@ -35,6 +35,15 @@ enum GradoAllocationResult
     GRADO_ALLOCATION_OVERLAP,
 };
 
+enum GradoStateLoadRoute
+{
+    GRADO_LOAD_NEW_GAME,
+    GRADO_LOAD_NEW_CHAPTER,
+    GRADO_LOAD_NORMAL,
+    GRADO_LOAD_SUSPEND,
+    GRADO_LOAD_LEGACY,
+};
+
 enum GradoStateValueResult
 {
     GRADO_STATE_VALUE_VALID,
@@ -46,6 +55,27 @@ enum GradoStateValueResult
     GRADO_STATE_VALUE_RANGE,
     GRADO_STATE_VALUE_MONOTONIC,
     GRADO_STATE_VALUE_READ_ONLY,
+    GRADO_STATE_VALUE_CONFLICT,
+};
+
+enum GradoStateRecovery
+{
+    GRADO_STATE_RECOVERY_NONE,
+    GRADO_STATE_RECOVERY_INITIALIZE_GUIDE,
+    GRADO_STATE_RECOVERY_RODERICH_EXILED,
+    GRADO_STATE_RECOVERY_REOPEN_DIRECTION,
+};
+
+enum GradoStateLoadResult
+{
+    GRADO_STATE_LOAD_VALID,
+    GRADO_STATE_LOAD_INPUT,
+    GRADO_STATE_LOAD_INCOMPATIBLE,
+    GRADO_STATE_LOAD_CORRUPT,
+    GRADO_STATE_LOAD_MISSING,
+    GRADO_STATE_LOAD_CONFLICT,
+    GRADO_STATE_LOAD_RECOVERY,
+    GRADO_STATE_LOAD_REOPEN,
 };
 
 enum
@@ -70,6 +100,14 @@ struct GradoStateFlagView
     unsigned int chapterBytes;
     const void * permanentFlags;
     unsigned int permanentBytes;
+};
+
+struct GradoStateLoadDiagnostic
+{
+    enum GradoStateLoadResult result;
+    enum GradoStateRecovery recovery;
+    u16 missingSymbol;
+    u16 producerSymbol;
 };
 
 enum GradoAllocationResult GradoState_ValidateAllocation(
