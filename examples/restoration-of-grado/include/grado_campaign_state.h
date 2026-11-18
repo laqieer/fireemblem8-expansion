@@ -36,8 +36,8 @@ enum GradoRescueFact
 enum GradoRoderichState
 {
     GRADO_RODERICH_UNSET,
-    GRADO_RODERICH_DUTY,
-    GRADO_RODERICH_RELIEF,
+    GRADO_RODERICH_KILLED,
+    GRADO_RODERICH_CAPTURED,
     GRADO_RODERICH_EXILED,
 };
 
@@ -72,6 +72,12 @@ enum GradoStateValueResult GradoState_WriteSymbol(
 enum GradoStateValueResult GradoState_ReadRescue(enum GradoRescueFact fact, u16 * value);
 enum GradoStateValueResult GradoState_RecordRescue(enum GradoRescueFact fact);
 
+enum GradoStateValueResult GradoState_ReadResolutionFrom(
+    enum GradoStateSymbol symbol, const struct GradoStateFlagView * view, u16 * value);
+
+enum GradoStateValueResult GradoState_RecordResolution(
+    enum GradoStateSymbol symbol, unsigned int chapter);
+
 enum GradoStateLoadResult GradoState_PreflightSave(
     enum SaveCompatState compatibility,
     const struct ExpansionSaveMeta * meta,
@@ -81,7 +87,7 @@ enum GradoStateLoadResult GradoState_PreflightSave(
     struct GradoStateLoadDiagnostic * diagnostic);
 
 enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
-    const struct GradoStateLoadDiagnostic * diagnostic);
+    struct GradoStateLoadDiagnostic * diagnostic);
 
 enum GradoStateLoadResult GradoState_ResolveEnding(
     unsigned int chapter, u16 * ending);

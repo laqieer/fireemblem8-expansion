@@ -241,6 +241,8 @@ static void RecordSemantic(
     {
         enum GradoStateLoadResult endingResult;
 
+        memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
+        memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
         if (route == GRADO_LOAD_SUSPEND)
         {
             if (!IsValidSuspendSave(SAVE_ID_SUSPEND))
@@ -283,6 +285,7 @@ static void RecordSemanticNegative(
     PrepareSemanticState();
     if (roderichRecovery)
     {
+        GradoState_RecordResolution(GRADO_STATE_RODERICH, 19);
         GradoState_WriteSymbol(GRADO_STATE_RODERICH, 11, 0);
         GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
         GradoState_WriteSymbol(GRADO_FLAG_CH06_CLEAR, 0, 1);
@@ -298,8 +301,9 @@ static void RecordSemanticNegative(
     }
     else if (expected == GRADO_STATE_LOAD_MISSING)
     {
-        GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 2, 0);
-        GradoState_WriteSymbol(GRADO_FLAG_CH02_CLEAR, 0, 1);
+        GradoState_WriteSymbol(GRADO_STATE_RAUSTEN_MED, 16, 0);
+        GradoState_WriteSymbol(GRADO_FLAG_CH15_MED_NATASHA_ABSENT, 16, 1);
+        GradoState_WriteSymbol(GRADO_FLAG_CH15_CLEAR, 0, 1);
     }
     else if (expected == GRADO_STATE_LOAD_REOPEN)
     {
@@ -316,6 +320,8 @@ static void RecordSemanticNegative(
         GradoState_WriteSymbol(GRADO_FLAG_CH15_CLEAR, 0, 1);
         GradoState_WriteSymbol(GRADO_FLAG_CH18_CLEAR, 0, 1);
     }
+    if (route == GRADO_LOAD_LEGACY)
+        memset(&gSram->expansionSaveMeta, 0, sizeof(gSram->expansionSaveMeta));
     memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
     gold = gPlaySt.partyGoldAmount;
     unit = gUnitArrayBlue[0];
@@ -324,7 +330,9 @@ static void RecordSemanticNegative(
         route, 21, &live, &diagnostic);
     record = &gGradoSemanticSaveProbe.records[gGradoSemanticSaveProbe.count++];
     record->route = route;
-    record->result = result == expected;
+    record->result = result == expected
+        && (route != GRADO_LOAD_LEGACY
+            || ClassifySramSaveCompat() == SAVE_COMPAT_VALID_LEGACY_OR_VANILLA);
     record->restored = !roderichRecovery
         || (diagnostic.recovery == GRADO_STATE_RECOVERY_RODERICH_EXILED
             && GradoState_ApplyLoadRecovery(&diagnostic) == GRADO_STATE_LOAD_VALID
@@ -348,7 +356,7 @@ static void ProbeSemanticSaves(void)
         RecordSemanticNegative(GRADO_LOAD_NORMAL, GRADO_STATE_LOAD_MISSING, 0);
         RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_CONFLICT, 0);
         RecordSemanticNegative(GRADO_LOAD_NORMAL, GRADO_STATE_LOAD_RECOVERY, 1);
-        RecordSemanticNegative(GRADO_LOAD_LEGACY, GRADO_STATE_LOAD_RECOVERY, 1);
+        RecordSemanticNegative(GRADO_LOAD_LEGACY, GRADO_STATE_LOAD_INCOMPATIBLE, 0);
         RecordSemanticNegative(GRADO_LOAD_SUSPEND, GRADO_STATE_LOAD_REOPEN, 0);
     }
     gGradoSemanticSaveProbe.phase = 2;

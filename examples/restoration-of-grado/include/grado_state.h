@@ -64,6 +64,8 @@ enum GradoStateRecovery
     GRADO_STATE_RECOVERY_INITIALIZE_GUIDE,
     GRADO_STATE_RECOVERY_RODERICH_EXILED,
     GRADO_STATE_RECOVERY_REOPEN_DIRECTION,
+    GRADO_STATE_RECOVERY_CHOICE,
+    GRADO_STATE_RECOVERY_LUND_ABANDONED,
 };
 
 enum GradoStateLoadResult
@@ -108,6 +110,8 @@ struct GradoStateLoadDiagnostic
     enum GradoStateRecovery recovery;
     u16 missingSymbol;
     u16 producerSymbol;
+    enum GradoStateLoadRoute route;
+    unsigned int chapter;
 };
 
 enum GradoAllocationResult GradoState_ValidateAllocation(

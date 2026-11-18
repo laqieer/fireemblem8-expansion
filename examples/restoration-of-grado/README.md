@@ -96,11 +96,21 @@ field and the current Suspend chapter, and returns without changing the view,
 metadata or live flags on refusal. Vanilla/legacy metadata, the default epoch
 2 and any non-current history are incompatible rather than migrated.
 
-Producer checkpoints are the chapter-clear facts in the campaign definition.
-A completed producer makes its semantic choice required. Valid stored choices
-are preserved; multi-hot choices conflict; ordinary missing choices are
-reported; only missing Roderich state after its producer is recoverable, as
-EXILED, with no item/unit/resource operation. A completed final-direction
+Chapter-clear facts make preceding choices required. Roderich and Lund instead
+use separate monotonic completed-resolution facts in the existing allocation;
+their CH10/CH14 exposition cannot settle either outcome. The actual CH18
+producer calls `GradoState_RecordResolution` only after a valid outcome is
+committed. Before that completion, unset remains unset.
+Valid stored choices are preserved; multi-hot choices conflict. Supported
+missing choices recover to their accepted values, except MED/DATA with recorded
+absence markers, which report and preserve the missing state. Post-resolution
+Roderich/Lund recover to EXILED/ABANDONED, with no item/unit/resource operation.
+Preflight checks the complete history before returning a recovery action;
+unrecoverable missing choices and direction reopening take precedence.
+`GradoState_ApplyLoadRecovery` rechecks the live history and updates its
+diagnostic after one correction. `RECOVERY` means another correction remains,
+not a valid history; only complete revalidation returns `VALID`.
+A completed final-direction
 producer with no direction returns the reopen action instead of choosing an
 ending. `GradoState_ResolveEnding` therefore never invents a default ending.
 New-game and new-chapter lifecycle calls reset their native scopes and are
@@ -264,9 +274,13 @@ The existing `gbagfx` helper builds only the original data required for linking.
 6. After the original-path records, run the same target module's semantic
    records. At epoch 2, normal and Suspend preflight must refuse Grado schema
    identity without touching the image. At epoch 256, preflight valid
-   typed histories, require successful public Suspend validation, and then
-   allow the original normal/Suspend loaders to restore the ending. The
-   missing-producer, one-hot conflict, legacy refusal, Roderich EXILED
+   typed histories, clear the live typed state, require successful public
+   Suspend validation, and then allow the original normal/Suspend loaders to
+   restore the saved ending. Omitting either semantic loader independently
+   must fail its restored record; earlier unrelated load cases cannot mask it.
+   The legacy case retains a valid native header but removes expansion
+   metadata: the real classifier must report legacy and preflight must refuse.
+   The recorded-absence/missing-state, one-hot conflict, legacy refusal, Roderich EXILED
    recovery and missing-direction reopen records must all preserve their
    input image. Recovery performs no resource or unit mutation.
 
@@ -326,9 +340,14 @@ save, credentials or manual judgment.
    normal, Suspend and legacy-compatible routes. At each call, compare both
    complete native buffers and the caller's metadata/view. Refuse default
    epoch 2 and legacy classifier state without mutation. Advance the actual
-   chapter-clear producers to prove missing choices, multi-hot conflicts,
-   Roderich EXILED recovery without resource writes, and missing-direction
-   reopen; valid choices and the derived ending must survive. New game resets
+   producers to prove missing choices, multi-hot conflicts, all nine accepted
+   recovery values, recorded MED/DATA absence refusal, and missing-direction
+   reopen. CH10 clearance must leave Roderich unset; record actual valid CH18
+   resolutions before simulating a missing Roderich/Lund outcome. Recover
+   EXILED/ABANDONED without resource writes. Combine missing guide truth and
+   required choices, and combine Roderich recovery with missing ration or
+   direction: no partial correction may report the whole history valid.
+   Valid choices and the derived ending must survive. New game resets
    both scopes and initializes guide truth, while new chapter resets only
    chapter flags. Compile the same lifecycle module for ARM with debug values
    0 and 1 in addition to the release-mode target save cases.

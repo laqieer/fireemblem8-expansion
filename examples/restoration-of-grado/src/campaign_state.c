@@ -166,6 +166,47 @@ enum GradoStateValueResult GradoState_RecordRescue(enum GradoRescueFact fact)
         sCampaignFields + sRescueFields[fact], GRADO_GUIDE_STATIC, 0, 1);
 }
 
+static const struct GradoStateField * GradoState_ResolutionField(enum GradoStateSymbol symbol)
+{
+    switch (symbol)
+    {
+    case GRADO_STATE_RODERICH:
+        return sCampaignFields + FIELD_GRADO_INTERNAL_RODERICH_RESOLVED;
+    case GRADO_STATE_LUND:
+        return sCampaignFields + FIELD_GRADO_INTERNAL_LUND_RESOLVED;
+    default:
+        return NULL;
+    }
+}
+
+enum GradoStateValueResult GradoState_ReadResolutionFrom(
+    enum GradoStateSymbol symbol, const struct GradoStateFlagView * view, u16 * value)
+{
+    const struct GradoStateField * field = GradoState_ResolutionField(symbol);
+
+    if (field == NULL)
+        return GRADO_STATE_VALUE_INPUT;
+    return GradoState_ReadValueFrom(
+        field, GRADO_GUIDE_STATIC, GRADO_STATE_NO_CHAPTER, view, value);
+}
+
+enum GradoStateValueResult GradoState_RecordResolution(
+    enum GradoStateSymbol symbol, unsigned int chapter)
+{
+    const struct GradoStateField * field = GradoState_ResolutionField(symbol);
+    enum GradoStateValueResult result;
+    u16 value;
+
+    if (field == NULL)
+        return GRADO_STATE_VALUE_INPUT;
+    if (chapter != 19)
+        return GRADO_STATE_VALUE_CHAPTER;
+    result = GradoState_ReadSymbol(symbol, chapter, &value);
+    if (result != GRADO_STATE_VALUE_VALID)
+        return result;
+    return GradoState_WriteValue(field, GRADO_GUIDE_STATIC, chapter, 1);
+}
+
 enum GradoStateValueResult GradoState_ReadSymbol(
     enum GradoStateSymbol symbol, unsigned int chapter, u16 * value)
 {
