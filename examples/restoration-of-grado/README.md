@@ -306,11 +306,20 @@ The existing `gbagfx` helper builds only the original data required for linking.
    from the saved flags. Preflight must still diagnose the saved view without
    changing either view. Clobber live state and call the corresponding original
    loader. A single recovery must report both symbols and match the complete
-   expected permanent bitmap, preserving every other valid choice, the post-load
-   image, chapter flags, unit, play state and bonus. Repeat both routes after
-   changing an unrelated permanent flag for normal or a chapter flag for
+   expected permanent bitmap, constructed directly from the saved bytes with
+   only the two recovery bits set, preserving every other valid choice, the
+   post-load image, chapter flags, unit, play state and bonus. Repeat both routes
+   after changing an unrelated permanent flag for normal or a chapter flag for
    Suspend: recovery must refuse and preserve both live flag scopes and the
    post-load image. The test-owned preflight is not production caller integration.
+8. In another reset, hold A+B+L for the saved-chapter validation capture.
+   Write physically valid Suspend blocks for project chapter 14 with the CH13
+   guard counter either valid or encoded as 3, above its maximum of 2. Make
+   the live counter have the opposite validity before preflight. Suspend must
+   accept the valid saved view and refuse the corrupt saved view, independently
+   of live flags. Normal and legacy preflights ignore those chapter flags.
+   Preserve the full input image and live state in both directions. Substituting
+   live chapter flags during validation must fail both records.
 
 Each capture retains the existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds.
 Native normal loading intentionally invalidates Suspend metadata; the case
@@ -377,8 +386,13 @@ save, credentials or manual judgment.
    legacy routes; one successful call must report all eleven symbols and guide
    initialization while preserving every other permanent flag. Preflight saved
    views that differ from valid live flags, then load and recover those saved
-   views. Inject a failed or no-op later write on every route, including after
-   guide initialization, and compare both complete flag scopes after refusal.
+   views. Construct expected permanent bytes directly from the pre-recovery
+   bytes and the specified recovery bits, not by using the writer under test.
+   For chapter 14, give saved and live CH13 guard counters opposite validity
+   in both directions: Suspend follows the saved counter, while normal and
+   legacy ignore chapter flags. Inject a failed or no-op later write on every
+   route, including after guide initialization, and compare both complete flag
+   scopes after refusal.
    A changed permanent snapshot must refuse on every route; a changed chapter
    snapshot must refuse Suspend but must not alone refuse normal recovery.
    Missing direction still reopens.

@@ -351,7 +351,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             self.assertEqual(results, {path: (1,) * 10 for path in expected_paths})
         _, semantic_size = resolve_elf_symbol(
             elf, "gGradoSemanticSaveProbe", tools["MODERN_NM"])
-        self.assertEqual(semantic_size, 44 + 9 * 36)
+        self.assertEqual(semantic_size, 48 + 9 * 36)
 
         def capture_semantic(name, keys, count):
             semantic_scenario = work / f"semantic-{name}-scenario.json"
@@ -381,15 +381,15 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 semantic_values[f"gGradoSemanticSaveProbe+0x{offset:x}"].to_bytes(4, "little")
                 for offset in range(0, semantic_size, 4)
             )
-            header = struct.unpack_from("<11I", semantic_data)
+            header = struct.unpack_from("<12I", semantic_data)
             self.assertEqual(header[:2], (2, count))
             return header[2:], [
-                struct.unpack_from("<9I", semantic_data, 44 + index * 36)
+                struct.unpack_from("<9I", semantic_data, 48 + index * 36)
                 for index in range(count)
             ]
 
         symbols, saved = capture_semantic("backed", ["A"], 9)
-        (normal, suspend, legacy, valid, incompatible,
+        (normal, suspend, legacy, valid, incompatible, corrupt,
          missing, conflict, recovery, reopen) = symbols
         no_slot = 0xFFFFFFFF
         expected_saved = {(normal, slot, slot) for slot in range(3)} | {
@@ -403,6 +403,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 saved,
             )
         negative = []
+        chapter = []
         if epoch == 256:
             negative_symbols, negative = capture_semantic("refused", ["A", "B"], 9)
             expected_negative = {
@@ -431,6 +432,18 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     and record[4:] == (1, 1, 1, 1, 1)
                     for record in backed
                 ), backed)
+            chapter_symbols, chapter = capture_semantic("chapter-views", ["A", "B", "L"], 2)
+            with self.subTest(save_family="semantic-chapter-views"):
+                self.assertEqual(chapter_symbols, symbols)
+                self.assertEqual(len(chapter), 2)
+                self.assertEqual({(record[0], record[3]) for record in chapter}, {
+                    (suspend, valid), (suspend, corrupt),
+                })
+                self.assertTrue(all(
+                    record[1] in (3, 4) and record[2] == 0
+                    and record[4:] == (1, 1, 1, 1, 1)
+                    for record in chapter
+                ), chapter)
         resources = {
             name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
             - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])
@@ -440,6 +453,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             "epoch": epoch, "profile": "native release whole-save module",
             "rom_bytes": rom.stat().st_size, "records": records,
             "semantic_records": saved, "refusal_records": negative,
+            "chapter_view_records": chapter,
             "ewram_bytes": resources["data"] + resources["ewram"],
             "iwram_bytes": resources["iwram"],
         }))
