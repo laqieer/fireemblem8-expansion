@@ -19,10 +19,14 @@ From the repository root, run:
 python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_supported_host_platform_is_pinned_for_every_build_job tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_real_workflow_consolidates_candidate_and_master_evidence tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_gate_argv_matches_workflow_commands_in_order -v
 ```
 
-### Expected result and negative control
+### Expected result
 
 The production workflow parser reads the actual eight-job mapping, accepting
-`ubuntu-24.04` for every job. Independently changing each job to `ubuntu-latest`
+`ubuntu-24.04` for every job.
+
+### Negative control
+
+Independently changing each job to `ubuntu-latest`
 or `ubuntu-26.04` is rejected by the production parser in the topology regression.
 The pre-fix workflow fails the positive mapping assertion.
 [Build 44266252322](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44266252322)
@@ -41,14 +45,17 @@ archival CI use the restored host. The separate upstream drift workflow only
 fetches Git objects and runs read-only textual drift/scan commands; it does not
 install these wheels or execute the host/ABI gates, so its runner is unchanged.
 
-### Automation, cleanup and limitations
+### Automation
 
 The command above proves parsed runner selection, rejection of changed-runner
 controls, and unchanged mirrored gate commands, not hosted execution. Require
 the exact-candidate full Build and automatic exact-master Build: all four broad
 workers and summary must succeed on the selected platform before completion.
-Normal review and remote-completion gates remain required. No manual visual
-criterion; the in-memory mutations need no cleanup. A future host upgrade needs
+Normal review and remote-completion gates remain required.
+
+### Cleanup and limitations
+
+No manual visual criterion; the in-memory mutations need no cleanup. A future host upgrade needs
 separate validation of these existing contracts, not merely a runner-label edit.
 Reverting this fix restores the demonstrated moving-alias failure.
 

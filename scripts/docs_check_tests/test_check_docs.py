@@ -1433,6 +1433,18 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "scripts.validation_ownership.tests.test_foundation.ObservationAllowanceTests -v",
                         },
                     },
+                    "TC-WORKFLOW-HOST-PLATFORM-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_supported_host_platform_is_pinned_for_every_build_job "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_real_workflow_consolidates_candidate_and_master_evidence "
+                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests."
+                            "test_gate_argv_matches_workflow_commands_in_order -v",
+                        },
+                    },
                     "TC-WORKFLOW-ASSET-DISCOVERY-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
