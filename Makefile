@@ -598,8 +598,12 @@ TEXT_INTERNAL_FLAGS := $(firstword $(MFLAGS))
 else
 TEXT_INTERNAL_FLAGS :=
 endif
+# A short option that takes an argument consumes the rest of its word. The
+# sentinel keeps an empty prefix empty when that option is the first letter.
+text_split_path_args = $(subst I, ,$(subst C, ,$(subst f, ,$(subst o, ,$(subst W, ,$(1))))))
+text_split_other_args = $(subst E, ,$(subst j, ,$(subst l, ,$(subst O, ,$(1)))))
 define text_query_flag
-$(if $(filter --question,$(1)),q,$(if $(or $(findstring =,$(1)),$(filter --% -I% -j% -l% -O%,$(1))),,$(findstring q,$(1))))
+$(if $(filter --question,$(1)),q,$(if $(or $(findstring =,$(1)),$(filter --%,$(1))),,$(findstring q,$(firstword x$(call text_split_other_args,$(call text_split_path_args,$(patsubst -%,%,$(1))))))))
 endef
 TEXT_QUERY_MODE := $(call text_query_flag,$(TEXT_INTERNAL_FLAGS))$(call text_query_flag,$(firstword $(MAKEFLAGS)))
 TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_STAMP),$(TEXT_INPUTS)),FORCE_TEXT_OUTPUTS),FORCE_TEXT_OUTPUTS)

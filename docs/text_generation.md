@@ -75,7 +75,9 @@ real no-op build skips. Variable overrides or option ordering can hide Make's
 actual mode from the recipe graph. When the query flag is not visible in
 Make's internal flags or the first `MAKEFLAGS` word, the probe stays enabled,
 so `make -q` conservatively reports stale rather than risking a stale consumer.
-An assigned `MFLAGS` value is not treated as an actual execution mode.
+An assigned `MFLAGS` value is not treated as an actual execution mode. In
+bundled short options, an option argument (such as an `-I` path containing
+`q`) is not mistaken for a question flag.
 
 This is **per-file atomicity**, not a multi-file transaction. A replace failure
 after the header was committed can leave a complete new header and complete
