@@ -1,4 +1,5 @@
 #include "global.h"
+#include "../include/grado_visuals.h"
 #include "bmlib.h"
 #include "hardware.h"
 
@@ -226,8 +227,10 @@ struct CGDataEnt CONST_DATA gCGDataTable[] = {
     { cg_7_tiles, cg_7_map, cg_7_palette, },
     { cg_8_tiles, cg_8_map, cg_8_palette, },
     { cg_9_tiles, cg_9_map, cg_9_palette, },
-    { cg_grado_funeral_omen_tiles, cg_grado_funeral_omen_map, cg_grado_funeral_omen_palette, },
-    { cg_grado_title_tiles, cg_grado_title_map, cg_grado_title_palette, },
+    [GRADO_CG_FUNERAL_OMEN] =
+        { cg_grado_funeral_omen_tiles, cg_grado_funeral_omen_map, cg_grado_funeral_omen_palette, },
+    [GRADO_CG_TITLE] =
+        { cg_grado_title_tiles, cg_grado_title_map, cg_grado_title_palette, },
 };
 
 //! FE8U = 0x080B65EC

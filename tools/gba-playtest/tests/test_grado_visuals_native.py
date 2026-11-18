@@ -5,6 +5,8 @@ import itertools
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -13,6 +15,7 @@ import unittest
 
 from scripts.localization.game_catalog.tests.runtime.initial_cache_native import _selected_tools
 from scripts.generated_data.validators import extract_enum_constants
+from scripts.modernize import gdb_smoke
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools/gba-playtest"))
@@ -24,10 +27,10 @@ from probe_bindings import resolve_elf_symbol, resolve_elf_symbol_address
 
 @unittest.skipIf(host_only_enabled(), "explicit host-only lane excludes ARM/libmGBA execution")
 class GradoVisualNativeTests(unittest.TestCase):
-    def run_command(self, command, *, cwd):
+    def run_command(self, command, *, cwd, timeout=90):
         result = subprocess.run(
             [str(value) for value in command], cwd=cwd,
-            capture_output=True, text=True, timeout=90,
+            capture_output=True, text=True, timeout=timeout,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -492,3 +495,155 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 "accepted CH02 (7,10) route is now reachable; update the retained warning",
             )
             print(json.dumps({"actual_native_records": observed}, sort_keys=True))
+
+    def test_selected_static_consumers(self):
+        output = ROOT / "build/projects/restoration-of-grado/primary/debug/aapcs"
+        self.run_command([
+            "make", "--no-print-directory", "-j2", "FE8_PROJECT=restoration-of-grado",
+            "FE8_PROJECT_PROFILE=primary", "MODERN_CONFIG=debug", "expansion-modern-rom",
+        ], cwd=ROOT, timeout=900)
+        elf, rom = output / "fireemblem8.elf", output / "fireemblem8.gba"
+        gdb = gdb_smoke.select_command(("arm-none-eabi-gdb", "gdb-multiarch"), "ARM GDB")
+        mgba = gdb_smoke.select_command(("mgba", "/usr/games/mgba"), "mGBA SDL frontend")
+        records = []
+        with tempfile.TemporaryDirectory(prefix="grado-static-native-", dir=ROOT / "build") as directory:
+            work = Path(directory)
+            palette_guard = b"\x5a\x5a" * 512
+            tilemap_guard = b"\x77\x77" * 1024
+            for name, data in (
+                ("palette-input", palette_guard), ("tilemap-input", tilemap_guard),
+            ):
+                (work / name).write_bytes(data)
+
+            def capture(setup, call, bg):
+                self.assertTrue(gdb_smoke.port_is_available(2345), "mGBA GDB port is occupied")
+                # One inferior call per fresh boot: repeated calls are not reliable in mGBA 0.10.
+                with tempfile.TemporaryDirectory(prefix="boot-", dir=work) as boot_directory:
+                    boot = Path(boot_directory)
+                    shutil.copyfile(rom, boot / "probe.gba")
+                    address = 0x06008000 if bg == 3 else 0x06000000
+                    commands = [
+                        "set pagination off", "set confirm off",
+                        "target remote 127.0.0.1:2345", "break StartGame", "continue", "disable 1",
+                        "set gLCDControlBuffer.bg2cnt.charBaseBlock = 0",
+                        "set gLCDControlBuffer.bg3cnt.charBaseBlock = 2",
+                        f"restore {work / 'palette-input'} binary &gPaletteBuffer",
+                        f"restore {work / 'tilemap-input'} binary &gBG{bg}TilemapBuffer",
+                        f"dump binary memory {boot / 'graphics-before'} {address:#x} {address + 0x5000:#x}",
+                        'printf "SRAM_OFFSET=%u\\n", ((char *)&gSram->unkstruct2-(char *)gSram)',
+                        "set $sp = $sp - 512",
+                        *setup, call,
+                        f"dump binary memory {boot / 'graphics'} {address:#x} {address + 0x5000:#x}",
+                        f"dump binary memory {boot / 'tilemap'} &gBG{bg}TilemapBuffer ((char *)&gBG{bg}TilemapBuffer+0x800)",
+                        f"dump binary memory {boot / 'palette'} &gPaletteBuffer ((char *)&gPaletteBuffer+0x400)",
+                        "disconnect",
+                    ]
+                    script = boot / "commands.gdb"
+                    script.write_text("\n".join(commands) + "\n", encoding="ascii")
+                    environment = os.environ.copy()
+                    environment.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+                    with (boot / "mgba.log").open("w+") as log:
+                        process = subprocess.Popen(
+                            [mgba, "-g", str(boot / "probe.gba")], env=environment,
+                            stdout=log, stderr=subprocess.STDOUT,
+                        )
+                        try:
+                            gdb_smoke.wait_for_server(process, 2345, 15)
+                            result = subprocess.run(
+                                [gdb, "-q", "-batch", str(elf), "-x", str(script)],
+                                capture_output=True, text=True, timeout=45,
+                            )
+                            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        finally:
+                            gdb_smoke.terminate(process)
+                    offsets = re.findall(r"^SRAM_OFFSET=(\d+)$", result.stdout, re.MULTILINE)
+                    self.assertEqual(len(offsets), 1, result.stdout)
+                    offset = int(offsets[0])
+                    save = (boot / "probe.sav").read_bytes()
+                    self.assertGreaterEqual(len(save), offset + 20)
+                    return {
+                        **{name: (boot / name).read_bytes() for name in (
+                            "graphics", "graphics-before", "tilemap", "palette",
+                        )},
+                        "saved-cg": save[offset:offset + 20],
+                    }
+
+            carriers = (
+                (1, 0x38, "bg/grado_imperial_tomb"),
+                (1, 0x39, "bg/grado_council_hall"),
+                (2, 10, "cg/grado_funeral_omen"),
+                (2, 11, "cg/grado_title"),
+            )
+            for kind, index, carrier in carriers:
+                prefix = ROOT / "graphics" / carrier
+                raw = prefix.with_suffix(".feimg2.bin").read_bytes()
+                tsa = prefix.with_suffix(".fetsa2.bin").read_bytes()
+                palette = prefix.with_suffix(".gbapal").read_bytes()
+                self.assertEqual(tsa[:2], bytes((29, 19)))
+                entries = struct.unpack_from("<600H", tsa, 2)
+                self.assertLess(max(value >> 12 for value in entries), 6)
+                self.assertLessEqual(len(raw), 0x5000)
+                for route in ("direct", "fade2", "fade3", "literal", "slot2"):
+                    with self.subTest(carrier=carrier, route=route):
+                        bg = 2 if route == "fade2" else 3
+                        pal = 0 if bg == 2 else 8
+                        count = 6 if route.startswith("fade") else 8
+                        setup = []
+                        if route.startswith("fade"):
+                            setup = [
+                                "set $fade = (struct ConvoBackgroundFadeProc *)$sp",
+                                f"set $fade->unkType = {kind}",
+                                f"set $fade->bgIndex = {index}",
+                            ]
+                            call = f"call ConvoBackgroundFade_LoadBg{bg}($fade)"
+                        elif route in ("literal", "slot2"):
+                            setup = [
+                                "set $event = (struct EventEngineProc *)$sp",
+                                "set $event->pEventCurrent = (unsigned short *)($sp+256)",
+                                "set {unsigned short}($sp+256) = 0x2140",
+                                f"set {{short}}($sp+258) = {index if route == 'literal' else -1}",
+                                f"set $event->activeTextType = {kind}",
+                                f"set gEventSlots[2] = {index}",
+                            ]
+                            call = "call Event21_TextBg($event)"
+                        else:
+                            call = f"call EventShowTextBgDirect({kind}, {index})"
+                        actual = capture(setup, call, bg)
+                        expected_graphics = (
+                            raw.ljust(0x5000, b"\x00") if kind == 2
+                            else raw + actual["graphics-before"][len(raw):]
+                        )
+                        expected_map = bytearray(tilemap_guard)
+                        for y in range(20):
+                            for x in range(30):
+                                struct.pack_into(
+                                    "<H", expected_map, 2 * (y * 32 + x),
+                                    entries[(19 - y) * 30 + x] + (pal << 12),
+                                )
+                        expected_palette = bytearray(palette_guard)
+                        expected_palette[pal * 32:(pal + count) * 32] = palette[:count * 32]
+                        if kind == 1:
+                            expected_palette[:2] = b"\x00\x00"
+                        for name, expected in (
+                            ("graphics", expected_graphics), ("tilemap", expected_map),
+                            ("palette", expected_palette),
+                        ):
+                            mismatch = next(
+                                (i for i, pair in enumerate(zip(actual[name], expected))
+                                 if pair[0] != pair[1]), None,
+                            )
+                            self.assertEqual(len(actual[name]), len(expected), name)
+                            self.assertIsNone(
+                                mismatch, f"{carrier}/{route}: {name} first mismatch {mismatch}",
+                            )
+                        saved = struct.unpack("<4I2H", actual["saved-cg"])
+                        expected_bits = (1 << index) if kind == 2 else 0
+                        self.assertEqual(saved, (expected_bits, 0, 0, 0, 2 * expected_bits, 0))
+                        records.append({
+                            "carrier": carrier, "route": route,
+                            "graphics_bytes": len(actual["graphics"]),
+                            "tilemap_bytes": len(actual["tilemap"]),
+                            "palette_bytes": len(actual["palette"]),
+                            "saved_cg_bits": saved[0],
+                        })
+        print(json.dumps({"selected_static_consumers": records}, sort_keys=True))

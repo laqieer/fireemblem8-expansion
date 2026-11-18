@@ -52,8 +52,8 @@ class GradoVisualAssetTests(unittest.TestCase):
 
     def test_static_carriers_use_existing_tsa_and_palette_consumers(self):
         carriers = {
-            "graphics/bg/grado_imperial_tomb.png": 8,
-            "graphics/bg/grado_council_hall.png": 8,
+            "graphics/bg/grado_imperial_tomb.png": 6,
+            "graphics/bg/grado_council_hall.png": 6,
             "graphics/cg/grado_funeral_omen.png": 6,
             "graphics/cg/grado_title.png": 6,
         }

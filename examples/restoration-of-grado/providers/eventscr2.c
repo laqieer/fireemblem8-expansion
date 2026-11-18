@@ -1,4 +1,5 @@
 #include "global.h"
+#include "../include/grado_visuals.h"
 
 #include "hardware.h"
 #include "proc.h"
@@ -141,6 +142,8 @@ struct CONST_DATA gfx_set gConvoBackgroundData[] = {
 	{bg_Black_Temple_Outside_tiles, bg_Black_Temple_Outside_map, bg_Black_Temple_Outside_palette},
 	{bg_Black_Temple_Inside_tiles, bg_Black_Temple_Inside_map, bg_Black_Temple_Inside_palette},
 	{bg_Blank_tiles, bg_Blank_map, bg_Blank_palette},
-	{bg_Grado_Imperial_Tomb_tiles, bg_Grado_Imperial_Tomb_map, bg_Grado_Imperial_Tomb_palette},
-	{bg_Grado_Council_Hall_tiles, bg_Grado_Council_Hall_map, bg_Grado_Council_Hall_palette},
+    [GRADO_BG_IMPERIAL_TOMB] =
+        {bg_Grado_Imperial_Tomb_tiles, bg_Grado_Imperial_Tomb_map, bg_Grado_Imperial_Tomb_palette},
+    [GRADO_BG_COUNCIL_HALL] =
+        {bg_Grado_Council_Hall_tiles, bg_Grado_Council_Hall_map, bg_Grado_Council_Hall_palette},
 };

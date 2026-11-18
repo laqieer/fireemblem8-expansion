@@ -190,8 +190,8 @@ opaque artwork. The source PNG and referenced native TSA tiles must contain
 no transparent pixels.
 The committed project PNGs are:
 
-* `grado_imperial_tomb.png` and `grado_council_hall.png`: ordinary dialogue BG
-  carriers, at most eight 16-color banks;
+* `grado_imperial_tomb.png` and `grado_council_hall.png`: dialogue BG
+  carriers, at most six 16-color banks for direct and crossfade loading;
 * `grado_funeral_omen.png`: CH00 event CG/carrier for a six-bank crossfade;
 * `grado_title.png`: title-master carrier for a six-bank special transition.
 
@@ -201,13 +201,29 @@ dependencies cannot discard the PNG input of an implicit multi-target rule.
 The regression invokes actual GNU Make with that ordering edge and checks
 all four converter argument vectors.
 The `restoration-of-grado/primary` project replaces only the four existing BG/CG
-code/data owners; default consumers and ROM data are unchanged. Its ordinary
+code/data owners; default consumers and ROM data are unchanged. The data-slot
+replacements retain native INCBIN preprocessing and asset dependencies.
+Additional ordinary C sources do not provide that preprocessing, so these raw
+owners cannot be moved to `FE8_PROJECT_C_SOURCES`.
+
+The project header `../include/grado_visuals.h` supplies named designated
+entries: `GRADO_BG_IMPERIAL_TOMB` is `0x38`, `GRADO_BG_COUNCIL_HALL` is `0x39`,
+`GRADO_CG_FUNERAL_OMEN` is `10`, and `GRADO_CG_TITLE` is `11`. Stock BG
+entries `0x00` through `0x35`, stock CG entries `0` through `9`, and
+the `BG_RANDOM` sentinel `0x37` are unchanged. The unused BG hole `0x36`
+is not a public project ID. The title carrier is not boot-title integration.
+CG IDs retain the original save-index bookkeeping.
+
+All four carriers use at most six banks: direct BG loading copies eight
+banks, but both fade loaders and both outgoing palette copies use only six.
+There is no project-only rendering path or enlarged palette copy.
+Its ordinary
 BGs enter `gConvoBackgroundData` with a 1,202-byte TSA and a 512-byte
 256-color palette file. The CG/title raw owners are split into ten 2,048-byte
 partitions expected by `DisplayCGfx`, then each uses the existing gbagfx LZ
 rule and a selected `gCGDataTable` entry. The public focused test regenerates
-the tile/TSA bytes, validates bank IDs and partitions, and rejects an ordinary
-carrier over eight banks or a crossfade carrier over six. Both CG partition
+the tile/TSA bytes, validates bank IDs and partitions, and rejects any of the
+four carriers over six banks. Both CG partition
 families are ignored build output owned by `clean` and `clean_fast`.
 Changing the splitter invalidates both families without changing the source
 image. The regression builds real partitions in a temporary directory, checks
@@ -236,9 +252,39 @@ make FE8_PROJECT=restoration-of-grado FE8_PROJECT_PROFILE=primary \
   build/projects/restoration-of-grado/primary/release/aapcs/src/data/ending/ending_cg.o
 ```
 
-The negative controls are the default project (none of these owners or data
-symbols is linked) and a carrier whose TSA requests a ninth ordinary or
-seventh crossfade palette bank.
+The negative controls are the default project (none of these project owners or
+data symbols is linked) and a carrier whose TSA requests a seventh palette
+bank. Restoring either former eight-bank BG must fail the carrier regression.
+
+The native suite also runs `GradoVisualNativeTests.test_selected_static_consumers`.
+This builds the selected debug ROM through Make and uses the existing ARM GDB
+and mGBA SDL frontend, including the distribution's `/usr/games/mgba` location.
+These are already supported quickstart tools; the modern CI job installs them
+for this case. Using the full compiled ROM avoids source extraction, replacement
+event functions or a parallel renderer fixture. The original engine initializes
+SRAM, RAM routines and game state before the `StartGame` breakpoint.
+
+Each of the four carriers runs through direct loading, both fade loaders,
+literal `Event21_TextBg` dispatch and slot-2 dispatch. A fresh temporary ROM
+copy and SRAM file isolate each of these twenty executions. GDB supplies typed
+event/proc inputs and checks actual VRAM, complete background tilemap/palette
+buffers and persisted CG bookkeeping, including its checksum. Expected pixels'
+encoded tile bytes, bottom-to-top TSA rows and palette bytes come from the real
+asset producers, not captured output. Guarded unused RAM stays unchanged;
+unused VRAM is compared with its captured pre-call state.
+
+Swap the two project BG table entries: all ten BG cases must fail their native
+graphics comparison. Swap the title CG's first two partitions: all five title
+cases must fail while the funeral carrier remains correct. Restore both
+mutations before normal builds. The test removes its own emulator processes
+and temporary files; an occupied GDB port fails without stopping another user.
+Only one inferior call is made per boot because repeated inferior calls are
+unreliable with the supported mGBA 0.10 frontend.
+
+This is instrumented selected-ROM memory/save evidence, not non-instrumented
+artistic acceptance or framebuffer evidence. Stock/default, random dispatch
+and outgoing-copy coverage remain required before this unfinished package is
+qualified; the twenty cases must not be relabeled as that complete family.
 
 The conversion evidence and compile/link binding do not establish subjective
 art acceptance. Material blockers remain: the four original CH00/CH02 portrait
