@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -125,7 +126,7 @@ class TextPublicationTests(unittest.TestCase):
         self.definitions.write_text("[X] = 0\n[Y] = 1\n", encoding="utf-8")
         (self.work / "global.h").write_text("typedef unsigned char u8;\ntypedef unsigned int u32;\n")
 
-    def inputs(self, count=32, text="[X][Y][X]"):
+    def inputs(self, count=32, text="[Y][X]"):
         self.source.write_text(
             "".join(f"#{index:04X}\n{text}\n" for index in range(count)), encoding="utf-8")
 
@@ -179,6 +180,17 @@ class TextPublicationTests(unittest.TestCase):
             spec.loader.exec_module(decoder)
         with mock.patch.object(decoder, "ROOT_NODE", len(nodes) - 1):
             return [decoder.decode_data(arrays[name], nodes, 0) for name in names]
+
+    def decoded_payloads(self):
+        decoded = []
+        for message in self.decoded_messages():
+            raw = bytearray()
+            for value in message:
+                raw.append(value & 0xff)
+                if value >> 8:
+                    raw.append(value >> 8)
+            decoded.append(bytes(raw))
+        return decoded
 
     def seed(self):
         self.inputs(3)
@@ -282,7 +294,7 @@ class TextPublicationTests(unittest.TestCase):
     def test_encodings_serial_bytes_permissions_and_unchanged_regeneration(self):
         for encoding in ("utf8", "cp932"):
             with self.subTest(encoding=encoding):
-                self.inputs(text="日本[X][Y][X]")
+                self.inputs(text="日本[Y][X]")
                 expected = self.reference(encoding)
                 self.generate(encoding=encoding)
                 self.assertEqual(self.pair(), expected)
@@ -291,11 +303,254 @@ class TextPublicationTests(unittest.TestCase):
                 before = [(path.stat().st_ino, path.stat().st_mtime_ns) for path in (self.header, self.data)]
                 self.generate(encoding=encoding)
                 self.assertEqual(before, [(path.stat().st_ino, path.stat().st_mtime_ns) for path in (self.header, self.data)])
-                self.inputs(40, text="日本[X][Y][X]")
+                self.inputs(40, text="日本[Y][X]")
                 self.generate(encoding=encoding)
                 self.assertEqual([stat.S_IMODE(path.stat().st_mode) for path in (self.header, self.data)], [0o640, 0o604])
                 self.assertEqual(self.pair(), self.reference(encoding))
                 self.assert_no_staging()
+
+    def test_make_rebuilds_both_shared_text_goals_when_generator_changes(self):
+        parent = ROOT / "build/test-artifacts"
+        for legacy in (False, True):
+            for dependency in ("textprocess.py", "huffman.py"):
+                with self.subTest(legacy=legacy, dependency=dependency), \
+                     tempfile.TemporaryDirectory(prefix="text-make-", dir=parent) as directory:
+                    work = Path(directory)
+                    tools = work / "tools"
+                    tools.mkdir()
+                    for name in ("textprocess.py", "huffman.py", "legacy_text_source.py"):
+                        shutil.copy2(SCRIPT.parent / name, tools / name)
+                    source = work / "texts.txt"
+                    definitions = work / "textdefs.txt"
+                    default_dir, legacy_dir = work / "default", work / "legacy"
+                    default_dir.mkdir()
+                    legacy_dir.mkdir()
+                    include_dir = work / "query-include"
+                    include_dir.mkdir()
+                    legacy_source = legacy_dir / "texts.txt"
+                    source.write_text("#0000\nA[Y][X]\n", encoding="utf-8")
+                    definitions.write_text("[X] = 0\n[Y] = 1\n", encoding="utf-8")
+                    legacy_source.write_bytes(source.read_bytes())
+                    output_dir = legacy_dir if legacy else default_dir
+                    output, header = output_dir / "msg_data.c", output_dir / "msg.h"
+                    stamp = output_dir / ".text.stamp"
+                    consumer, header_consumer = output_dir / "consumer.c", output_dir / "consumer.h"
+                    consumer_rules = work / "consumers.mk"
+                    consumer_rules.write_text(
+                        f'{consumer}: {output}\n\t@cp "$<" "$@"\n'
+                        f'{header_consumer}: {header}\n\t@cp "$<" "$@"\n',
+                        encoding="utf-8",
+                    )
+                    counter = work / "producer-calls"
+                    wrapper = work / "run-producer.py"
+                    wrapper.write_text(
+                        "import runpy, sys\n"
+                        "from pathlib import Path\n"
+                        "script, counter = map(Path, sys.argv[1:3])\n"
+                        "with counter.open('a', encoding='ascii') as stream:\n"
+                        "    stream.write('1\\n')\n"
+                        "sys.argv = [str(script), *sys.argv[3:]]\n"
+                        "sys.path.insert(0, str(script.parent))\n"
+                        "runpy.run_path(str(script), run_name='__main__')\n",
+                        encoding="utf-8",
+                    )
+                    common = [
+                        "make", "--no-print-directory", "-j2", "-f", str(ROOT / "Makefile"),
+                        "-f", str(consumer_rules), "NODEP=1",
+                        "FE8_PROJECT=default", "FE8_PROJECT_PROFILE=default",
+                        "MODERN_CONFIG=release", "MODERN_ABI=aapcs",
+                        f"MODERN_BUILD_ROOT={work / 'modern'}",
+                        f"PYTHON={sys.executable}", f"TEXT_TOOLS={tools}",
+                        f"TEXT_PROCESS={sys.executable} {wrapper} {tools / 'textprocess.py'} {counter}",
+                        f"TEXT_MAIN={source}", f"TEXT_SRC={source}", f"TEXT_DEFS={definitions}",
+                        f"MSG_LIST={default_dir / 'msg_data.c'}",
+                        f"TEXT_HEADER={default_dir / 'msg.h'}",
+                        f"TEXT_STAMP={default_dir / '.text.stamp'}",
+                        f"LEGACY_TEXT_MAIN={legacy_source}",
+                        f"LEGACY_TEXT_FILTER={tools / 'legacy_text_source.py'}",
+                        f"LEGACY_MSG_LIST={legacy_dir / 'msg_data.c'}",
+                        f"LEGACY_TEXT_HEADER={legacy_dir / 'msg.h'}",
+                        f"LEGACY_TEXT_STAMP={legacy_dir / '.text.stamp'}",
+                    ]
+                    # The unrelated source must not cause the archival filter to run.
+                    base = time.time_ns() - 10_000_000_000
+                    for path in (source, definitions, *tools.iterdir()):
+                        os.utime(path, ns=(base, base))
+                    os.utime(legacy_source, ns=(base + 1_000_000_000,) * 2)
+
+                    def run_make(*targets):
+                        return subprocess.run(
+                            [*common, *(str(target) for target in targets or (output,))], cwd=ROOT,
+                            capture_output=True, text=True, timeout=30,
+                        )
+
+                    def question(*options):
+                        return subprocess.run(
+                            [*common, "MAKE_RESTARTS=1", "-q", *options, str(output)], cwd=ROOT,
+                            capture_output=True, text=True, timeout=30,
+                        )
+
+                    def calls():
+                        return len(counter.read_text(encoding="ascii").splitlines())
+
+                    def change_after_stamp(path):
+                        now = time.time_ns()
+                        for item in (source, definitions, *tools.iterdir(), legacy_source):
+                            os.utime(item, ns=(now - 4_000_000_000,) * 2)
+                        os.utime(stamp, ns=(now - 3_000_000_000,) * 2)
+                        os.utime(path, ns=(now - 2_000_000_000,) * 2)
+
+                    first = run_make()
+                    self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                    self.assertEqual(calls(), 1)
+                    previous = output.read_bytes(), header.read_bytes()
+                    times = output.stat().st_mtime_ns, header.stat().st_mtime_ns
+                    initial_consumers = run_make(consumer, header_consumer)
+                    self.assertEqual(
+                        initial_consumers.returncode, 0,
+                        initial_consumers.stdout + initial_consumers.stderr,
+                    )
+                    consumer_times = consumer.stat().st_mtime_ns, header_consumer.stat().st_mtime_ns
+                    self.assertEqual(run_make(consumer, header_consumer).returncode, 0)
+                    self.assertEqual(calls(), 1)
+                    self.assertEqual(question().returncode, 0)
+                    for flag_override in (
+                        "MAKEFLAGS=--no-print-directory",
+                        "MFLAGS=--no-print-directory",
+                    ):
+                        with self.subTest(flag_override=flag_override):
+                            result = question(flag_override, f"-I{include_dir}")
+                            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    ambiguous_question = question(
+                        "MAKEFLAGS=--no-print-directory", "MFLAGS=--no-print-directory")
+                    self.assertEqual(ambiguous_question.returncode, 1)
+
+                    tool = tools / dependency
+                    tool.write_text(tool.read_text(encoding="utf-8") + "\n# fixture refresh\n",
+                                    encoding="utf-8")
+                    change_after_stamp(tool)
+                    refreshed = run_make()
+                    self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
+                    self.assertEqual(calls(), 2)
+                    self.assertEqual((output.read_bytes(), header.read_bytes()), previous)
+                    self.assertEqual((output.stat().st_mtime_ns, header.stat().st_mtime_ns), times)
+                    self.assertEqual(run_make(consumer, header_consumer).returncode, 0)
+                    self.assertEqual(
+                        (consumer.stat().st_mtime_ns, header_consumer.stat().st_mtime_ns),
+                        consumer_times,
+                    )
+                    self.assertEqual(calls(), 2)
+                    self.assertEqual(question().returncode, 0)
+
+                    selected_source = legacy_source if legacy else source
+                    selected_source.write_text("#0000\nB[Y][X]\n## EXTRA\nC[X]\n", encoding="utf-8")
+                    change_after_stamp(selected_source)
+                    updated = run_make(consumer, header_consumer)
+                    self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
+                    self.assertEqual(calls(), 3)
+                    self.assertNotEqual(output.read_bytes(), previous[0])
+                    self.assertNotEqual(header.read_bytes(), previous[1])
+                    self.assertEqual(consumer.read_bytes(), output.read_bytes())
+                    self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
+                    self.assertEqual(run_make(consumer, header_consumer).returncode, 0)
+                    self.assertEqual(calls(), 3)
+
+                    for missing in (output, header):
+                        missing.unlink()
+                        self.assertEqual(question().returncode, 1)
+                        restored = run_make()
+                        self.assertEqual(restored.returncode, 0, restored.stdout + restored.stderr)
+                        self.assertTrue(
+                            output.is_file() and header.is_file(),
+                            f"failed to restore {missing}: {restored.stdout}{restored.stderr}",
+                        )
+                    self.assertEqual(calls(), 5)
+
+                    stamp.unlink()
+                    self.assertEqual(question().returncode, 1)
+                    restored_stamp = run_make(consumer, header_consumer)
+                    self.assertEqual(
+                        restored_stamp.returncode, 0,
+                        restored_stamp.stdout + restored_stamp.stderr,
+                    )
+                    self.assertTrue(stamp.is_file())
+                    self.assertEqual(calls(), 6)
+
+                    output.unlink()
+                    header.unlink()
+                    restored_pair = run_make(output, header)
+                    self.assertEqual(
+                        restored_pair.returncode, 0, restored_pair.stdout + restored_pair.stderr,
+                    )
+                    self.assertTrue(output.is_file() and header.is_file())
+                    self.assertEqual(calls(), 7)
+                    self.assertEqual(run_make().returncode, 0)
+                    self.assertEqual(calls(), 7)
+                    synchronized = run_make(consumer, header_consumer)
+                    self.assertEqual(
+                        synchronized.returncode, 0, synchronized.stdout + synchronized.stderr,
+                    )
+                    self.assertEqual(calls(), 7)
+
+                    before = output.read_bytes()
+                    before_times = (
+                        output.stat().st_mtime_ns, header.stat().st_mtime_ns,
+                        consumer.stat().st_mtime_ns, header_consumer.stat().st_mtime_ns,
+                    )
+                    self.assertEqual(question("-W", str(definitions)).returncode, 1)
+                    self.assertEqual(calls(), 7)
+                    forced = subprocess.run(
+                        [*common, "-W", str(definitions), str(consumer), str(header_consumer)],
+                        cwd=ROOT, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(forced.returncode, 0, forced.stdout + forced.stderr)
+                    self.assertEqual(calls(), 8)
+                    self.assertEqual(
+                        (output.stat().st_mtime_ns, header.stat().st_mtime_ns,
+                         consumer.stat().st_mtime_ns, header_consumer.stat().st_mtime_ns),
+                        before_times,
+                    )
+
+                    definition_time = definitions.stat().st_mtime_ns
+                    definitions.write_text("[X] = 0\n[Y] = 2\n", encoding="utf-8")
+                    os.utime(definitions, ns=(definition_time, definition_time))
+                    forced = subprocess.run(
+                        [*common, f"-I{include_dir}", "-W", str(definitions),
+                         str(consumer), str(header_consumer)],
+                        cwd=ROOT, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(forced.returncode, 0, forced.stdout + forced.stderr)
+                    self.assertEqual(calls(), 9)
+                    self.assertNotEqual(output.read_bytes(), before)
+                    self.assertEqual(consumer.read_bytes(), output.read_bytes())
+                    self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
+
+                    before = output.read_bytes()
+                    definitions.write_text("[X] = 0\n[Y] = 3\n", encoding="utf-8")
+                    os.utime(definitions, ns=(definition_time, definition_time))
+                    ambiguous_build = subprocess.run(
+                        [*common, "MAKE_RESTARTS=1", "MAKEFLAGS=--no-print-directory",
+                         "MFLAGS=--no-print-directory", f"-I{include_dir}",
+                         "-W", str(definitions), str(consumer), str(header_consumer)],
+                        cwd=ROOT, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(
+                        ambiguous_build.returncode, 0,
+                        ambiguous_build.stdout + ambiguous_build.stderr,
+                    )
+                    self.assertEqual(calls(), 10)
+                    self.assertNotEqual(output.read_bytes(), before)
+                    self.assertEqual(consumer.read_bytes(), output.read_bytes())
+                    self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
+
+                    previous = output.read_bytes(), header.read_bytes()
+                    selected_source.write_text("#0000\n[MISSING][X]\n", encoding="utf-8")
+                    change_after_stamp(selected_source)
+                    stamp_time = stamp.stat().st_mtime_ns
+                    failed = run_make()
+                    self.assertNotEqual(failed.returncode, 0)
+                    self.assertEqual((output.read_bytes(), header.read_bytes()), previous)
+                    self.assertEqual(stamp.stat().st_mtime_ns, stamp_time)
 
     def test_actual_cli_other_cwd_spaces_and_new_file_umask(self):
         self.inputs()
@@ -442,6 +697,126 @@ class TextPublicationTests(unittest.TestCase):
                     self.generate(encoding=encoding)
                     self.assertEqual(self.decoded_messages(), [[1, 0], [0]])
                     self.assertEqual(self.pair(), expected)
+
+    def test_utf8_odd_length_literals_decode_with_a_real_terminator(self):
+        self.definitions.write_text(
+            "[X] = 0\n[Y] = 1\n[LOAD] = 16\n[FACE] = 0, 1\n",
+            encoding="utf-8",
+        )
+        self.source.write_text(
+            "#0000\nA[X]\n#0001\nAB[X]\n#0002\n日[X]\n#0003\n[X]\n"
+            "#0004\n[LOAD][FACE][X]\n#0005\nA[LOAD][FACE][X]\n"
+            "#0006\n日[LOAD][FACE][X]\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), *self.arguments()],
+            cwd=self.work, capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.decoded_payloads(), [
+            b"A\0", b"AB\0", "日".encode("utf-8") + b"\0", b"\0",
+            b"\x10\x00\x01\x00", b"A\x10\x00\x01\x00",
+            "日".encode("utf-8") + b"\x10\x00\x01\x00",
+        ])
+
+    def test_utf8_control_operands_and_literal_boundaries_round_trip(self):
+        self.definitions.write_text(
+            "[X] = 0\n[LOAD] = 16\n[LOW_ZERO] = 0, 1\n"
+            "[HIGH_ZERO] = 16, 0\n[MOVE] = 0x80, 0x10\n"
+            "[COLOR_ZERO] = 0x80, 0, 1\n[COLOR_ARG_ZERO] = 0x80, 1, 0\n"
+            "[NL] = 1\n[GLYPH2] = 0xC4, 0x80\n"
+            "[GLYPH3] = 0xE4, 0xB8, 0x80\n"
+            "[GLYPH4] = 0xF0, 0x90, 0x80, 0x80\n"
+            "[LEAD] = 0xC4\n[TAIL] = 0x80\n"
+            "[TAB] = 0x81, 0x40\n[LQUOTE] = 0x93\n[RQUOTE] = 0x94\n",
+            encoding="utf-8",
+        )
+        cases = (
+            ("一[LOAD][LOW_ZERO][X]", "一".encode("utf-8") + b"\x10\x00\x01\x00"),
+            ("A[LOAD][HIGH_ZERO]B[X]", b"A\x10\x10\x00B\x00"),
+            ("A[MOVE]B[X]", b"A\x80\x10B\x00"),
+            ("一[MOVE]B[X]", "一".encode("utf-8") + b"\x80\x10B\x00"),
+            ("[COLOR_ZERO][X]", b"\x80\x00\x01\x00"),
+            ("[COLOR_ARG_ZERO]B[X]", b"\x80\x01\x00B\x00"),
+            ("[GLYPH2][NL][X]", b"\xC4\x80\x01\x00"),
+            ("[GLYPH3][NL][X]", b"\xE4\xB8\x80\x01\x00"),
+            ("[GLYPH4][NL][X]", b"\xF0\x90\x80\x80\x01\x00"),
+            ("[LEAD][TAIL][NL][X]", b"\xC4\x80\x01\x00"),
+            ("[GLYPH4][MOVE][NL][X]", b"\xF0\x90\x80\x80\x80\x10\x01\x00"),
+            ("[TAB][MOVE]B[X]", b"\x81\x40\x80\x10B\x00"),
+            ("[LQUOTE][MOVE][RQUOTE][X]", b"\x93\x80\x10\x94\x00"),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.source.write_text(f"#0000\n{text}\n", encoding="utf-8")
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments()],
+                    cwd=self.work, capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.decoded_payloads(), [expected])
+
+    def test_utf8_missing_control_terminators_and_unencodable_zeros_reject(self):
+        previous = self.seed()
+        self.definitions.write_text(
+            "[X] = 0\n[LOAD] = 16\n[BOTH_ZERO] = 0, 0\n"
+            "[EXT] = 0x80\n[COLOR_ARG_ZERO] = 0x80, 1, 0\n",
+            encoding="utf-8",
+        )
+        for text in ("[EXT][X]", "[COLOR_ARG_ZERO]", "[LOAD][BOTH_ZERO]B[X]"):
+            with self.subTest(text=text):
+                self.source.write_text(f"#0000\n{text}\n", encoding="utf-8")
+                self.header.write_bytes(previous[0])
+                self.data.write_bytes(previous[1])
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments()],
+                    cwd=self.work, capture_output=True, text=True, timeout=15,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(str(self.source), result.stderr)
+                self.assertIn("0x0000", result.stderr)
+                self.assertEqual(self.pair(), previous)
+                self.assert_no_staging()
+
+    def test_all_empty_messages_have_decodable_huffman_streams(self):
+        self.source.write_text("#0000\n[X]\n#0001\n[X]\n", encoding="utf-8")
+        for encoding in ("utf8", "cp932"):
+            with self.subTest(encoding=encoding):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                    cwd=self.work, capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.decoded_messages(), [[0], [0]])
+
+    def test_missing_or_embedded_terminators_reject_before_publication(self):
+        previous = self.seed()
+        included = self.work / "selected messages.txt"
+        for encoding in ("utf8", "cp932"):
+            for use_include in (False, True):
+                for body in ("[Y]", "日本", "[Y][X][Y]", "[Y][X][X]", "[X]日本"):
+                    with self.subTest(encoding=encoding, include=use_include, body=body):
+                        selected = included if use_include else self.source
+                        selected.write_text(
+                            f"#0000\n{body}\n#0001\n[Y][X]\n", encoding="utf-8"
+                        )
+                        if use_include:
+                            self.source.write_text(
+                                f'#include "{included.name}"\n', encoding="utf-8"
+                            )
+                        self.header.write_bytes(previous[0])
+                        self.data.write_bytes(previous[1])
+                        result = subprocess.run(
+                            [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                            cwd=self.work, capture_output=True, text=True, timeout=15,
+                        )
+                        self.assertNotEqual(result.returncode, 0, result.stdout)
+                        self.assertIn("message must end with exactly one terminator", result.stderr)
+                        self.assertIn(str(selected), result.stderr)
+                        self.assertIn("0x0000", result.stderr)
+                        self.assertEqual(self.pair(), previous)
+                        self.assert_no_staging()
 
     def test_unknown_and_malformed_controls_reject_before_publication(self):
         previous = self.seed()
@@ -599,6 +974,49 @@ class TextPublicationTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.decoded_messages(), [[0xFA93, 0x7B96, 1, 0xEA8C, 0]])
+
+    def test_cp932_controls_require_a_distinct_terminal_symbol(self):
+        previous = self.seed()
+        self.definitions.write_text(
+            "[X] = 0\n[LOAD] = 16\n[SHORT_FACE] = 1\n"
+            "[FACE_ZERO_LOW] = 0x0100\n[PACKED_ZERO] = 0x0100\n"
+            "[SHORT_COLOR] = 0x80, 1\n[COLOR_ZERO] = 0x80, 0x0100\n"
+            "[COLOR_ARG_ZERO] = 0x80, 1, 0x4200\n[GLYPH] = 0x8094\n"
+            "[MOVE] = 0x80, 0x10\n",
+            encoding="utf-8",
+        )
+        valid = (
+            ("[LOAD][FACE_ZERO_LOW][X]", b"\x10\x00\x01\x00"),
+            ("[COLOR_ZERO][X]", b"\x80\x00\x01\x00"),
+            ("[COLOR_ARG_ZERO][X]", b"\x80\x01\x00B\x00"),
+            ("[GLYPH][X]", b"\x94\x80\x00"),
+            ("[GLYPH][MOVE][X]", b"\x94\x80\x80\x10\x00"),
+        )
+        for text, expected in valid:
+            with self.subTest(valid=text):
+                self.source.write_text(f"#0000\n{text}\n", encoding="utf-8")
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments("cp932")],
+                    cwd=self.work, capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.decoded_payloads(), [expected])
+
+        for text in (
+            "[SHORT_COLOR][X]", "[LOAD][SHORT_FACE][X]", "[PACKED_ZERO][X]",
+            "[GLYPH][SHORT_COLOR][X]", "[GLYPH][LOAD][SHORT_FACE][X]",
+        ):
+            with self.subTest(invalid=text):
+                self.source.write_text(f"#0000\n{text}\n", encoding="utf-8")
+                self.header.write_bytes(previous[0])
+                self.data.write_bytes(previous[1])
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments("cp932")],
+                    cwd=self.work, capture_output=True, text=True, timeout=15,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(self.pair(), previous)
+                self.assert_no_staging()
 
     def test_actual_write_and_close_failures_do_not_publish(self):
         previous = self.seed()

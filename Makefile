@@ -564,20 +564,75 @@ TEXT_SRC  := $(TEXT_MAIN) $(shell find $(TEXT_DIR) -type f -name "*.txt")
 
 TEXT_HEADER := include/constants/msg.h
 MSG_LIST    := src/msg_data.c
+TEXT_STAMP := $(DEPS_DIR)/textprocess.stamp
 LEGACY_TEXT_FILTER := scripts/texttools/legacy_text_source.py
 LEGACY_TEXT_DIR := build/legacy/text
 LEGACY_TEXT_MAIN := $(LEGACY_TEXT_DIR)/texts.txt
 LEGACY_TEXT_HEADER := $(LEGACY_TEXT_DIR)/msg.h
 LEGACY_MSG_LIST := $(LEGACY_TEXT_DIR)/msg_data.c
+LEGACY_TEXT_STAMP := $(LEGACY_TEXT_DIR)/textprocess.stamp
 
-src/msg_data.c: $(TEXT_SRC) $(TEXT_DEFS)
-	@$(TEXT_PROCESS) $(TEXT_MAIN) $(TEXT_DEFS) $@ $(TEXT_HEADER) utf8
+TEXT_INPUTS := $(TEXT_SRC) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py $(TEXT_TOOLS)/huffman.py
+LEGACY_TEXT_INPUTS := $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py $(TEXT_TOOLS)/huffman.py
+
+# A stamp can update an output after Make has cached its old mtime. Normal
+# builds always visit the output probe so Make rechecks it, including with -W.
+# Question mode ignores the no-op probe but still checks real input freshness.
+define text_refresh_needed
+$(shell \
+	if [ ! -e "$(1)" ] || [ ! -e "$(2)" ] || [ ! -e "$(3)" ]; then \
+		printf 1; \
+	else \
+		for input in $(foreach input,$(4),"$(input)"); do \
+			if [ ! -e "$$input" ] || [ "$$input" -nt "$(3)" ]; then \
+				printf 1; break; \
+			fi; \
+		done; \
+	fi)
+endef
+
+ifeq ($(origin MFLAGS),command line)
+ifeq ($(origin MAKEFLAGS),command line)
+TEXT_SHORT_FLAGS :=
+else
+TEXT_SHORT_FLAGS := $(firstword $(MAKEFLAGS))
+endif
+else
+TEXT_SHORT_FLAGS := $(firstword $(MFLAGS))
+endif
+TEXT_QUERY_MODE := $(if $(filter --% -I% -j% -l% -O%,$(TEXT_SHORT_FLAGS)),,$(findstring q,$(TEXT_SHORT_FLAGS)))
+TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_STAMP),$(TEXT_INPUTS)),FORCE_TEXT_OUTPUTS),FORCE_TEXT_OUTPUTS)
+LEGACY_TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_STAMP),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)),FORCE_LEGACY_TEXT_OUTPUTS),FORCE_LEGACY_TEXT_OUTPUTS)
+
+$(TEXT_STAMP): $(TEXT_INPUTS)
+	@mkdir -p "$(@D)"
+	@$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8
+	@touch "$@"
+
+.PHONY: FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS
+FORCE_TEXT_OUTPUTS: $(TEXT_STAMP)
+	@if [ ! -e "$(TEXT_HEADER)" ] || [ ! -e "$(MSG_LIST)" ]; then \
+		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8; \
+	fi
+
+$(MSG_LIST) $(TEXT_HEADER): $(TEXT_REFRESH) | $(TEXT_STAMP)
+	@test -e "$@"
 
 $(LEGACY_TEXT_MAIN): $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)
 	@$(PYTHON) $(LEGACY_TEXT_FILTER) $< $@
 
-$(LEGACY_MSG_LIST): $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py
-	@$(TEXT_PROCESS) $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $@ $(LEGACY_TEXT_HEADER) utf8
+$(LEGACY_TEXT_STAMP): $(LEGACY_TEXT_INPUTS)
+	@mkdir -p "$(@D)"
+	@$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8
+	@touch "$@"
+
+FORCE_LEGACY_TEXT_OUTPUTS: $(LEGACY_TEXT_STAMP)
+	@if [ ! -e "$(LEGACY_TEXT_HEADER)" ] || [ ! -e "$(LEGACY_MSG_LIST)" ]; then \
+		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8; \
+	fi
+
+$(LEGACY_MSG_LIST) $(LEGACY_TEXT_HEADER): $(LEGACY_TEXT_REFRESH) | $(LEGACY_TEXT_STAMP)
+	@test -e "$@"
 
 # Graphics Recipes
 

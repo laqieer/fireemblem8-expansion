@@ -16,12 +16,17 @@ struct InitialCacheProbe
     u32 bufferBytes;
     u32 decoderAddress;
     u32 initialActiveId;
-    struct InitialCacheRecord records[4];
+    struct InitialCacheRecord records[6];
 };
 
 volatile struct InitialCacheProbe gInitialCacheProbe;
 extern int sActiveMsg;
 extern void (*DecodeStringRAMFunc)(const char *, char *);
+
+#ifdef NATIVE_SINGLETON_TEXT
+const u8 gSingletonSentinel[] __attribute__((section(".singleton_sentinel"))) = { 1 };
+const u32 gSingletonPoison __attribute__((section(".singleton_poison"))) = 0xFFFF0041;
+#endif
 
 static void RecordLookup(unsigned slot, int id)
 {
@@ -38,6 +43,20 @@ static void RecordLookup(unsigned slot, int id)
     record->length = index;
 }
 
+static void RecordRawLookup(unsigned slot, int id, unsigned length)
+{
+    const char *text;
+    unsigned index;
+    volatile struct InitialCacheRecord *record;
+
+    text = GetStringFromIndex(id);
+    record = &gInitialCacheProbe.records[slot];
+    record->id = id;
+    record->length = length;
+    for (index = 0; index < record->length; index++)
+        record->bytes[index] = text[index];
+}
+
 void AgbMain(void)
 {
     gInitialCacheProbe.phase = 1;
@@ -46,10 +65,25 @@ void AgbMain(void)
     gInitialCacheProbe.initialActiveId = sActiveMsg;
     StoreRoutinesToIRAM();
     gInitialCacheProbe.decoderAddress = (u32)DecodeStringRAMFunc;
+#ifdef NATIVE_CONTROL_TEXT
+    RecordRawLookup(0, MSG_CACHE_ZERO, 7);
+    RecordRawLookup(1, MSG_CACHE_ONE, 6);
+    RecordRawLookup(2, MSG_ODD, 5);
+    RecordRawLookup(3, MSG_FACE_AFTER_ODD, 7);
+    RecordRawLookup(4, MSG_COLOR_ZERO, 4);
+    RecordRawLookup(5, MSG_COLOR_ARG_ZERO, 5);
+#else
     RecordLookup(0, MSG_CACHE_ZERO);
     RecordLookup(1, MSG_CACHE_ZERO);
     RecordLookup(2, MSG_CACHE_ONE);
     RecordLookup(3, MSG_CACHE_ZERO);
+    RecordLookup(4, MSG_ODD);
+#ifdef NATIVE_SINGLETON_TEXT
+    RecordLookup(5, MSG_FACE_AFTER_ODD);
+#else
+    RecordRawLookup(5, MSG_FACE_AFTER_ODD, 5);
+#endif
+#endif
     gInitialCacheProbe.phase = 2;
     for (;;)
         __asm__ volatile ("nop");

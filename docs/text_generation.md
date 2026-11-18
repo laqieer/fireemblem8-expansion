@@ -32,8 +32,9 @@ keeps the existing inode and modification time. Existing permission bits are
 preserved; new files use ordinary `0666` creation subject to the caller's
 umask. Existing output symlinks are resolved to their targets before staging.
 Only the invocation's own staged paths are cleaned, and failures propagate.
-For valid input without previously misparsed comments, message IDs, Huffman
-tables, encoding and generated-byte format remain unchanged.
+Previously correct inputs retain their decoded content and generated-byte
+format. Fixing an unterminated message changes the Huffman frequencies, so
+compressed bytes may change even for otherwise unchanged messages.
 
 Named controls in each selected source or included file must be defined;
 unmatched or nested brackets are rejected. The error identifies the source
@@ -49,6 +50,31 @@ the header's reserved `MSG_H` or `MSG_COUNT` names. Declarations may appear out
 of order: output is ordered by numeric ID so `gMsgTable[id]` matches the
 declared message. Gaps, duplicates and reserved names are rejected before
 either output is published.
+Each encoded message must end with exactly one standalone zero symbol, the
+terminator consumed by the native Huffman decoder. A printable byte immediately
+before the terminator does not absorb it into a two-byte symbol. Control
+boundaries distinguish a UTF-8 `0x80` continuation or CP932 trail byte from an
+extended control, including glyph bytes supplied through named definitions.
+They also distinguish zero operands from the terminator. A face control
+consumes two operand bytes; extended subcodes 0–3 consume one additional byte.
+Representable zero operands are retained, but consecutive zero bytes cannot be
+encoded by the native decoder and are rejected. Missing, embedded or
+control-consumed terminators and truncated controls are rejected before
+publication. This byte-level check does not qualify every consumer or establish
+that a control is semantically valid in a selected locale.
+If every message is empty, the generated Huffman tree still has a branch and
+each compressed stream contains a bit for the native decoder to consume.
+The default and archival Make recipes both track the producer and its
+Huffman module through separate input-freshness stamps. Identical regeneration
+keeps output mtimes, while changed output invalidates its Make consumers;
+missing outputs or stamps are restored without repeatedly invoking the producer.
+Normal builds make a lightweight output probe even on a no-op, so Make sees
+changes caused by `-W` as well as filesystem timestamps. `make -q` reports
+actual freshness, but `make -n` may conservatively list downstream work that a
+real no-op build skips. If both `MAKEFLAGS` and `MFLAGS` are overridden on the
+command line, Make hides its actual mode from the recipe graph; the probe stays
+enabled, so `make -q` conservatively reports stale rather than risking a stale
+consumer.
 
 This is **per-file atomicity**, not a multi-file transaction. A replace failure
 after the header was committed can leave a complete new header and complete
@@ -111,6 +137,18 @@ patch publication remain unchanged.
    Also reject missing or duplicate message IDs and duplicate definitions
    across direct and included inputs. Independently decode the generated table
    after reordered declarations and verify each message remains at its ID.
+   Decode odd-length UTF-8 literals, named and split UTF-8 glyphs, CP932
+   trail bytes, both face-operand byte positions and zero extended-control
+   operands; each representable stream must retain its bytes and final
+   terminator.
+   Missing, embedded, control-consumed and unencodable terminators reject
+   without publication. Before the fix, the independent decoder read beyond
+   compressed odd-length messages and malformed inputs were published. A
+   catalog of empty messages must decode correctly instead of emitting zero-byte
+   compressed arrays. The real Make regression uses isolated outputs and
+   consumers to check producer/Huffman changes, content-stable no-ops,
+   changed inputs, `-W` and `-q`, missing outputs/stamps and failed generation
+   for both lanes.
 5. The same regression command also runs a deliberately direct-to-final
    buffered writer using the current serial renderers. Its ordinary buffered
    line writes must expose partial header/C bytes and real compiler-reader

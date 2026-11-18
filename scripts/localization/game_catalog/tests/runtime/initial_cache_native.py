@@ -104,7 +104,9 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
-    def test_cold_zero_lookup_and_valid_cache_transitions(self):
+    def run_cache_scenario(self, *, mode="cache", generator=None):
+        if mode not in ("cache", "singleton", "controls"):
+            raise ValueError(f"unknown native text scenario {mode!r}")
         tools = _selected_tools(os.environ)
         paths = {
             name: str((ROOT / os.environ[name]).absolute())
@@ -125,16 +127,37 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
             work = Path(directory)
             source = work / "texts.txt"
             definitions = work / "textdefs.txt"
-            source.write_text(
-                "## MSG_CACHE_ZERO\nCache zero[.][X]\n"
-                "## MSG_CACHE_ONE\nCache one[.][X]\n",
+            if mode == "controls":
+                messages = (
+                    ("MSG_CACHE_ZERO", "一[LOAD][LOW_ZERO][X]"),
+                    ("MSG_CACHE_ONE", "A[LOAD][HIGH_ZERO]B[X]"),
+                    ("MSG_ODD", "A[MOVE]B[X]"),
+                    ("MSG_FACE_AFTER_ODD", "[GLYPH_HEAD][GLYPH_TAIL][MOVE]B[X]"),
+                    ("MSG_COLOR_ZERO", "[COLOR_ZERO][X]"),
+                    ("MSG_COLOR_ARG_ZERO", "[COLOR_ARG_ZERO]B[X]"),
+                )
+            else:
+                messages = (
+                    ("MSG_CACHE_ZERO", "Cache zero[.][X]"),
+                    ("MSG_CACHE_ONE", "Cache one[.][X]"),
+                    ("MSG_ODD", "Odd[X]"),
+                    ("MSG_FACE_AFTER_ODD", "A[LOAD][FACE][X]"),
+                )
+            source.write_text("".join(
+                f"## {name}\n{'[X]' if mode == 'singleton' else text}\n"
+                for name, text in messages
+            ), encoding="utf-8")
+            definitions.write_text(
+                "[X] = 0\n[.] = 31\n[LOAD] = 16\n[FACE] = 0, 1\n"
+                "[LOW_ZERO] = 0, 1\n[HIGH_ZERO] = 16, 0\n[MOVE] = 0x80, 16\n"
+                "[COLOR_ZERO] = 0x80, 0, 1\n[COLOR_ARG_ZERO] = 0x80, 1, 0\n"
+                "[GLYPH_HEAD] = 0xE4, 0xB8\n[GLYPH_TAIL] = 0x80\n",
                 encoding="ascii",
             )
-            definitions.write_text("[X] = 0\n[.] = 31\n", encoding="ascii")
             generated = work / "msg_data.c"
             header = work / "native_msg.h"
             self.run_command([
-                sys.executable, "-B", ROOT / "scripts/texttools/textprocess.py",
+                sys.executable, "-B", generator or ROOT / "scripts/texttools/textprocess.py",
                 source, definitions, generated, header, "utf8",
             ], cwd=ROOT)
             flags = [
@@ -150,6 +173,10 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 "-include", header,
                 "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types",
             ]
+            if mode == "singleton":
+                flags.append("-DNATIVE_SINGLETON_TEXT=1")
+            elif mode == "controls":
+                flags.append("-DNATIVE_CONTROL_TEXT=1")
             sources = [
                 ROOT / "src" / name for name in (
                     "msg.c", "ramfunc.c", "bmitem.c", "bmlib.c", "bmio.c", "bm.c",
@@ -184,6 +211,17 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 "-o", work / "sound/music_player_table.o",
             ], cwd=ROOT)
             linker = work / "module.ld"
+            # An absent compressed bit selects an out-of-range child in the
+            # old singleton tree; controlled ROM bytes make that observable.
+            singleton_sections = (
+                "*(.rodata.CompressedText_*) KEEP(*(.singleton_sentinel))"
+                if mode == "singleton" else ""
+            )
+            singleton_poison = (
+                ".singleton_poison (gMsgHuffmanTable + 0x3fffc) : "
+                "{ KEEP(*(.singleton_poison)) } > ROM"
+                if mode == "singleton" else ""
+            )
             linker.write_text(f"""
 OUTPUT_ARCH(arm)
 ENTRY(Init)
@@ -197,8 +235,9 @@ SECTIONS {{
  .rom : {{
    KEEP({work}/header.o(.text))
    KEEP({work}/boot.o(.text.boot))
-   *(.text*) *(.rodata*) *(.locale_data) . = ALIGN(4);
+   *(.text*) {singleton_sections} *(.rodata*) *(.locale_data) . = ALIGN(4);
  }} > ROM
+ {singleton_poison}
  .data : {{
    __data_start = .; *(.data*) . = ALIGN(4); __data_end = .;
  }} > EWRAM AT> ROM
@@ -231,8 +270,27 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 *(["--remove-section=.data"] if empty_data else []), elf, rom,
             ], cwd=work)
             self.assertLessEqual(rom.stat().st_size, 1024 * 1024)
+            layout = {}
+            if mode == "singleton":
+                rom_bytes = rom.read_bytes()
+                for name in (
+                    "CompressedText_MSG_CACHE_ZERO", "CompressedText_MSG_CACHE_ONE",
+                    "CompressedText_MSG_ODD", "CompressedText_MSG_FACE_AFTER_ODD",
+                    "gSingletonSentinel", "gSingletonPoison", "gMsgHuffmanTable",
+                ):
+                    address = resolve_elf_symbol_address(elf, name, tools["MODERN_NM"])
+                    layout[name] = {
+                        "address": hex(address), "first_byte": rom_bytes[address - 0x08000000],
+                    }
+                self.assertEqual(
+                    int(layout["gSingletonPoison"]["address"], 16)
+                    - int(layout["gMsgHuffmanTable"]["address"], 16),
+                    0x3fffc,
+                )
+                self.assertEqual(layout["gSingletonSentinel"]["first_byte"], 1)
+                self.assertEqual(layout["gSingletonPoison"]["first_byte"], ord("A"))
             _, size = resolve_elf_symbol(elf, "gInitialCacheProbe", tools["MODERN_NM"])
-            self.assertEqual(size, 20 + 4 * 24)
+            self.assertEqual(size, 20 + 6 * 24)
             scenario = work / "scenario.json"
             scenario.write_text(json.dumps({
                 "schema_version": 1, "name": "initial-message-cache", "frames": [],
@@ -260,27 +318,49 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 for offset in range(0, size, 4)
             )
             phase, count, buffer_bytes, decoder, initial_id = struct.unpack_from("<5I", data)
-            self.assertEqual((phase, count, buffer_bytes, initial_id), (2, 2, 0x1000, 0))
+            self.assertEqual((phase, count, buffer_bytes, initial_id), (2, len(messages), 0x1000, 0))
             self.assertGreaterEqual(decoder, 0x03000000)
             self.assertLess(decoder, 0x03007800)
             records = []
-            for slot in range(4):
+            for slot in range(6):
                 offset = 20 + slot * 24
                 identifier, length = struct.unpack_from("<2I", data, offset)
-                text = data[offset + 8:offset + 24].split(b"\0", 1)[0]
+                self.assertLessEqual(length, 16)
+                text = data[offset + 8:offset + 8 + length]
                 records.append((identifier, length, text))
             print(json.dumps({
                 "message_count": count, "buffer_bytes": buffer_bytes,
                 "decoder_address": hex(decoder), "rom_bytes": rom.stat().st_size,
+                "singleton_layout": layout,
                 "records": [
                     {"id": identifier, "length": length, "hex": text.hex()}
                     for identifier, length, text in records
                 ],
             }, sort_keys=True))
-            self.assertEqual(records, [
-                (0, 10, b"Cache zero"), (0, 10, b"Cache zero"),
-                (1, 9, b"Cache one"), (0, 10, b"Cache zero"),
-            ])
+            return records
+
+    def test_cold_zero_lookup_and_valid_cache_transitions(self):
+        self.assertEqual(self.run_cache_scenario(), [
+            (0, 10, b"Cache zero"), (0, 10, b"Cache zero"),
+            (1, 9, b"Cache one"), (0, 10, b"Cache zero"),
+            (2, 3, b"Odd"), (3, 5, b"A\x10\x00\x01\x00"),
+        ])
+
+    def test_singleton_huffman_messages_decode_on_native_arm(self):
+        self.assertEqual(self.run_cache_scenario(mode="singleton"), [
+            (0, 0, b""), (0, 0, b""), (1, 0, b""),
+            (0, 0, b""), (2, 0, b""), (3, 0, b""),
+        ])
+
+    def test_control_operands_decode_on_native_arm(self):
+        self.assertEqual(self.run_cache_scenario(mode="controls"), [
+            (0, 7, b"\xe4\xb8\x80\x10\x00\x01\x00"),
+            (1, 6, b"A\x10\x10\x00B\x00"),
+            (2, 5, b"A\x80\x10B\x00"),
+            (3, 7, b"\xe4\xb8\x80\x80\x10B\x00"),
+            (4, 4, b"\x80\x00\x01\x00"),
+            (5, 5, b"\x80\x01\x00B\x00"),
+        ])
 
     def test_selected_tools_keep_their_symlink_entrypoints(self):
         self._check_tool_facades("root")
@@ -360,7 +440,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             self.assertEqual(
                 [record["hex"] for record in observations[0]["records"]],
                 ["4361636865207a65726f", "4361636865207a65726f",
-                 "4361636865206f6e65", "4361636865207a65726f"],
+                 "4361636865206f6e65", "4361636865207a65726f",
+                 "4f6464", "4110000100"],
             )
             stages = set()
             for record in compiler_log.read_bytes().split(b"\0\0"):

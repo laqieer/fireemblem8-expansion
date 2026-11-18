@@ -89,6 +89,57 @@ def validate_text_controls(text, control_chars):
     if "[" in text[position:] or "]" in text[position:]:
         raise TextControlError("malformed text control")
 
+def text_glyph_length(data, pos, encoding_method):
+    ch = data[pos]
+    if encoding_method == 'cp932':
+        if (0x81 <= ch <= 0x9F or 0xE0 <= ch <= 0xFC) and pos + 1 < len(data):
+            trail = data[pos + 1]
+            if 0x40 <= trail <= 0xFC and trail != 0x7F:
+                return 2
+        return 1
+
+    if ch == 0x81 and pos + 1 < len(data) and data[pos + 1] == 0x40:
+        return 2
+    if 0xC2 <= ch <= 0xDF:
+        length = 2
+    elif 0xE0 <= ch <= 0xEF:
+        length = 3
+    elif 0xF0 <= ch <= 0xF4:
+        length = 4
+    else:
+        return 1
+    try:
+        data[pos:pos + length].decode('utf-8')
+    except UnicodeDecodeError:
+        return 1
+    return length
+
+def validate_text_bytes(data, encoding_method):
+    control_starts = set()
+    pos = 0
+    while pos < len(data):
+        ch = data[pos]
+        if ch == 0:
+            if pos != len(data) - 1:
+                raise TextControlError("message must end with exactly one terminator")
+            return control_starts
+        if ch == 0x10:
+            length = 3
+            label = "LoadFace"
+        elif ch == 0x80:
+            if pos + 1 >= len(data):
+                raise TextControlError("truncated extended control")
+            length = 3 if data[pos + 1] <= 3 else 2
+            label = "extended"
+        else:
+            pos += text_glyph_length(data, pos, encoding_method)
+            continue
+        if pos + length >= len(data):
+            raise TextControlError(f"truncated {label} control")
+        control_starts.add(pos)
+        pos += length
+    raise TextControlError("message must end with exactly one terminator")
+
 def text_to_shiftjis_u16_array(text, control_chars):
     u16_array = []
 
@@ -118,6 +169,14 @@ def text_to_shiftjis_u16_array(text, control_chars):
                 u16_array.extend(struct.unpack(f'{len(sjis_bytes)//2}H', sjis_bytes))
             break
 
+    byte_array = bytearray()
+    for value in u16_array:
+        if not 0 <= value <= 0xFFFF:
+            raise TextControlError("text symbol is outside the native 16-bit range")
+        byte_array.append(value & 0xFF)
+        if value >> 8:
+            byte_array.append(value >> 8)
+    validate_text_bytes(byte_array, 'cp932')
     return u16_array
 
 def text_to_utf8_u16_array(text, control_chars):
@@ -131,7 +190,8 @@ def text_to_utf8_u16_array(text, control_chars):
         if match:
             preceding_text = text[pos:match.start()]
             if preceding_text:
-                byte_array.extend(bytearray(preceding_text, 'utf-8'))
+                encoded = preceding_text.encode('utf-8')
+                byte_array.extend(encoded)
 
             control_char = match.group(1)
             for ctrl_ch in control_chars[control_char]:
@@ -141,8 +201,11 @@ def text_to_utf8_u16_array(text, control_chars):
         else:
             remaining_text = text[pos:]
             if remaining_text:
-                byte_array.extend(bytearray(preceding_text, 'utf-8'))
+                encoded = remaining_text.encode('utf-8')
+                byte_array.extend(encoded)
             break
+
+    control_starts = validate_text_bytes(byte_array, 'utf8')
 
     # step2: generate u16 array
     u16_array = []
@@ -151,21 +214,33 @@ def text_to_utf8_u16_array(text, control_chars):
         # same as textencode::compress_string()
         _ch = byte_array[pos]
 
-        if _ch == 0x80:
-            ch1 = byte_array[pos]
-            ch2 = byte_array[pos + 1]
-            pos = pos + 2
-
-            u16_array.append(ch1)
-            u16_array.append(ch2)
-        elif _ch == 0x10:
-            ch1 = byte_array[pos]
-            ch2 = byte_array[pos + 1]
-            ch3 = byte_array[pos + 2]
-            pos = pos + 3
-
-            u16_array.append(ch1)
-            u16_array.append(ch2 | (ch3 << 8))
+        if pos in control_starts and _ch == 0x80:
+            u16_array.append(_ch)
+            pos += 1
+            if byte_array[pos] != 0:
+                u16_array.append(byte_array[pos])
+                pos += 1
+        elif pos in control_starts and _ch == 0x10:
+            low, high = byte_array[pos + 1:pos + 3]
+            u16_array.append(_ch)
+            if high != 0:
+                u16_array.append(low | (high << 8))
+                pos += 3
+            elif low != 0:
+                u16_array.append(low)
+                pos += 2
+            else:
+                pos += 1
+        elif _ch == 0:
+            if pos == len(byte_array) - 1:
+                u16_array.append(0)
+                pos += 1
+            elif byte_array[pos + 1] != 0:
+                # The native decoder emits a zero only as the low byte of a pair.
+                u16_array.append(byte_array[pos + 1] << 8)
+                pos += 2
+            else:
+                raise TextControlError("native Huffman format cannot encode adjacent zero bytes")
         elif _ch == 0x23 or _ch == 0x7F or _ch == 0xE9:
             ch1 = byte_array[pos]
             pos = pos + 1
@@ -173,10 +248,13 @@ def text_to_utf8_u16_array(text, control_chars):
             u16_array.append(ch1)
         elif _ch >= 0x20:
             ch1 = byte_array[pos]
-            ch2 = byte_array[pos + 1]
-            pos = pos + 2
-
-            u16_array.append(ch1 | (ch2 << 8))
+            if pos + 1 >= len(byte_array) or byte_array[pos + 1] == 0:
+                u16_array.append(ch1)
+                pos += 1
+            else:
+                ch2 = byte_array[pos + 1]
+                pos += 2
+                u16_array.append(ch1 | (ch2 << 8))
         else:
             ch1 = byte_array[pos]
             pos = pos + 1
@@ -188,9 +266,12 @@ def text_to_utf8_u16_array(text, control_chars):
 def text_to_u16_array(text, control_chars, encoding_method, *, source_name=None):
     try:
         if encoding_method == 'cp932':
-            return text_to_shiftjis_u16_array(text, control_chars)
+            data = text_to_shiftjis_u16_array(text, control_chars)
         else:
-            return text_to_utf8_u16_array(text, control_chars)
+            data = text_to_utf8_u16_array(text, control_chars)
+        if not data or data[-1] != 0 or 0 in data[:-1]:
+            raise TextControlError("message must end with exactly one terminator")
+        return data
     except TextControlError as error:
         if source_name is None:
             raise
@@ -417,6 +498,9 @@ def main(args):
     freq_table = GenerateFreqTable(all_data)
 
     huff_tree = huffman.BuildHuffmanTree(freq_table)
+    if huff_tree.is_leaf():
+        # The native decoder consumes a bit before checking its first leaf.
+        huff_tree = huffman.HuffNodeCreateNode(huff_tree, huff_tree)
 
     huffman_table = huffman.BuildHuffmanTable()
     code_table = huffman.build_code_table(huff_tree)
