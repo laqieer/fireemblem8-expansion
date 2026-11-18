@@ -499,6 +499,46 @@ their own memory/temporary directories. The same source still implements
 windows/navigation/sort, but no target-ROM UI judgment or selected-profile
 save/lifecycle qualification is implied by these host and object checks.
 
+For the separate project-selection and ARM runtime subcase:
+
+1. Run
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_guide_selected_native -v`
+   with the supported ARM toolchain and libmGBA. It creates and removes its
+   own temporary project and build directories; no save or existing project
+   is changed. The existing debug ARM-enabled linker suite also runs it.
+2. The real Make project selector compiles the guide and event-info logical
+   slots with both adapters and `state.c`, requiring epoch 256 for the
+   temporary selected configuration. The default control uses the original
+   slots and epoch 2. Run each as a debug and release AAPCS module.
+3. With guide truth unset but reclaimed display/read bits set, the selected
+   guide remains locked; the default control exposes an unread entry. Seed
+   every permanent byte before reset. The selected permanent reset clears
+   all 25 bytes except truth and preserves the five chapter bytes; the default
+   reset clears permanent flags without setting truth. After the native
+   unlock-all and category consumers run, both expose all 56 entries in
+   ordered topic categories 1 through 11 and chapter categories 0 through 8.
+   The selected entries are all read without changing their backing bits;
+   the default entries remain unread with their native display bits set.
+   Inject two SELECT key events into the real guide main loop, from topic to
+   chapter and back. Both transitions must reset the four navigation indices,
+   set then clear the native sort flag, request the actual blocking redraw
+   script and preserve all other permanent and chapter bytes.
+4. The linked policy symbols and compiled reset slot distinguish the selected
+   module from the default control. The native flag buffers are checked for their
+   25/5-byte extents and nonoverlapping IWRAM addresses. Module ROM/EWRAM/IWRAM
+   measurements are printed for each configuration. The fixture isolates
+   inherited feature settings, preserves toolchain overrides and links inside
+   a non-ASCII build directory.
+
+The test selects real source slots but deliberately splits functions and
+`CONST_DATA` into per-symbol writable sections. A test-owned proc adapter checks
+the requested script and parent but does not execute or schedule the redraw;
+unrelated UI/audio adapters abort if reached, with sound effects disabled.
+The synthetic key events do not test physical key sampling. Test-owned
+buffers are not the complete game linker layout. These observations do not
+establish whole-game ROM/RAM, rendered guide UI, reopening the guide, a
+supported project profile, or save/load behavior.
+
 ## TC-GRADO-STATE-VALUES-001
 
 This subcase exercises native field values, not the complete token allocation,

@@ -4946,6 +4946,7 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests \
 		tools.gba-playtest.tests.test_grado_save_compat_native \
+		tools.gba-playtest.tests.test_grado_guide_selected_native \
 		scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
