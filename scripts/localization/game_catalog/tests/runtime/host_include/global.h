@@ -48,7 +48,10 @@ struct ActionData
 struct PlaySt
 {
     u8 pad[0x1C];
-    u8 unk1C[4];
+    u8 unk1C[2];
+    u8 unk1E;
+    u8 unk1F;
+    char playerName[11];
 };
 
 struct CharacterData

@@ -57,6 +57,34 @@ gate and this gate, with **the same eight jobs**. Job
 conditions, timeouts, required contexts, approvals and master-only build-once
 patch publication remain unchanged.
 
+## Native message transformations
+
+Modern English/qps message transformations iterate FE controls rather than
+treating every zero byte as the end of a C string. Face IDs and color-control
+arguments may contain zero; substitutions and article insertion retain the
+bytes after them in both the text and its prefix. Character-name controls
+read all four saved character slots through their declared fields. The
+4 KiB native message buffer and its existing scratch regions are unchanged.
+A transformation that exceeds its known scratch or output region returns
+`<!LOC_OVF!>`; a bounded malformed stream returns `<!LOC_BAD!>`.
+
+English/qps uses the native single-byte glyph grammar. Localized profiles use
+UTF-8 scalars and normalize imported English glyphs before rendering. These
+grammars cannot be inferred from bytes alone: `e9 93 80 20` is two native
+glyphs followed by `[Tact]`, but a UTF-8 scalar followed by a space in a
+localized stream. The build profile selects the existing grammar; arbitrary
+UTF-8 rendering in the native profile is not implied. The archival path is
+unchanged.
+
+The legacy `InsertPrefix` interface has no capacity argument for arbitrary
+caller-owned buffers; callers must still supply enough space. Likewise, this
+change does not bound the native Huffman decoder or nested message lookup.
+Selected-source and transformed-storage admission are tracked by #374, and
+renderer/resource qualification by #375.
+
+The exact native and localized regression procedure is
+[`TC-TEXT-NATIVE-TRANSFORM-001`](test-cases/core-framework.md#tc-text-native-transform-001-preserve-native-control-operands-and-substitutions).
+
 ## TC-TEXT-ATOMIC-PUBLICATION-001: Publish complete shared text outputs
 
 - **Issue/configuration:** #268; ordinary host text generation for modern and

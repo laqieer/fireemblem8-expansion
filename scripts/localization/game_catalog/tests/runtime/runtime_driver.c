@@ -20,10 +20,12 @@ static ExpansionLocaleId sCurrentLocale = EXPANSION_LOCALE_EN;
 static struct CharacterData sCharacterData = { 15 };
 static struct ItemData sItemData = { 18 };
 static const char *sTacticianNameOverride;
+static int sCharacterIds[4];
+static unsigned sCharacterIdCount;
 
 char gBufPrep[0x2000];
 struct ActionData gActionData = { 0 };
-struct PlaySt gPlaySt = { {0}, {0, 0, 0, 0} };
+struct PlaySt gPlaySt = {0};
 
 #define CHECK(cond) do { if (!(cond)) { \
     printf("FAIL: %s:%d: %s\n", __FILE__, __LINE__, #cond); \
@@ -202,7 +204,8 @@ const struct ItemData *GetItemData(int item)
 
 const struct CharacterData *GetCharacterData(int id)
 {
-    (void)id;
+    if (sCharacterIdCount < ARRAY_COUNT(sCharacterIds))
+        sCharacterIds[sCharacterIdCount++] = id;
     return &sCharacterData;
 }
 
@@ -213,6 +216,7 @@ static void ResetHarness(ExpansionLocaleId locale)
     sCurrentLocale = locale;
     sArmDecompCalls = 0;
     sTacticianNameOverride = NULL;
+    sCharacterIdCount = 0;
     sCharacterData.nameTextId = 15;
     sItemData.nameTextId = 18;
     LocalizedGameText_InvalidateCache();
@@ -486,6 +490,27 @@ static void TestUtf8ControlSubstitutions(void)
     CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
 }
 
+static void TestAllCharacterSlots(void)
+{
+    static const u8 source[] = {
+        0x80, 0x12, 0x80, 0x13, 0x80, 0x14, 0x80, 0x15, 0
+    };
+    static const int expectedIds[] = { 3, 5, 7, 9 };
+    const char *result;
+
+    ResetHarness(EXPANSION_LOCALE_JA);
+    gPlaySt.unk1C[0] = 3;
+    gPlaySt.unk1C[1] = 5;
+    gPlaySt.unk1E = 7;
+    gPlaySt.unk1F = 9;
+    GetStringFromIndex(13);
+    memcpy(&sMsgString, source, sizeof(source));
+    result = StringInsertSpecialPrefixByCtrl();
+    CHECK(strcmp(result, "艾莉艾莉艾莉艾莉") == 0);
+    CHECK(sCharacterIdCount == ARRAY_COUNT(expectedIds));
+    CHECK(memcmp(sCharacterIds, expectedIds, sizeof(expectedIds)) == 0);
+}
+
 static void TestTactSubstitutionKeepsUtf8Boundaries(void)
 {
     static const u8 expected[] = {
@@ -498,6 +523,39 @@ static void TestTactSubstitutionKeepsUtf8Boundaries(void)
     ResetHarness(EXPANSION_LOCALE_JA);
     GetStringFromIndex(14);
     result = StrInsertTact();
+    CHECK(memcmp(result, expected, sizeof(expected)) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
+}
+
+static void TestUtf8ScalarWithLegacyGlyphBytes(void)
+{
+    static const u8 expected[] = {
+        0xE9, 0x93, 0x80, ' ',
+        0xE8, 0xBB, 0x8D, 0xE5, 0xB8, 0xAB, 0
+    };
+    const char *result;
+
+    ResetHarness(EXPANSION_LOCALE_JA);
+    GetStringFromIndex(12);
+    result = StrInsertTact();
+    CHECK(memcmp(result, expected, sizeof(expected)) == 0);
+    result = StringInsertSpecialPrefixByCtrl();
+    CHECK(memcmp(result, expected, sizeof(expected)) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
+}
+
+static void TestPrefixPreservesControlArguments(void)
+{
+    static const char prefix[] = { 'P', 0x80, 0x01, 0x00, 'Q', 0 };
+    static const u8 expected[] = {
+        'P', 0x80, 0x01, 0x00, 'Q', 'R', 0x10, 0x10, 0x00, 'S', 0
+    };
+    char name[] = { 'R', 0x10, 0x10, 0x00, 'S', 0 };
+    const char *result;
+
+    ResetHarness(EXPANSION_LOCALE_JA);
+    GetStringFromIndex(0);
+    result = InsertPrefix(name, prefix, FALSE);
     CHECK(memcmp(result, expected, sizeof(expected)) == 0);
     CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
 }
@@ -705,7 +763,10 @@ int main(void)
     TestOverflowMarkerAndGuards();
     TestLegacyUnknownBufferStatus();
     TestUtf8ControlSubstitutions();
+    TestAllCharacterSlots();
     TestTactSubstitutionKeepsUtf8Boundaries();
+    TestUtf8ScalarWithLegacyGlyphBytes();
+    TestPrefixPreservesControlArguments();
     TestDerivedTextDoesNotMutateActiveCache();
     TestHelpBoxTransformsPreserveSupportScreenRecords();
     TestRepeatedDynamicSpecialSubstitutions();

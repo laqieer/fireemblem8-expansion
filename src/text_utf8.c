@@ -2,7 +2,7 @@
 
 #include "text_utf8.h"
 
-#ifdef FE8_TEXT_UTF8_ENABLED
+#ifdef MODERN
 
 static void TextUtf8_SetToken(
     struct TextUtf8Token *out,
@@ -40,11 +40,15 @@ static const char *TextUtf8_NextInternal(
     struct TextUtf8Token *out)
 {
     const u8 *bytes;
+#ifdef FE8_TEXT_UTF8_ENABLED
     u32 scalar;
+#endif
     u8 first;
     u8 second;
+#ifdef FE8_TEXT_UTF8_ENABLED
     u8 third;
     u8 fourth;
+#endif
 
     if (out == 0)
         return text;
@@ -156,6 +160,12 @@ static const char *TextUtf8_NextInternal(
         }
     }
 
+#ifndef FE8_TEXT_UTF8_ENABLED
+    TextUtf8_SetToken(
+        out, TEXT_UTF8_TOKEN_SCALAR, first, 0, 1, 0, 0,
+        TEXT_UTF8_TOKEN_FLAG_NONE);
+    return text + 1;
+#else
     if (bounded && available < 2)
         return TextUtf8_Invalid(
             text, out, TEXT_UTF8_TOKEN_FLAG_TRUNCATED);
@@ -256,8 +266,10 @@ static const char *TextUtf8_NextInternal(
     }
 
     return TextUtf8_Invalid(text, out, TEXT_UTF8_TOKEN_FLAG_NONE);
+#endif
 }
 
+#ifdef FE8_TEXT_UTF8_ENABLED
 const char *TextUtf8_Next(const char *text, struct TextUtf8Token *out)
 {
     return TextUtf8_NextInternal(text, 0, FALSE, out);
@@ -271,6 +283,22 @@ const char *TextUtf8_NextBounded(
     return TextUtf8_NextInternal(text, available, TRUE, out);
 }
 
+#else
+const char *TextUtf8_NextLegacy(const char *text, struct TextUtf8Token *out)
+{
+    return TextUtf8_NextInternal(text, 0, FALSE, out);
+}
+
+const char *TextUtf8_NextLegacyBounded(
+    const char *text,
+    u32 available,
+    struct TextUtf8Token *out)
+{
+    return TextUtf8_NextInternal(text, available, TRUE, out);
+}
+#endif
+
+#ifdef FE8_TEXT_UTF8_ENABLED
 static bool8 TextUtf8_IsWhitespace(u32 scalar)
 {
     if (scalar == TEXT_UTF8_LEGACY_SPACE_SCALAR
@@ -321,5 +349,6 @@ bool8 TextUtf8_HasVisibleContent(const char *text)
         text = next;
     }
 }
+#endif
 
-#endif /* FE8_TEXT_UTF8_ENABLED */
+#endif /* MODERN */
