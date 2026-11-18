@@ -32,8 +32,17 @@ keeps the existing inode and modification time. Existing permission bits are
 preserved; new files use ordinary `0666` creation subject to the caller's
 umask. Existing output symlinks are resolved to their targets before staging.
 Only the invocation's own staged paths are cleaned, and failures propagate.
-No parser, message ID, Huffman table, encoding or generated-byte format is
-changed.
+For valid input without previously misparsed comments, message IDs, Huffman
+tables, encoding and generated-byte format remain unchanged.
+
+Named controls in each selected source or included file must be defined;
+unmatched or nested brackets are rejected. The error identifies the source
+and message ID before either output is published. Comments are removed before
+splitting messages: line comments begin with `//` at the start of a source
+line, and `/* ... */` comments may span lines. Brackets inside comments are
+ignored. Removing a comment cannot create a directive, and comment markers
+inside quoted include paths remain literal. This syntax check does not by
+itself qualify control ordering, native references or storage capacity.
 
 This is **per-file atomicity**, not a multi-file transaction. A replace failure
 after the header was committed can leave a complete new header and complete
@@ -85,7 +94,14 @@ patch publication remain unchanged.
    Pre-publication failures retain both prior outputs. A later replacement
    failure preserves complete already-published or competing-writer outputs;
    no cross-file rollback is expected. Cleanup failures are explicit and never
-   justify deleting another invocation's staging.
+   justify deleting another invocation's staging. For #374, exercise unknown
+   and malformed named controls in direct and included inputs under both
+   encodings; the actual CLI must reject them with source and message ID while
+   preserving the previous pair. Line and multiline block comments must not
+   conceal later controls or create message directives. Decode generated CP932
+   with the independent decoder and check literal characters plus controls.
+   The old producer silently published unknown controls, including after a
+   line comment; dropping CP932 literals must fail the decode assertion.
 5. The same regression command also runs a deliberately direct-to-final
    buffered writer using the current serial renderers. Its ordinary buffered
    line writes must expose partial header/C bytes and real compiler-reader

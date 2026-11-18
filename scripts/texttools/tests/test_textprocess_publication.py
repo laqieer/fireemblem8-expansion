@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import selectors
 import shutil
 import socket
@@ -344,6 +345,180 @@ class TextPublicationTests(unittest.TestCase):
                 self.generate(module)
         self.assertEqual(self.pair(), previous)
         self.assert_no_staging()
+
+    def test_unknown_and_malformed_controls_reject_before_publication(self):
+        previous = self.seed()
+        included = self.work / "selected messages.txt"
+        for encoding in ("utf8", "cp932"):
+            for text, diagnostic in (
+                ("[DOES_NOT_EXIST][Y][X]", "unknown text control"),
+                ("// note\n[DOES_NOT_EXIST][Y][X]", "unknown text control"),
+                ("/\n* [DOES_NOT_EXIST] */[Y][X]", "unknown text control"),
+                ("/* c */#z\n[DOES_NOT_EXIST][Y][X]", "unknown text control"),
+                ("/* c\n#000F */#z\n[DOES_NOT_EXIST][Y][X]", "unknown text control"),
+                ("[BROKEN[Y][X]", "malformed text control"),
+                ("[][Y][X]", "malformed text control"),
+                ("[Y][X][[", "malformed text control"),
+                ("[Y][X]]]", "malformed text control"),
+            ):
+                for use_include in (False, True):
+                    with self.subTest(encoding=encoding, text=text, include=use_include):
+                        selected = included if use_include else self.source
+                        self.header.write_bytes(previous[0])
+                        self.data.write_bytes(previous[1])
+                        selected.write_text(
+                            f"#0001\n{text}\n#0002\n[Y][X]\n", encoding="utf-8"
+                        )
+                        if use_include:
+                            self.source.write_text(
+                                f'#include "{included.name}"\n', encoding="utf-8"
+                            )
+                        result = subprocess.run(
+                            [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                            cwd=self.work, capture_output=True, text=True, timeout=15,
+                        )
+                        self.assertNotEqual(result.returncode, 0, result.stdout)
+                        self.assertIn(diagnostic, result.stderr)
+                        self.assertIn(str(selected), result.stderr)
+                        self.assertIn("0x0001", result.stderr)
+                        self.assertEqual(self.pair(), previous)
+                        self.assert_no_staging()
+
+    def test_controls_inside_comments_do_not_change_generated_output(self):
+        for encoding in ("utf8", "cp932"):
+            with self.subTest(encoding=encoding):
+                self.source.write_text("#0001\n[Y][X]\n", encoding="utf-8")
+                self.generate(encoding=encoding)
+                expected = self.pair()
+                self.source.write_text(
+                    "#0001\n/* [NOT_A_CONTROL] */[Y][X]\n", encoding="utf-8"
+                )
+                self.generate(encoding=encoding)
+                self.assertEqual(self.pair(), expected)
+
+    def test_comments_preserve_message_boundaries_and_valid_output(self):
+        included = self.work / "selected messages.txt"
+        comments = (
+            "// note\n[Y][X]",
+            "[Y][X]\n// [NOT_A_CONTROL]",
+            "/* comment\n#000F\n[NOT_A_CONTROL]\n*/\n[Y][X]",
+        )
+        for encoding in ("utf8", "cp932"):
+            for use_include in (False, True):
+                for directive in ("#0001", "## CUSTOM"):
+                    selected = included if use_include else self.source
+                    if use_include:
+                        self.source.write_text(f'#include "{included.name}"\n', encoding="utf-8")
+
+                    def run(body):
+                        selected.write_text(
+                            f"{directive}\n{body}\n#0002\n[Y][X]\n", encoding="utf-8"
+                        )
+                        return subprocess.run(
+                            [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                            cwd=self.work, capture_output=True, text=True, timeout=15,
+                        )
+
+                    baseline = run("[Y][X]")
+                    self.assertEqual(baseline.returncode, 0, baseline.stderr)
+                    expected = self.pair()
+                    for body in comments:
+                        with self.subTest(
+                            encoding=encoding, include=use_include,
+                            directive=directive, body=body,
+                        ):
+                            result = run(body)
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertEqual(self.pair(), expected)
+                            self.assert_no_staging()
+
+    def test_include_path_can_contain_comment_like_characters(self):
+        included = self.work / "dir" / "*draft*" / "message.txt"
+        included.parent.mkdir(parents=True)
+        included.write_text("#0001\n[Y][X]\n", encoding="utf-8")
+        for encoding in ("utf8", "cp932"):
+            for indentation in ("", "  "):
+                with self.subTest(encoding=encoding, indentation=indentation):
+                    self.source.write_text("#0001\n[Y][X]\n", encoding="utf-8")
+                    baseline = subprocess.run(
+                        [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                        cwd=self.work, capture_output=True, text=True, timeout=15,
+                    )
+                    self.assertEqual(baseline.returncode, 0, baseline.stderr)
+                    expected = self.pair()
+                    self.source.write_text(
+                        f'{indentation}#include "dir/*draft*/message.txt"\n', encoding="utf-8"
+                    )
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                        cwd=self.work, capture_output=True, text=True, timeout=15,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(self.pair(), expected)
+                    self.assert_no_staging()
+
+    def test_comments_do_not_join_directive_fragments(self):
+        for encoding in ("utf8", "cp932"):
+            for plain, commented in (
+                ("#0001", "#0001/*note*/2"),
+                ("## CUSTOM", "## CUSTOM/*note*/_SUFFIX"),
+                ("#0001", '#incl/*note*/ude "missing.txt"\n#0001'),
+            ):
+                with self.subTest(encoding=encoding, directive=commented):
+                    self.source.write_text(f"{plain}\n[Y][X]\n", encoding="utf-8")
+                    self.generate(encoding=encoding)
+                    expected = self.pair()
+                    self.source.write_text(f"{commented}\n[Y][X]\n", encoding="utf-8")
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                        cwd=self.work, capture_output=True, text=True, timeout=15,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(self.pair(), expected)
+                    self.assert_no_staging()
+
+    def test_indented_include_like_message_text_still_removes_comments(self):
+        for encoding in ("utf8", "cp932"):
+            with self.subTest(encoding=encoding):
+                self.source.write_text('#0001\n #include ""[Y][X]\n', encoding="utf-8")
+                self.generate(encoding=encoding)
+                expected = self.pair()
+                self.source.write_text(
+                    '#0001\n #include "/*[MISSING]*/"[Y][X]\n', encoding="utf-8"
+                )
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                    cwd=self.work, capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.pair(), expected)
+                self.assert_no_staging()
+
+    def test_cp932_cli_preserves_literal_characters_and_controls(self):
+        self.source.write_text("#0001\n日本[Y]語[X]\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), *self.arguments("cp932")],
+            cwd=self.work, capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        generated = self.data.read_text(encoding="utf-8")
+        compressed = re.search(
+            r"CompressedText_MSG_001\[\] = \{([^}]*)\}", generated
+        ).group(1)
+        table = re.search(r"gMsgHuffmanTable\[\] = \{([^}]*)\}", generated).group(1)
+        encoded = bytes(int(value, 16) for value in re.findall(r"0x[0-9A-Fa-f]+", compressed))
+        nodes = [int(value, 16) for value in re.findall(r"0x[0-9A-Fa-f]+", table)]
+        spec = importlib.util.spec_from_file_location(
+            "publication_textdecoder", SCRIPT.with_name("textdecoder.py")
+        )
+        decoder = importlib.util.module_from_spec(spec)
+        with mock.patch.object(sys, "path", [str(SCRIPT.parent), *sys.path]):
+            spec.loader.exec_module(decoder)
+        with mock.patch.object(decoder, "ROOT_NODE", len(nodes) - 1):
+            self.assertEqual(
+                decoder.decode_data(encoded, nodes, 0),
+                [0xFA93, 0x7B96, 1, 0xEA8C, 0],
+            )
 
     def test_actual_write_and_close_failures_do_not_publish(self):
         previous = self.seed()
