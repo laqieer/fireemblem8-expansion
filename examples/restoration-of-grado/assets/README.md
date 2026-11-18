@@ -199,7 +199,12 @@ The existing `tsa_generator.py` remains the tile/TSA converter. The selected
 carriers declare their paired outputs explicitly so native sibling-ordering
 dependencies cannot discard the PNG input of an implicit multi-target rule.
 The regression invokes actual GNU Make with that ordering edge and checks
-all four converter argument vectors.
+all four converter argument vectors for PNG, converter and converter-module
+changes. The modern converter lock checks both outputs against every normal
+recipe prerequisite, excluding the paired outputs themselves. The focused
+`ModernBuildTests.test_fetsatool_lock_honors_converter_and_module_prerequisites`
+regression performs parallel warm builds and requires changed output bytes
+after changing only the converter or its module, without touching the source.
 The `restoration-of-grado/primary` project replaces only the four existing BG/CG
 code/data owners; default consumers and ROM data are unchanged. The data-slot
 replacements retain native INCBIN preprocessing and asset dependencies.
@@ -257,21 +262,32 @@ data symbols is linked) and a carrier whose TSA requests a seventh palette
 bank. Restoring either former eight-bank BG must fail the carrier regression.
 
 The native suite also runs `GradoVisualNativeTests.test_selected_static_consumers`.
-This builds the selected debug ROM through Make and uses the existing ARM GDB
+This explicitly selects the `build` output root and debug/AAPCS profile through
+Make, regardless of inherited build-root or ABI settings, and uses the existing ARM GDB
 and mGBA SDL frontend, including the distribution's `/usr/games/mgba` location.
 These are already supported quickstart tools; the modern CI job installs them
 for this case. Using the full compiled ROM avoids source extraction, replacement
 event functions or a parallel renderer fixture. The original engine initializes
 SRAM, RAM routines and game state before the `StartGame` breakpoint.
 
-Each of the four carriers runs through direct loading, both fade loaders,
-literal `Event21_TextBg` dispatch and slot-2 dispatch. A fresh temporary ROM
-copy and SRAM file isolate each of these twenty executions. GDB supplies typed
+Each of the four carriers, stock BGs `0`/`0x35`, stock CGs `0`/`9`, and
+the minimum/maximum RNG inputs runs through direct loading, both fade loaders,
+literal `Event21_TextBg` dispatch and slot-2 dispatch. The real RNG selects
+BG `0` or `52` for its two endpoint inputs; no RNG stub replaces it.
+A fresh temporary ROM copy, emulator configuration and SRAM file isolate each
+of these fifty executions. GDB runs without user initialization files and supplies typed
 event/proc inputs and checks actual VRAM, complete background tilemap/palette
 buffers and persisted CG bookkeeping, including its checksum. Expected pixels'
 encoded tile bytes, bottom-to-top TSA rows and palette bytes come from the real
 asset producers, not captured output. Guarded unused RAM stays unchanged;
 unused VRAM is compared with its captured pre-call state.
+
+The stock CG palette files contain six banks, but their inherited direct
+loader copies eight. Those two cases compare against the immutable linked-ROM
+input span captured before execution, first checking its declared six-bank
+prefix against the generated palette. This records the actual inherited
+transfer without inventing padding or using its destination as the oracle;
+it does not repair or endorse the extra-bank read.
 
 Swap the two project BG table entries: all ten BG cases must fail their native
 graphics comparison. Swap the title CG's first two partitions: all five title
@@ -282,9 +298,9 @@ Only one inferior call is made per boot because repeated inferior calls are
 unreliable with the supported mGBA 0.10 frontend.
 
 This is instrumented selected-ROM memory/save evidence, not non-instrumented
-artistic acceptance or framebuffer evidence. Stock/default, random dispatch
-and outgoing-copy coverage remain required before this unfinished package is
-qualified; the twenty cases must not be relabeled as that complete family.
+artistic acceptance or framebuffer evidence. Default-profile selection/resource
+proof and outgoing-copy coverage remain required before this unfinished package
+is qualified; stock entries in the selected ROM do not replace default-ROM proof.
 
 The conversion evidence and compile/link binding do not establish subjective
 art acceptance. Material blockers remain: the four original CH00/CH02 portrait

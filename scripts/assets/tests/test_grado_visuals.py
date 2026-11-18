@@ -172,23 +172,26 @@ class GradoVisualAssetTests(unittest.TestCase):
             "graphics/bg/grado_imperial_tomb", "graphics/bg/grado_council_hall",
             "graphics/cg/grado_funeral_omen", "graphics/cg/grado_title",
         ):
-            with self.subTest(prefix=prefix):
-                result = subprocess.run(
-                    ["make", "--no-print-directory", "-n", "-W", prefix + ".png",
-                     "--eval", f"{prefix}.fetsa2.bin: {prefix}.feimg2.bin",
-                     prefix + ".feimg2.bin", "FE8_PROJECT=restoration-of-grado",
-                     "FE8_PROJECT_PROFILE=primary", "MODERN_CONFIG=release"],
-                    cwd=ROOT, capture_output=True, text=True, timeout=60,
-                )
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                commands = [
-                    shlex.split(line) for line in result.stdout.splitlines()
-                    if line.startswith("scripts/gfxtools/tsa_generator.py ")
-                ]
-                self.assertEqual(commands, [[
-                    "scripts/gfxtools/tsa_generator.py", prefix + ".png",
-                    prefix + ".feimg2.bin", prefix + ".fetsa2.bin",
-                ]])
+            for changed in (
+                prefix + ".png", "scripts/gfxtools/tsa_generator.py", "scripts/gfxtools/tsa2.py",
+            ):
+                with self.subTest(prefix=prefix, changed=changed):
+                    result = subprocess.run(
+                        ["make", "--no-print-directory", "-n", "-W", changed,
+                         "--eval", f"{prefix}.fetsa2.bin: {prefix}.feimg2.bin",
+                         prefix + ".feimg2.bin", "FE8_PROJECT=restoration-of-grado",
+                         "FE8_PROJECT_PROFILE=primary", "MODERN_CONFIG=release"],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    commands = [
+                        shlex.split(line) for line in result.stdout.splitlines()
+                        if line.startswith("scripts/gfxtools/tsa_generator.py ")
+                    ]
+                    self.assertEqual(commands, [[
+                        "scripts/gfxtools/tsa_generator.py", prefix + ".png",
+                        prefix + ".feimg2.bin", prefix + ".fetsa2.bin",
+                    ]])
 
     def test_splitter_changes_invalidate_both_partition_families(self):
         with tempfile.TemporaryDirectory(prefix="grado-partition-make-") as directory:

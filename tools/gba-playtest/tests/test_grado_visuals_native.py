@@ -500,7 +500,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         output = ROOT / "build/projects/restoration-of-grado/primary/debug/aapcs"
         self.run_command([
             "make", "--no-print-directory", "-j2", "FE8_PROJECT=restoration-of-grado",
-            "FE8_PROJECT_PROFILE=primary", "MODERN_CONFIG=debug", "expansion-modern-rom",
+            "FE8_PROJECT_PROFILE=primary", "MODERN_BUILD_ROOT=build",
+            "MODERN_CONFIG=debug", "MODERN_ABI=aapcs", "expansion-modern-rom",
         ], cwd=ROOT, timeout=900)
         elf, rom = output / "fireemblem8.elf", output / "fireemblem8.gba"
         gdb = gdb_smoke.select_command(("arm-none-eabi-gdb", "gdb-multiarch"), "ARM GDB")
@@ -515,7 +516,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ):
                 (work / name).write_bytes(data)
 
-            def capture(setup, call, bg):
+            def capture(setup, call, bg, palette_source=None):
                 self.assertTrue(gdb_smoke.port_is_available(2345), "mGBA GDB port is occupied")
                 # One inferior call per fresh boot: repeated calls are not reliable in mGBA 0.10.
                 with tempfile.TemporaryDirectory(prefix="boot-", dir=work) as boot_directory:
@@ -529,6 +530,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         "set gLCDControlBuffer.bg3cnt.charBaseBlock = 2",
                         f"restore {work / 'palette-input'} binary &gPaletteBuffer",
                         f"restore {work / 'tilemap-input'} binary &gBG{bg}TilemapBuffer",
+                        *([] if palette_source is None else [
+                            f"dump binary memory {boot / 'palette-source'} &{palette_source} ((char *)&{palette_source}+256)",
+                        ]),
                         f"dump binary memory {boot / 'graphics-before'} {address:#x} {address + 0x5000:#x}",
                         'printf "SRAM_OFFSET=%u\\n", ((char *)&gSram->unkstruct2-(char *)gSram)',
                         "set $sp = $sp - 512",
@@ -541,7 +545,10 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     script = boot / "commands.gdb"
                     script.write_text("\n".join(commands) + "\n", encoding="ascii")
                     environment = os.environ.copy()
-                    environment.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+                    environment.update(
+                        SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy",
+                        XDG_CONFIG_HOME=str(boot / "config"),
+                    )
                     with (boot / "mgba.log").open("w+") as log:
                         process = subprocess.Popen(
                             [mgba, "-g", str(boot / "probe.gba")], env=environment,
@@ -550,7 +557,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                         try:
                             gdb_smoke.wait_for_server(process, 2345, 15)
                             result = subprocess.run(
-                                [gdb, "-q", "-batch", str(elf), "-x", str(script)],
+                                [gdb, "-nx", "-q", "-batch", str(elf), "-x", str(script)],
                                 capture_output=True, text=True, timeout=45,
                             )
                             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -566,6 +573,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                             "graphics", "graphics-before", "tilemap", "palette",
                         )},
                         "saved-cg": save[offset:offset + 20],
+                        **({} if palette_source is None else {
+                            "palette-source": (boot / "palette-source").read_bytes(),
+                        }),
                     }
 
             carriers = (
@@ -573,15 +583,28 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 (1, 0x39, "bg/grado_council_hall"),
                 (2, 10, "cg/grado_funeral_omen"),
                 (2, 11, "cg/grado_title"),
+                (1, 0, "bg/bg_House"),
+                (1, 0x35, "bg/bg_Blank"),
+                (2, 0, "cg/cg_0"),
+                (2, 9, "cg/cg_9"),
+                (1, 0x37, "bg/bg_House"),
+                (1, 0x37, "bg/bg_Black_Temple_Inside"),
             )
             for kind, index, carrier in carriers:
                 prefix = ROOT / "graphics" / carrier
-                raw = prefix.with_suffix(".feimg2.bin").read_bytes()
-                tsa = prefix.with_suffix(".fetsa2.bin").read_bytes()
+                if carrier.startswith("cg/cg_"):
+                    raw = b"".join(
+                        Path(f"{prefix}_part_{part}.4bpp").read_bytes() for part in range(10)
+                    )
+                    tsa = prefix.with_suffix(".tsa.bin").read_bytes()
+                else:
+                    raw = prefix.with_suffix(".feimg2.bin").read_bytes()
+                    tsa = prefix.with_suffix(".fetsa2.bin").read_bytes()
                 palette = prefix.with_suffix(".gbapal").read_bytes()
                 self.assertEqual(tsa[:2], bytes((29, 19)))
                 entries = struct.unpack_from("<600H", tsa, 2)
-                self.assertLess(max(value >> 12 for value in entries), 6)
+                if "grado_" in carrier:
+                    self.assertLess(max(value >> 12 for value in entries), 6)
                 self.assertLessEqual(len(raw), 0x5000)
                 for route in ("direct", "fade2", "fade3", "literal", "slot2"):
                     with self.subTest(carrier=carrier, route=route):
@@ -608,7 +631,16 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                             call = "call Event21_TextBg($event)"
                         else:
                             call = f"call EventShowTextBgDirect({kind}, {index})"
-                        actual = capture(setup, call, bg)
+                        if index == 0x37 and kind == 1:
+                            seeds = (0, 0, 0) if carrier.endswith("House") else (0, 0x8000, 0x7FFF)
+                            setup.extend(
+                                f"set gRNSeeds[{position}] = {value}"
+                                for position, value in enumerate(seeds)
+                            )
+                        actual = capture(
+                            setup, call, bg,
+                            f"{prefix.name}_palette" if carrier.startswith("cg/cg_") else None,
+                        )
                         expected_graphics = (
                             raw.ljust(0x5000, b"\x00") if kind == 2
                             else raw + actual["graphics-before"][len(raw):]
@@ -621,7 +653,12 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                                     entries[(19 - y) * 30 + x] + (pal << 12),
                                 )
                         expected_palette = bytearray(palette_guard)
-                        expected_palette[pal * 32:(pal + count) * 32] = palette[:count * 32]
+                        source_palette = palette
+                        if carrier.startswith("cg/cg_"):
+                            # Stock six-bank objects retain the legacy eight-bank direct read.
+                            source_palette = actual["palette-source"]
+                            self.assertEqual(source_palette[:len(palette)], palette)
+                        expected_palette[pal * 32:(pal + count) * 32] = source_palette[:count * 32]
                         if kind == 1:
                             expected_palette[:2] = b"\x00\x00"
                         for name, expected in (
