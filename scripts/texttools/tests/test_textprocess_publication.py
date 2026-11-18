@@ -424,6 +424,15 @@ class TextPublicationTests(unittest.TestCase):
                     ambiguous_question = question(
                         "MAKEFLAGS=--no-print-directory", "MFLAGS=--no-print-directory")
                     self.assertEqual(ambiguous_question.returncode, 1)
+                    with self.subTest(question_origin="MAKEFLAGS"):
+                        implicit_question = subprocess.run(
+                            [*common, "MAKE_RESTARTS=1", "MAKEFLAGS=--question", str(output)],
+                            cwd=ROOT, capture_output=True, text=True, timeout=30,
+                        )
+                        self.assertEqual(
+                            implicit_question.returncode, 0,
+                            implicit_question.stdout + implicit_question.stderr,
+                        )
 
                     tool = tools / dependency
                     tool.write_text(tool.read_text(encoding="utf-8") + "\n# fixture refresh\n",
@@ -542,6 +551,30 @@ class TextPublicationTests(unittest.TestCase):
                     self.assertNotEqual(output.read_bytes(), before)
                     self.assertEqual(consumer.read_bytes(), output.read_bytes())
                     self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
+
+                    for value, options in enumerate((
+                        ("--eval=MFLAGS=-q",),
+                        ("MFLAGS=-q",),
+                        ("--eval=MFLAGS=-q", "MAKEFLAGS=q=1"),
+                    ), 4):
+                        with self.subTest(flag_injection=options):
+                            before = output.read_bytes()
+                            definitions.write_text(
+                                f"[X] = 0\n[Y] = {value}\n", encoding="utf-8"
+                            )
+                            os.utime(definitions, ns=(definition_time, definition_time))
+                            rebuilt = subprocess.run(
+                                [*common, *options, "-W", str(definitions),
+                                 str(consumer), str(header_consumer)],
+                                cwd=ROOT, capture_output=True, text=True, timeout=30,
+                            )
+                            self.assertEqual(
+                                rebuilt.returncode, 0, rebuilt.stdout + rebuilt.stderr
+                            )
+                            self.assertNotEqual(output.read_bytes(), before)
+                            self.assertEqual(consumer.read_bytes(), output.read_bytes())
+                            self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
+                    self.assertEqual(calls(), 13)
 
                     previous = output.read_bytes(), header.read_bytes()
                     selected_source.write_text("#0000\n[MISSING][X]\n", encoding="utf-8")

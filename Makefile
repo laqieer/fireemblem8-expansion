@@ -591,16 +591,17 @@ $(shell \
 	fi)
 endef
 
-ifeq ($(origin MFLAGS),command line)
-ifeq ($(origin MAKEFLAGS),command line)
-TEXT_SHORT_FLAGS :=
+ifeq ($(origin MFLAGS),environment)
+TEXT_INTERNAL_FLAGS := $(firstword $(MFLAGS))
+else ifeq ($(origin MFLAGS),environment override)
+TEXT_INTERNAL_FLAGS := $(firstword $(MFLAGS))
 else
-TEXT_SHORT_FLAGS := $(firstword $(MAKEFLAGS))
+TEXT_INTERNAL_FLAGS :=
 endif
-else
-TEXT_SHORT_FLAGS := $(firstword $(MFLAGS))
-endif
-TEXT_QUERY_MODE := $(if $(filter --% -I% -j% -l% -O%,$(TEXT_SHORT_FLAGS)),,$(findstring q,$(TEXT_SHORT_FLAGS)))
+define text_query_flag
+$(if $(filter --question,$(1)),q,$(if $(or $(findstring =,$(1)),$(filter --% -I% -j% -l% -O%,$(1))),,$(findstring q,$(1))))
+endef
+TEXT_QUERY_MODE := $(call text_query_flag,$(TEXT_INTERNAL_FLAGS))$(call text_query_flag,$(firstword $(MAKEFLAGS)))
 TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_STAMP),$(TEXT_INPUTS)),FORCE_TEXT_OUTPUTS),FORCE_TEXT_OUTPUTS)
 LEGACY_TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_STAMP),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)),FORCE_LEGACY_TEXT_OUTPUTS),FORCE_LEGACY_TEXT_OUTPUTS)
 

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from .control_streams import ControlStreamError, tokenize_payload
 from .model import EnglishSourceEntry, GameCatalogError
 
 
@@ -123,6 +124,8 @@ def encode_english_source_text(
         literal = text[position:match.start()]
         if "[" in literal or "]" in literal:
             raise GameCatalogError(f"{source_name}: malformed text token")
+        if "\x00" in literal:
+            raise GameCatalogError(f"{source_name}: literal text contains an embedded NUL")
         payload.extend(literal.encode("utf-8"))
         payload.extend(
             _encode_named_token(
@@ -134,13 +137,17 @@ def encode_english_source_text(
     literal = text[position:]
     if "[" in literal or "]" in literal:
         raise GameCatalogError(f"{source_name}: malformed text token")
+    if "\x00" in literal:
+        raise GameCatalogError(f"{source_name}: literal text contains an embedded NUL")
     payload.extend(literal.encode("utf-8"))
 
     data = bytes(payload)
     if not data.endswith(b"\x00"):
         raise GameCatalogError(f"{source_name}: message must end with [X]")
-    if b"\x00" in data[:-1]:
-        raise GameCatalogError(f"{source_name}: message contains an interior NUL")
+    try:
+        tokenize_payload(data, source_name=source_name)
+    except ControlStreamError as error:
+        raise GameCatalogError(str(error)) from error
     return data
 
 

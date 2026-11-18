@@ -184,10 +184,12 @@ whole-game qualification. It does not fix or close those dependent contracts.
 - **Feature / originating issue:** `modern-framework-build` /
   [#363](https://github.com/laqieer/fireemblem8-expansion/issues/363),
   extracted from [#314](https://github.com/laqieer/fireemblem8-expansion/issues/314);
-  #374 also covers generated termination, control operands and a singleton tree.
+  #374 also covers generated termination, control operands, a singleton tree
+  and bounded localized control streams.
 - **Profile and prerequisites:** modern ARM7TDMI Thumb/AAPCS English-only
-  module ROM; existing ARM GCC/binutils, libmGBA and Python. Preserve work;
-  no base ROM, external asset, save fixture, GUI or new package.
+  and en/ja localized module ROMs; existing ARM GCC/binutils, libmGBA and
+  Python. Preserve work; no base ROM, external asset, save fixture, GUI or new
+  package.
 - **Starting state:** the test owns a fresh temporary directory and boots
   with cleared EWRAM/IWRAM. Message0 is the first lookup.
 
@@ -195,6 +197,7 @@ whole-game qualification. It does not fix or close those dependent contracts.
 
 ```bash
 env -u GBA_PLAYTEST_HOST_ONLY python3 -m unittest scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
+python3 -m unittest scripts.localization.game_catalog.tests.test_encode scripts.localization.game_catalog.tests.test_build_fixture.FixtureBuildTests.test_control_zeros_survive_generated_arm_catalog scripts.localization.game_catalog.tests.runtime.test_localized_game_text_runtime.LocalizedGameTextRuntimeTests.test_runtime_driver -v
 ```
 
 The existing English text generator emits four fixture messages and
@@ -207,6 +210,8 @@ Two further module ROMs exercise six control-bearing messages and four empty
 messages. The latter positions a known byte after the compressed arrays and a
 known leaf at the old singleton tree's out-of-range child, making a missing
 compressed bit visible without altering the real decoder.
+The en/ja module additionally boots a 28-entry generated test catalog and
+captures bounded localized, fallback and malformed-control lookups.
 One closed selector serves both the direct case and its compiler,
 symbol-reader and objcopy facades. Explicit `MODERN_CC`/`MODERN_NM`/
 `MODERN_OBJCOPY` win; otherwise use `MODERN_TOOLCHAIN_ROOT/bin` plus `PREFIX`,
@@ -235,6 +240,12 @@ The control fixture's six raw records are `e4 b8 80 10 00 01 00`,
 including a glyph split across named definitions, both face-operand byte
 positions and extended-control zero operands. Every singleton record is empty
 and the probe completes.
+The localized module uses a 5632-byte message buffer. It preserves low-zero,
+high-zero and consecutive-zero face operands and a zero extended-control
+argument, including English fallback. A premature terminator and an understated
+decoded-size bound each produce the visible corrupt marker. Host tests also
+exercise English, qps, absent and unpopulated fallback, transformed text, and
+compiled generated catalog bytes.
 
 ### Negative control
 
@@ -247,12 +258,16 @@ terminator and the native case returned `Odd` followed by unrelated bytes.
 With the exact pre-fix generator, the controlled singleton ROM returns `A`
 instead of the empty string, and the low-zero face and both zero-extended
 records differ from their expected bytes.
+Before the localized framing correction, the real C consumer treats the
+first operand zero as a terminator and returns a corrupt marker for valid
+streams; an understated decoded-size bound is not enforced.
 
 ### Interactions and save compatibility
 
 The validity marker exists only in the modern non-CJK consumer; it does not
-change the public lookup interface, valid cache transitions, 4KiB buffer,
-archival code/data path or separate localized consumer. It is transient,
+change the public lookup interface, valid cache transitions, 4KiB buffer or
+archival code/data path. The localized consumer uses the existing bit and
+storage bounds plus semantic control validation. Both are transient,
 not a save/config/epoch field. Its alignment and total ROM/RAM impact remain
 subject to existing linked budgets and complete candidate/master profiles.
 When regenerating the default linked reports, also regenerate their existing
@@ -276,9 +291,8 @@ The test removes only its owned temporary source/object/ELF/ROM/capture tree.
 ### Limitations
 
 This is module-native cache and byte-decoder coverage, not a complete
-game/locale profile. The CJK bounded consumer and semantic validity of zero
-control operands are not qualified by these non-CJK fixtures. It does not fix
-or qualify invalid-ID handling, English control/width safety, Huffman corpus
+game/locale profile or selected project. It does not qualify every localized
+consumer or fix invalid-ID handling, English control/width safety, Huffman corpus
 coverage, production translations, glyphs or Grado gameplay.
 There is no material manual-only criterion.
 

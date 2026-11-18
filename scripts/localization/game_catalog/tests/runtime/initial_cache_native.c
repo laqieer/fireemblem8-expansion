@@ -2,6 +2,11 @@
 #include "bmlib.h"
 #include "native_msg.h"
 
+#ifdef NATIVE_LOCALIZED_TEXT
+#include "game_localization_declarations.h"
+#include "localized_game_text_storage.h"
+#endif
+
 struct InitialCacheRecord
 {
     u32 id;
@@ -60,12 +65,23 @@ static void RecordRawLookup(unsigned slot, int id, unsigned length)
 void AgbMain(void)
 {
     gInitialCacheProbe.phase = 1;
+#ifdef NATIVE_LOCALIZED_TEXT
+    gInitialCacheProbe.messageCount = GAME_LOCALIZATION_TARGET_COUNT;
+#else
     gInitialCacheProbe.messageCount = MSG_COUNT;
+#endif
     gInitialCacheProbe.bufferBytes = sizeof(struct MsgBuffer);
     gInitialCacheProbe.initialActiveId = sActiveMsg;
     StoreRoutinesToIRAM();
     gInitialCacheProbe.decoderAddress = (u32)DecodeStringRAMFunc;
-#ifdef NATIVE_CONTROL_TEXT
+#ifdef NATIVE_LOCALIZED_TEXT
+    RecordRawLookup(0, 19, 11);
+    RecordRawLookup(1, 20, 5);
+    RecordRawLookup(2, 21, 5);
+    RecordLookup(3, 22);
+    RecordRawLookup(4, 26, 12);
+    RecordLookup(5, 27);
+#elif defined(NATIVE_CONTROL_TEXT)
     RecordRawLookup(0, MSG_CACHE_ZERO, 7);
     RecordRawLookup(1, MSG_CACHE_ONE, 6);
     RecordRawLookup(2, MSG_ODD, 5);

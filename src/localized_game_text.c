@@ -6,6 +6,7 @@
 
 #include "game_localization_declarations.h"
 #include "localized_text_codec.h"
+#include "text_utf8.h"
 
 static int LocalizedGameText_UsesLocalizedCatalog(ExpansionLocaleId locale)
 {
@@ -182,6 +183,27 @@ static enum LocalizedGameTextStatus LocalizedGameText_MapCodecStatus(
     }
 }
 
+static int LocalizedGameText_IsValidStream(const char *buffer, u32 length)
+{
+    const char *cursor;
+    const char *next;
+    struct TextUtf8Token token;
+    u32 remaining;
+
+    cursor = buffer;
+    remaining = length;
+    for (;;)
+    {
+        next = TextUtf8_NextBounded(cursor, remaining, &token);
+        if (token.kind == TEXT_UTF8_TOKEN_END)
+            return remaining == 1;
+        if (token.kind == TEXT_UTF8_TOKEN_INVALID || next == cursor)
+            return FALSE;
+        remaining -= (u32)(next - cursor);
+        cursor = next;
+    }
+}
+
 static enum LocalizedGameTextStatus LocalizedGameText_DecodeSelection(
     const struct LocalizedGameTextSelection *selection,
     char *buffer,
@@ -221,7 +243,7 @@ static enum LocalizedGameTextStatus LocalizedGameText_DecodeSelection(
     if (decodedLengthOut == 0)
         decodedLengthOut = &localDecodedLength;
 
-    codecStatus = LocalizedTextCodec_Decode(
+    codecStatus = LocalizedTextCodec_DecodeBitFramed(
         catalog->nodes,
         catalog->nodeCount,
         catalog->rootIndex,
@@ -229,12 +251,19 @@ static enum LocalizedGameTextStatus LocalizedGameText_DecodeSelection(
         entry->compressedSize,
         entry->bitLength,
         (u8 *)buffer,
-        bufferCapacity,
+        entry->maxDecodedBytes,
         decodedLengthOut);
+
+    if (codecStatus == LOCALIZED_TEXT_CODEC_OUTPUT_OVERFLOW)
+        codecStatus = LOCALIZED_TEXT_CODEC_TRAILING_DATA;
 
     mappedStatus = LocalizedGameText_MapCodecStatus(codecStatus);
     if (mappedStatus == LOCALIZED_GAME_TEXT_STATUS_OK)
-        return selection->successStatus;
+    {
+        if (LocalizedGameText_IsValidStream(buffer, *decodedLengthOut))
+            return selection->successStatus;
+        mappedStatus = LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT;
+    }
 
     if (mappedStatus == LOCALIZED_GAME_TEXT_STATUS_DECODE_OVERFLOW)
     {

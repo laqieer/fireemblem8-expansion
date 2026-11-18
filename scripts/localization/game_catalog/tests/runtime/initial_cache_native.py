@@ -105,7 +105,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
         return result.stdout
 
     def run_cache_scenario(self, *, mode="cache", generator=None):
-        if mode not in ("cache", "singleton", "controls"):
+        if mode not in ("cache", "singleton", "controls", "localized"):
             raise ValueError(f"unknown native text scenario {mode!r}")
         tools = _selected_tools(os.environ)
         paths = {
@@ -127,7 +127,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
             work = Path(directory)
             source = work / "texts.txt"
             definitions = work / "textdefs.txt"
-            if mode == "controls":
+            if mode in ("controls", "localized"):
                 messages = (
                     ("MSG_CACHE_ZERO", "一[LOAD][LOW_ZERO][X]"),
                     ("MSG_CACHE_ONE", "A[LOAD][HIGH_ZERO]B[X]"),
@@ -160,6 +160,7 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 sys.executable, "-B", generator or ROOT / "scripts/texttools/textprocess.py",
                 source, definitions, generated, header, "utf8",
             ], cwd=ROOT)
+            localized = mode == "localized"
             flags = [
                 *driver_flags,
                 "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-mabi=aapcs",
@@ -167,8 +168,9 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 "-fno-pic", "-fno-pie", "-fno-unwind-tables",
                 "-fno-asynchronous-unwind-tables", "-ffunction-sections", "-fdata-sections",
                 "-O1", "-g3", "-DMODERN=1", "-DNONMATCHING=1", "-DBUGFIX=1",
-                "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=1u",
-                "-DFE8_EXPANSION_DEFAULT_LOCALE_ID=0", "-DFE8_EXPANSION_STARTER_CONTENT=0",
+                f"-DFE8_EXPANSION_ENABLED_LOCALE_MASK={3 if localized else 1}u",
+                f"-DFE8_EXPANSION_DEFAULT_LOCALE_ID={1 if localized else 0}",
+                "-DFE8_EXPANSION_STARTER_CONTENT=0",
                 "-I" + str(ROOT / "include"), "-I" + str(ROOT), "-I" + str(work),
                 "-include", header,
                 "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types",
@@ -177,6 +179,8 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                 flags.append("-DNATIVE_SINGLETON_TEXT=1")
             elif mode == "controls":
                 flags.append("-DNATIVE_CONTROL_TEXT=1")
+            elif localized:
+                flags.append("-DNATIVE_LOCALIZED_TEXT=1")
             sources = [
                 ROOT / "src" / name for name in (
                     "msg.c", "ramfunc.c", "bmitem.c", "bmlib.c", "bmio.c", "bm.c",
@@ -184,6 +188,12 @@ class InitialMessageCacheNativeTests(unittest.TestCase):
                     "localized_game_text.c", "localized_text_codec.c", "text_utf8.c",
                 )
             ] + [generated, FIXTURES / "initial_cache_native.c"]
+            if localized:
+                from scripts.localization.game_catalog.tests.runtime.test_localized_game_text_runtime import (
+                    LocalizedGameTextRuntimeTests,
+                )
+                _, fixture = LocalizedGameTextRuntimeTests()._write_runtime_fixture(work)
+                sources.append(fixture)
             objects = []
             for path in sources:
                 target = work / path.with_suffix(".o").name
@@ -318,7 +328,12 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 for offset in range(0, size, 4)
             )
             phase, count, buffer_bytes, decoder, initial_id = struct.unpack_from("<5I", data)
-            self.assertEqual((phase, count, buffer_bytes, initial_id), (2, len(messages), 0x1000, 0))
+            expected_count = 28 if localized else len(messages)
+            expected_buffer = 0x1600 if localized else 0x1000
+            self.assertEqual(
+                (phase, count, buffer_bytes, initial_id),
+                (2, expected_count, expected_buffer, 0),
+            )
             self.assertGreaterEqual(decoder, 0x03000000)
             self.assertLess(decoder, 0x03007800)
             records = []
@@ -360,6 +375,16 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             (3, 7, b"\xe4\xb8\x80\x80\x10B\x00"),
             (4, 4, b"\x80\x00\x01\x00"),
             (5, 5, b"\x80\x01\x00B\x00"),
+        ])
+
+    def test_localized_control_operands_decode_on_native_arm(self):
+        self.assertEqual(self.run_cache_scenario(mode="localized"), [
+            (19, 11, b"\x10\x00\x01\xe7\x8c\xab\x80\x01\x00A\x00"),
+            (20, 5, b"\x10\x01\x00A\x00"),
+            (21, 5, b"\x10\x00\x00A\x00"),
+            (22, 11, b"<!LOC_BAD!>"),
+            (26, 12, b"\x80\x01\x00fallback\x00"),
+            (27, 11, b"<!LOC_BAD!>"),
         ])
 
     def test_selected_tools_keep_their_symlink_entrypoints(self):

@@ -12,11 +12,14 @@
  *
  * Input bits are consumed least-significant bit first. A symbol whose high
  * byte is nonzero emits low then high; generated catalogs never pair a zero
- * byte. A single-byte zero symbol is the only successful terminator.
+ * byte.
  *
  * inputBitLength is the exact meaningful bit count and must fit within
- * inputByteLength. The terminating NUL must consume the final meaningful bit;
- * a NUL followed by bits inside inputBitLength is trailing-data corruption.
+ * inputByteLength. The generic decoder requires a single-byte zero symbol to
+ * consume the final meaningful bit; a zero followed by meaningful bits is
+ * trailing-data corruption. The bit-framed decoder consumes all meaningful
+ * bits and requires the last decoded byte to be zero. Its caller must validate
+ * whether earlier zeros are valid control operands or premature terminators.
  * Byte padding outside inputBitLength is never consumed. outDecodedLength
  * includes the terminating NUL on success and on trailing-data failure. On
  * other failures it is the number of bytes safely written before the failure.
@@ -46,6 +49,17 @@ enum LocalizedTextCodecStatus
 };
 
 enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
+    const u32 *nodes,
+    u32 nodeCount,
+    u32 rootIndex,
+    const u8 *input,
+    u32 inputByteLength,
+    u32 inputBitLength,
+    u8 *output,
+    u32 outputCapacity,
+    u32 *outDecodedLength);
+
+enum LocalizedTextCodecStatus LocalizedTextCodec_DecodeBitFramed(
     const u32 *nodes,
     u32 nodeCount,
     u32 rootIndex,

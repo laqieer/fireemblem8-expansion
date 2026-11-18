@@ -71,10 +71,11 @@ missing outputs or stamps are restored without repeatedly invoking the producer.
 Normal builds make a lightweight output probe even on a no-op, so Make sees
 changes caused by `-W` as well as filesystem timestamps. `make -q` reports
 actual freshness, but `make -n` may conservatively list downstream work that a
-real no-op build skips. If both `MAKEFLAGS` and `MFLAGS` are overridden on the
-command line, Make hides its actual mode from the recipe graph; the probe stays
-enabled, so `make -q` conservatively reports stale rather than risking a stale
-consumer.
+real no-op build skips. Variable overrides or option ordering can hide Make's
+actual mode from the recipe graph. When the query flag is not visible in
+Make's internal flags or the first `MAKEFLAGS` word, the probe stays enabled,
+so `make -q` conservatively reports stale rather than risking a stale consumer.
+An assigned `MFLAGS` value is not treated as an actual execution mode.
 
 This is **per-file atomicity**, not a multi-file transaction. A replace failure
 after the header was committed can leave a complete new header and complete

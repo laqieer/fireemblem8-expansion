@@ -17,7 +17,7 @@ static int LocalizedTextCodec_IsLeaf(u32 node)
     return (node & LOCALIZED_TEXT_CODEC_LEAF_MASK) == LOCALIZED_TEXT_CODEC_LEAF_MASK;
 }
 
-enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
+static enum LocalizedTextCodecStatus LocalizedTextCodec_DecodeInternal(
     const u32 *nodes,
     u32 nodeCount,
     u32 rootIndex,
@@ -26,7 +26,8 @@ enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
     u32 inputBitLength,
     u8 *output,
     u32 outputCapacity,
-    u32 *outDecodedLength)
+    u32 *outDecodedLength,
+    int bitFramed)
 {
     u32 bitsConsumed;
     u32 byteIndex;
@@ -70,9 +71,11 @@ enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
         if (bitsConsumed >= inputBitLength)
         {
             *outDecodedLength = outputLength;
-            if (currentIndex == rootIndex)
-                return LOCALIZED_TEXT_CODEC_MISSING_TERMINATOR;
-            return LOCALIZED_TEXT_CODEC_TRUNCATED_INPUT;
+            if (currentIndex != rootIndex)
+                return LOCALIZED_TEXT_CODEC_TRUNCATED_INPUT;
+            if (bitFramed && outputLength != 0 && output[outputLength - 1] == 0)
+                return LOCALIZED_TEXT_CODEC_OK;
+            return LOCALIZED_TEXT_CODEC_MISSING_TERMINATOR;
         }
 
         node = nodes[currentIndex];
@@ -129,7 +132,7 @@ enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
         {
             output[outputLength++] = high;
         }
-        else if (low == 0)
+        else if (low == 0 && !bitFramed)
         {
             *outDecodedLength = outputLength;
             if (bitsConsumed != inputBitLength)
@@ -139,6 +142,38 @@ enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
 
         currentIndex = rootIndex;
     }
+}
+
+enum LocalizedTextCodecStatus LocalizedTextCodec_Decode(
+    const u32 *nodes,
+    u32 nodeCount,
+    u32 rootIndex,
+    const u8 *input,
+    u32 inputByteLength,
+    u32 inputBitLength,
+    u8 *output,
+    u32 outputCapacity,
+    u32 *outDecodedLength)
+{
+    return LocalizedTextCodec_DecodeInternal(
+        nodes, nodeCount, rootIndex, input, inputByteLength, inputBitLength,
+        output, outputCapacity, outDecodedLength, 0);
+}
+
+enum LocalizedTextCodecStatus LocalizedTextCodec_DecodeBitFramed(
+    const u32 *nodes,
+    u32 nodeCount,
+    u32 rootIndex,
+    const u8 *input,
+    u32 inputByteLength,
+    u32 inputBitLength,
+    u8 *output,
+    u32 outputCapacity,
+    u32 *outDecodedLength)
+{
+    return LocalizedTextCodec_DecodeInternal(
+        nodes, nodeCount, rootIndex, input, inputByteLength, inputBitLength,
+        output, outputCapacity, outDecodedLength, 1);
 }
 
 #endif /* FE8_LOCALIZED_TEXT_CODEC_ENABLED */

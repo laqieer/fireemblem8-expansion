@@ -2,6 +2,7 @@ import shutil
 import hashlib
 import json
 import os
+import struct
 import subprocess
 import sys
 import unittest
@@ -317,6 +318,62 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["locales"]["ja"]["explicit_fallback_count"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["provider_counts"]["raw"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
+
+    def test_control_zeros_survive_generated_arm_catalog(self):
+        from scripts.localization.game_catalog.compiled_fonts import _ArmObject
+        from scripts.texttools.multilang_codec import DecodeStatus, decompress_bounded
+
+        with (self.fixture_dir / "textdefs.txt").open("a", encoding="utf-8") as stream:
+            stream.write("[ColorZero] = 0x80, 1, 0\n")
+        (self.fixture_dir / "texts.txt").write_text(
+            "#0x0\nEnglish[ColorZero]A[X]\n"
+            "## MSG_FIXTURE_ONE\nOne[X]\n## MSG_FIXTURE_TWO\nTwo[X]\n",
+            encoding="ascii",
+        )
+        (self.fixture_dir / "ja_indexed.txt").write_text(
+            "#0x0000\n日[CTRL:0080][CTRL:0001][CTRL:0000]A\n",
+            encoding="utf-8",
+        )
+        build = self._build_fixture(enabled_locales=("ja",))
+        expected = {
+            "English": b"English\x80\x01\x00A\x00",
+            "Ja": "日".encode("utf-8") + b"\x80\x01\x00A\x00",
+        }
+        output = self.fixture_dir / "control-native"
+        written = write_build(build, output_dir=output)
+        compiler = shutil.which(os.environ.get("MODERN_CC", "arm-none-eabi-gcc"))
+        if compiler is None:
+            self.skipTest("selected ARM compiler required")
+        obj = output / "catalog.o"
+        compiled = subprocess.run(
+            [
+                compiler, "-mcpu=arm7tdmi", "-mthumb", "-mabi=aapcs", "-std=gnu89",
+                "-DMODERN=1", "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=3u",
+                "-I" + str(output), "-I" + str(ROOT / "include"), "-I" + str(ROOT),
+                "-c", str(written["source"]), "-o", str(obj),
+            ],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+        native = _ArmObject(obj)
+        for suffix, payload in expected.items():
+            with self.subTest(locale=suffix):
+                bundle = build.english if suffix == "English" else build.locale_bundle("ja")
+                symbol = f"gGameLocalization{suffix}"
+                node_bytes = native.symbol_bytes(native.symbol(symbol + "Nodes"))
+                nodes = struct.unpack(f"<{len(node_bytes) // 4}I", node_bytes)
+                blob = native.symbol_bytes(native.symbol(symbol + "CompressedBlob"))
+                entries = native.symbol_bytes(native.symbol(symbol + "Entries"))
+                offset, size, bits, bound, present, _, _, _ = struct.unpack_from(
+                    "<IIIIBBBB", entries
+                )
+                self.assertEqual((offset, present), (0, 1))
+                result = decompress_bounded(
+                    nodes, len(nodes), bundle.catalog.root_index, blob, size, bits,
+                    bound, bit_framed=True,
+                )
+                self.assertEqual(result.status, DecodeStatus.OK)
+                self.assertEqual(result.data, payload)
 
     def test_build_uses_supplied_talk_widths(self):
         with (self.fixture_dir / "textdefs.txt").open("a", encoding="utf-8") as stream:

@@ -51,6 +51,15 @@ JA_MESSAGES = (
     ((b"\x80\x20" * 2800) + b"\x00"),
     ((b"\x80\x20" * 170) + "猫\x00".encode("utf-8")),
     "剣\x00".encode("utf-8"),
+    b"\x10\x00\x01" + "猫".encode("utf-8") + b"\x80\x01\x00A\x00",
+    b"\x10\x01\x00A\x00",
+    b"\x10\x00\x00A\x00",
+    b"A\x00B\x00",
+    b"\x10\x01\x00",
+    b"\x80\x01\x00",
+    b"\x10\x00\x01\x80\x20Z\x00",
+    None,
+    b"bad bound\x00",
 )
 
 ENGLISH_MESSAGES = (
@@ -73,6 +82,15 @@ ENGLISH_MESSAGES = (
     b"D\x80\x20\x00",
     b"E\x80\x20\x00",
     b"Item\x00",
+    b"\x10\x01\x00Hello\x00",
+    b"English twenty\x00",
+    b"English twenty-one\x00",
+    b"English twenty-two\x00",
+    b"English twenty-three\x00",
+    b"English twenty-four\x00",
+    b"English twenty-five\x00",
+    b"\x80\x01\x00fallback\x00",
+    b"English twenty-seven\x00",
 )
 
 
@@ -116,8 +134,8 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
         return result
 
     def _write_runtime_fixture(self, build_dir: Path):
-        catalog = build_catalog(JA_MESSAGES)
-        english_catalog = build_catalog(ENGLISH_MESSAGES)
+        catalog = build_catalog(JA_MESSAGES, bit_framed=True)
+        english_catalog = build_catalog(ENGLISH_MESSAGES, bit_framed=True)
         if catalog.root_index is None:
             raise AssertionError("fixture catalog unexpectedly missing root")
         if english_catalog.root_index is None:
@@ -140,13 +158,14 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
             bit_length = entry.bit_length
             if index == 3:
                 bit_length -= 1
+            decoded = entry.decoded_size - 1 if index == 27 else entry.decoded_size
             entries.append(
                 "    {{ gJaCompressed + {offset}u, {size}u, {bits}u, {decoded}u, "
                 "1u, 1u, 0u, 0u }},".format(
                     offset=entry.pointer_offset,
                     size=entry.compressed_size,
                     bits=bit_length,
-                    decoded=entry.decoded_size,
+                    decoded=decoded,
                 )
             )
 
@@ -191,7 +210,7 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
             "#include \"localized_game_text.h\"\n"
             "#include \"localized_game_text_storage.h\"\n"
             "#include \"game_localization_catalog.h\"\n\n"
-            "struct MsgBuffer sMsgString = {{0}};\n"
+            "EWRAM_DATA struct MsgBuffer sMsgString = {{0}};\n"
             "const u32 gLocalizedGameTextStorageCapacity = sizeof(sMsgString);\n"
             "const u32 gGameLocalizationJaDisplayAliasCount = 1u;\n"
             "const u32 gGameLocalizationZhHansDisplayAliasCount = 0u;\n"
@@ -350,6 +369,7 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
                 str(build_dir),
                 str(ROOT / "src" / "localized_text_codec.c"),
                 str(ROOT / "src" / "localized_game_text.c"),
+                str(ROOT / "src" / "text_utf8.c"),
                 str(written["source"]),
                 str(AUTHORED_CORPUS_DRIVER),
                 "-o",
