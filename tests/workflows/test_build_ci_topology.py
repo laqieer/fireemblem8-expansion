@@ -2568,6 +2568,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         } <= packages)
         self.assertNotIn("libstdc++-arm-none-eabi-newlib", packages)
 
+    def test_modern_arm_setup_avoids_unneeded_target_cpp_recommendations(self):
+        _, _, jobs = verify._parse_workflow_structure_text(self.text)
+        modern = next(steps for name, _, steps in jobs if name == "build")
+        setup = next(dict(fields) for _, name, fields in modern if name == "Install dependencies")
+        installs = [
+            command[command.index("install") + 1:]
+            for command in verify._semantic_run_commands(tuple(setup.items()))
+            if command[:2] == ("sudo", "apt-get") and "install" in command
+        ]
+        self.assertEqual(len(installs), 1)
+        self.assertIn("--no-install-recommends", installs[0])
+        self.assertTrue({
+            "build-essential", "binutils-arm-none-eabi", "gcc-arm-none-eabi",
+            "libpng-dev", "pkg-config", "libnewlib-arm-none-eabi", "libmgba-dev",
+        } <= set(installs[0]))
+        self.assertNotIn("libstdc++-arm-none-eabi-newlib", installs[0])
+
     def test_protected_environment_is_exact_and_cannot_mask_python(self):
         workflow_env_variants = (
             "env:\n  BASH_ENV: build/python-mask.sh\n",

@@ -16,13 +16,17 @@ workflow, using credentials, or changing ROM behavior.
 From the repository root, run:
 
 ```bash
-python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_supported_host_platform_is_pinned_for_every_build_job tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_real_workflow_consolidates_candidate_and_master_evidence tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_gate_argv_matches_workflow_commands_in_order -v
+python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_supported_host_platform_is_pinned_for_every_build_job tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_real_workflow_consolidates_candidate_and_master_evidence tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_modern_arm_setup_avoids_unneeded_target_cpp_recommendations tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_archival_arm_setup_avoids_unneeded_target_cpp_recommendations tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_gate_argv_matches_workflow_commands_in_order -v
 ```
 
 ### Expected result
 
 The production workflow parser reads the actual eight-job mapping, accepting
 `ubuntu-24.04` for every job.
+Both ARM setup paths suppress optional recommended packages while retaining
+their explicit C compiler, newlib and other required dependencies. Modern setup
+uses the archival path's existing `--no-install-recommends` policy; no build
+gate or timeout is removed or extended.
 
 ### Negative control
 
@@ -34,6 +38,12 @@ supplies the original behavioral failure: Ubuntu 26.04.1 selected through
 `ubuntu-latest` rejected the supported Python profile, GNU Make observation ABI,
 and Python wheel hash. The existing topology, command mirror, dependency hashes,
 version checks, security controls and full job set must remain intact.
+Removing the modern recommendation policy fails its parsed-command regression.
+[Build 44270407132](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44270407132)
+records the coupled setup failure: a 463 MB optional ARM C++ library download
+consumed the remaining modern job window before any compiler check ran.
+Suppressing recommendations does not guarantee network speed; hosted execution
+must still finish every required check.
 
 ### Interactions and save compatibility
 
