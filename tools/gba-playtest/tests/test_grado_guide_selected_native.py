@@ -28,6 +28,8 @@ class GuideSelectionProbe(ctypes.LittleEndianStructure):
             "readCount", "topicCount", "chapterCount", "sortSet", "sortCleared",
             "sortChapterMode", "sortChapterFlag", "sortTopicMode", "sortTopicFlag",
             "redrawCount", "unexpectedCall",
+            "prologueFlag", "worldFlag", "natasha", "falk", "normalEventFlag",
+            "bgmEventFlag", "directEventFlag", "dynamicEventFlag",
         )
     ] + [
         (name, ctypes.c_uint8 * size)
@@ -37,6 +39,7 @@ class GuideSelectionProbe(ctypes.LittleEndianStructure):
             ("resetPermanent", 25), ("resetChapter", 5), ("unlockedPermanent", 25),
             ("sortChapterPermanent", 25), ("sortChapterFlags", 5),
             ("afterConsumersPermanent", 25), ("afterConsumersChapter", 5),
+            ("afterInheritedPermanent", 25), ("afterInheritedChapter", 5),
         )
     ]
 
@@ -73,8 +76,11 @@ class GradoSelectedGuideNativeTests(unittest.TestCase):
                 "FE8_PROJECT_REPLACE := code\n"
                 "FE8_PROJECT_INHERIT := $(filter-out code,$(FE8_PROJECT_MODULES))\n"
                 f"FE8_PROJECT_CODE_REPLACEMENTS := src/bmguide.c={project_path}/src/static_guide.c "
-                f"src/eventinfo.c={project_path}/src/native_flags.c\n"
-                f"FE8_PROJECT_C_SOURCES := {project_path}/src/state.c\n",
+                f"src/eventinfo.c={project_path}/src/native_flags.c "
+                f"src/events_script.c={project_path}/src/static_guide_events.c "
+                f"src/events_wm.c={project_path}/src/static_guide_worldmap.c\n"
+                f"FE8_PROJECT_C_SOURCES := {project_path}/src/state.c "
+                f"{project_path}/src/values.c {project_path}/src/campaign_state.c\n",
                 encoding="ascii",
             )
             inherited_environment = dict(os.environ, EXPANSION_AUTOPLAY_PLANNER="1")
@@ -91,9 +97,15 @@ class GradoSelectedGuideNativeTests(unittest.TestCase):
             output = build_root / "projects" / project.name / "probe" / config / "aapcs"
         else:
             output = build_root / config / "aapcs"
-        sources = ["src/bmguide.o", "src/eventinfo.o", "src/bmguide_config.o"]
+        sources = [
+            "src/bmguide.o", "src/eventinfo.o", "src/bmguide_config.o",
+            "src/events_script.o", "src/events_wm.o", "src/eventscr.o",
+        ]
         if selected:
-            sources.append(f"examples/{project.name}/src/state.o")
+            sources.extend(
+                f"examples/{project.name}/src/{name}.o"
+                for name in ("state", "values", "campaign_state")
+            )
         objects = [output / source for source in sources]
         environment = inherited_environment.copy()
         toolchain_overrides = {
@@ -290,6 +302,21 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         self.assertEqual(bytes(probe.sortChapterFlags), b"\xA6" * 5)
         self.assertEqual(bytes(probe.afterConsumersPermanent), unlocked)
         self.assertEqual(bytes(probe.afterConsumersChapter), b"\xA6" * 5)
+        self.assertEqual(probe.prologueFlag, int(not selected))
+        self.assertEqual(probe.worldFlag, int(not selected))
+        self.assertEqual(probe.natasha, 0 if selected else 0xFFFFFFFF)
+        self.assertEqual(probe.falk, 0 if selected else 0xFFFFFFFF)
+        self.assertEqual(
+            (probe.normalEventFlag, probe.bgmEventFlag, probe.directEventFlag, probe.dynamicEventFlag),
+            (1, 1, 1, 1),
+        )
+        inherited = bytearray(reset)
+        if not selected:
+            for flag in (180, 181, 226):
+                position = flag - 101
+                inherited[position // 8] |= 1 << (position % 8)
+        self.assertEqual(bytes(probe.afterInheritedPermanent), inherited)
+        self.assertEqual(bytes(probe.afterInheritedChapter), b"\xA6" * 5)
         resources = {
             name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
             - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])

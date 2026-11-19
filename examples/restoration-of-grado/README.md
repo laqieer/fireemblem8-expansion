@@ -49,9 +49,17 @@ real permanent-flag reset. New-game callers keep that same native reset
 interface. The header derives the internal native ID from the same
 allocation definition, not a second numeric owner.
 
-An eventual project must select both replacements and include `src/state.c`;
-neither replacement is activated by this reference. A permanent reset clears
-the original permanent buffer then sets only truth, leaving chapter bits
+An eventual project must select both replacements and include `src/state.c`.
+If it inherits the native chapter and world-map scripts, it must also replace
+their `src/events_script.c` and `src/events_wm.c` code slots with
+`src/static_guide_events.c` and `src/static_guide_worldmap.c`. Those providers
+compile the inherited guide-unlock commands as equal-length no-ops; ordinary
+native commands remain unchanged. Compile project-authored events separately
+with the normal event macros: their direct and dynamic flag writes must not
+be suppressed. A project that replaces the inherited scripts must instead
+account for all guide producers in its selected sources. None of these
+replacements is activated by this reference. A permanent reset clears the
+original permanent buffer then sets only truth, leaving chapter bits
 unchanged. This is new-game/reset behavior, not a load-recovery operation.
 
 The candidate campaign allocation now names all 227 FLAG and 16 STATE entries
@@ -559,10 +567,11 @@ For the separate project-selection and ARM runtime subcase:
    with the supported ARM toolchain and libmGBA. It creates and removes its
    own temporary project and build directories; no save or existing project
    is changed. The existing debug ARM-enabled linker suite also runs it.
-2. The real Make project selector compiles the guide and event-info logical
-   slots with both adapters and `state.c`, requiring epoch 256 for the
-   temporary selected configuration. The default control uses the original
-   slots and epoch 2. Run each as a debug and release AAPCS module.
+2. The real Make project selector compiles the guide, event-info, inherited
+   chapter-event and world-map-event slots with their adapters and the
+   campaign state modules, requiring epoch 256 for the temporary selected
+   configuration. The default control uses the original slots and epoch 2.
+   Run each as a debug and release AAPCS module.
 3. With guide truth unset but reclaimed display/read bits set, the selected
    guide remains locked; the default control exposes an unread entry. Seed
    every permanent byte before reset. The selected permanent reset clears
@@ -582,6 +591,15 @@ For the separate project-selection and ARM runtime subcase:
    measurements are printed for each configuration. The fixture isolates
    inherited feature settings, preserves toolchain overrides and links inside
    a non-ASCII build directory.
+5. After a fresh reset, execute the flag commands from the real prologue and
+   chapter-2 world-map tutorial scripts with the native event handler. The
+   default sets the guide flags; the selected scripts preserve both complete
+   flag buffers and the campaign readers report Natasha's retreat and CH07
+   Falk as unset. A native non-guide event still sets its normal flags, and
+   separately compiled project direct and dynamic event writes still set a
+   reclaimed flag. The host test decodes every script in those two compiled
+   event providers against the actual guide table, checks guide writes and
+   other commands, and refuses an unhandled direct guide clear or check.
 
 The test selects real source slots but deliberately splits functions and
 `CONST_DATA` into per-symbol writable sections. A test-owned proc adapter checks
@@ -590,7 +608,9 @@ unrelated UI/audio adapters abort if reached, with sound effects disabled.
 The synthetic key events do not test physical key sampling. Test-owned
 buffers are not the complete game linker layout. These observations do not
 establish whole-game ROM/RAM, rendered guide UI, reopening the guide, a
-supported project profile, or save/load behavior.
+supported project profile, or save/load behavior. The event probe dispatches
+the native flag commands while skipping unrelated event commands; it does not
+run the complete chapter or world-map event engine.
 
 ## TC-GRADO-STATE-VALUES-001
 

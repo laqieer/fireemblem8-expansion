@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -46,6 +47,48 @@ class GradoAllocationNativeTests(unittest.TestCase):
             cwd=ROOT, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def _arm_data_symbols(self, path):
+        compiler = self._arm_command()[0]
+        binutils = os.environ.get("MODERN_BINUTILS_DIR")
+        nm = discover_tool(compiler, binutils, "nm")
+        objcopy = discover_tool(compiler, binutils, "objcopy")
+        result = subprocess.run(
+            [str(nm), "-S", "--defined-only", "--format=posix", str(path)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with tempfile.TemporaryDirectory() as temporary:
+            data_file = Path(temporary) / "data.bin"
+            dump = subprocess.run(
+                [str(objcopy), "--dump-section", f".data={data_file}", str(path)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(dump.returncode, 0, dump.stdout + dump.stderr)
+            data = data_file.read_bytes()
+        symbols = {}
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) != 4 or fields[1] != "D":
+                continue
+            name, _, address, size = fields
+            begin, size = int(address, 16), int(size, 16)
+            self.assertLessEqual(begin + size, len(data), name)
+            symbols[name] = data[begin:begin + size]
+        return symbols
+
+    def _arm_data_relocations(self, path):
+        readelf = discover_tool(
+            self._arm_command()[0], os.environ.get("MODERN_BINUTILS_DIR"), "readelf",
+        )
+        result = subprocess.run(
+            [str(readelf), "-rW", str(path)], capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return [
+            row for row in parse_readelf_relocations(result.stdout)
+            if row.section_name == ".rel.data"
+        ]
 
     def test_native_compiler_honors_owned_toolchain_paths(self):
         compiler = shutil.which(self._arm_command()[0])
@@ -131,6 +174,79 @@ class GradoAllocationNativeTests(unittest.TestCase):
                 any(row.symbol_name == "GradoGuide_" + name for row in records)
                 for name in ("CheckFlag", "SetFlag", "ClearFlag")
             ))
+
+    def test_inherited_event_scripts_preserve_only_non_guide_flag_commands(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            guide_object = root / "guide-table.o"
+            self._arm_compile(ROOT / "src/bmguide_config.c", guide_object)
+            table = self._arm_data_symbols(guide_object)["gGuideTable"]
+            self.assertEqual(len(table) % 12, 0)
+            guide_flags = set()
+            sentinel = False
+            for entry in struct.iter_unpack("<BBHHHHH", table):
+                if entry[0] == 12:
+                    sentinel = True
+                    break
+                guide_flags.update((entry[4], entry[5]))
+            self.assertTrue(sentinel)
+            self.assertTrue(guide_flags)
+
+            dynamic_seen = False
+            for original, selected in (
+                ("events_script.c", "static_guide_events.c"),
+                ("events_wm.c", "static_guide_worldmap.c"),
+            ):
+                with self.subTest(provider=original):
+                    native_object = root / f"native-{original}.o"
+                    selected_object = root / f"selected-{original}.o"
+                    self._arm_compile(ROOT / "src" / original, native_object)
+                    self._arm_compile(EXAMPLE / "src" / selected, selected_object)
+                    native = {
+                        name: value for name, value in self._arm_data_symbols(native_object).items()
+                        if name.startswith("EventScr")
+                    }
+                    replacement = {
+                        name: value for name, value in self._arm_data_symbols(selected_object).items()
+                        if name.startswith("EventScr")
+                    }
+                    self.assertTrue(native)
+                    self.assertEqual(native.keys(), replacement.keys())
+                    relocations = self._arm_data_relocations(native_object)
+                    self.assertTrue(relocations)
+                    self.assertEqual(relocations, self._arm_data_relocations(selected_object))
+                    changed = 0
+                    for name, script in native.items():
+                        candidate = replacement[name]
+                        self.assertEqual(len(script), len(candidate), name)
+                        offset = 0
+                        while offset < len(script):
+                            self.assertLessEqual(offset + 4, len(script), name)
+                            word = struct.unpack_from("<I", script, offset)[0]
+                            command, flag = word & 0xFFFF, word >> 16
+                            opcode, subcommand = command >> 8, command & 0xF
+                            length = ((command >> 4) & 0xF) * 2
+                            self.assertTrue(length and length % 4 == 0, (name, offset))
+                            self.assertLessEqual(offset + length, len(script), (name, offset))
+                            expected = script[offset:offset + length]
+                            if flag in guide_flags and (
+                                (opcode == 2 and subcommand == 1)
+                                or (opcode == 3 and subcommand == 1)
+                            ):
+                                self.fail(f"unhandled inherited guide clear/check in {name}")
+                            if opcode == 2 and subcommand == 9:
+                                dynamic_seen |= flag == 0xFFFF
+                                if flag in guide_flags:
+                                    self.assertEqual(length, 4, (name, offset))
+                                    expected = struct.pack("<I", 0x20)
+                                    changed += 1
+                            self.assertEqual(
+                                candidate[offset:offset + length], expected,
+                                f"{name} command at byte {offset}",
+                            )
+                            offset += length
+                    self.assertGreater(changed, 0, original)
+            self.assertTrue(dynamic_seen)
 
     def test_static_guide_preserves_real_content_and_flag_backing(self):
         with tempfile.TemporaryDirectory() as temporary:

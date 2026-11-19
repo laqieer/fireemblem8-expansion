@@ -1,11 +1,12 @@
 #include "global.h"
 
 #include "constants/event-flags.h"
+#include "../include/grado_guide_flag_ownership.h"
 #include "../include/grado_state.h"
 
 int GradoState_IsProgressiveGuideFlag(unsigned int flag)
 {
-    return (flag >= 0xB4 && flag <= 0xEB) || (flag >= 0xF0 && flag <= 0x127);
+    return GRADO_STATE_IS_PROGRESSIVE_GUIDE_FLAG(flag);
 }
 
 static int GradoState_IsReservedFlag(unsigned int flag, unsigned int scope)
