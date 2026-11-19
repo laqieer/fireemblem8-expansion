@@ -2727,9 +2727,12 @@ current branch are selected explicitly:
 GitHub cannot return a complete open-PR list, if multiple implementation PRs
 match, or if the selected PR/branch differs. Closing-issue relations, exact
 issue references in titles, implementation branches, and actionable PR-body
-references identify implementation candidates; `Part of` and `Depends on`
-body references remain related context. Do not close an existing PR based only
-on its title. For a stale/superseded PR, record the reason and intended
+references identify implementation candidates, including issue-qualified
+Markdown link labels; `Part of` and `Depends on` body references remain
+related context. A new-root assignment may begin without a PR, then bind the
+published PR number in its first successor; later successors retain that
+number. Do not close an existing PR based only on its title. For a
+stale/superseded PR, record the reason and intended
 replacement branch in issue/coordination evidence, close the unusable PR, then
 rerun preflight before creating a replacement assignment or PR.
 

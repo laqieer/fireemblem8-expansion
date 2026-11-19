@@ -6781,6 +6781,9 @@ ROM, emulator, or remote mutation. The live preflight command is read-only.
    unusable PR, then rerun preflight before dispatching replacement work.
 4. Do not create an assignment or PR as part of this test procedure. Confirm
    that `assign` repeats the preflight before reserving work.
+5. Exercise a new-root assignment with no PR, publish its matching PR, then
+   create a successor assignment bound to that PR number and current branch.
+   Confirm later successors retain the same issue and PR identity.
 
 ### Expected result
 
@@ -6788,18 +6791,24 @@ An empty matching-PR set permits a new root. A unique existing implementation
 PR blocks an unbound root and permits continuation only when both the selected
 PR number and current branch match. Same-repository closing-issue relations,
 exact issue references in the title or branch, and actionable body directives
-identify implementation candidates. Related-only `Part of` or `Depends on`
-references do not. GitHub discovery errors and incomplete/ambiguous results
-fail closed.
+identify implementation candidates, including same-repository qualified
+references, issue URLs, and issue-prefixed Markdown link labels. A new-root
+lineage may bind its first published PR in a successor; that PR identity is
+then retained. Related-only `Part of` or `Depends on` references do not.
+GitHub discovery errors and incomplete/ambiguous results fail closed.
 
 ### Negative controls
 
 - `#1178` does not match issue `#178`; a closing reference from another
   repository does not match.
+- An issue-qualified Markdown link is an implementation reference, while a
+  related-only link is not.
 - `Part of #178` and `Depends on #178` alone do not identify an implementation
   PR.
 - An open matching PR without explicit selection, a wrong PR or branch, and
   multiple matching PRs are rejected.
+- A successor cannot drop or replace a PR identity once the lineage has bound
+  one.
 - A stale PR that remains open still blocks a replacement. Replacement is
   permitted only after its disposition is recorded, it is closed, and
   preflight is rerun.
@@ -6822,6 +6831,7 @@ python3 -m unittest \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_issue_pr_preflight_uses_exact_implementation_references \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_continues_one_selected_pr_and_blocks_duplicates \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
 ```
 

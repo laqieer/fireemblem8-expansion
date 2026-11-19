@@ -755,6 +755,39 @@ class ExactHandoffTests(unittest.TestCase):
             })
         self.assertEqual(len(handoff.validate_state(f.state)["assignments"]), 3)
 
+    def test_successor_binds_published_pr_to_new_root_lineage(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.assignment["pull_request"] = None
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[]):
+            f.entry = handoff.assign(f.state, f.assignment)
+        result = f.complete()
+        self.assertTrue(f.validate(result)["handoff_ready"])
+
+        successor = {
+            **f.assignment,
+            "id": "assignment-two",
+            "owner_id": "owner-two",
+            "session_id": "session-two",
+            "dispatch_id": "dispatch-two",
+            "pull_request": 192,
+            "assigned_parent_sha": result["result_sha"],
+            "predecessor_id": f.assignment["id"],
+            "kind": "review",
+        }
+        published_pr = {
+            "number": 192,
+            "title": "Fix issue #178",
+            "body": "",
+            "headRefName": "agent/test",
+            "closingIssuesReferences": [],
+        }
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[published_pr]):
+            entry = handoff.assign(f.state, successor)
+
+        self.assertEqual(entry["assignment"]["pull_request"], 192)
+        self.assertEqual(len(handoff.validate_state(f.state)["assignments"]), 2)
+
     def test_issue_pr_preflight_uses_exact_implementation_references(self):
         def pull_request(*, number=200, title="Unrelated", body="", branch="feature/other",
                          closing=()):
@@ -769,6 +802,8 @@ class ExactHandoffTests(unittest.TestCase):
             (pull_request(body="Refs #178"), "body"),
             (pull_request(body="Fix #178"), "body"),
             (pull_request(body="Fixes owner/repository#178"), "body"),
+            (pull_request(body="Fix https://github.com/owner/repository/issues/178"), "body"),
+            (pull_request(body="Implements [issue #178](https://github.com/owner/repository/issues/178)"), "body"),
             (pull_request(body="Address #178"), "body"),
             (pull_request(body="Addresses owner/repository#178"), "body"),
             (pull_request(closing=({

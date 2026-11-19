@@ -436,8 +436,10 @@ def validate_state(value):
         require(previous["closed_at"] is not None
                 and timestamp(entry["assigned_at"]) > timestamp(previous["closed_at"]),
                 "successor overlaps previous owner")
-        require(previous["assignment"]["issue"] == a["issue"]
-                and previous["assignment"]["pull_request"] == a["pull_request"],
+        previous_assignment = previous["assignment"]
+        require(previous_assignment["issue"] == a["issue"]
+                and (previous_assignment["pull_request"] is None
+                     or previous_assignment["pull_request"] == a["pull_request"]),
                 "successor context mismatch")
         if a["kind"] == "replacement":
             require(previous["interruption"] is not None and previous["assignment"]["kind"] != "replacement",
@@ -581,7 +583,7 @@ def implementation_pull_request_matches(repository, issue, pull_request):
     )
     body_pattern = re.compile(
         rf"\b(?:closes?|fix(?:es)?|resolves?|implements?|address(?:es)?|refs?)\b"
-        rf"\s*:?\s+(?:the\s+)?(?:issue\s+)?\[?{body_reference}(?![A-Za-z0-9])",
+        rf"\s*:?\s+(?:the\s+)?\[?(?:issue\s+)?{body_reference}(?![A-Za-z0-9])",
         re.IGNORECASE,
     )
     if body_pattern.search(body):
