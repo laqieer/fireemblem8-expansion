@@ -366,9 +366,9 @@ checks and full candidate/master Build evidence.
    ```
 
 4. Exercise mutations that change a supported runner to `ubuntu-latest`,
-   `ubuntu-latest`  to `ubuntu-24.04`, a self-hosted runner, a container,
-   a matrix or a duplicate/spaced/quoted runner key. Every mutation must fail
-   the corresponding parsed contract.
+   `ubuntu-26.04`, a self-hosted runner, a container, a matrix or a
+   duplicate/spaced/quoted runner key. Every mutation must fail the
+   corresponding parsed contract.
 5. Live delivery requires the exact candidate full Build on the selected
    platform, followed by automatic exact-master Build and
    `make remote-completion-check`.

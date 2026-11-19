@@ -3011,7 +3011,7 @@
       "prerequisites": "Clean Linux source checkout. No ROM, save, ARM debugger, emulator or live credentials for local parser fixtures.",
       "actions": "Parse Build and upstream-drift workflow mappings; require ubuntu-24.04 on every supported host job. Run parsed topology/verifier/drift tests, including runner mutation negatives. Live candidate and master delivery require exact-head and exact-master full Build evidence.",
       "expected_result": "All supported Build jobs and upstream drift use Ubuntu 24.04; existing Python, Make, wheel, ownership and worker contracts remain unchanged.",
-      "negative_control": "ubuntu-latest, other Ubuntu images, self-hosted, container, matrix, spaced/quoted/duplicate runner keys and alternate platform mappings fail.",
+      "negative_control": "ubuntu-latest, ubuntu-26.04, self-hosted, container, matrix, spaced/quoted/duplicate runner keys and alternate platform mappings fail.",
       "interactions": "Independent implementation on master with no ROM/RAM/save/config/generated-data/locale/modern/archival interaction.",
       "save_compatibility": "No save or migration change.",
       "cleanup": "Temporary test repositories clean themselves up.",
