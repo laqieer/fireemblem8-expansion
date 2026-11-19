@@ -93,7 +93,10 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                 "banim_presentation", "bmtrick", "hardware", "event", "bmmap", "msg_data",
             ))
             sources.extend(ROOT / "examples/restoration-of-grado/src" / name
-                for name in ("state.c", "values.c", "campaign_state.c", "lifecycle.c"))
+                for name in (
+                    "state.c", "values.c", "campaign_state.c", "lifecycle.c",
+                    "native_save_load.c", "native_save_load_ui.c",
+                ))
             assembly.extend((
                 (ROOT / "asm/arm.s", "arm.o"),
                 (ROOT / "asm/arm_call.s", "arm_call.o"),
@@ -355,19 +358,44 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         _, native_size = resolve_elf_symbol(
             elf, "gGradoNativeSaveProbe", tools["MODERN_NM"])
         self.assertEqual(native_size, 8 + 5 * 28)
+        _, caller_size = resolve_elf_symbol(
+            elf, "gGradoNativeLoadRefusalProbe", tools["MODERN_NM"])
+        self.assertEqual(caller_size, 9 * 4)
+
+        semantic_frame_budget = 10_000
 
         def capture_semantic(name, keys, count):
             semantic_scenario = work / f"semantic-{name}-scenario.json"
             semantic_scenario.write_text(json.dumps({
-                "schema_version": 1, "name": f"grado-semantic-{name}",
-                "frames": [{"start": 0, "end": 120, "keys": keys}],
-                "checkpoints": [{
-                    "name": name, "frame": 120, "framebuffer": False,
-                    "probes": [
-                        {"address": f"gGradoSemanticSaveProbe+0x{offset:x}", "size": 4}
-                        for offset in range(0, semantic_size, 4)
-                    ],
-                }],
+                "schema_version": 2, "name": f"grado-semantic-{name}",
+                "frames": [{"start": 0, "end": semantic_frame_budget - 1, "keys": keys}],
+                "run_until": {
+                    "max_frames": semantic_frame_budget,
+                    "terminal_conditions": [{
+                        "reason": "success",
+                        "all": [
+                            {
+                                "address": "gGradoSemanticSaveProbe+0x0",
+                                "size": 4,
+                                "operator": "eq",
+                                "value": "0x00000002",
+                            },
+                            {
+                                "address": "gGradoSemanticSaveProbe+0x4",
+                                "size": 4,
+                                "operator": "eq",
+                                "value": f"0x{count:08x}",
+                            },
+                        ],
+                    }],
+                    "checkpoint": {
+                        "name": name, "framebuffer": False,
+                        "probes": [
+                            {"address": f"gGradoSemanticSaveProbe+0x{offset:x}", "size": 4}
+                            for offset in range(0, semantic_size, 4)
+                        ],
+                    },
+                },
             }), encoding="utf-8")
             semantic_output = work / f"semantic-{name}-capture.json"
             self.run_command([
@@ -416,6 +444,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     "probes": [
                         {"address": f"gGradoNativeSaveProbe+0x{offset:x}", "size": 4}
                         for offset in range(0, native_size, 4)
+                    ] + [
+                        {"address": f"gGradoNativeLoadRefusalProbe+0x{offset:x}", "size": 4}
+                        for offset in range(0, caller_size, 4)
                     ],
             }],
         }), encoding="utf-8")
@@ -466,8 +497,19 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             self.assertTrue(all(
                 record[4:6] == (native_no_slot, native_no_slot) for record in native
             ), native)
+        caller_data = b"".join(
+            native_values[
+                f"gGradoNativeLoadRefusalProbe+0x{offset:x}"
+            ].to_bytes(4, "little")
+            for offset in range(0, caller_size, 4)
+        )
+        caller = struct.unpack("<9I", caller_data)
+        with self.subTest(save_family="native-caller-refusal"):
+            self.assertEqual(caller[:5], (2, 0, 1, 0x30, 0x30))
+            self.assertEqual(caller[5], caller[6])
+            self.assertEqual(caller[7:], (1, 1))
         negative = []
-        chapter = []
+        view_records = []
         if epoch == 256:
             negative_symbols, negative = capture_semantic("refused", ["A", "B"], 9)
             expected_negative = {
@@ -496,18 +538,18 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     and record[4:] == (1, 1, 1, 1, 1)
                     for record in backed
                 ), backed)
-            chapter_symbols, chapter = capture_semantic("chapter-views", ["A", "B", "L"], 2)
+            view_symbols, view_records = capture_semantic("chapter-views", ["A", "B", "L"], 2)
             with self.subTest(save_family="semantic-chapter-views"):
-                self.assertEqual(chapter_symbols, symbols)
-                self.assertEqual(len(chapter), 2)
-                self.assertEqual({(record[0], record[3]) for record in chapter}, {
+                self.assertEqual(view_symbols, symbols)
+                self.assertEqual(len(view_records), 2)
+                self.assertEqual({(record[0], record[3]) for record in view_records}, {
                     (suspend, valid), (suspend, corrupt),
                 })
                 self.assertTrue(all(
                     record[1] in (3, 4) and record[2] == 0
                     and record[4:] == (1, 1, 1, 1, 1)
-                    for record in chapter
-                ), chapter)
+                    for record in view_records
+                ), view_records)
         resources = {
             name: resolve_elf_symbol_address(elf, "__" + name + "_end", tools["MODERN_NM"])
             - resolve_elf_symbol_address(elf, "__" + name + "_start", tools["MODERN_NM"])
@@ -517,7 +559,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             "epoch": epoch, "profile": "native release whole-save module",
             "rom_bytes": rom.stat().st_size, "records": records,
             "semantic_records": saved, "refusal_records": negative,
-            "chapter_view_records": chapter,
+            "chapter_view_records": view_records,
             "ewram_bytes": resources["data"] + resources["ewram"],
             "iwram_bytes": resources["iwram"],
         }))

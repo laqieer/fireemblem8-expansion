@@ -91,6 +91,14 @@ enum GradoStateLoadResult GradoState_PreflightNativeSave(
     int slot,
     struct GradoStateLoadDiagnostic * diagnostic);
 
+enum GradoStateLoadResult GradoState_LoadNativeSave(
+    enum GradoStateLoadRoute route,
+    int slot,
+    struct GradoStateLoadDiagnostic * diagnostic);
+
+int GradoState_TryLoadNativeSave(enum GradoStateLoadRoute route, int slot);
+void GradoState_ReportNativeLoadRefusal(enum GradoStateLoadResult result);
+
 enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     struct GradoStateLoadDiagnostic * diagnostic);
 

@@ -1,19 +1,20 @@
 # Restoration of Grado native-state reference
 
-This is the unfinished optional reference for
+This is the optional reference implementation for
 [#315](https://github.com/laqieer/fireemblem8-expansion/issues/315).
-It is not a selectable game project or a qualified Grado build yet. Nothing
-here is linked by an unselected default framework build.
+It now provides a selectable `reference` project profile, but is not yet a
+qualified playable Grado campaign. Build it with
+`make FE8_PROJECT=restoration-of-grado`; the unselected default framework
+build remains unchanged.
 
 The allocation tracer implements `GradoState_ValidateAllocation`: a read-only C
 check over typed Boolean, one-hot and bounded-counter descriptors. It rejects
 unsupported domains, native capacity excess, engine/debug/sort reservations
 and overlapping lifetimes. Different chapters may reuse temporary bits.
-Permanent guide flags remain owned by the progressive guide unless the caller
-supplies the static-guide policy. Supplying that policy is **not** evidence
-that the native guide consumers have been redirected.
+The `reference` profile supplies the static-guide policy so the campaign owns
+its permanent guide truth through the native adapter.
 
-The unselected `src/values.c` codec reads and writes these descriptors through
+The `src/values.c` codec reads and writes these descriptors through
 the original native flag backend. Use only fields from a complete allocation
 already validated as a whole; each access additionally checks its own layout,
 guide policy, value domain and explicit current project-chapter ordinal.
@@ -36,8 +37,8 @@ An owning loader must establish compatible envelope/epoch/checksum and native
 block validity before constructing it. Field decoding alone never authorizes
 loading, migration, recovery or a resource operation.
 
-An unselected static-guide adapter is also available for the existing
-`src/bmguide.c` code slot: `src/static_guide.c` includes that native
+The optional static-guide adapter uses the existing `src/bmguide.c` code
+slot: `src/static_guide.c` includes that native
 implementation unchanged and routes only its flag operations through the
 shared ownership policy in `src/state.c`. It does not duplicate guide
 content, scripts, window, navigation or sort code. Every display/read query
@@ -49,18 +50,17 @@ real permanent-flag reset. New-game callers keep that same native reset
 interface. The header derives the internal native ID from the same
 allocation definition, not a second numeric owner.
 
-An eventual project must select both replacements and include `src/state.c`.
-If it inherits the native chapter and world-map scripts, it must also replace
+The `reference` profile selects both replacements and includes `src/state.c`.
+Because it inherits the native chapter and world-map scripts, it also replaces
 their `src/events_script.c` and `src/events_wm.c` code slots with
 `src/static_guide_events.c` and `src/static_guide_worldmap.c`. Those providers
 compile the inherited guide-unlock commands as equal-length no-ops; ordinary
 native commands remain unchanged. Compile project-authored events separately
 with the normal event macros: their direct and dynamic flag writes must not
 be suppressed. A project that replaces the inherited scripts must instead
-account for all guide producers in its selected sources. None of these
-replacements is activated by this reference. A permanent reset clears the
-original permanent buffer then sets only truth, leaving chapter bits
-unchanged. This is new-game/reset behavior, not a load-recovery operation.
+account for all guide producers in its selected sources. A permanent reset
+clears the original permanent buffer then sets only truth, leaving chapter
+bits unchanged. This is new-game/reset behavior, not a load-recovery operation.
 
 The candidate campaign allocation now names all 227 FLAG and 16 STATE entries
 in `include/grado_campaign_state.def`. That single C definition owns explicit
@@ -137,12 +137,13 @@ New-game and new-chapter lifecycle calls reset their native scopes and are
 separate from Suspend resume and normal loads. New game also restores static
 guide ownership, while a chapter reset preserves permanent history.
 
-This remains an unselected optional reference. The project slot is not wired
-to the framework by default, and no selected game UI or playable campaign is
-claimed. Framework epoch 2 remains the negative/default profile. Do not add a
-second save blob or bypass the preflight when adapting this source. The native
-compatibility subcase below proves the shared classifier; the whole-path case
-proves representative strict Grado preflight followed by original loading.
+The `reference` profile is selected explicitly and uses Grado schema 1 at save
+compatibility epoch 256; the default framework remains at epoch 2. Its modern
+release ROM links and boot-verifies, but this does not qualify every campaign
+producer, UI interaction, lifecycle transition or playable chapter. Do not add
+a second save blob or bypass the preflight when adapting this source. The
+native cases below exercise both the load wrapper and representative original
+loaders; the remaining whole-game qualification is still open.
 
 ## TC-GRADO-SAVE-COMPAT-001
 
@@ -150,7 +151,8 @@ This subcase of `TEST-SAVE-COMPAT` executes the original live global
 classifier, metadata/checksum builders and SRAM initialization/read routines
 in an ARM7TDMI/Thumb AAPCS release-mode module under libmGBA. It builds the
 same native code with configured epochs 2 and 256; the existing envelope stays 2.
-This is not a Grado game profile or a separate save record.
+This compatibility subcase does not itself exercise the selected Grado game
+profile or define a separate save record.
 
 **Prerequisites:** repository root, Python 3, the supported ARM toolchain and
 libmGBA from quickstart. No user ROM, save, savestate or external project is
@@ -207,11 +209,12 @@ including the linker script is insufficient. This proves these copied SRAM
 routines' placement, not the complete production game's globals or overlays.
 No successful substitute functions are used.
 
-No production code, defaults, format, epoch, flags or persistent RAM change.
-Actual normal/Suspend loading, producer-sensitive recovery/checkpoints,
-resources/retirement, selected guide/game profiles and complete target
-qualification remain open in #315. Temporary compiler/ROM/capture files are
-removed only from the fixture's owned build directory.
+This compatibility subcase does not change production code, defaults, format,
+epoch, flags or persistent RAM. Actual normal/Suspend loading,
+producer-sensitive recovery/checkpoints, resources/retirement, selected-profile
+behavior and complete target qualification remain open in #315. Temporary
+compiler/ROM/capture files are removed only from the fixture's owned build
+directory.
 
 ## TC-GRADO-SAVE-FLAGS-001
 
@@ -261,8 +264,15 @@ This `TEST-SAVELOAD` / `TEST-SUSPEND` subcase extends the same ARM/libmGBA
 module builder to the original whole writer/loader paths. It uses owned
 valid generic unit/class/item providers, not the unfinished Grado roster.
 All save, flag, unit, world-map, preference, SRAM and handwritten ARM checksum
-functions come from their original source owners; no function is stubbed.
-The existing `gbagfx` helper builds only the original data required for linking.
+functions come from their original source owners. A test-owned helpbox adapter
+captures only the caller's refusal message and coordinates. The existing
+`gbagfx` helper builds only the original data required for linking.
+
+First run `make project-selection-config` without `FE8_PROJECT` and require the
+default project/profile with no Grado settings. Then run
+`make FE8_PROJECT=restoration-of-grado`; require the selected release ROM to
+link and pass its built-in boot check. This compiles the production source
+replacements, but does not assert rendered UI or campaign behavior.
 
 1. With the compatibility case's toolchain/emulator prerequisites, run
    `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
@@ -301,7 +311,8 @@ The existing `gbagfx` helper builds only the original data required for linking.
    slots for every backing slot. At epoch 2, preflight must refuse Grado schema
    identity without touching the image or live state. At epoch 256, preflight
    valid typed histories, clear the live typed state, require successful public
-   Suspend validation, and allow the original normal/Suspend loaders to restore
+   Suspend validation, and allow the native load wrapper to invoke the original
+   normal/Suspend loaders to restore
    the saved ending and referenced bonus value. Suspend also restores the set
    final-witness chapter flag and the complete chapter bitmap. Omitting either
    loader or its bonus restore must fail that route's records; earlier unrelated
@@ -327,15 +338,20 @@ The existing `gbagfx` helper builds only the original data required for linking.
    post-load image, chapter flags, unit, play state and bonus. Repeat both routes
    after changing an unrelated permanent flag for normal or a chapter flag for
    Suspend: recovery must refuse and preserve both live flag scopes and the
-   post-load image. The test-owned preflight is not production caller integration.
+   post-load image. These semantic recovery cases use a live flag view and do
+   not claim that a physical save was loaded.
 8. In a separate reset, hold synthetic R for the physical-source preflight.
    At epoch 256 it binds normal slot 2 and both alternating Suspend slots
    (4 then 3) to their saved backing slots (1 then 2), without changing SRAM.
    A normal block with an out-of-range source offset and a valid Suspend block
    naming an invalid backing slot both return `CORRUPT` without loading that
    source. Epoch 2 refuses all five physical cases as incompatible and
-   preserves the same image. This probe does not claim that production callers
-   have been wired to the helper.
+   preserves the same image. The same capture invokes
+   `GradoState_TryLoadNativeSave`: epoch 2 must report configuration
+   incompatibility and epoch 256 must refuse the invalid source, without
+   invoking the loader or changing SRAM, live flags, play state, unit, bonus
+   flags or the Suspend selector. The test captures the message ID and helpbox
+   coordinates, not rendered UI.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make
@@ -345,20 +361,24 @@ The existing `gbagfx` helper builds only the original data required for linking.
    Preserve the full input image and live state in both directions. Substituting
    live chapter flags during validation must fail both records.
 
-Each capture retains the existing 120-frame, 1 MiB ROM, EWRAM and IWRAM-stack bounds.
+Fixed-frame captures retain the 120-frame bound. Semantic captures stop when
+their completion phase and expected record count are observed, with 10,000
+frames as a fail-closed watchdog. Every capture retains the 1 MiB ROM, EWRAM
+and IWRAM-stack bounds.
 Native normal loading intentionally invalidates Suspend metadata; the case
 does not falsely require the whole image to remain unchanged on a valid load.
 All original compatibility/transfer cases still execute. Cleanup removes only
 owned temporary modules; no user save or clean ROM is used.
 
-**Boundary:** this qualifies representative original whole-function
-save/load, block-checksum and strict Grado semantic preflight paths with
-controlled native data, including producer/missing/conflict/recovery and
-normal/Suspend/legacy boundaries. It is not cartridge-bus, complete game,
-selected UI, locale, or playable-profile qualification. The module is
-release-mode; the host campaign case separately compiles the lifecycle C for
-both debug and release settings. No core engine source, default, format, epoch,
-allocation or framework gate changes.
+**Boundary:** this builds and boot-verifies the selected modern release profile,
+and qualifies representative original whole-function save/load, block-checksum
+and strict Grado semantic preflight paths with controlled native data,
+including producer/missing/conflict/recovery and normal/Suspend/legacy
+boundaries. It is not cartridge-bus, complete game, rendered UI, locale or
+playable-campaign qualification. The module is release-mode; the host campaign
+case separately compiles the lifecycle C for both debug and release settings.
+No default framework, core engine, format, epoch, allocation or framework gate
+changes.
 
 ## TC-GRADO-ALLOCATION-001
 

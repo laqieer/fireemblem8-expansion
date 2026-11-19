@@ -6,7 +6,9 @@
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
+#include "constants/msg.h"
 #include "grado_campaign_state.h"
+#include "statscreen.h"
 #include "worldmap.h"
 
 #include <string.h>
@@ -96,6 +98,19 @@ struct GradoNativeSaveProbe
     struct GradoNativeSaveRecord records[5];
 };
 
+struct GradoNativeLoadRefusalProbe
+{
+    u32 phase;
+    u32 result;
+    u32 helpBoxCalls;
+    u32 helpBoxX;
+    u32 helpBoxY;
+    u32 expectedMessage;
+    u32 message;
+    u32 sramPreserved;
+    u32 liveStatePreserved;
+};
+
 static union
 {
     struct SaveBlocks native;
@@ -105,6 +120,19 @@ static u8 sBefore[CART_SRAM_SIZE];
 volatile struct GradoSavePathProbe gGradoSavePathProbe;
 volatile struct GradoSemanticSaveProbe gGradoSemanticSaveProbe;
 volatile struct GradoNativeSaveProbe gGradoNativeSaveProbe;
+volatile struct GradoNativeLoadRefusalProbe gGradoNativeLoadRefusalProbe;
+static u32 sHelpBoxCalls;
+static int sHelpBoxX;
+static int sHelpBoxY;
+static int sHelpBoxMessage;
+
+void StartHelpBoxExt_Unk(int x, int y, int mid)
+{
+    sHelpBoxCalls++;
+    sHelpBoxX = x;
+    sHelpBoxY = y;
+    sHelpBoxMessage = mid;
+}
 
 static void PrepareCurrent(void)
 {
@@ -339,14 +367,11 @@ static void RecordSemantic(enum GradoStateLoadRoute route, unsigned int backing)
         SetBonusContentClaimFlags(~bonus);
         gPlaySt.gameSaveSlot = (backing + 1) % 3;
         if (route == GRADO_LOAD_SUSPEND)
-        {
-            if (!IsValidSuspendSave(SAVE_ID_SUSPEND))
-                result = GRADO_STATE_LOAD_CORRUPT;
-            else
-                ReadSuspendSave(SAVE_ID_SUSPEND);
-        }
+            result = GradoState_LoadNativeSave(
+                GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, &diagnostic);
         else
-            ReadGameSave(slot);
+            result = GradoState_LoadNativeSave(
+                GRADO_LOAD_NORMAL, slot, &diagnostic);
         if (result == GRADO_STATE_LOAD_VALID)
             endingResult = GradoState_ResolveEnding(21, &diagnostic.missingSymbol);
         record->state = result == GRADO_STATE_LOAD_VALID
@@ -848,6 +873,59 @@ static void ProbeNativeSavePreflight(void)
     gGradoNativeSaveProbe.phase = 2;
 }
 
+static void ProbeNativeLoadRefusal(void)
+{
+    volatile struct GradoNativeLoadRefusalProbe * probe =
+        &gGradoNativeLoadRefusalProbe;
+    struct PlaySt livePlay;
+    struct Unit liveUnit;
+    u8 permanent[25];
+    u8 chapter[5];
+    u32 bonus = 0x13579BDF;
+    int suspendSaveIdOffset;
+    enum GradoStateLoadResult result;
+
+    PrepareSemanticSaves();
+    PrepareLive(SAVE_ID_GAME2, permanent, chapter);
+    PrepareSemanticState();
+    gPlaySt.chapterIndex = 21;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
+    SetBonusContentClaimFlags(bonus);
+#if FE8_EXPANSION_SAVE_COMPAT_EPOCH == 256
+    gSram->saveBlockInfo[SAVE_ID_GAME2].offset = 0xFFFF;
+    probe->expectedMessage = MSG_SAVE_COMPAT_UNKNOWN;
+#else
+    probe->expectedMessage = MSG_SAVE_COMPAT_CONFIG_INCOMPATIBLE;
+#endif
+
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+    memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
+    livePlay = gPlaySt;
+    liveUnit = gUnitArrayBlue[0];
+    suspendSaveIdOffset = gSuspendSaveIdOffset;
+    sHelpBoxCalls = 0;
+    sHelpBoxX = 0;
+    sHelpBoxY = 0;
+    sHelpBoxMessage = 0;
+
+    result = GradoState_TryLoadNativeSave(GRADO_LOAD_NORMAL, SAVE_ID_GAME2);
+    probe->result = result;
+    probe->helpBoxCalls = sHelpBoxCalls;
+    probe->helpBoxX = sHelpBoxX;
+    probe->helpBoxY = sHelpBoxY;
+    probe->message = sHelpBoxMessage;
+    probe->sramPreserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+    probe->liveStatePreserved =
+        memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+        && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+        && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+        && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+        && GetBonusContentClaimFlags() == bonus
+        && gSuspendSaveIdOffset == suspendSaveIdOffset;
+    probe->phase = 2;
+}
+
 void AgbMain(void)
 {
     unsigned int pass;
@@ -855,7 +933,10 @@ void AgbMain(void)
 
     gSram = &sSaveImage.native;
     if (!(REG_KEYINPUT & R_BUTTON))
+    {
         ProbeNativeSavePreflight();
+        ProbeNativeLoadRefusal();
+    }
     else if (!(REG_KEYINPUT & A_BUTTON))
     {
         if (REG_KEYINPUT & B_BUTTON)
