@@ -1274,7 +1274,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 ),
                 "extra-job": original
                 + "\n  target-only:\n"
-                + "    runs-on: ubuntu-latest\n"
+                + "    runs-on: ubuntu-24.04\n"
                 + "    steps:\n"
                 + "    - run: exit 1\n",
             }
@@ -1829,7 +1829,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "self-hosted": self.replace_in_job(
                         original,
                         job_name,
-                        "    runs-on: ubuntu-latest",
+                        "    runs-on: ubuntu-24.04",
                         "    runs-on: self-hosted",
                     ),
                     "container": self.replace_in_job(
@@ -1879,8 +1879,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "complex-key": self.replace_in_job(
                         original,
                         job_name,
-                        "    runs-on: ubuntu-latest",
-                        '    "runs-on": ubuntu-latest',
+                        "    runs-on: ubuntu-24.04",
+                        '    "runs-on": ubuntu-24.04',
                     ),
                     "duplicate-key": self.replace_in_job(
                         original,
@@ -1893,12 +1893,12 @@ class VerifyCliCwdTests(unittest.TestCase):
                         self.replace_in_job(
                             original,
                             job_name,
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                             "    __RUNS_ON__",
                         ),
                         job_name,
                         f"    timeout-minutes: {timeout}",
-                        "    runs-on: ubuntu-latest",
+                        "    runs-on: ubuntu-24.04",
                     ).replace(
                         "    __RUNS_ON__",
                         f"    timeout-minutes: {timeout}",
@@ -1937,32 +1937,32 @@ class VerifyCliCwdTests(unittest.TestCase):
                 for label, old, new in (
                         (
                             "runner",
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                             "    runs-on: self-hosted",
                         ),
                         (
                             "permissions",
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                             "    permissions: write-all\n"
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                         ),
                         (
                             "container",
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                             "    container: ubuntu:latest\n"
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                         ),
                         (
                             "defaults",
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                             "    defaults: {run: {shell: bash}}\n"
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                         ),
                         (
                             "unknown",
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                             "    mystery: true\n"
-                            "    runs-on: ubuntu-latest",
+                            "    runs-on: ubuntu-24.04",
                         ),
                 ):
                         mutations.append(

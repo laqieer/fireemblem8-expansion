@@ -18,7 +18,7 @@ jobs:
   # repository content.
   event-identity:
     name: event-identity
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       classifier_available: ${{ steps.identity.outputs.classifier_available }}
@@ -165,7 +165,7 @@ jobs:
     name: event-router
     if: ${{ always() && needs.event-identity.result == 'success' }}
     needs: [event-identity]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       classification: ${{ steps.classify.outputs.classification }}
@@ -339,7 +339,7 @@ jobs:
     name: ${{ needs.event-router.result == 'success' && needs.event-router.outputs.classification == 'metadata-only' && 'metadata-classifier' || needs.event-router.outputs.classification == 'review-first' && 'review-first-classifier' || 'event-classifier' }}
     if: always()
     needs: [event-identity, event-router]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       classification: ${{ needs.event-router.outputs.classification }}
@@ -487,7 +487,7 @@ jobs:
   host-tests:
     needs: [event-identity, event-classifier]
     if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && (needs.event-classifier.outputs.classification == 'metadata-only' || needs.event-classifier.outputs.classification == 'review-first') && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Keep complete host evidence within the modern worker's bounded allowance.
     timeout-minutes: 90
     env:
@@ -1024,7 +1024,7 @@ jobs:
   # isolation, and finally re-runs that same harness at an expanded item ID
   # cap for the issue #10 item-ID-expansion runtime probe. This is the
   # exact (and only) supported CI host matrix today:
-  # ubuntu-latest with arm-none-eabi GCC. macOS (Homebrew) is documented in
+  # ubuntu-24.04 with arm-none-eabi GCC. macOS (Homebrew) is documented in
   # tools/gba-playtest/README.md for local development but is not exercised
   # by CI. The archival/decomp agbcc `fireemblem8.gba` path is deliberately
   # absent from this modern job; the parallel `legacy` job below owns its
@@ -1033,7 +1033,7 @@ jobs:
   build:
     needs: [event-identity, event-classifier]
     if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && (needs.event-classifier.outputs.classification == 'metadata-only' || needs.event-classifier.outputs.classification == 'review-first') && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Exact-head runs 33425252664 and 33420585863 reached the former
     # 60-minute ceiling while still compiling. Keep enough shared-runner
     # variance for the unchanged comprehensive ROM/runtime gate.
@@ -1564,7 +1564,7 @@ jobs:
   extended-host-tests:
     needs: [event-identity, event-classifier]
     if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Shared-runner variance must not truncate the unique broad host gates.
     timeout-minutes: 90
     env:
@@ -1610,7 +1610,7 @@ jobs:
   legacy:
     needs: [event-identity, event-classifier]
     if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
@@ -1684,7 +1684,7 @@ jobs:
     name: summary
     if: always()
     needs: [event-identity, event-classifier, host-tests, build, extended-host-tests, legacy]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}

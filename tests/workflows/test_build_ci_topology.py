@@ -1628,7 +1628,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
     expected_direct = [
         f"    {WORKER_NEEDS}",
         f"    if: {expected_condition}",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         f"    timeout-minutes: {expected_timeout}",
         "    env:",
         "    steps:",
@@ -1675,7 +1675,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
 def _identity_contract_errors(job: str) -> list[str]:
     required = (
         "    name: event-identity",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "      classifier_available: ${{ "
         "steps.identity.outputs.classifier_available }}",
@@ -1738,7 +1738,7 @@ def _identity_contract_errors(job: str) -> list[str]:
     ]
     if direct != [
         "    name: event-identity",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "    env:",
@@ -1768,7 +1768,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "    name: event-router",
         "    if: ${{ always() && needs.event-identity.result == 'success' }}",
         "    needs: [event-identity]",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "      classification: ${{ steps.classify.outputs.classification }}",
@@ -1841,7 +1841,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "    name: event-router",
         "    if: ${{ always() && needs.event-identity.result == 'success' }}",
         "    needs: [event-identity]",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "    env:",
@@ -2024,7 +2024,7 @@ def _mode_contract_errors(job: str) -> list[str]:
         f"    name: {EVENT_CLASSIFIER_DYNAMIC_NAME}",
         "    if: always()",
         "    needs: [event-identity, event-router]",
-        "    runs-on: ubuntu-latest",
+        "    runs-on: ubuntu-24.04",
         "    timeout-minutes: 5",
         "    outputs:",
         "    env:",
@@ -5404,7 +5404,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     if job_name in METADATA_ADAPTER_JOBS
                     else WORKER_CONDITION
                 ),
-                "runs-on": "ubuntu-latest",
+                "runs-on": "ubuntu-24.04",
                 "timeout-minutes": "60" if job_name == "legacy" else "90",
                 "env": "",
                 "steps": "",
@@ -5529,7 +5529,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         )
                     )
             for allowed_line in (
-                "    runs-on: ubuntu-latest",
+                "    runs-on: ubuntu-24.04",
                 f"    timeout-minutes: {timeout}",
                 "    env:",
                 "    steps:",
@@ -5552,13 +5552,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             job = _job_blocks(self.text)[job_name]
             reordered = (
                 job.replace(
-                    "    runs-on: ubuntu-latest",
+                    "    runs-on: ubuntu-24.04",
                     "    __RUNS_ON__",
                     1,
                 )
                 .replace(
                     f"    timeout-minutes: {timeout}",
-                    "    runs-on: ubuntu-latest",
+                    "    runs-on: ubuntu-24.04",
                     1,
                 )
                 .replace(
@@ -5577,7 +5577,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
             for original, replacement in (
-                ("    runs-on: ubuntu-latest", "    runs-on: self-hosted"),
+                ("    runs-on: ubuntu-24.04", "    runs-on: self-hosted"),
                 (
                     f"    timeout-minutes: {timeout}",
                     f"    timeout-minutes: {int(timeout) - 1}",

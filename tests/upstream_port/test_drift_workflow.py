@@ -85,6 +85,44 @@ class WorkflowStaticPolicyTests(unittest.TestCase):
     def setUp(self):
         self.text = _read_workflow_text()
 
+    def _drift_job_span(self, text):
+        lines = text.splitlines()
+        start = lines.index("  drift-scan:")
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            line = lines[index]
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if indent == 2:
+                end = index
+                break
+        return lines, start, end
+
+    def _drift_job_direct_mapping(self, text):
+        lines, start, end = self._drift_job_span(text)
+        direct = []
+        for line in lines[start + 1:end]:
+            if (
+                line.strip()
+                and not line.lstrip().startswith("#")
+                and len(line) - len(line.lstrip(" ")) == 4
+                and not line.startswith("    -")
+            ):
+                direct.append(line.strip().split(":", 1)[0])
+        return direct
+
+    def _drift_job_errors(self, text):
+        if not re.search(
+            r"(?m)^  drift-scan:\n    runs-on: ubuntu-24\.04$",
+            text,
+        ):
+            return ["drift-scan runner must be ubuntu-24.04"]
+        direct = self._drift_job_direct_mapping(text)
+        if direct != ["runs-on", "timeout-minutes", "steps"]:
+            return ["drift-scan execution context is not closed"]
+        return []
+
     def test_workflow_file_exists(self):
         self.assertTrue(os.path.isfile(_WORKFLOW_PATH))
 
@@ -106,6 +144,49 @@ class WorkflowStaticPolicyTests(unittest.TestCase):
         self.assertRegex(self.text, r"workflow_dispatch:\s*\{\}")
         self.assertNotIn("workflow_dispatch:\n  inputs", self.text)
         self.assertNotIn("github.event.inputs", self.text)
+
+    def test_supported_host_is_explicitly_pinned(self):
+        self.assertRegex(
+            self.text,
+            r"(?m)^  drift-scan:\n    runs-on: ubuntu-24\.04$",
+        )
+        self.assertNotIn("runs-on: ubuntu-latest", self.text)
+
+    def test_drift_job_execution_context_is_closed(self):
+        self.assertEqual(self._drift_job_errors(self.text), [])
+        for override in (
+            "    container: ubuntu:26.04\n",
+            "    strategy:\n"
+            "      matrix:\n"
+            "        runner: [ubuntu-24.04]\n",
+        ):
+            changed = self.text.replace(
+                "    runs-on: ubuntu-24.04\n",
+                "    runs-on: ubuntu-24.04\n" + override,
+                1,
+            )
+            with self.subTest(override=override):
+                self.assertTrue(self._drift_job_errors(changed))
+
+    def test_comment_only_line_does_not_end_drift_job_span(self):
+        append_at = self.text.index("      - name: Configure/verify")
+        changed = (
+            self.text[:append_at]
+            + "  # host options\n"
+            + "    container: ubuntu:26.04\n"
+            + self.text[append_at:]
+        )
+        self.assertTrue(self._drift_job_errors(changed))
+
+    def test_moving_or_alternate_runner_images_are_rejected(self):
+        for runner in ("ubuntu-latest", "ubuntu-26.04"):
+            changed = self.text.replace(
+                "runs-on: ubuntu-24.04",
+                f"runs-on: {runner}",
+                1,
+            )
+            with self.subTest(runner=runner):
+                self.assertTrue(self._drift_job_errors(changed))
 
     def test_no_forbidden_mutating_operations_present(self):
         for forbidden in _FORBIDDEN_SUBSTRINGS:

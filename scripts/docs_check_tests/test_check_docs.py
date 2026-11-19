@@ -1119,6 +1119,16 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
                         },
                     },
+                    "TC-WORKFLOW-HOST-PLATFORM-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_build_ci_topology "
+                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests "
+                            "tests.upstream_port.test_drift_workflow.WorkflowStaticPolicyTests -v",
+                            "python3 -m unittest tests.upstream_port.test_verify "
+                            "tests.upstream_port.test_drift_workflow -v",
+                        },
+                    },
                     "TC-WORKFLOW-REPORTER-RUNTIME-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
