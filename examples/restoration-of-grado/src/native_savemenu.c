@@ -11,7 +11,7 @@ void GradoState_SaveMenu_NewGame(ProcPtr procPtr);
 
 #define ReadGameSave(slot) \
     do { \
-        if (!GradoState_TryLoadNativeSave(GRADO_LOAD_NORMAL, (slot))) \
+        if (!GradoState_TryLoadNativeSaveFromSaveMenu(GRADO_LOAD_NORMAL, (slot), proc)) \
             return; \
     } while (0)
 
@@ -19,7 +19,7 @@ void GradoState_SaveMenu_NewGame(ProcPtr procPtr);
     do { \
         if ((slot) == SAVE_ID_SUSPEND) \
         { \
-            if (!GradoState_TryLoadNativeSave(GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND)) \
+            if (!GradoState_TryLoadNativeSaveFromSaveMenu(GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, proc)) \
                 return; \
         } \
         else \
@@ -60,7 +60,7 @@ void GradoState_SaveMenu_NewGame(ProcPtr procPtr)
     result = GradoState_PreflightNativeSave(route, slot, &diagnostic);
     if (result != GRADO_STATE_LOAD_VALID && result != GRADO_STATE_LOAD_RECOVERY)
     {
-        GradoState_ReportNativeLoadRefusal(result);
+        GradoState_ReportNativeLoadRefusal(result, procPtr);
         return;
     }
 

@@ -122,6 +122,12 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                 prefix="grado-save-native-", dir=ROOT / "build",
             ) as directory:
                 work = Path(directory)
+                split_const_data = work / "split-const-data.h"
+                if full_paths:
+                    split_const_data.write_text(
+                        '#include "global.h"\n#undef CONST_DATA\n#define CONST_DATA\n',
+                        encoding="ascii",
+                    )
                 flags = [
                     *driver_flags, "-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-mabi=aapcs",
                     "-std=gnu11", "-fgnu89-inline", "-ffreestanding", "-fno-builtin", "-fno-common", "-fno-pic",
@@ -133,6 +139,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     "-DFE8_EXPANSION_STARTER_CONTENT=0", "-I" + str(ROOT / "include"),
                     "-I" + str(ROOT / "examples/restoration-of-grado/include"),
                     "-I" + str(ROOT), *(("-isystem", newlib) if newlib else ()),
+                    *(("-include", str(split_const_data)) if full_paths else ()),
                     "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types",
                 ]
                 objects = []

@@ -97,7 +97,10 @@ enum GradoStateLoadResult GradoState_LoadNativeSave(
     struct GradoStateLoadDiagnostic * diagnostic);
 
 int GradoState_TryLoadNativeSave(enum GradoStateLoadRoute route, int slot);
-void GradoState_ReportNativeLoadRefusal(enum GradoStateLoadResult result);
+int GradoState_TryLoadNativeSaveFromSaveMenu(
+    enum GradoStateLoadRoute route, int slot, ProcPtr saveMenuProc);
+void GradoState_ReportNativeLoadRefusal(
+    enum GradoStateLoadResult result, ProcPtr saveMenuProc);
 
 enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     struct GradoStateLoadDiagnostic * diagnostic);
