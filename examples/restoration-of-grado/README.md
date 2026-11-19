@@ -419,13 +419,15 @@ profile or GUI is required.
 2. The epoch-256 probe dispatches through the real generic menu
    `Menu_OnInit`, `RedrawMenu` and `Menu_OnIdle` functions. It checks every
    choice label, the four direction-cost tiers, pending/cancel/fresh-confirm
-   transitions, exactly-once synthetic resource deltas, and duplicate blocking.
+   transitions, pending reset/reload to the pre-choice checkpoint, exactly-once
+   synthetic resource deltas, and duplicate blocking.
    It also loads both CH15 decisions together, verifies all nine default
    recoveries, recovers EXILED through normal and Suspend sources, and reopens
    an incomplete final direction without defaulting it.
-3. Check captured typed records for source/backing slot identity, saved
-   choice values and gold, the two coexisting CH15 decisions, save-block
-   preservation and the epoch-2 control. The supported native normal loader
+3. Check captured typed records for rollback to unset choice state and base
+   gold after a pending reset, source/backing slot identity, saved choice
+   values and gold, the two coexisting CH15 decisions, save-block preservation
+   and the epoch-2 control. The supported native normal loader
    may invalidate Suspend metadata; the case checks the choice-bearing game
    block rather than incorrectly requiring the whole SRAM image to remain
    unchanged after that load.

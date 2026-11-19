@@ -31,7 +31,7 @@ enum
     CHOICE_DEFAULT_COUNT = 9,
     CHOICE_OUTCOME_COUNT = 31,
     CHOICE_DEFAULT_RECORD_WORDS = 6,
-    CHOICE_OUTCOME_RECORD_WORDS = 19,
+    CHOICE_OUTCOME_RECORD_WORDS = 20,
     CHOICE_BASE_GOLD = 1234,
     CHOICE_SKIP_KEYS = A_BUTTON | B_BUTTON | START_BUTTON | SELECT_BUTTON,
 };
@@ -80,6 +80,7 @@ struct GradoChoiceOutcomeRecord
     u32 suspendRestored;
     u32 suspendSourceSlot;
     u32 suspendBackingSlot;
+    u32 pendingRollbackRestored;
 };
 
 struct GradoChoiceCheckpointProbe
@@ -939,6 +940,7 @@ static void GradoChoice_RunOutcome(
     record->suspendRestored = 0;
     record->suspendSourceSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
     record->suspendBackingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
+    record->pendingRollbackRestored = 0;
 
     beforeGold = gPlaySt.partyGoldAmount;
     GradoChoice_Begin(family, record);
@@ -997,6 +999,34 @@ static void GradoChoice_RunOutcome(
         && gPlaySt.partyGoldAmount == beforeGold;
     if (!GradoChoice_CanSave())
         gGradoChoiceCheckpointProbe.pendingSaveBlocked = 1;
+
+    memset(&sTransaction, 0, sizeof(sTransaction));
+    memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
+    memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
+    gPlaySt.partyGoldAmount = 0;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
+    loadResult = GradoState_LoadNativeSave(
+        GRADO_LOAD_NORMAL, SAVE_ID_GAME0, &diagnostic);
+    record->pendingRollbackRestored =
+        loadResult == GRADO_STATE_LOAD_VALID
+        && sTransaction.phase == CHOICE_PHASE_IDLE
+        && !sTransaction.pending && !sTransaction.committed
+        && !sTransaction.resourceApplied && sTransaction.applyCount == 0
+        && GradoState_ReadSymbol(
+            sChoices[family].symbol, 0, &currentValue)
+                == GRADO_STATE_VALUE_UNSET
+        && gPlaySt.partyGoldAmount == beforeGold
+        && GradoChoice_CanSave();
+    if (!record->pendingRollbackRestored)
+        return;
+
+    GradoChoice_Begin(family, record);
+    GradoChoice_Trigger();
+    GradoChoice_SetInput(0, 0, 0);
+    GradoChoice_Advance();
+    if (sTransaction.phase != CHOICE_PHASE_CHOOSING)
+        return;
+    GradoChoice_SelectOutcome(option);
 
     if (family == CHOICE_LEGITIMACY && option == 0)
     {

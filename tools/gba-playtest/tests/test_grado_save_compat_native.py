@@ -590,7 +590,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             elf, "gGradoChoiceCheckpointProbe", tools["MODERN_NM"])
         header_words = 14
         default_words = 9 * 6
-        outcome_words = 31 * 19
+        outcome_words = 31 * 20
         self.assertEqual(size, (header_words + default_words + outcome_words) * 4)
 
         scenario = work / "choice-checkpoints-scenario.json"
@@ -704,7 +704,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
 
         outcome_offset = (header_words + default_words) * 4
         outcomes = [
-            struct.unpack_from("<19I", data, outcome_offset + index * 76)
+            struct.unpack_from("<20I", data, outcome_offset + index * 80)
             for index in range(31)
         ]
         expected = []
@@ -725,4 +725,5 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 self.assertEqual(outcome[13:17], (1, 1, 1, 1))
                 self.assertIn(outcome[17], (3, 4))
                 self.assertEqual(outcome[18], 0)
+                self.assertEqual(outcome[19], 1)
         self.assertEqual(len(expected), 31)
