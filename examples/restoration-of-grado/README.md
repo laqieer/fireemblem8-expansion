@@ -400,6 +400,57 @@ release settings.
 No default framework, core engine, format, epoch, allocation or framework gate
 changes.
 
+## TC-GRADO-CHOICE-CHECKPOINTS-001
+
+This case covers the native choice/checkpoint probe owned by issue #327. It
+uses the selected Grado reference source only as a dependency of the probe;
+the probe itself is not included in a release ROM.
+
+Prerequisites: the supported ARM7TDMI/Thumb AAPCS toolchain and libmGBA from
+quickstart, plus Python 3. No clean ROM, user save, configured gameplay
+profile or GUI is required.
+
+1. Run
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
+   The test compiles and boots the owned native module for save epochs 2 and
+   256. Epoch 2 must refuse Grado recovery without mutating its saved input;
+   epoch 256 must complete the probe and produce all nine default-recovery
+   records and all 31 choice-outcome records.
+2. The epoch-256 probe dispatches through the real generic menu
+   `Menu_OnInit`, `RedrawMenu` and `Menu_OnIdle` functions. It checks every
+   choice label, the four direction-cost tiers, pending/cancel/fresh-confirm
+   transitions, exactly-once synthetic resource deltas, and duplicate blocking.
+   It also loads both CH15 decisions together, verifies all nine default
+   recoveries, recovers EXILED through normal and Suspend sources, and reopens
+   an incomplete final direction without defaulting it.
+3. Check captured typed records for source/backing slot identity, saved
+   choice values and gold, the two coexisting CH15 decisions, save-block
+   preservation and the epoch-2 control. The supported native normal loader
+   may invalidate Suspend metadata; the case checks the choice-bearing game
+   block rather than incorrectly requiring the whole SRAM image to remain
+   unchanged after that load.
+
+The test-owned input driver and scheduler stubs make the menu callbacks
+deterministic. `RedrawMenu` sends labels to a test text sink, so label evidence
+does not claim rendered pixels, real scheduler timing or in-game visual
+qualification. Gold deltas are synthetic exactly-once evidence, not campaign
+balance. No material manual-only criterion is claimed by this case.
+
+**Negative control:** epoch 2 is the unselected default and must reject the
+epoch-256 Grado history without changing the saved input or live flags.
+Direction remains unset until an explicit choice; the probe also verifies that
+the normal menu does not invent a default direction.
+
+**Compatibility and interactions:** the case depends on the native allocation
+and save paths from issue #315, uses their existing save format and flags, and
+does not change the default framework epoch, save schema or release sources.
+The R+SELECT probe dispatch preserves the existing R-only native probes.
+
+**Cleanup and limits:** the test removes only its owned compiler/module/ROM/
+capture directory. It does not open or modify user saves. This is native
+module and callback evidence, not rendered UI, production gameplay balance,
+or a fully qualified playable campaign.
+
 ## TC-GRADO-ALLOCATION-001
 
 ### Complete campaign bindings

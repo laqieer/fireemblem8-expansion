@@ -25,6 +25,7 @@
 
 u8 DebugContinueMenu_ContinueChapter(struct MenuProc * menuProc, struct MenuItemProc * menuItemProc);
 void SaveMenu_SaveSlotSelectLoop(struct SaveMenuProc * proc);
+void GradoChoiceCheckpoints_Run(void);
 
 CONST_DATA struct CharacterData gCharacterData[] = {
     { .number = 1, .defaultClass = 1 },
@@ -1227,8 +1228,13 @@ void AgbMain(void)
     gSram = &sSaveImage.native;
     if (!(REG_KEYINPUT & R_BUTTON))
     {
-        ProbeNativeSavePreflight();
-        ProbeNativeLoadRefusal();
+        if (REG_KEYINPUT & SELECT_BUTTON)
+        {
+            ProbeNativeSavePreflight();
+            ProbeNativeLoadRefusal();
+        }
+        else
+            GradoChoiceCheckpoints_Run();
     }
     else if (!(REG_KEYINPUT & A_BUTTON))
     {

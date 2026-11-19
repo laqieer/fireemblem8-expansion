@@ -98,6 +98,9 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     "native_save_load.c", "native_save_load_ui.c",
                     "native_bmdebug.c", "native_savemenu.c", "native_sio_term.c",
                 ))
+            sources.append(
+                ROOT / "tools/gba-playtest/tests/c/grado_choice_checkpoints_native.c"
+            )
             assembly.extend((
                 (ROOT / "asm/arm.s", "arm.o"),
                 (ROOT / "asm/arm_call.s", "arm_call.o"),
@@ -229,6 +232,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 self.assertLessEqual(rom.stat().st_size, 1024 * 1024)
                 if full_paths:
                     self._assert_native_save_paths(epoch, work, tools, elf, rom)
+                    self._assert_choice_checkpoints(epoch, work, tools, elf, rom)
                     continue
                 _, size = resolve_elf_symbol(elf, "gGradoSaveCompatProbe", tools["MODERN_NM"])
                 self.assertEqual(size, 16 + 13 * 12)
@@ -580,3 +584,145 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             "ewram_bytes": resources["data"] + resources["ewram"],
             "iwram_bytes": resources["iwram"],
         }))
+
+    def _assert_choice_checkpoints(self, epoch, work, tools, elf, rom):
+        _, size = resolve_elf_symbol(
+            elf, "gGradoChoiceCheckpointProbe", tools["MODERN_NM"])
+        header_words = 14
+        default_words = 9 * 6
+        outcome_words = 31 * 19
+        self.assertEqual(size, (header_words + default_words + outcome_words) * 4)
+
+        scenario = work / "choice-checkpoints-scenario.json"
+        scenario.write_text(json.dumps({
+            "schema_version": 1, "name": "grado-choice-checkpoints",
+            "frames": [{"start": 0, "end": 1200, "keys": ["R", "SELECT"]}],
+            "checkpoints": [{
+                "name": "choice-checkpoint-records", "frame": 1200, "framebuffer": False,
+                "probes": [
+                    {"address": f"gGradoChoiceCheckpointProbe+0x{offset:x}", "size": 4}
+                    for offset in range(0, size, 4)
+                ],
+            }],
+        }), encoding="utf-8")
+        output = work / "choice-checkpoints-capture.json"
+        self.run_command([
+            sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
+            "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
+            "--scenario", scenario, "--output", output,
+        ], cwd=ROOT)
+        capture = json.loads(output.read_text())
+        values = {
+            probe["address"]: int(probe["value"], 16)
+            for probe in capture["checkpoints"][0]["probes"]
+        }
+        data = b"".join(
+            values[f"gGradoChoiceCheckpointProbe+0x{offset:x}"].to_bytes(4, "little")
+            for offset in range(0, size, 4)
+        )
+        header = struct.unpack_from("<14I", data)
+        self.assertEqual(header[:3], (2, 31 if epoch == 256 else 0, int(epoch == 256)))
+
+        if epoch == 2:
+            self.assertEqual(header, (2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0))
+            self.assertEqual(data[header_words * 4:], bytes(size - header_words * 4))
+            return
+
+        self.assertEqual(header[3:11], (1, 1, 1, 1, 1, 0, 1, 1))
+        self.assertIn(header[11], (3, 4))
+        self.assertEqual(header[12:], (0, 1))
+
+        defaults = [
+            struct.unpack_from("<6I", data, header_words * 4 + index * 24)
+            for index in range(9)
+        ]
+        expected_defaults = (2, 2, 2, 2, 3, 3, 3, 2, 2)
+        self.assertEqual(defaults, [
+            (family, value, value, 1, 1, 1)
+            for family, value in enumerate(expected_defaults)
+        ])
+
+        labels = (
+            (
+                "CENTRAL | Cost: local resistance",
+                "COUNCIL | Cost: slower enforcement",
+                "LOCAL | Cost: raid pressure",
+            ),
+            (
+                "FULL | Cost: recurring payments",
+                "LIMITED | Cost: delayed accountability",
+                "DECLINE | Cost: lost grain aid",
+            ),
+            (
+                "SUPPRESS | Cost: local alienation",
+                "CONCEDE | Cost: central revenue",
+                "AUTONOMY | Cost: weaker central authority",
+            ),
+            (
+                "FULL_PUBLIC | Cost: military morale",
+                "LIMITED | Cost: public distrust",
+                "SEALED | Cost: foreign trust",
+            ),
+            (
+                "CAPITAL | Cost: remote districts abandoned",
+                "FRONTIER | Cost: capital supply",
+                "EVEN | Cost: moderate losses everywhere",
+            ),
+            (
+                "SHIELD | Cost: weaker central deterrence",
+                "STATE_ARMY | Cost: local distrust",
+                "DISBAND_MIN | Cost: weaker air rescue",
+            ),
+            (
+                "SELF_RULE | Cost: weaker coordination",
+                "GARRISON | Cost: local backlash",
+                "MEDIATE | Cost: slower results",
+            ),
+            (
+                "FULL | Cost: lower temple autonomy",
+                "LIMITED | Cost: continued mutual distrust",
+                "REFUSE | Cost: no outside medical teams",
+            ),
+            (
+                "SURRENDER | Cost: knowledge and rewards lost",
+                "JOINT | Cost: leak risk",
+                "RETAIN | Cost: less foreign support",
+            ),
+            (
+                "CENTRAL | Cost: adverse transition",
+                "AUTONOMY | Cost: favorable transition",
+                "FOREIGN | Cost: favorable transition",
+                "RECKONING | Cost: favorable transition",
+            ),
+        )
+
+        def label_hash(text):
+            result = 2166136261
+            for byte in text.encode("ascii"):
+                result = ((result ^ byte) * 16777619) & 0xFFFFFFFF
+            return result
+
+        outcome_offset = (header_words + default_words) * 4
+        outcomes = [
+            struct.unpack_from("<19I", data, outcome_offset + index * 76)
+            for index in range(31)
+        ]
+        expected = []
+        for family, family_labels in enumerate(labels):
+            for option, label in enumerate(family_labels):
+                expected_value = option + 1
+                expected_gold = 1234 + family * 4 + option + 1
+                outcome = outcomes[len(expected)]
+                expected.append(outcome)
+                self.assertEqual(outcome[:3], (family, option, expected_value))
+                self.assertEqual(outcome[3], expected_value, (family, option, outcome))
+                self.assertEqual(outcome[4:8], (
+                    1234, expected_gold, label_hash(label), len(label),
+                ))
+                self.assertEqual(outcome[8:13], (
+                    1, 1, int(family == 0 and option == 0), 1, 1,
+                ))
+                self.assertEqual(outcome[13:17], (1, 1, 1, 1))
+                self.assertIn(outcome[17], (3, 4))
+                self.assertEqual(outcome[18], 0)
+        self.assertEqual(len(expected), 31)
