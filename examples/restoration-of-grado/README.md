@@ -354,9 +354,12 @@ replacements, but does not assert rendered UI or campaign behavior.
    incompatibility and epoch 256 must refuse the invalid source without
    invoking the loader or changing SRAM, live flags, play state, unit, bonus
    flags or the Suspend selector. The debug caller returns its refusal action
-   without restarting; the Link Arena caller preserves its state and does not
-   enter the battle map. The test captures the message ID and helpbox
-   coordinates, not rendered UI.
+   without restarting. The Link Arena caller requests the existing team-list
+   return label and skips palette/map initialization. Normal and Suspend save
+   menu selections refuse before requesting the fade-out transition. All
+   callers preserve SRAM/live state and report the expected message; the test
+   observes both byte-safe metadata copies and captures message IDs/helpbox
+   coordinates, not rendered UI or menu navigation.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make
@@ -380,8 +383,12 @@ and qualifies representative original whole-function save/load, block-checksum
 and strict Grado semantic preflight paths with controlled native data,
 including producer/missing/conflict/recovery and normal/Suspend/legacy
 boundaries. It is not cartridge-bus, complete game, rendered UI, locale or
-playable-campaign qualification. The module is release-mode; the host campaign
-case separately compiles the lifecycle C for both debug and release settings.
+playable-campaign qualification. The native test executes selected debug,
+save-menu and Link Arena load functions, observing the requested Link Arena
+return label and skipped local map/palette calls; it does not run the enclosing
+process scheduler or assert rendered UI/navigation. The module is release-mode;
+the host campaign case separately compiles the lifecycle C for both debug and
+release settings.
 No default framework, core engine, format, epoch, allocation or framework gate
 changes.
 

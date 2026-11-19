@@ -281,8 +281,12 @@ enum GradoStateLoadResult GradoState_PreflightNativeSave(
     enum SaveCompatState compatibility;
     enum GradoStateLoadResult result;
     struct GradoStateFlagView view;
+    struct ExpansionSaveMeta saveMeta;
+    struct PlaySt savedPlaySt;
     struct GameSaveBlock * gameSave;
     struct SuspendSaveBlock * suspendSave;
+    u8 permanentFlags[sizeof(((struct GameSaveBlock *)0)->permanentFlags)];
+    u8 chapterFlags[sizeof(((struct SuspendSaveBlock *)0)->chapterFlags)];
     int resolvedSlot;
     int backingSlot;
 
@@ -307,9 +311,11 @@ enum GradoStateLoadResult GradoState_PreflightNativeSave(
             GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
 
     compatibility = ClassifySramSaveCompat();
-    if (!GradoState_MetaMatches(compatibility, &gSram->expansionSaveMeta))
+    ReadSramFast(
+        &gSram->expansionSaveMeta, &saveMeta, sizeof(saveMeta));
+    if (!GradoState_MetaMatches(compatibility, &saveMeta))
         return GradoState_PreflightSave(
-            compatibility, &gSram->expansionSaveMeta, route, 0, NULL, diagnostic);
+            compatibility, &saveMeta, route, 0, NULL, diagnostic);
 
     if (route != GRADO_LOAD_SUSPEND)
     {
@@ -321,13 +327,16 @@ enum GradoStateLoadResult GradoState_PreflightNativeSave(
                 GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
 
         gameSave = GetSaveReadAddr(slot);
+        ReadSramFast(&gameSave->playSt, &savedPlaySt, sizeof(savedPlaySt));
+        ReadSramFast(
+            gameSave->permanentFlags, permanentFlags, sizeof(permanentFlags));
         view.chapterFlags = NULL;
         view.chapterBytes = 0;
-        view.permanentFlags = gameSave->permanentFlags;
-        view.permanentBytes = sizeof(gameSave->permanentFlags);
+        view.permanentFlags = permanentFlags;
+        view.permanentBytes = sizeof(permanentFlags);
         result = GradoState_PreflightSave(
-            compatibility, &gSram->expansionSaveMeta, route,
-            gameSave->playSt.chapterIndex, &view, diagnostic);
+            compatibility, &saveMeta, route, savedPlaySt.chapterIndex,
+            &view, diagnostic);
         diagnostic->sourceSlot = slot;
         diagnostic->backingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
         return result;
@@ -351,7 +360,12 @@ enum GradoStateLoadResult GradoState_PreflightNativeSave(
 
     diagnostic->sourceSlot = SAVE_ID_SUSPEND + resolvedSlot;
     suspendSave = GetSaveReadAddr(SAVE_ID_SUSPEND + resolvedSlot);
-    backingSlot = suspendSave->playSt.gameSaveSlot;
+    ReadSramFast(&suspendSave->playSt, &savedPlaySt, sizeof(savedPlaySt));
+    ReadSramFast(
+        suspendSave->chapterFlags, chapterFlags, sizeof(chapterFlags));
+    ReadSramFast(
+        suspendSave->permanentFlags, permanentFlags, sizeof(permanentFlags));
+    backingSlot = savedPlaySt.gameSaveSlot;
     diagnostic->backingSlot = backingSlot;
     if (backingSlot < SAVE_ID_GAME0 || backingSlot > SAVE_ID_GAME2
         || !GradoState_NativeSaveBlockReady(
@@ -360,13 +374,13 @@ enum GradoStateLoadResult GradoState_PreflightNativeSave(
             diagnostic, GRADO_STATE_LOAD_CORRUPT, GRADO_STATE_RECOVERY_NONE,
             GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
 
-    view.chapterFlags = suspendSave->chapterFlags;
-    view.chapterBytes = sizeof(suspendSave->chapterFlags);
-    view.permanentFlags = suspendSave->permanentFlags;
-    view.permanentBytes = sizeof(suspendSave->permanentFlags);
+    view.chapterFlags = chapterFlags;
+    view.chapterBytes = sizeof(chapterFlags);
+    view.permanentFlags = permanentFlags;
+    view.permanentBytes = sizeof(permanentFlags);
     result = GradoState_PreflightSave(
-        compatibility, &gSram->expansionSaveMeta, route,
-        suspendSave->playSt.chapterIndex, &view, diagnostic);
+        compatibility, &saveMeta, route, savedPlaySt.chapterIndex, &view,
+        diagnostic);
     diagnostic->sourceSlot = SAVE_ID_SUSPEND + resolvedSlot;
     diagnostic->backingSlot = backingSlot;
     return result;

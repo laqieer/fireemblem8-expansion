@@ -7,6 +7,7 @@
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
+#include "savemenu.h"
 #include "sio.h"
 #include "sio_core.h"
 #include "uimenu.h"
@@ -122,6 +123,14 @@ struct GradoNativeLoadRefusalProbe
     u32 normalCallerTransitionCount;
     u32 callerHelpBoxCalls;
     u32 callerHelpBoxCorrect;
+    u32 metadataCopyCount;
+    u32 preflightResult;
+    u32 linkArenaProcGotoCount;
+    u32 linkArenaExitLabel;
+    u32 saveMenuSuspendRefused;
+    u32 saveMenuNormalRefused;
+    u32 saveMenuPreserved;
+    u32 saveMenuProcGotoCount;
 };
 
 static union
@@ -141,6 +150,36 @@ static int sHelpBoxY;
 static int sHelpBoxMessage;
 static u32 sRestartGameCalls;
 static u32 sLinkArenaInitCalls;
+static void (*sUnwrappedReadSramFast)(void const *, void *, u32);
+static int sTraceExpansionMetaReads;
+static u32 sExpansionMetaReadCount;
+static u32 sProcGotoCalls;
+static int sProcGotoLabel;
+
+static void TraceSramRead(void const * src, void * dest, u32 size)
+{
+    if (sTraceExpansionMetaReads
+        && src == &gSram->expansionSaveMeta
+        && size == sizeof(gSram->expansionSaveMeta))
+        ++sExpansionMetaReadCount;
+
+    sUnwrappedReadSramFast(src, dest, size);
+}
+
+void Proc_Goto(ProcPtr proc, int label)
+{
+    (void)proc;
+    ++sProcGotoCalls;
+    sProcGotoLabel = label;
+}
+
+void StartBgmVolumeChange(int volumeInit, int volumeEnd, int duration, ProcPtr parent)
+{
+    (void)volumeInit;
+    (void)volumeEnd;
+    (void)duration;
+    (void)parent;
+}
 
 void StartHelpBoxExt_Unk(int x, int y, int mid)
 {
@@ -911,6 +950,7 @@ static void ProbeNativeLoadRefusal(void)
     struct PlaySt livePlay;
     struct Unit liveUnit;
     struct MenuItemProc menuItem;
+    struct SaveMenuProc saveMenuProc;
     struct SioTermProc sioProc;
     struct LinkArenaStMaybe linkArena;
     u8 permanent[25];
@@ -918,6 +958,8 @@ static void ProbeNativeLoadRefusal(void)
     u32 bonus = 0x13579BDF;
     int suspendSaveIdOffset;
     enum GradoStateLoadResult result;
+    enum GradoStateLoadResult preflightResult;
+    u32 helpBoxCallsBeforeMenu;
 
     PrepareSemanticSaves();
     PrepareLive(SAVE_ID_GAME2, permanent, chapter);
@@ -943,6 +985,18 @@ static void ProbeNativeLoadRefusal(void)
     sHelpBoxX = 0;
     sHelpBoxY = 0;
     sHelpBoxMessage = 0;
+
+    sUnwrappedReadSramFast = ReadSramFast;
+    sExpansionMetaReadCount = 0;
+    sTraceExpansionMetaReads = 1;
+    ReadSramFast = TraceSramRead;
+    preflightResult = GradoState_PreflightNativeSave(
+        GRADO_LOAD_NORMAL, SAVE_ID_GAME2,
+        &(struct GradoStateLoadDiagnostic){ 0 });
+    sTraceExpansionMetaReads = 0;
+    ReadSramFast = sUnwrappedReadSramFast;
+    probe->metadataCopyCount = sExpansionMetaReadCount;
+    probe->preflightResult = preflightResult;
 
     result = GradoState_TryLoadNativeSave(GRADO_LOAD_NORMAL, SAVE_ID_GAME2);
     probe->result = result;
@@ -978,6 +1032,8 @@ static void ProbeNativeLoadRefusal(void)
     sioProc.unk_48 = SAVE_ID_GAME2;
     linkArena = gLinkArenaSt;
     sLinkArenaInitCalls = 0;
+    sProcGotoCalls = 0;
+    sProcGotoLabel = -1;
     LinkArenaTeamBuild_LoadSelectedSave(&sioProc);
     probe->normalCallerPreserved =
         memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
@@ -989,9 +1045,35 @@ static void ProbeNativeLoadRefusal(void)
         && GetBonusContentClaimFlags() == bonus
         && gSuspendSaveIdOffset == suspendSaveIdOffset;
     probe->normalCallerTransitionCount = sLinkArenaInitCalls;
+    probe->linkArenaProcGotoCount = sProcGotoCalls;
+    probe->linkArenaExitLabel = sProcGotoLabel;
+
+    memset(&saveMenuProc, 0, sizeof(saveMenuProc));
+    saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESUME;
+    saveMenuProc.sus_slot = SAVE_ID_GAME2;
+    helpBoxCallsBeforeMenu = sHelpBoxCalls;
+    SaveMenu_NewGame(&saveMenuProc);
+    probe->saveMenuSuspendRefused =
+        sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
+        && sHelpBoxMessage == probe->expectedMessage;
+    saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
+    helpBoxCallsBeforeMenu = sHelpBoxCalls;
+    SaveMenu_NewGame(&saveMenuProc);
+    probe->saveMenuNormalRefused =
+        sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
+        && sHelpBoxMessage == probe->expectedMessage;
+    probe->saveMenuPreserved =
+        memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+        && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+        && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+        && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+        && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+        && GetBonusContentClaimFlags() == bonus
+        && gSuspendSaveIdOffset == suspendSaveIdOffset;
+    probe->saveMenuProcGotoCount = sProcGotoCalls;
     probe->callerHelpBoxCalls = sHelpBoxCalls;
     probe->callerHelpBoxCorrect =
-        sHelpBoxCalls == 3
+        sHelpBoxCalls == 5
         && sHelpBoxX == 0x30
         && sHelpBoxY == 0x30
         && sHelpBoxMessage == probe->expectedMessage;
