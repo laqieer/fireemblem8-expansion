@@ -85,14 +85,22 @@ class WorkflowStaticPolicyTests(unittest.TestCase):
     def setUp(self):
         self.text = _read_workflow_text()
 
-    def _drift_job_direct_mapping(self):
-        lines = self.text.splitlines()
+    def _drift_job_span(self, text):
+        lines = text.splitlines()
         start = lines.index("  drift-scan:")
         end = len(lines)
         for index in range(start + 1, len(lines)):
-            if lines[index].startswith("  ") and not lines[index].startswith("    "):
+            line = lines[index]
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if indent == 2:
                 end = index
                 break
+        return lines, start, end
+
+    def _drift_job_direct_mapping(self, text):
+        lines, start, end = self._drift_job_span(text)
         direct = []
         for line in lines[start + 1:end]:
             if (
@@ -110,22 +118,7 @@ class WorkflowStaticPolicyTests(unittest.TestCase):
             text,
         ):
             return ["drift-scan runner must be ubuntu-24.04"]
-        lines = text.splitlines()
-        start = lines.index("  drift-scan:")
-        end = len(lines)
-        for index in range(start + 1, len(lines)):
-            if lines[index].startswith("  ") and not lines[index].startswith("    "):
-                end = index
-                break
-        direct = []
-        for line in lines[start + 1:end]:
-            if (
-                line.strip()
-                and not line.lstrip().startswith("#")
-                and len(line) - len(line.lstrip(" ")) == 4
-                and not line.startswith("    -")
-            ):
-                direct.append(line.strip().split(":", 1)[0])
+        direct = self._drift_job_direct_mapping(text)
         if direct != ["runs-on", "timeout-minutes", "steps"]:
             return ["drift-scan execution context is not closed"]
         return []
@@ -174,6 +167,16 @@ class WorkflowStaticPolicyTests(unittest.TestCase):
             )
             with self.subTest(override=override):
                 self.assertTrue(self._drift_job_errors(changed))
+
+    def test_comment_only_line_does_not_end_drift_job_span(self):
+        append_at = self.text.index("      - name: Configure/verify")
+        changed = (
+            self.text[:append_at]
+            + "  # host options\n"
+            + "    container: ubuntu:26.04\n"
+            + self.text[append_at:]
+        )
+        self.assertTrue(self._drift_job_errors(changed))
 
     def test_moving_or_alternate_runner_images_are_rejected(self):
         for runner in ("ubuntu-latest", "ubuntu-26.04"):
