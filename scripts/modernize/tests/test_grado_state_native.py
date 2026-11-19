@@ -6,6 +6,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -27,14 +28,20 @@ class GradoAllocationNativeTests(unittest.TestCase):
             "MODERN_CC",
             str(Path(root) / "bin" / f"{prefix}gcc") if root else f"{prefix}gcc",
         )
-        return gcc_command(compiler, os.environ.get("MODERN_BINUTILS_DIR"), *arguments)
+        selected = shutil.which(compiler)
+        if selected is None:
+            raise FileNotFoundError(f"the selected ARM compiler is unavailable: {compiler}")
+        binutils = os.environ.get("MODERN_BINUTILS_DIR")
+        if binutils:
+            binutils = str(Path(binutils).absolute())
+        return gcc_command(str(Path(selected).absolute()), binutils, *arguments)
 
     def _arm_compile(self, source, output, extra=()):
         newlib = os.environ.get(
             "MODERN_NEWLIB_INCLUDE",
             "/usr/include/newlib" if Path("/usr/include/newlib/stdlib.h").is_file() else "",
         )
-        header_flags = ["-isystem", newlib] if newlib else []
+        header_flags = ["-isystem", str(Path(newlib).absolute())] if newlib else []
         result = subprocess.run(
             [
                 *self._arm_command(), "-std=gnu89", "-mthumb", "-mcpu=arm7tdmi",
@@ -91,9 +98,8 @@ class GradoAllocationNativeTests(unittest.TestCase):
         ]
 
     def test_native_compiler_honors_owned_toolchain_paths(self):
-        compiler = shutil.which(self._arm_command()[0])
-        self.assertIsNotNone(compiler, "the selected ARM compiler is unavailable")
-        assembler = discover_tool(compiler, os.environ.get("MODERN_BINUTILS_DIR"), "as")
+        compiler = self._arm_command()[0]
+        assembler = discover_tool(compiler, os.environ.get("MODERN_BINUTILS_DIR"), "as").absolute()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             toolchain = root / "tool chain"
@@ -129,6 +135,116 @@ class GradoAllocationNativeTests(unittest.TestCase):
             for arguments in invocations:
                 self.assertIn(f"-B{binutils}/", arguments)
                 self.assertIn(str(SOURCE), arguments)
+
+    def test_native_compiler_honors_relative_toolchain_paths(self):
+        compiler = self._arm_command()[0]
+        assembler = discover_tool(compiler, os.environ.get("MODERN_BINUTILS_DIR"), "as").absolute()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binutils = root / "relative bin utils"
+            binutils.mkdir()
+            toolchain = root / "compiler path"
+            compiler_path = toolchain / "bin" / "grado-source-gcc"
+            compiler_path.parent.mkdir(parents=True)
+            compiler_path.write_text(
+                "#!/usr/bin/env python3\nimport os, sys\n"
+                f"os.execv({compiler!r}, [{compiler!r}, *sys.argv[1:]])\n"
+            )
+            compiler_path.chmod(0o755)
+            capture = root / "assembler.log"
+            selected = binutils / "as"
+            selected.write_text(
+                "#!/usr/bin/env python3\nimport os, sys\n"
+                f"with open({str(capture)!r}, 'a') as log:\n"
+                "    log.write('assembler\\n')\n"
+                f"os.execv({str(assembler)!r}, [{str(assembler)!r}, *sys.argv[1:]])\n"
+            )
+            selected.chmod(0o755)
+            cases = (
+                ("explicit", False, False), ("explicit", False, True),
+                ("explicit", True, False), ("explicit", True, True),
+                ("root", False, False), ("root", True, True),
+            )
+            for selection, relative_compiler, relative_binutils in cases:
+                with self.subTest(
+                    selection=selection,
+                    relative_compiler=relative_compiler,
+                    relative_binutils=relative_binutils,
+                ):
+                    capture.write_text("")
+                    environment = os.environ.copy()
+                    environment["PREFIX"] = "grado-source-"
+                    if selection == "root":
+                        environment.pop("MODERN_CC", None)
+                        environment["MODERN_TOOLCHAIN_ROOT"] = (
+                            toolchain.name if relative_compiler else str(toolchain)
+                        )
+                    else:
+                        environment["MODERN_CC"] = (
+                            str(compiler_path.relative_to(root)) if relative_compiler
+                            else str(compiler_path)
+                        )
+                        environment["MODERN_TOOLCHAIN_ROOT"] = str(root / "unused toolchain")
+                    environment["MODERN_BINUTILS_DIR"] = (
+                        binutils.name if relative_binutils else str(binutils)
+                    )
+                    if environment.get("MODERN_NEWLIB_INCLUDE"):
+                        environment["MODERN_NEWLIB_INCLUDE"] = str(
+                            Path(environment["MODERN_NEWLIB_INCLUDE"]).absolute()
+                        )
+                    environment["PYTHONPATH"] = os.pathsep.join(
+                        filter(None, (str(ROOT), environment.get("PYTHONPATH")))
+                    )
+                    result = subprocess.run(
+                        [
+                            sys.executable, "-B", "-m", "unittest",
+                            "scripts.modernize.tests.test_grado_state_native."
+                            "GradoAllocationNativeTests.test_native_compiler_honors_owned_toolchain_paths",
+                            "scripts.modernize.tests.test_grado_state_native."
+                            "GradoAllocationNativeTests.test_native_guide_slot_routes_every_flag_call_through_its_policy",
+                        ],
+                        cwd=root, env=environment, capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(capture.read_text().splitlines(), ["assembler"] * 3)
+
+    def test_native_compiler_honors_relative_include_path(self):
+        compiler = self._arm_command()[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            headers = root / "header path"
+            headers.mkdir()
+            (headers / "stdlib.h").write_text("#define GRADO_TEST_INCLUDE 1\n")
+            source = root / "include-probe.c"
+            source.write_text(
+                "#include <stdlib.h>\n"
+                "#ifndef GRADO_TEST_INCLUDE\n"
+                '#error "configured include directory was not selected"\n'
+                "#endif\n"
+                "int grado_include_probe;\n"
+            )
+            command = (
+                "from pathlib import Path; import sys; "
+                "from scripts.modernize.tests.test_grado_state_native import GradoAllocationNativeTests; "
+                "GradoAllocationNativeTests()._arm_compile(Path(sys.argv[1]), Path(sys.argv[2]))"
+            )
+            for relative in (False, True):
+                with self.subTest(relative=relative):
+                    environment = os.environ.copy()
+                    environment["MODERN_CC"] = compiler
+                    if environment.get("MODERN_BINUTILS_DIR"):
+                        environment["MODERN_BINUTILS_DIR"] = str(
+                            Path(environment["MODERN_BINUTILS_DIR"]).absolute()
+                        )
+                    environment["MODERN_NEWLIB_INCLUDE"] = headers.name if relative else str(headers)
+                    environment["PYTHONPATH"] = os.pathsep.join(
+                        filter(None, (str(ROOT), environment.get("PYTHONPATH")))
+                    )
+                    result = subprocess.run(
+                        [sys.executable, "-B", "-c", command, str(source), str(root / "include.o")],
+                        cwd=root, env=environment, capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_native_guide_slot_routes_every_flag_call_through_its_policy(self):
         with tempfile.TemporaryDirectory() as temporary:

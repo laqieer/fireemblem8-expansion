@@ -360,6 +360,10 @@ save, credentials or manual judgment.
    implementation, executes them, then compiles the campaign source for
    ARM7TDMI/Thumb AAPCS. The previous absent campaign interface failed host
    compilation; that structural negative does not claim target-ROM evidence.
+   The same suite verifies absolute and relative compiler, binutils and
+   include paths with spaces, invoking the selected assembler for both
+   compiler selection forms. Before the fix, relative paths could become
+   unreachable or silently select the wrong assembler or headers.
 2. The complete physical allocation must pass the existing reservation,
    capacity, scope and overlap validator. An independent C consumer names
    every required public symbol from the owning 16-STATE/227-FLAG register;
