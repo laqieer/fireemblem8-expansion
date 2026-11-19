@@ -86,6 +86,11 @@ enum GradoStateLoadResult GradoState_PreflightSave(
     const struct GradoStateFlagView * view,
     struct GradoStateLoadDiagnostic * diagnostic);
 
+enum GradoStateLoadResult GradoState_PreflightNativeSave(
+    enum GradoStateLoadRoute route,
+    int slot,
+    struct GradoStateLoadDiagnostic * diagnostic);
+
 enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     struct GradoStateLoadDiagnostic * diagnostic);
 

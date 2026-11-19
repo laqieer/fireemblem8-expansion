@@ -78,6 +78,24 @@ struct GradoSemanticSaveProbe
     struct GradoSemanticSaveRecord records[9];
 };
 
+struct GradoNativeSaveRecord
+{
+    u32 route;
+    u32 requestedSlot;
+    u32 expectedBacking;
+    u32 result;
+    u32 sourceSlot;
+    u32 backingSlot;
+    u32 preserved;
+};
+
+struct GradoNativeSaveProbe
+{
+    u32 phase;
+    u32 count;
+    struct GradoNativeSaveRecord records[5];
+};
+
 static union
 {
     struct SaveBlocks native;
@@ -86,6 +104,7 @@ static union
 static u8 sBefore[CART_SRAM_SIZE];
 volatile struct GradoSavePathProbe gGradoSavePathProbe;
 volatile struct GradoSemanticSaveProbe gGradoSemanticSaveProbe;
+volatile struct GradoNativeSaveProbe gGradoNativeSaveProbe;
 
 static void PrepareCurrent(void)
 {
@@ -759,13 +778,85 @@ static void ProbeSemanticSaves(int mode)
     gGradoSemanticSaveProbe.phase = 2;
 }
 
+static void RecordNativeSavePreflight(
+    enum GradoStateLoadRoute route,
+    int requestedSlot,
+    unsigned int expectedBacking)
+{
+    struct GradoStateLoadDiagnostic diagnostic;
+    volatile struct GradoNativeSaveRecord * record;
+    enum GradoStateLoadResult result;
+
+    memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+    result = GradoState_PreflightNativeSave(route, requestedSlot, &diagnostic);
+    record = &gGradoNativeSaveProbe.records[gGradoNativeSaveProbe.count++];
+    record->route = route;
+    record->requestedSlot = requestedSlot;
+    record->expectedBacking = expectedBacking;
+    record->result = result;
+    record->sourceSlot = diagnostic.sourceSlot;
+    record->backingSlot = diagnostic.backingSlot;
+    record->preserved = memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0;
+}
+
+static void ProbeNativeSavePreflight(void)
+{
+    unsigned int backing;
+    u8 permanent[25];
+    u8 chapter[5];
+    struct SaveBlockInfo savedInfo;
+    struct SaveBlockInfo info;
+    struct SuspendSaveBlock * suspendSave;
+    unsigned int slot;
+
+    gGradoNativeSaveProbe.phase = 1;
+    gGradoNativeSaveProbe.count = 0;
+
+    PrepareCurrent();
+    PrepareSemanticSaves();
+    RecordNativeSavePreflight(
+        GRADO_LOAD_NORMAL, SAVE_ID_GAME2, GRADO_STATE_NO_NATIVE_SAVE_SLOT);
+
+    for (backing = SAVE_ID_GAME1; backing <= SAVE_ID_GAME2; ++backing)
+    {
+        PrepareLive(backing, permanent, chapter);
+        PrepareSemanticState();
+        gPlaySt.chapterIndex = 21;
+        gPlaySt.gameSaveSlot = backing;
+        SetBonusContentClaimFlags(BonusForBacking(backing));
+        WriteSuspendSave(SAVE_ID_SUSPEND);
+        RecordNativeSavePreflight(
+            GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, backing);
+    }
+
+    savedInfo = gSram->saveBlockInfo[SAVE_ID_GAME2];
+    gSram->saveBlockInfo[SAVE_ID_GAME2].offset = 0xFFFF;
+    RecordNativeSavePreflight(
+        GRADO_LOAD_NORMAL, SAVE_ID_GAME2, GRADO_STATE_NO_NATIVE_SAVE_SLOT);
+    gSram->saveBlockInfo[SAVE_ID_GAME2] = savedInfo;
+
+    slot = SAVE_ID_SUSPEND + GetLastSuspendSaveId();
+    suspendSave = &gSram->suspendSaveBlocks[slot - SAVE_ID_SUSPEND];
+    suspendSave->playSt.gameSaveSlot = SAVE_ID_ARENA;
+    memset(&info, 0, sizeof(info));
+    info.magic32 = SAVEMAGIC32;
+    info.kind = SAVEBLOCK_KIND_SUSPEND;
+    WriteSaveBlockInfo(&info, slot);
+    RecordNativeSavePreflight(
+        GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, GRADO_STATE_NO_NATIVE_SAVE_SLOT);
+
+    gGradoNativeSaveProbe.phase = 2;
+}
+
 void AgbMain(void)
 {
     unsigned int pass;
     unsigned int slot;
 
     gSram = &sSaveImage.native;
-    if (!(REG_KEYINPUT & A_BUTTON))
+    if (!(REG_KEYINPUT & R_BUTTON))
+        ProbeNativeSavePreflight();
+    else if (!(REG_KEYINPUT & A_BUTTON))
     {
         if (REG_KEYINPUT & B_BUTTON)
             ProbeSemanticSaves(0);

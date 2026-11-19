@@ -352,6 +352,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         _, semantic_size = resolve_elf_symbol(
             elf, "gGradoSemanticSaveProbe", tools["MODERN_NM"])
         self.assertEqual(semantic_size, 48 + 9 * 36)
+        _, native_size = resolve_elf_symbol(
+            elf, "gGradoNativeSaveProbe", tools["MODERN_NM"])
+        self.assertEqual(native_size, 8 + 5 * 28)
 
         def capture_semantic(name, keys, count):
             semantic_scenario = work / f"semantic-{name}-scenario.json"
@@ -392,6 +395,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         (normal, suspend, legacy, valid, incompatible, corrupt,
          missing, conflict, recovery, reopen) = symbols
         no_slot = 0xFFFFFFFF
+        native_no_slot = 0xFF
         expected_saved = {(normal, slot, slot) for slot in range(3)} | {
             (suspend, slot, backing) for slot in (3, 4) for backing in range(3)
         }
@@ -402,6 +406,66 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                     for record in saved),
                 saved,
             )
+
+        native_scenario = work / "native-preflight-scenario.json"
+        native_scenario.write_text(json.dumps({
+            "schema_version": 1, "name": "grado-native-save-preflight",
+            "frames": [{"start": 0, "end": 120, "keys": ["R"]}],
+            "checkpoints": [{
+                    "name": "native-source-records", "frame": 120, "framebuffer": False,
+                    "probes": [
+                        {"address": f"gGradoNativeSaveProbe+0x{offset:x}", "size": 4}
+                        for offset in range(0, native_size, 4)
+                    ],
+            }],
+        }), encoding="utf-8")
+        native_output = work / "native-preflight-capture.json"
+        self.run_command([
+            sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
+            "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
+            "--scenario", native_scenario, "--output", native_output,
+        ], cwd=ROOT)
+        native_capture = json.loads(native_output.read_text())
+        native_values = {
+            probe["address"]: int(probe["value"], 16)
+            for probe in native_capture["checkpoints"][0]["probes"]
+        }
+        native_data = b"".join(
+            native_values[f"gGradoNativeSaveProbe+0x{offset:x}"].to_bytes(4, "little")
+            for offset in range(0, native_size, 4)
+        )
+        self.assertEqual(struct.unpack_from("<2I", native_data), (2, 5))
+        native = [
+            struct.unpack_from("<7I", native_data, 8 + index * 28)
+            for index in range(5)
+        ]
+        self.assertEqual([record[:3] for record in native], [
+            (normal, 2, native_no_slot),
+            (suspend, 3, 1),
+            (suspend, 3, 2),
+            (normal, 2, native_no_slot),
+            (suspend, 3, native_no_slot),
+        ])
+        self.assertTrue(all(record[6] == 1 for record in native), native)
+        if epoch == 256:
+            self.assertTrue(
+                all(record[3] in (valid, recovery) for record in native[:3]), native
+            )
+            self.assertTrue(all(record[3] == corrupt for record in native[3:]), native)
+            self.assertEqual(
+                [record[4:6] for record in native[:3]],
+                [(2, native_no_slot), (4, 1), (3, 2)],
+            )
+            self.assertEqual(native[3][4:6], (2, native_no_slot), native)
+            self.assertTrue(all(
+                record[4] in (3, 4) and record[5] == 5
+                for record in native[4:]
+            ), native)
+        else:
+            self.assertTrue(all(record[3] == incompatible for record in native), native)
+            self.assertTrue(all(
+                record[4:6] == (native_no_slot, native_no_slot) for record in native
+            ), native)
         negative = []
         chapter = []
         if epoch == 256:

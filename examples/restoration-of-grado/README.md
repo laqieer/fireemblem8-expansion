@@ -96,13 +96,19 @@ qualification remain open.
 
 `src/lifecycle.c` is the real optional consumer policy for this reference.
 Epoch 256 denotes Grado schema 1; it still uses the framework's existing
-format/envelope version 2 and no additional save bytes. Every normal, Suspend
-and legacy-compatibility consumer must run `GradoState_PreflightSave` on a
-readonly view before calling an original loader. It requires the existing
-global classifier to report `CURRENT`, validates every applicable permanent
-field and the current Suspend chapter, and returns without changing the view,
-metadata or live flags on refusal. Vanilla/legacy metadata, the default epoch
-2 and any non-current history are incompatible rather than migrated.
+format/envelope version 2 and no additional save bytes. Production consumers
+must call `GradoState_PreflightNativeSave` before any destructive transition.
+It requires the global classifier and Grado epoch, checks the selected fixed
+native block's kind, size, offset and checksum, then constructs its readonly
+flag view. Normal loads bind the requested game slot; Suspend loads resolve
+the existing last/next rotation, validate the referenced normal-save block,
+and report both physical slots in the diagnostic. A caller must load from that
+exact source and set `gSuspendSaveIdOffset` from the returned Suspend slot.
+The helper does not change SRAM or that selector. `GradoState_PreflightSave`
+remains the lower-level policy for already-validated views; it alone cannot
+bind a production load to its physical source. Vanilla/legacy metadata, the
+default epoch 2 and any non-current history are incompatible rather than
+migrated.
 
 Chapter-clear facts make preceding choices required. Roderich and Lund instead
 use separate monotonic completed-resolution facts in the existing allocation;
@@ -322,7 +328,15 @@ The existing `gbagfx` helper builds only the original data required for linking.
    after changing an unrelated permanent flag for normal or a chapter flag for
    Suspend: recovery must refuse and preserve both live flag scopes and the
    post-load image. The test-owned preflight is not production caller integration.
-8. In another reset, hold A+B+L for the saved-chapter validation capture.
+8. In a separate reset, hold synthetic R for the physical-source preflight.
+   At epoch 256 it binds normal slot 2 and both alternating Suspend slots
+   (4 then 3) to their saved backing slots (1 then 2), without changing SRAM.
+   A normal block with an out-of-range source offset and a valid Suspend block
+   naming an invalid backing slot both return `CORRUPT` without loading that
+   source. Epoch 2 refuses all five physical cases as incompatible and
+   preserves the same image. This probe does not claim that production callers
+   have been wired to the helper.
+9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make
    the live counter have the opposite validity before preflight. Suspend must

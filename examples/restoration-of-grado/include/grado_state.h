@@ -87,6 +87,7 @@ enum
     GRADO_STATE_PERMANENT_BYTES = 25,
     GRADO_STATE_CHAPTER_BYTES = 5,
     GRADO_STATE_MAX_RECOVERIES = 14,
+    GRADO_STATE_NO_NATIVE_SAVE_SLOT = 0xFF,
 };
 
 struct GradoStateField
@@ -120,6 +121,8 @@ struct GradoStateLoadDiagnostic
     u16 recoveredSymbols[GRADO_STATE_MAX_RECOVERIES];
     u8 recoveredCount;
     u8 guideTruthInitialized;
+    u8 sourceSlot;
+    u8 backingSlot;
 };
 
 enum GradoAllocationResult GradoState_ValidateAllocation(

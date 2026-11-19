@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "agb_sram.h"
+#include "bmsave.h"
 #include "eventinfo.h"
 #include "../include/grado_campaign_state.h"
 #include "../include/grado_state_internal.h"
@@ -119,6 +121,8 @@ static enum GradoStateLoadResult GradoState_CheckHistory(
     memset(&pending, 0, sizeof(pending));
     pending.route = route;
     pending.chapter = chapter;
+    pending.sourceSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
+    pending.backingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
     GradoState_SetLoadResult(&pending, GRADO_STATE_LOAD_VALID,
         GRADO_STATE_RECOVERY_NONE, GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
     value = 0;
@@ -203,6 +207,8 @@ enum GradoStateLoadResult GradoState_PreflightSave(
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->route = route;
     diagnostic->chapter = chapter;
+    diagnostic->sourceSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
+    diagnostic->backingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
     if (route != GRADO_LOAD_NORMAL && route != GRADO_LOAD_SUSPEND
         && route != GRADO_LOAD_LEGACY)
         return GradoState_SetLoadResult(diagnostic, GRADO_STATE_LOAD_INPUT,
@@ -243,6 +249,126 @@ enum GradoStateLoadResult GradoState_PreflightSave(
         if (route == GRADO_LOAD_SUSPEND)
             memcpy(diagnostic->preflightChapter, chapterFlags, sizeof(chapterFlags));
     }
+    return result;
+}
+
+static int GradoState_NativeSaveBlockReady(
+    int slot, int kind, unsigned int size)
+{
+    struct SaveBlockInfo info;
+    void * expected;
+
+    if (slot < SAVE_ID_GAME0 || slot >= SAVE_ID_MAX)
+        return 0;
+
+    expected = GetSaveWriteAddr(slot);
+    if (expected == NULL)
+        return 0;
+
+    ReadSramFast(&gSram->saveBlockInfo[slot], &info, sizeof(info));
+    if (info.kind != kind || info.size != size
+        || info.offset != SramAddrToOffset(expected))
+        return 0;
+
+    return ReadSaveBlockInfo(&info, slot);
+}
+
+enum GradoStateLoadResult GradoState_PreflightNativeSave(
+    enum GradoStateLoadRoute route,
+    int slot,
+    struct GradoStateLoadDiagnostic * diagnostic)
+{
+    enum SaveCompatState compatibility;
+    enum GradoStateLoadResult result;
+    struct GradoStateFlagView view;
+    struct GameSaveBlock * gameSave;
+    struct SuspendSaveBlock * suspendSave;
+    int resolvedSlot;
+    int backingSlot;
+
+    if (diagnostic == NULL)
+        return GRADO_STATE_LOAD_INPUT;
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->route = route;
+    diagnostic->sourceSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
+    diagnostic->backingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
+    if (route != GRADO_LOAD_NORMAL && route != GRADO_LOAD_SUSPEND
+        && route != GRADO_LOAD_LEGACY)
+        return GradoState_SetLoadResult(
+            diagnostic, GRADO_STATE_LOAD_INPUT, GRADO_STATE_RECOVERY_NONE,
+            GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
+
+    if ((route == GRADO_LOAD_SUSPEND && slot != SAVE_ID_SUSPEND)
+        || (route != GRADO_LOAD_SUSPEND
+            && (slot < SAVE_ID_GAME0 || slot > SAVE_ID_GAME2)))
+        return GradoState_SetLoadResult(
+            diagnostic, GRADO_STATE_LOAD_INPUT, GRADO_STATE_RECOVERY_NONE,
+            GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
+
+    compatibility = ClassifySramSaveCompat();
+    if (!GradoState_MetaMatches(compatibility, &gSram->expansionSaveMeta))
+        return GradoState_PreflightSave(
+            compatibility, &gSram->expansionSaveMeta, route, 0, NULL, diagnostic);
+
+    if (route != GRADO_LOAD_SUSPEND)
+    {
+        diagnostic->sourceSlot = slot;
+        if (!GradoState_NativeSaveBlockReady(
+                slot, SAVEBLOCK_KIND_GAME, sizeof(struct GameSaveBlock)))
+            return GradoState_SetLoadResult(
+                diagnostic, GRADO_STATE_LOAD_CORRUPT, GRADO_STATE_RECOVERY_NONE,
+                GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
+
+        gameSave = GetSaveReadAddr(slot);
+        view.chapterFlags = NULL;
+        view.chapterBytes = 0;
+        view.permanentFlags = gameSave->permanentFlags;
+        view.permanentBytes = sizeof(gameSave->permanentFlags);
+        result = GradoState_PreflightSave(
+            compatibility, &gSram->expansionSaveMeta, route,
+            gameSave->playSt.chapterIndex, &view, diagnostic);
+        diagnostic->sourceSlot = slot;
+        diagnostic->backingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
+        return result;
+    }
+
+    resolvedSlot = GetLastSuspendSaveId();
+    if (resolvedSlot < 0 || resolvedSlot > 1
+        || !GradoState_NativeSaveBlockReady(
+            SAVE_ID_SUSPEND + resolvedSlot,
+            SAVEBLOCK_KIND_SUSPEND, sizeof(struct SuspendSaveBlock)))
+    {
+        resolvedSlot = GetNextSuspendSaveId();
+        if (resolvedSlot < 0 || resolvedSlot > 1
+            || !GradoState_NativeSaveBlockReady(
+                SAVE_ID_SUSPEND + resolvedSlot,
+                SAVEBLOCK_KIND_SUSPEND, sizeof(struct SuspendSaveBlock)))
+            return GradoState_SetLoadResult(
+                diagnostic, GRADO_STATE_LOAD_CORRUPT, GRADO_STATE_RECOVERY_NONE,
+                GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
+    }
+
+    diagnostic->sourceSlot = SAVE_ID_SUSPEND + resolvedSlot;
+    suspendSave = GetSaveReadAddr(SAVE_ID_SUSPEND + resolvedSlot);
+    backingSlot = suspendSave->playSt.gameSaveSlot;
+    diagnostic->backingSlot = backingSlot;
+    if (backingSlot < SAVE_ID_GAME0 || backingSlot > SAVE_ID_GAME2
+        || !GradoState_NativeSaveBlockReady(
+            backingSlot, SAVEBLOCK_KIND_GAME, sizeof(struct GameSaveBlock)))
+        return GradoState_SetLoadResult(
+            diagnostic, GRADO_STATE_LOAD_CORRUPT, GRADO_STATE_RECOVERY_NONE,
+            GRADO_STATE_SYMBOL_COUNT, GRADO_STATE_SYMBOL_COUNT);
+
+    view.chapterFlags = suspendSave->chapterFlags;
+    view.chapterBytes = sizeof(suspendSave->chapterFlags);
+    view.permanentFlags = suspendSave->permanentFlags;
+    view.permanentBytes = sizeof(suspendSave->permanentFlags);
+    result = GradoState_PreflightSave(
+        compatibility, &gSram->expansionSaveMeta, route,
+        suspendSave->playSt.chapterIndex, &view, diagnostic);
+    diagnostic->sourceSlot = SAVE_ID_SUSPEND + resolvedSlot;
+    diagnostic->backingSlot = backingSlot;
     return result;
 }
 
