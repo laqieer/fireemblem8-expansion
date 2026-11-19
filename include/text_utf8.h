@@ -2,13 +2,15 @@
 #define GUARD_TEXT_UTF8_H
 
 /*
- * Strict UTF-8 and engine-control iteration for modern CJK profiles.
+ * UTF-8 and legacy-byte engine-control iteration for modern message streams.
  * Include global.h before this header so u8/u32 and the generated locale
  * mask are available.
  */
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0)
+#if defined(MODERN)
 
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0
 #define FE8_TEXT_UTF8_ENABLED 1
+#endif
 
 enum TextUtf8TokenKind
 {
@@ -46,6 +48,7 @@ struct TextUtf8Token
     u8 flags;
 };
 
+#ifdef FE8_TEXT_UTF8_ENABLED
 /*
  * Decodes exactly one token at a token boundary and returns the first byte
  * after it. END returns the input pointer unchanged. INVALID always consumes
@@ -76,7 +79,19 @@ const char *TextUtf8_NextBounded(
  * count as content.
  */
 bool8 TextUtf8_HasVisibleContent(const char *text);
+#else
+/*
+ * English/qps uses legacy single-byte glyphs, not the localized UTF-8
+ * renderer. These variants retain the same control and spacing boundaries
+ * but treat every other high byte as a single glyph.
+ */
+const char *TextUtf8_NextLegacy(const char *text, struct TextUtf8Token *out);
+const char *TextUtf8_NextLegacyBounded(
+    const char *text,
+    u32 available,
+    struct TextUtf8Token *out);
+#endif
 
-#endif /* modern build with a localized game locale */
+#endif /* modern build */
 
 #endif /* GUARD_TEXT_UTF8_H */

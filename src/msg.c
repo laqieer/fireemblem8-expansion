@@ -79,6 +79,27 @@ const char *gStrPrefix[][2] =
     {"an ", "An "},
 };
 
+#if defined(MODERN)
+static void WriteBoundedMsgMarker(
+    char *buffer,
+    u32 bufferCapacity,
+    const char *marker)
+{
+    u32 i;
+
+    if (buffer == NULL || bufferCapacity == 0)
+        return;
+
+    i = 0;
+    while (i + 1 < bufferCapacity && marker[i] != '\0')
+    {
+        buffer[i] = marker[i];
+        i++;
+    }
+    buffer[i] = '\0';
+}
+#endif
+
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 static ExpansionLocaleId GetMsgLocale(void)
 {
@@ -450,25 +471,6 @@ static char *DecodeEnglishStringWithLimit(
 }
 #endif
 
-static void WriteBoundedMsgMarker(
-    char *buffer,
-    u32 bufferCapacity,
-    const char *marker)
-{
-    u32 i;
-
-    if (buffer == NULL || bufferCapacity == 0)
-        return;
-
-    i = 0;
-    while (i + 1 < bufferCapacity && marker[i] != '\0')
-    {
-        buffer[i] = marker[i];
-        i++;
-    }
-    buffer[i] = '\0';
-}
-
 static int SetLocalizedMsgTerminator(char *buffer, u32 decodedLength)
 {
     struct TextUtf8Token token;
@@ -590,7 +592,15 @@ const char * GetStrPrefix(s8 * str, bool capital)
     }
 }
 
+#if defined(MODERN)
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+#define MsgStream_Next TextUtf8_Next
+#define MsgStream_NextBounded TextUtf8_NextBounded
+#else
+#define MsgStream_Next TextUtf8_NextLegacy
+#define MsgStream_NextBounded TextUtf8_NextLegacyBounded
+#endif
+
 struct MsgStreamWriter
 {
     char *buffer;
@@ -627,6 +637,24 @@ static int MsgStreamWriter_AppendBytes(
     return TRUE;
 }
 
+static int MsgStream_InvalidToken(
+    const char *cursor,
+    const char *next,
+    const struct TextUtf8Token *token)
+{
+    return next == cursor || token->kind == TEXT_UTF8_TOKEN_INVALID;
+}
+
+static u8 MsgCharacterId(u32 slot)
+{
+    const u8 *const ids[] = {
+        &gPlaySt.unk1C[0], &gPlaySt.unk1C[1], &gPlaySt.unk1E, &gPlaySt.unk1F
+    };
+
+    return *ids[slot];
+}
+
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 static int MsgStreamWriter_AppendStream(
     struct MsgStreamWriter *writer,
     const char *source,
@@ -702,6 +730,7 @@ static int MsgStreamWriter_AppendTactStream(
         cursor = next;
     }
 }
+#endif
 
 static int MsgStream_GetLength(
     const char *source,
@@ -719,13 +748,13 @@ static int MsgStream_GetLength(
     for (;;)
     {
         if (sourceCapacity == 0)
-            next = TextUtf8_Next(cursor, &token);
+            next = MsgStream_Next(cursor, &token);
         else
-            next = TextUtf8_NextBounded(cursor, remaining, &token);
+            next = MsgStream_NextBounded(cursor, remaining, &token);
 
         if (token.kind == TEXT_UTF8_TOKEN_END)
             return TRUE;
-        if (token.kind == TEXT_UTF8_TOKEN_INVALID || next == cursor)
+        if (MsgStream_InvalidToken(cursor, next, &token))
             return FALSE;
 
         *outLength += (u32)(next - cursor);
@@ -735,6 +764,7 @@ static int MsgStream_GetLength(
     }
 }
 
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
 static char *MsgTransformFailure(
     char *buffer,
     u32 capacity,
@@ -801,6 +831,151 @@ void InsertPrefixWithLimit(
     for (i = 0; i < prefixLength; i++)
         str[i] = selectedPrefix[i];
 }
+#else
+static char *NativeMsgTransformFailure(
+    char *buffer,
+    u32 capacity,
+    enum LocalizedGameTextStatus status)
+{
+    const char *marker = status == LOCALIZED_GAME_TEXT_STATUS_DECODE_OVERFLOW
+        ? LOCALIZED_GAME_TEXT_MARKER_OVERFLOW
+        : LOCALIZED_GAME_TEXT_MARKER_CORRUPT;
+    WriteBoundedMsgMarker(buffer, capacity, marker);
+    return buffer;
+}
+
+static enum LocalizedGameTextStatus NativeMsgCopyCache(u8 *target, u32 capacity)
+{
+    u32 length;
+    u32 i;
+
+    if (!MsgStream_GetLength((const char *)&sMsgString, sizeof(sMsgString), &length))
+        return LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT;
+    if (length >= capacity)
+        return LOCALIZED_GAME_TEXT_STATUS_DECODE_OVERFLOW;
+
+    for (i = 0; i < length; i++)
+        target[i] = MSG_BUFFER1[i];
+    target[length] = 0;
+    return LOCALIZED_GAME_TEXT_STATUS_OK;
+}
+
+static enum LocalizedGameTextStatus NativeMsgAppendStream(
+    struct MsgStreamWriter *writer,
+    const char *source,
+    u32 capacity)
+{
+    u32 length;
+
+    if (!MsgStream_GetLength(source, capacity, &length))
+        return LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT;
+    if (!MsgStreamWriter_AppendBytes(writer, source, length))
+        return LOCALIZED_GAME_TEXT_STATUS_DECODE_OVERFLOW;
+    return LOCALIZED_GAME_TEXT_STATUS_OK;
+}
+
+static u32 NativeMsgUnboundedLength(const char *source)
+{
+    struct TextUtf8Token token;
+    const char *cursor = source;
+
+    for (;;)
+    {
+        const char *next = MsgStream_Next(cursor, &token);
+        if (token.kind == TEXT_UTF8_TOKEN_END)
+            return (u32)(cursor - source);
+        cursor = next;
+    }
+}
+
+static char *NativeMsgTransform(
+    u8 *scratch,
+    u32 scratchCapacity,
+    u8 *output,
+    u32 outputCapacity,
+    bool specialSubstitutions)
+{
+    struct MsgStreamWriter writer;
+    struct TextUtf8Token token;
+    enum LocalizedGameTextStatus status;
+    const char *cursor;
+    const char *next;
+    const char *replacement;
+    u32 replacementCapacity;
+    u32 remaining;
+    int characterSlot;
+
+    status = NativeMsgCopyCache(scratch, scratchCapacity);
+    if (status != LOCALIZED_GAME_TEXT_STATUS_OK)
+        return NativeMsgTransformFailure((char *)output, outputCapacity, status);
+
+    MsgStreamWriter_Init(&writer, (char *)output, outputCapacity);
+    cursor = (const char *)scratch;
+    remaining = scratchCapacity;
+    for (;;)
+    {
+        next = MsgStream_NextBounded(cursor, remaining, &token);
+        if (token.kind == TEXT_UTF8_TOKEN_END)
+            return writer.buffer;
+        if (MsgStream_InvalidToken(cursor, next, &token))
+            return NativeMsgTransformFailure(
+                writer.buffer, writer.capacity, LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT);
+
+        replacement = NULL;
+        replacementCapacity = 0;
+        characterSlot = -1;
+        if (token.kind == TEXT_UTF8_TOKEN_EXTENDED_CONTROL)
+        {
+            switch (token.payload)
+            {
+            case 0x12:
+            case 0x13:
+            case 0x14:
+            case 0x15:
+                if (specialSubstitutions)
+                    characterSlot = token.payload - 0x12;
+                break;
+
+            case 0x20:
+                replacement = GetTacticianName();
+                replacementCapacity = sizeof(gPlaySt.playerName);
+                break;
+
+            case 0x22:
+                if (specialSubstitutions)
+                {
+                    replacement = GetItemName(gActionData.item);
+                    if (replacement == (const char *)MSG_BUFFER5)
+                        replacementCapacity = sizeof(sMsgString.buffer5);
+                }
+                break;
+            }
+        }
+
+        if (characterSlot >= 0)
+        {
+            replacement = GetStringFromIndex(
+                GetCharacterData(MsgCharacterId(characterSlot))->nameTextId);
+            replacementCapacity = sizeof(sMsgString.buffer1);
+        }
+
+        if (replacement != NULL)
+        {
+            status = NativeMsgAppendStream(&writer, replacement, replacementCapacity);
+            if (status != LOCALIZED_GAME_TEXT_STATUS_OK)
+                return NativeMsgTransformFailure(writer.buffer, writer.capacity, status);
+        }
+        else if (!MsgStreamWriter_AppendBytes(&writer, cursor, (u32)(next - cursor)))
+        {
+            return NativeMsgTransformFailure(
+                writer.buffer, writer.capacity, LOCALIZED_GAME_TEXT_STATUS_DECODE_OVERFLOW);
+        }
+
+        remaining -= (u32)(next - cursor);
+        cursor = next;
+    }
+}
+#endif
 #endif
 
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
@@ -837,6 +1012,44 @@ InsertPrefix(char *str, const char *prefix, bool capital)
 
     InsertPrefixWithLimit(output, capacity, prefix, capital);
     return output;
+#elif defined(MODERN)
+    const char *selectedPrefix;
+    u32 capacity;
+    u32 prefixLength;
+    u32 stringLength;
+    u32 i;
+
+    selectedPrefix = prefix == NULL ? GetStrPrefix((s8 *)str, capital) : prefix;
+    prefixLength = NativeMsgUnboundedLength(selectedPrefix);
+    capacity = str == (char *)MSG_BUFFER5 ? sizeof(sMsgString.buffer5) : 0;
+
+    if (capacity == 0)
+    {
+        stringLength = NativeMsgUnboundedLength(str);
+    }
+    else if (!MsgStream_GetLength(str, capacity, &stringLength))
+    {
+        NativeMsgTransformFailure(
+            str, capacity, LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT);
+        return;
+    }
+    if (capacity != 0
+        && (prefixLength > capacity - 1
+            || stringLength > capacity - prefixLength - 1))
+    {
+        NativeMsgTransformFailure(
+            str, capacity, LOCALIZED_GAME_TEXT_STATUS_DECODE_OVERFLOW);
+        return;
+    }
+
+    i = stringLength + 1;
+    while (i != 0)
+    {
+        i--;
+        str[i + prefixLength] = str[i];
+    }
+    for (i = 0; i < prefixLength; i++)
+        str[i] = selectedPrefix[i];
 #else
     const char * _prefix;
     u8 len_prefix;
@@ -858,7 +1071,7 @@ InsertPrefix(char *str, const char *prefix, bool capital)
 
 void SetMsgTerminator(signed char * str)
 {
-#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+#if defined(MODERN)
     struct TextUtf8Token token;
     const char *cursor;
     const char *next;
@@ -868,14 +1081,14 @@ void SetMsgTerminator(signed char * str)
     trailingTerminator = NULL;
     for (;;)
     {
-        next = TextUtf8_Next(cursor, &token);
+        next = MsgStream_Next(cursor, &token);
         if (token.kind == TEXT_UTF8_TOKEN_END)
         {
             if (trailingTerminator != NULL)
                 *trailingTerminator = '\0';
             return;
         }
-        if (token.kind == TEXT_UTF8_TOKEN_INVALID || next == cursor)
+        if (MsgStream_InvalidToken(cursor, next, &token))
             return;
 
         if (token.kind == TEXT_UTF8_TOKEN_CONTROL
@@ -1072,7 +1285,7 @@ char * StringInsertSpecialPrefixByCtrl(void)
         if (characterSlot >= 0)
         {
             GetStringFromIndexInBufferWithLimit(
-                GetCharacterData(gPlaySt.unk1C[characterSlot])->nameTextId,
+                GetCharacterData(MsgCharacterId(characterSlot))->nameTextId,
                 MSG_TRANSFORM_INSERTION,
                 MSG_TRANSFORM_INSERTION_CAPACITY);
             nestedStatus = sLastMsgStatus;
@@ -1106,6 +1319,10 @@ char * StringInsertSpecialPrefixByCtrl(void)
         remaining -= (u32)(next - cursor);
         cursor = next;
     }
+#elif defined(MODERN)
+    return NativeMsgTransform(
+        MSG_BUFFER2, sizeof(sMsgString.buffer2),
+        MSG_BUFFER3, sizeof(sMsgString.buffer3), TRUE);
 #else
     u8 * r5 = MSG_BUFFER2;
     u8 * dst = MSG_BUFFER3;
@@ -1212,6 +1429,10 @@ char * StrInsertTact(void)
         remaining -= (u32)(next - cursor);
         cursor = next;
     }
+#elif defined(MODERN)
+    return NativeMsgTransform(
+        MSG_BUFFER4, sizeof(sMsgString.buffer4),
+        MSG_BUFFER5, sizeof(sMsgString.buffer5), FALSE);
 #else
     u8 * r5 = MSG_BUFFER4;
     u8 * r4 = MSG_BUFFER5;

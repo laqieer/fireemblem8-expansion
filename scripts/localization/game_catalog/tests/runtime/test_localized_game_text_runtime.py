@@ -39,7 +39,7 @@ JA_MESSAGES = (
     None,
     None,
     None,
-    None,
+    ("\u94c0 ".encode("utf-8") + b"\x80\x20\x00"),
     (
         "候".encode("utf-8")
         + b"\x80\x20"
@@ -283,6 +283,8 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
                 "-Werror",
                 "-Werror=declaration-after-statement",
                 "-fcf-protection=none",
+                "-fsanitize=bounds",
+                "-fno-sanitize-recover=bounds",
                 "-DMODERN=1",
                 "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
                 "-I",
