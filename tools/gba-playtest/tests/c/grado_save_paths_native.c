@@ -2,10 +2,14 @@
 
 #include "agb_sram.h"
 #include "bm.h"
+#include "bmudisp.h"
 #include "bmitem.h"
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
+#include "sio.h"
+#include "sio_core.h"
+#include "uimenu.h"
 #include "constants/msg.h"
 #include "grado_campaign_state.h"
 #include "statscreen.h"
@@ -14,6 +18,8 @@
 #include <string.h>
 
 #include "../../../../scripts/modernize/tests/fixtures/grado_save_test_helpers.h"
+
+u8 DebugContinueMenu_ContinueChapter(struct MenuProc * menuProc, struct MenuItemProc * menuItemProc);
 
 CONST_DATA struct CharacterData gCharacterData[] = {
     { .number = 1, .defaultClass = 1 },
@@ -109,6 +115,13 @@ struct GradoNativeLoadRefusalProbe
     u32 message;
     u32 sramPreserved;
     u32 liveStatePreserved;
+    u32 suspendCallerRefused;
+    u32 suspendCallerPreserved;
+    u32 suspendRestartCount;
+    u32 normalCallerPreserved;
+    u32 normalCallerTransitionCount;
+    u32 callerHelpBoxCalls;
+    u32 callerHelpBoxCorrect;
 };
 
 static union
@@ -121,10 +134,13 @@ volatile struct GradoSavePathProbe gGradoSavePathProbe;
 volatile struct GradoSemanticSaveProbe gGradoSemanticSaveProbe;
 volatile struct GradoNativeSaveProbe gGradoNativeSaveProbe;
 volatile struct GradoNativeLoadRefusalProbe gGradoNativeLoadRefusalProbe;
+struct LinkArenaStMaybe gLinkArenaSt;
 static u32 sHelpBoxCalls;
 static int sHelpBoxX;
 static int sHelpBoxY;
 static int sHelpBoxMessage;
+static u32 sRestartGameCalls;
+static u32 sLinkArenaInitCalls;
 
 void StartHelpBoxExt_Unk(int x, int y, int mid)
 {
@@ -132,6 +148,21 @@ void StartHelpBoxExt_Unk(int x, int y, int mid)
     sHelpBoxX = x;
     sHelpBoxY = y;
     sHelpBoxMessage = mid;
+}
+
+void RestartGameAndGoto8(void)
+{
+    sRestartGameCalls++;
+}
+
+void LinkArenaBattleMap_InitChapter(void)
+{
+    sLinkArenaInitCalls++;
+}
+
+void ApplyUnitSpritePalettes(void)
+{
+    sLinkArenaInitCalls++;
 }
 
 static void PrepareCurrent(void)
@@ -879,6 +910,9 @@ static void ProbeNativeLoadRefusal(void)
         &gGradoNativeLoadRefusalProbe;
     struct PlaySt livePlay;
     struct Unit liveUnit;
+    struct MenuItemProc menuItem;
+    struct SioTermProc sioProc;
+    struct LinkArenaStMaybe linkArena;
     u8 permanent[25];
     u8 chapter[5];
     u32 bonus = 0x13579BDF;
@@ -893,6 +927,7 @@ static void ProbeNativeLoadRefusal(void)
     SetBonusContentClaimFlags(bonus);
 #if FE8_EXPANSION_SAVE_COMPAT_EPOCH == 256
     gSram->saveBlockInfo[SAVE_ID_GAME2].offset = 0xFFFF;
+    gSram->saveBlockInfo[SAVE_ID_SUSPEND].offset = 0xFFFF;
     probe->expectedMessage = MSG_SAVE_COMPAT_UNKNOWN;
 #else
     probe->expectedMessage = MSG_SAVE_COMPAT_CONFIG_INCOMPATIBLE;
@@ -923,6 +958,43 @@ static void ProbeNativeLoadRefusal(void)
         && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
         && GetBonusContentClaimFlags() == bonus
         && gSuspendSaveIdOffset == suspendSaveIdOffset;
+
+    memset(&menuItem, 0, sizeof(menuItem));
+    menuItem.availability = MENU_ENABLED;
+    sRestartGameCalls = 0;
+    probe->suspendCallerRefused =
+        DebugContinueMenu_ContinueChapter(NULL, &menuItem) == MENU_ACT_SND6B;
+    probe->suspendRestartCount = sRestartGameCalls;
+    probe->suspendCallerPreserved =
+        memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+        && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+        && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+        && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+        && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+        && GetBonusContentClaimFlags() == bonus
+        && gSuspendSaveIdOffset == suspendSaveIdOffset;
+
+    memset(&sioProc, 0, sizeof(sioProc));
+    sioProc.unk_48 = SAVE_ID_GAME2;
+    linkArena = gLinkArenaSt;
+    sLinkArenaInitCalls = 0;
+    LinkArenaTeamBuild_LoadSelectedSave(&sioProc);
+    probe->normalCallerPreserved =
+        memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+        && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+        && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+        && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+        && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+        && memcmp(&gLinkArenaSt, &linkArena, sizeof(linkArena)) == 0
+        && GetBonusContentClaimFlags() == bonus
+        && gSuspendSaveIdOffset == suspendSaveIdOffset;
+    probe->normalCallerTransitionCount = sLinkArenaInitCalls;
+    probe->callerHelpBoxCalls = sHelpBoxCalls;
+    probe->callerHelpBoxCorrect =
+        sHelpBoxCalls == 3
+        && sHelpBoxX == 0x30
+        && sHelpBoxY == 0x30
+        && sHelpBoxMessage == probe->expectedMessage;
     probe->phase = 2;
 }
 

@@ -348,10 +348,14 @@ replacements, but does not assert rendered UI or campaign behavior.
    naming an invalid backing slot both return `CORRUPT` without loading that
    source. Epoch 2 refuses all five physical cases as incompatible and
    preserves the same image. The same capture invokes
-   `GradoState_TryLoadNativeSave`: epoch 2 must report configuration
-   incompatibility and epoch 256 must refuse the invalid source, without
+   `GradoState_TryLoadNativeSave` and the selected
+   production callers `DebugContinueMenu_ContinueChapter` and
+   `LinkArenaTeamBuild_LoadSelectedSave`. Epoch 2 must report configuration
+   incompatibility and epoch 256 must refuse the invalid source without
    invoking the loader or changing SRAM, live flags, play state, unit, bonus
-   flags or the Suspend selector. The test captures the message ID and helpbox
+   flags or the Suspend selector. The debug caller returns its refusal action
+   without restarting; the Link Arena caller preserves its state and does not
+   enter the battle map. The test captures the message ID and helpbox
    coordinates, not rendered UI.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
