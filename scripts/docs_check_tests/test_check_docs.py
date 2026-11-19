@@ -1198,6 +1198,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_build_ci_topology -v",
+                            "python3 -m unittest "
+                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests."
+                            "test_reporter_and_full_game_checks_have_independent_worker_owners -v",
+                        },
+                    },
                     "TC-WORKFLOW-MANUAL-HANDOFF-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
