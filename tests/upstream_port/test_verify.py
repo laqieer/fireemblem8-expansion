@@ -3,6 +3,7 @@ import inspect
 import io
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -30,6 +31,7 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
 )
+_AGENT_HANDOFF_TEST_STEP_NAME = verify_mod._AGENT_HANDOFF_TEST_STEP_NAME
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
@@ -106,7 +108,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 changed = prefix + "  legacy:\n" + legacy.replace(
                     "      run: ./build_tools.sh\n",
                     "      run: |\n        ./build_tools.sh\n        "
-                    + " ".join(command) + "\n",
+                    + shlex.join(command) + "\n",
                     1,
                 )
                 self.assertNotEqual(changed, original)
@@ -125,7 +127,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             for _, name, command in verify_mod._parse_workflow_gate_contract_text(workflow):
                 with self.subTest(gate=name, command=command):
                     with open(helper, "w", encoding="utf-8") as stream:
-                        stream.write(original + "\n" + " ".join(command) + "\n")
+                        stream.write(original + "\n" + shlex.join(command) + "\n")
                     with self.assertRaisesRegex(ValueError, "exactly once"):
                         verify_mod._parse_workflow_structure_text(workflow, target)
 
@@ -344,6 +346,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             if step_name
             in {
                 _WORKFLOW_PILOT_TEST_STEP_NAME,
+                _AGENT_HANDOFF_TEST_STEP_NAME,
                 _WORKFLOW_PILOT_BASELINE_STEP_NAME,
             }
         ]
@@ -356,6 +359,18 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                         "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
                         "scripts/workflow_pilot/isolated_launcher.py",
                         "reporter-tests",
+                    ],
+                ),
+                (
+                    _AGENT_HANDOFF_TEST_STEP_NAME,
+                    [
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                        "-I",
+                        "-c",
+                        'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
+                        "scripts.workflow_pilot.tests.test_agent_handoff",
+                        "scripts.workflow_pilot.tests.test_coordinator_observations",
+                        "-v",
                     ],
                 ),
                 (
@@ -379,6 +394,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertEqual(
             [
                 by_name["workflow-pilot-reporter-tests"],
+                by_name["agent-handoff-tests"],
                 by_name["workflow-pilot-baseline"],
             ],
             [argv for _, argv in pilot_commands],
@@ -524,7 +540,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 31 current candidate Build gates remain; docs governance is
+        # All current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -534,6 +550,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "upstream-port-tests",
                 "workflow-contract-tests",
                 "workflow-pilot-reporter-tests",
+                "agent-handoff-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
                 "artifact-guard-tests",

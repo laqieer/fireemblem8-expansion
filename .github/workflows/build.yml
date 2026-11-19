@@ -972,6 +972,13 @@ jobs:
       run: |
         "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
 
+    - name: Run agent-handoff regression suite (issue #381)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: |
+        "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+          scripts.workflow_pilot.tests.test_agent_handoff \
+          scripts.workflow_pilot.tests.test_coordinator_observations -v
+
     - name: Validate workflow-pilot baseline against checked-out Git history
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:

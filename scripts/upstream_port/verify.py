@@ -1035,6 +1035,7 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_AGENT_HANDOFF_TEST_STEP_NAME = "Run agent-handoff regression suite (issue #381)"
 _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Verify checked-out revision"),
     ("host-tests", "Hydrate workflow-pilot Git authority"),
@@ -1043,6 +1044,7 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Run upstream-port tooling test suite"),
     ("host-tests", "Run workflow contract test suite"),
     ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
+    ("host-tests", _AGENT_HANDOFF_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
     ("extended-host-tests", "Run full-game localization width contract (issue #18)"),
@@ -1110,6 +1112,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run upstream-port tooling test suite"),
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
+        ("gate", _AGENT_HANDOFF_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
     ),
@@ -2384,6 +2387,22 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "the pinned owned environment with /usr/bin/python3 -I "
                 "scripts/host_python.py create; verification never installs "
                 "packages or relies on system/user-site jsonschema"
+            ),
+        ),
+        Gate(
+            name="agent-handoff-tests",
+            command=[
+                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                "-I",
+                "-c",
+                'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
+                "scripts.workflow_pilot.tests.test_agent_handoff",
+                "scripts.workflow_pilot.tests.test_coordinator_observations",
+                "-v",
+            ],
+            applicable_note=(
+                "issue #381 host lane: validates exact open-PR matching, "
+                "continuation binding and duplicate-root rejection"
             ),
         ),
         Gate(

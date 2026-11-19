@@ -6814,3 +6814,116 @@ the production file/process/query adapters themselves run in the tests.
 Opaque runtime handles cannot certify exit/RSS; a missing real observation
 remains an explicit hold, never an authenticated label or invented backend.
 Revert the dedicated #178 change on regression.
+
+## TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001: Prevent duplicate implementation PRs for an issue
+
+**Issue:** [#381](https://github.com/laqieer/fireemblem8-expansion/issues/381)
+
+**Profile:** source-only Linux checkout with Python 3, Git, and the reviewed
+workflow-pilot handoff tool. Live preflight also requires authenticated
+read access to the target repository's open PRs.
+
+### Prerequisites and starting state
+
+Run from the exact reviewed source root. Automated checks use temporary Git
+repositories and inert GitHub open-PR responses; they need no token, live PR,
+ROM, emulator, or remote mutation. The live preflight command is read-only.
+
+### Actions
+
+1. Run the focused issue/PR matching and handoff tests listed below.
+2. Before dispatching work for an issue, run `agent-handoff preflight` for
+   that repository and issue. If there is no matching open implementation PR,
+   the result permits a new root. If there is one, rerun with its exact PR
+   number and current branch to bind a continuation.
+3. If an existing PR cannot serve, record its stale/superseded reason and the
+   intended replacement branch in issue or coordination evidence, close the
+   unusable PR, then rerun preflight before dispatching replacement work.
+4. Do not create an assignment or PR as part of this test procedure. Confirm
+   that `assign` repeats the preflight before reserving work.
+5. Exercise a new-root assignment with no PR, publish its matching PR, then
+   create a successor assignment bound to that PR number and current branch.
+   Confirm later successors retain the same issue and PR identity.
+6. With issue `#178` fixtures, compare actionable Markdown labels `#178`,
+   `owner/repository#178`, and `issue #178` with matching destinations, plus
+   foreign or wrong-issue destinations and uppercase label/URL forms. Exercise
+   `Refs #177, #178` and confirm the second item matches; ensure parsing stops
+   before `Depends on #178` or `Part of #178`. Check that a foreign title such
+   as `Fix other/repository-#178` is not a local issue match.
+
+### Expected result
+
+An empty matching-PR set permits a new root. A unique existing implementation
+PR blocks an unbound root and permits continuation only when both the selected
+PR number and current branch match. Same-repository closing-issue relations,
+exact same-repository qualified title references, standalone issue-number
+references in branches, and actionable body directives identify implementation
+candidates. Markdown labels may use local `#N`, repository-qualified
+`owner/repository#N`, or `issue #N` notation, but must name the same repository
+and issue as the destination and follow an actionable directive; issue URLs
+are matched exactly. Actionable comma-, `and`-, and `&`-separated references
+check each item without crossing into related-only clauses. A foreign
+repository title or path ending in punctuation before `#N` is not a local
+reference. Related-only Markdown links do not identify an implementation PR.
+Dotted version components in branches are not issue references. A new-root
+lineage may bind its first published PR in a successor; that PR identity is
+then retained. Related-only `Part of` or `Depends on` references do not.
+GitHub discovery errors and incomplete/ambiguous results fail closed.
+
+### Negative controls
+
+- `#1178` does not match issue `#178`; a closing reference from another
+  repository does not match.
+- Markdown labels `#178`, `owner/repository#178`, and `issue #178` are
+  implementation references only with the matching repository/issue
+  destination; foreign-repository or wrong-issue destinations are not.
+- `Refs #177, #178` matches issue `#178`, but `Refs #177, Depends on #178` and
+  `Refs #177; Part of #178` do not.
+- `Fix other/repository-#178` does not match local issue `#178`.
+- `Part of #178` and `Depends on #178` alone do not identify an implementation
+  PR.
+- `Fix owner/repository#178` matches a title for `owner/repository`, while a
+  different repository-qualified title does not.
+- `release/1.178.0` does not match issue `#178`.
+- An open matching PR without explicit selection, a wrong PR or branch, and
+  multiple matching PRs are rejected.
+- A successor cannot drop or replace a PR identity once the lineage has bound
+  one.
+- A stale PR that remains open still blocks a replacement. Replacement is
+  permitted only after its disposition is recorded, it is closed, and
+  preflight is rerun.
+- GitHub command failure, malformed or duplicate results, and a result set
+  reaching the 1000-item bound are rejected rather than treated as empty.
+
+### Interactions and save compatibility
+
+Dependencies: none. Conflicts: none with game features, other issues, or
+profiles; unrelated issues remain independent. This is host-only workflow
+tooling and does not change ROM/RAM, save/configuration, generated game data,
+localization, modern debug/release, or archival behavior.
+
+### Automation
+
+Focused deterministic coverage:
+
+```bash
+python3 -m unittest \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_issue_pr_preflight_uses_exact_implementation_references \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_continues_one_selected_pr_and_blocks_duplicates \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
+```
+
+The Build host job runs the complete `test_agent_handoff` and
+`test_coordinator_observations` modules.
+
+### Cleanup and limitations
+
+The guard recognizes explicit issue-to-PR identity; it does not infer semantic
+equivalence from arbitrary source diffs, and it does not close or replace PRs
+automatically. Revert the dedicated #381 change if the preflight blocks valid
+independent work or permits a duplicate root. Tests clean only their owned
+temporary repositories and processes. Live preflight does not create
+assignments, close PRs, or otherwise mutate GitHub. No manual-only acceptance
+criterion applies.

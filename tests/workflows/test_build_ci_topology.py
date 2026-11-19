@@ -235,6 +235,12 @@ WORKFLOW_PILOT_GATE = (
     "scripts/workflow_pilot/isolated_launcher.py "
     "reporter-tests"
 )
+AGENT_HANDOFF_COMMANDS = (
+    '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c '
+    "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' \\",
+    "scripts.workflow_pilot.tests.test_agent_handoff \\",
+    "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+)
 WORKFLOW_PILOT_BASELINE_GATE = (
     "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline "
     '--repository-root "$GITHUB_WORKSPACE" '
@@ -1470,7 +1476,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
     if not steps or not _preflight_step_is_reviewed(steps[0], "host-tests"):
         return ["host-tests review-first preflight differs"]
     steps = steps[1:]
-    if len(steps) < 10:
+    if len(steps) < 11:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
         _metadata_adapter_step_is_reviewed(steps[0]),
@@ -1538,6 +1544,12 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[9],
+            "Run agent-handoff regression suite (issue #381)",
+            AGENT_HANDOFF_COMMANDS,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+        ),
+        _run_step_is_exact(
+            steps[10],
             "Validate workflow-pilot baseline against checked-out Git history",
             (WORKFLOW_PILOT_BASELINE_GATE,),
             if_expression=FULL_WORKER_STEP_CONDITION,
