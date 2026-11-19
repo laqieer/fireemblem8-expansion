@@ -107,6 +107,13 @@ class WorkflowStaticPolicyTests(unittest.TestCase):
         self.assertNotIn("workflow_dispatch:\n  inputs", self.text)
         self.assertNotIn("github.event.inputs", self.text)
 
+    def test_supported_host_is_explicitly_pinned(self):
+        self.assertRegex(
+            self.text,
+            r"(?m)^  drift-scan:\n    runs-on: ubuntu-24\.04$",
+        )
+        self.assertNotIn("runs-on: ubuntu-latest", self.text)
+
     def test_no_forbidden_mutating_operations_present(self):
         for forbidden in _FORBIDDEN_SUBSTRINGS:
             self.assertNotIn(

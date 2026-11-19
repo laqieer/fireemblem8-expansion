@@ -340,6 +340,76 @@ not changed live GitHub data. This does not tolerate malformed *required*
 security timing, synthesize missing evidence, or replace actual named security
 checks and full candidate/master Build evidence.
 
+## TC-WORKFLOW-HOST-PLATFORM-001: Retain Ubuntu 24.04 after ubuntu-latest moves
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #371](https://github.com/laqieer/fireemblem8-expansion/issues/371).
+- **Supported configuration or artifact:** Linux source checkout on Ubuntu
+  24.04 and the existing Build/upstream-drift workflows. No ROM, save, ARM
+  debugger, emulator or live credentials are required for the host fixtures.
+- **Prerequisites and clean starting state:** run from the repository root
+  with Python 3 and Git. Worktree fixtures must not be left under source paths.
+
+### Actions
+
+1. Parse `.github/workflows/build.yml` and verify that every Build job uses
+   exactly `runs-on: ubuntu-24.04`, with no `ubuntu-latest`, self-hosted,
+   container or matrix runner substitution.
+2. Parse `.github/workflows/upstream-port-drift.yml` and verify the
+   `drift-scan` job uses exactly `runs-on: ubuntu-24.04`.
+3. Run:
+
+   ```bash
+   python3 -m unittest tests.workflows.test_build_ci_topology \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests \
+     tests.upstream_port.test_drift_workflow.WorkflowStaticPolicyTests -v
+   ```
+
+4. Exercise mutations that change a supported runner to `ubuntu-latest`,
+   `ubuntu-latest`  to `ubuntu-24.04`, a self-hosted runner, a container,
+   a matrix or a duplicate/spaced/quoted runner key. Every mutation must fail
+   the corresponding parsed contract.
+5. Live delivery requires the exact candidate full Build on the selected
+   platform, followed by automatic exact-master Build and
+   `make remote-completion-check`.
+
+### Expected result
+
+Every supported host/dependency/ABI job resolves Ubuntu 24.04. Existing
+Python 3.12, GNU Make 4.3, dependency hashes and broad worker topology remain
+unchanged. Mutated runner images and alternate runner forms cannot pass.
+
+### Negative control
+
+Before the pin, a workflow using `ubuntu-latest` accepted the moving image.
+After the pin, changing any supported job or upstream-drift runner to
+`ubuntu-latest` or another alternate fails the parsed positive contract.
+No success-shaped fallback weakens Python, Make, wheel, ownership or Build
+gate requirements.
+
+### Interactions and save compatibility
+
+Dependencies: none; implementation is independent on master. This case
+preserves all Build jobs and upstream drift on the accepted host. Conflicts:
+moving a supported job to a different Ubuntu image or a self-hosted/container
+runner is unsupported. No ROM/RAM, save/config, locale, generated-data,
+modern/debug/release or archival payload change.
+
+### Automation
+
+The workflow topology and upstream verifier suites assert the parsed runner
+mapping and reject runner mutations. Live exact-head and exact-master Build
+runs prove the supported Ubuntu 24.04 environment and all four broad workers.
+Actionlint remains the workflow syntax check.
+
+### Cleanup and limitations
+
+Host fixtures require no cleanup beyond ordinary temporary test repositories.
+This is an explicit image pin, not a claim that every future Ubuntu package set
+remains unchanged. It does not assert a real runner image in host-only tests;
+candidate and master Build provide that runtime evidence. No manual criterion
+applies.
+
 ## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
 
 - **Feature / originating issue:** `workflow-governance` /

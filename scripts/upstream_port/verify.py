@@ -1558,9 +1558,9 @@ def _parse_job_context(job_name, body):
                 raise ValueError(f"job {job_name!r} needs differs")
             values[name] = value
         elif name == "runs-on":
-            if value != "ubuntu-latest" or nested:
+            if value != "ubuntu-24.04" or nested:
                 raise ValueError(
-                    f"job {job_name!r} runs-on must be ubuntu-latest"
+                    f"job {job_name!r} runs-on must be ubuntu-24.04"
                 )
             values[name] = value
         elif name == "timeout-minutes":

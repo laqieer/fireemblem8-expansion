@@ -607,6 +607,7 @@
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+        "TC-WORKFLOW-HOST-PLATFORM-001",
         "TC-WORKFLOW-REPORTER-RUNTIME-001",
         "TC-WORKFLOW-ASSET-DISCOVERY-001",
         "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
@@ -2990,6 +2991,39 @@
         {
           "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_bootstrap_and_reporter_interpreter_agree -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-HOST-PLATFORM-001",
+      "title": "Retain Ubuntu 24.04 after ubuntu-latest moves",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/371"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-host-platform-001-retain-ubuntu-2404-after-ubuntu-latest-moves",
+      "profiles": [
+        "Source checkout on Ubuntu 24.04, Python 3 and Git",
+        "Exact-head candidate and exact-master GitHub Build runs"
+      ],
+      "purpose": "Preserve the supported host image and every existing dependency, ABI and Build gate after ubuntu-latest moves.",
+      "prerequisites": "Clean Linux source checkout. No ROM, save, ARM debugger, emulator or live credentials for local parser fixtures.",
+      "actions": "Parse Build and upstream-drift workflow mappings; require ubuntu-24.04 on every supported host job. Run parsed topology/verifier/drift tests, including runner mutation negatives. Live candidate and master delivery require exact-head and exact-master full Build evidence.",
+      "expected_result": "All supported Build jobs and upstream drift use Ubuntu 24.04; existing Python, Make, wheel, ownership and worker contracts remain unchanged.",
+      "negative_control": "ubuntu-latest, other Ubuntu images, self-hosted, container, matrix, spaced/quoted/duplicate runner keys and alternate platform mappings fail.",
+      "interactions": "Independent implementation on master with no ROM/RAM/save/config/generated-data/locale/modern/archival interaction.",
+      "save_compatibility": "No save or migration change.",
+      "cleanup": "Temporary test repositories clean themselves up.",
+      "limitations": "Host-only fixtures do not prove GitHub's real runner image; exact candidate/master Build provide that runtime evidence. No visual, audio or UX judgment applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_drift_workflow.WorkflowStaticPolicyTests -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify tests.upstream_port.test_drift_workflow -v",
+          "evidence": "scripts/upstream_port/verify.py"
         }
       ]
     },

@@ -43,7 +43,7 @@ permissions:
 
 jobs:
   drift-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout (full history, no submodules, no credentials persisted)
