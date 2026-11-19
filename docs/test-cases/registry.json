@@ -575,7 +575,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/346",
         "https://github.com/laqieer/fireemblem8-expansion/issues/354",
         "https://github.com/laqieer/fireemblem8-expansion/issues/356",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/359"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/359",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/380"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -584,6 +585,7 @@
         "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
         "TC-WORKFLOW-CI-WAIT-001",
+        "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
         "TC-WORKFLOW-BODY-EDIT-001",
@@ -3241,6 +3243,38 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001",
+      "title": "Keep legacy Build within its 60-minute budget",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/380"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-legacy-build-bounded-001-keep-legacy-build-within-its-60-minute-budget",
+      "profiles": [
+        "Full candidate or master Build on ubuntu-24.04; source-only topology tests from a clean checkout"
+      ],
+      "purpose": "Prove full-game localization checks remain in an independent 90-minute host worker while the 60-minute legacy worker completes every archival gate.",
+      "prerequisites": "Use the exact candidate or master SHA under test. Local topology tests need Python 3; end-to-end timing requires access to the matching full Build run. No ROM or emulator is required.",
+      "actions": "Run the focused workflow-topology and upstream-port mirror tests. Inspect the exact full Build run and confirm the localization commands pass in extended-host-tests and legacy completes native ARM review, archival build, and pinned-payload validation within its unchanged limit.",
+      "expected_result": "All four full-game localization commands pass in extended-host-tests, independent of the reporter-owned host-tests job; legacy contains no host-only setup or localization work and passes all native ARM, archival, and payload gates within 60 minutes.",
+      "negative_control": "The topology tests reject missing or moved localization commands, incorrect worker ownership, and changed limits. Historical runs #44486937093 and #44492436378 were canceled at the 60-minute boundary during native ARM review, skipping archival and payload checks.",
+      "interactions": "Uses the existing extended-host-tests, host-tests, and legacy workers without adding a job. No gameplay/profile dependencies or conflicts are introduced; the reporter remains independently owned.",
+      "save_compatibility": "Build-workflow-only correction; no save/configuration, generated-data, localization content, ROM/RAM, debug/release, or archival behavior change.",
+      "cleanup": "No persistent data is created by the source-only tests; GitHub runner outputs are ephemeral.",
+      "limitations": "Source topology tests cannot predict shared-runner timing. Exact candidate and post-merge Build runs must demonstrate the worker limits.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners -v",
+          "evidence": "tests/upstream_port/test_verify.py"
         }
       ]
     },

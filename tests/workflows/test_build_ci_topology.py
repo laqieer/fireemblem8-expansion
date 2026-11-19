@@ -235,6 +235,12 @@ WORKFLOW_PILOT_GATE = (
     "scripts/workflow_pilot/isolated_launcher.py "
     "reporter-tests"
 )
+AGENT_HANDOFF_COMMANDS = (
+    '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c '
+    "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' \\",
+    "scripts.workflow_pilot.tests.test_agent_handoff \\",
+    "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+)
 WORKFLOW_PILOT_BASELINE_GATE = (
     "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline "
     '--repository-root "$GITHUB_WORKSPACE" '
@@ -1470,7 +1476,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
     if not steps or not _preflight_step_is_reviewed(steps[0], "host-tests"):
         return ["host-tests review-first preflight differs"]
     steps = steps[1:]
-    if len(steps) < 10:
+    if len(steps) < 11:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
         _metadata_adapter_step_is_reviewed(steps[0]),
@@ -1538,6 +1544,12 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[9],
+            "Run agent-handoff regression suite (issue #381)",
+            AGENT_HANDOFF_COMMANDS,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+        ),
+        _run_step_is_exact(
+            steps[10],
             "Validate workflow-pilot baseline against checked-out Git history",
             (WORKFLOW_PILOT_BASELINE_GATE,),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -2372,8 +2384,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "scripts/artifact_guard",
         "scripts/docs_check_tests",
         "make generated-data",
-        "scripts.localization.game_locales",
-        "make game-localization-test",
         "expansion-modern-linker-check",
     ):
         if _contains_command(extended_host, duplicate):
@@ -2415,9 +2425,9 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
         errors.append("candidate host execution defaults must not alter pilot gates")
 
-    legacy = jobs["legacy"]
+    extended = jobs["extended-host-tests"]
     width_steps = [
-        step for step in _step_blocks(legacy)
+        step for step in _step_blocks(extended)
         if _step_name(step) == "Run full-game localization width contract (issue #18)"
     ]
     if len(width_steps) != 1 or not _run_step_is_exact(
@@ -2431,22 +2441,16 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         ),
         if_expression=FULL_WORKER_STEP_CONDITION,
     ):
-        errors.append("independent host worker lost exact full-game evidence")
-    host_setup = [
-        step for step in _step_blocks(legacy)
-        if _step_name(step) == "Install host-only dependencies (no arm-none-eabi toolchain)"
-    ]
-    if len(host_setup) != 1 or not _run_step_is_exact(
-        host_setup[0],
-        "Install host-only dependencies (no arm-none-eabi toolchain)",
-        (
-            "sudo apt-get update && sudo apt-get install -y "
-            "build-essential libmgba-dev python3-venv",
-            "/usr/bin/python3 -I scripts/host_python.py create",
-        ),
-        if_expression=FULL_WORKER_STEP_CONDITION,
+        errors.append("independent extended host worker lost exact full-game evidence")
+    legacy = jobs["legacy"]
+    if any(
+        _step_name(step) in {
+            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Run full-game localization width contract (issue #18)",
+        }
+        for step in _step_blocks(legacy)
     ):
-        errors.append("independent full-game worker host bootstrap differs")
+        errors.append("legacy worker must not spend its archival timeout on host-only checks")
     for command in ("make legacy -j2", "make -C mgfembp compare"):
         if not _contains_command(legacy, command):
             errors.append(f"legacy job lost unique evidence: {command}")
@@ -5853,7 +5857,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     any("summary loop omits" in error for error in _errors(changed, False))
                 )
 
-    def test_host_python_bootstrap_and_reporter_interpreter_agree(self):
+    def test_host_python_and_full_game_checks_keep_worker_ownership(self):
         from scripts import host_python
         from scripts.upstream_port import verify
 
@@ -5884,14 +5888,50 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
         )
         self.assertEqual(setup["if"], reporter["if"])
-        legacy = next(steps for name, _, steps in jobs if name == "legacy")
-        full_game_setup = next(dict(fields) for _, name, fields in legacy if name == setup_name)
-        self.assertEqual(full_game_setup, setup)
-        legacy_names = [name for _, name, _ in legacy]
-        self.assertLess(
-            legacy_names.index("Run full-game localization width contract (issue #18)"),
-            legacy_names.index("Install archival build dependencies"),
+        extended = next(
+            steps for job_name, _, steps in jobs if job_name == "extended-host-tests"
         )
+        full_game_name = "Run full-game localization width contract (issue #18)"
+        full_game = next(
+            dict(fields) for _, name, fields in extended if name == full_game_name
+        )
+        self.assertEqual(
+            full_game["run"],
+            (
+                ("make", "game-localization-test"),
+                ("python3", "-m", "scripts.localization.game_locales", "check"),
+                ("python3", "-m", "scripts.localization.game_locales", "check-crosswalk"),
+                ("python3", "-m", "scripts.localization.game_locales", "check-raw-closure"),
+            ),
+        )
+        self.assertEqual(full_game["if"], setup["if"])
+        extended_names = [name for _, name, _ in extended]
+        self.assertLess(
+            extended_names.index("Run configuration and linker-budget gates"),
+            extended_names.index(full_game_name),
+        )
+        legacy = next(steps for job_name, _, steps in jobs if job_name == "legacy")
+        legacy_names = [name for _, name, _ in legacy]
+        self.assertNotIn(setup_name, legacy_names)
+        self.assertNotIn(full_game_name, legacy_names)
+        legacy_gate = "    - name: Validate pinned archival payload identities"
+        host_setup_step = next(
+            step for step in _step_blocks(_job_blocks(self.text)["host-tests"])
+            if _step_name(step) == setup_name
+        )
+        full_game_step = next(
+            step for step in _step_blocks(_job_blocks(self.text)["extended-host-tests"])
+            if _step_name(step) == full_game_name
+        )
+        for step in (host_setup_step, full_game_step):
+            with self.subTest(legacy_regression=_step_name(step)):
+                changed = self.text.replace(
+                    legacy_gate,
+                    step + "\n" + legacy_gate,
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(_errors(changed, False))
         for changed in (
             self.text.replace(
                 "        /usr/bin/python3 -I scripts/host_python.py create\n", "", 1
@@ -5907,21 +5947,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         ):
             self.assertNotEqual(changed, self.text)
             self.assertTrue(_errors(changed, False))
-        prefix, legacy_body = self.text.split("  legacy:\n", 1)
+        prefix, extended_body = self.text.split("  extended-host-tests:\n", 1)
         for changed_body in (
-            legacy_body.replace("libmgba-dev python3-venv", "libmgba-dev", 1),
-            legacy_body.replace(
-                "scripts/host_python.py create", "scripts/host_python.py check", 1,
-            ),
-            legacy_body.replace(
+            extended_body.replace(
                 "make game-localization-test", "make game-localization-test || true", 1,
             ),
-            legacy_body.replace(
+            extended_body.replace(
                 "        python3 -m scripts.localization.game_locales check-raw-closure\n",
                 "", 1,
             ),
         ):
-            changed = prefix + "  legacy:\n" + changed_body
+            changed = prefix + "  extended-host-tests:\n" + changed_body
             self.assertNotEqual(changed, self.text)
             self.assertTrue(_errors(changed, False))
 

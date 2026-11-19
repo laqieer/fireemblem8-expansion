@@ -2362,6 +2362,66 @@ No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
 
+## TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001: Keep legacy Build within its 60-minute budget
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #380](https://github.com/laqieer/fireemblem8-expansion/issues/380).
+- **Supported configuration or artifact:** the full candidate or master Build
+  on `ubuntu-24.04`; the source-only topology checks run from a clean checkout.
+- **Prerequisites and clean starting state:** use the exact candidate or master
+  SHA under test. Local checks need Python 3 and no ROM, emulator, or GitHub
+  credentials; inspect the matching full Build run for end-to-end timing.
+
+### Actions
+
+1. Run the workflow-topology and upstream-port mirror tests listed below.
+2. Confirm the four full-game localization commands remain together in
+   `extended-host-tests`, which is independent of the workflow-pilot reporter.
+3. Inspect the exact full Build run: confirm `extended-host-tests` succeeds
+   within 90 minutes and `legacy` succeeds within 60 minutes through native
+   ARM review, archival build, and pinned-payload validation.
+
+### Expected result
+
+The independent extended-host worker passes all full-game localization
+checks; `host-tests` retains its reporter ownership; and the legacy worker
+contains no host-only bootstrap or localization work while completing every
+native ARM, archival, and payload gate within its unchanged 60-minute limit.
+
+### Negative control
+
+The topology tests fail if a localization command is removed or moved back to
+`legacy` or into the reporter-owned `host-tests` job, or if the required job
+limits change. Historical runs [#44486937093](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44486937093)
+and [#44492436378](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44492436378)
+were canceled at the 60-minute boundary during native ARM review, skipping the
+archival and payload checks.
+
+### Interactions and save compatibility
+
+The existing `extended-host-tests`, `host-tests`, and `legacy` workers remain
+separate owners for their existing gates. This is a Build-workflow correction
+with no game-feature, profile, save/configuration, generated-data, localization
+content, ROM/RAM, debug/release, or archival behavior change.
+
+### Automation
+
+- `python3 -m unittest tests.workflows.test_build_ci_topology -v` parses the
+  workflow and enforces job placement, exact full-game commands, and worker
+  limits.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners -v`
+  verifies that the full-game checks remain owned by the independent extended
+  host worker.
+- The exact candidate Build run verifies successful execution and duration of
+  both affected workers.
+
+### Cleanup and limitations
+
+No persistent data is created by the topology tests. Build-local generated
+outputs are ephemeral on GitHub runners. Local structure tests cannot predict
+shared-runner timing; exact candidate and post-merge Build results remain
+required.
+
 ## TC-WORKFLOW-MANUAL-HANDOFF-001: Surface actionable manual testing and resume automatically
 
 - **Feature / originating issue:** `workflow-governance` /

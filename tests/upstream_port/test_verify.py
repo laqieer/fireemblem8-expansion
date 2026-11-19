@@ -96,7 +96,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 continue
             with self.subTest(gate=gate.name):
                 owners = [job for job, _, argv in contract if list(argv) == gate.command]
-                self.assertEqual(len(owners), 1)
+                self.assertEqual(owners, ["extended-host-tests"])
                 self.assertNotEqual(owners[0], reporter_owners[0])
 
     def test_setup_cannot_duplicate_mirrored_gate_commands(self):
