@@ -798,12 +798,15 @@ class ExactHandoffTests(unittest.TestCase):
 
         cases = (
             (pull_request(title="Fix #178"), "title"),
+            (pull_request(title="Fix owner/repository#178"), "title"),
             (pull_request(branch="fix/issue-178"), "branch"),
             (pull_request(body="Refs #178"), "body"),
             (pull_request(body="Fix #178"), "body"),
             (pull_request(body="Fixes owner/repository#178"), "body"),
             (pull_request(body="Fix https://github.com/owner/repository/issues/178"), "body"),
-            (pull_request(body="Implements [issue #178](https://github.com/owner/repository/issues/178)"), "body"),
+            (pull_request(
+                body="Implements [issue #178](https://github.com/owner/repository/issues/178)"),
+                "body"),
             (pull_request(body="Address #178"), "body"),
             (pull_request(body="Addresses owner/repository#178"), "body"),
             (pull_request(closing=({
@@ -823,6 +826,18 @@ class ExactHandoffTests(unittest.TestCase):
         )
         self.assertIsNone(handoff.implementation_pull_request_matches(
             "owner/repository", 178, unrelated))
+        for candidate in (
+            pull_request(title="Fix other/repository#178"),
+            pull_request(title="Fix another/owner/repository#178"),
+            pull_request(branch="release/1.178.0"),
+            pull_request(
+                body="Implements [issue #178](https://github.com/other/project/issues/178)"),
+            pull_request(
+                body="Implements [issue #178](https://github.com/owner/repository/issues/179)"),
+        ):
+            with self.subTest(candidate=candidate):
+                self.assertIsNone(handoff.implementation_pull_request_matches(
+                    "owner/repository", 178, candidate))
         for body in (
             "Refs #1780",
             "Refs owner/repository#1780",

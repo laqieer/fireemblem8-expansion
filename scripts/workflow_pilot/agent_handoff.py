@@ -565,12 +565,15 @@ def implementation_pull_request_matches(repository, issue, pull_request):
         sources.append("closing-issue")
 
     title_pattern = re.compile(
-        rf"(?<![A-Za-z0-9])(?:#|issue[-_\s]+){number}(?![A-Za-z0-9])", re.IGNORECASE)
+        rf"(?<![A-Za-z0-9._/-]){re.escape(repository)}\#{number}(?![A-Za-z0-9_])"
+        rf"|(?<![A-Za-z0-9])(?:#|issue[-_\s]+){number}(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
     if title_pattern.search(pull_request["title"]):
         sources.append("title")
 
     branch_pattern = re.compile(
-        rf"(?<![A-Za-z0-9])(?:issue[-_]?{number}|{number})(?![A-Za-z0-9])",
+        rf"(?<![A-Za-z0-9._])(?:issue[-_]?{number}|{number})(?![A-Za-z0-9._])",
         re.IGNORECASE,
     )
     if branch_pattern.search(pull_request["headRefName"]):
@@ -581,12 +584,17 @@ def implementation_pull_request_matches(repository, issue, pull_request):
         rf"(?:\#{number}|{re.escape(repository)}\#{number}|"
         rf"https://github\.com/{re.escape(repository)}/issues/{number})"
     )
+    markdown_body_reference = (
+        rf"\[issue\s+(?:\#{number}|{re.escape(repository)}\#{number})\]"
+        rf"\(https://github\.com/{re.escape(repository)}/issues/{number}\)"
+    )
     body_pattern = re.compile(
         rf"\b(?:closes?|fix(?:es)?|resolves?|implements?|address(?:es)?|refs?)\b"
-        rf"\s*:?\s+(?:the\s+)?\[?(?:issue\s+)?{body_reference}(?![A-Za-z0-9])",
+        rf"\s*:?\s+(?:the\s+)?(?:issue\s+)?{body_reference}(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
-    if body_pattern.search(body):
+    plain_body = re.sub(r"\[[^\]\n]*\]\([^)\n]*\)", "", body)
+    if re.search(markdown_body_reference, body) or body_pattern.search(plain_body):
         sources.append("body")
 
     if not sources:

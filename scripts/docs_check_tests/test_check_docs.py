@@ -1209,6 +1209,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "scripts.workflow_pilot.tests.test_agent_handoff."
                             "ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root "
                             "scripts.workflow_pilot.tests.test_agent_handoff."
+                            "ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage "
+                            "scripts.workflow_pilot.tests.test_agent_handoff."
                             "ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v",
                             "build/host-python/bin/python3 -I -c "
                             "'import sys, unittest; sys.path.insert(0, \".\"); "

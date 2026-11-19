@@ -6790,21 +6790,26 @@ ROM, emulator, or remote mutation. The live preflight command is read-only.
 An empty matching-PR set permits a new root. A unique existing implementation
 PR blocks an unbound root and permits continuation only when both the selected
 PR number and current branch match. Same-repository closing-issue relations,
-exact issue references in the title or branch, and actionable body directives
-identify implementation candidates, including same-repository qualified
-references, issue URLs, and issue-prefixed Markdown link labels. A new-root
-lineage may bind its first published PR in a successor; that PR identity is
-then retained. Related-only `Part of` or `Depends on` references do not.
-GitHub discovery errors and incomplete/ambiguous results fail closed.
+exact same-repository qualified title references, standalone issue-number
+references in branches, and actionable body directives identify implementation
+candidates. Markdown links must name the same repository and issue in both
+their label and destination; issue URLs are matched exactly. Dotted version
+components in branches are not issue references. A new-root lineage may bind
+its first published PR in a successor; that PR identity is then retained.
+Related-only `Part of` or `Depends on` references do not. GitHub discovery
+errors and incomplete/ambiguous results fail closed.
 
 ### Negative controls
 
 - `#1178` does not match issue `#178`; a closing reference from another
   repository does not match.
 - An issue-qualified Markdown link is an implementation reference, while a
-  related-only link is not.
+  foreign-repository or wrong-issue destination is not.
 - `Part of #178` and `Depends on #178` alone do not identify an implementation
   PR.
+- `Fix owner/repository#178` matches a title for `owner/repository`, while a
+  different repository-qualified title does not.
+- `release/1.178.0` does not match issue `#178`.
 - An open matching PR without explicit selection, a wrong PR or branch, and
   multiple matching PRs are rejected.
 - A successor cannot drop or replace a PR identity once the lineage has bound
