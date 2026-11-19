@@ -807,6 +807,9 @@ class ExactHandoffTests(unittest.TestCase):
             (pull_request(
                 body="Implements [issue #178](https://github.com/owner/repository/issues/178)"),
                 "body"),
+            (pull_request(
+                body="Implements [Issue #178](https://github.com/owner/repository/issues/178)"),
+                "body"),
             (pull_request(body="Address #178"), "body"),
             (pull_request(body="Addresses owner/repository#178"), "body"),
             (pull_request(closing=({

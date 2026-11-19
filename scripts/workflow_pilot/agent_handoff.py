@@ -594,7 +594,8 @@ def implementation_pull_request_matches(repository, issue, pull_request):
         re.IGNORECASE,
     )
     plain_body = re.sub(r"\[[^\]\n]*\]\([^)\n]*\)", "", body)
-    if re.search(markdown_body_reference, body) or body_pattern.search(plain_body):
+    if (re.search(markdown_body_reference, body, re.IGNORECASE)
+            or body_pattern.search(plain_body)):
         sources.append("body")
 
     if not sources:
