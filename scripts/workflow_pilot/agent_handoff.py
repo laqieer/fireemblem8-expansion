@@ -30,6 +30,7 @@ HOST_FILES = {".github/copilot-instructions.md", ".github/skills/development-wor
 ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+MAX_OPEN_PULL_REQUESTS = 1000
 HandoffDataError = observations.ObservationError
 require = observations.require
 load_json = observations.load_json
@@ -504,6 +505,150 @@ def _ancestor(root, parent, child):
     return result.returncode == 0
 
 
+def list_open_pull_requests(repository):
+    text(repository, maximum=256, pattern=observations.REPOSITORY_RE)
+    result = git.run_process(
+        ["gh", "pr", "list", "--repo", repository, "--state", "open",
+         "--limit", str(MAX_OPEN_PULL_REQUESTS),
+         "--json", "number,title,body,headRefName,closingIssuesReferences"],
+        cwd=observations.ROOT, env=os.environ.copy(), timeout=30,
+        max_bytes=observations.MAX_JSON_BYTES,
+    )
+    require(result.returncode == 0,
+            "open pull request discovery failed: " +
+            os.fsdecode(result.stderr[:1024]).strip())
+    pull_requests = observations.parse_bytes(result.stdout)
+    require(type(pull_requests) is list, "open pull request discovery returned a non-list")
+    require(len(pull_requests) < MAX_OPEN_PULL_REQUESTS,
+            "open pull request discovery reached its 1000-result bound")
+    seen = set()
+    for pull_request in pull_requests:
+        fields(pull_request, "number title body headRefName closingIssuesReferences")
+        integer(pull_request["number"], minimum=1)
+        require(pull_request["number"] not in seen, "duplicate open pull request identity")
+        seen.add(pull_request["number"])
+        text(pull_request["title"], maximum=1024)
+        text(pull_request["headRefName"], maximum=256)
+        text(pull_request["body"], nullable=True)
+        for reference in items(pull_request["closingIssuesReferences"], maximum=128):
+            require(type(reference) is dict and "number" in reference
+                    and "repository" in reference, "invalid closing-issue reference")
+            integer(reference["number"], minimum=1)
+            require(type(reference["repository"]) is dict,
+                    "invalid closing-issue repository")
+    return pull_requests
+
+
+def _closing_reference_matches(reference, repository, issue):
+    target = reference["repository"]
+    if "nameWithOwner" in target:
+        name_with_owner = target["nameWithOwner"]
+        text(name_with_owner, maximum=256, pattern=observations.REPOSITORY_RE)
+    else:
+        owner = target.get("owner")
+        require(type(owner) is dict, "closing-issue owner is missing")
+        text(owner.get("login"), maximum=256)
+        text(target.get("name"), maximum=256)
+        name_with_owner = owner["login"] + "/" + target["name"]
+    return reference["number"] == issue and name_with_owner.casefold() == repository.casefold()
+
+
+def implementation_pull_request_matches(repository, issue, pull_request):
+    number = str(issue)
+    sources = []
+    if any(_closing_reference_matches(reference, repository, issue)
+           for reference in pull_request["closingIssuesReferences"]):
+        sources.append("closing-issue")
+
+    title_pattern = re.compile(
+        rf"(?<![A-Za-z0-9])(?:#|issue[-_\s]+){number}(?![A-Za-z0-9])", re.IGNORECASE)
+    if title_pattern.search(pull_request["title"]):
+        sources.append("title")
+
+    branch_pattern = re.compile(
+        rf"(?<![A-Za-z0-9])(?:issue[-_]?{number}|{number})(?![A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+    if branch_pattern.search(pull_request["headRefName"]):
+        sources.append("branch")
+
+    body = pull_request["body"] or ""
+    body_reference = (
+        rf"(?:\#{number}|{re.escape(repository)}\#{number}|"
+        rf"https://github\.com/{re.escape(repository)}/issues/{number}(?![0-9]))"
+    )
+    body_pattern = re.compile(
+        rf"\b(?:closes?|fixes?|resolves?|implements?|addresses?|refs?)\b"
+        rf"\s*:?\s+(?:the\s+)?(?:issue\s+)?\[?{body_reference}",
+        re.IGNORECASE,
+    )
+    if body_pattern.search(body):
+        sources.append("body")
+
+    if not sources:
+        return None
+    return {
+        "number": pull_request["number"],
+        "title": pull_request["title"],
+        "headRefName": pull_request["headRefName"],
+        "sources": sources,
+    }
+
+
+def preflight_issue_pr(repository, issue, selected_pr=None, expected_branch=None,
+                       *, pull_requests=None):
+    text(repository, maximum=256, pattern=observations.REPOSITORY_RE)
+    integer(issue, minimum=1)
+    integer(selected_pr, minimum=1, nullable=True)
+    text(expected_branch, nullable=True, maximum=256)
+    if selected_pr is not None:
+        require(expected_branch is not None, "continuation requires its selected branch")
+
+    if pull_requests is None:
+        pull_requests = list_open_pull_requests(repository)
+    matches = [
+        match for pull_request in pull_requests
+        if (match := implementation_pull_request_matches(repository, issue, pull_request)) is not None
+    ]
+    if len(matches) > 1:
+        identities = ", ".join(
+            f"#{item['number']} ({item['headRefName']})" for item in matches
+        )
+        raise HandoffDataError(
+            f"multiple open implementation PRs for issue #{issue}: {identities}; "
+            "record a disposition before continuing"
+        )
+    if not matches:
+        require(selected_pr is None,
+                f"selected PR #{selected_pr} is not an open implementation PR for issue #{issue}")
+        return {
+            "repository": repository,
+            "issue": issue,
+            "decision": "new-root",
+            "pull_request": None,
+            "branch": expected_branch,
+        }
+
+    match = matches[0]
+    if selected_pr is None:
+        raise HandoffDataError(
+            f"open implementation PR #{match['number']} already exists for issue #{issue} "
+            f"on branch {match['headRefName']}; continue it or record and close it before replacement"
+        )
+    require(selected_pr == match["number"],
+            f"select existing implementation PR #{match['number']} for issue #{issue}")
+    require(expected_branch == match["headRefName"],
+            f"selected PR #{selected_pr} uses branch {match['headRefName']}, "
+            f"not {expected_branch}")
+    return {
+        "repository": repository,
+        "issue": issue,
+        "decision": "continue-existing",
+        "pull_request": match["number"],
+        "branch": match["headRefName"],
+    }
+
+
 def observe_git(assignment):
     root = Path(assignment["allowed_worktree"])
     require(str(root.resolve(strict=True)) == str(root), "worktree path is symlinked")
@@ -594,6 +739,10 @@ def assign(state, assignment):
              "coordination_turns": 0}
     candidate = {**state, "assignments": [*state["assignments"], entry]}
     validate_state(candidate)
+    preflight_issue_pr(
+        assignment["repository"], assignment["issue"], assignment["pull_request"],
+        assignment["expected_branch"],
+    )
     state["assignments"].append(entry)
     state["clock"]["at"] = now()
     return entry
@@ -1144,6 +1293,11 @@ def summarize_handoffs(state):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
+    preflight = commands.add_parser("preflight")
+    preflight.add_argument("--repository", required=True)
+    preflight.add_argument("--issue", type=int, required=True)
+    preflight.add_argument("--selected-pr", type=int)
+    preflight.add_argument("--expected-branch")
     assign_parser = commands.add_parser("assign")
     assign_parser.add_argument("--assignment", type=Path, required=True)
     observe = commands.add_parser("observe")
@@ -1164,6 +1318,12 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     try:
+        if args.operation == "preflight":
+            output = preflight_issue_pr(
+                args.repository, args.issue, args.selected_pr, args.expected_branch,
+            )
+            sys.stdout.buffer.write(observations.json_bytes(output))
+            return 0
         with observations.locked_state(args.state) as state:
             validate_state(state)
             if args.operation == "assign":

@@ -315,6 +315,14 @@ unbuildable layer. If one request contains separately deliverable contracts,
 create explicit dependent sub-issues before implementation, freeze each
 sub-issue's contract, and give each sub-issue its own PR.
 
+Before dispatching issue work or opening an issue PR, run the reviewed
+`agent-handoff preflight` for the target repository and issue. Continue the
+unique existing implementation PR by its exact PR number and branch; do not
+start a second root. The `agent-handoff assign` operation repeats this gate.
+If an existing PR cannot serve, record its stale/superseded disposition and
+the intended replacement branch in issue/coordination evidence, close it, and
+rerun preflight before replacement work.
+
 ### Independent roots and genuine stacks
 
 Base every independent issue branch directly on `master`. Use a stack only

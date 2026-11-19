@@ -6754,3 +6754,86 @@ the production file/process/query adapters themselves run in the tests.
 Opaque runtime handles cannot certify exit/RSS; a missing real observation
 remains an explicit hold, never an authenticated label or invented backend.
 Revert the dedicated #178 change on regression.
+
+## TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001: Prevent duplicate implementation PRs for an issue
+
+**Issue:** [#381](https://github.com/laqieer/fireemblem8-expansion/issues/381)
+
+**Profile:** source-only Linux checkout with Python 3, Git, and the reviewed
+workflow-pilot handoff tool. Live preflight also requires authenticated
+read access to the target repository's open PRs.
+
+### Prerequisites and starting state
+
+Run from the exact reviewed source root. Automated checks use temporary Git
+repositories and inert GitHub open-PR responses; they need no token, live PR,
+ROM, emulator, or remote mutation. The live preflight command is read-only.
+
+### Actions
+
+1. Run the focused issue/PR matching and handoff tests listed below.
+2. Before dispatching work for an issue, run `agent-handoff preflight` for
+   that repository and issue. If there is no matching open implementation PR,
+   the result permits a new root. If there is one, rerun with its exact PR
+   number and current branch to bind a continuation.
+3. If an existing PR cannot serve, record its stale/superseded reason and the
+   intended replacement branch in issue or coordination evidence, close the
+   unusable PR, then rerun preflight before dispatching replacement work.
+4. Do not create an assignment or PR as part of this test procedure. Confirm
+   that `assign` repeats the preflight before reserving work.
+
+### Expected result
+
+An empty matching-PR set permits a new root. A unique existing implementation
+PR blocks an unbound root and permits continuation only when both the selected
+PR number and current branch match. Same-repository closing-issue relations,
+exact issue references in the title or branch, and actionable body directives
+identify implementation candidates. Related-only `Part of` or `Depends on`
+references do not. GitHub discovery errors and incomplete/ambiguous results
+fail closed.
+
+### Negative controls
+
+- `#1178` does not match issue `#178`; a closing reference from another
+  repository does not match.
+- `Part of #178` and `Depends on #178` alone do not identify an implementation
+  PR.
+- An open matching PR without explicit selection, a wrong PR or branch, and
+  multiple matching PRs are rejected.
+- A stale PR that remains open still blocks a replacement. Replacement is
+  permitted only after its disposition is recorded, it is closed, and
+  preflight is rerun.
+- GitHub command failure, malformed or duplicate results, and a result set
+  reaching the 1000-item bound are rejected rather than treated as empty.
+
+### Dependencies, conflicts, and compatibility
+
+Dependencies: none. Conflicts: none with game features, other issues, or
+profiles; unrelated issues remain independent. This is host-only workflow
+tooling and does not change ROM/RAM, save/configuration, generated game data,
+localization, modern debug/release, or archival behavior.
+
+### Automation and cleanup
+
+Focused deterministic coverage:
+
+```bash
+python3 -m unittest \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_issue_pr_preflight_uses_exact_implementation_references \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_continues_one_selected_pr_and_blocks_duplicates \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
+```
+
+The Build host job runs the complete `test_agent_handoff` and
+`test_coordinator_observations` modules. Tests clean only their owned temporary
+repositories and processes. The live preflight does not create assignments,
+close PRs, or otherwise mutate GitHub. No manual-only acceptance criterion
+applies.
+
+### Limitations
+
+The guard recognizes explicit issue-to-PR identity; it does not infer semantic
+equivalence from arbitrary source diffs, and it does not close or replace PRs
+automatically. Revert the dedicated #381 change if the preflight blocks valid
+independent work or permits a duplicate root.

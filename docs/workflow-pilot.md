@@ -2706,7 +2706,32 @@ proof of perpetual availability. Boot/suspend observations invalidate stale
 coverage until the coordinator makes a fresh availability decision.
 
 Set `REVIEWED_SOURCE`, `COORDINATOR_STATE`, `ASSIGNMENT`, `OWNER_EVENTS`,
-`RESULT` and `WORKTREE` to those actual paths. The four operations are:
+`RESULT` and `WORKTREE` to those actual paths. The operation commands are:
+
+Before dispatching issue work, query the live open-PR inventory:
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff preflight \
+  --repository "$REPOSITORY" --issue 178
+```
+
+An existing implementation PR is continued only when its PR number and
+current branch are selected explicitly:
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff preflight \
+  --repository "$REPOSITORY" --issue 178 --selected-pr 191 --expected-branch agent/issue-178
+```
+
+`assign` repeats this discovery before reserving work. It fails closed if
+GitHub cannot return a complete open-PR list, if multiple implementation PRs
+match, or if the selected PR/branch differs. Closing-issue relations, exact
+issue references in titles, implementation branches, and actionable PR-body
+references identify implementation candidates; `Part of` and `Depends on`
+body references remain related context. Do not close an existing PR based only
+on its title. For a stale/superseded PR, record the reason and intended
+replacement branch in issue/coordination evidence, close the unusable PR, then
+rerun preflight before creating a replacement assignment or PR.
 
 ```bash
 /usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff assign \
