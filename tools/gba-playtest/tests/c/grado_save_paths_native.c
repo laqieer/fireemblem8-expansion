@@ -152,6 +152,14 @@ static u32 sHelpBoxCalls;
 static int sHelpBoxX;
 static int sHelpBoxY;
 static int sHelpBoxMessage;
+static u32 sHelpBoxGfxLoads;
+static u32 sHelpBoxGfxLoadsAtStart;
+static u32 sHelpBoxCloseCalls;
+static u32 sPopupStartCalls;
+static const struct ProcCmd * sPopupScript;
+static ProcPtr sPopupParent;
+static ProcPtr sBrokenProc;
+static struct SaveMenu8A20068Proc sSaveMenuPopupProc;
 static u32 sRestartGameCalls;
 static u32 sLinkArenaInitCalls;
 static void (*sUnwrappedReadSramFast)(void const *, void *, u32);
@@ -159,6 +167,8 @@ static int sTraceExpansionMetaReads;
 static u32 sExpansionMetaReadCount;
 static u32 sProcGotoCalls;
 static int sProcGotoLabel;
+
+extern struct ProcCmd gProcScr_Savemenu_0[];
 
 static void TraceSramRead(void const * src, void * dest, u32 size)
 {
@@ -177,6 +187,19 @@ void Proc_Goto(ProcPtr proc, int label)
     sProcGotoLabel = label;
 }
 
+ProcPtr Proc_StartBlocking(const struct ProcCmd * script, ProcPtr parent)
+{
+    sPopupStartCalls++;
+    sPopupScript = script;
+    sPopupParent = parent;
+    return &sSaveMenuPopupProc;
+}
+
+void Proc_Break(ProcPtr proc)
+{
+    sBrokenProc = proc;
+}
+
 void StartBgmVolumeChange(int volumeInit, int volumeEnd, int duration, ProcPtr parent)
 {
     (void)volumeInit;
@@ -191,6 +214,7 @@ void StartHelpBoxExt_Unk(int x, int y, int mid)
     sHelpBoxX = x;
     sHelpBoxY = y;
     sHelpBoxMessage = mid;
+    sHelpBoxGfxLoadsAtStart = sHelpBoxGfxLoads;
 }
 
 void RestartGameAndGoto8(void)
@@ -216,12 +240,14 @@ void InitPlayConfig(int isDifficult, s8 unk)
 
 void CloseHelpBox(void)
 {
+    sHelpBoxCloseCalls++;
 }
 
 void LoadHelpBoxGfx(void * dest, int pal)
 {
     (void)dest;
     (void)pal;
+    sHelpBoxGfxLoads++;
 }
 
 void StartItemHelpBox(int x, int y, int item)
@@ -1005,6 +1031,9 @@ static void ProbeNativeLoadRefusal(void)
     enum GradoStateLoadResult result;
     enum GradoStateLoadResult preflightResult;
     u32 helpBoxCallsBeforeMenu;
+    u32 helpBoxGfxLoadsBeforeMenu;
+    u32 helpBoxCloseCallsBeforeDismiss;
+    u32 popupStartCallsBeforeMenu;
     u32 procGotoCallsBeforeMenu;
     u16 previousNewKeys;
 
@@ -1116,11 +1145,29 @@ static void ProbeNativeLoadRefusal(void)
     gKeyStatusPtr->newKeys = A_BUTTON;
     procGotoCallsBeforeMenu = sProcGotoCalls;
     helpBoxCallsBeforeMenu = sHelpBoxCalls;
+    helpBoxGfxLoadsBeforeMenu = sHelpBoxGfxLoads;
+    popupStartCallsBeforeMenu = sPopupStartCalls;
     SaveMenu_SaveSlotSelectLoop(&saveMenuProc);
     probe->saveMenuSuspendRefused =
-        sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
-        && sHelpBoxMessage == probe->expectedMessage
+        sPopupStartCalls == popupStartCallsBeforeMenu + 1
+        && sPopupScript == gProcScr_Savemenu_0
+        && sPopupParent == &saveMenuProc
+        && sSaveMenuPopupProc.msgId == probe->expectedMessage
+        && sHelpBoxCalls == helpBoxCallsBeforeMenu
         && sProcGotoCalls == procGotoCallsBeforeMenu;
+    SaveMenuPopupHelpBox_Init(&sSaveMenuPopupProc);
+    probe->saveMenuSuspendRefused =
+        probe->saveMenuSuspendRefused
+        && sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
+        && sHelpBoxGfxLoads == helpBoxGfxLoadsBeforeMenu + 1
+        && sHelpBoxGfxLoadsAtStart == sHelpBoxGfxLoads;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    sBrokenProc = NULL;
+    helpBoxCloseCallsBeforeDismiss = sHelpBoxCloseCalls;
+    SaveMenuPopupHelpBox_WaitInput(&sSaveMenuPopupProc);
+    probe->saveMenuSuspendRefused = probe->saveMenuSuspendRefused
+        && sBrokenProc == &sSaveMenuPopupProc
+        && sHelpBoxCloseCalls == helpBoxCloseCallsBeforeDismiss + 1;
     memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
@@ -1130,11 +1177,29 @@ static void ProbeNativeLoadRefusal(void)
     gKeyStatusPtr->newKeys = A_BUTTON;
     procGotoCallsBeforeMenu = sProcGotoCalls;
     helpBoxCallsBeforeMenu = sHelpBoxCalls;
+    helpBoxGfxLoadsBeforeMenu = sHelpBoxGfxLoads;
+    popupStartCallsBeforeMenu = sPopupStartCalls;
     SaveMenu_SaveSlotSelectLoop(&saveMenuProc);
     probe->saveMenuNormalRefused =
-        sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
-        && sHelpBoxMessage == probe->expectedMessage
+        sPopupStartCalls == popupStartCallsBeforeMenu + 1
+        && sPopupScript == gProcScr_Savemenu_0
+        && sPopupParent == &saveMenuProc
+        && sSaveMenuPopupProc.msgId == probe->expectedMessage
+        && sHelpBoxCalls == helpBoxCallsBeforeMenu
         && sProcGotoCalls == procGotoCallsBeforeMenu;
+    SaveMenuPopupHelpBox_Init(&sSaveMenuPopupProc);
+    probe->saveMenuNormalRefused =
+        probe->saveMenuNormalRefused
+        && sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
+        && sHelpBoxGfxLoads == helpBoxGfxLoadsBeforeMenu + 1
+        && sHelpBoxGfxLoadsAtStart == sHelpBoxGfxLoads;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    sBrokenProc = NULL;
+    helpBoxCloseCallsBeforeDismiss = sHelpBoxCloseCalls;
+    SaveMenuPopupHelpBox_WaitInput(&sSaveMenuPopupProc);
+    probe->saveMenuNormalRefused = probe->saveMenuNormalRefused
+        && sBrokenProc == &sSaveMenuPopupProc
+        && sHelpBoxCloseCalls == helpBoxCloseCallsBeforeDismiss + 1;
     gKeyStatusPtr->newKeys = previousNewKeys;
     probe->saveMenuPreserved =
         memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0

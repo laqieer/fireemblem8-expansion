@@ -266,7 +266,8 @@ module builder to the original whole writer/loader paths. It uses owned
 valid generic unit/class/item providers, not the unfinished Grado roster.
 All save, flag, unit, world-map, preference, SRAM and handwritten ARM checksum
 functions come from their original source owners. A test-owned helpbox adapter
-captures only the caller's refusal message and coordinates. The existing
+captures refusal messages, coordinates and graphics initialization order; the
+probe records the blocking popup script and save-menu parent. The existing
 `gbagfx` helper builds only the original data required for linking.
 
 First run `make project-selection-config` without `FE8_PROJECT` and require the
@@ -359,7 +360,11 @@ replacements, but does not assert rendered UI or campaign behavior.
    menu selections refuse before requesting the fade-out transition. All
    callers preserve SRAM/live state and report the expected message; the test
    observes both byte-safe metadata copies and captures message IDs/helpbox
-   coordinates, not rendered UI or menu navigation.
+   coordinates, not rendered UI or menu navigation. It also requires both
+   save-menu refusals to start the existing blocking popup under the save-menu
+   Proc. The probe executes the original popup initializer and dismissal
+   handler, verifying that helpbox graphics load before the message starts
+   and input breaks the popup child.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make
@@ -386,7 +391,10 @@ boundaries. It is not cartridge-bus, complete game, rendered UI, locale or
 playable-campaign qualification. The native test executes selected debug,
 save-menu and Link Arena load functions, observing the requested Link Arena
 return label and skipped local map/palette calls; it does not run the enclosing
-process scheduler or assert rendered UI/navigation. The module is release-mode;
+process scheduler or assert rendered UI/navigation. It captures the actual
+blocking child script/parent and directly invokes the original popup
+initialization/dismissal handlers; it does not run the scheduler. The module is
+release-mode;
 the host campaign case separately compiles the lifecycle C for both debug and
 release settings.
 No default framework, core engine, format, epoch, allocation or framework gate
