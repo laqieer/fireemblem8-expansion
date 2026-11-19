@@ -6784,6 +6784,10 @@ ROM, emulator, or remote mutation. The live preflight command is read-only.
 5. Exercise a new-root assignment with no PR, publish its matching PR, then
    create a successor assignment bound to that PR number and current branch.
    Confirm later successors retain the same issue and PR identity.
+6. With issue `#178` fixtures, compare an actionable same-repository Markdown
+   issue link with `Part of` and `Depends on` links, foreign or wrong-issue
+   destinations, and uppercase label/URL forms. Confirm only actionable
+   references to the exact repository and issue match.
 
 ### Expected result
 
@@ -6793,11 +6797,12 @@ PR number and current branch match. Same-repository closing-issue relations,
 exact same-repository qualified title references, standalone issue-number
 references in branches, and actionable body directives identify implementation
 candidates. Markdown links must name the same repository and issue in both
-their label and destination; issue URLs are matched exactly. Dotted version
-components in branches are not issue references. A new-root lineage may bind
-its first published PR in a successor; that PR identity is then retained.
-Related-only `Part of` or `Depends on` references do not. GitHub discovery
-errors and incomplete/ambiguous results fail closed.
+their label and destination and follow an actionable directive; issue URLs are
+matched exactly. Related-only Markdown links do not identify an implementation
+PR. Dotted version components in branches are not issue references. A new-root
+lineage may bind its first published PR in a successor; that PR identity is
+then retained. Related-only `Part of` or `Depends on` references do not.
+GitHub discovery errors and incomplete/ambiguous results fail closed.
 
 ### Negative controls
 

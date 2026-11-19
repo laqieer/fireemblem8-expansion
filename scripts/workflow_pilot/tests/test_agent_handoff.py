@@ -808,7 +808,7 @@ class ExactHandoffTests(unittest.TestCase):
                 body="Implements [issue #178](https://github.com/owner/repository/issues/178)"),
                 "body"),
             (pull_request(
-                body="Implements [Issue #178](https://github.com/owner/repository/issues/178)"),
+                body="Implements [Issue #178](https://github.com/OWNER/REPOSITORY/ISSUES/178)"),
                 "body"),
             (pull_request(body="Address #178"), "body"),
             (pull_request(body="Addresses owner/repository#178"), "body"),
@@ -837,6 +837,10 @@ class ExactHandoffTests(unittest.TestCase):
                 body="Implements [issue #178](https://github.com/other/project/issues/178)"),
             pull_request(
                 body="Implements [issue #178](https://github.com/owner/repository/issues/179)"),
+            pull_request(
+                body="Part of [issue #178](https://github.com/owner/repository/issues/178)"),
+            pull_request(
+                body="Depends on [issue #178](https://github.com/owner/repository/issues/178)"),
         ):
             with self.subTest(candidate=candidate):
                 self.assertIsNone(handoff.implementation_pull_request_matches(

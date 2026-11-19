@@ -588,14 +588,20 @@ def implementation_pull_request_matches(repository, issue, pull_request):
         rf"\[issue\s+(?:\#{number}|{re.escape(repository)}\#{number})\]"
         rf"\(https://github\.com/{re.escape(repository)}/issues/{number}\)"
     )
-    body_pattern = re.compile(
+    body_directive = (
         rf"\b(?:closes?|fix(?:es)?|resolves?|implements?|address(?:es)?|refs?)\b"
-        rf"\s*:?\s+(?:the\s+)?(?:issue\s+)?{body_reference}(?![A-Za-z0-9_])",
+        rf"\s*:?\s+(?:the\s+)?"
+    )
+    markdown_body_pattern = re.compile(
+        body_directive + markdown_body_reference + r"(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
+    body_pattern = re.compile(
+        body_directive + rf"(?:issue\s+)?{body_reference}(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
     plain_body = re.sub(r"\[[^\]\n]*\]\([^)\n]*\)", "", body)
-    if (re.search(markdown_body_reference, body, re.IGNORECASE)
-            or body_pattern.search(plain_body)):
+    if markdown_body_pattern.search(body) or body_pattern.search(plain_body):
         sources.append("body")
 
     if not sources:
