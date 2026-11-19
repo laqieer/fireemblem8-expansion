@@ -2727,16 +2727,19 @@ current branch are selected explicitly:
 GitHub cannot return a complete open-PR list, if multiple implementation PRs
 match, or if the selected PR/branch differs. Closing-issue relations, exact
 issue references in titles, implementation branches, and actionable PR-body
-references identify implementation candidates, including exact same-repository
-qualified title references and actionable Markdown links whose label and
-destination name that repository and issue. Dotted version components in a
-branch are not issue references; `Part of` and `Depends on` body references
-and links remain related context. A new-root assignment may begin without a
-PR, then bind the published PR number in its first successor; later successors
-retain that number. Do not close an existing PR based only on its title. For a
-stale/superseded PR, record the reason and intended
-replacement branch in issue/coordination evidence, close the unusable PR, then
-rerun preflight before creating a replacement assignment or PR.
+references identify implementation candidates. Qualified titles must name
+the exact repository; a foreign repository/path ending in punctuation before
+`#N` is not a local reference. Markdown labels may use `#N`,
+`owner/repository#N`, or `issue #N`, but both label and destination must name
+the same repository and issue. Actionable comma-, `and`-, and `&`-separated
+body lists inspect every reference and stop before related-only `Part of` or
+`Depends on` clauses. Dotted version components in a branch are not issue
+references. A new-root assignment may begin without a PR, then bind the
+published PR number in its first successor; later successors retain that
+number. Do not close an existing PR based only on its title. For a
+stale/superseded PR, record the reason and intended replacement branch in
+issue/coordination evidence, close the unusable PR, then rerun preflight
+before creating a replacement assignment or PR.
 
 ```bash
 /usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff assign \

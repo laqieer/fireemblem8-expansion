@@ -6844,10 +6844,12 @@ ROM, emulator, or remote mutation. The live preflight command is read-only.
 5. Exercise a new-root assignment with no PR, publish its matching PR, then
    create a successor assignment bound to that PR number and current branch.
    Confirm later successors retain the same issue and PR identity.
-6. With issue `#178` fixtures, compare an actionable same-repository Markdown
-   issue link with `Part of` and `Depends on` links, foreign or wrong-issue
-   destinations, and uppercase label/URL forms. Confirm only actionable
-   references to the exact repository and issue match.
+6. With issue `#178` fixtures, compare actionable Markdown labels `#178`,
+   `owner/repository#178`, and `issue #178` with matching destinations, plus
+   foreign or wrong-issue destinations and uppercase label/URL forms. Exercise
+   `Refs #177, #178` and confirm the second item matches; ensure parsing stops
+   before `Depends on #178` or `Part of #178`. Check that a foreign title such
+   as `Fix other/repository-#178` is not a local issue match.
 
 ### Expected result
 
@@ -6856,10 +6858,14 @@ PR blocks an unbound root and permits continuation only when both the selected
 PR number and current branch match. Same-repository closing-issue relations,
 exact same-repository qualified title references, standalone issue-number
 references in branches, and actionable body directives identify implementation
-candidates. Markdown links must name the same repository and issue in both
-their label and destination and follow an actionable directive; issue URLs are
-matched exactly. Related-only Markdown links do not identify an implementation
-PR. Dotted version components in branches are not issue references. A new-root
+candidates. Markdown labels may use local `#N`, repository-qualified
+`owner/repository#N`, or `issue #N` notation, but must name the same repository
+and issue as the destination and follow an actionable directive; issue URLs
+are matched exactly. Actionable comma-, `and`-, and `&`-separated references
+check each item without crossing into related-only clauses. A foreign
+repository title or path ending in punctuation before `#N` is not a local
+reference. Related-only Markdown links do not identify an implementation PR.
+Dotted version components in branches are not issue references. A new-root
 lineage may bind its first published PR in a successor; that PR identity is
 then retained. Related-only `Part of` or `Depends on` references do not.
 GitHub discovery errors and incomplete/ambiguous results fail closed.
@@ -6868,8 +6874,12 @@ GitHub discovery errors and incomplete/ambiguous results fail closed.
 
 - `#1178` does not match issue `#178`; a closing reference from another
   repository does not match.
-- An issue-qualified Markdown link is an implementation reference, while a
-  foreign-repository or wrong-issue destination is not.
+- Markdown labels `#178`, `owner/repository#178`, and `issue #178` are
+  implementation references only with the matching repository/issue
+  destination; foreign-repository or wrong-issue destinations are not.
+- `Refs #177, #178` matches issue `#178`, but `Refs #177, Depends on #178` and
+  `Refs #177; Part of #178` do not.
+- `Fix other/repository-#178` does not match local issue `#178`.
 - `Part of #178` and `Depends on #178` alone do not identify an implementation
   PR.
 - `Fix owner/repository#178` matches a title for `owner/repository`, while a
