@@ -112,9 +112,10 @@ migrated.
 
 Chapter-clear facts make preceding choices required. Roderich and Lund instead
 use separate monotonic completed-resolution facts in the existing allocation;
-their CH10/CH14 exposition cannot settle either outcome. The actual CH18
-producer calls `GradoState_RecordResolution` only after a valid outcome is
-committed. Before that completion, unset remains unset.
+their CH10/CH14 exposition cannot settle either outcome. Production CH18
+producer integration remains pending: `GradoState_RecordResolution` must be
+called only after a valid outcome is committed. Until then, unset remains
+unset.
 Valid stored choices are preserved; multi-hot choices conflict. Supported
 missing choices recover to their accepted values, except MED/DATA with recorded
 absence markers, which report and preserve the missing state. Post-resolution
