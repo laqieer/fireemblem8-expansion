@@ -161,7 +161,7 @@ read. The fixture redirects the native `gSram` pointer to an owned 32 KiB
 EWRAM image; it does not claim cartridge-bus or complete game-loader evidence.
 
 1. Run
-   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
    The existing debug ARM-enabled linker invocation runs this module in
    candidate/master Build CI. Explicit host-only discovery skips it.
    Both physical and symlink-discovered test sources must execute the same
@@ -225,7 +225,7 @@ case. It links the original `eventinfo.c` getters and native flag serializers;
 the canonical linker supplies the actual IWRAM flag arrays.
 
 1. Run
-   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
    Both epochs and physical/fresh-linked imports must execute.
 2. Exercise all three normal slots and both Suspend slots. Virtual slots 0..2
    denote normal fields; 3..4 denote Suspend fields. For each, use seeds
@@ -276,7 +276,7 @@ link and pass its built-in boot check. This compiles the production source
 replacements, but does not assert rendered UI or campaign behavior.
 
 1. With the compatibility case's toolchain/emulator prerequisites, run
-   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_save_compat_native -v`.
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
    The additional whole-save case must execute at epochs 2 and 256, not skip.
 2. In one current owned image, save valid native unit/play state in every
    normal slot 0..2. Use `permanent[i] = 0xA5 ^ (29*i) ^ (7*input)` and

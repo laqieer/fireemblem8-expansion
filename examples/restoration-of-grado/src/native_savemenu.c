@@ -4,6 +4,9 @@
 #include "savemenu.h"
 #include "../include/grado_campaign_state.h"
 
+void GradoState_SaveMenu_NewGame(ProcPtr procPtr);
+
+#define SAVEMENU_NEW_GAME_HANDLER GradoState_SaveMenu_NewGame
 #define SaveMenu_NewGame GradoState_SaveMenu_NewGameCore
 
 #define ReadGameSave(slot) \
@@ -27,9 +30,10 @@
 
 #include "../../../src/savemenu.c"
 
+#undef SAVEMENU_NEW_GAME_HANDLER
 #undef SaveMenu_NewGame
 
-void SaveMenu_NewGame(ProcPtr procPtr)
+void GradoState_SaveMenu_NewGame(ProcPtr procPtr)
 {
     struct SaveMenuProc * proc = procPtr;
     struct GradoStateLoadDiagnostic diagnostic;
@@ -61,4 +65,9 @@ void SaveMenu_NewGame(ProcPtr procPtr)
     }
 
     GradoState_SaveMenu_NewGameCore(procPtr);
+}
+
+void SaveMenu_NewGame(ProcPtr procPtr)
+{
+    GradoState_SaveMenu_NewGame(procPtr);
 }

@@ -32,6 +32,10 @@
 #include "constants/chapters.h"
 #include "constants/songs.h"
 
+#ifndef SAVEMENU_NEW_GAME_HANDLER
+#define SAVEMENU_NEW_GAME_HANDLER SaveMenu_NewGame
+#endif
+
 extern u16 gEndingTmScratchA[];
 
 EWRAM_DATA struct SaveMenuRTextData gSaveMenuRTextData = { 0 };
@@ -627,7 +631,7 @@ void ExecSaveMenuMiscOption(struct SaveMenuProc * proc)
 
                 break;
             }
-            SaveMenu_NewGame(proc);
+            SAVEMENU_NEW_GAME_HANDLER(proc);
         }
         else
         {
@@ -641,7 +645,7 @@ void ExecSaveMenuMiscOption(struct SaveMenuProc * proc)
         {
             proc->unk_44 = 0xf0;
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
-            SaveMenu_NewGame(proc);
+            SAVEMENU_NEW_GAME_HANDLER(proc);
         }
         else
         {
@@ -753,7 +757,7 @@ void SaveMenu_SaveSlotSelectLoop(struct SaveMenuProc * proc)
             }
 
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
-            SaveMenu_NewGame(proc);
+            SAVEMENU_NEW_GAME_HANDLER(proc);
             return;
 
         case MAIN_MENU_OPTION_7:
@@ -761,12 +765,12 @@ void SaveMenu_SaveSlotSelectLoop(struct SaveMenuProc * proc)
                 proc->unk_44 = 0xf0;
 
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
-            SaveMenu_NewGame(proc);
+            SAVEMENU_NEW_GAME_HANDLER(proc);
             return;
 
         case MAIN_MENU_OPTION_RESUME:
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
-            SaveMenu_NewGame(proc);
+            SAVEMENU_NEW_GAME_HANDLER(proc);
             return;
 
         case MAIN_MENU_OPTION_NEW_GAME:
@@ -1104,7 +1108,7 @@ void SaveMenuExtrasMenuLoop(struct SaveMenuProc * proc)
             break;
 
         default:
-            SaveMenu_NewGame(proc);
+            SAVEMENU_NEW_GAME_HANDLER(proc);
             Proc_Goto(proc, PL_SAVEMENU_NEW_GAME);
             break;
         }
@@ -1266,7 +1270,7 @@ void SaveMenuExtraSlotSelectLoop(struct SaveMenuProc * proc)
             {
                 if (proc->sus_slot_cur == (u8)-1) {
                     ReadGameSave(proc->sus_slot);
-                    SaveMenu_NewGame(proc);
+                    SAVEMENU_NEW_GAME_HANDLER(proc);
                     PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
                     return;
                 }

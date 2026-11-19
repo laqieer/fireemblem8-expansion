@@ -7,6 +7,9 @@
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
+#include "hardware.h"
+#include "helpbox.h"
+#include "m4a.h"
 #include "savemenu.h"
 #include "sio.h"
 #include "sio_core.h"
@@ -21,6 +24,7 @@
 #include "../../../../scripts/modernize/tests/fixtures/grado_save_test_helpers.h"
 
 u8 DebugContinueMenu_ContinueChapter(struct MenuProc * menuProc, struct MenuItemProc * menuItemProc);
+void SaveMenu_SaveSlotSelectLoop(struct SaveMenuProc * proc);
 
 CONST_DATA struct CharacterData gCharacterData[] = {
     { .number = 1, .defaultClass = 1 },
@@ -202,6 +206,47 @@ void LinkArenaBattleMap_InitChapter(void)
 void ApplyUnitSpritePalettes(void)
 {
     sLinkArenaInitCalls++;
+}
+
+void InitPlayConfig(int isDifficult, s8 unk)
+{
+    (void)isDifficult;
+    (void)unk;
+}
+
+void CloseHelpBox(void)
+{
+}
+
+void LoadHelpBoxGfx(void * dest, int pal)
+{
+    (void)dest;
+    (void)pal;
+}
+
+void StartItemHelpBox(int x, int y, int item)
+{
+    (void)x;
+    (void)y;
+    (void)item;
+}
+
+void SaveMenuDrawSubSelBox(struct SaveMenuProc * proc, s8 flag)
+{
+    (void)proc;
+    (void)flag;
+}
+
+s8 SaveMenuTryMoveSaveSlotCursor(struct SaveMenuProc * proc, s8 position)
+{
+    (void)proc;
+    (void)position;
+    return 0;
+}
+
+void m4aSongNumStart(u16 song)
+{
+    (void)song;
 }
 
 static void PrepareCurrent(void)
@@ -960,6 +1005,8 @@ static void ProbeNativeLoadRefusal(void)
     enum GradoStateLoadResult result;
     enum GradoStateLoadResult preflightResult;
     u32 helpBoxCallsBeforeMenu;
+    u32 procGotoCallsBeforeMenu;
+    u16 previousNewKeys;
 
     PrepareSemanticSaves();
     PrepareLive(SAVE_ID_GAME2, permanent, chapter);
@@ -967,9 +1014,23 @@ static void ProbeNativeLoadRefusal(void)
     gPlaySt.chapterIndex = 21;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
     SetBonusContentClaimFlags(bonus);
+    SetFlag(166);
+    WriteGameSave(SAVE_ID_GAME2);
+
+    PrepareLive(1, permanent, chapter);
+    PrepareSemanticState();
+    gPlaySt.chapterIndex = 21;
+    gPlaySt.gameSaveSlot = 1;
+    SetBonusContentClaimFlags(bonus);
+    SetFlag(166);
+    WriteSuspendSave(SAVE_ID_SUSPEND);
+
+    PrepareLive(SAVE_ID_GAME2, permanent, chapter);
+    PrepareSemanticState();
+    gPlaySt.chapterIndex = 21;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
+    SetBonusContentClaimFlags(bonus);
 #if FE8_EXPANSION_SAVE_COMPAT_EPOCH == 256
-    gSram->saveBlockInfo[SAVE_ID_GAME2].offset = 0xFFFF;
-    gSram->saveBlockInfo[SAVE_ID_SUSPEND].offset = 0xFFFF;
     probe->expectedMessage = MSG_SAVE_COMPAT_UNKNOWN;
 #else
     probe->expectedMessage = MSG_SAVE_COMPAT_CONFIG_INCOMPATIBLE;
@@ -1051,17 +1112,30 @@ static void ProbeNativeLoadRefusal(void)
     memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESUME;
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
+    previousNewKeys = gKeyStatusPtr->newKeys;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    procGotoCallsBeforeMenu = sProcGotoCalls;
     helpBoxCallsBeforeMenu = sHelpBoxCalls;
-    SaveMenu_NewGame(&saveMenuProc);
+    SaveMenu_SaveSlotSelectLoop(&saveMenuProc);
     probe->saveMenuSuspendRefused =
         sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
-        && sHelpBoxMessage == probe->expectedMessage;
+        && sHelpBoxMessage == probe->expectedMessage
+        && sProcGotoCalls == procGotoCallsBeforeMenu;
+    memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
+    saveMenuProc.sus_slot = SAVE_ID_GAME2;
+    saveMenuProc.sus_slot_cur = 0;
+    saveMenuProc.cursor_config = 1;
+    saveMenuProc.hb_en = 1;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    procGotoCallsBeforeMenu = sProcGotoCalls;
     helpBoxCallsBeforeMenu = sHelpBoxCalls;
-    SaveMenu_NewGame(&saveMenuProc);
+    SaveMenu_SaveSlotSelectLoop(&saveMenuProc);
     probe->saveMenuNormalRefused =
         sHelpBoxCalls == helpBoxCallsBeforeMenu + 1
-        && sHelpBoxMessage == probe->expectedMessage;
+        && sHelpBoxMessage == probe->expectedMessage
+        && sProcGotoCalls == procGotoCallsBeforeMenu;
+    gKeyStatusPtr->newKeys = previousNewKeys;
     probe->saveMenuPreserved =
         memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
         && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
