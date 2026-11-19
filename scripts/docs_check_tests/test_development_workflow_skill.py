@@ -4617,6 +4617,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",
             "TC-WORKFLOW-CI-WAIT-001",
+            "TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-BODY-EDIT-001",

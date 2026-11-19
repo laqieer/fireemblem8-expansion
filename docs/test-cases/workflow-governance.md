@@ -6806,14 +6806,14 @@ fail closed.
 - GitHub command failure, malformed or duplicate results, and a result set
   reaching the 1000-item bound are rejected rather than treated as empty.
 
-### Dependencies, conflicts, and compatibility
+### Interactions and save compatibility
 
 Dependencies: none. Conflicts: none with game features, other issues, or
 profiles; unrelated issues remain independent. This is host-only workflow
 tooling and does not change ROM/RAM, save/configuration, generated game data,
 localization, modern debug/release, or archival behavior.
 
-### Automation and cleanup
+### Automation
 
 Focused deterministic coverage:
 
@@ -6826,14 +6826,14 @@ python3 -m unittest \
 ```
 
 The Build host job runs the complete `test_agent_handoff` and
-`test_coordinator_observations` modules. Tests clean only their owned temporary
-repositories and processes. The live preflight does not create assignments,
-close PRs, or otherwise mutate GitHub. No manual-only acceptance criterion
-applies.
+`test_coordinator_observations` modules.
 
-### Limitations
+### Cleanup and limitations
 
 The guard recognizes explicit issue-to-PR identity; it does not infer semantic
 equivalence from arbitrary source diffs, and it does not close or replace PRs
 automatically. Revert the dedicated #381 change if the preflight blocks valid
-independent work or permits a duplicate root.
+independent work or permits a duplicate root. Tests clean only their owned
+temporary repositories and processes. Live preflight does not create
+assignments, close PRs, or otherwise mutate GitHub. No manual-only acceptance
+criterion applies.

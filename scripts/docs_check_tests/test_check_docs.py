@@ -1198,6 +1198,25 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests.test_agent_handoff."
+                            "ExactHandoffTests.test_issue_pr_preflight_uses_exact_implementation_references "
+                            "scripts.workflow_pilot.tests.test_agent_handoff."
+                            "ExactHandoffTests.test_preflight_continues_one_selected_pr_and_blocks_duplicates "
+                            "scripts.workflow_pilot.tests.test_agent_handoff."
+                            "ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root "
+                            "scripts.workflow_pilot.tests.test_agent_handoff."
+                            "ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v",
+                            "build/host-python/bin/python3 -I -c "
+                            "'import sys, unittest; sys.path.insert(0, \".\"); "
+                            "unittest.main(module=None)' "
+                            "scripts.workflow_pilot.tests.test_agent_handoff "
+                            "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+                        },
+                    },
                     "TC-WORKFLOW-MANUAL-HANDOFF-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

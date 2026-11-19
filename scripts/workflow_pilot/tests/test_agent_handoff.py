@@ -767,6 +767,10 @@ class ExactHandoffTests(unittest.TestCase):
             (pull_request(title="Fix #178"), "title"),
             (pull_request(branch="fix/issue-178"), "branch"),
             (pull_request(body="Refs #178"), "body"),
+            (pull_request(body="Fix #178"), "body"),
+            (pull_request(body="Fixes owner/repository#178"), "body"),
+            (pull_request(body="Address #178"), "body"),
+            (pull_request(body="Addresses owner/repository#178"), "body"),
             (pull_request(closing=({
                 "number": 178,
                 "repository": {"owner": {"login": "owner"}, "name": "repository"},
@@ -784,6 +788,14 @@ class ExactHandoffTests(unittest.TestCase):
         )
         self.assertIsNone(handoff.implementation_pull_request_matches(
             "owner/repository", 178, unrelated))
+        for body in (
+            "Refs #1780",
+            "Refs owner/repository#1780",
+            "Refs https://github.com/owner/repository/issues/1780",
+        ):
+            with self.subTest(body=body):
+                self.assertIsNone(handoff.implementation_pull_request_matches(
+                    "owner/repository", 178, pull_request(body=body)))
         cross_repository = pull_request(closing=({
             "number": 178,
             "repository": {"owner": {"login": "other"}, "name": "repository"},
@@ -867,6 +879,25 @@ class ExactHandoffTests(unittest.TestCase):
             )["decision"],
             "continue-existing",
         )
+
+        unrelated_empty_body_pr = [{
+            "number": 193,
+            "title": "Unrelated PR",
+            "body": "",
+            "headRefName": "feature/unrelated",
+            "closingIssuesReferences": [],
+        }]
+        with mock.patch.object(
+            handoff.git, "run_process",
+            return_value=mock.Mock(
+                returncode=0,
+                stdout=observations.json_bytes(unrelated_empty_body_pr),
+                stderr=b"",
+            ),
+        ):
+            decision = handoff.preflight_issue_pr(
+                "owner/repository", 179, expected_branch="fix/issue-179")
+        self.assertEqual(decision["decision"], "new-root")
 
         with mock.patch.object(handoff.git, "run_process",
                                return_value=mock.Mock(returncode=1, stdout=b"", stderr=b"offline")):

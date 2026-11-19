@@ -44,10 +44,12 @@ def fields(value, names):
     return value
 
 
-def text(value, *, nullable=False, maximum=16384, pattern=None):
+def text(value, *, nullable=False, allow_empty=False, maximum=16384, pattern=None):
     if value is None and nullable:
         return
-    require(type(value) is str and 0 < len(value) <= maximum, "invalid bounded string")
+    minimum = 0 if allow_empty else 1
+    require(type(value) is str and minimum <= len(value) <= maximum,
+            "invalid bounded string")
     require(not any(0xD800 <= ord(char) <= 0xDFFF for char in value), "invalid Unicode scalar")
     if pattern is not None:
         require(pattern.fullmatch(value) is not None, "invalid string format")
@@ -529,7 +531,7 @@ def list_open_pull_requests(repository):
         seen.add(pull_request["number"])
         text(pull_request["title"], maximum=1024)
         text(pull_request["headRefName"], maximum=256)
-        text(pull_request["body"], nullable=True)
+        text(pull_request["body"], nullable=True, allow_empty=True)
         for reference in items(pull_request["closingIssuesReferences"], maximum=128):
             require(type(reference) is dict and "number" in reference
                     and "repository" in reference, "invalid closing-issue reference")
@@ -575,11 +577,11 @@ def implementation_pull_request_matches(repository, issue, pull_request):
     body = pull_request["body"] or ""
     body_reference = (
         rf"(?:\#{number}|{re.escape(repository)}\#{number}|"
-        rf"https://github\.com/{re.escape(repository)}/issues/{number}(?![0-9]))"
+        rf"https://github\.com/{re.escape(repository)}/issues/{number})"
     )
     body_pattern = re.compile(
-        rf"\b(?:closes?|fixes?|resolves?|implements?|addresses?|refs?)\b"
-        rf"\s*:?\s+(?:the\s+)?(?:issue\s+)?\[?{body_reference}",
+        rf"\b(?:closes?|fix(?:es)?|resolves?|implements?|address(?:es)?|refs?)\b"
+        rf"\s*:?\s+(?:the\s+)?(?:issue\s+)?\[?{body_reference}(?![A-Za-z0-9])",
         re.IGNORECASE,
     )
     if body_pattern.search(body):
