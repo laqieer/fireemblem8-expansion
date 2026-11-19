@@ -804,8 +804,12 @@ class ExactHandoffTests(unittest.TestCase):
             (pull_request(body="Fix #178"), "body"),
             (pull_request(body="Fixes owner/repository#178"), "body"),
             (pull_request(body="Fix https://github.com/owner/repository/issues/178"), "body"),
+            (pull_request(body="Refs #177, #178"), "body"),
             (pull_request(
                 body="Implements [issue #178](https://github.com/owner/repository/issues/178)"),
+                "body"),
+            (pull_request(
+                body="Implements [owner/repository#178](https://github.com/owner/repository/issues/178)"),
                 "body"),
             (pull_request(
                 body="Implements [Issue #178](https://github.com/OWNER/REPOSITORY/ISSUES/178)"),
@@ -831,6 +835,9 @@ class ExactHandoffTests(unittest.TestCase):
             "owner/repository", 178, unrelated))
         for candidate in (
             pull_request(title="Fix other/repository#178"),
+            pull_request(title="Fix other/repository-#178"),
+            pull_request(title="Fix other/repository.#178"),
+            pull_request(title="Fix other/repository_#178"),
             pull_request(title="Fix another/owner/repository#178"),
             pull_request(branch="release/1.178.0"),
             pull_request(
@@ -841,6 +848,8 @@ class ExactHandoffTests(unittest.TestCase):
                 body="Part of [issue #178](https://github.com/owner/repository/issues/178)"),
             pull_request(
                 body="Depends on [issue #178](https://github.com/owner/repository/issues/178)"),
+            pull_request(body="Refs #177; Depends on #178"),
+            pull_request(body="Refs #177, Depends on #178"),
         ):
             with self.subTest(candidate=candidate):
                 self.assertIsNone(handoff.implementation_pull_request_matches(
@@ -873,6 +882,19 @@ class ExactHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "already exists"):
             handoff.preflight_issue_pr(
                 "owner/repository", 178, pull_requests=[existing])
+        list_reference = {
+            **existing, "title": "Unrelated", "body": "Refs #177, #178",
+            "headRefName": "feature/other",
+        }
+        with self.assertRaisesRegex(handoff.HandoffDataError, "already exists"):
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, pull_requests=[list_reference])
+        foreign_reference = {
+            **list_reference, "title": "Fix other/repository-#178", "body": "",
+        }
+        decision = handoff.preflight_issue_pr(
+            "owner/repository", 178, pull_requests=[foreign_reference])
+        self.assertEqual(decision["decision"], "new-root")
         with self.assertRaisesRegex(handoff.HandoffDataError, "select existing"):
             handoff.preflight_issue_pr(
                 "owner/repository", 178, 192, "agent/test", pull_requests=[existing])

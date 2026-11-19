@@ -566,7 +566,7 @@ def implementation_pull_request_matches(repository, issue, pull_request):
 
     title_pattern = re.compile(
         rf"(?<![A-Za-z0-9._/-]){re.escape(repository)}\#{number}(?![A-Za-z0-9_])"
-        rf"|(?<![A-Za-z0-9])(?:#|issue[-_\s]+){number}(?![A-Za-z0-9_])",
+        rf"|(?<![A-Za-z0-9._/-])(?:#|issue[-_\s]+){number}(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
     if title_pattern.search(pull_request["title"]):
@@ -580,13 +580,15 @@ def implementation_pull_request_matches(repository, issue, pull_request):
         sources.append("branch")
 
     body = pull_request["body"] or ""
+    repository_reference = re.escape(repository)
+    reference_boundary = r"(?<![A-Za-z0-9._/-])"
     body_reference = (
-        rf"(?:\#{number}|{re.escape(repository)}\#{number}|"
-        rf"https://github\.com/{re.escape(repository)}/issues/{number})"
+        rf"{reference_boundary}(?:\#{number}|{repository_reference}\#{number}|"
+        rf"https://github\.com/{repository_reference}/issues/{number})"
     )
     markdown_body_reference = (
-        rf"\[issue\s+(?:\#{number}|{re.escape(repository)}\#{number})\]"
-        rf"\(https://github\.com/{re.escape(repository)}/issues/{number}\)"
+        rf"\[(?:issue\s+)?(?:\#{number}|{repository_reference}\#{number})\]"
+        rf"\(https://github\.com/{repository_reference}/issues/{number}\)"
     )
     body_directive = (
         rf"\b(?:closes?|fix(?:es)?|resolves?|implements?|address(?:es)?|refs?)\b"
@@ -596,12 +598,26 @@ def implementation_pull_request_matches(repository, issue, pull_request):
         body_directive + markdown_body_reference + r"(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
+    any_body_reference = (
+        rf"{reference_boundary}(?:\#[0-9]+|{repository_reference}\#[0-9]+|"
+        rf"https://github\.com/{repository_reference}/issues/[0-9]+)"
+        r"(?![A-Za-z0-9_])"
+    )
     body_pattern = re.compile(
-        body_directive + rf"(?:issue\s+)?{body_reference}(?![A-Za-z0-9_])",
+        body_directive
+        + rf"(?:issue\s+)?(?P<references>{any_body_reference}"
+        + rf"(?:\s*(?:,\s*|\band\b\s*|&\s*){any_body_reference})*)",
+        re.IGNORECASE,
+    )
+    target_body_reference_pattern = re.compile(
+        body_reference + r"(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
     plain_body = re.sub(r"\[[^\]\n]*\]\([^)\n]*\)", "", body)
-    if markdown_body_pattern.search(body) or body_pattern.search(plain_body):
+    if markdown_body_pattern.search(body) or any(
+        target_body_reference_pattern.search(match.group("references"))
+        for match in body_pattern.finditer(plain_body)
+    ):
         sources.append("body")
 
     if not sources:
