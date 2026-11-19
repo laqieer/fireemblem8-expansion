@@ -1035,6 +1035,7 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_AGENT_HANDOFF_TEST_STEP_NAME = "Run agent-handoff regression suite (issue #381)"
 _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Verify checked-out revision"),
     ("host-tests", "Hydrate workflow-pilot Git authority"),
@@ -1043,10 +1044,10 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Run upstream-port tooling test suite"),
     ("host-tests", "Run workflow contract test suite"),
     ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
+    ("host-tests", _AGENT_HANDOFF_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
-    ("legacy", "Install host-only dependencies (no arm-none-eabi toolchain)"),
-    ("legacy", "Run full-game localization width contract (issue #18)"),
+    ("extended-host-tests", "Run full-game localization width contract (issue #18)"),
     ("build", "Verify checked-out revision"),
     ("build", "Check tracked artifacts"),
     ("build", _DOCS_GOVERNANCE_STEP_NAME),
@@ -1112,6 +1113,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run upstream-port tooling test suite"),
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
+        ("gate", _AGENT_HANDOFF_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
     ),
@@ -1151,12 +1153,11 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run multilang texttools codec gates"),
         ("gate", "Run text generator atomic publication tests (issue #268)"),
         ("gate", "Run configuration and linker-budget gates"),
+        ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "legacy": (
         ("setup", None),
         ("setup", "Verify checked-out revision"),
-        ("setup", "Install host-only dependencies (no arm-none-eabi toolchain)"),
-        ("gate", "Run full-game localization width contract (issue #18)"),
         ("setup", "Install archival build dependencies"),
         ("setup", "Preflight archival toolchain executables"),
         ("setup", "Install pinned archival agbcc compilers"),
@@ -1560,9 +1561,9 @@ def _parse_job_context(job_name, body):
                 raise ValueError(f"job {job_name!r} needs differs")
             values[name] = value
         elif name == "runs-on":
-            if value != "ubuntu-latest" or nested:
+            if value != "ubuntu-24.04" or nested:
                 raise ValueError(
-                    f"job {job_name!r} runs-on must be ubuntu-latest"
+                    f"job {job_name!r} runs-on must be ubuntu-24.04"
                 )
             values[name] = value
         elif name == "timeout-minutes":
@@ -2391,6 +2392,22 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="agent-handoff-tests",
+            command=[
+                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                "-I",
+                "-c",
+                'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
+                "scripts.workflow_pilot.tests.test_agent_handoff",
+                "scripts.workflow_pilot.tests.test_coordinator_observations",
+                "-v",
+            ],
+            applicable_note=(
+                "issue #381 host lane: validates exact open-PR matching, "
+                "continuation binding and duplicate-root rejection"
+            ),
+        ),
+        Gate(
             name="workflow-pilot-baseline",
             command=[
                 "/usr/bin/python3",
@@ -2725,30 +2742,30 @@ def gates(jobs: int = 2) -> List[Gate]:
             name="game-localization-width-contract",
             command=["make", "game-localization-test"],
             applicable_note=(
-                "issue #18 full-game host checks use the existing legacy worker "
-                "before archival setup: validates the JA/ZH catalog, typed widths, "
-                "generated breaks and native text consumers independently of "
-                "the reporter critical path, without an ARM toolchain"
+                "issue #18 full-game host checks use the existing extended-host "
+                "worker, independently of the reporter critical path and the "
+                "legacy timeout; validates the JA/ZH catalog, typed widths, "
+                "generated breaks and native text consumers without an ARM toolchain"
             ),
         ),
         Gate(
             name="game-localization-catalog-check",
             command=["python3", "-m", "scripts.localization.game_locales", "check"],
-            applicable_note="full-game host closure check before archival setup",
+            applicable_note="full-game host closure check in the independent extended-host worker",
         ),
         Gate(
             name="game-localization-crosswalk-check",
             command=[
                 "python3", "-m", "scripts.localization.game_locales", "check-crosswalk",
             ],
-            applicable_note="full-game source/catalog crosswalk coverage before archival setup",
+            applicable_note="full-game source/catalog crosswalk coverage in the independent extended-host worker",
         ),
         Gate(
             name="game-localization-raw-closure-check",
             command=[
                 "python3", "-m", "scripts.localization.game_locales", "check-raw-closure",
             ],
-            applicable_note="unresolved raw full-game locale closure before archival setup",
+            applicable_note="unresolved raw full-game locale closure in the independent extended-host worker",
         ),
         Gate(
             name="modern-review-arm-check-debug",
