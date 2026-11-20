@@ -489,7 +489,7 @@ class TextPublicationTests(unittest.TestCase):
                         restored_stamp.stdout + restored_stamp.stderr,
                     )
                     self.assertTrue(stamp.is_file())
-                    self.assertEqual(calls(), 6)
+                    self.assertEqual(calls(), 5)
 
                     output.unlink()
                     header.unlink()
@@ -498,14 +498,14 @@ class TextPublicationTests(unittest.TestCase):
                         restored_pair.returncode, 0, restored_pair.stdout + restored_pair.stderr,
                     )
                     self.assertTrue(output.is_file() and header.is_file())
-                    self.assertEqual(calls(), 7)
+                    self.assertEqual(calls(), 6)
                     self.assertEqual(run_make().returncode, 0)
-                    self.assertEqual(calls(), 7)
+                    self.assertEqual(calls(), 6)
                     synchronized = run_make(consumer, header_consumer)
                     self.assertEqual(
                         synchronized.returncode, 0, synchronized.stdout + synchronized.stderr,
                     )
-                    self.assertEqual(calls(), 7)
+                    self.assertEqual(calls(), 6)
 
                     before = output.read_bytes()
                     before_times = (
@@ -513,13 +513,13 @@ class TextPublicationTests(unittest.TestCase):
                         consumer.stat().st_mtime_ns, header_consumer.stat().st_mtime_ns,
                     )
                     self.assertEqual(question("-W", str(definitions)).returncode, 1)
-                    self.assertEqual(calls(), 7)
+                    self.assertEqual(calls(), 6)
                     forced = subprocess.run(
                         [*common, "-W", str(definitions), str(consumer), str(header_consumer)],
                         cwd=ROOT, capture_output=True, text=True, timeout=30,
                     )
                     self.assertEqual(forced.returncode, 0, forced.stdout + forced.stderr)
-                    self.assertEqual(calls(), 8)
+                    self.assertEqual(calls(), 7)
                     self.assertEqual(
                         (output.stat().st_mtime_ns, header.stat().st_mtime_ns,
                          consumer.stat().st_mtime_ns, header_consumer.stat().st_mtime_ns),
@@ -535,7 +535,7 @@ class TextPublicationTests(unittest.TestCase):
                         cwd=ROOT, capture_output=True, text=True, timeout=30,
                     )
                     self.assertEqual(forced.returncode, 0, forced.stdout + forced.stderr)
-                    self.assertEqual(calls(), 9)
+                    self.assertEqual(calls(), 8)
                     self.assertNotEqual(output.read_bytes(), before)
                     self.assertEqual(consumer.read_bytes(), output.read_bytes())
                     self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
@@ -553,7 +553,7 @@ class TextPublicationTests(unittest.TestCase):
                         ambiguous_build.returncode, 0,
                         ambiguous_build.stdout + ambiguous_build.stderr,
                     )
-                    self.assertEqual(calls(), 10)
+                    self.assertEqual(calls(), 9)
                     self.assertNotEqual(output.read_bytes(), before)
                     self.assertEqual(consumer.read_bytes(), output.read_bytes())
                     self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
@@ -586,7 +586,7 @@ class TextPublicationTests(unittest.TestCase):
                             self.assertNotEqual(output.read_bytes(), before)
                             self.assertEqual(consumer.read_bytes(), output.read_bytes())
                             self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
-                    self.assertEqual(calls(), 21)
+                    self.assertEqual(calls(), 20)
 
                     previous = output.read_bytes(), header.read_bytes()
                     selected_source.write_text("#0000\n[MISSING][X]\n", encoding="utf-8")

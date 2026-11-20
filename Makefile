@@ -626,7 +626,8 @@ LEGACY_TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$
 
 $(TEXT_STAMP): $(TEXT_INPUTS)
 	@mkdir -p "$(@D)"
-	@if [ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" != "1" ]; then \
+	@if [ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" != "1" ] || \
+		{ [ -e "$@" ] && [ -n "$?" ]; }; then \
 		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8; \
 	fi
 	@touch "$@"
@@ -645,7 +646,8 @@ $(LEGACY_TEXT_MAIN): $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)
 
 $(LEGACY_TEXT_STAMP): $(LEGACY_TEXT_INPUTS)
 	@mkdir -p "$(@D)"
-	@if [ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" != "1" ]; then \
+	@if [ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" != "1" ] || \
+		{ [ -e "$@" ] && [ -n "$?" ]; }; then \
 		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8; \
 	fi
 	@touch "$@"
