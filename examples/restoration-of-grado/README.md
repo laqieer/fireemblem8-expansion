@@ -411,6 +411,75 @@ release settings.
 No default framework, core engine, format, epoch, allocation or framework gate
 changes.
 
+## TC-GRADO-CHOICE-CHECKPOINTS-001
+
+This case covers the native choice/checkpoint probe owned by issue #327. It
+uses the selected Grado reference source only as a dependency of the probe;
+the probe itself is not included in a release ROM.
+
+Prerequisites: the supported ARM7TDMI/Thumb AAPCS toolchain and libmGBA from
+quickstart, plus Python 3. No clean ROM, user save, configured gameplay
+profile or GUI is required.
+
+1. Run
+   `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
+   The test compiles and boots the owned native module for save epochs 2 and
+   256. At epoch 2, the Grado-specific preflight must refuse the epoch-2 input
+   without mutating its saved bytes or live flags; this does not test the
+   default loader against epoch-256 Grado data. Epoch 256 must complete the
+   probe and produce all nine default-recovery records, all 31 choice-outcome
+   records and 14 direction-history records.
+2. The epoch-256 probe dispatches through the real generic menu
+   `Menu_OnInit`, `RedrawMenu` and `Menu_OnIdle` functions. It checks every
+   choice label and all four direction labels across favorable, moderate and
+   adverse histories, including histories where foundation and conflict are
+   both true or both false. A test-owned save adapter attempts normal and
+   Suspend checkpoints while a choice is pending and proves both are rejected
+   without changing SRAM; the same adapter permits pre-choice and completed
+   checkpoints. The probe also checks cancel/fresh-confirm transitions,
+   pending reset/reload to the pre-choice checkpoint, exactly-once synthetic
+   resource deltas and duplicate blocking. Dispatching the confirmation
+   menu's second item after commit must leave the transaction complete and its
+   committed value and resources unchanged.
+   It also loads both CH15 decisions together, verifies all nine default
+   recoveries, recovers EXILED through normal and Suspend sources, verifies a
+   rejected EXILED checkpoint reports failure without reading an unset result,
+   and reopens
+   an incomplete final direction without defaulting it. That reopen starts
+   from distinct live sentinels, restores a saved prior choice and gold through
+   the native Suspend loader, then applies the direction choice's synthetic
+   cost from the restored gold balance.
+3. Check captured typed records for rollback to unset choice state and base
+   gold after a pending reset, source/backing slot identity, saved choice
+   values and gold after both completed-load and missing-direction reopen,
+   the two coexisting CH15 decisions, save-block preservation and the epoch-2
+   control. The supported native normal loader
+   may invalidate Suspend metadata; the case checks the choice-bearing game
+   block rather than incorrectly requiring the whole SRAM image to remain
+   unchanged after that load.
+
+The test-owned input driver and scheduler stubs make the menu callbacks
+deterministic. `RedrawMenu` sends labels to a test text sink, so label evidence
+does not claim rendered pixels, real scheduler timing or in-game visual
+qualification. Gold deltas are synthetic exactly-once evidence, not campaign
+balance. No material manual-only criterion is claimed by this case.
+
+**Negative control:** the epoch-2 module runs the Grado-specific preflight on
+its epoch-2 input and requires refusal without changing the saved bytes or
+live flags. This does not claim that the default framework loader rejects an
+epoch-256 Grado save. Direction remains unset until an explicit choice; the
+probe also verifies that the normal menu does not invent a default direction.
+
+**Compatibility and interactions:** the case depends on the native allocation
+and save paths from issue #315, uses their existing save format and flags, and
+does not change the default framework epoch, save schema or release sources.
+The R+SELECT probe dispatch preserves the existing R-only native probes.
+
+**Cleanup and limits:** the test removes only its owned compiler/module/ROM/
+capture directory. It does not open or modify user saves. This is native
+module and callback evidence, not rendered UI, production gameplay balance,
+or a fully qualified playable campaign.
+
 ## TC-GRADO-ALLOCATION-001
 
 ### Complete campaign bindings

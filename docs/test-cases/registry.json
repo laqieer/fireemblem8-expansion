@@ -35,6 +35,7 @@
       "configuration-identity",
       "project-input-selection",
       "grado-native-allocation",
+      "grado-choice-checkpoints",
       "save-compatibility",
       "generated-data-platform",
       "typed-id-item-cap",
@@ -77,6 +78,18 @@
         "TC-GRADO-SAVE-COMPAT-001",
         "TC-GRADO-SAVE-FLAGS-001",
         "TC-GRADO-SAVE-PATHS-001"
+      ]
+    },
+    {
+      "id": "grado-choice-checkpoints",
+      "title": "Grado native choice checkpoints",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/327"
+      ],
+      "reference": "examples/restoration-of-grado/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GRADO-CHOICE-CHECKPOINTS-001"
       ]
     },
     {
@@ -1005,6 +1018,34 @@
           "command": "make FE8_PROJECT=restoration-of-grado",
           "evidence": "examples/restoration-of-grado/project.mk"
         },
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-CHOICE-CHECKPOINTS-001",
+      "title": "Exercise native Grado choices and save checkpoints",
+      "feature_id": "grado-choice-checkpoints",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/327"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-choice-checkpoints-001",
+      "profiles": [
+        "Non-release ARM7TDMI/Thumb AAPCS native module, epochs 2 and 256, libmGBA"
+      ],
+      "purpose": "Exercise all accepted generic-menu choice outcomes, checkpoint recovery and save-source diagnostics without adding the probe to a release ROM or asserting campaign balance.",
+      "prerequisites": "Python 3, supported ARM toolchain and libmGBA from quickstart; no clean ROM, user save, configured gameplay profile or GUI.",
+      "actions": "Run the documented native test module. Boot the owned ARM module at epochs 2 and 256; dispatch the test-only R+SELECT probe while preserving existing R-only probes. At epoch 256, execute all 31 outcomes through Menu_OnInit, RedrawMenu and Menu_OnIdle, capture choice/cost labels in the test text sink, and exercise pending, cancel, fresh confirmation, exact-once synthetic resource application, duplicate blocking, two independent CH15 choices, all nine default recoveries, normal/Suspend EXILED recovery and missing-direction reopening. For the reopen path, save a prior choice and gold, replace live state with distinct sentinels, load the validated Suspend history, then open the direction menu and apply its synthetic cost from the restored gold. At epoch 2, prove refusal without saved-input/live-flag mutation. Check normal and Suspend source/backing slots and choice-bearing save blocks.",
+      "expected_result": "Epoch 256 reaches completion with all 31 outcome records and nine default records correct. Every displayed menu label/cost tier matches its semantic choice; cancellation returns to choices, held input cannot confirm, a fresh confirmation commits once, and re-entry cannot repeat effects. Both CH15 decisions coexist after reload. Every accepted default recovers through the native loaders, EXILED recovery restores the saved symbol/state through normal and Suspend routes, and missing direction reopens unset with the prior choice and resources restored from the saved checkpoint before menu/cost handling. Source/backing slot identities remain available after recovery. Epoch 2 refuses without mutating its input or live flags. Normal-load Suspend invalidation remains native behavior; the test verifies the game block, not whole-SRAM immutability after valid load.",
+      "negative_control": "Epoch 2 is the default-profile refusal control. In the supported epoch, direction remains unset until an explicit selection. The probe does not accept a missing outcome, repeated resource application, held-input confirmation or stale menu state as success.",
+      "interactions": "Depends on the native Grado allocation and save paths from issue #315/PR #358. Uses existing generic menu dispatch, save format and flags; no new framework gate or production release probe. The text sink proves label dispatch/content, not rendered UI.",
+      "save_compatibility": "No save schema, envelope, epoch, flag allocation or migration changes. The implementation preserves source/backing slot identifiers in completed recovery diagnostics; existing epoch-2 rejection/default behavior remains.",
+      "cleanup": "Remove only the test's owned compiler/module/ROM/capture directory; do not open or modify user saves.",
+      "limitations": "Deterministic native module and generic-menu callback evidence only. Test-owned scheduler/input and text-sink stubs do not prove rendered pixels, real scheduler timing, production campaign balance or a playable campaign. No material manual-only criterion is claimed.",
+      "automation": [
         {
           "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v",
           "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
