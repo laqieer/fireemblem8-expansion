@@ -340,6 +340,76 @@ not changed live GitHub data. This does not tolerate malformed *required*
 security timing, synthesize missing evidence, or replace actual named security
 checks and full candidate/master Build evidence.
 
+## TC-WORKFLOW-HOST-PLATFORM-001: Retain Ubuntu 24.04 after ubuntu-latest moves
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #371](https://github.com/laqieer/fireemblem8-expansion/issues/371).
+- **Supported configuration or artifact:** Linux source checkout on Ubuntu
+  24.04 and the existing Build/upstream-drift workflows. No ROM, save, ARM
+  debugger, emulator or live credentials are required for the host fixtures.
+- **Prerequisites and clean starting state:** run from the repository root
+  with Python 3 and Git. Worktree fixtures must not be left under source paths.
+
+### Actions
+
+1. Parse `.github/workflows/build.yml` and verify that every Build job uses
+   exactly `runs-on: ubuntu-24.04`, with no `ubuntu-latest`, self-hosted,
+   container or matrix runner substitution.
+2. Parse `.github/workflows/upstream-port-drift.yml` and verify the
+   `drift-scan` job uses exactly `runs-on: ubuntu-24.04`.
+3. Run:
+
+   ```bash
+   python3 -m unittest tests.workflows.test_build_ci_topology \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests \
+     tests.upstream_port.test_drift_workflow.WorkflowStaticPolicyTests -v
+   ```
+
+4. Exercise mutations that change a supported runner to `ubuntu-latest`,
+   `ubuntu-26.04`, a self-hosted runner, a container, a matrix or a
+   duplicate/spaced/quoted runner key. Every mutation must fail the
+   corresponding parsed contract.
+5. Live delivery requires the exact candidate full Build on the selected
+   platform, followed by automatic exact-master Build and
+   `make remote-completion-check`.
+
+### Expected result
+
+Every supported host/dependency/ABI job resolves Ubuntu 24.04. Existing
+Python 3.12, GNU Make 4.3, dependency hashes and broad worker topology remain
+unchanged. Mutated runner images and alternate runner forms cannot pass.
+
+### Negative control
+
+Before the pin, a workflow using `ubuntu-latest` accepted the moving image.
+After the pin, changing any supported job or upstream-drift runner to
+`ubuntu-latest` or another alternate fails the parsed positive contract.
+No success-shaped fallback weakens Python, Make, wheel, ownership or Build
+gate requirements.
+
+### Interactions and save compatibility
+
+Dependencies: none; implementation is independent on master. This case
+preserves all Build jobs and upstream drift on the accepted host. Conflicts:
+moving a supported job to a different Ubuntu image or a self-hosted/container
+runner is unsupported. No ROM/RAM, save/config, locale, generated-data,
+modern/debug/release or archival payload change.
+
+### Automation
+
+The workflow topology and upstream verifier suites assert the parsed runner
+mapping and reject runner mutations. Live exact-head and exact-master Build
+runs prove the supported Ubuntu 24.04 environment and all four broad workers.
+Actionlint remains the workflow syntax check.
+
+### Cleanup and limitations
+
+Host fixtures require no cleanup beyond ordinary temporary test repositories.
+This is an explicit image pin, not a claim that every future Ubuntu package set
+remains unchanged. It does not assert a real runner image in host-only tests;
+candidate and master Build provide that runtime evidence. No manual criterion
+applies.
+
 ## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -2291,6 +2361,66 @@ replacement of the retired Full Matrix.
 No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
+
+## TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001: Keep legacy Build within its 60-minute budget
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #380](https://github.com/laqieer/fireemblem8-expansion/issues/380).
+- **Supported configuration or artifact:** the full candidate or master Build
+  on `ubuntu-24.04`; the source-only topology checks run from a clean checkout.
+- **Prerequisites and clean starting state:** use the exact candidate or master
+  SHA under test. Local checks need Python 3 and no ROM, emulator, or GitHub
+  credentials; inspect the matching full Build run for end-to-end timing.
+
+### Actions
+
+1. Run the workflow-topology and upstream-port mirror tests listed below.
+2. Confirm the four full-game localization commands remain together in
+   `extended-host-tests`, which is independent of the workflow-pilot reporter.
+3. Inspect the exact full Build run: confirm `extended-host-tests` succeeds
+   within 90 minutes and `legacy` succeeds within 60 minutes through native
+   ARM review, archival build, and pinned-payload validation.
+
+### Expected result
+
+The independent extended-host worker passes all full-game localization
+checks; `host-tests` retains its reporter ownership; and the legacy worker
+contains no host-only bootstrap or localization work while completing every
+native ARM, archival, and payload gate within its unchanged 60-minute limit.
+
+### Negative control
+
+The topology tests fail if a localization command is removed or moved back to
+`legacy` or into the reporter-owned `host-tests` job, or if the required job
+limits change. Historical runs [#44486937093](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44486937093)
+and [#44492436378](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44492436378)
+were canceled at the 60-minute boundary during native ARM review, skipping the
+archival and payload checks.
+
+### Interactions and save compatibility
+
+The existing `extended-host-tests`, `host-tests`, and `legacy` workers remain
+separate owners for their existing gates. This is a Build-workflow correction
+with no game-feature, profile, save/configuration, generated-data, localization
+content, ROM/RAM, debug/release, or archival behavior change.
+
+### Automation
+
+- `python3 -m unittest tests.workflows.test_build_ci_topology -v` parses the
+  workflow and enforces job placement, exact full-game commands, and worker
+  limits.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners -v`
+  verifies that the full-game checks remain owned by the independent extended
+  host worker.
+- The exact candidate Build run verifies successful execution and duration of
+  both affected workers.
+
+### Cleanup and limitations
+
+No persistent data is created by the topology tests. Build-local generated
+outputs are ephemeral on GitHub runners. Local structure tests cannot predict
+shared-runner timing; exact candidate and post-merge Build results remain
+required.
 
 ## TC-WORKFLOW-MANUAL-HANDOFF-001: Surface actionable manual testing and resume automatically
 
@@ -6684,3 +6814,116 @@ the production file/process/query adapters themselves run in the tests.
 Opaque runtime handles cannot certify exit/RSS; a missing real observation
 remains an explicit hold, never an authenticated label or invented backend.
 Revert the dedicated #178 change on regression.
+
+## TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001: Prevent duplicate implementation PRs for an issue
+
+**Issue:** [#381](https://github.com/laqieer/fireemblem8-expansion/issues/381)
+
+**Profile:** source-only Linux checkout with Python 3, Git, and the reviewed
+workflow-pilot handoff tool. Live preflight also requires authenticated
+read access to the target repository's open PRs.
+
+### Prerequisites and starting state
+
+Run from the exact reviewed source root. Automated checks use temporary Git
+repositories and inert GitHub open-PR responses; they need no token, live PR,
+ROM, emulator, or remote mutation. The live preflight command is read-only.
+
+### Actions
+
+1. Run the focused issue/PR matching and handoff tests listed below.
+2. Before dispatching work for an issue, run `agent-handoff preflight` for
+   that repository and issue. If there is no matching open implementation PR,
+   the result permits a new root. If there is one, rerun with its exact PR
+   number and current branch to bind a continuation.
+3. If an existing PR cannot serve, record its stale/superseded reason and the
+   intended replacement branch in issue or coordination evidence, close the
+   unusable PR, then rerun preflight before dispatching replacement work.
+4. Do not create an assignment or PR as part of this test procedure. Confirm
+   that `assign` repeats the preflight before reserving work.
+5. Exercise a new-root assignment with no PR, publish its matching PR, then
+   create a successor assignment bound to that PR number and current branch.
+   Confirm later successors retain the same issue and PR identity.
+6. With issue `#178` fixtures, compare actionable Markdown labels `#178`,
+   `owner/repository#178`, and `issue #178` with matching destinations, plus
+   foreign or wrong-issue destinations and uppercase label/URL forms. Exercise
+   `Refs #177, #178` and confirm the second item matches; ensure parsing stops
+   before `Depends on #178` or `Part of #178`. Check that a foreign title such
+   as `Fix other/repository-#178` is not a local issue match.
+
+### Expected result
+
+An empty matching-PR set permits a new root. A unique existing implementation
+PR blocks an unbound root and permits continuation only when both the selected
+PR number and current branch match. Same-repository closing-issue relations,
+exact same-repository qualified title references, standalone issue-number
+references in branches, and actionable body directives identify implementation
+candidates. Markdown labels may use local `#N`, repository-qualified
+`owner/repository#N`, or `issue #N` notation, but must name the same repository
+and issue as the destination and follow an actionable directive; issue URLs
+are matched exactly. Actionable comma-, `and`-, and `&`-separated references
+check each item without crossing into related-only clauses. A foreign
+repository title or path ending in punctuation before `#N` is not a local
+reference. Related-only Markdown links do not identify an implementation PR.
+Dotted version components in branches are not issue references. A new-root
+lineage may bind its first published PR in a successor; that PR identity is
+then retained. Related-only `Part of` or `Depends on` references do not.
+GitHub discovery errors and incomplete/ambiguous results fail closed.
+
+### Negative controls
+
+- `#1178` does not match issue `#178`; a closing reference from another
+  repository does not match.
+- Markdown labels `#178`, `owner/repository#178`, and `issue #178` are
+  implementation references only with the matching repository/issue
+  destination; foreign-repository or wrong-issue destinations are not.
+- `Refs #177, #178` matches issue `#178`, but `Refs #177, Depends on #178` and
+  `Refs #177; Part of #178` do not.
+- `Fix other/repository-#178` does not match local issue `#178`.
+- `Part of #178` and `Depends on #178` alone do not identify an implementation
+  PR.
+- `Fix owner/repository#178` matches a title for `owner/repository`, while a
+  different repository-qualified title does not.
+- `release/1.178.0` does not match issue `#178`.
+- An open matching PR without explicit selection, a wrong PR or branch, and
+  multiple matching PRs are rejected.
+- A successor cannot drop or replace a PR identity once the lineage has bound
+  one.
+- A stale PR that remains open still blocks a replacement. Replacement is
+  permitted only after its disposition is recorded, it is closed, and
+  preflight is rerun.
+- GitHub command failure, malformed or duplicate results, and a result set
+  reaching the 1000-item bound are rejected rather than treated as empty.
+
+### Interactions and save compatibility
+
+Dependencies: none. Conflicts: none with game features, other issues, or
+profiles; unrelated issues remain independent. This is host-only workflow
+tooling and does not change ROM/RAM, save/configuration, generated game data,
+localization, modern debug/release, or archival behavior.
+
+### Automation
+
+Focused deterministic coverage:
+
+```bash
+python3 -m unittest \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_issue_pr_preflight_uses_exact_implementation_references \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_continues_one_selected_pr_and_blocks_duplicates \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage \
+  scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
+```
+
+The Build host job runs the complete `test_agent_handoff` and
+`test_coordinator_observations` modules.
+
+### Cleanup and limitations
+
+The guard recognizes explicit issue-to-PR identity; it does not infer semantic
+equivalence from arbitrary source diffs, and it does not close or replace PRs
+automatically. Revert the dedicated #381 change if the preflight blocks valid
+independent work or permits a duplicate root. Tests clean only their owned
+temporary repositories and processes. Live preflight does not create
+assignments, close PRs, or otherwise mutate GitHub. No manual-only acceptance
+criterion applies.

@@ -588,7 +588,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/346",
         "https://github.com/laqieer/fireemblem8-expansion/issues/354",
         "https://github.com/laqieer/fireemblem8-expansion/issues/356",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/359"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/359",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/380"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -597,6 +598,7 @@
         "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
         "TC-WORKFLOW-CI-WAIT-001",
+        "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
         "TC-WORKFLOW-BODY-EDIT-001",
@@ -618,8 +620,10 @@
         "TC-WORKFLOW-REVIEW-FIRST-001",
         "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
+        "TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+        "TC-WORKFLOW-HOST-PLATFORM-001",
         "TC-WORKFLOW-REPORTER-RUNTIME-001",
         "TC-WORKFLOW-ASSET-DISCOVERY-001",
         "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
@@ -2923,6 +2927,38 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001",
+      "title": "Prevent duplicate implementation PRs for an issue",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/381"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-issue-pr-uniqueness-001-prevent-duplicate-implementation-prs-for-an-issue",
+      "profiles": [
+        "Source-only Linux checkout with Python 3, Git, and the reviewed workflow-pilot handoff tool"
+      ],
+      "purpose": "Prevent dispatching duplicate implementation work when an open PR already serves the target issue, while allowing independent related issues and an explicitly selected continuation.",
+      "prerequisites": "Run at the exact reviewed source root. Automated fixtures use temporary Git repositories and inert open-PR responses and need no token or remote mutation. Live preflight needs authenticated read access to the target repository's open PRs.",
+      "actions": "Run the focused issue/PR matching and handoff tests. For live issue work, run agent-handoff preflight before dispatch; select a unique existing PR by its exact number and branch when continuing it. If that PR is stale, record its disposition and replacement branch in issue/coordination evidence, close it, then rerun preflight before replacement work. Exercise a no-PR new root, publish its matching PR, then bind that PR number and current branch in the successor assignment. With issue #178 fixtures, compare an actionable same-repository Markdown issue link with Part of and Depends on links, foreign or wrong-issue destinations, and uppercase label/URL forms; confirm only actionable references to the exact repository and issue match.",
+      "expected_result": "No matching implementation PR permits a new root. One matching PR blocks an unbound root and permits only a handoff bound to that PR and current branch. Closing-issue relations, issue-bearing titles, standalone issue-number branch references, exact same-repository qualified titles, exact issue URLs, and actionable Markdown links whose label and destination name the same repository and issue are discovered; related-only references do not block. Dotted version components in a branch are not issue references. A new-root lineage can bind its first published PR in a successor, after which successors retain that identity.",
+      "negative_control": "A second root for an open implementation PR, wrong selected PR/branch, multiple matching PRs, malformed/duplicate/truncated GitHub results, API failure, or a stale PR not yet dispositioned and closed refuses. A successor cannot drop or replace a bound PR identity. #1178 does not match #178; a foreign or wrong-issue Markdown destination does not match its label; release/1.178.0 does not match #178; Part of #178 and Depends on #178 alone, including Markdown links, are not implementation signals.",
+      "interactions": "Uses the existing coordinator-owned issue/PR handoff and `gh` read access; unrelated issues remain independent. No PR is automatically closed or replaced. Conflicts with duplicate delivery roots, not game or build behavior.",
+      "save_compatibility": "Host-only workflow tooling; no ROM/RAM, save/configuration, generated game data, localization, modern debug/release, or archival impact.",
+      "cleanup": "Automated tests clean only their owned temporary repositories and child processes. Live preflight is read-only; a stale-PR disposition and closure are explicit coordinator actions.",
+      "limitations": "The guard detects issue-to-PR identity and explicit implementation references; it does not infer semantic equivalence from arbitrary source diffs or close PRs. No manual-only acceptance criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_issue_pr_preflight_uses_exact_implementation_references scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_continues_one_selected_pr_and_blocks_duplicates scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_assign_runs_issue_pr_gate_before_reserving_new_root scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v",
+          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_agent_handoff scripts.workflow_pilot.tests.test_coordinator_observations -v",
+          "evidence": ".github/workflows/build.yml"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
       "title": "Preserve post-checkout program effects",
       "feature_id": "workflow-governance",
@@ -3036,6 +3072,39 @@
         {
           "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_bootstrap_and_reporter_interpreter_agree -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-HOST-PLATFORM-001",
+      "title": "Retain Ubuntu 24.04 after ubuntu-latest moves",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/371"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-host-platform-001-retain-ubuntu-2404-after-ubuntu-latest-moves",
+      "profiles": [
+        "Source checkout on Ubuntu 24.04, Python 3 and Git",
+        "Exact-head candidate and exact-master GitHub Build runs"
+      ],
+      "purpose": "Preserve the supported host image and every existing dependency, ABI and Build gate after ubuntu-latest moves.",
+      "prerequisites": "Clean Linux source checkout. No ROM, save, ARM debugger, emulator or live credentials for local parser fixtures.",
+      "actions": "Parse Build and upstream-drift workflow mappings; require ubuntu-24.04 on every supported host job. Run parsed topology/verifier/drift tests, including runner mutation negatives. Live candidate and master delivery require exact-head and exact-master full Build evidence.",
+      "expected_result": "All supported Build jobs and upstream drift use Ubuntu 24.04; existing Python, Make, wheel, ownership and worker contracts remain unchanged.",
+      "negative_control": "ubuntu-latest, ubuntu-26.04, self-hosted, container, matrix, spaced/quoted/duplicate runner keys and alternate platform mappings fail.",
+      "interactions": "Independent implementation on master with no ROM/RAM/save/config/generated-data/locale/modern/archival interaction.",
+      "save_compatibility": "No save or migration change.",
+      "cleanup": "Temporary test repositories clean themselves up.",
+      "limitations": "Host-only fixtures do not prove GitHub's real runner image; exact candidate/master Build provide that runtime evidence. No visual, audio or UX judgment applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_drift_workflow.WorkflowStaticPolicyTests -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify tests.upstream_port.test_drift_workflow -v",
+          "evidence": "scripts/upstream_port/verify.py"
         }
       ]
     },
@@ -3220,6 +3289,38 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001",
+      "title": "Keep legacy Build within its 60-minute budget",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/380"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-legacy-build-bounded-001-keep-legacy-build-within-its-60-minute-budget",
+      "profiles": [
+        "Full candidate or master Build on ubuntu-24.04; source-only topology tests from a clean checkout"
+      ],
+      "purpose": "Prove full-game localization checks remain in an independent 90-minute host worker while the 60-minute legacy worker completes every archival gate.",
+      "prerequisites": "Use the exact candidate or master SHA under test. Local topology tests need Python 3; end-to-end timing requires access to the matching full Build run. No ROM or emulator is required.",
+      "actions": "Run the focused workflow-topology and upstream-port mirror tests. Inspect the exact full Build run and confirm the localization commands pass in extended-host-tests and legacy completes native ARM review, archival build, and pinned-payload validation within its unchanged limit.",
+      "expected_result": "All four full-game localization commands pass in extended-host-tests, independent of the reporter-owned host-tests job; legacy contains no host-only setup or localization work and passes all native ARM, archival, and payload gates within 60 minutes.",
+      "negative_control": "The topology tests reject missing or moved localization commands, incorrect worker ownership, and changed limits. Historical runs #44486937093 and #44492436378 were canceled at the 60-minute boundary during native ARM review, skipping archival and payload checks.",
+      "interactions": "Uses the existing extended-host-tests, host-tests, and legacy workers without adding a job. No gameplay/profile dependencies or conflicts are introduced; the reporter remains independently owned.",
+      "save_compatibility": "Build-workflow-only correction; no save/configuration, generated-data, localization content, ROM/RAM, debug/release, or archival behavior change.",
+      "cleanup": "No persistent data is created by the source-only tests; GitHub runner outputs are ephemeral.",
+      "limitations": "Source topology tests cannot predict shared-runner timing. Exact candidate and post-merge Build runs must demonstrate the worker limits.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners -v",
+          "evidence": "tests/upstream_port/test_verify.py"
         }
       ]
     },

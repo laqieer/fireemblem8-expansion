@@ -846,11 +846,13 @@ class RecoveryObservationTests(unittest.TestCase):
                  "session_id": "fresh-session", "dispatch_id": "fresh-dispatch",
                  "expected_branch": "agent/fresh", "allowed_worktree": str(other)}
         with self.subTest(source="reservation"):
-            with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
-                handoff.assign(copy.deepcopy(f.state), fresh)
+            with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
+                    handoff.assign(copy.deepcopy(f.state), fresh)
         with self.subTest(source="loaded"):
             separate = {**f.state, "assignments": []}
-            entry = handoff.assign(separate, fresh)
+            with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+                entry = handoff.assign(separate, fresh)
             path = f.home / "bypassed-retention.json"
             write_json(path, {**f.state, "assignments": [*f.state["assignments"], entry]})
             with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
