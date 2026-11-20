@@ -591,6 +591,21 @@ $(shell \
 	fi)
 endef
 
+define text_outputs_current
+$(shell \
+	if [ ! -e "$(1)" ] || [ ! -e "$(2)" ]; then \
+		printf 0; \
+	else \
+		current=1; \
+		for input in $(foreach input,$(3),"$(input)"); do \
+			if [ ! -e "$$input" ] || [ "$$input" -nt "$(1)" ] || [ "$$input" -nt "$(2)" ]; then \
+				current=0; break; \
+			fi; \
+		done; \
+		printf '%s' "$$current"; \
+	fi)
+endef
+
 ifeq ($(origin MFLAGS),environment)
 TEXT_INTERNAL_FLAGS := $(firstword $(MFLAGS))
 else ifeq ($(origin MFLAGS),environment override)
@@ -611,7 +626,9 @@ LEGACY_TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$
 
 $(TEXT_STAMP): $(TEXT_INPUTS)
 	@mkdir -p "$(@D)"
-	@$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8
+	@if [ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" != "1" ]; then \
+		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8; \
+	fi
 	@touch "$@"
 
 .PHONY: FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS
@@ -628,7 +645,9 @@ $(LEGACY_TEXT_MAIN): $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)
 
 $(LEGACY_TEXT_STAMP): $(LEGACY_TEXT_INPUTS)
 	@mkdir -p "$(@D)"
-	@$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8
+	@if [ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" != "1" ]; then \
+		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8; \
+	fi
 	@touch "$@"
 
 FORCE_LEGACY_TEXT_OUTPUTS: $(LEGACY_TEXT_STAMP)
