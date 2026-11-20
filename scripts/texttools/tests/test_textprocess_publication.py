@@ -949,6 +949,35 @@ class TextPublicationTests(unittest.TestCase):
                             self.assertEqual(self.pair(), expected)
                             self.assert_no_staging()
 
+    def test_unknown_directives_reject_direct_and_included_sources(self):
+        included = self.work / "selected messages.txt"
+        invalid = (
+            "#0000\n[Y][X]\n"
+            "#UNKNOWN\n[MISSING][X]\n"
+            "#0001\n[Y][X]\n"
+        )
+        for encoding in ("utf8", "cp932"):
+            previous = self.seed()
+            for use_include in (False, True):
+                with self.subTest(encoding=encoding, include=use_include):
+                    selected = included if use_include else self.source
+                    selected.write_text(invalid, encoding="utf-8")
+                    if use_include:
+                        self.source.write_text(
+                            f'#include "{included.name}"\n', encoding="utf-8"
+                        )
+                    self.header.write_bytes(previous[0])
+                    self.data.write_bytes(previous[1])
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), *self.arguments(encoding)],
+                        cwd=self.work, capture_output=True, text=True, timeout=15,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("unknown text directive", result.stderr)
+                    self.assertIn(str(selected), result.stderr)
+                    self.assertEqual(self.pair(), previous)
+                    self.assert_no_staging()
+
     def test_include_path_can_contain_comment_like_characters(self):
         included = self.work / "dir" / "*draft*" / "message.txt"
         included.parent.mkdir(parents=True)

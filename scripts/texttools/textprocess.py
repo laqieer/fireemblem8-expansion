@@ -394,7 +394,7 @@ def parse_source_messages(
 
 def process_file(file_path, control_chars, encoding_method, index=0):
     messages = []
-    for source in parse_source_messages(file_path, index):
+    for source in parse_source_messages(file_path, index, strict_directives=True):
         data = text_to_u16_array(
             source.text, control_chars, encoding_method,
             source_name=source.source_name,
