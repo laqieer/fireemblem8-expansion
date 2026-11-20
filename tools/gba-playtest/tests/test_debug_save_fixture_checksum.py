@@ -33,6 +33,7 @@ class DebugSaveFixtureChecksumTests(unittest.TestCase):
                 [
                     compiler,
                     "-w",
+                    "-std=gnu89",
                     "-I",
                     str(ROOT / "include"),
                     "-I",

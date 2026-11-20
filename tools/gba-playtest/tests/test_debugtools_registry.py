@@ -691,6 +691,19 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
                 f"compiling debug save fixture stubs failed:\n{out}",
             )
 
+            rc, out, grado_stubs_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debug_save_fixture_grado_host_stubs.c",
+                "debug_save_fixture_grado_stubs.o",
+                defines=defines,
+                extra_flags=["-std=gnu89", grado_include],
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling Grado debug save fixture stubs failed:\n{out}",
+            )
+
             rc, out, driver_obj = _compile(
                 work,
                 C_FIXTURES_DIR / "debug_save_fixture_driver.c",
@@ -706,7 +719,7 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
 
             rc, out, exe = _link(
                 work,
-                [fixture_obj, stubs_obj, driver_obj],
+                [fixture_obj, stubs_obj, grado_stubs_obj, driver_obj],
                 "debug_save_fixture_test",
             )
             self.assertEqual(
