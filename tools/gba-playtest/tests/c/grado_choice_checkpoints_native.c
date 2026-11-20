@@ -798,15 +798,17 @@ static u8 GradoChoice_ConfirmSelected(
     enum GradoStateValueResult result;
 
     (void)menu;
+    if (sTransaction.phase != CHOICE_PHASE_CONFIRMING
+        || !sTransaction.pending || sTransaction.committed)
+        return MENU_ACT_SKIPCURSOR;
+
     if (item->itemNumber != 0)
     {
         GradoChoice_CancelPending();
         return MENU_ACT_SKIPCURSOR;
     }
 
-    if (sTransaction.phase != CHOICE_PHASE_CONFIRMING
-        || !sTransaction.pending || sTransaction.committed
-        || gPlaySt.partyGoldAmount + sTransaction.pendingGoldDelta > 0xFFFF)
+    if (gPlaySt.partyGoldAmount + sTransaction.pendingGoldDelta > 0xFFFF)
         return MENU_ACT_SKIPCURSOR;
 
     newGold = gPlaySt.partyGoldAmount + sTransaction.pendingGoldDelta;
@@ -1149,6 +1151,18 @@ static void GradoChoice_RunOutcome(
         && sTransaction.phase == CHOICE_PHASE_COMPLETE
         && sTransaction.applyCount == 1
         && gPlaySt.partyGoldAmount == committedGold;
+    GradoChoice_SetInput(DPAD_DOWN, DPAD_DOWN, DPAD_DOWN);
+    Menu_OnIdle(&sTransaction.confirmMenu);
+    GradoChoice_SetInput(0, 0, 0);
+    GradoChoice_SetInput(A_BUTTON, 0, A_BUTTON);
+    Menu_OnIdle(&sTransaction.confirmMenu);
+    duplicateAfterCommit = duplicateAfterCommit
+        && sTransaction.phase == CHOICE_PHASE_COMPLETE
+        && sTransaction.committed && !sTransaction.pending
+        && sTransaction.resourceApplied && sTransaction.applyCount == 1
+        && gPlaySt.partyGoldAmount == committedGold
+        && GradoChoice_ReadValue(sChoices[family].symbol, &currentValue)
+        && currentValue == record->expectedValue;
 
     record->actualValue = GradoChoice_ReadValue(
         sChoices[family].symbol, &currentValue) ? currentValue : 0xFFFFFFFFu;

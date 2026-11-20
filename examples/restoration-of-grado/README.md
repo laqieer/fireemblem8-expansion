@@ -438,7 +438,9 @@ profile or GUI is required.
    without changing SRAM; the same adapter permits pre-choice and completed
    checkpoints. The probe also checks cancel/fresh-confirm transitions,
    pending reset/reload to the pre-choice checkpoint, exactly-once synthetic
-   resource deltas and duplicate blocking.
+   resource deltas and duplicate blocking. Dispatching the confirmation
+   menu's second item after commit must leave the transaction complete and its
+   committed value and resources unchanged.
    It also loads both CH15 decisions together, verifies all nine default
    recoveries, recovers EXILED through normal and Suspend sources, and reopens
    an incomplete final direction without defaulting it. That reopen starts
