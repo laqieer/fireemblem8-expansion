@@ -163,6 +163,8 @@ static u32 sHelpBoxCalls;
 static int sHelpBoxX;
 static int sHelpBoxY;
 static int sHelpBoxMessage;
+static void * sHelpBoxGfxDest;
+static int sHelpBoxPalette;
 static u32 sHelpBoxGfxLoads;
 static u32 sHelpBoxGfxLoadsAtStart;
 static u32 sHelpBoxCloseCalls;
@@ -229,8 +231,18 @@ void StartHelpBoxExt_Unk(int x, int y, int mid)
 }
 
 static int CompleteManagedRefusalPopup(
-    ProcPtr parent, int expectedMessage, u32 startCallsBefore, u32 helpBoxCallsBefore)
+    ProcPtr parent,
+    int expectedMessage,
+    u32 startCallsBefore,
+    u32 helpBoxCallsBefore,
+    int linkArenaContext)
 {
+    void * expectedGfxDest = linkArenaContext
+        ? OBJ_VRAM0 + 0x280 * TILE_SIZE_4BPP
+        : OBJ_VRAM0 + OBJCHR_SAVEMENU_SLOTSEL_HELPBOX * TILE_SIZE_4BPP;
+    int expectedPalette = linkArenaContext
+        ? 6
+        : OBJPAL_SAVEMENU_SLOTSEL_HELPBOX;
     u32 helpBoxGfxLoadsBefore = sHelpBoxGfxLoads;
     u32 helpBoxCloseCallsBefore = sHelpBoxCloseCalls;
 
@@ -244,6 +256,8 @@ static int CompleteManagedRefusalPopup(
     SaveMenuPopupHelpBox_Init(&sSaveMenuPopupProc);
     if (sHelpBoxCalls != helpBoxCallsBefore + 1
         || sHelpBoxGfxLoads != helpBoxGfxLoadsBefore + 1
+        || sHelpBoxGfxDest != expectedGfxDest
+        || sHelpBoxPalette != expectedPalette
         || sHelpBoxGfxLoadsAtStart != sHelpBoxGfxLoads)
         return 0;
 
@@ -294,8 +308,8 @@ void CloseHelpBox(void)
 
 void LoadHelpBoxGfx(void * dest, int pal)
 {
-    (void)dest;
-    (void)pal;
+    sHelpBoxGfxDest = dest;
+    sHelpBoxPalette = pal;
     sHelpBoxGfxLoads++;
 }
 
@@ -1246,7 +1260,7 @@ static void ProbeNativeLoadRefusal(void)
         GRADO_LOAD_NORMAL, SAVE_ID_GAME2, &debugMenuProc);
     popupLifecyclesCorrect = CompleteManagedRefusalPopup(
         &debugMenuProc, probe->expectedMessage,
-        popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu);
+        popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0);
     probe->result = result;
     probe->helpBoxCalls = sHelpBoxCalls;
     probe->helpBoxX = sHelpBoxX;
@@ -1274,7 +1288,7 @@ static void ProbeNativeLoadRefusal(void)
             debugCallerRefused = 0;
         if (!CompleteManagedRefusalPopup(
                 &debugMenuProc, probe->expectedMessage,
-                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu))
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0))
             popupLifecyclesCorrect = 0;
     }
     probe->suspendCallerRefused = debugCallerRefused;
@@ -1306,7 +1320,7 @@ static void ProbeNativeLoadRefusal(void)
             linkArenaCallerPreserved = 0;
         if (!CompleteManagedRefusalPopup(
                 &sioProc, probe->expectedMessage,
-                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu))
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 1))
             popupLifecyclesCorrect = 0;
     }
     probe->normalCallerPreserved = linkArenaCallerPreserved
@@ -1337,7 +1351,7 @@ static void ProbeNativeLoadRefusal(void)
             || sProcGotoCalls != procGotoCallsBeforeMenu
             || !CompleteManagedRefusalPopup(
                 &sioProc, probe->expectedMessage,
-                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu))
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 1))
             linkArenaSelectionRefused = 0;
     }
     probe->linkArenaSelectionRefused = linkArenaSelectionRefused;
@@ -1355,7 +1369,7 @@ static void ProbeNativeLoadRefusal(void)
         sProcGotoCalls == procGotoCallsBeforeMenu
         && CompleteManagedRefusalPopup(
             &saveMenuProc, probe->expectedMessage,
-            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu);
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0);
     memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
@@ -1375,7 +1389,7 @@ static void ProbeNativeLoadRefusal(void)
         sProcGotoCalls == procGotoCallsBeforeMenu
         && CompleteManagedRefusalPopup(
             &saveMenuProc, probe->expectedMessage,
-            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu)
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0)
         && saveMenuProc.unk_44 == 0x100
         && saveMenuProc.sus_slot_cur == 0;
 
@@ -1398,7 +1412,7 @@ static void ProbeNativeLoadRefusal(void)
         sProcGotoCalls == procGotoCallsBeforeMenu
         && CompleteManagedRefusalPopup(
             &saveMenuProc, probe->expectedMessage,
-            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu)
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0)
         && saveMenuProc.unk_44 == 0x100
         && saveMenuProc.sus_slot_cur == 1;
 

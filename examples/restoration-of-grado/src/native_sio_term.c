@@ -5,7 +5,8 @@
 
 #define ReadGameSave(slot) \
     do { \
-        if (!GradoState_TryLoadNativeSaveFromProc(GRADO_LOAD_NORMAL, (slot), proc)) \
+        if (!GradoState_TryLoadLinkArenaNativeSaveFromProc( \
+                GRADO_LOAD_NORMAL, (slot), proc)) \
         { \
             Proc_Goto(proc, 4); \
             return; \
@@ -39,7 +40,7 @@ void LinkArenaTeamBuild_Loop(struct SioTermProc * proc)
             && result != GRADO_STATE_LOAD_REOPEN)
         {
             SioPlaySoundEffect(2);
-            GradoState_ReportNativeLoadRefusal(result, proc);
+            GradoState_ReportLinkArenaLoadRefusal(result, proc);
             return;
         }
 

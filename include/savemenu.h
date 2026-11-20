@@ -193,7 +193,9 @@ struct SaveMenu8A20068Proc {
     /* 00 */ PROC_HEADER;
     /* 2C */ int x;
     /* 30 */ int y;
-    /* 34 */ u8 _pad[0x58-0x34];
+    /* 34 */ void * gfxVram;
+    /* 38 */ int gfxPalette;
+    /* 3C */ u8 _pad[0x58-0x3C];
 
     /* 58 */ int msgId;
 };
@@ -241,6 +243,8 @@ void SaveMenuExtrasMenuLoop(struct SaveMenuProc * proc);
 s8 SaveMenuTryMoveExtraSlotCursor(struct SaveMenuProc *, int);
 void SaveMenuPopupHelpBox_Init(struct SaveMenu8A20068Proc * proc);
 void SaveMenuPopupHelpBox_WaitInput(struct SaveMenu8A20068Proc * proc);
+void StartPopupHelpBox(
+    int x, int y, int msgId, ProcPtr parent, void * gfxVram, int gfxPalette);
 void StartSaveMenuPopupHelpBox(int x, int y, int msgId, ProcPtr parent);
 void SaveMenuExtraSlotSelectLoop(struct SaveMenuProc * proc);
 void SaveMenuStartSqMask(struct SaveMenuProc * proc);
