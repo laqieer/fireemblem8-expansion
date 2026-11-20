@@ -11,7 +11,9 @@ enum GradoStateLoadResult GradoState_LoadNativeSave(
     enum GradoStateLoadResult result;
 
     result = GradoState_PreflightNativeSave(route, slot, diagnostic);
-    if (result != GRADO_STATE_LOAD_VALID && result != GRADO_STATE_LOAD_RECOVERY)
+    if (result != GRADO_STATE_LOAD_VALID
+        && result != GRADO_STATE_LOAD_RECOVERY
+        && result != GRADO_STATE_LOAD_REOPEN)
         return result;
 
     if (route == GRADO_LOAD_SUSPEND)

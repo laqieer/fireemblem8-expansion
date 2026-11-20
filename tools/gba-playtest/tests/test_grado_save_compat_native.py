@@ -368,7 +368,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         self.assertEqual(native_size, 8 + 5 * 28)
         _, caller_size = resolve_elf_symbol(
             elf, "gGradoNativeLoadRefusalProbe", tools["MODERN_NM"])
-        self.assertEqual(caller_size, 24 * 4)
+        self.assertEqual(caller_size, 32 * 4)
 
         semantic_frame_budget = 10_000
 
@@ -511,7 +511,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ].to_bytes(4, "little")
             for offset in range(0, caller_size, 4)
         )
-        caller = struct.unpack("<24I", caller_data)
+        caller = struct.unpack("<32I", caller_data)
         with self.subTest(save_family="native-caller-refusal"):
             self.assertEqual(caller[:5], (2, 0, 1, 0x30, 0x30))
             self.assertEqual(caller[5], caller[6])
@@ -525,6 +525,12 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             self.assertEqual(caller[18:20], (1, 4))
             self.assertEqual(caller[20:23], (1, 1, 1))
             self.assertEqual(caller[23], 1)
+            if epoch == 256:
+                self.assertEqual(caller[24:26], (reopen, reopen))
+                self.assertEqual(caller[26:32], (1, 1, 1, 1, 1, 1))
+            else:
+                self.assertEqual(caller[24:26], (incompatible, incompatible))
+                self.assertEqual(caller[26:32], (0, 0, 0, 0, 0, 0))
         negative = []
         view_records = []
         if epoch == 256:

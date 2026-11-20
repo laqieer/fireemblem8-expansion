@@ -327,6 +327,13 @@ replacements, but does not assert rendered UI or campaign behavior.
    preserve their input image and live state. Recovery changes the intended
    Roderich state without resource or unit mutation. These refusal/recovery
    cases use a live flag view; they do not claim a physical save was loaded.
+   A separate physical normal-save record stores a valid prior choice and gold
+   with the final direction unset, confirms the `REOPEN` preflight, then clears
+   live state to distinct sentinels. `GradoState_LoadNativeSave` must still
+   return `REOPEN` after restoring the saved choice and play state;
+   `GradoState_TryLoadNativeSave` accepts that loaded disposition, and the
+   save-menu handler advances without a refusal popup. Epoch 2 remains
+   incompatible and refuses without restoring the sentinels.
 7. In that same epoch-256 capture, write two missing choices and their
    producers into valid normal and Suspend blocks backed by normal slot 0.
    Seed a valid unrelated direction directly after the other setup writes,
