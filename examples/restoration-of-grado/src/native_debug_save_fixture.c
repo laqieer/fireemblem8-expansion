@@ -103,7 +103,7 @@ enum DebugSaveFixtureContinueResult DebugSaveFixture_ConsumePendingContinue(void
         && loadResult == GRADO_STATE_LOAD_RECOVERY)
     {
         recoveryResult = GradoState_ApplyLoadRecovery(&diagnostic);
-        if (recoveryResult != GRADO_STATE_LOAD_RECOVERY)
+        if (recoveryResult != GRADO_STATE_LOAD_VALID)
         {
             DebugSaveFixture_Abort(DEBUG_SAVE_FIXTURE_ABORT_CONSUME_FAILED);
             DebugSaveFixture_SetResult(DEBUG_SAVE_FIXTURE_ERR_IMAGE_INVALID);

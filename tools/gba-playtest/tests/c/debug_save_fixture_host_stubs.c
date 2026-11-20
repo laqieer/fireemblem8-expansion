@@ -140,7 +140,7 @@ enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     (void)diagnostic;
     sGradoRecoveryCalls++;
     sGradoLoadCountAtRecovery = sGameLoadCount + sSuspendLoadCount;
-    return GRADO_STATE_LOAD_RECOVERY;
+    return GRADO_STATE_LOAD_VALID;
 }
 
 ProcPtr Proc_Find(const struct ProcCmd *script)
