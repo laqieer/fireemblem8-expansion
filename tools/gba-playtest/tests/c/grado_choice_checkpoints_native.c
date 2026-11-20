@@ -99,6 +99,9 @@ struct GradoChoiceCheckpointProbe
     u32 directionSourceSlot;
     u32 directionBackingSlot;
     u32 raustenDualPreserved;
+    u32 directionPriorChoiceRestored;
+    u32 directionResourcesRestored;
+    u32 directionCostAppliedFromRestoredGold;
     struct GradoChoiceDefaultRecord defaults[CHOICE_DEFAULT_COUNT];
     struct GradoChoiceOutcomeRecord outcomes[CHOICE_OUTCOME_COUNT];
 };
@@ -1196,36 +1199,50 @@ static void GradoChoice_RunMissingDirection(void)
     struct GradoStateLoadDiagnostic diagnostic;
     enum GradoStateLoadResult preflight;
     enum GradoStateLoadResult loaded;
+    u16 legitimacy = 0;
     u16 direction = 0;
-    int unchanged;
+    u32 savedGold = 2345;
 
     GradoChoice_PrepareCurrent();
     GradoChoice_PrepareLive();
     GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME);
     GradoChoice_SeedAllChoices();
+    GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 0, 2);
     GradoState_WriteSymbol(
         GRADO_STATE_DIRECTION, GRADO_STATE_NO_CHAPTER, 0);
     GradoState_WriteSymbol(GRADO_FLAG_CH18_CLEAR, 0, 1);
     gPlaySt.chapterIndex = 21;
+    gPlaySt.partyGoldAmount = savedGold;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
     WriteGameSave(SAVE_ID_GAME0);
     WriteSuspendSave(SAVE_ID_SUSPEND);
-    memcpy(sBefore, gSram, sizeof(sBefore));
 
     preflight = GradoState_PreflightNativeSave(
         GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, &diagnostic);
     GradoChoice_SetInput(0, 0, 0);
+    memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
+    memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
+    gPlaySt.partyGoldAmount = 0x5555;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
+    memset(&sTransaction, 0, sizeof(sTransaction));
     loaded = GradoState_LoadNativeSave(
         GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, &diagnostic);
-    unchanged = memcmp(sBefore, gSram, sizeof(sBefore)) == 0
+    gGradoChoiceCheckpointProbe.directionPriorChoiceRestored =
+        loaded == GRADO_STATE_LOAD_REOPEN
         && GradoState_ReadSymbol(
-            GRADO_STATE_DIRECTION, GRADO_STATE_NO_CHAPTER, &direction)
-                == GRADO_STATE_VALUE_UNSET;
+            GRADO_STATE_LEGITIMACY, 0, &legitimacy) == GRADO_STATE_VALUE_VALID
+        && legitimacy == 2;
+    gGradoChoiceCheckpointProbe.directionResourcesRestored =
+        loaded == GRADO_STATE_LOAD_REOPEN
+        && gPlaySt.partyGoldAmount == savedGold
+        && gPlaySt.chapterIndex == 21;
+    GradoState_ReadSymbol(
+        GRADO_STATE_DIRECTION, GRADO_STATE_NO_CHAPTER, &direction);
     gGradoChoiceCheckpointProbe.directionSourceSlot = diagnostic.sourceSlot;
     gGradoChoiceCheckpointProbe.directionBackingSlot = diagnostic.backingSlot;
     gGradoChoiceCheckpointProbe.missingDirectionReopened =
         preflight == GRADO_STATE_LOAD_REOPEN
-        && loaded == GRADO_STATE_LOAD_REOPEN && unchanged;
+        && loaded == GRADO_STATE_LOAD_REOPEN && direction == 0;
 
     GradoChoice_Begin(CHOICE_DIRECTION, NULL);
     GradoChoice_Trigger();
@@ -1243,6 +1260,15 @@ static void GradoChoice_RunMissingDirection(void)
         && sTransaction.choiceItems[1].availability == MENU_ENABLED
         && sTransaction.choiceItems[2].availability == MENU_ENABLED
         && sTransaction.choiceItems[3].availability == MENU_ENABLED;
+    GradoChoice_SelectOutcome(0);
+    gGradoChoiceCheckpointProbe.directionCostAppliedFromRestoredGold =
+        gGradoChoiceCheckpointProbe.directionPriorChoiceRestored
+        && gGradoChoiceCheckpointProbe.directionResourcesRestored
+        && GradoChoice_ConfirmWithFreshInput()
+        && GradoChoice_ReadValue(GRADO_STATE_DIRECTION, &direction)
+        && direction == 1
+        && gPlaySt.partyGoldAmount
+            == savedGold + GradoChoice_GoldDelta(CHOICE_DIRECTION, 0);
 }
 
 static void GradoChoice_RunExiledRoute(enum GradoStateLoadRoute route, int * passed)

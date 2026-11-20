@@ -327,6 +327,13 @@ replacements, but does not assert rendered UI or campaign behavior.
    preserve their input image and live state. Recovery changes the intended
    Roderich state without resource or unit mutation. These refusal/recovery
    cases use a live flag view; they do not claim a physical save was loaded.
+   A separate physical normal-save record stores a valid prior choice and gold
+   with the final direction unset, confirms the `REOPEN` preflight, then clears
+   live state to distinct sentinels. `GradoState_LoadNativeSave` must still
+   return `REOPEN` after restoring the saved choice and play state;
+   `GradoState_TryLoadNativeSave` accepts that loaded disposition, and the
+   save-menu handler advances without a refusal popup. Epoch 2 remains
+   incompatible and refuses without restoring the sentinels.
 7. In that same epoch-256 capture, write two missing choices and their
    producers into valid normal and Suspend blocks backed by normal slot 0.
    Seed a valid unrelated direction directly after the other setup writes,
@@ -425,11 +432,15 @@ profile or GUI is required.
    synthetic resource deltas, and duplicate blocking.
    It also loads both CH15 decisions together, verifies all nine default
    recoveries, recovers EXILED through normal and Suspend sources, and reopens
-   an incomplete final direction without defaulting it.
+   an incomplete final direction without defaulting it. That reopen starts
+   from distinct live sentinels, restores a saved prior choice and gold through
+   the native Suspend loader, then applies the direction choice's synthetic
+   cost from the restored gold balance.
 3. Check captured typed records for rollback to unset choice state and base
    gold after a pending reset, source/backing slot identity, saved choice
-   values and gold, the two coexisting CH15 decisions, save-block preservation
-   and the epoch-2 control. The supported native normal loader
+   values and gold after both completed-load and missing-direction reopen,
+   the two coexisting CH15 decisions, save-block preservation and the epoch-2
+   control. The supported native normal loader
    may invalidate Suspend metadata; the case checks the choice-bearing game
    block rather than incorrectly requiring the whole SRAM image to remain
    unchanged after that load.

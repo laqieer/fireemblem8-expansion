@@ -58,7 +58,9 @@ void GradoState_SaveMenu_NewGame(ProcPtr procPtr)
     }
 
     result = GradoState_PreflightNativeSave(route, slot, &diagnostic);
-    if (result != GRADO_STATE_LOAD_VALID && result != GRADO_STATE_LOAD_RECOVERY)
+    if (result != GRADO_STATE_LOAD_VALID
+        && result != GRADO_STATE_LOAD_RECOVERY
+        && result != GRADO_STATE_LOAD_REOPEN)
     {
         GradoState_ReportNativeLoadRefusal(result, procPtr);
         return;

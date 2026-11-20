@@ -13,7 +13,7 @@ static int TryLoadNativeSave(
     enum GradoStateLoadResult result;
 
     result = GradoState_LoadNativeSave(route, slot, &diagnostic);
-    if (result == GRADO_STATE_LOAD_VALID)
+    if (result == GRADO_STATE_LOAD_VALID || result == GRADO_STATE_LOAD_REOPEN)
         return 1;
 
     GradoState_ReportNativeLoadRefusal(result, saveMenuProc);

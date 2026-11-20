@@ -26,6 +26,7 @@
 u8 DebugContinueMenu_ContinueChapter(struct MenuProc * menuProc, struct MenuItemProc * menuItemProc);
 void SaveMenu_SaveSlotSelectLoop(struct SaveMenuProc * proc);
 void GradoChoiceCheckpoints_Run(void);
+void GradoState_SaveMenu_NewGame(ProcPtr procPtr);
 
 CONST_DATA struct CharacterData gCharacterData[] = {
     { .number = 1, .defaultClass = 1 },
@@ -136,6 +137,14 @@ struct GradoNativeLoadRefusalProbe
     u32 saveMenuNormalRefused;
     u32 saveMenuPreserved;
     u32 saveMenuProcGotoCount;
+    u32 reopenPreflightResult;
+    u32 reopenLoadResult;
+    u32 reopenChoiceRestored;
+    u32 reopenGoldRestored;
+    u32 reopenTryLoadAccepted;
+    u32 reopenTryLoadStateRestored;
+    u32 reopenTryLoadNoPopup;
+    u32 reopenSaveMenuContinued;
 };
 
 static union
@@ -1036,6 +1045,76 @@ static void ProbeNativeSavePreflight(void)
     gGradoNativeSaveProbe.phase = 2;
 }
 
+static void ProbeNativeDirectionReopen(
+    volatile struct GradoNativeLoadRefusalProbe * probe)
+{
+    u8 permanent[25];
+    u8 chapter[5];
+    struct SaveMenuProc saveMenuProc;
+    u16 legitimacy = 0;
+    u32 savedGold = 2345;
+    u32 helpBoxCallsBefore;
+    u32 procGotoCallsBefore;
+    enum GradoStateLoadResult result;
+
+    PrepareSemanticSaves();
+    PrepareLive(SAVE_ID_GAME0, permanent, chapter);
+    PrepareSemanticState();
+    GradoState_WriteSymbol(GRADO_STATE_LEGITIMACY, 0, 2);
+    GradoState_WriteSymbol(GRADO_STATE_DIRECTION, GRADO_STATE_NO_CHAPTER, 0);
+    GradoState_WriteSymbol(GRADO_FLAG_CH18_CLEAR, 0, 1);
+    gPlaySt.chapterIndex = 21;
+    gPlaySt.partyGoldAmount = savedGold;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
+    WriteGameSave(SAVE_ID_GAME0);
+
+    probe->reopenPreflightResult = GradoState_PreflightNativeSave(
+        GRADO_LOAD_NORMAL, SAVE_ID_GAME0,
+        &(struct GradoStateLoadDiagnostic){ 0 });
+    memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
+    memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
+    gPlaySt.partyGoldAmount = 0x5555;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
+    result = GradoState_LoadNativeSave(
+        GRADO_LOAD_NORMAL, SAVE_ID_GAME0,
+        &(struct GradoStateLoadDiagnostic){ 0 });
+    probe->reopenLoadResult = result;
+    probe->reopenChoiceRestored =
+        result == GRADO_STATE_LOAD_REOPEN
+        && GradoState_ReadSymbol(
+            GRADO_STATE_LEGITIMACY, 0, &legitimacy) == GRADO_STATE_VALUE_VALID
+        && legitimacy == 2;
+    probe->reopenGoldRestored =
+        result == GRADO_STATE_LOAD_REOPEN
+        && gPlaySt.partyGoldAmount == savedGold
+        && gPlaySt.chapterIndex == 21;
+
+    memset(&saveMenuProc, 0, sizeof(saveMenuProc));
+    saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
+    saveMenuProc.sus_slot = SAVE_ID_GAME0;
+    procGotoCallsBefore = sProcGotoCalls;
+    sProcGotoLabel = -1;
+    GradoState_SaveMenu_NewGame(&saveMenuProc);
+    probe->reopenSaveMenuContinued =
+        sProcGotoCalls == procGotoCallsBefore + 1
+        && sProcGotoLabel == PL_SAVEMENU_NEW_GAME;
+
+    memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
+    memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
+    gPlaySt.partyGoldAmount = 0x5555;
+    gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
+    helpBoxCallsBefore = sHelpBoxCalls;
+    probe->reopenTryLoadAccepted =
+        GradoState_TryLoadNativeSave(GRADO_LOAD_NORMAL, SAVE_ID_GAME0);
+    probe->reopenTryLoadStateRestored =
+        probe->reopenTryLoadAccepted
+        && GradoState_ReadSymbol(
+            GRADO_STATE_LEGITIMACY, 0, &legitimacy) == GRADO_STATE_VALUE_VALID
+        && legitimacy == 2
+        && gPlaySt.partyGoldAmount == savedGold;
+    probe->reopenTryLoadNoPopup = sHelpBoxCalls == helpBoxCallsBefore;
+}
+
 static void ProbeNativeLoadRefusal(void)
 {
     volatile struct GradoNativeLoadRefusalProbe * probe =
@@ -1238,6 +1317,7 @@ static void ProbeNativeLoadRefusal(void)
         && sHelpBoxX == 0x30
         && sHelpBoxY == 0x30
         && sHelpBoxMessage == probe->expectedMessage;
+    ProbeNativeDirectionReopen(probe);
     probe->phase = 2;
 }
 
