@@ -582,6 +582,7 @@ LEGACY_TEXT_OUTPUT_INPUTS := $(if $(LEGACY_TEXT_STAMP_MISSING),$(LEGACY_TEXT_INP
 # A stamp can update an output after Make has cached its old mtime. Normal
 # builds always visit the output probe so Make rechecks it, including with -W.
 # Question mode ignores the no-op probe but still checks real input freshness.
+# A missing stamp is published only after generation or a current-output check.
 define text_refresh_needed
 $(shell \
 	if [ ! -e "$(1)" ] || [ ! -e "$(2)" ] || [ ! -e "$(3)" ]; then \
@@ -634,9 +635,9 @@ FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS:
 $(TEXT_STAMP): $(TEXT_INPUTS)
 	@mkdir -p "$(@D)"
 	@if [ "$(TEXT_STAMP_MISSING)" != "1" ]; then \
-		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8; \
+		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8 && \
+		touch "$@"; \
 	fi
-	@touch "$@"
 
 $(MSG_LIST): $(TEXT_REFRESH) $(TEXT_OUTPUT_INPUTS) | $(TEXT_STAMP)
 	@if [ ! -e "$(MSG_LIST)" ] || [ ! -e "$(TEXT_HEADER)" ] || \
@@ -645,6 +646,10 @@ $(MSG_LIST): $(TEXT_REFRESH) $(TEXT_OUTPUT_INPUTS) | $(TEXT_STAMP)
 				[ -n "$(filter $(TEXT_INPUTS),$?)" ]; }; }; then \
 		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8 && \
 		{ mkdir -p "$(DEPS_DIR)" && touch "$(TEXT_STAMP)"; }; \
+	elif [ "$(TEXT_STAMP_MISSING)" = "1" ] && \
+		[ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" = "1" ] && \
+		[ -z "$(filter $(TEXT_INPUTS),$?)" ]; then \
+		mkdir -p "$(DEPS_DIR)" && touch "$(TEXT_STAMP)"; \
 	fi
 
 $(TEXT_HEADER): $(MSG_LIST)
@@ -660,6 +665,10 @@ $(LEGACY_MSG_LIST): $(LEGACY_TEXT_REFRESH) $(LEGACY_TEXT_OUTPUT_INPUTS) | $(LEGA
 				[ -n "$(filter $(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER),$?)" ]; }; }; then \
 		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8 && \
 		{ mkdir -p "$(LEGACY_TEXT_DIR)" && touch "$(LEGACY_TEXT_STAMP)"; }; \
+	elif [ "$(LEGACY_TEXT_STAMP_MISSING)" = "1" ] && \
+		[ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" = "1" ] && \
+		[ -z "$(filter $(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER),$?)" ]; then \
+		mkdir -p "$(LEGACY_TEXT_DIR)" && touch "$(LEGACY_TEXT_STAMP)"; \
 	fi
 
 $(LEGACY_TEXT_HEADER): $(LEGACY_MSG_LIST)
@@ -668,9 +677,9 @@ $(LEGACY_TEXT_HEADER): $(LEGACY_MSG_LIST)
 $(LEGACY_TEXT_STAMP): $(LEGACY_TEXT_INPUTS)
 	@mkdir -p "$(@D)"
 	@if [ "$(LEGACY_TEXT_STAMP_MISSING)" != "1" ]; then \
-		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8; \
+		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8 && \
+		touch "$@"; \
 	fi
-	@touch "$@"
 
 # Graphics Recipes
 

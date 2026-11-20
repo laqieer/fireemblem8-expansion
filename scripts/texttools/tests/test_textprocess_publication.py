@@ -618,6 +618,22 @@ class TextPublicationTests(unittest.TestCase):
                     self.assertEqual((output.read_bytes(), header.read_bytes()), previous)
                     self.assertEqual(stamp.stat().st_mtime_ns, stamp_time)
 
+                    stamp.unlink()
+                    failed_without_stamp = run_make()
+                    self.assertNotEqual(
+                        failed_without_stamp.returncode, 0,
+                        failed_without_stamp.stdout + failed_without_stamp.stderr,
+                    )
+                    self.assertEqual((output.read_bytes(), header.read_bytes()), previous)
+                    self.assertFalse(stamp.exists())
+                    rejected_retry = run_make()
+                    self.assertNotEqual(
+                        rejected_retry.returncode, 0,
+                        rejected_retry.stdout + rejected_retry.stderr,
+                    )
+                    self.assertEqual((output.read_bytes(), header.read_bytes()), previous)
+                    self.assertFalse(stamp.exists())
+
     def test_actual_cli_other_cwd_spaces_and_new_file_umask(self):
         self.inputs()
         expected = self.reference()
