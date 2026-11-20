@@ -2,7 +2,7 @@
   "checkpoints": [
     {
       "frame": 900,
-      "framebuffer_hash": "fnv1a64-rgb24:5c1e50c0437f3715",
+      "framebuffer_hash": "fnv1a64-rgb24:bb6574f44f938039",
       "name": "dialog-shown",
       "probes": [],
       "sram_hash": "fnv1a64-sram:cf00cfe068119bc5"

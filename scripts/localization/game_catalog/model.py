@@ -36,6 +36,7 @@ class EnglishSourceEntry:
     target_id: int
     definition: Optional[str]
     source_text: str
+    message_text: str
     encoded_bytes: bytes
 
 

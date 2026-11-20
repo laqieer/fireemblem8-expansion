@@ -2,10 +2,10 @@
 
 This layer treats message content as opaque bytes. It deliberately performs no
 UTF-8 or FE control-code validation; importers and renderers own those semantic
-checks. Present catalog entries must contain exactly one trailing NUL because
-the runtime decoder uses that byte as its only termination condition. Each
-entry carries its exact meaningful compressed bit length so byte padding is
-never decoded as message data.
+checks. The default catalog format uses a single trailing NUL as its terminator.
+An opt-in bit-framed format permits interior NUL bytes and requires its consumer
+to validate their meaning. Each entry carries its exact meaningful compressed
+bit length so byte padding is never decoded as message data.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ LEAF_MASK = 0xFFFF0000
 MAX_NODE_COUNT = 0x10000
 POINTER_SIZE = 4
 SCHEMA = "fe8-multilang-huffman-v1"
+BIT_FRAMED_SCHEMA = "fe8-multilang-huffman-bit-framed-v1"
 
 
 class DecodeStatus(IntEnum):
@@ -154,6 +155,7 @@ class Catalog:
     compressed_blob: bytes
     model: Optional[HuffmanModel]
     budget: CatalogBudget
+    bit_framed: bool = False
 
     @property
     def nodes(self) -> Tuple[int, ...]:
@@ -181,6 +183,7 @@ class Catalog:
             len(encoded),
             entry.bit_length,
             entry.decoded_size,
+            bit_framed=self.bit_framed,
         )
         if result.status != DecodeStatus.OK:
             raise ValueError("catalog entry failed to decode: {}".format(result.status.name))
@@ -188,7 +191,7 @@ class Catalog:
 
     def to_dict(self) -> dict:
         return {
-            "schema": SCHEMA,
+            "schema": BIT_FRAMED_SCHEMA if self.bit_framed else SCHEMA,
             "entry_count": len(self.entries),
             "pointer_size": POINTER_SIZE,
             "root_index": self.root_index,
@@ -430,8 +433,10 @@ def decompress_bounded(
     input_length: int,
     input_bit_length: int,
     output_capacity: int,
+    *,
+    bit_framed: bool = False,
 ) -> DecodeResult:
-    """Decode exactly the declared meaningful bits with explicit bounds."""
+    """Decode within explicit bounds; bit-framed callers validate semantics."""
 
     output = bytearray()
     byte_index = 0
@@ -458,11 +463,12 @@ def decompress_bounded(
     current_index = root_index
     while True:
         if byte_index * 8 + bit_index >= input_bit_length:
-            status = (
-                DecodeStatus.MISSING_TERMINATOR
-                if current_index == root_index
-                else DecodeStatus.TRUNCATED_INPUT
-            )
+            if current_index != root_index:
+                status = DecodeStatus.TRUNCATED_INPUT
+            elif bit_framed and output and output[-1] == 0:
+                status = DecodeStatus.OK
+            else:
+                status = DecodeStatus.MISSING_TERMINATOR
             return _decode_result(status, output, byte_index, bit_index)
 
         word = nodes[current_index]
@@ -505,7 +511,7 @@ def decompress_bounded(
         output.append(low)
         if high:
             output.append(high)
-        elif low == 0:
+        elif low == 0 and not bit_framed:
             status = (
                 DecodeStatus.OK
                 if byte_index * 8 + bit_index == input_bit_length
@@ -516,10 +522,10 @@ def decompress_bounded(
         current_index = root_index
 
 
-def _validate_message(message: bytes) -> None:
+def _validate_message(message: bytes, *, bit_framed: bool) -> None:
     if not message or message[-1] != 0:
         raise ValueError("present catalog messages must end with NUL")
-    if b"\x00" in message[:-1]:
+    if not bit_framed and b"\x00" in message[:-1]:
         raise ValueError("present catalog messages cannot contain an interior NUL")
 
 
@@ -545,12 +551,15 @@ def _node_table_hash(nodes: Sequence[int]) -> str:
 def build_catalog(
     messages: Sequence[Optional[bytes]],
     suffix_share: bool = False,
+    *,
+    bit_framed: bool = False,
 ) -> Catalog:
     """Build one deterministic catalog.
 
     ``None`` is a null pointer/absent entry. If suffix sharing is enabled, a
     compressed message may point into the immediately preceding present
-    message only when it is a strictly shorter byte suffix.
+    message only when it is a strictly shorter byte suffix. ``bit_framed``
+    permits interior NUL bytes; callers must validate their semantics.
     """
 
     normalized: List[Optional[bytes]] = []
@@ -564,7 +573,7 @@ def build_catalog(
             continue
         if not isinstance(message, bytes):
             raise TypeError("catalog messages must be bytes or None")
-        _validate_message(message)
+        _validate_message(message, bit_framed=bit_framed)
         symbols = pack_bytes(message)
         if unpack_symbols(symbols) != message:
             raise AssertionError("byte packing failed to round-trip")
@@ -591,6 +600,7 @@ def build_catalog(
             b"",
             None,
             budget,
+            bit_framed,
         )
 
     model = build_huffman_model(all_symbols)
@@ -675,6 +685,7 @@ def build_catalog(
             len(encoded),
             entry.bit_length,
             len(message),
+            bit_framed=bit_framed,
         )
         if result.status != DecodeStatus.OK or result.data != message:
             raise AssertionError(
@@ -701,4 +712,4 @@ def build_catalog(
         compressed_sha256=hashlib.sha256(blob).hexdigest(),
         node_table_sha256=_node_table_hash(model.nodes),
     )
-    return Catalog(tuple(entries), bytes(blob), model, budget)
+    return Catalog(tuple(entries), bytes(blob), model, budget, bit_framed)

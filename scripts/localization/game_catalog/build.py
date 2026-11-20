@@ -46,7 +46,7 @@ from scripts.localization.game_locales.raw_providers import (
     resolve_ja_raw_text,
 )
 from scripts.texttools.multilang_codec import build_catalog
-from scripts.texttools.multilang_codec.codec import SCHEMA as CODEC_SCHEMA
+from scripts.texttools.multilang_codec.codec import BIT_FRAMED_SCHEMA as CODEC_SCHEMA
 
 from .c_emitter import render_config_header, render_declarations, render_header, render_source
 from .constants import (
@@ -94,6 +94,7 @@ from .control_streams import (
     load_talk_font_metrics,
     load_portrait_operand_map,
     remap_fe8j_portrait_operands,
+    tokenize_payload,
     validate_event_continuations,
     validate_final_payload,
 )
@@ -400,10 +401,6 @@ def _encode_control_unit(value: int) -> bytes:
     chunk = bytes((low,))
     if high:
         chunk += bytes((high,))
-    if b"\x00" in chunk:
-        raise GameCatalogError(
-            f"control unit 0x{value:04X} encodes an embedded NUL byte and cannot be stored"
-        )
     return chunk
 
 
@@ -434,10 +431,13 @@ def encode_canonical_text(
             payload.extend(encoded)
         else:
             payload.extend(_encode_control_unit(unit))
-    if b"\x00" in payload:
-        raise GameCatalogError("encoded payload contains an embedded NUL byte")
     payload.append(0)
-    return bytes(payload)
+    data = bytes(payload)
+    try:
+        tokenize_payload(data, source_name="canonical text")
+    except ControlStreamError as error:
+        raise GameCatalogError(str(error)) from error
+    return data
 
 
 def encode_authored_text(
@@ -687,7 +687,7 @@ def _build_locale_bundle(
         for row in mapping.rows
     )
     messages = tuple(entry.encoded_bytes for entry in entries)
-    catalog = build_catalog(messages, suffix_share=suffix_share)
+    catalog = build_catalog(messages, suffix_share=suffix_share, bit_framed=True)
     return LocaleCatalogBundle(locale=locale, entries=entries, catalog=catalog)
 
 
@@ -770,7 +770,9 @@ def _build_eu_locale_bundle(
     return LocaleCatalogBundle(
         locale=locale,
         entries=entries_tuple,
-        catalog=build_catalog(messages, suffix_share=suffix_share),
+        catalog=build_catalog(
+            messages, suffix_share=suffix_share, bit_framed=True
+        ),
     )
 
 
@@ -1163,6 +1165,7 @@ def build_game_catalog(
         catalog=build_catalog(
             tuple(entry.encoded_bytes for entry in english_entries),
             suffix_share=suffix_share,
+            bit_framed=True,
         ),
     )
     mapping = _load_mapping(mapping_path, target_count=target_count, repo_root=repo_root)
@@ -1273,7 +1276,9 @@ def build_game_catalog(
                     LocaleCatalogBundle(
                         locale=bundle.locale,
                         entries=entries,
-                        catalog=build_catalog(payloads, suffix_share=suffix_share),
+                        catalog=build_catalog(
+                            payloads, suffix_share=suffix_share, bit_framed=True
+                        ),
                     )
                 )
                 width_validation[bundle.locale] = validation
