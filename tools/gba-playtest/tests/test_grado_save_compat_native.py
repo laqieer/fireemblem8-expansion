@@ -594,7 +594,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
     def _assert_choice_checkpoints(self, epoch, work, tools, elf, rom):
         _, size = resolve_elf_symbol(
             elf, "gGradoChoiceCheckpointProbe", tools["MODERN_NM"])
-        header_words = 24
+        header_words = 25
         default_words = 9 * 6
         outcome_words = 31 * 22
         direction_history_words = 14 * 20
@@ -630,13 +630,13 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             values[f"gGradoChoiceCheckpointProbe+0x{offset:x}"].to_bytes(4, "little")
             for offset in range(0, size, 4)
         )
-        header = struct.unpack_from("<24I", data)
+        header = struct.unpack_from("<25I", data)
         self.assertEqual(header[:3], (2, 31 if epoch == 256 else 0, int(epoch == 256)))
 
         if epoch == 2:
             self.assertEqual(
                 header,
-                (2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                (2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
             )
             self.assertEqual(data[header_words * 4:], bytes(size - header_words * 4))
             return
@@ -646,6 +646,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         self.assertEqual(header[12:17], (0, 1, 1, 1, 1))
         self.assertEqual(header[17:23], (1, 1, 1, 1, 1, 1))
         self.assertEqual(header[23], 14)
+        self.assertEqual(header[24], 1)
 
         defaults = [
             struct.unpack_from("<6I", data, header_words * 4 + index * 24)

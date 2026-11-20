@@ -442,7 +442,9 @@ profile or GUI is required.
    menu's second item after commit must leave the transaction complete and its
    committed value and resources unchanged.
    It also loads both CH15 decisions together, verifies all nine default
-   recoveries, recovers EXILED through normal and Suspend sources, and reopens
+   recoveries, recovers EXILED through normal and Suspend sources, verifies a
+   rejected EXILED checkpoint reports failure without reading an unset result,
+   and reopens
    an incomplete final direction without defaulting it. That reopen starts
    from distinct live sentinels, restores a saved prior choice and gold through
    the native Suspend loader, then applies the direction choice's synthetic

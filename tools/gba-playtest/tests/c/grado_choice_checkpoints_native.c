@@ -122,6 +122,7 @@ struct GradoChoiceCheckpointProbe
     u32 completedNormalSaveAllowed;
     u32 completedSuspendSaveAllowed;
     u32 directionHistoryCount;
+    u32 exiledRejectedCheckpointSafe;
     struct GradoChoiceDefaultRecord defaults[CHOICE_DEFAULT_COUNT];
     struct GradoChoiceOutcomeRecord outcomes[CHOICE_OUTCOME_COUNT];
     struct GradoChoiceDirectionHistoryRecord
@@ -1441,6 +1442,7 @@ static void GradoChoice_RunExiledRoute(enum GradoStateLoadRoute route, int * pas
     unsigned int gameOffset;
     unsigned int sourceSlot;
 
+    *passed = 0;
     GradoChoice_PrepareCurrent();
     GradoChoice_PrepareLive();
     GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME);
@@ -1528,8 +1530,9 @@ void GradoChoiceCheckpoints_Run(void)
 {
     unsigned int family;
     unsigned int option;
-    int exiledNormal;
-    int exiledSuspend;
+    int exiledNormal = 0;
+    int exiledSuspend = 0;
+    int rejectedExiled = 1;
 
     memset((void *)&gGradoChoiceCheckpointProbe, 0, sizeof(gGradoChoiceCheckpointProbe));
     gGradoChoiceCheckpointProbe.phase = 1;
@@ -1548,6 +1551,12 @@ void GradoChoiceCheckpoints_Run(void)
     GradoChoice_RunExiledRoute(GRADO_LOAD_SUSPEND, &exiledSuspend);
     gGradoChoiceCheckpointProbe.exiledNormalRecovered = exiledNormal;
     gGradoChoiceCheckpointProbe.exiledSuspendRecovered = exiledSuspend;
+    memset(&sTransaction, 0, sizeof(sTransaction));
+    sTransaction.pending = 1;
+    GradoChoice_RunExiledRoute(GRADO_LOAD_NORMAL, &rejectedExiled);
+    gGradoChoiceCheckpointProbe.exiledRejectedCheckpointSafe =
+        !rejectedExiled && sTransaction.pending;
+    memset(&sTransaction, 0, sizeof(sTransaction));
     gGradoChoiceCheckpointProbe.phase = 13;
     GradoChoice_RunRaustenDual();
     gGradoChoiceCheckpointProbe.phase = 14;
