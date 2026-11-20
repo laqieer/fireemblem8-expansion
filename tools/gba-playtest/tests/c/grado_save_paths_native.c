@@ -4,6 +4,7 @@
 #include "bm.h"
 #include "bmudisp.h"
 #include "bmitem.h"
+#include "bmlib.h"
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
@@ -146,6 +147,11 @@ struct GradoNativeLoadRefusalProbe
     u32 reopenSaveMenuContinued;
     u32 linkArenaSelectionRefused;
     u32 saveMenuOption7Refused;
+    u32 linkArenaOldBaseClobbers;
+    u32 linkArenaNewBasePreserves;
+    u32 linkArenaPopupDestinationCorrect;
+    u32 linkArenaPopupPreservesTiles;
+    u32 linkArenaPopupClosePreservesTiles;
 };
 
 static union
@@ -173,6 +179,7 @@ static const struct ProcCmd * sPopupScript;
 static ProcPtr sPopupParent;
 static ProcPtr sBrokenProc;
 static struct SaveMenu8A20068Proc sSaveMenuPopupProc;
+static u8 sLinkArenaTacticianGfxBefore[0x1800];
 static u32 sRestartGameCalls;
 static u32 sLinkArenaInitCalls;
 static void (*sUnwrappedReadSramFast)(void const *, void *, u32);
@@ -182,6 +189,7 @@ static u32 sProcGotoCalls;
 static int sProcGotoLabel;
 
 extern struct ProcCmd gProcScr_Savemenu_0[];
+void GradoState_LoadProductionHelpBoxGfx(void * dest, int pal);
 
 static void TraceSramRead(void const * src, void * dest, u32 size)
 {
@@ -238,13 +246,14 @@ static int CompleteManagedRefusalPopup(
     int linkArenaContext)
 {
     void * expectedGfxDest = linkArenaContext
-        ? OBJ_VRAM0 + 0x280 * TILE_SIZE_4BPP
+        ? OBJ_VRAM0 + 0x300 * TILE_SIZE_4BPP
         : OBJ_VRAM0 + OBJCHR_SAVEMENU_SLOTSEL_HELPBOX * TILE_SIZE_4BPP;
     int expectedPalette = linkArenaContext
         ? 6
         : OBJPAL_SAVEMENU_SLOTSEL_HELPBOX;
     u32 helpBoxGfxLoadsBefore = sHelpBoxGfxLoads;
     u32 helpBoxCloseCallsBefore = sHelpBoxCloseCalls;
+    int linkArenaTilesPreserved = 1;
 
     if (sPopupStartCalls != startCallsBefore + 1
         || sPopupScript != gProcScr_Savemenu_0
@@ -253,7 +262,41 @@ static int CompleteManagedRefusalPopup(
         || sHelpBoxCalls != helpBoxCallsBefore)
         return 0;
 
+    if (linkArenaContext)
+    {
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+        memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+            sizeof(sLinkArenaTacticianGfxBefore));
+        GradoState_LoadProductionHelpBoxGfx(
+            OBJ_VRAM0 + 0x280 * TILE_SIZE_4BPP, 6);
+
+        gGradoNativeLoadRefusalProbe.linkArenaOldBaseClobbers =
+            memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) != 0;
+        if (!gGradoNativeLoadRefusalProbe.linkArenaOldBaseClobbers)
+            return 0;
+
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+        memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+            sizeof(sLinkArenaTacticianGfxBefore));
+        GradoState_LoadProductionHelpBoxGfx(
+            OBJ_VRAM0 + 0x300 * TILE_SIZE_4BPP, 6);
+
+        gGradoNativeLoadRefusalProbe.linkArenaNewBasePreserves =
+            memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) == 0;
+        if (!gGradoNativeLoadRefusalProbe.linkArenaNewBasePreserves)
+            return 0;
+
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+        memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+            sizeof(sLinkArenaTacticianGfxBefore));
+    }
+
     SaveMenuPopupHelpBox_Init(&sSaveMenuPopupProc);
+    if (linkArenaContext)
+        gGradoNativeLoadRefusalProbe.linkArenaPopupDestinationCorrect =
+            sHelpBoxGfxDest == expectedGfxDest;
     if (sHelpBoxCalls != helpBoxCallsBefore + 1
         || sHelpBoxGfxLoads != helpBoxGfxLoadsBefore + 1
         || sHelpBoxGfxDest != expectedGfxDest
@@ -261,12 +304,31 @@ static int CompleteManagedRefusalPopup(
         || sHelpBoxGfxLoadsAtStart != sHelpBoxGfxLoads)
         return 0;
 
+    if (linkArenaContext)
+    {
+        linkArenaTilesPreserved =
+            memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) == 0;
+        gGradoNativeLoadRefusalProbe.linkArenaPopupPreservesTiles =
+            linkArenaTilesPreserved;
+    }
+
     gKeyStatusPtr->newKeys = A_BUTTON;
     sBrokenProc = NULL;
     SaveMenuPopupHelpBox_WaitInput(&sSaveMenuPopupProc);
 
+    if (linkArenaContext)
+    {
+        linkArenaTilesPreserved = linkArenaTilesPreserved
+            && memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) == 0;
+        gGradoNativeLoadRefusalProbe.linkArenaPopupClosePreservesTiles =
+            linkArenaTilesPreserved;
+    }
+
     return sBrokenProc == &sSaveMenuPopupProc
-        && sHelpBoxCloseCalls == helpBoxCloseCallsBefore + 1;
+        && sHelpBoxCloseCalls == helpBoxCloseCallsBefore + 1
+        && linkArenaTilesPreserved;
 }
 
 void RestartGameAndGoto8(void)
@@ -306,11 +368,30 @@ void CloseHelpBox(void)
     sHelpBoxCloseCalls++;
 }
 
+void InitSpriteTextFont(struct Font * font, void * vramDest, int palette)
+{
+    (void)font;
+    (void)vramDest;
+    (void)palette;
+}
+
+void InitSpriteText(struct Text * text)
+{
+    (void)text;
+}
+
+void SetTextFont(struct Font * font)
+{
+    (void)font;
+}
+
 void LoadHelpBoxGfx(void * dest, int pal)
 {
     sHelpBoxGfxDest = dest;
     sHelpBoxPalette = pal;
     sHelpBoxGfxLoads++;
+    if (pal == 6)
+        GradoState_LoadProductionHelpBoxGfx(dest, pal);
 }
 
 void StartItemHelpBox(int x, int y, int item)

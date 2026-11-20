@@ -265,11 +265,12 @@ This `TEST-SAVELOAD` / `TEST-SUSPEND` subcase extends the same ARM/libmGBA
 module builder to the original whole writer/loader paths. It uses owned
 valid generic unit/class/item providers, not the unfinished Grado roster.
 All save, flag, unit, world-map, preference, SRAM and handwritten ARM checksum
-functions come from their original source owners. A test-owned helpbox adapter
-captures refusal messages, coordinates, graphics initialization order, OBJ
-graphics destination and palette; the probe records the blocking popup script
-and save-menu parent. The existing
-`gbagfx` helper builds only the original data required for linking.
+functions come from their original source owners. Test-owned stubs capture
+refusal messages, coordinates, OBJ graphics destination and palette; the real
+production helpbox loader and original compressed graphics/palette are used
+against libmGBA VRAM. The probe records the blocking popup script and save-menu
+parent. The existing `gbagfx` helper builds only the original data required
+for linking.
 
 First run `make project-selection-config` without `FE8_PROJECT` and require the
 default project/profile with no Grado settings. Then run
@@ -373,13 +374,17 @@ replacements, but does not assert rendered UI or campaign behavior.
    coordinates, not rendered UI or menu navigation. Debug Continue and Link
    Arena each repeat a refusal after dismissal, requiring every attempt to
    start exactly one blocking popup under its active caller Proc. Save-menu
-   popups use OBJ tile base 0x200/palette 9; Link Arena popups use the existing
-   Link Arena helpbox region at OBJ tile base 0x280/palette 6, preserving the
-   title graphics at OBJ tile base 0x200. Every popup must load graphics
-   before opening, close its helpbox on dismissal, and release its blocking
-   child before the caller can retry. These native calls model process
-   start/dismissal through the existing API stubs; they do not run the real
-   Proc scheduler or assert rendered appearance.
+   popups use OBJ tile base 0x200/palette 9; Link Arena popups use OBJ tile
+   base 0x300/palette 6, after the selector object graphics at tiles
+   0x240-0x2FF. Load the original selector image and run the production
+   `LoadHelpBoxGfx` with its real compressed graphics at bases 0x280 and
+   0x300. The old base must alter the selector's full 0x1800-byte VRAM image;
+   the new base must preserve it. Then require the actual Link Arena refusal
+   popup to load at 0x300 and preserve that image through initialization and
+   dismissal. Every popup must load graphics before opening, close its helpbox
+   on dismissal, and release its blocking child before the caller can retry.
+   These native calls model process start/dismissal through the existing API
+   stubs; they do not run the real Proc scheduler or assert rendered appearance.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make

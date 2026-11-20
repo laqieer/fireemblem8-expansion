@@ -73,6 +73,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
             (ROOT / "src/libagbsyscall.s", "syscalls.o"),
         ]
         if full_paths:
+            self.run_command(["make", "tools/preproc/preproc"], cwd=ROOT)
             self.run_command(["make", "-C", ROOT / "tools/gbagfx"], cwd=ROOT)
             self.run_command([
                 "make", "src/msg_data.c",
@@ -99,6 +100,7 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     "native_bmdebug.c", "native_debug_save_fixture.c",
                     "native_savemenu.c", "native_sio_term.c",
                 ))
+            sources.append(ROOT / "src/helpbox.c")
             assembly.extend((
                 (ROOT / "asm/arm.s", "arm.o"),
                 (ROOT / "asm/arm_call.s", "arm_call.o"),
@@ -123,6 +125,31 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                 prefix="grado-save-native-", dir=ROOT / "build",
             ) as directory:
                 work = Path(directory)
+                assets_source = None
+                if full_paths:
+                    incbin_source = work / "grado_helpbox_graphics.inc.c"
+                    incbin_source.write_text(
+                        '#include "global.h"\n'
+                        'u8 gGfx_HelpTextBox[] = '
+                        'INCBIN_U8("graphics/misc/gGfx_HelpTextBox.4bpp.lz");\n'
+                        'u8 gGfx_HelpTextBox2[] = '
+                        'INCBIN_U8("graphics/misc/gGfx_HelpTextBox2.4bpp.lz");\n'
+                        'u8 gGfx_HelpTextBox3[] = '
+                        'INCBIN_U8("graphics/misc/gGfx_HelpTextBox3.4bpp.lz");\n'
+                        'u8 gGfx_HelpTextBox4[] = '
+                        'INCBIN_U8("graphics/misc/gGfx_HelpTextBox4.4bpp.lz");\n'
+                        'u8 gGfx_HelpTextBox5[] = '
+                        'INCBIN_U8("graphics/misc/gGfx_HelpTextBox5.4bpp.lz");\n'
+                        'u8 Img_TacticianSelObj[] = '
+                        'INCBIN_U8("graphics/misc/Img_TacticianSelObj.4bpp.lz");\n'
+                        'u16 Pal_HelpBox[] = '
+                        'INCBIN_U16("graphics/misc/Pal_HelpBox.gbapal");\n',
+                        encoding="ascii",
+                    )
+                    assets_source = work / "grado_helpbox_graphics.c"
+                    assets_source.write_text(self.run_command([
+                        ROOT / "tools/preproc/preproc", incbin_source,
+                    ], cwd=ROOT), encoding="ascii")
                 split_const_data = work / "split-const-data.h"
                 if full_paths:
                     split_const_data.write_text(
@@ -152,9 +179,17 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                         selected = [
                             value for value in flags if value != "-ffunction-sections"
                         ] + ["-fno-toplevel-reorder", "-fno-reorder-functions"]
+                    elif source.name == "helpbox.c":
+                        selected = [*flags, "-DLoadHelpBoxGfx=GradoState_LoadProductionHelpBoxGfx"]
                     self.run_command(
                         [tools["MODERN_CC"], *selected, "-c", source, "-o", target], cwd=ROOT,
                     )
+                    objects.append(target)
+                if assets_source is not None:
+                    target = work / "grado_helpbox_graphics.o"
+                    self.run_command([
+                        tools["MODERN_CC"], *flags, "-c", assets_source, "-o", target,
+                    ], cwd=ROOT)
                     objects.append(target)
                 for source, name in assembly:
                     target = work / name
@@ -369,7 +404,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         self.assertEqual(native_size, 8 + 5 * 28)
         _, caller_size = resolve_elf_symbol(
             elf, "gGradoNativeLoadRefusalProbe", tools["MODERN_NM"])
-        self.assertEqual(caller_size, 34 * 4)
+        self.assertEqual(caller_size, 39 * 4)
 
         semantic_frame_budget = 10_000
 
@@ -512,7 +547,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ].to_bytes(4, "little")
             for offset in range(0, caller_size, 4)
         )
-        caller = struct.unpack("<34I", caller_data)
+        caller = struct.unpack("<39I", caller_data)
         with self.subTest(save_family="native-caller-refusal"):
             self.assertEqual(caller[:5], (2, 0, 1, 0x30, 0x30))
             self.assertEqual(caller[5], caller[6])
@@ -520,6 +555,8 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             self.assertEqual(caller[9:12], (1, 1, 0))
             self.assertEqual(caller[12:14], (1, 0))
             self.assertEqual(caller[14], 10)
+            self.assertEqual(caller[34:36], (1, 1))
+            self.assertEqual(caller[36:39], (1, 1, 1))
             self.assertEqual(caller[15], 1)
             self.assertEqual(caller[16], 2)
             self.assertEqual(caller[17], incompatible if epoch == 2 else conflict)

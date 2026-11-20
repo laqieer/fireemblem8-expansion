@@ -61,5 +61,5 @@ void GradoState_ReportLinkArenaLoadRefusal(
 {
     StartPopupHelpBox(
         0x30, 0x30, GetNativeLoadRefusalMessage(result), parentProc,
-        OBJ_VRAM0 + 0x280 * TILE_SIZE_4BPP, 6);
+        OBJ_VRAM0 + 0x300 * TILE_SIZE_4BPP, 6);
 }
