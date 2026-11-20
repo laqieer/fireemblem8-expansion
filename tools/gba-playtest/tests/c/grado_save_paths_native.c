@@ -152,6 +152,11 @@ struct GradoNativeLoadRefusalProbe
     u32 linkArenaPopupDestinationCorrect;
     u32 linkArenaPopupPreservesTiles;
     u32 linkArenaPopupClosePreservesTiles;
+    u32 corruptBlockLoadResult;
+    u32 corruptBlockLoadPreserved;
+    u32 corruptBlockMenuRefused;
+    u32 corruptBlockMenuPreserved;
+    u32 corruptBlockMenuMessage;
 };
 
 static union
@@ -1519,6 +1524,69 @@ static void ProbeNativeLoadRefusal(void)
         && sHelpBoxY == 0x30
         && sHelpBoxMessage == probe->expectedMessage;
     ProbeNativeDirectionReopen(probe);
+#if FE8_EXPANSION_SAVE_COMPAT_EPOCH == 256
+    {
+        struct SaveBlockInfo validInfo;
+        struct GradoStateLoadDiagnostic diagnostic;
+        u32 popupStartCallsBefore;
+        u32 helpBoxCallsBefore;
+        u32 procGotoCallsBefore;
+        int popupCorrect;
+
+        PrepareSemanticSaves();
+        PrepareLive(SAVE_ID_GAME0, permanent, chapter);
+        PrepareSemanticState();
+        gPlaySt.chapterIndex = 21;
+        gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
+        SetBonusContentClaimFlags(bonus);
+        validInfo = gSram->saveBlockInfo[SAVE_ID_GAME2];
+        gSram->saveBlockInfo[SAVE_ID_GAME2].offset = 0xFFFF;
+
+        memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+        memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+        memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
+        livePlay = gPlaySt;
+        liveUnit = gUnitArrayBlue[0];
+        suspendSaveIdOffset = gSuspendSaveIdOffset;
+
+        probe->corruptBlockLoadResult = GradoState_LoadNativeSave(
+            GRADO_LOAD_NORMAL, SAVE_ID_GAME2, &diagnostic);
+        probe->corruptBlockLoadPreserved =
+            memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+            && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+            && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+            && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+            && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+            && GetBonusContentClaimFlags() == bonus
+            && gSuspendSaveIdOffset == suspendSaveIdOffset;
+
+        memset(&saveMenuProc, 0, sizeof(saveMenuProc));
+        saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
+        saveMenuProc.sus_slot = SAVE_ID_GAME2;
+        saveMenuProc.sus_slot_cur = 0;
+        saveMenuProc.unk_44 = 0x10;
+        popupStartCallsBefore = sPopupStartCalls;
+        helpBoxCallsBefore = sHelpBoxCalls;
+        procGotoCallsBefore = sProcGotoCalls;
+        SaveMenu_NewGame(&saveMenuProc);
+        popupCorrect = CompleteManagedRefusalPopup(
+            &saveMenuProc, MSG_SAVE_COMPAT_UNKNOWN,
+            popupStartCallsBefore, helpBoxCallsBefore, 0);
+        probe->corruptBlockMenuRefused =
+            popupCorrect && sProcGotoCalls == procGotoCallsBefore
+            && saveMenuProc.unk_44 == 0x100;
+        probe->corruptBlockMenuPreserved =
+            memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+            && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+            && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+            && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+            && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+            && GetBonusContentClaimFlags() == bonus
+            && gSuspendSaveIdOffset == suspendSaveIdOffset;
+        probe->corruptBlockMenuMessage = sSaveMenuPopupProc.msgId;
+        gSram->saveBlockInfo[SAVE_ID_GAME2] = validInfo;
+    }
+#endif
     probe->phase = 2;
 }
 

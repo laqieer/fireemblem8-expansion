@@ -404,7 +404,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         self.assertEqual(native_size, 8 + 5 * 28)
         _, caller_size = resolve_elf_symbol(
             elf, "gGradoNativeLoadRefusalProbe", tools["MODERN_NM"])
-        self.assertEqual(caller_size, 39 * 4)
+        self.assertEqual(caller_size, 44 * 4)
 
         semantic_frame_budget = 10_000
 
@@ -482,9 +482,9 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
         native_scenario = work / "native-preflight-scenario.json"
         native_scenario.write_text(json.dumps({
             "schema_version": 1, "name": "grado-native-save-preflight",
-            "frames": [{"start": 0, "end": 120, "keys": ["R"]}],
+            "frames": [{"start": 0, "end": 360, "keys": ["R"]}],
             "checkpoints": [{
-                    "name": "native-source-records", "frame": 120, "framebuffer": False,
+                    "name": "native-source-records", "frame": 360, "framebuffer": False,
                     "probes": [
                         {"address": f"gGradoNativeSaveProbe+0x{offset:x}", "size": 4}
                         for offset in range(0, native_size, 4)
@@ -547,7 +547,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             ].to_bytes(4, "little")
             for offset in range(0, caller_size, 4)
         )
-        caller = struct.unpack("<39I", caller_data)
+        caller = struct.unpack("<44I", caller_data)
         with self.subTest(save_family="native-caller-refusal"):
             self.assertEqual(caller[:5], (2, 0, 1, 0x30, 0x30))
             self.assertEqual(caller[5], caller[6])
@@ -570,6 +570,11 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 self.assertEqual(caller[24:26], (incompatible, incompatible))
                 self.assertEqual(caller[26:32], (0, 0, 0, 0, 0, 0))
             self.assertEqual(caller[32:34], (1, 1))
+            if epoch == 256:
+                with self.subTest(save_family="corrupt-block-default-consumer"):
+                    self.assertEqual(caller[39], corrupt)
+                    self.assertEqual(caller[40:43], (1, 1, 1))
+                    self.assertEqual(caller[43], caller[5])
         negative = []
         view_records = []
         if epoch == 256:
