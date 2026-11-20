@@ -1005,10 +1005,10 @@ class TextPublicationTests(unittest.TestCase):
 
     def test_comments_do_not_join_directive_fragments(self):
         for encoding in ("utf8", "cp932"):
-            for plain, commented in (
-                ("#0000", "#0000/*note*/2"),
-                ("## CUSTOM", "## CUSTOM/*note*/_SUFFIX"),
-                ("#0000", '#incl/*note*/ude "missing.txt"\n#0000'),
+            for plain, commented, should_reject in (
+                ("#0000", "#0000/*note*/2", False),
+                ("## CUSTOM", "## CUSTOM/*note*/_SUFFIX", False),
+                ("#0000", '#incl/*note*/ude "missing.txt"\n#0000', True),
             ):
                 with self.subTest(encoding=encoding, directive=commented):
                     self.source.write_text(f"{plain}\n[Y][X]\n", encoding="utf-8")
@@ -1019,7 +1019,11 @@ class TextPublicationTests(unittest.TestCase):
                         [sys.executable, str(SCRIPT), *self.arguments(encoding)],
                         cwd=self.work, capture_output=True, text=True, timeout=15,
                     )
-                    self.assertEqual(result.returncode, 0, result.stderr)
+                    if should_reject:
+                        self.assertNotEqual(result.returncode, 0, result.stdout)
+                        self.assertIn("unknown text directive", result.stderr)
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(self.pair(), expected)
                     self.assert_no_staging()
 
