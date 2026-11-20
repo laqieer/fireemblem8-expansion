@@ -594,10 +594,14 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
     def _assert_choice_checkpoints(self, epoch, work, tools, elf, rom):
         _, size = resolve_elf_symbol(
             elf, "gGradoChoiceCheckpointProbe", tools["MODERN_NM"])
-        header_words = 17
+        header_words = 24
         default_words = 9 * 6
-        outcome_words = 31 * 20
-        self.assertEqual(size, (header_words + default_words + outcome_words) * 4)
+        outcome_words = 31 * 22
+        direction_history_words = 14 * 20
+        self.assertEqual(
+            size,
+            (header_words + default_words + outcome_words + direction_history_words) * 4,
+        )
 
         scenario = work / "choice-checkpoints-scenario.json"
         scenario.write_text(json.dumps({
@@ -626,20 +630,22 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             values[f"gGradoChoiceCheckpointProbe+0x{offset:x}"].to_bytes(4, "little")
             for offset in range(0, size, 4)
         )
-        header = struct.unpack_from("<17I", data)
+        header = struct.unpack_from("<24I", data)
         self.assertEqual(header[:3], (2, 31 if epoch == 256 else 0, int(epoch == 256)))
 
         if epoch == 2:
             self.assertEqual(
                 header,
-                (2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                (2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
             )
             self.assertEqual(data[header_words * 4:], bytes(size - header_words * 4))
             return
 
         self.assertEqual(header[3:11], (1, 1, 1, 1, 1, 0, 1, 1))
         self.assertIn(header[11], (3, 4))
-        self.assertEqual(header[12:], (0, 1, 1, 1, 1))
+        self.assertEqual(header[12:17], (0, 1, 1, 1, 1))
+        self.assertEqual(header[17:23], (1, 1, 1, 1, 1, 1))
+        self.assertEqual(header[23], 14)
 
         defaults = [
             struct.unpack_from("<6I", data, header_words * 4 + index * 24)
@@ -713,7 +719,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
 
         outcome_offset = (header_words + default_words) * 4
         outcomes = [
-            struct.unpack_from("<20I", data, outcome_offset + index * 80)
+            struct.unpack_from("<22I", data, outcome_offset + index * 88)
             for index in range(31)
         ]
         expected = []
@@ -735,4 +741,96 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 self.assertIn(outcome[17], (3, 4))
                 self.assertEqual(outcome[18], 0)
                 self.assertEqual(outcome[19], 1)
+                self.assertEqual(outcome[20:22], (1, 1))
         self.assertEqual(len(expected), 31)
+
+        direction_labels = (
+            (
+                "CENTRAL | Cost: favorable transition",
+                "CENTRAL | Cost: moderate transition",
+                "CENTRAL | Cost: adverse transition",
+            ),
+            (
+                "AUTONOMY | Cost: favorable transition",
+                "AUTONOMY | Cost: moderate transition",
+                "AUTONOMY | Cost: adverse transition",
+            ),
+            (
+                "FOREIGN | Cost: favorable transition",
+                "FOREIGN | Cost: moderate transition",
+                "FOREIGN | Cost: adverse transition",
+            ),
+            (
+                "RECKONING | Cost: favorable transition",
+                "RECKONING | Cost: moderate transition",
+                "RECKONING | Cost: adverse transition",
+            ),
+        )
+        direction_histories = (
+            ("central favorable", 1, (1, 2, 2, 2, 2, 2, 2, 2, 2)),
+            ("central neither", 1, (2, 2, 2, 2, 2, 1, 2, 2, 1)),
+            ("central adverse", 1, (3, 2, 2, 2, 2, 1, 1, 2, 1)),
+            ("autonomy favorable", 2, (3, 2, 2, 2, 1, 1, 1, 2, 1)),
+            ("autonomy neither", 2, (2, 2, 2, 2, 1, 1, 2, 2, 1)),
+            ("autonomy both", 2, (3, 2, 1, 2, 1, 2, 1, 2, 1)),
+            ("autonomy adverse", 2, (1, 2, 2, 2, 1, 1, 2, 2, 1)),
+            ("foreign favorable", 3, (2, 1, 2, 1, 2, 1, 2, 1, 1)),
+            ("foreign neither", 3, (2, 2, 2, 1, 2, 1, 2, 2, 1)),
+            ("foreign both", 3, (2, 1, 2, 3, 2, 1, 2, 1, 3)),
+            ("foreign adverse", 3, (2, 3, 2, 1, 2, 1, 2, 3, 1)),
+            ("reckoning favorable", 4, (2, 2, 2, 1, 2, 1, 2, 1, 1)),
+            ("reckoning neither", 4, (2, 2, 2, 2, 2, 1, 2, 1, 1)),
+            ("reckoning adverse", 4, (2, 2, 2, 3, 2, 1, 2, 1, 1)),
+        )
+
+        def direction_support(values, direction):
+            legitimacy, renais, saltroad, truth, ration, wyvern, village, med, data = values
+            if direction == 1:
+                foundation = (legitimacy == 1 and wyvern == 2) or (
+                    saltroad == 1 and village == 2
+                )
+                conflict = (legitimacy == 3 and village == 1) or (
+                    saltroad == 3 and wyvern == 3
+                )
+            elif direction == 2:
+                foundation = (legitimacy == 3 and village == 1) or (
+                    saltroad == 3 and ration == 2
+                )
+                conflict = (legitimacy == 1 and village == 2) or (
+                    saltroad == 1 and wyvern == 2
+                )
+            elif direction == 3:
+                foundation = (renais == 1 and med == 1) or (
+                    renais == 2 and data == 2
+                )
+                conflict = (renais == 3 and med == 3) or (data == 3 and truth == 3)
+            else:
+                foundation = (truth == 1 and data == 2) or (
+                    truth == 1 and renais != 3
+                )
+                conflict = truth == 3 or (truth == 2 and renais == 3)
+            return foundation, conflict
+
+        direction_offset = (header_words + default_words + outcome_words) * 4
+        direction_coverage = {direction: set() for direction in range(1, 5)}
+        for index, (name, target, choice_values) in enumerate(direction_histories):
+            record = struct.unpack_from("<20I", data, direction_offset + index * 80)
+            self.assertEqual(record[:3], (index, target, 4), name)
+            self.assertEqual(record[3:12], choice_values, name)
+            for direction in range(1, 5):
+                foundation, conflict = direction_support(choice_values, direction)
+                tier = 0 if foundation and not conflict else (
+                    2 if conflict and not foundation else 1
+                )
+                direction_coverage[direction].add(tier)
+                label = direction_labels[direction - 1][tier]
+                self.assertEqual(
+                    (record[11 + direction], record[15 + direction]),
+                    (label_hash(label), len(label)),
+                    (name, direction, foundation, conflict),
+                )
+                if direction == target and name.endswith("both"):
+                    self.assertEqual((foundation, conflict), (True, True), name)
+                if direction == target and name.endswith("neither"):
+                    self.assertEqual((foundation, conflict), (False, False), name)
+        self.assertEqual(direction_coverage, {direction: {0, 1, 2} for direction in range(1, 5)})

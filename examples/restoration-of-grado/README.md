@@ -424,14 +424,21 @@ profile or GUI is required.
 1. Run
    `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
    The test compiles and boots the owned native module for save epochs 2 and
-   256. Epoch 2 must refuse Grado recovery without mutating its saved input;
-   epoch 256 must complete the probe and produce all nine default-recovery
-   records and all 31 choice-outcome records.
+   256. At epoch 2, the Grado-specific preflight must refuse the epoch-2 input
+   without mutating its saved bytes or live flags; this does not test the
+   default loader against epoch-256 Grado data. Epoch 256 must complete the
+   probe and produce all nine default-recovery records, all 31 choice-outcome
+   records and 14 direction-history records.
 2. The epoch-256 probe dispatches through the real generic menu
    `Menu_OnInit`, `RedrawMenu` and `Menu_OnIdle` functions. It checks every
-   choice label, the four direction-cost tiers, pending/cancel/fresh-confirm
-   transitions, pending reset/reload to the pre-choice checkpoint, exactly-once
-   synthetic resource deltas, and duplicate blocking.
+   choice label and all four direction labels across favorable, moderate and
+   adverse histories, including histories where foundation and conflict are
+   both true or both false. A test-owned save adapter attempts normal and
+   Suspend checkpoints while a choice is pending and proves both are rejected
+   without changing SRAM; the same adapter permits pre-choice and completed
+   checkpoints. The probe also checks cancel/fresh-confirm transitions,
+   pending reset/reload to the pre-choice checkpoint, exactly-once synthetic
+   resource deltas and duplicate blocking.
    It also loads both CH15 decisions together, verifies all nine default
    recoveries, recovers EXILED through normal and Suspend sources, and reopens
    an incomplete final direction without defaulting it. That reopen starts
@@ -453,10 +460,11 @@ does not claim rendered pixels, real scheduler timing or in-game visual
 qualification. Gold deltas are synthetic exactly-once evidence, not campaign
 balance. No material manual-only criterion is claimed by this case.
 
-**Negative control:** epoch 2 is the unselected default and must reject the
-epoch-256 Grado history without changing the saved input or live flags.
-Direction remains unset until an explicit choice; the probe also verifies that
-the normal menu does not invent a default direction.
+**Negative control:** the epoch-2 module runs the Grado-specific preflight on
+its epoch-2 input and requires refusal without changing the saved bytes or
+live flags. This does not claim that the default framework loader rejects an
+epoch-256 Grado save. Direction remains unset until an explicit choice; the
+probe also verifies that the normal menu does not invent a default direction.
 
 **Compatibility and interactions:** the case depends on the native allocation
 and save paths from issue #315, uses their existing save format and flags, and

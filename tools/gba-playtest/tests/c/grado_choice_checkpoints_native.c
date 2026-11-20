@@ -30,8 +30,9 @@ enum
 {
     CHOICE_DEFAULT_COUNT = 9,
     CHOICE_OUTCOME_COUNT = 31,
+    CHOICE_DIRECTION_HISTORY_COUNT = 14,
     CHOICE_DEFAULT_RECORD_WORDS = 6,
-    CHOICE_OUTCOME_RECORD_WORDS = 20,
+    CHOICE_OUTCOME_RECORD_WORDS = 22,
     CHOICE_BASE_GOLD = 1234,
     CHOICE_SKIP_KEYS = A_BUTTON | B_BUTTON | START_BUTTON | SELECT_BUTTON,
 };
@@ -81,6 +82,18 @@ struct GradoChoiceOutcomeRecord
     u32 suspendSourceSlot;
     u32 suspendBackingSlot;
     u32 pendingRollbackRestored;
+    u32 pendingNormalSaveRejected;
+    u32 pendingSuspendSaveRejected;
+};
+
+struct GradoChoiceDirectionHistoryRecord
+{
+    u32 historyIndex;
+    u32 targetDirection;
+    u32 drawnLabelCount;
+    u32 choiceValues[CHOICE_DEFAULT_COUNT];
+    u32 displayedLabelHashes[4];
+    u32 displayedLabelLengths[4];
 };
 
 struct GradoChoiceCheckpointProbe
@@ -102,8 +115,17 @@ struct GradoChoiceCheckpointProbe
     u32 directionPriorChoiceRestored;
     u32 directionResourcesRestored;
     u32 directionCostAppliedFromRestoredGold;
+    u32 pendingNormalSaveRejected;
+    u32 pendingSuspendSaveRejected;
+    u32 preChoiceNormalSaveAllowed;
+    u32 preChoiceSuspendSaveAllowed;
+    u32 completedNormalSaveAllowed;
+    u32 completedSuspendSaveAllowed;
+    u32 directionHistoryCount;
     struct GradoChoiceDefaultRecord defaults[CHOICE_DEFAULT_COUNT];
     struct GradoChoiceOutcomeRecord outcomes[CHOICE_OUTCOME_COUNT];
+    struct GradoChoiceDirectionHistoryRecord
+        directionHistories[CHOICE_DIRECTION_HISTORY_COUNT];
 };
 
 struct GradoChoiceTransaction
@@ -242,6 +264,30 @@ static const char * const sDirectionLabels[4][3] = {
         "RECKONING | Cost: moderate transition",
         "RECKONING | Cost: adverse transition",
     },
+};
+
+struct GradoChoiceDirectionHistoryInput
+{
+    u32 targetDirection;
+    u16 choices[CHOICE_DEFAULT_COUNT];
+};
+
+static const struct GradoChoiceDirectionHistoryInput
+sDirectionHistoryInputs[CHOICE_DIRECTION_HISTORY_COUNT] = {
+    { 1, { 1, 2, 2, 2, 2, 2, 2, 2, 2 } },
+    { 1, { 2, 2, 2, 2, 2, 1, 2, 2, 1 } },
+    { 1, { 3, 2, 2, 2, 2, 1, 1, 2, 1 } },
+    { 2, { 3, 2, 2, 2, 1, 1, 1, 2, 1 } },
+    { 2, { 2, 2, 2, 2, 1, 1, 2, 2, 1 } },
+    { 2, { 3, 2, 1, 2, 1, 2, 1, 2, 1 } },
+    { 2, { 1, 2, 2, 2, 1, 1, 2, 2, 1 } },
+    { 3, { 2, 1, 2, 1, 2, 1, 2, 1, 1 } },
+    { 3, { 2, 2, 2, 1, 2, 1, 2, 2, 1 } },
+    { 3, { 2, 1, 2, 3, 2, 1, 2, 1, 3 } },
+    { 3, { 2, 3, 2, 1, 2, 1, 2, 3, 1 } },
+    { 4, { 2, 2, 2, 1, 2, 1, 2, 1, 1 } },
+    { 4, { 2, 2, 2, 2, 2, 1, 2, 1, 1 } },
+    { 4, { 2, 2, 2, 3, 2, 1, 2, 1, 1 } },
 };
 
 static const struct
@@ -524,6 +570,24 @@ static void GradoChoice_SetInput(u16 newKeys, u16 repeatedKeys, u16 heldKeys)
 static int GradoChoice_CanSave(void)
 {
     return !sTransaction.pending;
+}
+
+static int GradoChoice_RequestGameSave(u8 slot)
+{
+    if (!GradoChoice_CanSave())
+        return 0;
+
+    WriteGameSave(slot);
+    return 1;
+}
+
+static int GradoChoice_RequestSuspendSave(u8 slot)
+{
+    if (!GradoChoice_CanSave())
+        return 0;
+
+    WriteSuspendSave(slot);
+    return 1;
 }
 
 static u16 GradoChoice_GoldDelta(unsigned int family, unsigned int option)
@@ -857,7 +921,9 @@ static void GradoChoice_RunRaustenDual(void)
     gPlaySt.partyGoldAmount = CHOICE_BASE_GOLD;
     gPlaySt.chapterIndex = 0;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
-    WriteGameSave(SAVE_ID_GAME0);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+        return;
+    gGradoChoiceCheckpointProbe.preChoiceNormalSaveAllowed = 1;
 
     if (!GradoChoice_CommitFixture(
             CHOICE_RAUSTEN_MED, 0,
@@ -866,7 +932,9 @@ static void GradoChoice_RunRaustenDual(void)
             CHOICE_RAUSTEN_DATA, 2, expectedGold))
         return;
 
-    WriteGameSave(SAVE_ID_GAME0);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+        return;
+    gGradoChoiceCheckpointProbe.completedNormalSaveAllowed = 1;
     memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
     gPlaySt.partyGoldAmount = 0;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
@@ -922,7 +990,9 @@ static void GradoChoice_RunOutcome(
     gPlaySt.partyGoldAmount = CHOICE_BASE_GOLD;
     gPlaySt.chapterIndex = 0;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
-    WriteGameSave(SAVE_ID_GAME0);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+        return;
+    gGradoChoiceCheckpointProbe.preChoiceNormalSaveAllowed = 1;
 
     recordIndex = gGradoChoiceCheckpointProbe.outcomeCount++;
     record = &gGradoChoiceCheckpointProbe.outcomes[recordIndex];
@@ -944,6 +1014,8 @@ static void GradoChoice_RunOutcome(
     record->suspendSourceSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
     record->suspendBackingSlot = GRADO_STATE_NO_NATIVE_SAVE_SLOT;
     record->pendingRollbackRestored = 0;
+    record->pendingNormalSaveRejected = 0;
+    record->pendingSuspendSaveRejected = 0;
 
     beforeGold = gPlaySt.partyGoldAmount;
     GradoChoice_Begin(family, record);
@@ -1000,8 +1072,20 @@ static void GradoChoice_RunOutcome(
         && GradoState_ReadSymbol(
             sChoices[family].symbol, 0, &currentValue) == GRADO_STATE_VALUE_UNSET
         && gPlaySt.partyGoldAmount == beforeGold;
-    if (!GradoChoice_CanSave())
-        gGradoChoiceCheckpointProbe.pendingSaveBlocked = 1;
+    memcpy(sBefore, gSram, sizeof(sBefore));
+    record->pendingNormalSaveRejected =
+        !GradoChoice_RequestGameSave(SAVE_ID_GAME0)
+        && memcmp(sBefore, gSram, sizeof(sBefore)) == 0;
+    record->pendingSuspendSaveRejected =
+        !GradoChoice_RequestSuspendSave(SAVE_ID_SUSPEND)
+        && memcmp(sBefore, gSram, sizeof(sBefore)) == 0;
+    gGradoChoiceCheckpointProbe.pendingNormalSaveRejected &=
+        record->pendingNormalSaveRejected;
+    gGradoChoiceCheckpointProbe.pendingSuspendSaveRejected &=
+        record->pendingSuspendSaveRejected;
+    gGradoChoiceCheckpointProbe.pendingSaveBlocked =
+        gGradoChoiceCheckpointProbe.pendingNormalSaveRejected
+        && gGradoChoiceCheckpointProbe.pendingSuspendSaveRejected;
 
     memset(&sTransaction, 0, sizeof(sTransaction));
     memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
@@ -1069,7 +1153,9 @@ static void GradoChoice_RunOutcome(
     record->actualValue = GradoChoice_ReadValue(
         sChoices[family].symbol, &currentValue) ? currentValue : 0xFFFFFFFFu;
 
-    WriteGameSave(SAVE_ID_GAME0);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+        return;
+    gGradoChoiceCheckpointProbe.completedNormalSaveAllowed = 1;
     memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
     gPlaySt.partyGoldAmount = 0;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME2;
@@ -1095,8 +1181,11 @@ static void GradoChoice_RunOutcome(
     GradoState_WriteSymbol(GRADO_FLAG_CH00_WARN, 0, 1);
     gPlaySt.chapterIndex = 0;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
-    WriteGameSave(SAVE_ID_GAME0);
-    WriteSuspendSave(SAVE_ID_SUSPEND);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0)
+        || !GradoChoice_RequestSuspendSave(SAVE_ID_SUSPEND))
+        return;
+    gGradoChoiceCheckpointProbe.completedNormalSaveAllowed = 1;
+    gGradoChoiceCheckpointProbe.completedSuspendSaveAllowed = 1;
     memset(GetPermanentFlagBits(), 0, GetPermanentFlagBitsSize());
     memset(GetChapterFlagBits(), 0, GetChapterFlagBitsSize());
     gPlaySt.partyGoldAmount = 0;
@@ -1160,7 +1249,8 @@ static void GradoChoice_RunDefaults(void)
         gGradoChoiceCheckpointProbe.phase = 70 + i;
         gPlaySt.chapterIndex = 21;
         gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
-        WriteGameSave(SAVE_ID_GAME0);
+        if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+            continue;
         gGradoChoiceCheckpointProbe.phase = 80 + i;
         memcpy(sBefore, gSram, sizeof(sBefore));
         gameOffset = SramAddrToOffset(GetSaveReadAddr(SAVE_ID_GAME0));
@@ -1214,8 +1304,11 @@ static void GradoChoice_RunMissingDirection(void)
     gPlaySt.chapterIndex = 21;
     gPlaySt.partyGoldAmount = savedGold;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
-    WriteGameSave(SAVE_ID_GAME0);
-    WriteSuspendSave(SAVE_ID_SUSPEND);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0)
+        || !GradoChoice_RequestSuspendSave(SAVE_ID_SUSPEND))
+        return;
+    gGradoChoiceCheckpointProbe.preChoiceNormalSaveAllowed = 1;
+    gGradoChoiceCheckpointProbe.preChoiceSuspendSaveAllowed = 1;
 
     preflight = GradoState_PreflightNativeSave(
         GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, &diagnostic);
@@ -1271,6 +1364,60 @@ static void GradoChoice_RunMissingDirection(void)
             == savedGold + GradoChoice_GoldDelta(CHOICE_DIRECTION, 0);
 }
 
+static void GradoChoice_RunDirectionHistories(void)
+{
+    unsigned int historyIndex;
+
+    for (historyIndex = 0;
+        historyIndex < CHOICE_DIRECTION_HISTORY_COUNT;
+        ++historyIndex)
+    {
+        const struct GradoChoiceDirectionHistoryInput * input =
+            sDirectionHistoryInputs + historyIndex;
+        volatile struct GradoChoiceDirectionHistoryRecord * record =
+            &gGradoChoiceCheckpointProbe.directionHistories[historyIndex];
+        unsigned int i;
+
+        GradoChoice_PrepareCurrent();
+        GradoChoice_PrepareLive();
+        GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME);
+        for (i = 0; i < CHOICE_DEFAULT_COUNT; ++i)
+        {
+            if (GradoState_WriteSymbol(
+                    sChoices[i].symbol, GRADO_STATE_NO_CHAPTER,
+                    input->choices[i]) != GRADO_STATE_VALUE_VALID)
+                return;
+        }
+        if (GradoState_WriteSymbol(
+                GRADO_STATE_DIRECTION, GRADO_STATE_NO_CHAPTER, 0)
+            != GRADO_STATE_VALUE_VALID)
+            return;
+
+        GradoChoice_Begin(CHOICE_DIRECTION, NULL);
+        GradoChoice_Trigger();
+        GradoChoice_SetInput(0, 0, 0);
+        GradoChoice_Advance();
+        if (sTransaction.phase != CHOICE_PHASE_CHOOSING)
+            return;
+
+        GradoChoice_DrawMenu(&sTransaction.choiceMenu);
+        record->historyIndex = historyIndex;
+        record->targetDirection = input->targetDirection;
+        record->drawnLabelCount = sDrawCount;
+        for (i = 0; i < CHOICE_DEFAULT_COUNT; ++i)
+            record->choiceValues[i] = input->choices[i];
+        for (i = 0; i < ARRAY_COUNT(record->displayedLabelHashes); ++i)
+        {
+            record->displayedLabelHashes[i] = sDrawHashes[i];
+            record->displayedLabelLengths[i] = sDrawLengths[i];
+        }
+        if (sDrawCount != ARRAY_COUNT(record->displayedLabelHashes))
+            return;
+
+        ++gGradoChoiceCheckpointProbe.directionHistoryCount;
+    }
+}
+
 static void GradoChoice_RunExiledRoute(enum GradoStateLoadRoute route, int * passed)
 {
     struct GradoStateLoadDiagnostic diagnostic;
@@ -1296,9 +1443,13 @@ static void GradoChoice_RunExiledRoute(enum GradoStateLoadRoute route, int * pas
     gPlaySt.chapterIndex = 21;
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
     savedGold = gPlaySt.partyGoldAmount;
-    WriteGameSave(SAVE_ID_GAME0);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+        return;
     if (route == GRADO_LOAD_SUSPEND)
-        WriteSuspendSave(SAVE_ID_SUSPEND);
+    {
+        if (!GradoChoice_RequestSuspendSave(SAVE_ID_SUSPEND))
+            return;
+    }
 
     memcpy(sBefore, gSram, sizeof(sBefore));
     gameOffset = SramAddrToOffset(GetSaveReadAddr(SAVE_ID_GAME0));
@@ -1342,7 +1493,8 @@ static void GradoChoice_RunEpoch2Control(void)
     GradoChoice_PrepareLive();
     GradoState_BeginLifecycle(GRADO_LOAD_NEW_GAME);
     gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
-    WriteGameSave(SAVE_ID_GAME0);
+    if (!GradoChoice_RequestGameSave(SAVE_ID_GAME0))
+        return;
     memcpy(sBefore, gSram, sizeof(sBefore));
     beforePlay = gPlaySt;
     memcpy(beforePermanent, GetPermanentFlagBits(), sizeof(beforePermanent));
@@ -1374,6 +1526,7 @@ void GradoChoiceCheckpoints_Run(void)
     gGradoChoiceCheckpointProbe.supportedEpoch = 1;
     gGradoChoiceCheckpointProbe.phase = 10;
     GradoChoice_RunMissingDirection();
+    GradoChoice_RunDirectionHistories();
     gGradoChoiceCheckpointProbe.phase = 11;
     GradoChoice_RunDefaults();
     gGradoChoiceCheckpointProbe.phase = 12;
@@ -1385,6 +1538,9 @@ void GradoChoiceCheckpoints_Run(void)
     GradoChoice_RunRaustenDual();
     gGradoChoiceCheckpointProbe.phase = 14;
     gGradoChoiceCheckpointProbe.phase = 15;
+    gGradoChoiceCheckpointProbe.pendingNormalSaveRejected = 1;
+    gGradoChoiceCheckpointProbe.pendingSuspendSaveRejected = 1;
+    gGradoChoiceCheckpointProbe.pendingSaveBlocked = 1;
 
     for (family = 0; family < CHOICE_FAMILY_COUNT; ++family)
         for (option = 0; option < sChoices[family].optionCount; ++option)
