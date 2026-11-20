@@ -63,6 +63,9 @@ void GradoState_SaveMenu_NewGame(ProcPtr procPtr)
         && result != GRADO_STATE_LOAD_RECOVERY
         && result != GRADO_STATE_LOAD_REOPEN)
     {
+        if (proc->sus_slot_cur != (u8)-1)
+            proc->unk_44 = 0x100;
+
         GradoState_ReportNativeLoadRefusal(result, procPtr);
         return;
     }

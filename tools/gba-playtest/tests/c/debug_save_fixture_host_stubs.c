@@ -8,6 +8,7 @@
 #include "expansion_debugtools.h"
 #include "expansion_debug_save_fixture.h"
 #include "debug_save_fixture_internal.h"
+#include "grado_campaign_state.h"
 
 u8 sGameStartSaveBuf[0x8000];
 u8 gGenericBuffer[0x2000];
@@ -22,6 +23,11 @@ static int sTitleActive = TRUE;
 static int sGameLoadCount;
 static int sSuspendLoadCount;
 static int sLastLoadedSlot = -1;
+static enum GradoStateLoadResult sGradoPreflightResult = GRADO_STATE_LOAD_RECOVERY;
+static int sGradoPreflightCalls;
+static int sGradoPreflightViewIsFixtureImage;
+static int sGradoRecoveryCalls;
+static int sGradoLoadCountAtRecovery;
 
 struct ProcCmd CONST_DATA gProcScr_TitleScreen[] = {
     PROC_END
@@ -68,6 +74,73 @@ int DebugSaveFixtureHost_GetSuspendLoadCount(void)
 int DebugSaveFixtureHost_GetLastLoadedSlot(void)
 {
     return sLastLoadedSlot;
+}
+
+void DebugSaveFixtureGradoHost_SetPreflightResult(
+    enum GradoStateLoadResult result)
+{
+    sGradoPreflightResult = result;
+}
+
+int DebugSaveFixtureGradoHost_GetPreflightCalls(void)
+{
+    return sGradoPreflightCalls;
+}
+
+int DebugSaveFixtureGradoHost_GetPreflightViewIsFixtureImage(void)
+{
+    return sGradoPreflightViewIsFixtureImage;
+}
+
+int DebugSaveFixtureGradoHost_GetRecoveryCalls(void)
+{
+    return sGradoRecoveryCalls;
+}
+
+int DebugSaveFixtureGradoHost_GetLoadCountAtRecovery(void)
+{
+    return sGradoLoadCountAtRecovery;
+}
+
+enum GradoStateLoadResult GradoState_PreflightSave(
+    enum SaveCompatState compatibility,
+    const struct ExpansionSaveMeta *meta,
+    enum GradoStateLoadRoute route,
+    unsigned int chapter,
+    const struct GradoStateFlagView *view,
+    struct GradoStateLoadDiagnostic *diagnostic)
+{
+    struct SaveBlocks *fixture = (struct SaveBlocks *)sGameStartSaveBuf;
+    struct SuspendSaveBlock *suspend = &fixture->suspendSaveBlocks[1];
+    struct GameSaveBlock *game = &fixture->gameSaveBlocks[0];
+
+    (void)chapter;
+    (void)diagnostic;
+    sGradoPreflightCalls++;
+    sGradoPreflightViewIsFixtureImage =
+        compatibility == SAVE_COMPAT_CURRENT
+        && meta == &fixture->expansionSaveMeta
+        && ((route == GRADO_LOAD_SUSPEND
+                && view->chapterFlags == suspend->chapterFlags
+                && view->permanentFlags == suspend->permanentFlags
+                && view->chapterBytes == sizeof(suspend->chapterFlags)
+                && view->permanentBytes == sizeof(suspend->permanentFlags))
+            || (route == GRADO_LOAD_NORMAL
+                && view->chapterFlags == NULL
+                && view->permanentFlags == game->permanentFlags
+                && view->chapterBytes == 0
+                && view->permanentBytes == sizeof(game->permanentFlags)));
+
+    return sGradoPreflightResult;
+}
+
+enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
+    struct GradoStateLoadDiagnostic *diagnostic)
+{
+    (void)diagnostic;
+    sGradoRecoveryCalls++;
+    sGradoLoadCountAtRecovery = sGameLoadCount + sSuspendLoadCount;
+    return GRADO_STATE_LOAD_RECOVERY;
 }
 
 ProcPtr Proc_Find(const struct ProcCmd *script)

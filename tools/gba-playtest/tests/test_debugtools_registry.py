@@ -652,18 +652,25 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
+            grado_include = (
+                "-I" + str(REPO_ROOT / "examples" / "restoration-of-grado" / "include")
+            )
             defines = [
                 "MODERN=1",
                 "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
-                "FE8_EXPANSION_SAVE_COMPAT_EPOCH=2",
+                "FE8_EXPANSION_SAVE_COMPAT_EPOCH=256",
             ]
 
             rc, out, fixture_obj = _compile(
                 work,
-                SAVE_FIXTURE_SRC,
+                REPO_ROOT
+                / "examples"
+                / "restoration-of-grado"
+                / "src"
+                / "native_debug_save_fixture.c",
                 "debug_save_fixture.o",
                 defines=defines,
-                extra_flags=["-std=gnu89"],
+                extra_flags=["-std=gnu89", grado_include],
             )
             self.assertEqual(
                 rc,
@@ -676,7 +683,7 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
                 C_FIXTURES_DIR / "debug_save_fixture_host_stubs.c",
                 "debug_save_fixture_stubs.o",
                 defines=defines,
-                extra_flags=["-std=gnu89"],
+                extra_flags=["-std=gnu89", grado_include],
             )
             self.assertEqual(
                 rc,
@@ -689,7 +696,7 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
                 C_FIXTURES_DIR / "debug_save_fixture_driver.c",
                 "debug_save_fixture_driver.o",
                 defines=defines,
-                extra_flags=["-std=gnu89"],
+                extra_flags=["-std=gnu89", grado_include],
             )
             self.assertEqual(
                 rc,

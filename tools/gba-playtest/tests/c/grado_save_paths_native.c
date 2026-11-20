@@ -144,6 +144,8 @@ struct GradoNativeLoadRefusalProbe
     u32 reopenTryLoadStateRestored;
     u32 reopenTryLoadNoPopup;
     u32 reopenSaveMenuContinued;
+    u32 linkArenaSelectionRefused;
+    u32 saveMenuOption7Refused;
 };
 
 static union
@@ -266,6 +268,17 @@ void LinkArenaBattleMap_InitChapter(void)
 void ApplyUnitSpritePalettes(void)
 {
     sLinkArenaInitCalls++;
+}
+
+void DisplayUiHand(int x, int y)
+{
+    (void)x;
+    (void)y;
+}
+
+void SioPlaySoundEffect(int sound)
+{
+    (void)sound;
 }
 
 void InitPlayConfig(int isDifficult, s8 unk)
@@ -1172,6 +1185,7 @@ static void ProbeNativeLoadRefusal(void)
     int popupLifecyclesCorrect;
     int debugCallerRefused;
     int linkArenaCallerPreserved;
+    int linkArenaSelectionRefused;
 
     PrepareSemanticSaves();
     PrepareLive(SAVE_ID_GAME2, permanent, chapter);
@@ -1308,6 +1322,26 @@ static void ProbeNativeLoadRefusal(void)
     probe->linkArenaProcGotoCount = sProcGotoCalls;
     probe->linkArenaExitLabel = sProcGotoLabel;
 
+    sioProc.unk_48 = SAVE_ID_GAME2;
+    sioProc.unk_38[SAVE_ID_GAME2] = 21;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    linkArenaSelectionRefused = 1;
+    for (attempt = 0; attempt < 2; ++attempt)
+    {
+        helpBoxCallsBeforeMenu = sHelpBoxCalls;
+        popupStartCallsBeforeMenu = sPopupStartCalls;
+        procGotoCallsBeforeMenu = sProcGotoCalls;
+        sBrokenProc = NULL;
+        LinkArenaTeamBuild_Loop(&sioProc);
+        if (sBrokenProc != NULL
+            || sProcGotoCalls != procGotoCallsBeforeMenu
+            || !CompleteManagedRefusalPopup(
+                &sioProc, probe->expectedMessage,
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu))
+            linkArenaSelectionRefused = 0;
+    }
+    probe->linkArenaSelectionRefused = linkArenaSelectionRefused;
+
     memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESUME;
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
@@ -1327,6 +1361,10 @@ static void ProbeNativeLoadRefusal(void)
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
     saveMenuProc.sus_slot_cur = 0;
     saveMenuProc.cursor_config = 1;
+    saveMenuProc.chapter_idx[0] = 0;
+    saveMenuProc.chapter_idx[1] = 1;
+    saveMenuProc.chapter_idx[2] = 2;
+    saveMenuProc.unk_44 = 0x10;
     saveMenuProc.hb_en = 1;
     gKeyStatusPtr->newKeys = A_BUTTON;
     procGotoCallsBeforeMenu = sProcGotoCalls;
@@ -1337,7 +1375,33 @@ static void ProbeNativeLoadRefusal(void)
         sProcGotoCalls == procGotoCallsBeforeMenu
         && CompleteManagedRefusalPopup(
             &saveMenuProc, probe->expectedMessage,
-            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu);
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu)
+        && saveMenuProc.unk_44 == 0x100
+        && saveMenuProc.sus_slot_cur == 0;
+
+    memset(&saveMenuProc, 0, sizeof(saveMenuProc));
+    saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_7;
+    saveMenuProc.sus_slot = SAVE_ID_GAME2;
+    saveMenuProc.sus_slot_cur = 1;
+    saveMenuProc.cursor_config = 1;
+    saveMenuProc.chapter_idx[0] = 0;
+    saveMenuProc.chapter_idx[1] = 1;
+    saveMenuProc.chapter_idx[2] = 2;
+    saveMenuProc.unk_44 = 0x10;
+    saveMenuProc.hb_en = 1;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    procGotoCallsBeforeMenu = sProcGotoCalls;
+    helpBoxCallsBeforeMenu = sHelpBoxCalls;
+    popupStartCallsBeforeMenu = sPopupStartCalls;
+    SaveMenu_SaveSlotSelectLoop(&saveMenuProc);
+    probe->saveMenuOption7Refused =
+        sProcGotoCalls == procGotoCallsBeforeMenu
+        && CompleteManagedRefusalPopup(
+            &saveMenuProc, probe->expectedMessage,
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu)
+        && saveMenuProc.unk_44 == 0x100
+        && saveMenuProc.sus_slot_cur == 1;
+
     gKeyStatusPtr->newKeys = previousNewKeys;
     probe->saveMenuPreserved =
         memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
@@ -1353,7 +1417,9 @@ static void ProbeNativeLoadRefusal(void)
         popupLifecyclesCorrect
         && probe->saveMenuSuspendRefused
         && probe->saveMenuNormalRefused
-        && sHelpBoxCalls == 7
+        && probe->saveMenuOption7Refused
+        && probe->linkArenaSelectionRefused
+        && sHelpBoxCalls == 10
         && sHelpBoxX == 0x30
         && sHelpBoxY == 0x30
         && sHelpBoxMessage == probe->expectedMessage;

@@ -384,6 +384,16 @@ replacements, but does not assert rendered UI or campaign behavior.
    of live flags. Normal and legacy preflights ignore those chapter flags.
    Preserve the full input image and live state in both directions. Substituting
    live chapter flags during validation must fail both records.
+10. From `tools/gba-playtest/tests`, run
+    `python3 -B -m unittest test_debugtools_registry.DebugSaveFixtureHostTests.test_real_fixture_state_machine_and_exact_bytes -v`.
+    This compiles the enabled Grado debug-fixture adapter around the real
+    fixture state machine. The host preflight boundary confirms that normal
+    and Suspend validation receive metadata and flag views from the volatile
+    fixture image, and that recovery runs only after the selected loader.
+    A conflicting result must refuse before either loader or recovery runs,
+    while preserving source SRAM and zeroizing the volatile image. The
+    Grado preflight result is controlled by the harness here; the native
+    save-path cases above exercise the production semantic preflight.
 
 Fixed-frame captures retain the 120-frame bound. Semantic captures stop when
 their completion phase and expected record count are observed, with 10,000

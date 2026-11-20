@@ -11,6 +11,7 @@ FE8_PROJECT_CODE_REPLACEMENTS := \
 	src/eventinfo.c=examples/restoration-of-grado/src/native_flags.c \
 	src/events_script.c=examples/restoration-of-grado/src/static_guide_events.c \
 	src/events_wm.c=examples/restoration-of-grado/src/static_guide_worldmap.c \
+	src/debug_save_fixture.c=examples/restoration-of-grado/src/native_debug_save_fixture.c \
 	src/savemenu.c=examples/restoration-of-grado/src/native_savemenu.c \
 	src/sio_term.c=examples/restoration-of-grado/src/native_sio_term.c
 FE8_PROJECT_C_SOURCES := \
