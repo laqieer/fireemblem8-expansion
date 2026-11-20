@@ -445,6 +445,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-warm-replay-", dir=ROOT / "build") as directory:
             temporary = Path(directory)
+            deps = temporary / "deps"
             output = temporary / ("native-" + "x" * max(1, 122 - len(str(temporary))))
             entrypoint = self.project / "warm-native.mk"
             entrypoint.write_text(
@@ -455,10 +456,20 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 "\t@: native-asset-dependencies $(MODERN_ALL_DATA_ASSET_DEPS)\n",
                 encoding="ascii",
             )
+            warm_text = subprocess.run(
+                [
+                    "make", "--no-print-directory", f"DEPS_DIR={deps}",
+                    f"PYTHON={sys.executable}",
+                    f"MODERN_CC={temporary / 'unavailable-compiler'}", "src/msg_data.c",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(warm_text.returncode, 0, warm_text.stdout + warm_text.stderr)
             arguments = [
                 "make", "--no-print-directory", "-f", str(entrypoint), "NODEP=1",
                 "MODERN_DRY_RUN=1", "FE8_PROJECT=default", "MODERN_ROM_SIZE=32M",
                 "EXPANSION_ENABLED_LOCALES=en,ja", f"MODERN_BUILD_ROOT={output}",
+                f"DEPS_DIR={deps}",
                 f"PYTHON={sys.executable}", f"MODERN_CC={temporary / 'unavailable-compiler'}",
                 "--old-file=expansion-modern-toolchain-check",
             ]
