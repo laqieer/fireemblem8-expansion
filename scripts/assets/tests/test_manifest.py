@@ -1021,7 +1021,9 @@ class AssetManifestTests(unittest.TestCase):
                     expected = content
                 self.assertEqual(path, logical)
                 self.assertEqual(content, expected)
-        self.assertEqual(len(ordinary), 3)
+        with open(source, encoding="utf-8") as handle:
+            expected_ids = {record["id"] for record in json.load(handle)["assets"]}
+        self.assertEqual({record.id for record in ordinary}, expected_ids)
         self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, logical)))
 
     def test_discovery_artifact_rejects_malformed_or_escaping_outputs(self):

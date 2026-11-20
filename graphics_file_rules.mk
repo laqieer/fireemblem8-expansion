@@ -208,3 +208,28 @@ graphics/statscreen/StatscreenEquipmentBG.bin: %.bin: %.tmap
 
 graphics/statscreen/StatscreenEquipedWeaponHighlight.bin: %.bin: %.tmap
 	$(TMAP2TSA) $< $@ --width 15 --height 0
+
+define grado_static_carrier
+$(1).feimg2.bin $(1).fetsa2.bin &: $(1).png scripts/gfxtools/tsa_generator.py scripts/gfxtools/tsa2.py
+	$$(FETSATOOL) $$< $(1).feimg2.bin $(1).fetsa2.bin
+endef
+
+$(eval $(call grado_static_carrier,graphics/bg/grado_imperial_tomb))
+$(eval $(call grado_static_carrier,graphics/bg/grado_council_hall))
+$(eval $(call grado_static_carrier,graphics/cg/grado_funeral_omen))
+$(eval $(call grado_static_carrier,graphics/cg/grado_title))
+
+define grado_cg_parts
+CLEAN_FILES += $(foreach part,0 1 2 3 4 5 6 7 8 9,graphics/cg/$(1)_part_$(part).bin)
+graphics/cg/$(1)_part_0.bin graphics/cg/$(1)_part_1.bin \
+graphics/cg/$(1)_part_2.bin graphics/cg/$(1)_part_3.bin \
+graphics/cg/$(1)_part_4.bin graphics/cg/$(1)_part_5.bin \
+graphics/cg/$(1)_part_6.bin graphics/cg/$(1)_part_7.bin \
+graphics/cg/$(1)_part_8.bin graphics/cg/$(1)_part_9.bin &: \
+graphics/cg/$(1).feimg2.bin examples/restoration-of-grado/assets/static/derive_visuals.py
+	python3 -B examples/restoration-of-grado/assets/static/derive_visuals.py split-cg $$< \
+		graphics/cg/$(1)_part
+endef
+
+$(eval $(call grado_cg_parts,grado_funeral_omen))
+$(eval $(call grado_cg_parts,grado_title))

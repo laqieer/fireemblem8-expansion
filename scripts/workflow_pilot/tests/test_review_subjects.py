@@ -429,6 +429,16 @@ class SubjectTests(SubjectTestCase):
                         for line in rule.replace("\\\n", " ").splitlines()
                         if line.startswith("\t")
                     ]
+                    native_maps = [
+                        command for command in commands
+                        if "tools.gba-playtest.tests.test_grado_visuals_native" in command
+                    ]
+                    self.assertEqual(len(native_maps), 1)
+                    self.assertEqual(native_maps[0][0], "env")
+                    self.assertIn(
+                        ("-u", "GBA_PLAYTEST_HOST_ONLY"),
+                        tuple(zip(native_maps[0], native_maps[0][1:])),
+                    )
                     publication = [
                         command for command in commands
                         if "scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests."

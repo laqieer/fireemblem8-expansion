@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "portraitId": 17,
+  "symbol": "Natasha",
+  "blinkKind": "FACE_BLINK_NORMAL",
+  "anchors": {
+    "mouth": [
+      2,
+      6
+    ],
+    "eyes": [
+      3,
+      4
+    ]
+  },
+  "frames": {
+    "main": [
+      0,
+      0,
+      80,
+      72
+    ],
+    "minimug": [
+      80,
+      0,
+      32,
+      32
+    ],
+    "eyeOpen": [
+      0,
+      72,
+      32,
+      16
+    ],
+    "eyeClosed": [
+      32,
+      72,
+      32,
+      16
+    ],
+    "mouthClosed": [
+      64,
+      72,
+      32,
+      16
+    ],
+    "mouthOpen": [
+      96,
+      72,
+      32,
+      16
+    ]
+  },
+  "alias": {
+    "mode": "existing-components",
+    "components": {
+      "img": "portrait_Natasha_tileset",
+      "imgChibi": "portrait_Natasha_chibi",
+      "pal": "portrait_Natasha_palette",
+      "imgMouth": "portrait_Natasha_mouth"
+    }
+  }
+}

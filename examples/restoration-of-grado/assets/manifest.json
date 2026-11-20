@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "GRADO_CH00_MAP",
+      "kind": "chapter-map-layout",
+      "sources": [
+        "graphics/map/layout/grado/CH00.mar",
+        "graphics/map/layout/grado/CH00.json"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "mar",
+        "compression": "lz77"
+      },
+      "ownership": {
+        "seam": "chapter-data-asset-table",
+        "tableSource": "src/data/data_8B363C.c",
+        "chapterSettings": "src/data/chapter_settings.json",
+        "chapterSettingsIndex": 0,
+        "mainLayerId": 4,
+        "symbol": "PrologueMap",
+        "consumer": "GetChapterMapPointer"
+      },
+      "resources": {
+        "mapWidth": 16,
+        "mapHeight": 12,
+        "mapBufferBytes": 2048
+      },
+      "provenance": {
+        "origin": "Original project tile layout supplied to the native adapter.",
+        "license": "No legal-review decision is encoded by this technical record.",
+        "modifications": "Creator metatiles converted to native configuration-entry indices.",
+        "tools": [
+          "scripts.assets",
+          "scripts/mar_to_map.py"
+        ]
+      }
+    },
+    {
+      "id": "GRADO_AMELIA_PORTRAIT",
+      "kind": "formatted-portrait-package",
+      "sources": [
+        "assets/portraits/amelia/amelia.png",
+        "assets/portraits/amelia/metadata.json",
+        "assets/portraits/amelia/amelia.pal"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "fe7-fe8-formatted-png",
+        "adapterVersion": 1,
+        "jascSidecar": true
+      },
+      "ownership": {
+        "seam": "portrait-data-table",
+        "tableSource": "src/portrait_data.c",
+        "registrySource": "assets/portrait_registry.json",
+        "portraitId": 25,
+        "symbol": "Amelia",
+        "consumer": "GetPortraitData"
+      },
+      "resources": {
+        "sheetWidth": 128,
+        "sheetHeight": 112,
+        "paletteColors": 16,
+        "mainBytes": 2880,
+        "minimugBytes": 512,
+        "eyeFrameBytes": 256,
+        "mouthFrameBytes": 256
+      },
+      "provenance": {
+        "origin": "explicit migration alias for the shipped Amelia FE8 components",
+        "license": "Repository provenance is recorded separately; this is not legal clearance.",
+        "modifications": "none to runtime components; package metadata binds the standard table entry",
+        "tools": [
+          "scripts.assets"
+        ]
+      }
+    },
+    {
+      "id": "GRADO_DUESSEL_PORTRAIT",
+      "kind": "formatted-portrait-package",
+      "sources": [
+        "assets/portraits/duessel/duessel.png",
+        "assets/portraits/duessel/metadata.json",
+        "assets/portraits/duessel/duessel.pal"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "fe7-fe8-formatted-png",
+        "adapterVersion": 1,
+        "jascSidecar": true
+      },
+      "ownership": {
+        "seam": "portrait-data-table",
+        "tableSource": "src/portrait_data.c",
+        "registrySource": "assets/portrait_registry.json",
+        "portraitId": 37,
+        "symbol": "Duessel",
+        "consumer": "GetPortraitData"
+      },
+      "resources": {
+        "sheetWidth": 128,
+        "sheetHeight": 112,
+        "paletteColors": 16,
+        "mainBytes": 2880,
+        "minimugBytes": 512,
+        "eyeFrameBytes": 256,
+        "mouthFrameBytes": 256
+      },
+      "provenance": {
+        "origin": "explicit migration alias for the shipped Duessel FE8 components",
+        "license": "Repository provenance is recorded separately; this is not legal clearance.",
+        "modifications": "none to runtime components; package metadata binds the standard table entry",
+        "tools": [
+          "scripts.assets"
+        ]
+      }
+    },
+    {
+      "id": "GRADO_NATASHA_PORTRAIT",
+      "kind": "formatted-portrait-package",
+      "sources": [
+        "assets/portraits/natasha/natasha.png",
+        "assets/portraits/natasha/metadata.json",
+        "assets/portraits/natasha/natasha.pal"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "fe7-fe8-formatted-png",
+        "adapterVersion": 1,
+        "jascSidecar": true
+      },
+      "ownership": {
+        "seam": "portrait-data-table",
+        "tableSource": "src/portrait_data.c",
+        "registrySource": "assets/portrait_registry.json",
+        "portraitId": 17,
+        "symbol": "Natasha",
+        "consumer": "GetPortraitData"
+      },
+      "resources": {
+        "sheetWidth": 128,
+        "sheetHeight": 112,
+        "paletteColors": 16,
+        "mainBytes": 2880,
+        "minimugBytes": 512,
+        "eyeFrameBytes": 256,
+        "mouthFrameBytes": 256
+      },
+      "provenance": {
+        "origin": "explicit migration alias for the shipped Natasha FE8 components",
+        "license": "Repository provenance is recorded separately; this is not legal clearance.",
+        "modifications": "none to runtime components; package metadata binds the standard table entry",
+        "tools": [
+          "scripts.assets"
+        ]
+      }
+    },
+    {
+      "id": "GRADO_KNOLL_PORTRAIT",
+      "kind": "formatted-portrait-package",
+      "sources": [
+        "assets/portraits/knoll/knoll.png",
+        "assets/portraits/knoll/metadata.json",
+        "assets/portraits/knoll/knoll.pal"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "fe7-fe8-formatted-png",
+        "adapterVersion": 1,
+        "jascSidecar": true
+      },
+      "ownership": {
+        "seam": "portrait-data-table",
+        "tableSource": "src/portrait_data.c",
+        "registrySource": "assets/portrait_registry.json",
+        "portraitId": 41,
+        "symbol": "Knoll",
+        "consumer": "GetPortraitData"
+      },
+      "resources": {
+        "sheetWidth": 128,
+        "sheetHeight": 112,
+        "paletteColors": 16,
+        "mainBytes": 2880,
+        "minimugBytes": 512,
+        "eyeFrameBytes": 256,
+        "mouthFrameBytes": 256
+      },
+      "provenance": {
+        "origin": "explicit migration alias for the shipped Knoll FE8 components",
+        "license": "Repository provenance is recorded separately; this is not legal clearance.",
+        "modifications": "none to runtime components; package metadata binds the standard table entry",
+        "tools": [
+          "scripts.assets"
+        ]
+      }
+    },
+    {
+      "id": "CH2_MAIN_MAP",
+      "kind": "tiled-tmx-map-layout",
+      "sources": [
+        "examples/restoration-of-grado/assets/maps/CH02.tmx"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "tmx-safe-v1",
+        "compression": "lz77",
+        "layer": "Main",
+        "tilesetId": "fe8-metatiles-16px-4096"
+      },
+      "ownership": {
+        "seam": "chapter-data-asset-table",
+        "tableSource": "src/data/data_8B363C.c",
+        "chapterSettings": "src/data/chapter_settings.json",
+        "chapterSettingsIndex": 2,
+        "mainLayerId": 11,
+        "symbol": "Ch2Map",
+        "consumer": "GetChapterMapPointer"
+      },
+      "resources": {
+        "mapWidth": 16,
+        "mapHeight": 12,
+        "mapBufferBytes": 2048
+      },
+      "provenance": {
+        "origin": "Original project tile layout supplied to the native adapter.",
+        "license": "No legal-review decision is encoded by this technical record.",
+        "modifications": "Safe TMX GIDs retain native four-entry metatile addressing.",
+        "tools": [
+          "scripts.assets",
+          "scripts/mar_to_map.py"
+        ]
+      }
+    }
+  ]
+}

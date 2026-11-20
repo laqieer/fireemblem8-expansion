@@ -3,6 +3,7 @@
   "coverage": {
     "mode": "complete",
     "expected_feature_ids": [
+      "grado-native-visuals",
       "tester-case-catalog",
       "meaningful-test-evidence-policy",
       "mechanics-hook-registry",
@@ -61,6 +62,18 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "grado-native-visuals",
+      "title": "Optional Grado native visual source derivatives",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/325"
+      ],
+      "reference": "examples/restoration-of-grado/assets/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GRADO-NATIVE-VISUALS-001"
+      ]
+    },
     {
       "id": "cjk-resource-storage",
       "title": "Bounded lossless CJK resource index storage",
@@ -838,6 +851,39 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-GRADO-NATIVE-VISUALS-001",
+      "title": "Convert optional Grado map sources to native configuration indices",
+      "feature_id": "grado-native-visuals",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/325"
+      ],
+      "document": "examples/restoration-of-grado/assets/README.md",
+      "anchor": "tc-grado-native-visuals-001",
+      "profiles": [
+        "Unselected Grado native-map source derivatives through existing host asset producers",
+        "Isolated ARM7TDMI/Thumb AAPCS module ROM under libmGBA with owned native chapter/table inputs"
+      ],
+      "purpose": "Validate real generated native map addressing and source selection without claiming a loaded or qualified game.",
+      "prerequisites": "Repository root, Python3 and tracked project asset inputs for source checks; supported ARM tools/libmGBA and existing gbagfx additionally required for explicit native module. Build tools/gbagfx's existing Make target if missing. No base ROM, save or external tileset image.",
+      "actions": "Run python3 -B -m unittest scripts.assets.tests.test_grado_visuals -v and the native module command in the procedure. Retain generated map/default reselection, actual source/incbin owner, raw/LZ77 and original graphics/palette/rendering checks. Build the public generated-movecost native object and run original IWRAM-loaded ARM flood for CommonT2/Civilian/Fly normal profiles plus owned enemy collision in both chapters; compare all 192 cells against independent source-map/Fort-terrain/typed-cost weighted paths, actual copied-function pointer and existing resources.",
+      "expected_result": "Both Grado maps are 16x12/386 native bytes with correct metatile scaling and original native records across carriers/owner. Actual display matches 20 CH00/16 CH02 independent pixel colors. Eight complete movement matrices per source-owner artifact match independent weighted paths and collision controls; original ARM dispatch points inside IWRAM. Unscaled CH00 changes pixels/costs, CH02 stays identical. Default reselection remains correct; CH02 upper-floor to lower-road disconnection is retained as a route warning, not silently qualified.",
+      "negative_control": "Missing/malformed ownership/source inputs fail explicitly and default sources remain. The real unscaled CH00 reaches completion with wrong metatile/terrain, framebuffer and movement costs; CH02 remains unchanged. No-remap original CH00 owner remains stock15x10. The reachable owned enemy tile must become impassable; omitting actor collision fails the complete native matrix. Unexpected SRAM/extra-map/audio routes trap. Source dimensions or a PNG alone are not native game qualification.",
+      "interactions": "Uses existing asset manifest, chapter asset-table ownership, safe TMX and ordered MAR/JSON. No new framework flag or default C provider. Future code/chapter selections must match the declared map owners and Fort 60/61/62 tuple.",
+      "save_compatibility": "Source derivatives only; no save bytes, schema, compatibility epoch or persistent RAM change.",
+      "cleanup": "Remove only the owned temporary build directory; preserve default tracked inputs and original masters.",
+      "limitations": "Isolated module proves carriers, original source owner, rendering pixels and real native movement/collision using explicit owned map/chapter/table/remap/unit-map inputs, not actual project classes/units/EVT coordinates or a selected supported game/profile/full memory layout. CH02 road(7,10) is unreachable from floor(7,4) in the current terrain; owned collision at(7,5) is not a route fix. Selected-game screenshots, early portraits, BG/CG/crossfade consumers and artistic acceptance remain open. Host-only skipping is not proof; manifest alone does not select CH00/tileset.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.assets.tests.test_grado_visuals -v",
+          "evidence": "scripts/assets/tests/test_grado_visuals.py"
+        },
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest tools.gba-playtest.tests.test_grado_visuals_native -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_visuals_native.py"
+        }
+      ]
+    },
     {
       "id": "TC-TEXT-INITIAL-CACHE-001",
       "title": "Decode the first modern English message-zero lookup",
