@@ -451,8 +451,8 @@ enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     unsigned int recoveredCount;
     unsigned int i;
     int guideInitialized;
-    int sourceSlot;
-    int backingSlot;
+    u32 sourceSlot;
+    u32 backingSlot;
 
     if (diagnostic == NULL || diagnostic->chapter >= GRADO_STATE_CHAPTER_COUNT
         || (diagnostic->route != GRADO_LOAD_NORMAL && diagnostic->route != GRADO_LOAD_SUSPEND
