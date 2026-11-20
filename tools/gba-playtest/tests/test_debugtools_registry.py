@@ -652,18 +652,25 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
+            grado_include = (
+                "-I" + str(REPO_ROOT / "examples" / "restoration-of-grado" / "include")
+            )
             defines = [
                 "MODERN=1",
                 "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
-                "FE8_EXPANSION_SAVE_COMPAT_EPOCH=2",
+                "FE8_EXPANSION_SAVE_COMPAT_EPOCH=256",
             ]
 
             rc, out, fixture_obj = _compile(
                 work,
-                SAVE_FIXTURE_SRC,
+                REPO_ROOT
+                / "examples"
+                / "restoration-of-grado"
+                / "src"
+                / "native_debug_save_fixture.c",
                 "debug_save_fixture.o",
                 defines=defines,
-                extra_flags=["-std=gnu89"],
+                extra_flags=["-std=gnu89", grado_include],
             )
             self.assertEqual(
                 rc,
@@ -676,7 +683,7 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
                 C_FIXTURES_DIR / "debug_save_fixture_host_stubs.c",
                 "debug_save_fixture_stubs.o",
                 defines=defines,
-                extra_flags=["-std=gnu89"],
+                extra_flags=["-std=gnu89", grado_include],
             )
             self.assertEqual(
                 rc,
@@ -684,12 +691,25 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
                 f"compiling debug save fixture stubs failed:\n{out}",
             )
 
+            rc, out, grado_stubs_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debug_save_fixture_grado_host_stubs.c",
+                "debug_save_fixture_grado_stubs.o",
+                defines=defines,
+                extra_flags=["-std=gnu89", grado_include],
+            )
+            self.assertEqual(
+                rc,
+                0,
+                f"compiling Grado debug save fixture stubs failed:\n{out}",
+            )
+
             rc, out, driver_obj = _compile(
                 work,
                 C_FIXTURES_DIR / "debug_save_fixture_driver.c",
                 "debug_save_fixture_driver.o",
                 defines=defines,
-                extra_flags=["-std=gnu89"],
+                extra_flags=["-std=gnu89", grado_include],
             )
             self.assertEqual(
                 rc,
@@ -699,7 +719,7 @@ class DebugSaveFixtureHostTests(unittest.TestCase):
 
             rc, out, exe = _link(
                 work,
-                [fixture_obj, stubs_obj, driver_obj],
+                [fixture_obj, stubs_obj, grado_stubs_obj, driver_obj],
                 "debug_save_fixture_test",
             )
             self.assertEqual(

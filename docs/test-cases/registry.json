@@ -34,6 +34,7 @@
       "modern-framework-build",
       "configuration-identity",
       "project-input-selection",
+      "grado-native-allocation",
       "save-compatibility",
       "generated-data-platform",
       "typed-id-item-cap",
@@ -61,6 +62,23 @@
     "deferred_issues": []
   },
   "features": [
+    {
+      "id": "grado-native-allocation",
+      "title": "Optional Grado native fields and guide ownership",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "reference": "examples/restoration-of-grado/README.md",
+      "status": "current",
+      "required_cases": [
+        "TC-GRADO-ALLOCATION-001",
+        "TC-GRADO-GUIDE-001",
+        "TC-GRADO-STATE-VALUES-001",
+        "TC-GRADO-SAVE-COMPAT-001",
+        "TC-GRADO-SAVE-FLAGS-001",
+        "TC-GRADO-SAVE-PATHS-001"
+      ]
+    },
     {
       "id": "cjk-resource-storage",
       "title": "Bounded lossless CJK resource index storage",
@@ -839,6 +857,195 @@
   ],
   "cases": [
     {
+      "id": "TC-GRADO-STATE-VALUES-001",
+      "title": "Read and write typed fields through the native flag backend",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-state-values-001",
+      "profiles": [
+        "Grado reference source; Linux host-native original flag routines",
+        "ARM7TDMI/Thumb GNU89 AAPCS compile-only"
+      ],
+      "purpose": "Exercise explicit Boolean/counter/one-hot and permanent monotonic values through the actual existing native flag backend, without claiming production allocation or save/lifecycle integration.",
+      "prerequisites": "Host cc, Python3, supported ARM GCC/headers and owned temporary files. Use fields from a complete validated allocation; the current project chapter is an explicit ordinal. No ROM, emulator, save file, credentials or new dependency.",
+      "actions": "Run the documented native module. Execute real example value functions/original eventinfo.c with owned backing. Cover explicit counter/Boolean/one-hot/monotonic values, zero clearing, native bounds, chapter/guide ownership and corruption. Produce separate packed bytes, deliberately disagree live state, and decode readonly sized views including permanent-only input, null/short buffers, wrong scope and corrupt data. Snapshot/compare every call's view metadata, complete input and live arrays immediately before later fixture restoration; compile the codec for supported ARM.",
+      "expected_result": "Legal live and supplied-view values reflect their actual native buffers without touching unrelated storage. Zero one-hot writes clear and subsequent UNSET reads preserve guards. Invalid access/write and corrupt values preserve output and full input/live arrays; no recovery/defaults. Permanent-only views do not require chapter bytes, short/native-invalid views refuse, and set monotonic facts cannot be cleared. Default behavior is unchanged.",
+      "negative_control": "The pre-feature interface is absent and fails compilation; that is structural evidence only. Actual adversarial vectors reject reserved/wrong-chapter/range/corrupt states. Compiled one-hot-zero no-op and null/short-view live-write controls survive former checks but the current native probe aborts. Existing short-buffer admission rejection remains. The unrelated event dispatcher aborts if executed rather than supplying a success stub.",
+      "interactions": "Shares the existing typed allocation validator and original native flag backend. This host test does not prove selected-profile behavior; full allocation and selected-profile runtime qualification remain required. Generic Boolean writes do not enforce retirement monotonicity; the distinct permanent monotonic kind enforces only the explicit write rule, not production producer/load lifecycle wiring.",
+      "save_compatibility": "The readonly view is pointers/sizes over existing native5/25-byte buffers, not a serialized record/blob. It changes no physical allocation, envelope, epoch, selected profile or SRAM. The owning loader must classify compatible schema/epoch/checksum/block before constructing a view. Actual normal/Suspend/legacy loading and recovery/checkpoint/retirement qualification remain incomplete.",
+      "cleanup": "Tests remove only their owned unique temporary probe/object directories and preserve saves, worktrees and real game buffers.",
+      "limitations": "Host-native value behavior and ARM compilation are not target-ROM/save/profile/UI qualification. Alternative descriptors are fixture inputs, not production assignments; valid explicit writes are not automatic repair authority.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",
+          "evidence": "scripts/modernize/tests/test_grado_state_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-GUIDE-001",
+      "title": "Route native guide progression without consuming project flags",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-guide-001",
+      "profiles": [
+        "Default progressive guide control versus static adapter selected by the Grado reference profile",
+        "Linux host-native real consumers and ARM7TDMI/Thumb AAPCS object routing"
+      ],
+      "purpose": "Preserve the native guide content and implementation while preventing its progressive consumers from reading or writing any of the 112 reclaimed display/read flags.",
+      "prerequisites": "Python3, host cc, supported ARM GCC/binutils and framework headers; no ROM, emulator, save or activated project profile.",
+      "actions": "Run the documented native module. Compile/link the actual guide/table and both original/native-reset-adapted flag backends. Execute cold/initialized truth, unrelated reclaimed-bit, native reset and complete-buffer-preservation vectors over all56 entries and all240 native flag IDs. Compile selected ARM guide/reset objects and inspect raw guide flag-reference relocations.",
+      "expected_result": "Uninitialized truth locks all56 entries regardless of unrelated reclaimed bits. Explicit initialization and the actual optional native permanent reset expose all56 as read; reset sets exactly truth after clearing permanent storage and preserves chapter bytes. Subsequent guide operations preserve every buffer byte. Original progression remains unchanged; sort/ordinary flags reach the backend and ARM guide raw references stay in policy forwarders.",
+      "negative_control": "The original source locks under an empty permanent buffer, unlock-all exposes entries but leaves unread state. An unexpected unused event-dispatch call aborts the test; unresolved linker errors are not ignored.",
+      "interactions": "Uses the existing bmguide.c and eventinfo.c project code replacement slots and the same ownership predicate/allocation definition. The Grado reference profile selects these source replacements; no copied engine implementation, new framework gate or runtime selector is added. Complete profile/save behavior remains unqualified.",
+      "save_compatibility": "Host tests use only owned native buffers, never actual engine state or SRAM. No envelope, epoch or load route changes. Permanent reset is new-game initialization, not load recovery; complete selected save/lifecycle behavior remains required before qualification.",
+      "cleanup": "Tests remove only their own unique compiler/probe directories and preserve Git indexes, worktrees, saves and real engine state.",
+      "limitations": "Host compilation adapts only the ARM register annotation and aborts on an unused dispatcher dependency. ARM evidence is compiled-symbol/relocation routing, not target-ROM UI navigation or full save/lifecycle qualification.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",
+          "evidence": "scripts/modernize/tests/test_grado_state_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-SAVE-COMPAT-001",
+      "title": "Execute native save compatibility for default and Grado epochs",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-save-compat-001",
+      "profiles": [
+        "ARM7TDMI/Thumb AAPCS release-mode module, epochs 2 and 256, libmGBA"
+      ],
+      "purpose": "Independently verify the existing native live compatibility mechanism and complete input preservation across both supported test epochs.",
+      "prerequisites": "Python 3, supported ARM toolchain and libmGBA from quickstart; no user ROM, save, savestate or external project.",
+      "actions": "Run the native module command in the procedure. Execute the real metadata/checksum builders, SRAM initialization/read routines and live classifier on thirteen owned 32 KiB-image inputs for each epoch, capturing semantic records and native resources. Retain source-relative object paths and apply the canonical SRAM IWRAM selectors before remaining BSS; inspect actual ELF workspace bounds and active copied-function pointers. Keep the existing ARM-enabled CI binding and host-only skip.",
+      "expected_result": "Native records match the procedure's input-group/SaveCompatState table. Several malformed-input causes intentionally share HEADER_CORRUPT; no unique status per cause is promised. Current metadata requires the configured epoch, older format precedes foreign epoch, and diagnostic-only changes remain compatible. Every complete input image stays byte-identical after classification.",
+      "negative_control": "Foreign epoch, absent metadata, corrupt checksum and surviving payload are real native inputs and cannot be accepted as CURRENT or erased. Default epoch 2 is the unselected profile control; host-only skipping never counts as native evidence.",
+      "interactions": "Reuses existing global save compatibility, SRAM and fixed-layout module boot/capture interfaces. This compatibility module does not exercise the separate selected Grado project allocation, guide or load wrapper. No new framework flag, gate or prerequisite.",
+      "save_compatibility": "No production envelope, defaults, epoch, save bytes or persistent RAM change. The owned EWRAM image is a test input, not a save blob or qualified Grado game/profile.",
+      "cleanup": "Remove only the fixture's temporary build/compiler/ROM/capture directory; never load or rewrite user saves or source masters.",
+      "limitations": "Release-mode native classification and copied SRAM workspace placement only, not cartridge-bus, complete production globals/overlays, full normal/Suspend loading, producer/recovery/checkpoint/resources/retirement, debug or selected-game qualification.",
+      "automation": [
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
+        },
+        {
+          "command": "python3 -B -m unittest scripts.workflow_pilot.tests.test_review_subjects.SubjectTests.test_modern_linker_recipe_runs_mandatory_arm_positives -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-SAVE-FLAGS-001",
+      "title": "Round-trip native flag bytes through normal and Suspend fields",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-save-flags-001",
+      "profiles": [
+        "ARM7TDMI/Thumb AAPCS release-mode module, epochs 2 and 256, libmGBA"
+      ],
+      "purpose": "Prove existing native flag-transfer primitives preserve the 40 chapter/200 permanent bits and every byte outside their typed save fields.",
+      "prerequisites": "Same supported tools and owned 32 KiB image as TC-GRADO-SAVE-COMPAT-001; no user save, ROM or external project.",
+      "actions": "Run the existing native save module. For all three normal and both Suspend slots, write four slot/byte-varying vectors through the original functions, compare stored fields and entire image with an independent rolling snapshot, clobber live arrays, execute non-destructive view and actual reads, and capture all twenty records per epoch plus real flag/SRAM/resource bounds.",
+      "expected_result": "Every permanent span is 25 bytes and every serialized chapter span five bytes; all source bytes round-trip, other scopes and complete image stay unchanged outside permitted writes. Both unused Suspend chapter-field bytes remain intact. Non-destructive view preserves live arrays. All thirteen compatibility records remain valid.",
+      "negative_control": "Unused Suspend chapter bytes start as 0xA5/0x5A before the expected snapshot, exposing seven-byte writes. Live-array end guards 0xD6/0x6D and view-output guards 0xE2/0x2E are checked immediately after each read, exposing permanent/view26-byte and chapter7-byte copies. Live0xC3/0x3C clobbers expose no-op reads. Slot/byte-varying complementary vectors distinguish stale, wrong-slot, truncated and cross-scope copies. Host-only skipping is not native evidence.",
+      "interactions": "Reuses original eventinfo storage getters, bmsave-lib serializers, canonical IWRAM labels and copied SRAM routines through the existing ARM-enabled CI module. No new framework flag, gate, service or job.",
+      "save_compatibility": "No production source, save layout, default envelope/epoch or allocation changes. Raw byte vectors are owned native transfer inputs, not legal semantic Grado histories or a new save blob/profile.",
+      "cleanup": "Only the module's owned temporary compiler/ROM/capture directory; never load or rewrite user saves.",
+      "limitations": "Flag-transfer primitives only, not complete normal/Suspend entrypoints or block metadata/checksums, cartridge bus, producer-sensitive recovery/resources, guide consumers, legal state combinations or selected-game/profile qualification.",
+      "automation": [
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-SAVE-PATHS-001",
+      "title": "Execute original normal and Suspend writer/loader paths",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-save-paths-001",
+      "profiles": [
+        "Selected modern release AAPCS project profile at epoch 256",
+        "Owned native ARM/AAPCS release modules at epochs 2 and 256",
+        "Host integration of the enabled Grado debug-fixture adapter"
+      ],
+      "purpose": "Compile and boot-verify the explicitly selected Grado reference profile, then qualify representative original whole save/load, native block-checksum and strict Grado semantic preflight paths beyond direct flag serializers. It also proves the Link Arena refusal helpbox no longer overwrites the active selector OBJ graphics.",
+      "prerequisites": "Supported modern ARM/AAPCS toolchain, libmGBA and normal source-build dependencies. Initialize the pinned mgfembp submodule if absent. The existing gbagfx helper builds only required original text/tree and map data; no user ROM or save is needed.",
+      "actions": "Run make project-selection-config without FE8_PROJECT and require the default project/profile and empty settings. Run make FE8_PROJECT=restoration-of-grado and require the selected release ROM to link and pass its built-in boot check. Then run env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v. Create three valid normal saves with distinct bonus values, then exercise each normal slot and both alternated physical Suspend slots against every backing slot using original writers, block validation, live-state clobbers and the production load wrapper around original loaders. Flip a stored permanent byte after each valid path and recheck the original checksum validator and complete 32 KiB input image. In separate reset captures preflight typed schema-1/epoch-256 views before original load at both epochs and exercise missing-producer, conflict, legacy, Roderich recovery and missing-direction controls. At epoch 256, preflight and load backed normal and Suspend histories with two missing recoverable choices while the live choices are valid and Suspend chapter flags differ; repeat with a stale permanent or chapter flag before recovery. Save a valid normal history with a prior choice and gold but no final direction, verify REOPEN preflight, clobber live state with distinct sentinels, and check that native loading returns REOPEN after restoring the saved choice/play state, the load wrapper accepts it, and the save-menu handler proceeds without refusal. At epoch 2, verify incompatibility and refusal. In an A+B+L reset, save chapter 14 Suspend blocks with valid versus corrupt CH13 guard counters while live validity is opposite, and preflight both views on Suspend, normal and legacy routes. In the R capture, exercise GradoState_TryLoadNativeSaveFromProc and the selected DebugContinueMenu_ContinueChapter, LinkArenaTeamBuild_LoadSelectedSave and SaveMenu_NewGame callers with incompatible epoch-2 and corrupt epoch-256 inputs; record safe Link Arena return-label selection, no save-menu transition on refusal, and byte-safe metadata copies. Repeat Debug Continue and Link Arena refusals after dismissing each popup; each attempt must create exactly one blocking popup under its active caller Proc, then close the helpbox and release the popup child before retry. From tools/gba-playtest/tests, run python3 -B -m unittest test_debugtools_registry.DebugSaveFixtureHostTests.test_real_fixture_state_machine_and_exact_bytes -v. The enabled Grado adapter host test requires fixture-image metadata and flag-view bindings for normal and Suspend routes, recovery only after a loader, and conflict refusal before load/recovery while preserving source SRAM. For Link Arena, compile the production LoadHelpBoxGfx with the original compressed helpbox and selector graphics and palette via tools/preproc, run it against libmGBA OBJ VRAM at tile bases 0x280 and 0x300, and compare the full 0x1800-byte Img_TacticianSelObj region before and after. Then run the production caller and blocking popup at 0x300 and verify selector bytes remain unchanged through initialization and dismissal.",
+      "expected_result": "The selected modern release ROM links and boot-verifies at epoch 256; the no-project configuration remains default. All nine distinct native records per epoch restore every applicable flag byte, referenced bonus, slot, saved gold/chapter, identity/class, level 7, experience 33 and position (2,3). Each backing block and saved slot identity validates. Epoch 2 refuses Grado preflight without changing live or image state; epoch 256 admits all nine normal/Suspend histories and restores ending 4, referenced bonus and permanent flags, plus the set final-witness flag and full chapter bitmap for Suspend. Missing/conflict/legacy histories refuse; supported Roderich recovery becomes EXILED. Missing final direction returns REOPEN while the original normal loader restores the saved choice and play state; GradoState_TryLoadNativeSaveFromProc accepts that disposition and the save-menu handler proceeds without a refusal popup. Epoch 2 still rejects this history and preserves live sentinels. Both backed routes preflight the distinct saved view, recover and report both choices in one call, and match the complete permanent bitmap independently constructed from saved bytes and two recovery bits; their stale counterparts refuse and preserve both live flag scopes and the post-load image. Both physically valid Suspend blocks follow their saved counter's validity, not live validity, while normal and legacy ignore chapter flags; complete input and live state are preserved. Production load refusal returns before the original loader, preserves SRAM, flags, play state, unit, bonus values and Suspend selector, and reports the expected message ID and coordinates. The debug caller returns its refusal action without restart. Debug Continue and Link Arena each parent every refusal popup to their active caller Proc; dismissal closes the helpbox and releases the blocking child before the repeated attempt. Link Arena requests the existing team-list return label and does not initialize palettes or the battle map. Both normal and Suspend save-menu selections report refusal without requesting the fade-out transition for invalid histories. The probe observes byte-safe metadata copies. The enabled Grado debug adapter preflights the fixture-owned metadata and flag bytes for normal and Suspend routes, invokes recovery after the corresponding loader, refuses conflicts before loading, preserves the real SRAM source image and clears the volatile fixture. Payload corruption refuses without altering input bytes. Original compatibility/transfer records and existing ROM/RAM bounds remain. The original 0x280 control changes the selector OBJ image, while the 0x300 allocation preserves it; the actual Link Arena refusal popup uses 0x300/palette 6 and preserves the image through dismissal.",
+      "negative_control": "The default project-selection query remains project/profile default with no Grado settings; epoch 2 refuses Grado metadata. Missing or wrong normal backing fails the affected semantic records; omitting normal/Suspend permanent restoration fails all nine native paths, and omitting chapter restoration fails all six Suspend/backing combinations at both epochs and their epoch-256 semantic records. A native IsValidSuspendSave refusal fails all six Suspend validity records even when it leaves the correct resolved slot intact. Removing either bonus restore or either semantic loader fails its own normal or Suspend family. Reading live rather than saved permanent or Suspend chapter flags, validating a live chapter in place of its saved view, or a recovery writer clearing a valid unrelated direction fails the relevant records, including when that writer also clears it during setup. Epoch 2, producer-missing, multi-hot, unsupported legacy and stale preflight controls cannot accept; a missing direction remains REOPEN without defaulting it, and failure to restore the saved choice/resources is the pre-fix negative control. Roderich recovery is EXILED and preserves the image. Bypassing the save-menu preflight requests the fade-out without its refusal message; bypassing the Link Arena redirect omits the tested return label; bypassing the debug refusal invokes restart. Each fails its caller record. Bypassing the Grado debug fixture adapter loads a conflict-selected fixture and fails the host assertion; running recovery before the loader, or using live SRAM metadata/flags rather than the volatile image, also fails. Replacing the caller-bound popup with an unparented helpbox fails the caller and lifecycle assertions; failing to close the helpbox or break the popup child fails its dismissal observation. Removing the second metadata ReadSramFast copy fails the captured metadata-copy count. An incomplete semantic phase/count fails before the 10,000-frame watchdog; host-only skipping is not native evidence. Using the original 0x280 Link Arena popup destination must fail the VRAM comparison, including the active B-button tiles; the real compressed inputs and production loader are required, not a graphics stub.",
+      "interactions": "The selected project uses the existing code replacement slots for the guide, event flags/scripts, save menu, Link Arena terminal and debug menu, plus project-owned save helpers. Reuses the existing module builder and ARM-enabled CI invocation. Original production save/load functions and handwritten ARM checksum code remain the owners; generic test data providers are not the Grado roster. No new framework flag, service, job or CI timeout; semantic scenarios use the existing bounded run-until mechanism.",
+      "save_compatibility": "The explicitly selected reference profile uses Grado schema 1 and epoch 256 with the existing envelope version 2 and no additional save bytes. Default project selection remains epoch 2; no core save ABI, default epoch/envelope or framework profile changes.",
+      "cleanup": "Remove only owned temporary build/capture directories. Restore mutation controls; never access user saves or cartridge images.",
+      "limitations": "Representative whole functions, native corruption recognition and the optional semantic policy only; not cartridge-bus timing, complete game state, rendered UI, all resources or playable content. The profile build proves source integration and boot only. The native test executes selected debug, save-menu and Link Arena load functions, observing the requested Link Arena return label and skipped local map/palette calls. Popup parent, initialization, dismissal and blocking-child release are exercised through native API stubs; the test does not run the enclosing process scheduler or assert rendered UI/navigation. Valid normal loading may invalidate Suspend metadata by design; image preservation is measured separately before and after that load.",
+      "automation": [
+        {
+          "command": "make project-selection-config",
+          "evidence": "project_selection.mk"
+        },
+        {
+          "command": "make FE8_PROJECT=restoration-of-grado",
+          "evidence": "examples/restoration-of-grado/project.mk"
+        },
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v",
+          "evidence": "tools/gba-playtest/tests/test_grado_save_compat_native.py"
+        },
+        {
+          "command": "cd tools/gba-playtest/tests && python3 -B -m unittest test_debugtools_registry.DebugSaveFixtureHostTests.test_real_fixture_state_machine_and_exact_bytes -v",
+          "evidence": "tools/gba-playtest/tests/test_debugtools_registry.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GRADO-ALLOCATION-001",
+      "title": "Validate native flag domains, reservations and lifetimes",
+      "feature_id": "grado-native-allocation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/315"
+      ],
+      "document": "examples/restoration-of-grado/README.md",
+      "anchor": "tc-grado-allocation-001",
+      "profiles": [
+        "Unselected default framework; Linux host-native metadata probe",
+        "ARM7TDMI/Thumb GNU89, default supported AAPCS compile-only"
+      ],
+      "purpose": "Exercise the real optional reference C validator and complete candidate campaign bindings through owned native buffers, without exercising selected-profile behavior.",
+      "prerequisites": "Python 3, host cc and supported ARM GCC from quickstart; no ROM, emulator, save file or alternate profile.",
+      "actions": "Run python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v. Compile an independent 243-name public C consumer, then execute real campaign/native flag routines across all 14 public one-hot and 8 stored-counter domains, all 34 choice/direction/transition aliases, all 4 retirement facts, both 4-member collections/all 16 subsets and 21 retained-reader vectors after native chapter reset. Enumerate all 16 native direction/ending and all 8 private-transition bit patterns; check complete live arrays/output immediately after every projection read and every readonly write. Exercise schema-1/epoch-256 preflight, all eleven recoverable symbols together on all three routes, guide initialization, distinct saved/live views, opposite saved/live chapter-counter validity in both directions, stale permanent/Suspend-chapter snapshots, injected later-write failure/no-op and lifecycle boundaries. Compile lifecycle C for ARM debug and release profiles while retaining descriptor controls.",
+      "expected_result": "The complete allocation validates; missing public names fail compilation and extra/duplicate names reject independently of the definition. Every legal enum/counter value and alias agrees; one-hot zero is UNSET, counter zero valid, monotonic clearing/upper bounds/readonly writes refuse without mutation. Unset semantic ending preserves the guard while unset Boolean aliases are false; every corrupt multi-bit projection refuses without a default/partial truth. Collection groups have no contradictory unused target. Retained continuity survives reset. Current Grado history alone passes all load routes. On each route one recovery call reports and completes all eleven recoverable symbols and guide initialization while matching the complete permanent bitmap independently constructed from pre-recovery bytes and recovery bits. Suspend validates saved chapter-counter validity independently of live flags; normal and legacy ignore chapter flags. Stale or failed recovery preserves both complete live flag scopes, while normal recovery ignores an unrelated chapter change. Roderich recovers only to EXILED and missing direction reopens. ARM lifecycle compile succeeds in both debug and release.",
+      "negative_control": "Before the tracer, the public interface and source are absent and both compiler probes fail. Progressive policy rejects guide-bit allocation; the unselected default links no reference code. Wrong-transition-target and unset/corrupt-ending/corrupt-transition defaults compile and survive the former probe but abort in the complete native projection corpus. Substituting live flags for the saved view, validating live chapter flags instead of saved flags, or a shared recovery writer clearing an unrelated valid direction must fail, including when that writer also clears it during setup. Changed preflight snapshots, an injected failed second write and an injected successful no-op must refuse without leaving partial flag changes.",
+      "interactions": "Project-specific reference only, using existing native event-flag constants. This allocation test does not itself prove guide redirection; the selected profile source build and guide case cover that integration separately. No new framework feature gate or prerequisite is added.",
+      "save_compatibility": "Campaign probes mutate only owned native-format buffers, never actual engine state or SRAM. No envelope, epoch or checksum changes. Complete Grado schema 1/epoch 256 and normal/Suspend/legacy loading remain open in issue 315; default framework epoch 2 is unchanged and the candidate physical map is not a released save ABI.",
+      "cleanup": "Tests remove only their own temporary compiler/probe directories and preserve Git indexes, worktrees, saves and engine buffers.",
+      "limitations": "Host probes execute real example modules and native flag routines with owned buffers; ARM evidence is compile-only, not target-ROM behavior. All 243 candidate logical entries are mapped and the selected profile links/boot-verifies, but full save/recovery/checkpoint/gameplay and manual qualification remain unclaimed.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.modernize.tests.test_grado_state_native -v",
+          "evidence": "scripts/modernize/tests/test_grado_state_native.py"
+        }
+      ]
+    },
+    {
       "id": "TC-TEXT-INITIAL-CACHE-001",
       "title": "Decode the first modern English message-zero lookup",
       "feature_id": "modern-framework-build",
@@ -982,7 +1189,9 @@
       ],
       "document": "docs/cjk_fonts.md",
       "anchor": "tc-cjk-resource-storage-001-bounded-lossless-resource-indexes",
-      "profiles": ["Linux CPython 3.12 host tools with committed CJK inputs"],
+      "profiles": [
+        "Linux CPython 3.12 host tools with committed CJK inputs"
+      ],
       "purpose": "Preserve complete index data and existing physical provenance while supporting bounded deterministic plain/packed storage.",
       "prerequisites": "Clean source checkout with committed indexes and atlas inputs. Tests own their temporary source/font root; no ROM, emulator, external font checkout or manual criterion.",
       "actions": "Run the focused resource-index and direct source-predicate modules. Round-trip both real indexes through the actual CLI, run existing legacy/schema2 asset consumers and inventory generation/check against both formats, compare complete typed data and atlas bytes, reverse to the original representations with complete logical equality, and exercise every malformed/bounded input.",
@@ -1012,7 +1221,9 @@
       ],
       "document": "docs/cjk_fonts.md",
       "anchor": "tc-cjk-inventory-order-001-deterministic-consumer-inventory",
-      "profiles": ["Host Python 3 CJK inventory generation; no optional game profile"],
+      "profiles": [
+        "Host Python 3 CJK inventory generation; no optional game profile"
+      ],
       "purpose": "Make generated consumer explanations independent of filesystem enumeration while retaining every target and unchanged glyph assets.",
       "prerequisites": "Clean source checkout with Python 3 and committed CJK inputs; no ROM or emulator.",
       "actions": "Run the direct-consumer order regression and existing CJK check. Reverse enumeration of real synthetic source files containing overlapping and unique target IDs. Regenerate metadata through the existing inventory/provenance commands and compare committed outputs.",
@@ -2748,10 +2959,14 @@
       "id": "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
       "title": "Ignore unrelated check lifecycle",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/281"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/281"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-security-check-isolation-001-ignore-unrelated-check-lifecycle",
-      "profiles": ["Linux host Python source checkout"],
+      "profiles": [
+        "Linux host Python source checkout"
+      ],
       "purpose": "Keep unrelated Build lifecycle outside required exact security evidence while preserving all named-check validation.",
       "prerequisites": "Existing host-test dependencies; no ROM, save, credentials or live mutation.",
       "actions": "Run focused SecurityTests. Compare required named results with and without unrelated reversed skipped-job and malformed lifecycle records, then corrupt required check lifecycle, identity and response envelope.",
@@ -2772,10 +2987,16 @@
       "id": "TC-WORKFLOW-REVIEW-FIRST-001",
       "title": "Gate expensive Builds after accepted review",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/181", "https://github.com/laqieer/fireemblem8-expansion/issues/265"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/181",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/265"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-first-001-gate-expensive-builds-after-accepted-review",
-      "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
+      "profiles": [
+        "Locked host Python and source checkout",
+        "Coordinator-owned disposable PRs on a dependency-ready base"
+      ],
       "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
       "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
       "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack, test_live_pause and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; validate real parent decisions/ancestry. Exercise current default-control identity, causal native incident attribution, owned bare publication/readback, unchanged-head fallback and initial-lane preservation, then execute the documented disposable PR procedure with actual GitHub identities.",
@@ -2820,10 +3041,16 @@
       "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
       "title": "Expand valid findings across complete sibling families",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179", "https://github.com/laqieer/fireemblem8-expansion/issues/223"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/223"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
-      "profiles": ["Host-only Linux source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
+      "profiles": [
+        "Host-only Linux source checkout with the isolated #216 host interpreter, Git and native GCC",
+        "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"
+      ],
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
       "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
       "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions. For #223, observe actual PID/exit state before staging cleanup across inner/outer timeouts, creation-boundary and running interruption, closed/inherited stdio, bounded/closed stdin, early leader exit, unrelated-process preservation and immutable helper substitution. Check caller-handler and inherited-mask preservation, plus retained live staging when real termination is unavailable.",
@@ -2856,10 +3083,15 @@
       "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
       "title": "Validate bounded exact-SHA agent handoffs",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178", "https://github.com/laqieer/fireemblem8-expansion/issues/367"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/367"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
-      "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
+      "profiles": [
+        "Source-only Linux checkout with the issue #216 locked host Python environment and Git"
+      ],
       "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
       "prerequisites": "Start at the exact reviewed source root with the unchanged #176 baseline and #216 inherited locked interpreter; use build/host-python/bin/python3 -I for both replay contexts rather than system python3. No token, live workflow, ROM or emulator is required. The current standalone raw CLI replay needs only its checked-out checker and owns its temporary inputs. Execute the same fixture separately from an already available pristinefe4608b source context for the pre-fix failure; the replay performs no historical-code acquisition, history probe or fetch.",
       "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute the current standalone raw CLI replay: clean0, second-file EOL/EOF1, oversizedpair2 and aggregate-diff2. In the separate pre-fix context its first clean CLI call returns2 and the always-on expectation check must fail, including under Python optimization. Execute other documented CLI positive/negative commands and optional reporting.",
@@ -2916,10 +3148,14 @@
       "id": "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
       "title": "Preserve post-checkout program effects",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/196"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/196"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-script-extraction-001-preserve-post-checkout-program-effects",
-      "profiles": ["Clean Linux source checkout with Python 3, Bash, Git and actionlint; automatic exact-master Build for real patch publication"],
+      "profiles": [
+        "Clean Linux source checkout with Python 3, Bash, Git and actionlint; automatic exact-master Build for real patch publication"
+      ],
       "purpose": "Preserve selected post-checkout workflow program effects, parsed helper ownership and actual build-once master publication without changing trust boundaries or gates.",
       "prerequisites": "Source root; exclusively owned host fixtures. No host credential, ROM, network fetch or ARM compiler for fixture tests; real publication uses the existing CI environment.",
       "actions": "Run actual helper and drift suites, parsed mirror/helper-drift tests and actionlint. Compare remote identity/refusal, fresh-ref/report/status preservation and compiler pins/destinations/failure cutoffs. After merge require real exact-master patch creation/upload and remote completion.",
@@ -2960,10 +3196,14 @@
       "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
       "title": "Retain broad validation after a bounded shadow pilot",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/180"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-gate-ownership-001-retain-broad-validation-after-a-bounded-shadow-pilot",
-      "profiles": ["Clean Linux host source checkout with Python 3 and Git"],
+      "profiles": [
+        "Clean Linux host source checkout with Python 3 and Git"
+      ],
       "purpose": "Observe one artifact-guard immutable-input criterion and retain existing broad validation when complete ownership or positive net value is unproved.",
       "prerequisites": "Clean source checkout; no credentials, ROM, save or new dependency. Historical source and experiment are explicitly identified in the procedure.",
       "actions": "Run the repository's real TestImmutability criterion, existing broad suite and revision check. Read the historical component and corrected per-scenario records as evidence only; compare recorded real child observations, disconnected-consumer and wrong-input controls, nine shadow expectations and measured costs. Do not execute mutable issue-comment prototype code.",

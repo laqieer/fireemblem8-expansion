@@ -1482,6 +1482,10 @@ jobs:
         python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v
         python3 -m unittest discover -s scripts/modernize/tests -p "test_quickstart.py" -v
 
+    - name: Check optional Grado allocation metadata (issue 315)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      run: python3 -m unittest scripts.modernize.tests.test_grado_state_native -v
+
     # Generated-data platform (Issue #5 Chapter 2 slice, Batch C): validates
     # every registered table's JSON source, cross-table references, the
     # whole-bundle chapter manifest, and committed inventory drift. Pure

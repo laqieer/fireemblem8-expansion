@@ -100,7 +100,7 @@ proves private fetch access. No subjective manual criterion.
    python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v
    ```
 
-   The same eight jobs and 31 validation commands remain. Harmless helper
+   The same eight jobs and every validation command remain. Harmless helper
    comments preserve equivalence; replacing its body with a no-op fails.
    Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
    refuse. Replay the line-boundary controls:
@@ -590,7 +590,7 @@ the consumers' independent protected-principal/deployment requirements.
    and baseline keep their original required host worker and scrubbed
    environment. All eight jobs, full-mode conditions, exact checkout and
    summary dependencies remain; worker bounds are still90/90/60minutes.
-   The local upstream verifier mirrors the same complete31commands in their
+   The local upstream verifier mirrors the same complete command set in its
    current workflow order. Parsed ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
    complete native successes before claiming the end-to-end fix.

@@ -4946,6 +4946,15 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests \
 		scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
+	env -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES -u MAKELEVEL \
+		-u GBA_PLAYTEST_HOST_ONLY \
+		MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" \
+		MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+		MODERN_BINUTILS_DIR="$(MODERN_BINUTILS_DIR)" \
+		MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
+		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
+		"$(PYTHON)" -m unittest discover \
+		-s tools/gba-playtest/tests -p 'test_grado_*_native.py' -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \
