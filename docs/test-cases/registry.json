@@ -989,13 +989,13 @@
       ],
       "purpose": "Compile and boot-verify the explicitly selected Grado reference profile, then qualify representative original whole save/load, native block-checksum and strict Grado semantic preflight paths beyond direct flag serializers.",
       "prerequisites": "Supported modern ARM/AAPCS toolchain, libmGBA and normal source-build dependencies. Initialize the pinned mgfembp submodule if absent. The existing gbagfx helper builds only required original text/tree and map data; no user ROM or save is needed.",
-      "actions": "Run make project-selection-config without FE8_PROJECT and require the default project/profile and empty settings. Run make FE8_PROJECT=restoration-of-grado and require the selected release ROM to link and pass its built-in boot check. Then run env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v. Create three valid normal saves with distinct bonus values, then exercise each normal slot and both alternated physical Suspend slots against every backing slot using original writers, block validation, live-state clobbers and the production load wrapper around original loaders. Flip a stored permanent byte after each valid path and recheck the original checksum validator and complete 32 KiB input image. In separate reset captures preflight typed schema-1/epoch-256 views before original load at both epochs and exercise missing-producer, conflict, legacy, Roderich recovery and missing-direction controls. At epoch 256, preflight and load backed normal and Suspend histories with two missing recoverable choices while the live choices are valid and Suspend chapter flags differ; repeat with a stale permanent or chapter flag before recovery. Save a valid normal history with a prior choice and gold but no final direction, verify REOPEN preflight, clobber live state with distinct sentinels, and check that native loading returns REOPEN after restoring the saved choice/play state, the load wrapper accepts it, and the save-menu handler proceeds without refusal. At epoch 2, verify incompatibility and refusal. In an A+B+L reset, save chapter 14 Suspend blocks with valid versus corrupt CH13 guard counters while live validity is opposite, and preflight both views on Suspend, normal and legacy routes. In the R capture, exercise GradoState_TryLoadNativeSave and the selected DebugContinueMenu_ContinueChapter, LinkArenaTeamBuild_LoadSelectedSave and SaveMenu_NewGame callers with incompatible epoch-2 and corrupt epoch-256 inputs; record safe Link Arena return-label selection, no save-menu transition on refusal, and byte-safe metadata copies.",
-      "expected_result": "The selected modern release ROM links and boot-verifies at epoch 256; the no-project configuration remains default. All nine distinct native records per epoch restore every applicable flag byte, referenced bonus, slot, saved gold/chapter, identity/class, level 7, experience 33 and position (2,3). Each backing block and saved slot identity validates. Epoch 2 refuses Grado preflight without changing live or image state; epoch 256 admits all nine normal/Suspend histories and restores ending 4, referenced bonus and permanent flags, plus the set final-witness flag and full chapter bitmap for Suspend. Missing/conflict/legacy histories refuse; supported Roderich recovery becomes EXILED. Missing final direction returns REOPEN while the original normal loader restores the saved choice and play state; GradoState_TryLoadNativeSave accepts that disposition and the save-menu handler proceeds without a refusal popup. Epoch 2 still rejects this history and preserves live sentinels. Both backed routes preflight the distinct saved view, recover and report both choices in one call, and match the complete permanent bitmap independently constructed from saved bytes and two recovery bits; their stale counterparts refuse and preserve both live flag scopes and the post-load image. Both physically valid Suspend blocks follow their saved counter's validity, not live validity, while normal and legacy ignore chapter flags; complete input and live state are preserved. Production load refusal returns before the original loader, preserves SRAM, flags, play state, unit, bonus values and Suspend selector, and reports the expected message ID and coordinates. The debug caller returns its refusal action without restart. Link Arena requests the existing team-list return label and does not initialize palettes or the battle map. Both normal and Suspend save-menu selections report refusal without requesting the fade-out transition for invalid histories. The probe observes byte-safe metadata copies. Payload corruption refuses without altering input bytes. Original compatibility/transfer records and existing ROM/RAM bounds remain.",
-      "negative_control": "The default project-selection query remains project/profile default with no Grado settings; epoch 2 refuses Grado metadata. Missing or wrong normal backing fails the affected semantic records; omitting normal/Suspend permanent restoration fails all nine native paths, and omitting chapter restoration fails all six Suspend/backing combinations at both epochs and their epoch-256 semantic records. A native IsValidSuspendSave refusal fails all six Suspend validity records even when it leaves the correct resolved slot intact. Removing either bonus restore or either semantic loader fails its own normal or Suspend family. Reading live rather than saved permanent or Suspend chapter flags, validating a live chapter in place of its saved view, or a recovery writer clearing a valid unrelated direction fails the relevant records, including when that writer also clears it during setup. Epoch 2, producer-missing, multi-hot, unsupported legacy and stale preflight controls cannot accept; a missing direction remains REOPEN without defaulting it, and failure to restore the saved choice/resources is the pre-fix negative control. Roderich recovery is EXILED and preserves the image. Bypassing the save-menu preflight requests the fade-out without its refusal message; bypassing the Link Arena redirect omits the tested return label; bypassing the debug refusal invokes restart. Each fails its caller record. Removing the second metadata ReadSramFast copy fails the captured metadata-copy count. An incomplete semantic phase/count fails before the 10,000-frame watchdog; host-only skipping is not native evidence.",
+      "actions": "Run make project-selection-config without FE8_PROJECT and require the default project/profile and empty settings. Run make FE8_PROJECT=restoration-of-grado and require the selected release ROM to link and pass its built-in boot check. Then run env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v. Create three valid normal saves with distinct bonus values, then exercise each normal slot and both alternated physical Suspend slots against every backing slot using original writers, block validation, live-state clobbers and the production load wrapper around original loaders. Flip a stored permanent byte after each valid path and recheck the original checksum validator and complete 32 KiB input image. In separate reset captures preflight typed schema-1/epoch-256 views before original load at both epochs and exercise missing-producer, conflict, legacy, Roderich recovery and missing-direction controls. At epoch 256, preflight and load backed normal and Suspend histories with two missing recoverable choices while the live choices are valid and Suspend chapter flags differ; repeat with a stale permanent or chapter flag before recovery. Save a valid normal history with a prior choice and gold but no final direction, verify REOPEN preflight, clobber live state with distinct sentinels, and check that native loading returns REOPEN after restoring the saved choice/play state, the load wrapper accepts it, and the save-menu handler proceeds without refusal. At epoch 2, verify incompatibility and refusal. In an A+B+L reset, save chapter 14 Suspend blocks with valid versus corrupt CH13 guard counters while live validity is opposite, and preflight both views on Suspend, normal and legacy routes. In the R capture, exercise GradoState_TryLoadNativeSaveFromProc and the selected DebugContinueMenu_ContinueChapter, LinkArenaTeamBuild_LoadSelectedSave and SaveMenu_NewGame callers with incompatible epoch-2 and corrupt epoch-256 inputs; record safe Link Arena return-label selection, no save-menu transition on refusal, and byte-safe metadata copies. Repeat Debug Continue and Link Arena refusals after dismissing each popup; each attempt must create exactly one blocking popup under its active caller Proc, then close the helpbox and release the popup child before retry.",
+      "expected_result": "The selected modern release ROM links and boot-verifies at epoch 256; the no-project configuration remains default. All nine distinct native records per epoch restore every applicable flag byte, referenced bonus, slot, saved gold/chapter, identity/class, level 7, experience 33 and position (2,3). Each backing block and saved slot identity validates. Epoch 2 refuses Grado preflight without changing live or image state; epoch 256 admits all nine normal/Suspend histories and restores ending 4, referenced bonus and permanent flags, plus the set final-witness flag and full chapter bitmap for Suspend. Missing/conflict/legacy histories refuse; supported Roderich recovery becomes EXILED. Missing final direction returns REOPEN while the original normal loader restores the saved choice and play state; GradoState_TryLoadNativeSaveFromProc accepts that disposition and the save-menu handler proceeds without a refusal popup. Epoch 2 still rejects this history and preserves live sentinels. Both backed routes preflight the distinct saved view, recover and report both choices in one call, and match the complete permanent bitmap independently constructed from saved bytes and two recovery bits; their stale counterparts refuse and preserve both live flag scopes and the post-load image. Both physically valid Suspend blocks follow their saved counter's validity, not live validity, while normal and legacy ignore chapter flags; complete input and live state are preserved. Production load refusal returns before the original loader, preserves SRAM, flags, play state, unit, bonus values and Suspend selector, and reports the expected message ID and coordinates. The debug caller returns its refusal action without restart. Debug Continue and Link Arena each parent every refusal popup to their active caller Proc; dismissal closes the helpbox and releases the blocking child before the repeated attempt. Link Arena requests the existing team-list return label and does not initialize palettes or the battle map. Both normal and Suspend save-menu selections report refusal without requesting the fade-out transition for invalid histories. The probe observes byte-safe metadata copies. Payload corruption refuses without altering input bytes. Original compatibility/transfer records and existing ROM/RAM bounds remain.",
+      "negative_control": "The default project-selection query remains project/profile default with no Grado settings; epoch 2 refuses Grado metadata. Missing or wrong normal backing fails the affected semantic records; omitting normal/Suspend permanent restoration fails all nine native paths, and omitting chapter restoration fails all six Suspend/backing combinations at both epochs and their epoch-256 semantic records. A native IsValidSuspendSave refusal fails all six Suspend validity records even when it leaves the correct resolved slot intact. Removing either bonus restore or either semantic loader fails its own normal or Suspend family. Reading live rather than saved permanent or Suspend chapter flags, validating a live chapter in place of its saved view, or a recovery writer clearing a valid unrelated direction fails the relevant records, including when that writer also clears it during setup. Epoch 2, producer-missing, multi-hot, unsupported legacy and stale preflight controls cannot accept; a missing direction remains REOPEN without defaulting it, and failure to restore the saved choice/resources is the pre-fix negative control. Roderich recovery is EXILED and preserves the image. Bypassing the save-menu preflight requests the fade-out without its refusal message; bypassing the Link Arena redirect omits the tested return label; bypassing the debug refusal invokes restart. Each fails its caller record. Replacing the caller-bound popup with an unparented helpbox fails the caller and lifecycle assertions; failing to close the helpbox or break the popup child fails its dismissal observation. Removing the second metadata ReadSramFast copy fails the captured metadata-copy count. An incomplete semantic phase/count fails before the 10,000-frame watchdog; host-only skipping is not native evidence.",
       "interactions": "The selected project uses the existing code replacement slots for the guide, event flags/scripts, save menu, Link Arena terminal and debug menu, plus project-owned save helpers. Reuses the existing module builder and ARM-enabled CI invocation. Original production save/load functions and handwritten ARM checksum code remain the owners; generic test data providers are not the Grado roster. No new framework flag, service, job or CI timeout; semantic scenarios use the existing bounded run-until mechanism.",
       "save_compatibility": "The explicitly selected reference profile uses Grado schema 1 and epoch 256 with the existing envelope version 2 and no additional save bytes. Default project selection remains epoch 2; no core save ABI, default epoch/envelope or framework profile changes.",
       "cleanup": "Remove only owned temporary build/capture directories. Restore mutation controls; never access user saves or cartridge images.",
-      "limitations": "Representative whole functions, native corruption recognition and the optional semantic policy only; not cartridge-bus timing, complete game state, rendered UI, all resources or playable content. The profile build proves source integration and boot only. The native test executes selected debug, save-menu and Link Arena load functions, observing the requested Link Arena return label and skipped local map/palette calls; it does not run the enclosing process scheduler or assert rendered UI/navigation. Valid normal loading may invalidate Suspend metadata by design; image preservation is measured separately before and after that load.",
+      "limitations": "Representative whole functions, native corruption recognition and the optional semantic policy only; not cartridge-bus timing, complete game state, rendered UI, all resources or playable content. The profile build proves source integration and boot only. The native test executes selected debug, save-menu and Link Arena load functions, observing the requested Link Arena return label and skipped local map/palette calls. Popup parent, initialization, dismissal and blocking-child release are exercised through native API stubs; the test does not run the enclosing process scheduler or assert rendered UI/navigation. Valid normal loading may invalidate Suspend metadata by design; image preservation is measured separately before and after that load.",
       "automation": [
         {
           "command": "make project-selection-config",
@@ -1184,7 +1184,9 @@
       ],
       "document": "docs/cjk_fonts.md",
       "anchor": "tc-cjk-resource-storage-001-bounded-lossless-resource-indexes",
-      "profiles": ["Linux CPython 3.12 host tools with committed CJK inputs"],
+      "profiles": [
+        "Linux CPython 3.12 host tools with committed CJK inputs"
+      ],
       "purpose": "Preserve complete index data and existing physical provenance while supporting bounded deterministic plain/packed storage.",
       "prerequisites": "Clean source checkout with committed indexes and atlas inputs. Tests own their temporary source/font root; no ROM, emulator, external font checkout or manual criterion.",
       "actions": "Run the focused resource-index and direct source-predicate modules. Round-trip both real indexes through the actual CLI, run existing legacy/schema2 asset consumers and inventory generation/check against both formats, compare complete typed data and atlas bytes, reverse to the original representations with complete logical equality, and exercise every malformed/bounded input.",
@@ -1214,7 +1216,9 @@
       ],
       "document": "docs/cjk_fonts.md",
       "anchor": "tc-cjk-inventory-order-001-deterministic-consumer-inventory",
-      "profiles": ["Host Python 3 CJK inventory generation; no optional game profile"],
+      "profiles": [
+        "Host Python 3 CJK inventory generation; no optional game profile"
+      ],
       "purpose": "Make generated consumer explanations independent of filesystem enumeration while retaining every target and unchanged glyph assets.",
       "prerequisites": "Clean source checkout with Python 3 and committed CJK inputs; no ROM or emulator.",
       "actions": "Run the direct-consumer order regression and existing CJK check. Reverse enumeration of real synthetic source files containing overlapping and unique target IDs. Regenerate metadata through the existing inventory/provenance commands and compare committed outputs.",
@@ -2950,10 +2954,14 @@
       "id": "TC-WORKFLOW-SECURITY-CHECK-ISOLATION-001",
       "title": "Ignore unrelated check lifecycle",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/281"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/281"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-security-check-isolation-001-ignore-unrelated-check-lifecycle",
-      "profiles": ["Linux host Python source checkout"],
+      "profiles": [
+        "Linux host Python source checkout"
+      ],
       "purpose": "Keep unrelated Build lifecycle outside required exact security evidence while preserving all named-check validation.",
       "prerequisites": "Existing host-test dependencies; no ROM, save, credentials or live mutation.",
       "actions": "Run focused SecurityTests. Compare required named results with and without unrelated reversed skipped-job and malformed lifecycle records, then corrupt required check lifecycle, identity and response envelope.",
@@ -2974,10 +2982,16 @@
       "id": "TC-WORKFLOW-REVIEW-FIRST-001",
       "title": "Gate expensive Builds after accepted review",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/181", "https://github.com/laqieer/fireemblem8-expansion/issues/265"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/181",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/265"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-first-001-gate-expensive-builds-after-accepted-review",
-      "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
+      "profiles": [
+        "Locked host Python and source checkout",
+        "Coordinator-owned disposable PRs on a dependency-ready base"
+      ],
       "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
       "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
       "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack, test_live_pause and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; validate real parent decisions/ancestry. Exercise current default-control identity, causal native incident attribution, owned bare publication/readback, unchanged-head fallback and initial-lane preservation, then execute the documented disposable PR procedure with actual GitHub identities.",
@@ -3022,10 +3036,16 @@
       "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
       "title": "Expand valid findings across complete sibling families",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179", "https://github.com/laqieer/fireemblem8-expansion/issues/223"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/223"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
-      "profiles": ["Host-only Linux source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
+      "profiles": [
+        "Host-only Linux source checkout with the isolated #216 host interpreter, Git and native GCC",
+        "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"
+      ],
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
       "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
       "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions. For #223, observe actual PID/exit state before staging cleanup across inner/outer timeouts, creation-boundary and running interruption, closed/inherited stdio, bounded/closed stdin, early leader exit, unrelated-process preservation and immutable helper substitution. Check caller-handler and inherited-mask preservation, plus retained live staging when real termination is unavailable.",
@@ -3058,10 +3078,15 @@
       "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
       "title": "Validate bounded exact-SHA agent handoffs",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178", "https://github.com/laqieer/fireemblem8-expansion/issues/367"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/367"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
-      "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
+      "profiles": [
+        "Source-only Linux checkout with the issue #216 locked host Python environment and Git"
+      ],
       "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
       "prerequisites": "Start at the exact reviewed source root with the unchanged #176 baseline and #216 inherited locked interpreter; use build/host-python/bin/python3 -I for both replay contexts rather than system python3. No token, live workflow, ROM or emulator is required. The current standalone raw CLI replay needs only its checked-out checker and owns its temporary inputs. Execute the same fixture separately from an already available pristinefe4608b source context for the pre-fix failure; the replay performs no historical-code acquisition, history probe or fetch.",
       "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute the current standalone raw CLI replay: clean0, second-file EOL/EOF1, oversizedpair2 and aggregate-diff2. In the separate pre-fix context its first clean CLI call returns2 and the always-on expectation check must fail, including under Python optimization. Execute other documented CLI positive/negative commands and optional reporting.",
@@ -3118,10 +3143,14 @@
       "id": "TC-WORKFLOW-SCRIPT-EXTRACTION-001",
       "title": "Preserve post-checkout program effects",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/196"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/196"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-script-extraction-001-preserve-post-checkout-program-effects",
-      "profiles": ["Clean Linux source checkout with Python 3, Bash, Git and actionlint; automatic exact-master Build for real patch publication"],
+      "profiles": [
+        "Clean Linux source checkout with Python 3, Bash, Git and actionlint; automatic exact-master Build for real patch publication"
+      ],
       "purpose": "Preserve selected post-checkout workflow program effects, parsed helper ownership and actual build-once master publication without changing trust boundaries or gates.",
       "prerequisites": "Source root; exclusively owned host fixtures. No host credential, ROM, network fetch or ARM compiler for fixture tests; real publication uses the existing CI environment.",
       "actions": "Run actual helper and drift suites, parsed mirror/helper-drift tests and actionlint. Compare remote identity/refusal, fresh-ref/report/status preservation and compiler pins/destinations/failure cutoffs. After merge require real exact-master patch creation/upload and remote completion.",
@@ -3162,10 +3191,14 @@
       "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
       "title": "Retain broad validation after a bounded shadow pilot",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/180"],
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180"
+      ],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-gate-ownership-001-retain-broad-validation-after-a-bounded-shadow-pilot",
-      "profiles": ["Clean Linux host source checkout with Python 3 and Git"],
+      "profiles": [
+        "Clean Linux host source checkout with Python 3 and Git"
+      ],
       "purpose": "Observe one artifact-guard immutable-input criterion and retain existing broad validation when complete ownership or positive net value is unproved.",
       "prerequisites": "Clean source checkout; no credentials, ROM, save or new dependency. Historical source and experiment are explicitly identified in the procedure.",
       "actions": "Run the repository's real TestImmutability criterion, existing broad suite and revision check. Read the historical component and corrected per-scenario records as evidence only; compare recorded real child observations, disconnected-consumer and wrong-input controls, nine shadow expectations and measured costs. Do not execute mutable issue-comment prototype code.",

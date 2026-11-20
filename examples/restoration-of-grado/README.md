@@ -331,7 +331,7 @@ replacements, but does not assert rendered UI or campaign behavior.
    with the final direction unset, confirms the `REOPEN` preflight, then clears
    live state to distinct sentinels. `GradoState_LoadNativeSave` must still
    return `REOPEN` after restoring the saved choice and play state;
-   `GradoState_TryLoadNativeSave` accepts that loaded disposition, and the
+   `GradoState_TryLoadNativeSaveFromProc` accepts that loaded disposition, and the
    save-menu handler advances without a refusal popup. Epoch 2 remains
    incompatible and refuses without restoring the sentinels.
 7. In that same epoch-256 capture, write two missing choices and their
@@ -358,7 +358,7 @@ replacements, but does not assert rendered UI or campaign behavior.
    naming an invalid backing slot both return `CORRUPT` without loading that
    source. Epoch 2 refuses all five physical cases as incompatible and
    preserves the same image. The same capture invokes
-   `GradoState_TryLoadNativeSave` and the selected
+   `GradoState_TryLoadNativeSaveFromProc` and the selected
    production callers `DebugContinueMenu_ContinueChapter` and
    `LinkArenaTeamBuild_LoadSelectedSave`. Epoch 2 must report configuration
    incompatibility and epoch 256 must refuse the invalid source without
@@ -369,11 +369,13 @@ replacements, but does not assert rendered UI or campaign behavior.
    menu selections refuse before requesting the fade-out transition. All
    callers preserve SRAM/live state and report the expected message; the test
    observes both byte-safe metadata copies and captures message IDs/helpbox
-   coordinates, not rendered UI or menu navigation. It also requires both
-   save-menu refusals to start the existing blocking popup under the save-menu
-   Proc. The probe executes the original popup initializer and dismissal
-   handler, verifying that helpbox graphics load before the message starts
-   and input breaks the popup child.
+   coordinates, not rendered UI or menu navigation. Debug Continue and Link
+   Arena each repeat a refusal after dismissal, requiring every attempt to
+   start exactly one blocking popup under its active caller Proc. Every popup
+   must load graphics before opening, close its helpbox on dismissal, and
+   release its blocking child before the caller can retry. Save-menu refusal
+   retains the same lifecycle. These native calls model process start/dismissal
+   through the existing API stubs; they do not run the real Proc scheduler.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make

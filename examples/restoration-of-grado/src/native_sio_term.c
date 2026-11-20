@@ -5,7 +5,7 @@
 
 #define ReadGameSave(slot) \
     do { \
-        if (!GradoState_TryLoadNativeSave(GRADO_LOAD_NORMAL, (slot))) \
+        if (!GradoState_TryLoadNativeSaveFromProc(GRADO_LOAD_NORMAL, (slot), proc)) \
         { \
             Proc_Goto(proc, 4); \
             return; \
