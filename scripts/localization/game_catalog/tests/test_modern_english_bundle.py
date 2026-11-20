@@ -92,6 +92,28 @@ class SelectedSourceCompatibilityTests(unittest.TestCase):
                     with self.assertRaises(GameCatalogError):
                         load_english_source_entries(main, definitions, target_count=2)
 
+    def test_localized_rejects_unknown_directives_and_discarded_content(self):
+        source = (
+            "#0000\nA[X]\n"
+            "#UNKNOWN\n[UNKNOWN_CONTROL][X]\n"
+            "#0001\nB[X]\n"
+        )
+        for use_include in (False, True):
+            with self.subTest(include=use_include), tempfile.TemporaryDirectory(
+                dir=TEST_DIR
+            ) as tmp:
+                root = Path(tmp)
+                definitions = root / "defs.txt"
+                definitions.write_text("[X] = 0\n", encoding="utf-8")
+                selected = root / ("included.txt" if use_include else "texts.txt")
+                selected.write_text(source, encoding="utf-8")
+                main = root / "texts.txt"
+                if use_include:
+                    main.write_text('#include "included.txt"\n', encoding="utf-8")
+
+                with self.assertRaisesRegex(GameCatalogError, "unknown text directive"):
+                    load_english_source_entries(main, definitions, target_count=2)
+
     def test_native_and_localized_report_include_cycles(self):
         with tempfile.TemporaryDirectory(dir=TEST_DIR) as tmp:
             root = Path(tmp)

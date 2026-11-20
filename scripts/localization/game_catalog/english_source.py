@@ -171,7 +171,8 @@ def load_english_source_entries(
     definitions = load_english_definitions(definitions_path)
     try:
         parsed = textprocess.order_messages(
-            textprocess.parse_source_messages(texts_path), str(texts_path)
+            textprocess.parse_source_messages(texts_path, strict_directives=True),
+            str(texts_path),
         )
     except (OSError, UnicodeError, ValueError) as error:
         raise GameCatalogError(f"{texts_path}: {error}") from error

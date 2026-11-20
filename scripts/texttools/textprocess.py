@@ -292,7 +292,9 @@ def text_to_u16_array(text, control_chars, encoding_method, *, source_name=None)
             raise
         raise TextControlError(f"{source_name}: {error}") from error
 
-def parse_source_messages(file_path, index=0, include_stack=()):
+def parse_source_messages(
+    file_path, index=0, include_stack=(), *, strict_directives=False
+):
     resolved = os.path.realpath(file_path)
     if resolved in include_stack:
         chain = " -> ".join((*include_stack, resolved))
@@ -352,7 +354,12 @@ def parse_source_messages(file_path, index=0, include_stack=()):
                 raise FileNotFoundError(f"Error: File '{include_path}' does not exist.")
 
             messages.extend(
-                parse_source_messages(include_path, current_index, include_stack)
+                parse_source_messages(
+                    include_path,
+                    current_index,
+                    include_stack,
+                    strict_directives=strict_directives,
+                )
             )
             current_index = messages[-1].idx + 1 if messages else current_index
             continue
@@ -374,6 +381,10 @@ def parse_source_messages(file_path, index=0, include_stack=()):
                 definition = macro_match.group(1)
             else:
                 raise ValueError(f"{file_path}: malformed message directive")
+        elif strict_directives and stripped.startswith('#'):
+            raise ValueError(
+                f"{file_path}:{line_number}: unknown text directive {stripped!r}"
+            )
 
     if text is not None:
         if source.endswith("\n") and raw_lines and raw_lines[-1] == "":
