@@ -588,6 +588,27 @@ class TextPublicationTests(unittest.TestCase):
                             self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
                     self.assertEqual(calls(), 20)
 
+                    before = output.read_bytes()
+                    definitions.write_text("[X] = 0\n[Y] = 15\n", encoding="utf-8")
+                    output_time = min(
+                        output.stat().st_mtime_ns, header.stat().st_mtime_ns,
+                    ) - 1_000_000_000
+                    for path in (source, definitions, *tools.iterdir(), legacy_source):
+                        os.utime(path, ns=(output_time,) * 2)
+                    stamp.unlink()
+                    forced_missing_stamp = subprocess.run(
+                        [*common, "-W", str(definitions), str(consumer), str(header_consumer)],
+                        cwd=ROOT, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(
+                        forced_missing_stamp.returncode, 0,
+                        forced_missing_stamp.stdout + forced_missing_stamp.stderr,
+                    )
+                    self.assertEqual(calls(), 21)
+                    self.assertNotEqual(output.read_bytes(), before)
+                    self.assertEqual(consumer.read_bytes(), output.read_bytes())
+                    self.assertEqual(header_consumer.read_bytes(), header.read_bytes())
+
                     previous = output.read_bytes(), header.read_bytes()
                     selected_source.write_text("#0000\n[MISSING][X]\n", encoding="utf-8")
                     change_after_stamp(selected_source)

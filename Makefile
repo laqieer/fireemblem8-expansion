@@ -565,15 +565,19 @@ TEXT_SRC  := $(TEXT_MAIN) $(shell find $(TEXT_DIR) -type f -name "*.txt")
 TEXT_HEADER := include/constants/msg.h
 MSG_LIST    := src/msg_data.c
 TEXT_STAMP := $(DEPS_DIR)/textprocess.stamp
+TEXT_STAMP_MISSING := $(shell test -e "$(TEXT_STAMP)" || printf 1)
 LEGACY_TEXT_FILTER := scripts/texttools/legacy_text_source.py
 LEGACY_TEXT_DIR := build/legacy/text
 LEGACY_TEXT_MAIN := $(LEGACY_TEXT_DIR)/texts.txt
 LEGACY_TEXT_HEADER := $(LEGACY_TEXT_DIR)/msg.h
 LEGACY_MSG_LIST := $(LEGACY_TEXT_DIR)/msg_data.c
 LEGACY_TEXT_STAMP := $(LEGACY_TEXT_DIR)/textprocess.stamp
+LEGACY_TEXT_STAMP_MISSING := $(shell test -e "$(LEGACY_TEXT_STAMP)" || printf 1)
 
 TEXT_INPUTS := $(TEXT_SRC) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py $(TEXT_TOOLS)/huffman.py
 LEGACY_TEXT_INPUTS := $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py $(TEXT_TOOLS)/huffman.py
+TEXT_OUTPUT_INPUTS := $(if $(TEXT_STAMP_MISSING),$(TEXT_INPUTS))
+LEGACY_TEXT_OUTPUT_INPUTS := $(if $(LEGACY_TEXT_STAMP_MISSING),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))
 
 # A stamp can update an output after Make has cached its old mtime. Normal
 # builds always visit the output probe so Make rechecks it, including with -W.
@@ -624,41 +628,49 @@ TEXT_QUERY_MODE := $(call text_query_flag,$(TEXT_INTERNAL_FLAGS))$(call text_que
 TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_STAMP),$(TEXT_INPUTS)),FORCE_TEXT_OUTPUTS),FORCE_TEXT_OUTPUTS)
 LEGACY_TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_STAMP),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)),FORCE_LEGACY_TEXT_OUTPUTS),FORCE_LEGACY_TEXT_OUTPUTS)
 
+.PHONY: FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS
+FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS:
+
 $(TEXT_STAMP): $(TEXT_INPUTS)
 	@mkdir -p "$(@D)"
-	@if [ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" != "1" ] || \
-		{ [ -e "$@" ] && [ -n "$?" ]; }; then \
+	@if [ "$(TEXT_STAMP_MISSING)" != "1" ]; then \
 		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8; \
 	fi
 	@touch "$@"
 
-.PHONY: FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS
-FORCE_TEXT_OUTPUTS: $(TEXT_STAMP)
-	@if [ ! -e "$(TEXT_HEADER)" ] || [ ! -e "$(MSG_LIST)" ]; then \
-		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8; \
+$(MSG_LIST): $(TEXT_REFRESH) $(TEXT_OUTPUT_INPUTS) | $(TEXT_STAMP)
+	@if [ ! -e "$(MSG_LIST)" ] || [ ! -e "$(TEXT_HEADER)" ] || \
+		{ [ "$(TEXT_STAMP_MISSING)" = "1" ] && \
+			{ [ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" != "1" ] || \
+				[ -n "$(filter $(TEXT_INPUTS),$?)" ]; }; }; then \
+		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8 && \
+		{ mkdir -p "$(DEPS_DIR)" && touch "$(TEXT_STAMP)"; }; \
 	fi
 
-$(MSG_LIST) $(TEXT_HEADER): $(TEXT_REFRESH) | $(TEXT_STAMP)
+$(TEXT_HEADER): $(MSG_LIST)
 	@test -e "$@"
 
 $(LEGACY_TEXT_MAIN): $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)
 	@$(PYTHON) $(LEGACY_TEXT_FILTER) $< $@
 
+$(LEGACY_MSG_LIST): $(LEGACY_TEXT_REFRESH) $(LEGACY_TEXT_OUTPUT_INPUTS) | $(LEGACY_TEXT_STAMP)
+	@if [ ! -e "$(LEGACY_MSG_LIST)" ] || [ ! -e "$(LEGACY_TEXT_HEADER)" ] || \
+		{ [ "$(LEGACY_TEXT_STAMP_MISSING)" = "1" ] && \
+			{ [ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" != "1" ] || \
+				[ -n "$(filter $(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER),$?)" ]; }; }; then \
+		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8 && \
+		{ mkdir -p "$(LEGACY_TEXT_DIR)" && touch "$(LEGACY_TEXT_STAMP)"; }; \
+	fi
+
+$(LEGACY_TEXT_HEADER): $(LEGACY_MSG_LIST)
+	@test -e "$@"
+
 $(LEGACY_TEXT_STAMP): $(LEGACY_TEXT_INPUTS)
 	@mkdir -p "$(@D)"
-	@if [ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" != "1" ] || \
-		{ [ -e "$@" ] && [ -n "$?" ]; }; then \
+	@if [ "$(LEGACY_TEXT_STAMP_MISSING)" != "1" ]; then \
 		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8; \
 	fi
 	@touch "$@"
-
-FORCE_LEGACY_TEXT_OUTPUTS: $(LEGACY_TEXT_STAMP)
-	@if [ ! -e "$(LEGACY_TEXT_HEADER)" ] || [ ! -e "$(LEGACY_MSG_LIST)" ]; then \
-		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8; \
-	fi
-
-$(LEGACY_MSG_LIST) $(LEGACY_TEXT_HEADER): $(LEGACY_TEXT_REFRESH) | $(LEGACY_TEXT_STAMP)
-	@test -e "$@"
 
 # Graphics Recipes
 
