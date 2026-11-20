@@ -556,11 +556,13 @@ static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
     };
     struct GradoStateFlagView saved;
     struct GradoStateLoadDiagnostic diagnostic;
+    struct GradoStateLoadDiagnostic nativeDiagnostic;
     struct GradoStateLoadDiagnostic liveDiagnostic;
     volatile struct GradoSemanticSaveRecord * record;
     struct PlaySt livePlay;
     struct Unit liveUnit;
     enum GradoStateLoadResult preflight;
+    enum GradoStateLoadResult nativePreflight;
     enum GradoStateLoadResult applied;
     u8 expectedPermanent[25];
     u8 permanent[25];
@@ -636,12 +638,21 @@ static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
     liveValid = GradoState_PreflightSave(
         ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
         route, 21, &live, &liveDiagnostic) == GRADO_STATE_LOAD_VALID;
+    nativePreflight = GradoState_PreflightNativeSave(
+        route,
+        route == GRADO_LOAD_SUSPEND ? SAVE_ID_SUSPEND : SAVE_ID_GAME0,
+        &nativeDiagnostic);
     preflight = GradoState_PreflightSave(
         ClassifySramSaveCompat(), &gSram->expansionSaveMeta,
         route, 21, &saved, &diagnostic);
     firstRecovery = diagnostic.missingSymbol == GRADO_STATE_LEGITIMACY
         || diagnostic.missingSymbol == GRADO_STATE_RENAIS;
     preflightPreserved = preparedExpected && liveValid
+        && nativePreflight == preflight
+        && nativeDiagnostic.sourceSlot == slot
+        && nativeDiagnostic.backingSlot
+            == (route == GRADO_LOAD_SUSPEND ? SAVE_ID_GAME0
+                : GRADO_STATE_NO_NATIVE_SAVE_SLOT)
         && GradoState_ReadSymbolFrom(GRADO_STATE_DIRECTION, 21, &saved, &direction)
             == GRADO_STATE_VALUE_VALID && direction == 4
         && memcmp(expectedPermanent, saved.permanentFlags, sizeof(expectedPermanent)) != 0
@@ -680,14 +691,24 @@ static void RecordBackedRecovery(enum GradoStateLoadRoute route, int stale)
     livePlay = gPlaySt;
     liveUnit = gUnitArrayBlue[0];
     memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
-    applied = GradoState_ApplyLoadRecovery(&diagnostic);
+    applied = GradoState_ApplyLoadRecovery(&nativeDiagnostic);
     if (stale)
-        correction = applied == GRADO_STATE_LOAD_CONFLICT && diagnostic.recoveredCount == 0
+        correction = applied == GRADO_STATE_LOAD_CONFLICT
+            && nativeDiagnostic.recoveredCount == 0
+            && nativeDiagnostic.sourceSlot == slot
+            && nativeDiagnostic.backingSlot
+                == (route == GRADO_LOAD_SUSPEND ? SAVE_ID_GAME0
+                    : GRADO_STATE_NO_NATIVE_SAVE_SLOT)
             && memcmp(permanent, GetPermanentFlagBits(), sizeof(permanent)) == 0;
     else
-        correction = applied == GRADO_STATE_LOAD_VALID && diagnostic.recoveredCount == 2
-            && WasRecovered(&diagnostic, GRADO_STATE_LEGITIMACY)
-            && WasRecovered(&diagnostic, GRADO_STATE_RENAIS)
+        correction = applied == GRADO_STATE_LOAD_VALID
+            && nativeDiagnostic.recoveredCount == 2
+            && nativeDiagnostic.sourceSlot == slot
+            && nativeDiagnostic.backingSlot
+                == (route == GRADO_LOAD_SUSPEND ? SAVE_ID_GAME0
+                    : GRADO_STATE_NO_NATIVE_SAVE_SLOT)
+            && WasRecovered(&nativeDiagnostic, GRADO_STATE_LEGITIMACY)
+            && WasRecovered(&nativeDiagnostic, GRADO_STATE_RENAIS)
             && GradoState_ReadSymbol(GRADO_STATE_LEGITIMACY, 21, &legitimacy)
                 == GRADO_STATE_VALUE_VALID && legitimacy == 2
             && GradoState_ReadSymbol(GRADO_STATE_RENAIS, 21, &renais)

@@ -340,8 +340,10 @@ replacements, but does not assert rendered UI or campaign behavior.
    post-load image, chapter flags, unit, play state and bonus. Repeat both routes
    after changing an unrelated permanent flag for normal or a chapter flag for
    Suspend: recovery must refuse and preserve both live flag scopes and the
-   post-load image. These semantic recovery cases use a live flag view and do
-   not claim that a physical save was loaded.
+   post-load image. Successful recovery must retain physical save provenance:
+   normal source slot 0 with no backing slot, or the selected rotated Suspend
+   source slot (3 or 4) with backing slot 0. The separate semantic refusal
+   cases use a live flag view and do not claim that a physical save was loaded.
 8. In a separate reset, hold synthetic R for the physical-source preflight.
    At epoch 256 it binds normal slot 2 and both alternating Suspend slots
    (4 then 3) to their saved backing slots (1 then 2), without changing SRAM.

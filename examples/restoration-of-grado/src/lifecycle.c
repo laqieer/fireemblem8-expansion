@@ -451,6 +451,8 @@ enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     unsigned int recoveredCount;
     unsigned int i;
     int guideInitialized;
+    u32 sourceSlot;
+    u32 backingSlot;
 
     if (diagnostic == NULL || diagnostic->chapter >= GRADO_STATE_CHAPTER_COUNT
         || (diagnostic->route != GRADO_LOAD_NORMAL && diagnostic->route != GRADO_LOAD_SUSPEND
@@ -466,6 +468,8 @@ enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
             && memcmp(view.chapterFlags, diagnostic->preflightChapter, sizeof(originalChapter)) != 0))
         return GRADO_STATE_LOAD_CONFLICT;
 
+    sourceSlot = diagnostic->sourceSlot;
+    backingSlot = diagnostic->backingSlot;
     GradoState_CheckHistory(diagnostic->route, diagnostic->chapter, &view, &current);
     if (current.result != diagnostic->result || current.recovery != diagnostic->recovery
         || current.missingSymbol != diagnostic->missingSymbol
@@ -508,6 +512,8 @@ enum GradoStateLoadResult GradoState_ApplyLoadRecovery(
     }
 
     *diagnostic = current;
+    diagnostic->sourceSlot = sourceSlot;
+    diagnostic->backingSlot = backingSlot;
     memcpy(diagnostic->recoveredSymbols, recovered, recoveredCount * sizeof(recovered[0]));
     diagnostic->recoveredCount = recoveredCount;
     diagnostic->guideTruthInitialized = guideInitialized;
