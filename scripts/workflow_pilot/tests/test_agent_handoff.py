@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import os
 import subprocess
@@ -29,6 +30,20 @@ def at_offset(seconds):
 
 def write_json(path, value):
     Path(path).write_bytes(observations.json_bytes(value))
+
+
+def gh_stub_environment(root, response):
+    bin_dir = Path(root) / "fake-bin"
+    bin_dir.mkdir(exist_ok=True)
+    executable = bin_dir / "gh"
+    executable.write_text(
+        "#!/bin/sh\nprintf '%s' '" + json.dumps(response) + "'\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    environment = raw.git_environment()
+    environment["PATH"] = str(bin_dir) + os.pathsep + environment["PATH"]
+    return environment
 
 
 def git(root, *args, input=None, check=True):
@@ -87,11 +102,20 @@ class GitFixture:
         availability = {"mode": "always-on", "observed_at": at_offset(-60), "valid_until": at_offset(3600),
                         "autostop_enabled": False, "stop_on_disconnect": False, "plan": None}
         self.state = handoff.new_state("owner/repository", "coordinator-one", availability)
+        self.open_prs_patch = mock.patch.object(
+            handoff, "list_open_pull_requests",
+            return_value=[{
+                "number": 191, "title": "Fix issue #178", "body": "Closes #178",
+                "headRefName": "agent/test", "closingIssuesReferences": [],
+            }],
+        )
+        self.open_prs_patch.start()
         self.processes = []
         self.entry = handoff.assign(self.state, self.assignment) if assign else None
         self.parent_log, self.owner_log = self.home / "parent.jsonl", self.home / "owner.jsonl"
 
     def close(self):
+        self.open_prs_patch.stop()
         for process in self.processes:
             if process.returncode is None:
                 process.kill()
@@ -705,27 +729,293 @@ class ExactHandoffTests(unittest.TestCase):
             with self.subTest(source="reservation", issue=issue, pr=pr):
                 candidate = copy.deepcopy(f.state)
                 before = observations.json_bytes(candidate)
-                with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
-                    handoff.assign(candidate, assignment)
+                with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
+                        handoff.assign(candidate, assignment)
                 self.assertEqual(observations.json_bytes(candidate), before)
             with self.subTest(source="loaded", issue=issue, pr=pr):
                 standalone = {**f.state, "assignments": []}
-                entry = handoff.assign(standalone, assignment)
+                with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+                    entry = handoff.assign(standalone, assignment)
                 path = f.home / "duplicate-root.json"
                 write_json(path, {**f.state, "assignments": [*f.state["assignments"], entry]})
                 with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
                     handoff.validate_state(observations.load_json(path))
-        independent = handoff.assign(f.state, {**fresh, "issue": 179, "pull_request": None})
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+            independent = handoff.assign(f.state, {**fresh, "issue": 179, "pull_request": None})
         self.assertEqual(independent["assignment"]["kind"], "initial")
         other = f.home / "independent"
         git(f.repository, "worktree", "add", "-b", "agent/independent", str(other), f.parent)
-        handoff.assign(f.state, {
-            **fresh, "id": "independent", "owner_id": "independent-owner",
-            "session_id": "independent-session", "dispatch_id": "independent-dispatch",
-            "issue": 180, "pull_request": None, "allowed_worktree": str(other),
-            "expected_branch": "agent/independent", "assigned_parent_sha": f.parent,
-        })
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+            handoff.assign(f.state, {
+                **fresh, "id": "independent", "owner_id": "independent-owner",
+                "session_id": "independent-session", "dispatch_id": "independent-dispatch",
+                "issue": 180, "pull_request": None, "allowed_worktree": str(other),
+                "expected_branch": "agent/independent", "assigned_parent_sha": f.parent,
+            })
         self.assertEqual(len(handoff.validate_state(f.state)["assignments"]), 3)
+
+    def test_successor_binds_published_pr_to_new_root_lineage(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.assignment["pull_request"] = None
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[]):
+            f.entry = handoff.assign(f.state, f.assignment)
+        result = f.complete()
+        self.assertTrue(f.validate(result)["handoff_ready"])
+
+        successor = {
+            **f.assignment,
+            "id": "assignment-two",
+            "owner_id": "owner-two",
+            "session_id": "session-two",
+            "dispatch_id": "dispatch-two",
+            "pull_request": 192,
+            "assigned_parent_sha": result["result_sha"],
+            "predecessor_id": f.assignment["id"],
+            "kind": "review",
+        }
+        published_pr = {
+            "number": 192,
+            "title": "Fix issue #178",
+            "body": "",
+            "headRefName": "agent/test",
+            "closingIssuesReferences": [],
+        }
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[published_pr]):
+            entry = handoff.assign(f.state, successor)
+
+        self.assertEqual(entry["assignment"]["pull_request"], 192)
+        self.assertEqual(len(handoff.validate_state(f.state)["assignments"]), 2)
+
+    def test_issue_pr_preflight_uses_exact_implementation_references(self):
+        def pull_request(*, number=200, title="Unrelated", body="", branch="feature/other",
+                         closing=()):
+            return {
+                "number": number, "title": title, "body": body, "headRefName": branch,
+                "closingIssuesReferences": list(closing),
+            }
+
+        cases = (
+            (pull_request(title="Fix #178"), "title"),
+            (pull_request(title="Fix owner/repository#178"), "title"),
+            (pull_request(branch="fix/issue-178"), "branch"),
+            (pull_request(body="Refs #178"), "body"),
+            (pull_request(body="Fix #178"), "body"),
+            (pull_request(body="Fixes owner/repository#178"), "body"),
+            (pull_request(body="Fix https://github.com/owner/repository/issues/178"), "body"),
+            (pull_request(body="Refs #177, #178"), "body"),
+            (pull_request(
+                body="Implements [issue #178](https://github.com/owner/repository/issues/178)"),
+                "body"),
+            (pull_request(
+                body="Implements [owner/repository#178](https://github.com/owner/repository/issues/178)"),
+                "body"),
+            (pull_request(
+                body="Implements [Issue #178](https://github.com/OWNER/REPOSITORY/ISSUES/178)"),
+                "body"),
+            (pull_request(body="Address #178"), "body"),
+            (pull_request(body="Addresses owner/repository#178"), "body"),
+            (pull_request(closing=({
+                "number": 178,
+                "repository": {"owner": {"login": "owner"}, "name": "repository"},
+            },)), "closing-issue"),
+        )
+        for candidate, source in cases:
+            with self.subTest(source=source):
+                result = handoff.implementation_pull_request_matches(
+                    "owner/repository", 178, candidate)
+                self.assertIn(source, result["sources"])
+
+        unrelated = pull_request(
+            title="Fix #1178", branch="fix/1178",
+            body="Part of #178; depends on #178",
+        )
+        self.assertIsNone(handoff.implementation_pull_request_matches(
+            "owner/repository", 178, unrelated))
+        for candidate in (
+            pull_request(title="Fix other/repository#178"),
+            pull_request(title="Fix other/repository-#178"),
+            pull_request(title="Fix other/repository.#178"),
+            pull_request(title="Fix other/repository_#178"),
+            pull_request(title="Fix another/owner/repository#178"),
+            pull_request(branch="release/1.178.0"),
+            pull_request(
+                body="Implements [issue #178](https://github.com/other/project/issues/178)"),
+            pull_request(
+                body="Implements [issue #178](https://github.com/owner/repository/issues/179)"),
+            pull_request(
+                body="Part of [issue #178](https://github.com/owner/repository/issues/178)"),
+            pull_request(
+                body="Depends on [issue #178](https://github.com/owner/repository/issues/178)"),
+            pull_request(body="Refs #177; Depends on #178"),
+            pull_request(body="Refs #177, Depends on #178"),
+        ):
+            with self.subTest(candidate=candidate):
+                self.assertIsNone(handoff.implementation_pull_request_matches(
+                    "owner/repository", 178, candidate))
+        for body in (
+            "Refs #1780",
+            "Refs owner/repository#1780",
+            "Refs https://github.com/owner/repository/issues/1780",
+        ):
+            with self.subTest(body=body):
+                self.assertIsNone(handoff.implementation_pull_request_matches(
+                    "owner/repository", 178, pull_request(body=body)))
+        cross_repository = pull_request(closing=({
+            "number": 178,
+            "repository": {"owner": {"login": "other"}, "name": "repository"},
+        },))
+        self.assertIsNone(handoff.implementation_pull_request_matches(
+            "owner/repository", 178, cross_repository))
+
+    def test_preflight_continues_one_selected_pr_and_blocks_duplicates(self):
+        existing = {
+            "number": 191, "title": "Fix issue #178", "body": "Closes #178",
+            "headRefName": "agent/test", "closingIssuesReferences": [],
+        }
+        decision = handoff.preflight_issue_pr(
+            "owner/repository", 178, 191, "agent/test", pull_requests=[existing])
+        self.assertEqual(decision["decision"], "continue-existing")
+        self.assertEqual(decision["pull_request"], 191)
+
+        with self.assertRaisesRegex(handoff.HandoffDataError, "already exists"):
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, pull_requests=[existing])
+        list_reference = {
+            **existing, "title": "Unrelated", "body": "Refs #177, #178",
+            "headRefName": "feature/other",
+        }
+        with self.assertRaisesRegex(handoff.HandoffDataError, "already exists"):
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, pull_requests=[list_reference])
+        foreign_reference = {
+            **list_reference, "title": "Fix other/repository-#178", "body": "",
+        }
+        decision = handoff.preflight_issue_pr(
+            "owner/repository", 178, pull_requests=[foreign_reference])
+        self.assertEqual(decision["decision"], "new-root")
+        with self.assertRaisesRegex(handoff.HandoffDataError, "select existing"):
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, 192, "agent/test", pull_requests=[existing])
+        with self.assertRaisesRegex(handoff.HandoffDataError, "not agent/other"):
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, 191, "agent/other", pull_requests=[existing])
+        with self.assertRaisesRegex(handoff.HandoffDataError, "multiple open"):
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, 191, "agent/test",
+                pull_requests=[existing, {**existing, "number": 192, "headRefName": "agent/other"}])
+
+        replacement = handoff.preflight_issue_pr(
+            "owner/repository", 178, expected_branch="agent/replacement", pull_requests=[])
+        self.assertEqual(replacement["decision"], "new-root")
+        self.assertEqual(replacement["branch"], "agent/replacement")
+
+    def test_assign_runs_issue_pr_gate_before_reserving_new_root(self):
+        f = self.fixture
+        new_assignment = {
+            **f.assignment, "id": "new-issue-root", "issue": 179, "pull_request": None,
+            "owner_id": "new-owner", "session_id": "new-session", "dispatch_id": "new-dispatch",
+        }
+        other_pr = {
+            "number": 192, "title": "Issue 179 implementation", "body": "",
+            "headRefName": "agent/test", "closingIssuesReferences": [],
+        }
+        state = handoff.new_state("owner/repository", "coordinator-one", f.state["availability"])
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[other_pr]):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "already exists"):
+                handoff.assign(state, new_assignment)
+        self.assertEqual(state["assignments"], [])
+
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[]):
+            entry = handoff.assign(state, new_assignment)
+        self.assertEqual(entry["assignment"]["issue"], 179)
+
+    def test_preflight_cli_queries_live_inventory_and_fails_closed(self):
+        self.fixture.open_prs_patch.stop()
+        process = mock.Mock(returncode=0, stdout=b"[]", stderr=b"")
+        with mock.patch.object(handoff.git, "run_process", return_value=process) as run_process:
+            self.assertEqual(handoff.list_open_pull_requests("owner/repository"), [])
+        argv = run_process.call_args.args[0]
+        self.assertEqual(argv[:7], [
+            "gh", "pr", "list", "--repo", "owner/repository", "--state", "open",
+        ])
+        self.assertIn("--json", argv)
+
+        existing = [{
+            "number": 191, "title": "Fix issue #178", "body": "Closes #178",
+            "headRefName": "agent/test", "closingIssuesReferences": [],
+        }]
+        with mock.patch.object(
+            handoff.git, "run_process",
+            return_value=mock.Mock(
+                returncode=0, stdout=observations.json_bytes(existing), stderr=b""),
+        ):
+            discovered = handoff.list_open_pull_requests("owner/repository")
+        self.assertEqual(
+            handoff.preflight_issue_pr(
+                "owner/repository", 178, 191, "agent/test", pull_requests=discovered
+            )["decision"],
+            "continue-existing",
+        )
+
+        unrelated_empty_body_pr = [{
+            "number": 193,
+            "title": "Unrelated PR",
+            "body": "",
+            "headRefName": "feature/unrelated",
+            "closingIssuesReferences": [],
+        }]
+        with mock.patch.object(
+            handoff.git, "run_process",
+            return_value=mock.Mock(
+                returncode=0,
+                stdout=observations.json_bytes(unrelated_empty_body_pr),
+                stderr=b"",
+            ),
+        ):
+            decision = handoff.preflight_issue_pr(
+                "owner/repository", 179, expected_branch="fix/issue-179")
+        self.assertEqual(decision["decision"], "new-root")
+
+        with mock.patch.object(handoff.git, "run_process",
+                               return_value=mock.Mock(returncode=1, stdout=b"", stderr=b"offline")):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "discovery failed"):
+                handoff.list_open_pull_requests("owner/repository")
+
+        for raw in (b"{}", observations.json_bytes([
+            {"number": 191, "title": "a", "body": "", "headRefName": "b",
+             "closingIssuesReferences": []},
+            {"number": 191, "title": "c", "body": "", "headRefName": "d",
+             "closingIssuesReferences": []},
+        ])):
+            with mock.patch.object(handoff.git, "run_process",
+                                   return_value=mock.Mock(returncode=0, stdout=raw, stderr=b"")):
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.list_open_pull_requests("owner/repository")
+
+        bounded = observations.json_bytes([
+            {"number": number, "title": "a", "body": "", "headRefName": "b",
+             "closingIssuesReferences": []}
+            for number in range(1, handoff.MAX_OPEN_PULL_REQUESTS + 1)
+        ])
+        with mock.patch.object(handoff.git, "run_process",
+                               return_value=mock.Mock(returncode=0, stdout=bounded, stderr=b"")):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "1000-result bound"):
+                handoff.list_open_pull_requests("owner/repository")
+
+        output = io.BytesIO()
+        arguments = [
+            "preflight", "--repository", "owner/repository", "--issue", "179",
+            "--expected-branch", "fix/issue-179",
+        ]
+        parsed = handoff.parse_args(arguments)
+        with mock.patch.object(handoff, "list_open_pull_requests", return_value=[]):
+            with mock.patch.object(handoff, "parse_args", return_value=parsed):
+                with mock.patch.object(handoff.sys, "stdout", mock.Mock(buffer=output)):
+                    status = handoff.main(arguments)
+        self.assertEqual(status, 0)
+        self.assertEqual(observations.parse_bytes(output.getvalue())["decision"], "new-root")
 
     def test_available_plan_and_unavailable_suspend_or_disconnect(self):
         f = self.fixture
@@ -880,7 +1170,8 @@ class HandoffSchemaTests(unittest.TestCase):
                     self.assertEqual(observations.json_bytes(state), before)
                 assignment["dispatch_id"] = "next-dispatch"
                 state = copy.deepcopy(f.state)
-                handoff.assign(state, assignment)
+                with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+                    handoff.assign(state, assignment)
                 self.validator.validate(state)
                 for key in ("id", "owner_id", "session_id", "dispatch_id"):
                     with self.subTest(boundary="loaded", identity=key):
@@ -990,6 +1281,10 @@ class HandoffSchemaTests(unittest.TestCase):
     def test_unicode_scalar_and_protocol_overlap_controls_through_real_cli(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
+        environment = gh_stub_environment(f.home, [{
+            "number": 191, "title": "Fix issue #178", "body": "Closes #178",
+            "headRefName": "agent/test", "closingIssuesReferences": [],
+        }])
         state_path, assignment_path = f.home / "state.json", f.home / "assignment.json"
         command = [str(ROOT / "build/host-python/bin/python3"), "-I",
                    str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"), "agent-handoff",
@@ -1004,7 +1299,7 @@ class HandoffSchemaTests(unittest.TestCase):
                     wire = json.dumps(assignment, ensure_ascii=ascii_wire).encode("utf-8")
                     assignment_path.write_bytes(wire)
                     self.assertEqual(self.validator.is_valid(json.loads(wire)), expected == 0)
-                    observed = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+                    observed = raw.run_process(command, cwd=ROOT, env=environment)
                     self.assertEqual(observed.returncode, expected, observed.stderr.decode())
                     if expected:
                         self.assertEqual(state_path.read_bytes(), before)
@@ -1020,7 +1315,7 @@ class HandoffSchemaTests(unittest.TestCase):
         before = state_path.read_bytes()
         write_json(assignment_path, assignment)
         self.validator.validate(assignment)
-        rejected = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        rejected = raw.run_process(command, cwd=ROOT, env=environment)
         self.assertEqual(rejected.returncode, 2)
         self.assertEqual(state_path.read_bytes(), before)
 
@@ -1108,6 +1403,10 @@ class HandoffSchemaTests(unittest.TestCase):
     def test_integral_wire_numbers_work_through_the_real_cli(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
+        environment = gh_stub_environment(f.home, [{
+            "number": 191, "title": "Fix issue #178", "body": "Closes #178",
+            "headRefName": "agent/test", "closingIssuesReferences": [],
+        }])
         state_path, assignment_path = f.home / "state.json", f.home / "assignment.json"
         write_json(state_path, f.state)
         raw_assignment = observations.json_bytes(f.assignment)
@@ -1119,7 +1418,7 @@ class HandoffSchemaTests(unittest.TestCase):
                    str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"), "agent-handoff"]
         assigned = raw.run_process(
             [*command, "assign", "--state", str(state_path), "--assignment", str(assignment_path)],
-            cwd=ROOT, env=raw.git_environment(),
+            cwd=ROOT, env=environment,
         )
         self.assertEqual(assigned.returncode, 0, assigned.stderr.decode())
         loaded = observations.load_json(state_path)
@@ -1127,12 +1426,12 @@ class HandoffSchemaTests(unittest.TestCase):
         process = f.waiting_process()
         observe = [*command, "observe", "--state", str(state_path),
                    "--assignment-id", f.assignment["id"], "--pid", str(process.pid)]
-        self.assertEqual(raw.run_process(observe, cwd=ROOT, env=raw.git_environment()).returncode, 0)
+        self.assertEqual(raw.run_process(observe, cwd=ROOT, env=environment).returncode, 0)
         wire = state_path.read_bytes().replace(
             f'"pid":{process.pid}'.encode(), f'"pid":{process.pid}e0'.encode())
         self.validator.validate(json.loads(wire))
         state_path.write_bytes(wire)
-        sampled = raw.run_process(observe, cwd=ROOT, env=raw.git_environment())
+        sampled = raw.run_process(observe, cwd=ROOT, env=environment)
         self.assertEqual(sampled.returncode, 0, sampled.stderr.decode())
         self.assertIs(type(observations.load_json(state_path)["assignments"][0]["process"]["pid"]), int)
         for token in (b"true", b"178.5", b"NaN", b"1e309", b"9223372036854775808.0"):
@@ -1141,7 +1440,7 @@ class HandoffSchemaTests(unittest.TestCase):
                 before = state_path.read_bytes()
                 rejected = raw.run_process(
                     [*command, "assign", "--state", str(state_path), "--assignment", str(assignment_path)],
-                    cwd=ROOT, env=raw.git_environment(),
+                    cwd=ROOT, env=environment,
                 )
                 self.assertEqual(rejected.returncode, 2)
                 self.assertEqual(state_path.read_bytes(), before)
