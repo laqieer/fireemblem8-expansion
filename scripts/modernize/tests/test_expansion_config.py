@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT / "tools/gba-playtest/tests"))
 import expansion_config as ec  # noqa: E402
 from host_mode import host_only_enabled  # noqa: E402
 from scripts.modernize.tests.make_database import (
-    make_database_rule,
+    make_database_rule_header,
     make_database_variable,
 )
 
@@ -4934,9 +4934,26 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
 
     def test_debug_linker_check_selects_arm_configuration_cases(self):
+        module = "scripts.modernize.tests.test_expansion_config"
+        required = {
+            f"{module}.{self.__class__.__name__}.{method.__name__}"
+            for method in (
+                self.test_c_macro_defaults_and_validates_profiles,
+                self.test_make_choice_reaches_compiler_metadata_and_stamp,
+            )
+        }
+
+        def case_ids(suite):
+            for case in suite:
+                if isinstance(case, unittest.TestSuite):
+                    yield from case_ids(case)
+                else:
+                    yield case.id()
+
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="blue-route-", dir=ROOT / "build") as temporary:
             build_root = Path(temporary).relative_to(ROOT) / "modern"
+            target = "expansion-modern-linker-check"
             environment = {
                 "HOME": temporary,
                 "LC_ALL": "C",
@@ -4955,40 +4972,69 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                 cwd=ROOT, env=environment, text=True, capture_output=True,
                 check=False, timeout=60,
             )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        rule = make_database_rule(result.stdout, "expansion-modern-linker-check")
-        self.assertIsNotNone(rule)
-        commands = (
-            shlex.split(line)
-            for line in re.sub(r"\\\n[ \t]*", " ", rule).splitlines()
-            if line.startswith("\t")
-        )
-        module = "scripts.modernize.tests.test_expansion_config"
-        selectors = []
-        for command in commands:
-            for index in range(len(command) - 1):
-                if command[index:index + 2] == ["-m", "unittest"]:
-                    selectors.extend(
-                        arg for arg in command[index + 2:]
-                        if arg == module or arg.startswith(f"{module}.")
-                    )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rule = make_database_rule_header(result.stdout, target)
+            self.assertIsNotNone(rule)
+            prerequisites = shlex.split(rule.partition(":")[2])
 
-        def case_ids(suite):
-            for case in suite:
-                if isinstance(case, unittest.TestSuite):
-                    yield from case_ids(case)
-                else:
-                    yield case.id()
-
-        loaded = unittest.TestLoader().loadTestsFromNames(selectors)
-        required = {
-            f"{module}.{self.__class__.__name__}.{method.__name__}"
-            for method in (
-                self.test_c_macro_defaults_and_validates_profiles,
-                self.test_make_choice_reaches_compiler_metadata_and_stamp,
+            recording = Path(temporary) / "calls.jsonl"
+            script = Path(temporary) / "record.py"
+            script.write_text(
+                "import json, os, sys\n"
+                "if sys.argv[1:3] == ['-m', 'unittest']:\n"
+                f"    with open({str(recording)!r}, 'a', encoding='utf-8') as output:\n"
+                "        output.write(json.dumps(sys.argv[3:]) + '\\n')\n"
+                "else:\n"
+                "    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n",
+                encoding="utf-8",
             )
-        }
-        self.assertEqual(required - set(case_ids(loaded)), set())
+            runner = Path(temporary) / "python-recorder"
+            runner.write_text(
+                "#!/bin/sh\n"
+                f"exec {shlex.quote(sys.executable)} {shlex.quote(str(script))} \"$@\"\n",
+                encoding="utf-8",
+            )
+            runner.chmod(0o755)
+
+            def dispatched(extra_args=()):
+                recording.unlink(missing_ok=True)
+                result = subprocess.run(
+                    [
+                        "make", "--no-print-directory", "-rR", *extra_args,
+                        *(option for prerequisite in prerequisites for option in ("-o", prerequisite)),
+                        target, "NODEP=1", "MODERN_DRY_RUN=1", "MODERN_CONFIG=debug",
+                        "FE8_PROJECT=default", f"MODERN_BUILD_ROOT={build_root}",
+                        f"PYTHON={runner}",
+                    ],
+                    cwd=ROOT, env=environment, text=True, capture_output=True,
+                    check=False, timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                commands = (
+                    [json.loads(line) for line in recording.read_text(encoding="utf-8").splitlines()]
+                    if recording.exists() else []
+                )
+                selectors = [
+                    arg for command in commands for arg in command
+                    if arg == module or arg.startswith(f"{module}.")
+                ]
+                loaded = unittest.TestLoader().loadTestsFromNames(selectors)
+                return set(case_ids(loaded))
+
+            self.assertEqual(required - dispatched(), set())
+            noop = Path(temporary) / "noop.mk"
+            noop.write_text(
+                f'{target}:\n\t: "$(PYTHON)" -m unittest {" ".join(sorted(required))}\n',
+                encoding="utf-8",
+            )
+            default_makefile = next(
+                name for name in ("GNUmakefile", "makefile", "Makefile")
+                if (ROOT / name).is_file()
+            )
+            self.assertEqual(
+                required - dispatched(("-f", default_makefile, "-f", str(noop))),
+                required,
+            )
 
     def test_make_choice_reaches_compiler_metadata_and_stamp(self):
         compiler = find_modern_compiler()
