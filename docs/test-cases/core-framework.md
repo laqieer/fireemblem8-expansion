@@ -1108,7 +1108,8 @@ rationale or validation evidence for every non-pending status; pending
 records may leave those fields empty.
 
 The following in-memory reversal of linker/build priority must report one
-failure in the focused priority test without changing source files:
+failure in the focused priority test without changing source files. Reordering
+patterns within the linker family must still pass because precedence is unchanged:
 
 ```sh
 python3 - <<'PY'
@@ -1124,6 +1125,13 @@ with patch.object(classify, "_RULES", (rules[1], rules[0], *rules[2:])):
         ClassifyPathTests("test_priority_linker_before_build"))
 if len(result.failures) != 1 or result.errors:
     raise SystemExit("priority mutation was not rejected as expected")
+
+reordered = ((rules[0][0], tuple(reversed(rules[0][1]))), *rules[1:])
+with patch.object(classify, "_RULES", reordered):
+    result = unittest.TextTestRunner().run(
+        ClassifyPathTests("test_priority_linker_before_build"))
+if not result.wasSuccessful():
+    raise SystemExit("semantics-preserving pattern reorder was rejected")
 PY
 ```
 
