@@ -100,7 +100,7 @@ proves private fetch access. No subjective manual criterion.
    python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v
    ```
 
-   The same eight jobs and 31 validation commands remain. Harmless helper
+   The same eight jobs and the remaining validation gates remain. Harmless helper
    comments preserve equivalence; replacing its body with a no-op fails.
    Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
    refuse. Replay the line-boundary controls:
@@ -581,7 +581,7 @@ the consumers' independent protected-principal/deployment requirements.
 6. Check the complete scheduling contract:
 
    ```bash
-   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_bootstrap_and_reporter_interpreter_agree -v
+   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_and_full_game_checks_keep_worker_ownership -v
    ```
 
    The unchanged four full-game width/catalog/crosswalk/raw-closure commands
@@ -590,7 +590,7 @@ the consumers' independent protected-principal/deployment requirements.
    and baseline keep their original required host worker and scrubbed
    environment. All eight jobs, full-mode conditions, exact checkout and
    summary dependencies remain; worker bounds are still90/90/60minutes.
-   The local upstream verifier mirrors the same complete31commands in their
+   The local upstream verifier mirrors the declared Build gates in their
    current workflow order. Parsed ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
    complete native successes before claiming the end-to-end fix.
@@ -6916,7 +6916,11 @@ python3 -m unittest \
 ```
 
 The Build host job runs the complete `test_agent_handoff` and
-`test_coordinator_observations` modules.
+`test_coordinator_observations` modules through the isolated reporter suite.
+Before that suite, an independently invoked discovery check compares its
+selected case IDs with both directly loaded modules; omitting either module
+or an individual case fails the Build even if reporter discovery also omits
+the check itself.
 
 ### Cleanup and limitations
 

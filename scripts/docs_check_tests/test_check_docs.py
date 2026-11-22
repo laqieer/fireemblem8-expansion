@@ -1212,11 +1212,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage "
                             "scripts.workflow_pilot.tests.test_agent_handoff."
                             "ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v",
-                            "build/host-python/bin/python3 -I -c "
-                            "'import sys, unittest; sys.path.insert(0, \".\"); "
-                            "unittest.main(module=None)' "
-                            "scripts.workflow_pilot.tests.test_agent_handoff "
-                            "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+                            "build/host-python/bin/python3 -I "
+                            "scripts/workflow_pilot/isolated_launcher.py reporter-tests",
                         },
                     },
                     "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001": {

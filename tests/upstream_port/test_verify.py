@@ -1,11 +1,13 @@
 import contextlib
 import inspect
 import io
+import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -31,7 +33,6 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
 )
-_AGENT_HANDOFF_TEST_STEP_NAME = verify_mod._AGENT_HANDOFF_TEST_STEP_NAME
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
@@ -329,14 +330,16 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         ]
         self.assertEqual(
             commands,
-            [[
-                "python3", "-m", "unittest", "discover", "-s",
-                "tests/workflows", "-p", "test_*.py", "-v",
-            ]],
+            [
+                [
+                    "python3", "-m", "unittest", "discover", "-s",
+                    "tests/workflows", "-p", "test_*.py", "-v",
+                ],
+            ],
         )
-        gate = {g.name: g for g in verify_mod.gates()}["workflow-contract-tests"]
-        self.assertEqual(gate.command, commands[0])
-        self.assertNotIn("make", gate.command)
+        gates = {g.name: g for g in verify_mod.gates()}
+        self.assertEqual(gates["workflow-contract-tests"].command, commands[0])
+        self.assertNotIn("make", commands[0])
 
     def test_workflow_pilot_commands_are_mirrored_exactly_in_order(self):
         workflow_commands = _parse_workflow_gate_commands()
@@ -346,7 +349,6 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             if step_name
             in {
                 _WORKFLOW_PILOT_TEST_STEP_NAME,
-                _AGENT_HANDOFF_TEST_STEP_NAME,
                 _WORKFLOW_PILOT_BASELINE_STEP_NAME,
             }
         ]
@@ -356,21 +358,20 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 (
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     [
-                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
-                        "scripts/workflow_pilot/isolated_launcher.py",
-                        "reporter-tests",
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                        "-I", "-c",
+                        'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
+                        "scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests."
+                        "test_real_discovery_includes_complete_handoff_modules",
+                        "-v",
                     ],
                 ),
                 (
-                    _AGENT_HANDOFF_TEST_STEP_NAME,
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
                     [
-                        "$GITHUB_WORKSPACE/build/host-python/bin/python3",
-                        "-I",
-                        "-c",
-                        'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
-                        "scripts.workflow_pilot.tests.test_agent_handoff",
-                        "scripts.workflow_pilot.tests.test_coordinator_observations",
-                        "-v",
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "reporter-tests",
                     ],
                 ),
                 (
@@ -393,8 +394,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         by_name = {gate.name: gate.command for gate in verify_mod.gates()}
         self.assertEqual(
             [
+                by_name["workflow-pilot-discovery-coverage"],
                 by_name["workflow-pilot-reporter-tests"],
-                by_name["agent-handoff-tests"],
                 by_name["workflow-pilot-baseline"],
             ],
             [argv for _, argv in pilot_commands],
@@ -549,8 +550,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "gba-playtest-host-suite",
                 "upstream-port-tests",
                 "workflow-contract-tests",
+                "workflow-pilot-discovery-coverage",
                 "workflow-pilot-reporter-tests",
-                "agent-handoff-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
                 "artifact-guard-tests",
@@ -833,6 +834,60 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     {} if env is None else env,
                     f"host-only mode leaked into {gate.name}",
                 )
+
+    def test_discovery_gate_receives_the_workflow_scrubbed_environment(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            _, _, jobs = verify_mod._parse_workflow_structure_text(stream.read())
+        workflow_env = next(
+            dict(dict(fields)["env"])
+            for _, _, steps in jobs
+            for _, name, fields in steps
+            if name == _WORKFLOW_PILOT_TEST_STEP_NAME
+        )
+        expected = {
+            name: value[1:-1] if value.startswith("'") and value.endswith("'") else value
+            for name, value in workflow_env.items()
+        }
+        gate = next(
+            item for item in verify_mod.gates()
+            if item.name == "workflow-pilot-discovery-coverage"
+        )
+        target = verify_mod._expand_workspace(gate.command, REPO_ROOT)
+        actual_run = subprocess.run
+        observed = []
+        keys = [*expected, "VERIFIER_TEST_SENTINEL"]
+        probe = (
+            "import json, os; "
+            f"print(json.dumps({{key: os.environ.get(key) for key in {keys!r}}}))"
+        )
+
+        def run_with_environment_probe(argv, **kwargs):
+            if argv == target:
+                child = actual_run([sys.executable, "-I", "-c", probe], **kwargs)
+                self.assertEqual(child.returncode, 0, child.stderr)
+                observed.append(json.loads(child.stdout))
+                return child
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        hostile = {
+            "PATH": "/not-the-runner-path",
+            "GIT_DIR": "/not-the-repository",
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_GLOBAL": "/not-the-global-config",
+            "PYTHONPATH": "/not-the-python-path",
+            "BASH_ENV": "/not-the-shell-startup",
+            "VERIFIER_TEST_SENTINEL": "preserved",
+        }
+        with (
+            mock.patch.dict(os.environ, hostile, clear=False),
+            mock.patch.object(verify_mod.subprocess, "run", side_effect=run_with_environment_probe),
+            mock.patch.object(verify_mod, "_resolve_repository_root", return_value=REPO_ROOT),
+        ):
+            results = verify_mod.run_gates(REPO_ROOT)
+            self.assertEqual({name: os.environ[name] for name in hostile}, hostile)
+
+        self.assertTrue(all(result.passed for result in results))
+        self.assertEqual(observed, [{**expected, "VERIFIER_TEST_SENTINEL": "preserved"}])
 
     def test_run_gates_preserves_argv_order_at_target_repository_root(self):
         seen = []
@@ -1242,6 +1297,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                 '      run: python3 -m unittest discover -s tests/workflows '
                 '-p "test_*.py" -v\n'
             )
+            self.assertEqual(original.count(upstream_step), 1)
+            self.assertEqual(original.count(workflow_step), 1)
             mutations = {
                 "newer-added": original.replace(
                     upstream_step,
@@ -1295,6 +1352,12 @@ class VerifyCliCwdTests(unittest.TestCase):
                 + "    steps:\n"
                 + "    - run: exit 1\n",
             }
+            self.assertEqual(mutations["reordered"].count(upstream_step), 1)
+            self.assertEqual(mutations["reordered"].count(workflow_step), 1)
+            self.assertLess(
+                mutations["reordered"].index(workflow_step),
+                mutations["reordered"].index(upstream_step),
+            )
             for name, changed in mutations.items():
                 with self.subTest(name=name):
                     with open(workflow_path, "w", encoding="utf-8") as handle:

@@ -230,16 +230,16 @@ SUMMARY_RESULTS = (
 MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
+WORKFLOW_PILOT_DISCOVERY_GUARD = (
+    '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c '
+    "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' "
+    "scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests."
+    "test_real_discovery_includes_complete_handoff_modules -v"
+)
 WORKFLOW_PILOT_GATE = (
     '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I '
     "scripts/workflow_pilot/isolated_launcher.py "
     "reporter-tests"
-)
-AGENT_HANDOFF_COMMANDS = (
-    '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c '
-    "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' \\",
-    "scripts.workflow_pilot.tests.test_agent_handoff \\",
-    "scripts.workflow_pilot.tests.test_coordinator_observations -v",
 )
 WORKFLOW_PILOT_BASELINE_GATE = (
     "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline "
@@ -674,7 +674,17 @@ def _direct_job_name(job: str) -> str | None:
     return matches[0]
 
 
-def _command_run_field(command: str, key: str = "run") -> str:
+def _command_run_field(
+    command: str, key: str = "run", *, discovery_guard: bool | None = None
+) -> str:
+    if discovery_guard is None:
+        discovery_guard = command == WORKFLOW_PILOT_GATE
+    if discovery_guard:
+        return (
+            f"      {key}: |\n"
+            f"        {WORKFLOW_PILOT_DISCOVERY_GUARD}\n"
+            f"        {command}\n"
+        )
     if command.startswith('"'):
         return f"      {key}: |\n        {command}\n"
     return f"      {key}: {command}\n"
@@ -1315,10 +1325,14 @@ def _contains_exact_command(
     if_expression: str | None = None,
     env_lines: tuple[str, ...] | None = None,
 ) -> bool:
-    expected = _normalise(command)
+    expected = (
+        (WORKFLOW_PILOT_DISCOVERY_GUARD, command)
+        if command == WORKFLOW_PILOT_GATE
+        else (command,)
+    )
     for step in _step_blocks(job):
         commands = _run_block_commands(step)
-        if len(commands) != 1 or _normalise(commands[0]) != expected:
+        if tuple(map(_normalise, commands)) != tuple(map(_normalise, expected)):
             continue
         fields = _direct_step_mapping_fields(step)
         expected_fields = {"name", "run"}
@@ -1476,7 +1490,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
     if not steps or not _preflight_step_is_reviewed(steps[0], "host-tests"):
         return ["host-tests review-first preflight differs"]
     steps = steps[1:]
-    if len(steps) < 11:
+    if len(steps) < 10:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
         _metadata_adapter_step_is_reviewed(steps[0]),
@@ -1538,18 +1552,12 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         _run_step_is_exact(
             steps[8],
             "Run workflow-pilot reporter regression suite (issue #176)",
-            (WORKFLOW_PILOT_GATE,),
+            (WORKFLOW_PILOT_DISCOVERY_GUARD, WORKFLOW_PILOT_GATE),
             if_expression=FULL_WORKER_STEP_CONDITION,
             env_lines=SCRUBBED_STEP_ENV,
         ),
         _run_step_is_exact(
             steps[9],
-            "Run agent-handoff regression suite (issue #381)",
-            AGENT_HANDOFF_COMMANDS,
-            if_expression=FULL_WORKER_STEP_CONDITION,
-        ),
-        _run_step_is_exact(
-            steps[10],
             "Validate workflow-pilot baseline against checked-out Git history",
             (WORKFLOW_PILOT_BASELINE_GATE,),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -2969,7 +2977,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 with self.subTest(command=command, replacement=replacement):
                     changed = self.text.replace(
                         _command_run_field(command),
-                        _command_run_field(replacement),
+                        _command_run_field(
+                            replacement,
+                            discovery_guard=command == WORKFLOW_PILOT_GATE,
+                        ),
                         1,
                     )
                     self.assertTrue(
@@ -5881,7 +5892,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         interpreter = host_python.DEFAULT_ENVIRONMENT / "bin" / "python3"
         self.assertEqual(
-            reporter["run"][0],
+            reporter["run"][-1],
             (
                 "$GITHUB_WORKSPACE/" + str(interpreter.relative_to(ROOT)),
                 "-I", "scripts/workflow_pilot/isolated_launcher.py", "reporter-tests",
@@ -6038,6 +6049,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
         )
 
+    def test_reporter_discovery_guard_cannot_be_omitted_reordered_or_masked(self):
+        guard = f"        {WORKFLOW_PILOT_DISCOVERY_GUARD}\n"
+        reporter = f"        {WORKFLOW_PILOT_GATE}\n"
+        for changed in (
+            self.text.replace(guard, "", 1),
+            self.text.replace(guard, guard.rstrip() + " || true\n", 1),
+            self.text.replace(guard + reporter, reporter + guard, 1),
+        ):
+            with self.subTest(changed=changed != self.text):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "protected pre-pilot step sequence differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
     def test_both_workflow_pilot_steps_reject_complex_or_advisory_keys(self):
         variants = (
             "continue-on-error: true",
@@ -6159,7 +6187,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             with self.subTest(replacement=replacement):
                 changed = self.text.replace(
                     _command_run_field(WORKFLOW_PILOT_GATE),
-                    _command_run_field(replacement),
+                    _command_run_field(replacement, discovery_guard=True),
                     1,
                 )
                 self.assertNotEqual(changed, self.text)

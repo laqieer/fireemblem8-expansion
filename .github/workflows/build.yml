@@ -936,9 +936,7 @@ jobs:
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s tests/upstream_port -v
 
-    # Consolidated Build CI topology contract: candidate/master triggers,
-    # combined workers, evidence ownership, and fail-closed summary. Pure
-    # stdlib/YAML-text parsing; no ROM/toolchain.
+    # Consolidated Build CI topology uses stdlib/YAML-text parsing.
     - name: Run workflow contract test suite
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
@@ -970,14 +968,8 @@ jobs:
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: |
+        "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests.test_real_discovery_includes_complete_handoff_modules -v
         "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
-
-    - name: Run agent-handoff regression suite (issue #381)
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: |
-        "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
-          scripts.workflow_pilot.tests.test_agent_handoff \
-          scripts.workflow_pilot.tests.test_coordinator_observations -v
 
     - name: Validate workflow-pilot baseline against checked-out Git history
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}

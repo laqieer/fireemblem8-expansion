@@ -12,6 +12,7 @@ from unittest import mock
 import uuid
 
 from scripts import host_python
+from scripts.workflow_pilot import isolated_launcher
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -278,6 +279,71 @@ class ReporterExecutionTests(unittest.TestCase):
             [sys.executable, "-I", str(self.launcher), "reporter-tests", *arguments],
             cwd=self.root, env=environment, capture_output=True, text=True, timeout=20,
         )
+
+    def assert_complete_handoff_modules(self, cases):
+        discovered = {case.id() for case in cases}
+        for module_name in (
+            "scripts.workflow_pilot.tests.test_agent_handoff",
+            "scripts.workflow_pilot.tests.test_coordinator_observations",
+        ):
+            loader = unittest.TestLoader()
+            direct = loader.loadTestsFromName(module_name)
+            self.assertFalse(loader.errors)
+            expected = set()
+            pending = [direct]
+            while pending:
+                item = pending.pop()
+                if isinstance(item, unittest.TestSuite):
+                    pending.extend(item)
+                else:
+                    expected.add(item.id())
+            self.assertTrue(expected)
+            selected = {
+                case_id for case_id in discovered if case_id.startswith(module_name + ".")
+            }
+            self.assertEqual(selected, expected, module_name)
+
+    def test_real_discovery_includes_complete_handoff_modules(self):
+        self.assert_complete_handoff_modules(isolated_launcher.discover_reporter_cases())
+
+    def test_discovery_coverage_guard_rejects_omitted_module_or_case(self):
+        cases = isolated_launcher.discover_reporter_cases()
+        for module in (
+            "scripts.workflow_pilot.tests.test_agent_handoff.",
+            "scripts.workflow_pilot.tests.test_coordinator_observations.",
+        ):
+            expected = [case for case in cases if case.id().startswith(module)]
+            self.assertTrue(expected)
+            incomplete = (
+                [case for case in cases if not case.id().startswith(module)],
+                [case for case in cases if case.id() != expected[0].id()],
+            )
+            for selected in incomplete:
+                with self.subTest(module=module, selected=len(selected)):
+                    with self.assertRaises(AssertionError):
+                        self.assert_complete_handoff_modules(selected)
+
+    def test_discovery_coverage_guard_rejects_traversal_omissions(self):
+        cases = isolated_launcher.discover_reporter_cases()
+        original = isolated_launcher.reporter_test_cases
+        for module in (
+            "scripts.workflow_pilot.tests.test_agent_handoff.",
+            "scripts.workflow_pilot.tests.test_coordinator_observations.",
+        ):
+            target = next(case.id() for case in cases if case.id().startswith(module))
+            for whole_module in (False, True):
+                def omitted(suite):
+                    return (
+                        case for case in original(suite)
+                        if not (case.id().startswith(module) if whole_module else case.id() == target)
+                    )
+
+                with self.subTest(module=module, whole_module=whole_module):
+                    with mock.patch.object(isolated_launcher, "reporter_test_cases", omitted):
+                        with self.assertRaises(AssertionError):
+                            self.assert_complete_handoff_modules(
+                                isolated_launcher.discover_reporter_cases()
+                            )
 
     def test_complete_discovery_uses_two_distinct_live_isolated_processes(self):
         (self.tests / "test_concurrent.py").write_text(
