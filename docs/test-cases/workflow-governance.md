@@ -659,7 +659,8 @@ audio or human-approval criterion is added.
 ## TC-WORKFLOW-REVIEW-FIRST-001: Gate expensive Builds after accepted review
 
 - **Feature / issue:** `workflow-governance` /
-  [#181](https://github.com/laqieer/fireemblem8-expansion/issues/181).
+  [#181](https://github.com/laqieer/fireemblem8-expansion/issues/181);
+  Git-fixture portability [#404](https://github.com/laqieer/fireemblem8-expansion/issues/404).
 - **Profile / prerequisites:** source checkout with the existing locked host
   Python, Git and local process controls. Local cases own Git repositories,
   real handoff processes and disposable HTTP responses below `build`.
@@ -686,6 +687,27 @@ audio or human-approval criterion is added.
 
    An existing equivalent locked interpreter may be supplied instead; do not
    create another dependency bootstrap.
+   The focused Git-timezone regression is:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_adaptive_gate.OverrideScopeTests.test_scope_route_uses_the_same_commit_instant_in_different_git_timezones -v
+   ```
+
+   It creates separate real commits under UTC and POSIX `TZ=UTC-8` (UTC+08)
+   and requires the same named-risk routing and the exact Git commit instant
+   in UTC. As a pre-fix negative control, substitute the old offset-specific
+   conversion:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); from scripts.workflow_pilot.tests import test_adaptive_gate as t; t.git_commit_utc = lambda r, s: t.git(r, "show", "-s", "--format=%cI", s).replace("+00:00", "Z"); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_adaptive_gate.OverrideScopeTests.test_scope_route_uses_the_same_commit_instant_in_different_git_timezones -v
+   ```
+
+   The UTC subcase passes and the UTC+08 subcase must error before the
+   route assertion; rerun the unmodified command to restore the positive.
    The dispatch-discovery controls run the actual embedded Bash/jq program
    against owned Git and complete provider fixtures. One eligible candidate
    plus a same-named fork must bind in either order. Multiple eligible

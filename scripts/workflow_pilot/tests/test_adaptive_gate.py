@@ -24,6 +24,7 @@ from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import candidate_evidence
 from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import pr_metadata as github
+from scripts.workflow_pilot import raw_diff_check as raw
 from scripts.workflow_pilot import reporter, review_family as review
 from scripts.workflow_pilot import event_classifier
 from scripts.workflow_pilot.tests.review_support import Runtime
@@ -31,6 +32,11 @@ from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offse
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def git_commit_utc(root, revision):
+    seconds = int(git(root, "show", "-s", "--format=%ct", revision))
+    return datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
@@ -270,7 +276,7 @@ class OverrideScopeTests(unittest.TestCase):
             comparison["files"][-1]["status"] = "claimed-generated"
         elif fault == "wrong-count":
             comparison["files"][-1]["changes"] += 1
-        committed = git(root, "show", "-s", "--format=%cI", head).replace("+00:00", "Z")
+        committed = git_commit_utc(root, head)
         submitted = (reporter.parse_time(committed, "commit") + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
         if fault == "late":
             submitted = committed
@@ -325,9 +331,27 @@ class OverrideScopeTests(unittest.TestCase):
         result, selected, _ = gate.route_event(
             github.GitHubClient("/usr/bin/gh", runner=transport), event, payload, m.REPOSITORY)
         self.observed = {"category": category, "risk": risk, "fault": fault, "base": base, "head": head,
+                         "root": root, "committed": committed,
                          "files": files, "calls": calls, "decision": asdict(selected),
                          "classification": result.classification}
         return result, selected
+
+    def test_scope_route_uses_the_same_commit_instant_in_different_git_timezones(self):
+        git_environment = raw.git_environment
+        for zone, offsets in (("UTC", ("Z", "+00:00")), ("UTC-8", ("+08:00",))):
+            with self.subTest(zone=zone), patch.object(
+                raw, "git_environment", side_effect=lambda: {**git_environment(), "TZ": zone}
+            ):
+                result, selected = self.route("docs", risk="security")
+                self.assertEqual((selected.reason, result.classification), ("named-risk", "review-first"))
+                root, head = self.observed["root"], self.observed["head"]
+                native = git(root, "show", "-s", "--format=%cI", head)
+                epoch = int(git(root, "show", "-s", "--format=%ct", head))
+                self.assertTrue(native.endswith(offsets), native)
+                self.assertEqual(
+                    reporter.parse_time(self.observed["committed"], "commit").timestamp(),
+                    epoch,
+                )
 
     def test_only_actual_eligible_categories_honor_a_timely_override(self):
         for category, fault in (("generated", None), ("localization", None), ("docs", None),
@@ -1278,8 +1302,7 @@ class AdapterTests(unittest.TestCase):
                             "sha": hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest(),
                             "content": base64.b64encode(content).decode(),
                         })
-                    committed = fixtures.git_run(
-                        root, "show", "-s", "--format=%cI", revision).stdout.decode().strip().replace("+00:00", "Z")
+                    committed = git_commit_utc(root, revision)
                     client.add("GET", m._endpoint(f"git/commits/{revision}"),
                                {"sha": revision, "committer": {"date": committed}})
                 for anchor in {base, first["commit_sha"]}:
