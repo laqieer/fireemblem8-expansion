@@ -1,12 +1,17 @@
 """Host behavior and ARM object-boundary tests for issue #68's log transport."""
 
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-import modern_mk_query as mmq
+if __package__:
+    from . import modern_mk_query as mmq
+else:
+    import modern_mk_query as mmq
 
 ROOT = Path(__file__).resolve().parents[3]
 INCLUDES = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
@@ -27,6 +32,25 @@ def temporary_directory():
     root = ROOT / "build"
     root.mkdir(parents=True, exist_ok=True)
     return tempfile.TemporaryDirectory(dir=root)
+
+
+class ExpansionLogImportTests(unittest.TestCase):
+    def test_package_import_without_test_directory_on_pythonpath(self):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import importlib; importlib.import_module("
+                "'tools.gba-playtest.tests.test_expansion_log')",
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 class ExpansionLogHostTests(unittest.TestCase):
