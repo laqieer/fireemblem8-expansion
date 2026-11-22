@@ -583,6 +583,66 @@ class GateTests(unittest.TestCase):
         self.assertFalse(self.assess(runs=(
             preflight, old, current, self.workflow_run(40)))["merge_eligible"])
 
+    def test_historical_preflight_preserves_lane_without_current_authority(self):
+        run = self.workflow_run(10, "review-first")
+        jobs = tuple(job for job in run.jobs
+                     if job.name not in candidate_evidence.NEW_WORKER_JOB_IDS)
+        self.assertEqual(
+            github._run_mode(jobs, run_id=run.run_id, status="completed"),
+            "historical-review-first")
+        old = replace(run, mode="historical-review-first", jobs=jobs)
+        current_pr_full = self.workflow_run(20, event="pull_request")
+        with self.assertRaises(ValueError):
+            gate._history_lane(self.pr, self.fixture.parent, (old, current_pr_full))
+        self.assertEqual(gate._history_lane(self.pr, self.fixture.parent, (old,)), "review-first")
+        skipped_publisher = replace(
+            old.jobs[0], job_id=1000, name="patch-release", conclusion="skipped",
+            runner_name=None, started_at=None)
+        old_with_publisher = replace(old, jobs=(*old.jobs, skipped_publisher))
+        self.assertEqual(gate._history_lane(
+            self.pr, self.fixture.parent, (old_with_publisher,)), "review-first")
+        with self.assertRaises(ValueError):
+            gate._history_lane(self.pr, self.fixture.parent, (
+                replace(old_with_publisher, jobs=(*old.jobs, replace(
+                    skipped_publisher, conclusion="success"))), current_pr_full))
+        for worker in candidate_evidence.NEW_WORKER_JOB_IDS:
+            with self.subTest(unexpected_worker=worker):
+                extra = next(job for job in run.jobs if job.name == worker)
+                with self.assertRaises(ValueError):
+                    gate._history_lane(
+                        self.pr, self.fixture.parent,
+                        (replace(old, jobs=(*old.jobs, extra)), current_pr_full))
+        old_only = self.assess(runs=(old,))
+        self.assertFalse(old_only["dispatchable"])
+        self.assertFalse(old_only["merge_eligible"])
+        self.assertIn("exact-preflight", old_only["missing"])
+
+        current_preflight = self.runs[0]
+        self.assertEqual(
+            gate._history_lane(self.pr, self.fixture.parent, (old, current_preflight)),
+            "review-first")
+        self.assertTrue(self.assess(runs=(old, current_preflight))["dispatchable"])
+
+        for preflight in (
+            old,
+            replace(old, candidate_binding=None),
+            replace(old, jobs=tuple(replace(job, conclusion="failure")
+                                    if job.name == "event-identity" else job
+                                    for job in old.jobs)),
+            replace(old, jobs=tuple(replace(job, conclusion="success")
+                                    if job.name == "summary" else job
+                                    for job in old.jobs)),
+            replace(current_preflight, jobs=tuple(replace(job, conclusion="failure")
+                                                  if job.name == "event-router" else job
+                                                  for job in current_preflight.jobs)),
+            replace(current_preflight, mode="active-review-first", status="in_progress"),
+        ):
+            with self.subTest(mode=preflight.mode, binding=preflight.candidate_binding):
+                with self.assertRaises(ValueError):
+                    gate._history_lane(self.pr, self.fixture.parent, (preflight, current_pr_full))
+                result = self.assess(runs=(preflight, current_pr_full))
+                self.assertFalse(result["merge_eligible"], result)
+
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
         self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {

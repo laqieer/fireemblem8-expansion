@@ -190,7 +190,7 @@ def run_mode(run: dict) -> str:
     return mode
 
 
-def preflight_success(jobs: dict[str, tuple[str, str | None]]) -> bool:
+def preflight_success(jobs: dict[str, tuple[str, str | None]], *, historical: bool = False) -> bool:
     expected = {
         "event-identity": ("completed", "success"),
         "event-router": ("completed", "success"),
@@ -204,6 +204,11 @@ def preflight_success(jobs: dict[str, tuple[str, str | None]]) -> bool:
         "legacy": ("completed", "skipped"),
         "summary": ("completed", "failure"),
     }
+    if historical:
+        for job_id in NEW_WORKER_JOB_IDS:
+            del expected[job_id]
+        if jobs.get("patch-release") == ("completed", "skipped"):
+            expected["patch-release"] = ("completed", "skipped")
     return jobs == expected
 
 

@@ -1099,6 +1099,10 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "scripts.workflow_pilot.tests.test_summary_continuity_contract -v",
                             "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate."
                             "GateTests.test_latest_full_requires_the_current_shape -v",
+                            "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate."
+                            "GateTests.test_historical_preflight_preserves_lane_without_current_authority "
+                            "scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests."
+                            "test_historical_lightweight_history_allows_current_pre_full_preparation -v",
                         },
                     },
                     "TC-WORKFLOW-PRIVATE-CI-001": {

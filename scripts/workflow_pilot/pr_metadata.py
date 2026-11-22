@@ -3197,7 +3197,9 @@ def _pre_full_preparation(runs: tuple[RunState, ...]) -> bool:
         and run.candidate_base_ref is not None
         and run.status == "completed"
         and all(job.status == "completed" and job.conclusion is not None for job in run.jobs)
-        and run.mode in {"review-first", "metadata-only"}
+        and run.mode in {
+            "review-first", "metadata-only", "historical-review-first", "historical-metadata-only",
+        }
         for run in relevant
     )
 

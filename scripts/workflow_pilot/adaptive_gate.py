@@ -1040,8 +1040,7 @@ def _history_lane(pr, base, runs):
             continue
         observed = True
         if run.mode in {
-            "metadata-only", "historical-metadata-only", "historical-review-first",
-            "active-metadata-only",
+            "metadata-only", "historical-metadata-only", "active-metadata-only",
         }:
             continue
         require(run.candidate_binding is not None and run.candidate_base_ref is not None
@@ -1053,9 +1052,13 @@ def _history_lane(pr, base, runs):
     require(len({run.workflow_id for run in relevant}) == 1, "candidate intake workflow is ambiguous")
     lanes = set()
     for run in relevant:
-        if run.mode == "review-first" and candidate_evidence.preflight_success(
-                {job.name: (job.status, job.conclusion) for job in run.jobs}):
+        if run.mode in {"review-first", "historical-review-first"}:
+            require(candidate_evidence.preflight_success(
+                {job.name: (job.status, job.conclusion) for job in run.jobs},
+                historical=run.mode == "historical-review-first"), "candidate preflight history is incomplete")
             lanes.add("review-first")
+        elif run.mode == "active-review-first":
+            raise ValueError("candidate preflight history is incomplete")
         elif run.mode in {"full", "historical-full", "active-full"} and run.event == "pull_request":
             lanes.add("concurrent")
     require(len(lanes) == 1, "candidate initial execution lane is unknown or ambiguous")

@@ -3295,7 +3295,7 @@
       "purpose": "Preserve complete Build evidence while moving the reporter, ownership and full-game localization groups into independent workers.",
       "prerequisites": "Clean exact-candidate checkout with Python 3, GNU Make, host C and ARM binutils for local checks; access to exact candidate and resulting master Build runs for end-to-end evidence.",
       "actions": "Run the documented topology, checkout, ownership, mirror, candidate-evidence, adaptive-gate and metadata-continuity checks. Inspect exact candidate and master full Builds, then compare workflow wall time, queue time, per-job durations and summed runner-minutes with a comparable pre-split run.",
-      "expected_result": "Each intact group runs once in its own verified exact-SHA 90-minute job; all seven workers and summary succeed. The localization worker builds gbagfx and bin2c from its clean checkout before running its checks. Metadata-only and review-first skip the three new workers. Historical full runs cannot authorize current full-build or metadata continuity without a newer successful current full run.",
+      "expected_result": "Each intact group runs once in its own verified exact-SHA 90-minute job; all seven workers and summary succeed. The localization worker builds gbagfx and bin2c from its clean checkout before running its checks. Metadata-only and review-first skip the three new workers. Historical full runs cannot authorize current full-build or metadata continuity without a newer successful current full run. A valid historical preflight preserves the initial review-first lane but cannot authorize a dispatch; historical lightweight history permits metadata preparation only with a current preflight.",
       "negative_control": "Missing or duplicate groups, checkout, prerequisites, summary dependencies or results fail. Failed, cancelled, skipped or partially missing new workers block authority; an old full alone or newer old-shaped full cannot substitute for a current full run.",
       "interactions": "Preserves classifier fallback, exact-head authority, suite selections, branch protection and all candidate/master gates. Workflow edits and upstream gate ownership are shared conflict surfaces; issues 387 through 389 are independent follow-ups.",
       "save_compatibility": "No game, save, configuration, localization-content, ROM/RAM or profile behavior changes.",
@@ -3312,6 +3312,10 @@
         },
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_latest_full_requires_the_current_shape -v",
+          "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_historical_preflight_preserves_lane_without_current_authority scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_historical_lightweight_history_allows_current_pre_full_preparation -v",
           "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
         }
       ]

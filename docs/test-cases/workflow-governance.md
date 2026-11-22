@@ -2476,7 +2476,10 @@ Metadata-only and review-first runs skip the three new workers. Metadata
 continuity requires a successful full run with all current jobs: a historical
 full followed by a newer successful current full is acceptable, but an old
 full alone or a newer old-shaped full is not, including in adaptive
-candidate assessment.
+candidate assessment. A valid historical preflight preserves the initial
+review-first lane but cannot authorize a current dispatch. Historical
+lightweight runs do not prevent metadata preparation backed by a current
+preflight and cannot establish full-Build authority.
 
 ### Negative control
 
@@ -2502,6 +2505,8 @@ surfaces; #387–#389 remain independent follow-ups.
   checks current and historical run authority and the summary boundary.
 - `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_latest_full_requires_the_current_shape -v`
   checks the same authority boundary during adaptive candidate assessment.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_historical_preflight_preserves_lane_without_current_authority scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_historical_lightweight_history_allows_current_pre_full_preparation -v`
+  checks historical lane provenance and current preflight preparation.
 
 ### Cleanup and limitations
 
