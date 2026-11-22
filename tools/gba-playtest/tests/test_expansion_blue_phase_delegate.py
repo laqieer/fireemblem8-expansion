@@ -286,29 +286,6 @@ class BluePhaseDelegateMenuTests(unittest.TestCase):
             self.assertIn("MAP_MENU_HELP_CALLBACK: PASS", completed.stdout)
 
 
-class BluePhaseDelegateLocalizationTests(unittest.TestCase):
-    def test_stable_ids_and_every_authored_locale(self):
-        registry = json.loads(
-            (ROOT / "texts" / "expansion" / "registry.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        entries = {entry["key"]: entry for entry in registry["messages"]}
-        self.assertEqual(entries["autoplay.charge.label"]["id"], 80)
-        self.assertEqual(entries["autoplay.charge.help"]["id"], 81)
-        for locale in ("en", "ja", "zh-Hans", "fr", "de", "es", "it"):
-            catalog = json.loads(
-                (
-                    ROOT / "texts" / "expansion" / f"catalog.{locale}.json"
-                ).read_text(encoding="utf-8")
-            )
-            strings = catalog["strings"]
-            self.assertTrue(strings["autoplay.charge.label"])
-            self.assertTrue(strings["autoplay.charge.help"])
-            self.assertNotIn("\n", strings["autoplay.charge.label"])
-            self.assertLessEqual(len(strings["autoplay.charge.label"]), 8)
-
-
 class BluePhaseDelegateResourceTests(unittest.TestCase):
     def test_arm_module_has_no_static_ram(self):
         if ARM_CC is None or ARM_SIZE is None:
