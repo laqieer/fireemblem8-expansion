@@ -983,11 +983,22 @@ debugger, or release feature.
 - **Supported configuration or artifact:** Python 3 host-only suite and modern
   AAPCS debug/release ROMs built from the documented source commands.
 - **Prerequisites and clean starting state:** clean boot with no save,
-  savestate, or externally supplied ROM baseline.
+  savestate, or externally supplied ROM baseline. The backend probe and
+  generated-homebrew integration checks require a host C compiler and libmGBA
+  development headers and library.
 
 ### Actions
 
 1. Run `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`.
+   To run the region/pixel checks separately, run:
+
+   ```sh
+   python3 -m unittest discover -s tools/gba-playtest/tests -p "test_region_pixel_schema.py" -v
+   python3 -m unittest discover -s tools/gba-playtest/tests -p "test_backend_probes.py" -v
+   PYTHONPATH=tools/gba-playtest/tests python3 -m unittest -v \
+     test_backend_integration.BackendIntegrationTests.test_generated_homebrew_full_lifecycle_and_policies
+   ```
+
 2. Build and capture a fresh debug ROM, then verify the capture under the
    behavior policy:
 
@@ -1029,13 +1040,17 @@ debugger, or release feature.
 
 The harness records provenance and semantic probes deterministically. Valid
 behavior-policy verification succeeds while a changed checkpoint reports the
-JSON path, expected value, and observed value.
+JSON path, expected value, and observed value. The compiled backend matches
+the region RGB/FNV vector and ignores padding; the generated homebrew capture
+shows blue, red, blue at the probed pixel and only the affected region changes.
 
 ### Negative control
 
 `verify` cannot write or refresh a baseline. Host-only mode skips live tests
 by its explicit switch, not artifact timing; malformed scenarios and mismatch
-are failures, never retries or success-shaped fallbacks.
+are failures, never retries or success-shaped fallbacks. Region/pixel coordinates
+outside the framebuffer are rejected, and an inside pixel change alters its
+region hash while an outside pixel change does not.
 
 ### Interactions and save compatibility
 
@@ -1049,6 +1064,12 @@ ROM, save layout, or configuration identity itself.
   — `tools/gba-playtest/tests/test_baseline_no_autorefresh.py`.
 - `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_host_only_mode.py" -v`
   — `tools/gba-playtest/tests/test_host_only_mode.py`.
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_region_pixel_schema.py" -v`
+  — `tools/gba-playtest/tests/test_region_pixel_schema.py`.
+- `python3 -m unittest discover -s tools/gba-playtest/tests -p "test_backend_probes.py" -v`
+  — `tools/gba-playtest/tests/test_backend_probes.py`.
+- `PYTHONPATH=tools/gba-playtest/tests python3 -m unittest -v test_backend_integration.BackendIntegrationTests.test_generated_homebrew_full_lifecycle_and_policies`
+  — `tools/gba-playtest/tests/test_backend_integration.py`.
 - `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/gba_playtest.py`.
 
@@ -1056,7 +1077,8 @@ ROM, save layout, or configuration identity itself.
 
 Keep captures under ignored build output and remove them with `make clean_fast`
 when finished. Screenshots are supplementary only; semantic probes, not
-pointer/timing/source-text coincidences, are the behavioral oracle.
+pointer/timing/source-text coincidences, are the behavioral oracle. The
+generated-homebrew capture validates the harness, not a production game ROM.
 
 ## TC-CORE-008: Upstream scan records a human decision
 
