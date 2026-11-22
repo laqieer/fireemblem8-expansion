@@ -338,9 +338,14 @@ class OverrideScopeTests(unittest.TestCase):
 
     def test_scope_route_uses_the_same_commit_instant_in_different_git_timezones(self):
         git_environment = raw.git_environment
+        expected_epoch = 1704164645
         for zone, offsets in (("UTC", ("Z", "+00:00")), ("UTC-8", ("+08:00",))):
             with self.subTest(zone=zone), patch.object(
-                raw, "git_environment", side_effect=lambda: {**git_environment(), "TZ": zone}
+                raw, "git_environment", side_effect=lambda: {
+                    **git_environment(), "TZ": zone,
+                    "GIT_AUTHOR_DATE": f"@{expected_epoch}",
+                    "GIT_COMMITTER_DATE": f"@{expected_epoch}",
+                }
             ):
                 result, selected = self.route("docs", risk="security")
                 self.assertEqual((selected.reason, result.classification), ("named-risk", "review-first"))
@@ -348,6 +353,7 @@ class OverrideScopeTests(unittest.TestCase):
                 native = git(root, "show", "-s", "--format=%cI", head)
                 epoch = int(git(root, "show", "-s", "--format=%ct", head))
                 self.assertTrue(native.endswith(offsets), native)
+                self.assertEqual(epoch, expected_epoch)
                 self.assertEqual(
                     reporter.parse_time(self.observed["committed"], "commit").timestamp(),
                     epoch,

@@ -695,10 +695,10 @@ audio or human-approval criterion is added.
      scripts.workflow_pilot.tests.test_adaptive_gate.OverrideScopeTests.test_scope_route_uses_the_same_commit_instant_in_different_git_timezones -v
    ```
 
-   It creates separate real commits under UTC and POSIX `TZ=UTC-8` (UTC+08)
-   and requires the same named-risk routing and the exact Git commit instant
-   in UTC. As a pre-fix negative control, substitute the old offset-specific
-   conversion:
+   It creates separate real commits for the same fixed instant under UTC and
+   POSIX `TZ=UTC-8` (UTC+08) and requires the same named-risk routing and the
+   exact Git commit instant in UTC. As a pre-fix negative control, substitute
+   the old offset-specific conversion:
 
    ```bash
    build/host-python/bin/python3 -I -c \
