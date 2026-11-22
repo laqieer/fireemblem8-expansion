@@ -1039,7 +1039,10 @@ def _history_lane(pr, base, runs):
         if run.candidate_base_ref not in (None, pr.base_ref):
             continue
         observed = True
-        if run.mode in {"metadata-only", "active-metadata-only"}:
+        if run.mode in {
+            "metadata-only", "historical-metadata-only", "historical-review-first",
+            "active-metadata-only",
+        }:
             continue
         require(run.candidate_binding is not None and run.candidate_base_ref is not None
                 and run.mode != "active-unknown", "candidate intake history is unproven")
@@ -1053,7 +1056,7 @@ def _history_lane(pr, base, runs):
         if run.mode == "review-first" and candidate_evidence.preflight_success(
                 {job.name: (job.status, job.conclusion) for job in run.jobs}):
             lanes.add("review-first")
-        elif run.mode in {"full", "active-full"} and run.event == "pull_request":
+        elif run.mode in {"full", "historical-full", "active-full"} and run.event == "pull_request":
             lanes.add("concurrent")
     require(len(lanes) == 1, "candidate initial execution lane is unknown or ambiguous")
     return next(iter(lanes))
@@ -1433,6 +1436,12 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         scheduling.append("stale-run")
     if len({run.run_id for run in full}) != len(full) or len(full) > 1:
         scheduling.append("duplicate-full-run")
+    if full and any(
+        run.mode == "historical-full" and
+        run.run_number >= max(current.run_number for current in full)
+        for run in current_runs
+    ):
+        scheduling.append("newer-historical-full")
     preflight = any(run.mode == "review-first" and candidate_evidence.preflight_success(
         {job.name: (job.status, job.conclusion) for job in run.jobs}) for run in matching)
     try:

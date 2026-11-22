@@ -454,7 +454,7 @@ class GateTests(unittest.TestCase):
         jobs = []
         for index, job_id in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS)):
             name = classifier if job_id == "event-classifier" else job_id
-            verdict = ("skipped" if mode == "review-first" and job_id in {"legacy", "extended-host-tests"}
+            verdict = ("skipped" if mode == "review-first" and job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS
                        else "failure" if mode == "review-first" and job_id == "summary" else "success")
             jobs.append(github.JobState(
                 index + 1, run_id, name, "completed", verdict,
@@ -543,6 +543,45 @@ class GateTests(unittest.TestCase):
         self.assertEqual(body.count(github.EVIDENCE_MARKER), 1)
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
+
+    def test_latest_full_requires_the_current_shape(self):
+        def historical(run_id):
+            run = self.workflow_run(run_id)
+            jobs = tuple(job for job in run.jobs
+                         if job.name not in candidate_evidence.NEW_WORKER_JOB_IDS)
+            self.assertEqual(
+                github._run_mode(jobs, run_id=run_id, status="completed"), "historical-full")
+            return replace(run, mode="historical-full", jobs=jobs)
+
+        old = historical(10)
+        self.runs.append(old)
+        old_only = self.assess()
+        self.assertFalse(old_only["merge_eligible"])
+        self.assertTrue(old_only["dispatchable"])
+
+        self.dispatched()
+        self.runs[-1] = self.workflow_run(20)
+        preflight, _, current = self.runs
+        self.assertTrue(self.assess()["merge_eligible"])
+        self.assertTrue(self.assess(runs=(current, old, preflight))["merge_eligible"])
+
+        newer = historical(30)
+        result = self.assess(runs=(preflight, newer, old, current))
+        self.assertFalse(result["merge_eligible"], result)
+        self.assertIn("newer-historical-full", result["missing"])
+        self.assertFalse(self.assess(runs=(
+            preflight, old, current, replace(newer, run_number=current.run_number)))["merge_eligible"])
+        self.assertFalse(self.assess(runs=(
+            preflight, old, current, replace(newer, candidate_binding=None)))["merge_eligible"])
+        self.assertTrue(self.assess(runs=(
+            preflight, old, current, replace(newer, head_branch="another-branch")))["merge_eligible"])
+        self.assertTrue(self.assess(runs=(
+            preflight, old, current, replace(newer, candidate_base_ref="another-base")))["merge_eligible"])
+        self.assertTrue(self.assess(runs=(
+            preflight, old, current,
+            replace(newer, candidate_binding=(self.pr.number, self.pr.head_sha, "b" * 40))))["merge_eligible"])
+        self.assertFalse(self.assess(runs=(
+            preflight, old, current, self.workflow_run(40)))["merge_eligible"])
 
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
         self.assertTrue(gate._local_ready(self.state, self.pr, self.record))

@@ -625,7 +625,7 @@ def _review_first_run():
     jobs = [job for job in jobs if job["name"] != "patch-release"]
     next(job for job in jobs if job["name"] == "event-classifier")["name"] = "review-first-classifier"
     for job in jobs:
-        if job["name"] in {"extended-host-tests", "legacy"}:
+        if job["name"] in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
             job.update(_job(
                 job["name"], job_id=job["id"], run_id=101,
                 conclusion="skipped", runner_name=None,
@@ -668,7 +668,7 @@ def _metadata_jobs(
 ) -> list[dict]:
     jobs = []
     for index, name in enumerate(sorted(pr_metadata.METADATA_JOB_NAMES), 1):
-        if name in {"extended-host-tests", "legacy", "patch-release"}:
+        if name in {*candidate_evidence.METADATA_SKIPPED_JOB_IDS, "patch-release"}:
             jobs.append(
                 _job(
                     name,
@@ -1869,6 +1869,49 @@ class LauncherSandbox:
 
 
 class PullRequestMetadataTests(unittest.TestCase):
+    def test_historical_full_shape_is_recognized_but_never_authorizes_edits(self):
+        def historical(run):
+            record, jobs = run
+            return record, [
+                job for job in jobs
+                if job["name"] not in candidate_evidence.NEW_WORKER_JOB_IDS
+            ]
+
+        old = historical(_run(101, 10, mode="full"))
+        current = _run(202, 11, mode="full")
+        newer_old = historical(_run(303, 12, mode="full"))
+        for records, expected_id, successful in (
+            ([old], 101, False),
+            ([current, old], 202, True),
+            ([newer_old, current, old], 303, False),
+        ):
+            with self.subTest(run_ids=[record[0]["id"] for record in records]):
+                client = ScriptedClient()
+                _add_snapshot(client, records)
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                runs = pr_metadata.list_candidate_runs(client, state)
+                latest = pr_metadata._latest_full(runs)
+                self.assertEqual(latest.run_id, expected_id)
+                authority, authorized = pr_metadata._current_full_authorization(runs)
+                self.assertEqual(authority.run_id, expected_id)
+                self.assertEqual(authorized, successful)
+                if successful:
+                    pr_metadata.require_full_success(latest)
+                else:
+                    self.assertEqual(latest.mode, "historical-full")
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata.require_full_success(latest)
+
+        partial_record, partial_jobs = _run(303, 12, mode="full")
+        partial_jobs = [
+            job for job in partial_jobs if job["name"] != "game-localization-tests"
+        ]
+        client = ScriptedClient()
+        _add_snapshot(client, [(partial_record, partial_jobs), current])
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        with self.assertRaisesRegex(pr_metadata.MetadataEditError, "unknown or mixed job shape"):
+            pr_metadata.list_candidate_runs(client, state)
+
     def test_public_and_private_repositories_retain_exact_identity_binding(self):
         for private in (False, True):
             with self.subTest(private=private):
@@ -5093,7 +5136,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "conclusion"
             ] = "failure"
             mutations[f"{job_name}-failure"] = jobs
-        for job_name in ("extended-host-tests", "legacy"):
+        for job_name in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
             jobs = copy.deepcopy(base_jobs)
             target = next(job for job in jobs if job["name"] == job_name)
             target["runner_name"] = "unexpected-runner"
