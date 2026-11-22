@@ -694,7 +694,8 @@ The focused host/backend fixture rejects malformed profile configuration,
 duplicate traces, unexpected framebuffer output, terminal-impossible
 configuration/trace timestamps, and over-budget trace output. The benchmark
 tests also reject an in-place non-atomic overwrite or empty JSON report and
-confirm failed runs do not publish stale success output. The paired
+check stale-output removal on capture failure and nonpublication on semantic
+failure before their temporary directories are removed. The paired
 runner flips one committed semantic trace value after capture and requires the
 comparator to reject it; same-profile samples with shifted terminal or trace
 frames, an event-telemetry overflow, or a non-OFF cached presentation policy

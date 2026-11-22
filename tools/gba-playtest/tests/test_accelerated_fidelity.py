@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import platform
 import subprocess
 import sys
 import tempfile
@@ -602,8 +603,8 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
                         "1",
                     ]
                 )
-        self.assertEqual(result, 1)
-        self.assertFalse(benchmark.exists())
+            self.assertEqual(result, 1)
+            self.assertFalse(benchmark.exists())
 
     def test_benchmark_failure_never_publishes_success_json(self):
         capture = {
@@ -638,19 +639,19 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
                         "1",
                     ]
                 )
-        self.assertEqual(result, 1)
-        write_benchmark.assert_not_called()
-        self.assertFalse(benchmark.exists())
+            self.assertEqual(result, 1)
+            write_benchmark.assert_not_called()
+            self.assertFalse(benchmark.exists())
 
     def test_benchmark_success_replaces_output_atomically(self):
         baseline = {
             "rom": {"sha1": "a" * 40, "size": 1024, "title": "fixture", "game_code": "TEST"},
-            "scenario": "normal-fidelity",
+            "scenario": "autoplay-normal-fidelity-computer-modern-debug",
             "terminal": {"frame": 42},
         }
         accelerated = {
-            "rom": baseline["rom"],
-            "scenario": "accelerated-fidelity",
+            "rom": copy.deepcopy(baseline["rom"]),
+            "scenario": "autoplay-accelerated-fidelity-computer-modern-debug",
             "terminal": {"frame": 30},
         }
         samples = [
@@ -679,8 +680,8 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
         self.assertEqual(report["rom"], baseline["rom"])
         self.assertIs(report["same_rom_provenance"], True)
         self.assertEqual(report["scenario"], {
-            "baseline": "normal-fidelity",
-            "accelerated": "accelerated-fidelity",
+            "baseline": baseline["scenario"],
+            "accelerated": accelerated["scenario"],
         })
         self.assertEqual(report["emulated_frames"], {
             "baseline": 43,
@@ -689,12 +690,17 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
         })
         self.assertEqual(report["wall_clock_samples_seconds"], samples)
         self.assertIsInstance(report["format_version"], int)
-        for field in ("machine", "platform", "python", "python_implementation"):
-            self.assertIsInstance(report["host"][field], str)
-            self.assertTrue(report["host"][field])
-        for field in ("path", "python_executable"):
-            self.assertIsInstance(report["runner"][field], str)
-            self.assertTrue(report["runner"][field])
+        expected_host = {
+            "machine": platform.machine(),
+            "platform": platform.platform(aliased=True),
+            "python": platform.python_version(),
+            "python_implementation": platform.python_implementation(),
+        }
+        for field, value in expected_host.items():
+            self.assertEqual(report["host"][field], value)
+        self.assertIsInstance(report["runner"]["path"], str)
+        self.assertTrue(report["runner"]["path"])
+        self.assertEqual(report["runner"]["python_executable"], sys.executable)
         for field in ("libmgba_version", "repository_commit"):
             self.assertIsInstance(report[field], str)
             self.assertTrue(report[field])
