@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import modern_mk_query as mmq
+
 ROOT = Path(__file__).resolve().parents[3]
 INCLUDES = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
 SOURCE = ROOT / "src" / "expansion_log.c"
@@ -131,8 +133,13 @@ class ExpansionLogArmTests(unittest.TestCase):
             self.assertIn("04fff700", disassembly)
 
     def test_archival_lane_cfile_list_excludes_logging_backend(self):
-        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        self.assertIn("$(filter-out src/expansion_log.c,$(CFILES))", makefile)
+        database = mmq.query_make_database("debug")
+        sources = mmq.variable_value(database, "CFILES").split()
+        objects = mmq.variable_value(database, "ALL_OBJECTS").split()
+        self.assertIn("src/bmphase.c", sources)
+        self.assertIn("src/bmphase.o", objects)
+        self.assertNotIn("src/expansion_log.c", sources)
+        self.assertNotIn("src/expansion_log.o", objects)
 
     def test_shared_public_sources_keep_c89_comment_style(self):
         for path in (SOURCE, ROOT / "include" / "expansion_log.h"):
