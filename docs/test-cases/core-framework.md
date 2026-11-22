@@ -1062,7 +1062,8 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
 
 - **Feature / originating issue:** `upstream-port-tooling` /
   [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12) and
-  [#415](https://github.com/laqieer/fireemblem8-expansion/issues/415).
+  [#415](https://github.com/laqieer/fireemblem8-expansion/issues/415) and
+  [#416](https://github.com/laqieer/fireemblem8-expansion/issues/416).
 - **Supported configuration or artifact:** a local source checkout with a
   verified canonical `decomp` remote and ignored `build/upstream-port/` output;
   the state tests also run in a disposable Linux/Python fixture without a remote.
@@ -1078,8 +1079,9 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
    ignored `build/upstream-port/` directory.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
-4. Run `python3 -m unittest tests.upstream_port.test_state.UpsertCommitStatusTests -v`
-   to exercise an existing pending record transitioning to pending and ported.
+4. Run `python3 -m unittest tests.upstream_port.test_state -v` to exercise
+   loaded and upserted decision statuses with and without evidence, including
+   an existing pending record transitioning to pending and ported.
 5. From the source repository root, invoke the documented
    `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
    source-checkout selection and explicit `--repo <target-root>` selection.
@@ -1102,12 +1104,23 @@ it is not an installed nested/external entrypoint.
 The tool rejects a wrong remote, stale/diverged ref, merge report request,
 unsafe/tracked/outside/symlink output path, missing decision evidence, or
 attempt to mutate upstream source. A non-root target cannot become gate
-authority or execution cwd.
+authority or execution cwd. Both loaded records and upserts reject missing
+rationale or validation evidence for every non-pending status; pending
+records may leave those fields empty.
+
 In a disposable Python process, replace the permitted pending transitions
 with an empty set; both existing-pending transition tests must fail:
 
 ```sh
 python3 -c 'import unittest; from scripts.upstream_port import constants; constants.ALLOWED_TRANSITIONS["pending"] = set(); unittest.main(module="tests.upstream_port.test_state", defaultTest="UpsertCommitStatusTests", verbosity=2)'
+```
+
+In a disposable Python process, weaken the evidence-required status set.
+The loader and upsert missing-evidence controls must fail for skipped,
+superseded, and conflict:
+
+```sh
+python3 -c 'import unittest; from scripts.upstream_port import constants; constants.STATUSES_REQUIRING_EVIDENCE = {"ported"}; unittest.main(module="tests.upstream_port.test_state", verbosity=2)'
 ```
 
 ### Interactions and save compatibility
@@ -1120,7 +1133,7 @@ compatibility impact.
 
 - `python3 -m unittest discover -s tests/upstream_port -v`
   — `tests/upstream_port/test_cli_readonly.py`.
-- `python3 -m unittest tests.upstream_port.test_state.UpsertCommitStatusTests -v`
+- `python3 -m unittest tests.upstream_port.test_state -v`
   — `tests/upstream_port/test_state.py`.
 - `python3 -m scripts.upstream_port verify --dry-run`
   — `scripts/upstream_port/verify.py`.
