@@ -1075,20 +1075,22 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
    ignored `build/upstream-port/` directory.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
-4. From the source repository root, invoke the documented
-   `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
-   source-checkout selection and explicit `--repo <target-root>` selection.
+4. From the source repository root, run
+   `python3 -m scripts.upstream_port verify --dry-run` and
+   `python3 -m scripts.upstream_port --repo "$PWD" verify --dry-run`.
 
 ### Expected result
 
 Scan and drift are read-only and deterministic. Report output contains only
 the explicitly selected local commits; an accepted human decision is recorded
 with its rationale/evidence before the port boundary can advance.
-Both public `verify` paths execute repository-relative gates at the resolved
-target Git top level. That same root supplies `$GITHUB_WORKSPACE` expansion
-and workflow-pilot repository authority, and no gate has a separate working
-directory. The source-tree module is launched from its source repository root;
-it is not an installed nested/external entrypoint.
+Both dry runs list every gate as skipped without launching any gate command;
+Git may run to discover the repository root. Normal `verify` executes
+repository-relative gates at the resolved target Git top level. That same
+root supplies `$GITHUB_WORKSPACE` expansion and workflow-pilot repository
+authority, and no gate has a separate working directory. The source-tree
+module is launched from its source repository root; it is not an installed
+nested/external entrypoint.
 
 ### Negative control
 
@@ -1107,6 +1109,8 @@ compatibility impact.
 
 - `python3 -m unittest discover -s tests/upstream_port -v`
   — `tests/upstream_port/test_cli_readonly.py`.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_dry_run_never_executes_gate_commands`
+  — observes subprocess launches with Git root discovery stubbed.
 - `python3 -m scripts.upstream_port verify --dry-run`
   — `scripts/upstream_port/verify.py`.
 

@@ -2647,7 +2647,8 @@
       "feature_id": "upstream-port-tooling",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/12",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/419"
       ],
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-008-upstream-scan-records-a-human-decision",
@@ -2657,8 +2658,8 @@
       ],
       "purpose": "Prove read-only scan/report safety and the explicit decision-record boundary.",
       "prerequisites": "No pending state update; use a locally available canonical ref or explicit fetch.",
-      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run the exact documented verify --dry-run module command and exercise implicit source-checkout plus explicit --repo target selection.",
-      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence; every verify gate executes at the resolved target Git top level, which is also the workspace-expansion and repository-authority root. The source-tree module remains a source-root invocation rather than an installed entrypoint.",
+      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run verify --dry-run with implicit source-checkout and explicit --repo target selection.",
+      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence. Both dry runs list every gate as skipped without launching a gate command; Git may run for root discovery. Normal verify gates execute at the resolved target Git top level, which is also the workspace-expansion and repository-authority root.",
       "negative_control": "Unsafe output, wrong refs, merges, missing evidence, and a non-root target are rejected; no nested/external module-discovery contract or per-gate working directory is introduced.",
       "interactions": "The tool never executes or mutates upstream source.",
       "save_compatibility": "No runtime, generated-data, ROM, RAM, or save impact.",
@@ -2668,6 +2669,10 @@
         {
           "command": "python3 -m unittest discover -s tests/upstream_port -v",
           "evidence": "tests/upstream_port/test_cli_readonly.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_dry_run_never_executes_gate_commands",
+          "evidence": "tests/upstream_port/test_verify.py"
         },
         {
           "command": "python3 -m scripts.upstream_port verify --dry-run",

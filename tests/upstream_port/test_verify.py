@@ -617,8 +617,15 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertIn("MODERN_CONFIG=debug", debug_gate.command)
         self.assertIn("MODERN_CONFIG=release", release_gate.command)
 
-    def test_dry_run_never_executes_subprocess(self):
-        results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
+    def test_dry_run_never_executes_gate_commands(self):
+        with (
+            mock.patch.object(
+                verify_mod, "_git_top_level", return_value=os.path.realpath(REPO_ROOT)
+            ),
+            mock.patch.object(verify_mod.subprocess, "Popen") as launch,
+        ):
+            results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
+        launch.assert_not_called()
         self.assertEqual(len(results), len(verify_mod.gates()))
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
