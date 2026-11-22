@@ -33,15 +33,30 @@ sys.path.insert(0, str(ROOT / "tools/gba-playtest/tests"))
 
 import expansion_config as ec  # noqa: E402
 from host_mode import host_only_enabled  # noqa: E402
-from scripts.modernize.tests.make_database import make_database_variable
+from scripts.modernize.tests.make_database import (
+    make_database_rule,
+    make_database_variable,
+)
+
+
+def find_modern_compiler():
+    selected = os.environ.get("MODERN_CC")
+    compiler = shutil.which(selected or "arm-none-eabi-gcc")
+    if selected and compiler is None:
+        raise FileNotFoundError(f"MODERN_CC is not executable: {selected}")
+    return compiler
 
 
 def preprocess_expansion_header(header, *defines):
-    compiler = shutil.which("arm-none-eabi-cpp")
-    driver_args = []
-    if compiler is None:
-        compiler = shutil.which("arm-none-eabi-gcc")
+    if os.environ.get("MODERN_CC"):
+        compiler = find_modern_compiler()
         driver_args = ["-E"]
+    else:
+        compiler = shutil.which("arm-none-eabi-cpp")
+        driver_args = []
+        if compiler is None:
+            compiler = find_modern_compiler()
+            driver_args = ["-E"]
     if compiler is None:
         raise unittest.SkipTest("arm-none-eabi-cpp/-gcc is not available")
     return subprocess.run(
@@ -4918,14 +4933,74 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
 
+    def test_debug_linker_check_selects_arm_configuration_cases(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="blue-route-", dir=ROOT / "build") as temporary:
+            build_root = Path(temporary).relative_to(ROOT) / "modern"
+            environment = {
+                "HOME": temporary,
+                "LC_ALL": "C",
+                "PATH": os.environ.get("PATH", os.defpath),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TMPDIR": temporary,
+            }
+            result = subprocess.run(
+                [
+                    "make", "--no-print-directory", "-rR", "-n", "-p",
+                    "--eval=__blue_route_probe__:; @:", "__blue_route_probe__",
+                    "NODEP=1", "MODERN_DRY_RUN=1", "MODERN_CONFIG=debug",
+                    "FE8_PROJECT=default", f"MODERN_BUILD_ROOT={build_root}",
+                    f"PYTHON={sys.executable}",
+                ],
+                cwd=ROOT, env=environment, text=True, capture_output=True,
+                check=False, timeout=60,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rule = make_database_rule(result.stdout, "expansion-modern-linker-check")
+        self.assertIsNotNone(rule)
+        commands = (
+            shlex.split(line)
+            for line in re.sub(r"\\\n[ \t]*", " ", rule).splitlines()
+            if line.startswith("\t")
+        )
+        module = "scripts.modernize.tests.test_expansion_config"
+        selectors = []
+        for command in commands:
+            for index in range(len(command) - 1):
+                if command[index:index + 2] == ["-m", "unittest"]:
+                    selectors.extend(
+                        arg for arg in command[index + 2:]
+                        if arg == module or arg.startswith(f"{module}.")
+                    )
+
+        def case_ids(suite):
+            for case in suite:
+                if isinstance(case, unittest.TestSuite):
+                    yield from case_ids(case)
+                else:
+                    yield case.id()
+
+        loaded = unittest.TestLoader().loadTestsFromNames(selectors)
+        required = {
+            f"{module}.{self.__class__.__name__}.{method.__name__}"
+            for method in (
+                self.test_c_macro_defaults_and_validates_profiles,
+                self.test_make_choice_reaches_compiler_metadata_and_stamp,
+            )
+        }
+        self.assertEqual(required - set(case_ids(loaded)), set())
+
     def test_make_choice_reaches_compiler_metadata_and_stamp(self):
-        compiler = shutil.which("arm-none-eabi-gcc")
+        compiler = find_modern_compiler()
         if compiler is None:
             self.skipTest("arm-none-eabi-gcc is not available")
 
-        with tempfile.TemporaryDirectory() as temporary:
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="blue-config-", dir=ROOT / "build") as temporary:
             build_root = Path(temporary) / "modern"
             generated = build_root / "debug" / "aapcs" / "generated"
+            make_root = build_root.relative_to(ROOT)
+            make_generated = make_root / "debug" / "aapcs" / "generated"
             environment = {
                 "HOME": temporary,
                 "LC_ALL": "C",
@@ -4941,11 +5016,12 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                         "--no-print-directory",
                         "NODEP=1",
                         "print-MODERN_CFLAGS",
-                        str(generated / "compile_settings.txt"),
-                        str(generated / "expansion_build_metadata.json"),
-                        f"MODERN_BUILD_ROOT={build_root}",
+                        str(make_generated / "compile_settings.txt"),
+                        str(make_generated / "expansion_build_metadata.json"),
+                        f"MODERN_BUILD_ROOT={make_root}",
                         "MODERN_CONFIG=debug",
                         "MODERN_ABI=aapcs",
+                        f"MODERN_CC={compiler}",
                         "FE8_PROJECT=default",
                         f"EXPANSION_BLUE_PHASE_DELEGATE={value}",
                         "MODERN_CONFIG_RESOLVE_GOALS=print-MODERN_CFLAGS",
@@ -5140,6 +5216,7 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
     preprocess = staticmethod(preprocess_expansion_header)
     macros = staticmethod(preprocessor_macros)
 
+    @mock.patch.dict(os.environ, {"MODERN_CC": ""})
     @mock.patch("subprocess.run")
     @mock.patch("shutil.which")
     def test_preprocess_falls_back_to_gcc_driver(self, which, run):
@@ -5162,6 +5239,25 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
         self.assertEqual(command[0], "/toolchain/arm-none-eabi-gcc")
         self.assertIn("-E", command)
         self.assertIn("-dM", command)
+
+    @mock.patch.dict(os.environ, {"MODERN_CC": "/custom/arm-gcc"})
+    @mock.patch("subprocess.run")
+    @mock.patch("shutil.which", return_value="/custom/arm-gcc")
+    def test_preprocess_uses_selected_compiler(self, which, run):
+        self.preprocess("expansion_config.h")
+
+        which.assert_called_once_with("/custom/arm-gcc")
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "/custom/arm-gcc")
+        self.assertIn("-E", command)
+        self.assertIn("-dM", command)
+
+    @mock.patch.dict(os.environ, {"MODERN_CC": "/missing/arm-gcc"})
+    @mock.patch("shutil.which", return_value=None)
+    def test_missing_selected_compiler_is_an_error(self, which):
+        with self.assertRaisesRegex(FileNotFoundError, "MODERN_CC"):
+            self.preprocess("expansion_config.h")
+        which.assert_called_once_with("/missing/arm-gcc")
 
     def test_macros_accepts_valued_and_value_less_definitions(self):
         fixture = "\n".join(
