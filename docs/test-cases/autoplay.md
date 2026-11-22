@@ -88,22 +88,25 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
   `EXPANSION_BLUE_PHASE_DELEGATE=1`; the semantic positive uses debug, while
   matching debug/release default-disabled ROMs are the runtime negatives.
   Catalog validation covers every authored locale, including Japanese.
-- **Prerequisites and clean starting state:** repository root, libmGBA, no
-  save or savestate. For manual execution, use a deterministic map with one
-  already-moved blue unit, at least two other eligible blue units, and red and
-  green actors. The automated Chapter 2 run supplies all three factions; the
-  real-source host driver independently fixes the moved/sleep/berserk/
-  hidden/unselectable/dead/rescued exclusion matrix.
+- **Prerequisites and clean starting state:** repository root, GNU Make,
+  modern ARM GCC and libmGBA, no save or savestate. For manual execution, use
+  a deterministic map with one already-moved blue unit, at least two other
+  eligible blue units, and red and green actors. The automated Chapter 2 run
+  supplies all three factions; the real-source host driver independently
+  fixes the moved/sleep/berserk/hidden/unselectable/dead/rescued exclusion
+  matrix.
 
 ### Actions
 
 1. Run
-   `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`.
+   `python3 -m unittest scripts.modernize.tests.test_expansion_config.BluePhaseDelegateFlagTests -v`.
 2. Run
-   `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+   `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`.
 3. Run
+   `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+4. Run
    `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
-4. In an enabled ROM, finish one blue unit's action, move the cursor to an
+5. In an enabled ROM, finish one blue unit's action, move the cursor to an
    empty tile, open the map menu, use the localized **Charge** first row (or
    second row when Danger is also enabled), press `R` once to exercise the
    expansion/vanilla help-ID guard, then select the row and provide no unit
@@ -111,6 +114,9 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
 
 ### Expected result
 
+The C flag defaults to 0; modern 0/1 choices reach the real compiler,
+generated metadata and compile-settings stamp, with matching fingerprints.
+Toggling the choice changes the fingerprint but not the save epoch.
 Charge is visible only in the valid interactive blue state. The already-moved
 unit and every unavailable/rescued/dead/sleeping/berserk unit are absent from
 the delegated actor list. Each remaining actor receives at most one action
@@ -137,7 +143,8 @@ Danger-then-Charge order and End remains final. Clean debug and release
 Prologue runs remain idle in `PLAYER`, with zero blue computer starts,
 completions, or actions.
 Invalid `-1`, `2`, or textual config values and an enabled non-modern C
-profile fail before producing a ROM.
+profile fail before producing a ROM. A missing C default or lost Make-to-C,
+metadata, fingerprint, or compile-settings propagation fails the host check.
 
 ### Interactions and save compatibility
 
@@ -149,6 +156,9 @@ epoch; reset/suspend-resume returns through issue #85's `PLAYER` reset.
 
 ### Automation
 
+- `scripts/modernize/tests/test_expansion_config.py` exercises the C
+  preprocessor and the real Make-generated configuration outputs for 0 and 1
+  in an isolated temporary build root.
 - `tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py` and its
   real C driver cover configuration identity, dependency failures, exact menu
   capacity, every localized label/help entry, shared AI eligibility, valid and
