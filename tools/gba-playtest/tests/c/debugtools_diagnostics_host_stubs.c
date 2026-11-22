@@ -40,10 +40,15 @@ static struct Font sFont = {0};
 struct Font* gActiveFont = &sFont;
 
 static struct Proc sContextProc;
+static struct Proc sTitleProc;
+static struct Proc sMapProc;
+static struct Proc sPlayerPhaseProc;
+static struct Proc sPrepProc;
 static struct Proc sOwnerProc;
 static struct Proc sScratchProc;
 static ProcFunc sOwnerEndCb;
 static int sHubActive;
+static int sTitleActive;
 static int sBattleActive;
 static int sBattleEventDaemonActive;
 static int sMapActive;
@@ -115,6 +120,10 @@ void DebugToolsDiagnosticsHost_Reset(void)
     memset(sBgMaps, 0, sizeof(sBgMaps));
     memset(sMapUnits, 0, sizeof(sMapUnits));
     memset(&sContextProc, 0, sizeof(sContextProc));
+    memset(&sTitleProc, 0, sizeof(sTitleProc));
+    memset(&sMapProc, 0, sizeof(sMapProc));
+    memset(&sPlayerPhaseProc, 0, sizeof(sPlayerPhaseProc));
+    memset(&sPrepProc, 0, sizeof(sPrepProc));
     memset(&sOwnerProc, 0xA5, sizeof(sOwnerProc));
     memset(&sScratchProc, 0xA5, sizeof(sScratchProc));
     memset(&sOwnerProc, 0, offsetof(struct Proc, x));
@@ -140,6 +149,7 @@ void DebugToolsDiagnosticsHost_Reset(void)
     gActiveFont = &sFont;
     sOwnerEndCb = NULL;
     sHubActive = 1;
+    sTitleActive = 1;
     sBattleActive = 0;
     sBattleEventDaemonActive = 0;
     sMapActive = 0;
@@ -246,7 +256,12 @@ void DebugToolsDiagnosticsHost_ReopenHub(void)
 
 void DebugToolsDiagnosticsHost_EndContext(void)
 {
-    Proc_End(&sOwnerProc);
+    if (sPrepActive)
+        Proc_End(&sPrepProc);
+    else if (sPlayerPhaseActive)
+        Proc_End(&sPlayerPhaseProc);
+    else
+        Proc_End(&sTitleProc);
 }
 
 u16* BG_GetMapBuffer(int bg)
@@ -350,16 +365,16 @@ ProcPtr Proc_Find(const struct ProcCmd* script)
             : NULL;
 
     if (script == gProc_BMapMain)
-        return sMapActive ? &sContextProc : NULL;
+        return sMapActive ? &sMapProc : NULL;
 
     if (script == gProcScr_TitleScreen)
-        return &sContextProc;
+        return sTitleActive ? &sTitleProc : NULL;
 
     if (script == gProcScr_PlayerPhase)
-        return sPlayerPhaseActive ? &sContextProc : NULL;
+        return sPlayerPhaseActive ? &sPlayerPhaseProc : NULL;
 
     if (script == gProcScr_SALLYCURSOR)
-        return sPrepActive ? &sContextProc : NULL;
+        return sPrepActive ? &sPrepProc : NULL;
 
     if (script == ProcScr_StdEventEngine)
         return sEventActive ? &sContextProc : NULL;
@@ -391,6 +406,22 @@ void Proc_SetEndCb(ProcPtr proc, ProcFunc func)
 
 void Proc_End(ProcPtr proc)
 {
+    if (proc == &sTitleProc || proc == &sMapProc
+        || proc == &sPlayerPhaseProc || proc == &sPrepProc)
+    {
+        if (sOwnerProc.proc_script != NULL && sOwnerProc.proc_parent == proc)
+            Proc_End(&sOwnerProc);
+        if (proc == &sTitleProc)
+            sTitleActive = 0;
+        else if (proc == &sMapProc)
+            sMapActive = 0;
+        else if (proc == &sPlayerPhaseProc)
+            sPlayerPhaseActive = 0;
+        else
+            sPrepActive = 0;
+        return;
+    }
+
     if (proc == &sOwnerProc)
     {
         if (sOwnerEndCb != NULL)

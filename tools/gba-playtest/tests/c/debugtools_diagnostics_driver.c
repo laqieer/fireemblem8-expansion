@@ -3,6 +3,7 @@
 
 #include "global.h"
 
+#include "bm.h"
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
 
@@ -167,22 +168,66 @@ static int TestUnavailableContexts(void)
     return 0;
 }
 
-static int TestParentTeardown(void)
+static int TestForeignLocks(void)
+{
+    int prep;
+
+    for (prep = 0; prep <= 1; ++prep)
+    {
+        DebugToolsDiagnosticsHost_Reset();
+        DebugToolsDiagnosticsHost_SetMap(prep, 1);
+        LockGame();
+        DebugToolsDiagnostics_SetSessionContext(
+            prep ? DEBUGTOOLS_DIAG_CONTEXT_PREP : DEBUGTOOLS_DIAG_CONTEXT_MAP);
+        CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
+              "session with foreign lock must start");
+        CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 1 && gBmSt.lock == 1,
+              "map or prep session must not change a foreign game lock");
+        DebugToolsDiagnostics_EndSession(0);
+        CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 1 && gBmSt.lock == 1,
+              prep ? "prep teardown must preserve a foreign game lock"
+                   : "map teardown must preserve a foreign game lock");
+        UnlockGame();
+    }
+
+    return 0;
+}
+
+static int TestContextParentTeardown(
+    enum DebugToolsDiagnosticsContext context, const char* message)
 {
     DebugToolsDiagnosticsHost_Reset();
+    if (context != DEBUGTOOLS_DIAG_CONTEXT_TITLE)
+        DebugToolsDiagnosticsHost_SetMap(context == DEBUGTOOLS_DIAG_CONTEXT_PREP, 1);
     DebugToolsDiagnosticsHost_FillDisplay(0x369C);
-    DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_TITLE);
+    DebugToolsDiagnostics_SetSessionContext(context);
     CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
           "parent-teardown session must start");
     DebugToolsDiagnosticsHost_OverwriteDisplay(0x147A);
     DebugToolsDiagnosticsHost_EndContext();
-    CHECK(DebugToolsDiagnosticsHost_DisplayEquals(0x369C),
-          "context-parent teardown must restore owned display cells");
+    CHECK(DebugToolsDiagnosticsHost_DisplayEquals(0x369C), message);
     CHECK(gDebugToolsDiagnosticsProbe.forcedTeardownCount == 0
           && gDebugToolsDiagnosticsProbe.restorationCount == 1,
           "parent teardown is restored once without counting as explicit force");
     CHECK(gDebugToolsDiagnosticsProbe.restorationMismatchMask == 0,
           "parent teardown must retain exact restoration");
+    return 0;
+}
+
+static int TestParentTeardown(void)
+{
+    CHECK(TestContextParentTeardown(
+              DEBUGTOOLS_DIAG_CONTEXT_TITLE,
+              "title parent teardown must restore owned display cells") == 0,
+          "title parent-teardown case failed");
+    CHECK(TestContextParentTeardown(
+              DEBUGTOOLS_DIAG_CONTEXT_MAP,
+              "map parent teardown must restore owned display cells") == 0,
+          "map parent-teardown case failed");
+    CHECK(TestContextParentTeardown(
+              DEBUGTOOLS_DIAG_CONTEXT_PREP,
+              "prep parent teardown must restore owned display cells") == 0,
+          "prep parent-teardown case failed");
     return 0;
 }
 
@@ -235,6 +280,8 @@ int main(void)
           "title/restoration case failed");
     CHECK(TestMapAndEmptyUnit() == 0,
           "map/empty-unit case failed");
+    CHECK(TestForeignLocks() == 0,
+          "foreign-lock case failed");
     CHECK(TestUnavailableContexts() == 0,
           "unavailable-context case failed");
     CHECK(TestParentTeardown() == 0,
