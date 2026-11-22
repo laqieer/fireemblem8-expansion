@@ -14,17 +14,18 @@
 
 ### Actions
 
-1. Run `make expansion-modern-hq-mixer-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
-2. Run `make expansion-modern-hq-mixer-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
-3. Build the non-instrumented listening pair with
+1. Run `python3 -m unittest tools.gba-playtest.tests.test_hq_mixer -v`.
+2. Run `make expansion-modern-hq-mixer-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
+3. Run `make expansion-modern-hq-mixer-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+4. Build the non-instrumented listening pair with
    `make expansion-modern-hq-mixer-listening-roms MODERN_CONFIG=release MODERN_ABI=aapcs`.
-4. For the configuration negative, retain the failure from
+5. For the configuration negative, retain the failure from
    `make -n legacy EXPANSION_HQ_MIXER=1`.
-5. Clean-boot, without a save or savestate, the enabled listening ROM at
+6. Clean-boot, without a save or savestate, the enabled listening ROM at
    `build/expansion-modern-hq-mixer-listening/enabled/release/aapcs/fireemblem8.gba`.
    Confirm initial silence, press `A` once at the first prompt, and listen
    through the opening BGM.
-6. Repeat the same input and emulator-volume sequence with
+7. Repeat the same input and emulator-volume sequence with
    `build/expansion-modern-hq-mixer-listening/stock-control/release/aapcs/fireemblem8.gba`.
 
 The ROMs under `build/expansion-modern-hq-mixer*/` used by the automated
@@ -59,6 +60,8 @@ The disabled ROM has no HQ mixer symbol, high-resolution buffer, or runtime
 probe; it uses the stock MP2K mixer while still producing bounded non-silent
 stereo PCM through the same scripted-battle progression. An enabled archival request
 fails before compilation rather than silently selecting either mixer.
+The host symbol check accepts an absent name and rejects sized or unsized
+definitions and symbol-tool failures; it does not inspect a ROM.
 
 ### Interactions and save compatibility
 
@@ -74,7 +77,10 @@ and saves remain interchangeable.
 
 - `python3 -m unittest tools.gba-playtest.tests.test_hq_mixer -v` validates
   strict configuration, Autoconf persistence, archival rejection, compiled
-  mixer selection, IWRAM symbol bounds, and the deterministic RMS fixture.
+  mixer selection, IWRAM symbol bounds, host-side symbol absence and tool
+  failures, and the deterministic RMS fixture. The host symbol checks need
+  no ARM tools; their real-object integration case requires an ELF host
+  compiler and GNU-compatible `nm` and skips when these are unavailable.
 - `make expansion-modern-hq-mixer-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   and the matching release command run exact-ELF/map checks plus real
   libmGBA player-liveness, channel-ownership, sustained late-window

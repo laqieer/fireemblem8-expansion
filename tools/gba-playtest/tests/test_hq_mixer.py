@@ -179,6 +179,118 @@ class HqMixerConfigurationTests(unittest.TestCase):
         )
 
 
+class HqMixerSymbolValidationTests(unittest.TestCase):
+    def test_disabled_hq_symbols_must_be_absent(self) -> None:
+        for record in (
+            "00000000 T SoundMainRAM_End",
+            "08000000 T SoundMainRAM_End",
+            "00000000 00000000 T SoundMainRAM_End",
+            "08000000 00000004 T SoundMainRAM_End",
+        ):
+            result = subprocess.CompletedProcess(["nm"], 0, record + "\n", "")
+            with self.subTest(record=record), mock.patch(
+                "probe_bindings.subprocess.run", return_value=result
+            ):
+                hq.require_absent_symbol(Path("fixture.o"), "Missing", "nm")
+                with self.assertRaisesRegex(RuntimeError, "must be absent"):
+                    hq.require_absent_symbol(Path("fixture.o"), "SoundMainRAM_End", "nm")
+
+    def test_symbol_tool_errors_are_not_absence(self) -> None:
+        failed = subprocess.CompletedProcess(["nm"], 3, "", "nm failed")
+        for result in (
+            failed,
+            FileNotFoundError("nm is unavailable"),
+            subprocess.TimeoutExpired("nm", 300),
+        ):
+            patch_args = (
+                {"side_effect": result}
+                if isinstance(result, Exception)
+                else {"return_value": result}
+            )
+            with self.subTest(result=result), mock.patch(
+                "probe_bindings.subprocess.run", **patch_args
+            ):
+                with self.assertRaises(hq.ProbeBindingError):
+                    hq.require_absent_symbol(Path("fixture.o"), "SoundMainRAM_End", "nm")
+
+    def test_malformed_symbol_table_is_not_absence(self) -> None:
+        for table in (
+            "not a symbol table\n",
+            "00000000 ! Other\n",
+        ):
+            result = subprocess.CompletedProcess(["nm"], 0, table, "")
+            with self.subTest(table=table), mock.patch(
+                "probe_bindings.subprocess.run", return_value=result
+            ):
+                with self.assertRaisesRegex(hq.ProbeBindingError, "unrecognized nm symbol table"):
+                    hq.require_absent_symbol(Path("fixture.o"), "Missing", "nm")
+
+        result = subprocess.CompletedProcess(
+            ["nm"], 0, "00000000 T SoundMainRAM_End\nnot a symbol table\n", ""
+        )
+        with mock.patch("probe_bindings.subprocess.run", return_value=result):
+            with self.assertRaisesRegex(hq.ProbeBindingError, "unrecognized nm symbol table"):
+                hq.find_elf_symbol(Path("fixture.o"), "SoundMainRAM_End", "nm")
+
+    def test_real_host_elf_symbols_and_failed_tools(self) -> None:
+        compiler = shutil.which("cc")
+        nm = shutil.which("nm")
+        if compiler is None or nm is None:
+            self.skipTest("host compiler and nm unavailable")
+        with tempfile.TemporaryDirectory(dir=build_scratch_dir()) as temporary:
+            work = Path(temporary)
+            probe = work / "probe.o"
+            result = subprocess.run(
+                [compiler, "-x", "c", "-c", "-o", str(probe), "-"],
+                cwd=ROOT,
+                input="int hq_symbol_probe;\n",
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            if probe.read_bytes()[:4] != b"\x7fELF":
+                self.skipTest("host compiler does not emit ELF objects")
+            result = subprocess.run(
+                [nm, "-S", "--defined-only", str(probe)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode:
+                self.skipTest("host nm lacks GNU-compatible ELF options")
+            self.assertIsNotNone(hq.find_elf_symbol(probe, "hq_symbol_probe", nm))
+
+            object_file = work / "symbols.o"
+            result = subprocess.run(
+                [compiler, "-x", "assembler", "-c", "-o", str(object_file), "-"],
+                cwd=ROOT,
+                input=(
+                    ".text\n"
+                    ".globl SoundMainRAM_End\n"
+                    "SoundMainRAM_End:\n"
+                    ".byte 0\n"
+                    ".globl SoundMainRAM_MixBuffer\n"
+                    "SoundMainRAM_MixBuffer:\n"
+                    ".byte 0\n"
+                    ".size SoundMainRAM_MixBuffer, . - SoundMainRAM_MixBuffer\n"
+                ),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            hq.require_absent_symbol(object_file, "gExpansionHqMixerProbe", nm)
+            for symbol in ("SoundMainRAM_End", "SoundMainRAM_MixBuffer"):
+                with self.subTest(symbol=symbol):
+                    with self.assertRaisesRegex(RuntimeError, "must be absent"):
+                        hq.require_absent_symbol(object_file, symbol, nm)
+            failed_nm = work / "failed-nm"
+            failed_nm.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+            failed_nm.chmod(0o755)
+            for tool in (work / "missing-nm", failed_nm):
+                with self.subTest(tool=tool):
+                    with self.assertRaises(hq.ProbeBindingError):
+                        hq.require_absent_symbol(object_file, "SoundMainRAM_End", str(tool))
+
+
 class HqMixerCompiledArtifactTests(unittest.TestCase):
     def setUp(self) -> None:
         if ARM_GCC is None or ARM_NM is None:
@@ -231,22 +343,6 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
             mixer_end, _ = resolver("SoundMainRAM_End")
             self.assertEqual(mixer_size, hq.HQ_NO_REVERB_CODE_BYTES)
             self.assertEqual(mixer_end - mixer, hq.HQ_NO_REVERB_CODE_BYTES)
-
-    def test_disabled_hq_symbols_must_be_absent(self) -> None:
-        with mock.patch.object(
-            hq,
-            "resolve_elf_symbol",
-            side_effect=hq.ProbeBindingError("symbol missing"),
-        ):
-            hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
-
-        with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0, 0)):
-            with self.assertRaisesRegex(RuntimeError, "must be absent"):
-                hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
-
-        with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0x08000000, 4)):
-            with self.assertRaisesRegex(RuntimeError, "must be absent"):
-                hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
 
 
 class HqMixerQualityFixtureTests(unittest.TestCase):

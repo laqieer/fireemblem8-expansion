@@ -12,6 +12,9 @@ from typing import Callable
 SYMBOL_EXPRESSION_RE = re.compile(
     r"^([A-Za-z_][A-Za-z0-9_]*)(?:\+(0x[0-9a-fA-F]+))?$"
 )
+NM_SYMBOL_LINE_RE = re.compile(
+    r"^[0-9a-fA-F]+(?:\s+[0-9a-fA-F]+)?\s+[A-Za-z?]\s+\S.*$"
+)
 
 
 class ProbeBindingError(RuntimeError):
@@ -68,18 +71,39 @@ def _read_elf_symbol_table(
 def _find_elf_symbol(
     table: str,
     symbol: str,
+    *,
+    require_valid_table: bool = False,
 ) -> tuple[int, int | None] | None:
     pattern = re.compile(
         r"^([0-9a-fA-F]+)(?:\s+([0-9a-fA-F]+))?\s+\S\s+"
         + re.escape(symbol)
         + r"$"
     )
+    found = None
     for line in table.splitlines():
-        match = pattern.match(line.strip())
-        if match:
+        line = line.strip()
+        if not line:
+            continue
+        if require_valid_table and NM_SYMBOL_LINE_RE.fullmatch(line) is None:
+            raise ProbeBindingError(f"unrecognized nm symbol table line: {line!r}")
+        match = pattern.match(line)
+        if match and found is None:
             size = int(match.group(2), 16) if match.group(2) is not None else None
-            return int(match.group(1), 16), size
-    return None
+            found = int(match.group(1), 16), size
+            if not require_valid_table:
+                return found
+    return found
+
+
+def find_elf_symbol(
+    elf: Path,
+    symbol: str,
+    nm: str | os.PathLike[str] | None = None,
+) -> tuple[int, int | None] | None:
+    """Return a defined symbol or None after a valid symbol-table read."""
+    return _find_elf_symbol(
+        _read_elf_symbol_table(elf, nm), symbol, require_valid_table=True
+    )
 
 
 def resolve_elf_symbol(
