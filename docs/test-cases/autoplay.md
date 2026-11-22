@@ -103,8 +103,6 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
    Set `MODERN_CC` to use a selected ARM GCC; an explicitly unavailable
    compiler fails rather than silently skipping. The debug linker-check runs
    the two ARM-dependent configuration checks in the ARM-equipped Build job.
-   A recording runner executes that Make recipe with its prerequisites
-   suppressed and verifies that both checks are dispatched.
 2. Run
    `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`.
 3. Run

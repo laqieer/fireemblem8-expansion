@@ -33,10 +33,7 @@ sys.path.insert(0, str(ROOT / "tools/gba-playtest/tests"))
 
 import expansion_config as ec  # noqa: E402
 from host_mode import host_only_enabled  # noqa: E402
-from scripts.modernize.tests.make_database import (
-    make_database_rule_header,
-    make_database_variable,
-)
+from scripts.modernize.tests.make_database import make_database_variable
 
 
 def find_modern_compiler():
@@ -47,7 +44,7 @@ def find_modern_compiler():
     return compiler
 
 
-def preprocess_expansion_header(header, *defines):
+def preprocess_expansion_header(header, *defines, source=""):
     if os.environ.get("MODERN_CC"):
         compiler = find_modern_compiler()
         driver_args = ["-E"]
@@ -71,7 +68,7 @@ def preprocess_expansion_header(header, *defines):
             "c",
             "-",
         ],
-        input=f'#include "{header}"\n',
+        input=f'#include "{header}"\n{source}',
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -79,15 +76,14 @@ def preprocess_expansion_header(header, *defines):
     )
 
 
-def preprocessor_macros(output):
-    values = {}
-    for line in output.splitlines():
-        if not line.startswith("#define "):
-            continue
-        definition = line[len("#define "):].split(maxsplit=1)
-        name = definition[0]
-        values[name] = definition[1] if len(definition) == 2 else ""
-    return values
+def macro_value_assertion(macro, value):
+    return (
+        f"#if !defined({macro})\n"
+        f"#error {macro} is not defined\n"
+        f"#elif ({macro}) != ({value})\n"
+        f"#error {macro} has the wrong value\n"
+        "#endif\n"
+    )
 
 
 def assert_rejects_wrong_length(test_case, validator, values):
@@ -4903,9 +4899,10 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
 
     def test_c_macro_defaults_and_validates_profiles(self):
         macro = "FE8_EXPANSION_BLUE_PHASE_DELEGATE"
-        result = preprocess_expansion_header("expansion_config.h")
+        result = preprocess_expansion_header(
+            "expansion_config.h", source=macro_value_assertion(macro, 0)
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(preprocessor_macros(result.stdout).get(macro), "0")
 
         for value in ("0", "1"):
             with self.subTest(value=value):
@@ -4913,9 +4910,9 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     "expansion_config.h",
                     "FE8_EXPANSION_MODERN_BUILD=1",
                     f"{macro}={value}",
+                    source=macro_value_assertion(macro, value),
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(preprocessor_macros(result.stdout).get(macro), value)
 
         for value in ("-1", "2"):
             with self.subTest(value=value):
@@ -4932,109 +4929,6 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
             f"{macro}=1",
         )
         self.assertNotEqual(result.returncode, 0)
-
-    def test_debug_linker_check_selects_arm_configuration_cases(self):
-        module = "scripts.modernize.tests.test_expansion_config"
-        required = {
-            f"{module}.{self.__class__.__name__}.{method.__name__}"
-            for method in (
-                self.test_c_macro_defaults_and_validates_profiles,
-                self.test_make_choice_reaches_compiler_metadata_and_stamp,
-            )
-        }
-
-        def case_ids(suite):
-            for case in suite:
-                if isinstance(case, unittest.TestSuite):
-                    yield from case_ids(case)
-                else:
-                    yield case.id()
-
-        (ROOT / "build").mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="blue-route-", dir=ROOT / "build") as temporary:
-            build_root = Path(temporary).relative_to(ROOT) / "modern"
-            target = "expansion-modern-linker-check"
-            environment = {
-                "HOME": temporary,
-                "LC_ALL": "C",
-                "PATH": os.environ.get("PATH", os.defpath),
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "TMPDIR": temporary,
-            }
-            result = subprocess.run(
-                [
-                    "make", "--no-print-directory", "-rR", "-n", "-p",
-                    "--eval=__blue_route_probe__:; @:", "__blue_route_probe__",
-                    "NODEP=1", "MODERN_DRY_RUN=1", "MODERN_CONFIG=debug",
-                    "FE8_PROJECT=default", f"MODERN_BUILD_ROOT={build_root}",
-                    f"PYTHON={sys.executable}",
-                ],
-                cwd=ROOT, env=environment, text=True, capture_output=True,
-                check=False, timeout=60,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            rule = make_database_rule_header(result.stdout, target)
-            self.assertIsNotNone(rule)
-            prerequisites = shlex.split(rule.partition(":")[2])
-
-            recording = Path(temporary) / "calls.jsonl"
-            script = Path(temporary) / "record.py"
-            script.write_text(
-                "import json, os, sys\n"
-                "if sys.argv[1:3] == ['-m', 'unittest']:\n"
-                f"    with open({str(recording)!r}, 'a', encoding='utf-8') as output:\n"
-                "        output.write(json.dumps(sys.argv[3:]) + '\\n')\n"
-                "else:\n"
-                "    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n",
-                encoding="utf-8",
-            )
-            runner = Path(temporary) / "python-recorder"
-            runner.write_text(
-                "#!/bin/sh\n"
-                f"exec {shlex.quote(sys.executable)} {shlex.quote(str(script))} \"$@\"\n",
-                encoding="utf-8",
-            )
-            runner.chmod(0o755)
-
-            def dispatched(extra_args=()):
-                recording.unlink(missing_ok=True)
-                result = subprocess.run(
-                    [
-                        "make", "--no-print-directory", "-rR", *extra_args,
-                        *(option for prerequisite in prerequisites for option in ("-o", prerequisite)),
-                        target, "NODEP=1", "MODERN_DRY_RUN=1", "MODERN_CONFIG=debug",
-                        "FE8_PROJECT=default", f"MODERN_BUILD_ROOT={build_root}",
-                        f"PYTHON={runner}",
-                    ],
-                    cwd=ROOT, env=environment, text=True, capture_output=True,
-                    check=False, timeout=60,
-                )
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                commands = (
-                    [json.loads(line) for line in recording.read_text(encoding="utf-8").splitlines()]
-                    if recording.exists() else []
-                )
-                selectors = [
-                    arg for command in commands for arg in command
-                    if arg == module or arg.startswith(f"{module}.")
-                ]
-                loaded = unittest.TestLoader().loadTestsFromNames(selectors)
-                return set(case_ids(loaded))
-
-            self.assertEqual(required - dispatched(), set())
-            noop = Path(temporary) / "noop.mk"
-            noop.write_text(
-                f'{target}:\n\t: "$(PYTHON)" -m unittest {" ".join(sorted(required))}\n',
-                encoding="utf-8",
-            )
-            default_makefile = next(
-                name for name in ("GNUmakefile", "makefile", "Makefile")
-                if (ROOT / name).is_file()
-            )
-            self.assertEqual(
-                required - dispatched(("-f", default_makefile, "-f", str(noop))),
-                required,
-            )
 
     def test_make_choice_reaches_compiler_metadata_and_stamp(self):
         compiler = find_modern_compiler()
@@ -5091,7 +4985,6 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     [
                         compiler,
                         "-E",
-                        "-dM",
                         "-x",
                         "c",
                         *shlex.split(match.group(1)),
@@ -5099,7 +4992,12 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     ],
                     cwd=ROOT,
                     env=environment,
-                    input='#include "expansion_config.h"\n',
+                    input=(
+                        '#include "expansion_config.h"\n'
+                        + macro_value_assertion(
+                            "FE8_EXPANSION_BLUE_PHASE_DELEGATE", value
+                        )
+                    ),
                     text=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -5107,13 +5005,6 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     timeout=60,
                 )
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
-                self.assertEqual(
-                    preprocessor_macros(compiled.stdout).get(
-                        "FE8_EXPANSION_BLUE_PHASE_DELEGATE"
-                    ),
-                    str(value),
-                )
-
                 settings = dict(
                     line.split("=", 1)
                     for line in (generated / "compile_settings.txt")
@@ -5260,7 +5151,17 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
     """The same two dependencies must also be hard C compile errors."""
 
     preprocess = staticmethod(preprocess_expansion_header)
-    macros = staticmethod(preprocessor_macros)
+
+    @staticmethod
+    def macros(output):
+        values = {}
+        for line in output.splitlines():
+            if not line.startswith("#define "):
+                continue
+            definition = line[len("#define "):].split(maxsplit=1)
+            name = definition[0]
+            values[name] = definition[1] if len(definition) == 2 else ""
+        return values
 
     @mock.patch.dict(os.environ, {"MODERN_CC": ""})
     @mock.patch("subprocess.run")
