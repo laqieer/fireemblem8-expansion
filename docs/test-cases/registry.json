@@ -2675,6 +2675,10 @@
           "evidence": "tests/upstream_port/test_verify.py"
         },
         {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_documented_source_root_module_dry_run_is_real",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
           "command": "python3 -m scripts.upstream_port verify --dry-run",
           "evidence": "scripts/upstream_port/verify.py"
         }

@@ -1110,7 +1110,9 @@ compatibility impact.
 - `python3 -m unittest discover -s tests/upstream_port -v`
   — `tests/upstream_port/test_cli_readonly.py`.
 - `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_dry_run_never_executes_gate_commands`
-  — observes subprocess launches with Git root discovery stubbed.
+  — observes API and both CLI paths with Git root discovery stubbed.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_documented_source_root_module_dry_run_is_real`
+  — checks both real module invocations and their skipped-gate output.
 - `python3 -m scripts.upstream_port verify --dry-run`
   — `scripts/upstream_port/verify.py`.
 
