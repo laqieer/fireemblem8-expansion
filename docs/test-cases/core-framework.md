@@ -1061,7 +1061,8 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
 ## TC-CORE-008: Upstream scan records a human decision
 
 - **Feature / originating issue:** `upstream-port-tooling` /
-  [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12).
+  [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12),
+  [#402](https://github.com/laqieer/fireemblem8-expansion/issues/402).
 - **Supported configuration or artifact:** a local source checkout with a
   verified canonical `decomp` remote and ignored `build/upstream-port/` output.
 - **Prerequisites and clean starting state:** no unreviewed local state update;
@@ -1078,6 +1079,7 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
 4. From the source repository root, invoke the documented
    `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
    source-checkout selection and explicit `--repo <target-root>` selection.
+5. Run `python3 -m unittest discover -s tests/upstream_port -p test_classify.py -v`.
 
 ### Expected result
 
@@ -1089,6 +1091,7 @@ target Git top level. That same root supplies `$GITHUB_WORKSPACE` expansion
 and workflow-pilot repository authority, and no gate has a separate working
 directory. The source-tree module is launched from its source repository root;
 it is not an installed nested/external entrypoint.
+The overlapping `linker/example.mk` path is classified as linker, not build.
 
 ### Negative control
 
@@ -1096,6 +1099,25 @@ The tool rejects a wrong remote, stale/diverged ref, merge report request,
 unsafe/tracked/outside/symlink output path, missing decision evidence, or
 attempt to mutate upstream source. A non-root target cannot become gate
 authority or execution cwd.
+The following in-memory reversal of linker/build priority must report one
+failure in the focused priority test without changing source files:
+
+```sh
+python3 - <<'PY'
+import sys, unittest
+from unittest.mock import patch
+from scripts.upstream_port import classify
+sys.path.insert(0, "tests/upstream_port")
+from test_classify import ClassifyPathTests
+
+rules = classify._RULES
+with patch.object(classify, "_RULES", (rules[1], rules[0], *rules[2:])):
+    result = unittest.TextTestRunner().run(
+        ClassifyPathTests("test_priority_linker_before_build"))
+if len(result.failures) != 1 or result.errors:
+    raise SystemExit("priority mutation was not rejected as expected")
+PY
+```
 
 ### Interactions and save compatibility
 
@@ -1107,6 +1129,8 @@ compatibility impact.
 
 - `python3 -m unittest discover -s tests/upstream_port -v`
   — `tests/upstream_port/test_cli_readonly.py`.
+- `python3 -m unittest discover -s tests/upstream_port -p test_classify.py -v`
+  — `tests/upstream_port/test_classify.py`.
 - `python3 -m scripts.upstream_port verify --dry-run`
   — `scripts/upstream_port/verify.py`.
 

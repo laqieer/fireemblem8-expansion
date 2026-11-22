@@ -505,7 +505,8 @@
       "title": "Read-only upstream-port review tooling",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/12",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/402"
       ],
       "reference": "docs/upstream-porting.md",
       "status": "current",
@@ -2647,7 +2648,8 @@
       "feature_id": "upstream-port-tooling",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/12",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/402"
       ],
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-008-upstream-scan-records-a-human-decision",
@@ -2655,11 +2657,11 @@
         "Local checkout with canonical decomp remote",
         "Ignored build/upstream-port report output"
       ],
-      "purpose": "Prove read-only scan/report safety and the explicit decision-record boundary.",
+      "purpose": "Prove read-only scan/report safety, the explicit decision-record boundary, and linker/build classification priority.",
       "prerequisites": "No pending state update; use a locally available canonical ref or explicit fetch.",
-      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run the exact documented verify --dry-run module command and exercise implicit source-checkout plus explicit --repo target selection.",
-      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence; every verify gate executes at the resolved target Git top level, which is also the workspace-expansion and repository-authority root. The source-tree module remains a source-root invocation rather than an installed entrypoint.",
-      "negative_control": "Unsafe output, wrong refs, merges, missing evidence, and a non-root target are rejected; no nested/external module-discovery contract or per-gate working directory is introduced.",
+      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run the exact documented verify --dry-run module command, exercise implicit source-checkout plus explicit --repo target selection, and run the focused classifier tests.",
+      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence; every verify gate executes at the resolved target Git top level, which is also the workspace-expansion and repository-authority root. The source-tree module remains a source-root invocation rather than an installed entrypoint. A linker path with a build suffix classifies as linker.",
+      "negative_control": "Unsafe output, wrong refs, merges, missing evidence, and a non-root target are rejected; no nested/external module-discovery contract or per-gate working directory is introduced. Reversing linker/build rule priority fails the focused priority test.",
       "interactions": "The tool never executes or mutates upstream source.",
       "save_compatibility": "No runtime, generated-data, ROM, RAM, or save impact.",
       "cleanup": "Remove only the named ignored report directory.",
@@ -2668,6 +2670,10 @@
         {
           "command": "python3 -m unittest discover -s tests/upstream_port -v",
           "evidence": "tests/upstream_port/test_cli_readonly.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s tests/upstream_port -p test_classify.py -v",
+          "evidence": "tests/upstream_port/test_classify.py"
         },
         {
           "command": "python3 -m scripts.upstream_port verify --dry-run",

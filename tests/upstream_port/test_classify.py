@@ -45,7 +45,7 @@ class ClassifyPathTests(unittest.TestCase):
 
     def test_priority_linker_before_build(self):
         # linker/* wins over any *.mk-style build heuristic collision.
-        self.assertEqual(classify.classify_path("linker_script_sound.txt"), "linker")
+        self.assertEqual(classify.classify_path("linker/example.mk"), "linker")
 
     def test_category_summary_counts(self):
         summary = classify.category_summary(["Makefile", "Makefile", "README.md"])
