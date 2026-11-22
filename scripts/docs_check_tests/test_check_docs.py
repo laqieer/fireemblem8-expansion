@@ -1087,6 +1087,20 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-BUILD-CI-SPLIT-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_build_ci_topology "
+                            "tests.workflows.test_build_ci_checkout "
+                            "tests.workflows.test_ownership_probe "
+                            "tests.upstream_port.test_verify -v",
+                            "python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence "
+                            "scripts.workflow_pilot.tests.test_pr_metadata "
+                            "scripts.workflow_pilot.tests.test_summary_continuity_contract -v",
+                            "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate."
+                            "GateTests.test_latest_full_requires_the_current_shape -v",
+                        },
+                    },
                     "TC-WORKFLOW-PRIVATE-CI-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
