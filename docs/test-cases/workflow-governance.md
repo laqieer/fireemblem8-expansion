@@ -2477,7 +2477,9 @@ continuity requires a successful full run with all current jobs: a historical
 full followed by a newer successful current full is acceptable, but an old
 full alone or a newer old-shaped full is not, including in adaptive
 candidate assessment. A valid historical preflight preserves the initial
-review-first lane but cannot authorize a current dispatch. Historical
+review-first lane but cannot authorize a current dispatch. A completed
+preflight with a failed adapter does not block a successful same-head retry;
+the failed attempt alone grants no lane or dispatch authority. Historical
 lightweight runs do not prevent metadata preparation backed by a current
 preflight and cannot establish full-Build authority.
 
@@ -2486,8 +2488,9 @@ preflight and cannot establish full-Build authority.
 The focused checks reject a missing or duplicated group, missing checkout,
 prerequisite, summary dependency or result, and failed, cancelled or skipped
 new workers. Partial new job shapes fail; removing all three new jobs cannot
-make a historical full run authoritative. The unchanged pre-split topology
-lacks the three independent jobs.
+make a historical full run authoritative. Malformed, active, unbound or
+contradictory preflight history still blocks a retry. The unchanged pre-split
+topology lacks the three independent jobs.
 
 ### Interactions and save compatibility
 
@@ -2507,6 +2510,8 @@ surfaces; #387–#389 remain independent follow-ups.
   checks the same authority boundary during adaptive candidate assessment.
 - `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_historical_preflight_preserves_lane_without_current_authority scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_historical_lightweight_history_allows_current_pre_full_preparation -v`
   checks historical lane provenance and current preflight preparation.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_history_does_not_block_a_successful_retry scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_retry_still_rejects_unproven_history -v`
+  checks failed-adapter retries and rejects unproven history.
 
 ### Cleanup and limitations
 

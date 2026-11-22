@@ -1051,16 +1051,32 @@ def _history_lane(pr, base, runs):
         return None
     require(len({run.workflow_id for run in relevant}) == 1, "candidate intake workflow is ambiguous")
     lanes = set()
+    failed_preflight = False
     for run in relevant:
         if run.mode in {"review-first", "historical-review-first"}:
-            require(candidate_evidence.preflight_success(
-                {job.name: (job.status, job.conclusion) for job in run.jobs},
-                historical=run.mode == "historical-review-first"), "candidate preflight history is incomplete")
-            lanes.add("review-first")
+            jobs = {job.name: (job.status, job.conclusion) for job in run.jobs}
+            require(len(jobs) == len(run.jobs) and run.event == "pull_request"
+                    and run.status == "completed" and run.conclusion == "failure",
+                    "candidate preflight history is incomplete")
+            historical = run.mode == "historical-review-first"
+            if candidate_evidence.preflight_success(jobs, historical=historical):
+                lanes.add("review-first")
+                continue
+            normalized = dict(jobs)
+            for name in candidate_evidence.METADATA_ADAPTER_JOB_IDS:
+                if normalized.get(name) in {
+                    ("completed", "failure"), ("completed", "cancelled"),
+                    ("completed", "timed_out"),
+                }:
+                    normalized[name] = ("completed", "success")
+            require(normalized != jobs and candidate_evidence.preflight_success(
+                normalized, historical=historical), "candidate preflight history is incomplete")
+            failed_preflight = True
         elif run.mode == "active-review-first":
             raise ValueError("candidate preflight history is incomplete")
         elif run.mode in {"full", "historical-full", "active-full"} and run.event == "pull_request":
             lanes.add("concurrent")
+    require(not failed_preflight or "review-first" in lanes, "candidate preflight history is incomplete")
     require(len(lanes) == 1, "candidate initial execution lane is unknown or ambiguous")
     return next(iter(lanes))
 

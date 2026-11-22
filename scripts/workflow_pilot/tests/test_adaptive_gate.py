@@ -643,6 +643,74 @@ class GateTests(unittest.TestCase):
                 result = self.assess(runs=(preflight, current_pr_full))
                 self.assertFalse(result["merge_eligible"], result)
 
+        self.runs = [old, current_preflight]
+        self.dispatched()
+        self.runs[-1] = self.workflow_run(20)
+        self.assertTrue(self.assess()["merge_eligible"])
+
+    def test_failed_preflight_history_does_not_block_a_successful_retry(self):
+        for mode in ("review-first", "historical-review-first"):
+            for worker in candidate_evidence.METADATA_ADAPTER_JOB_IDS:
+                for conclusion in ("failure", "cancelled", "timed_out"):
+                    with self.subTest(mode=mode, worker=worker, conclusion=conclusion):
+                        failed = self.workflow_run(10, "review-first")
+                        jobs = tuple(
+                            replace(job, conclusion=conclusion) if job.name == worker else job
+                            for job in failed.jobs
+                            if mode == "review-first"
+                            or job.name not in candidate_evidence.NEW_WORKER_JOB_IDS)
+                        failed = replace(failed, mode=mode, jobs=jobs)
+                        retry = self.workflow_run(20, "review-first")
+                        for runs in ((failed, retry), (retry, failed)):
+                            self.assertEqual(
+                                gate._history_lane(self.pr, self.fixture.parent, runs), "review-first")
+                            result = self.assess(runs=runs)
+                            self.assertTrue(result["dispatchable"], result)
+                            self.assertFalse(result["merge_eligible"])
+                        with self.assertRaises(ValueError):
+                            gate._history_lane(self.pr, self.fixture.parent, (failed,))
+                        with self.assertRaises(ValueError):
+                            gate._history_lane(self.pr, self.fixture.parent, (
+                                failed, self.workflow_run(30, event="pull_request")))
+
+        self.runs = [failed, retry]
+        self.dispatched()
+        self.runs[-1] = self.workflow_run(30)
+        self.assertTrue(self.assess()["merge_eligible"])
+
+    def test_failed_preflight_retry_still_rejects_unproven_history(self):
+        run = self.workflow_run(10, "review-first")
+        failed = replace(run, jobs=tuple(
+            replace(job, conclusion="failure") if job.name == "host-tests" else job
+            for job in run.jobs))
+        retry = self.workflow_run(20, "review-first")
+        variants = (
+            replace(failed, candidate_binding=None),
+            replace(failed, candidate_base_ref=None),
+            replace(failed, mode="active-review-first", status="in_progress"),
+            replace(failed, status="in_progress"),
+            replace(failed, conclusion="success"),
+            replace(failed, event="workflow_dispatch"),
+            replace(failed, jobs=(*failed.jobs, failed.jobs[0])),
+            replace(failed, jobs=tuple(
+                replace(job, conclusion="failure") if job.name == "event-identity" else job
+                for job in failed.jobs)),
+            replace(failed, jobs=tuple(
+                replace(job, conclusion="success") if job.name == "summary" else job
+                for job in failed.jobs)),
+            replace(failed, jobs=tuple(
+                replace(job, conclusion="skipped") if job.name == "host-tests" else job
+                for job in failed.jobs)),
+        )
+        for invalid in variants:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    gate._history_lane(self.pr, self.fixture.parent, (invalid, retry))
+                self.assertFalse(self.assess(runs=(invalid, retry))["dispatchable"])
+        with self.assertRaises(ValueError):
+            gate._history_lane(self.pr, self.fixture.parent, (
+                failed, retry, self.workflow_run(30, event="pull_request")))
+
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
         self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {
