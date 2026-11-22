@@ -119,12 +119,6 @@ class CommitRecordSchemaTests(unittest.TestCase):
             json.dump(state, fh)
         return path
 
-    def test_valid_terminal_record_loads_cleanly(self):
-        with tempfile.TemporaryDirectory() as td:
-            path = self._load_with_record(self._valid_terminal_record(), td)
-            loaded = state_mod.load_state(path)
-            self.assertEqual(loaded["commits"][self.sha]["status"], "ported")
-
     def test_valid_pending_record_with_empty_rationale_evidence_loads_cleanly(self):
         with tempfile.TemporaryDirectory() as td:
             path = self._load_with_record(self._valid_pending_record(), td)
@@ -214,22 +208,26 @@ class CommitRecordSchemaTests(unittest.TestCase):
             self.assertIn("illegal status", str(ctx.exception))
 
     def test_terminal_status_with_empty_rationale_rejected(self):
-        record = self._valid_terminal_record()
-        record["rationale"] = ""
-        with tempfile.TemporaryDirectory() as td:
-            path = self._load_with_record(record, td)
-            with self.assertRaises(state_mod.StateError) as ctx:
-                state_mod.load_state(path)
-            self.assertIn("rationale", str(ctx.exception))
+        for status in ("ported", "skipped", "superseded", "conflict"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as td:
+                record = self._valid_terminal_record()
+                record["status"] = status
+                record["rationale"] = ""
+                path = self._load_with_record(record, td)
+                with self.assertRaises(state_mod.StateError) as ctx:
+                    state_mod.load_state(path)
+                self.assertIn("rationale", str(ctx.exception))
 
     def test_terminal_status_with_empty_validation_evidence_rejected(self):
-        record = self._valid_terminal_record()
-        record["validation_evidence"] = "   "
-        with tempfile.TemporaryDirectory() as td:
-            path = self._load_with_record(record, td)
-            with self.assertRaises(state_mod.StateError) as ctx:
-                state_mod.load_state(path)
-            self.assertIn("validation_evidence", str(ctx.exception))
+        for status in ("ported", "skipped", "superseded", "conflict"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as td:
+                record = self._valid_terminal_record()
+                record["status"] = status
+                record["validation_evidence"] = "   "
+                path = self._load_with_record(record, td)
+                with self.assertRaises(state_mod.StateError) as ctx:
+                    state_mod.load_state(path)
+                self.assertIn("validation_evidence", str(ctx.exception))
 
     def test_empty_author_name_rejected_even_for_pending(self):
         record = self._valid_pending_record()
@@ -346,13 +344,31 @@ class UpsertCommitStatusTests(unittest.TestCase):
         self._mark("pending", rationale="", evidence="")
         self.assertEqual(self.state["commits"][self.sha]["status"], "pending")
 
-    def test_ported_requires_rationale(self):
-        with self.assertRaises(state_mod.StateError):
-            self._mark("ported", rationale="", evidence="tested")
+    def test_all_non_pending_statuses_accept_evidence(self):
+        for status in ("ported", "skipped", "superseded", "conflict"):
+            with self.subTest(status=status):
+                self.state["commits"].clear()
+                self._mark(status)
+                record = self.state["commits"][self.sha]
+                self.assertEqual(record["status"], status)
+                self.assertEqual(record["rationale"], "because")
+                self.assertEqual(record["validation_evidence"], "tested")
 
-    def test_ported_requires_evidence(self):
-        with self.assertRaises(state_mod.StateError):
-            self._mark("ported", rationale="because", evidence="")
+    def test_non_pending_requires_rationale(self):
+        for status in ("ported", "skipped", "superseded", "conflict"):
+            self.state["commits"].clear()
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(state_mod.StateError, "rationale"):
+                    self._mark(status, rationale="", evidence="tested")
+                self.assertNotIn(self.sha, self.state["commits"])
+
+    def test_non_pending_requires_evidence(self):
+        for status in ("ported", "skipped", "superseded", "conflict"):
+            self.state["commits"].clear()
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(state_mod.StateError, "validation_evidence"):
+                    self._mark(status, rationale="because", evidence="")
+                self.assertNotIn(self.sha, self.state["commits"])
 
     def test_ported_to_pending_rejected(self):
         self._mark("ported")
