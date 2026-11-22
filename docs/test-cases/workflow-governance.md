@@ -582,6 +582,7 @@ the consumers' independent protected-principal/deployment requirements.
 
    ```bash
    python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_and_full_game_checks_keep_worker_ownership -v
+   python3 -m unittest tests.upstream_port.test_verify.HostOnlyEnvGateMirrorTests.test_pilot_gates_receive_the_workflow_scrubbed_environment tests.upstream_port.test_verify.HostOnlyEnvGateMirrorTests.test_scrubbed_gate_command_assignments_override_step_environment -v
    ```
 
    The unchanged four full-game width/catalog/crosswalk/raw-closure commands
@@ -591,7 +592,10 @@ the consumers' independent protected-principal/deployment requirements.
    environment. All eight jobs, full-mode conditions, exact checkout and
    summary dependencies remain; worker bounds are still90/90/60minutes.
    The local upstream verifier mirrors the declared Build gates in their
-   current workflow order. Parsed ownership/order is scheduling evidence;
+   current workflow order. Real child probes check that all three pilot gates
+   receive their parsed CI step environment despite hostile inherited values,
+   while inline command assignments retain shell precedence. Parsed
+   ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
    complete native successes before claiming the end-to-end fix.
    Count exact gate argv across every parsed executable step, including
@@ -621,6 +625,8 @@ second reporter process exists. The original host traces reach their native
 usage candidate. dropping cases, losing a configured discovered instance, ignoring a child
 completion result, or accepting empty
 discovery fails the focused controls; increasing deadlines is not the fix.
+Without the verifier environment fix, reporter and baseline children inherit
+hostile values, and the scrubbed defaults override inline assignments.
 After the reporter improvement, exact7b automatic master and exact41d
 candidate both still reached90minutes twice during the final full-game
 step. Preserve those actual failures. The old parsed graph puts all four

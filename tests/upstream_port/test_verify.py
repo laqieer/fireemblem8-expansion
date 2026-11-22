@@ -835,37 +835,53 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     f"host-only mode leaked into {gate.name}",
                 )
 
-    def test_discovery_gate_receives_the_workflow_scrubbed_environment(self):
+    def test_pilot_gates_receive_the_workflow_scrubbed_environment(self):
         with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
             _, _, jobs = verify_mod._parse_workflow_structure_text(stream.read())
-        workflow_env = next(
-            dict(dict(fields)["env"])
+        workflow_envs = {
+            name: dict(dict(fields)["env"])
             for _, _, steps in jobs
             for _, name, fields in steps
-            if name == _WORKFLOW_PILOT_TEST_STEP_NAME
-        )
-        expected = {
-            name: value[1:-1] if value.startswith("'") and value.endswith("'") else value
-            for name, value in workflow_env.items()
+            if name in {_WORKFLOW_PILOT_TEST_STEP_NAME, _WORKFLOW_PILOT_BASELINE_STEP_NAME}
         }
-        gate = next(
-            item for item in verify_mod.gates()
-            if item.name == "workflow-pilot-discovery-coverage"
-        )
-        target = verify_mod._expand_workspace(gate.command, REPO_ROOT)
+        expected = {}
+        for gate_name, step_name in (
+            ("workflow-pilot-discovery-coverage", _WORKFLOW_PILOT_TEST_STEP_NAME),
+            ("workflow-pilot-reporter-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
+            ("workflow-pilot-baseline", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ):
+            expected[gate_name] = {
+                name: value[1:-1] if value.startswith("'") and value.endswith("'") else value
+                for name, value in workflow_envs[step_name].items()
+            }
+        targets = {}
+        for gate in verify_mod.gates():
+            if gate.name in expected:
+                _, argv = verify_mod._split_env_prefix(gate.command)
+                argv, _ = verify_mod._split_stdout_redirect(argv)
+                targets[tuple(verify_mod._expand_workspace(argv, REPO_ROOT))] = gate.name
         actual_run = subprocess.run
-        observed = []
-        keys = [*expected, "VERIFIER_TEST_SENTINEL"]
+        observed = {}
+        keys = sorted({key for values in expected.values() for key in values})
+        keys.append("VERIFIER_TEST_SENTINEL")
         probe = (
             "import json, os; "
             f"print(json.dumps({{key: os.environ.get(key) for key in {keys!r}}}))"
         )
 
         def run_with_environment_probe(argv, **kwargs):
-            if argv == target:
-                child = actual_run([sys.executable, "-I", "-c", probe], **kwargs)
+            gate_name = targets.get(tuple(argv))
+            if gate_name:
+                child = actual_run(
+                    [sys.executable, "-I", "-c", probe],
+                    cwd=kwargs["cwd"],
+                    env=kwargs["env"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
                 self.assertEqual(child.returncode, 0, child.stderr)
-                observed.append(json.loads(child.stdout))
+                observed[gate_name] = json.loads(child.stdout)
                 return child
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
@@ -887,7 +903,66 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             self.assertEqual({name: os.environ[name] for name in hostile}, hostile)
 
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(observed, [{**expected, "VERIFIER_TEST_SENTINEL": "preserved"}])
+        self.assertEqual(
+            observed,
+            {
+                name: {**values, "VERIFIER_TEST_SENTINEL": "preserved"}
+                for name, values in expected.items()
+            },
+        )
+
+    def test_scrubbed_gate_command_assignments_override_step_environment(self):
+        probe = (
+            "import json, os; "
+            "print(json.dumps({key: os.environ.get(key) for key in "
+            "('PATH', 'GIT_DIR', 'PYTHONPATH', 'VERIFIER_TEST_SENTINEL')}))"
+        )
+        gate = verify_mod.Gate(
+            name="inline-environment-probe",
+            command=[
+                "PATH=/command/bin",
+                "GIT_DIR=/command/repository",
+                sys.executable,
+                "-I",
+                "-c",
+                probe,
+            ],
+            applicable_note="test inline environment precedence",
+            scrubbed_pilot_environment=True,
+        )
+        actual_run = subprocess.run
+
+        def capture_child(argv, **kwargs):
+            kwargs["stdout"] = subprocess.PIPE
+            return actual_run(argv, **kwargs)
+
+        hostile = {
+            "PATH": "/ambient/bin",
+            "GIT_DIR": "/ambient/repository",
+            "PYTHONPATH": "/ambient/python",
+            "VERIFIER_TEST_SENTINEL": "preserved",
+        }
+        with (
+            mock.patch.dict(os.environ, hostile, clear=False),
+            mock.patch.object(verify_mod, "gates", return_value=[gate]),
+            mock.patch.object(verify_mod, "_require_target_gate_equivalence"),
+            mock.patch.object(verify_mod, "_resolve_repository_root", return_value=REPO_ROOT),
+            mock.patch.object(verify_mod.subprocess, "run", side_effect=capture_child),
+        ):
+            results = verify_mod.run_gates(REPO_ROOT)
+            self.assertEqual({name: os.environ[name] for name in hostile}, hostile)
+
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].passed)
+        self.assertEqual(
+            json.loads(results[0].stdout),
+            {
+                "PATH": "/command/bin",
+                "GIT_DIR": "/command/repository",
+                "PYTHONPATH": "",
+                "VERIFIER_TEST_SENTINEL": "preserved",
+            },
+        )
 
     def test_run_gates_preserves_argv_order_at_target_repository_root(self):
         seen = []

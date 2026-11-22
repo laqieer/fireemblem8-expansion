@@ -356,7 +356,10 @@ with `/usr/bin/python3 -I scripts/host_python.py create` in the target checkout
 before non-dry-run verification. The reporter suite uses that owned interpreter
 with `-I`, as does the independent handoff-discovery check; installing
 `jsonschema` into system or user site-packages is not a substitute. Setup is
-not another gate and `verify` remains network-independent.
+not another gate and `verify` remains network-independent. The discovery,
+reporter and baseline children receive their CI step's scrubbed environment;
+an inline command assignment takes precedence over that step environment, as
+it does in the workflow shell.
 
 1. `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`
    (issue #13 host-only suite; the inline environment assignment applies only

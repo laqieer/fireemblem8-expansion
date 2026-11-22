@@ -2403,6 +2403,7 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "scripts/host_python.py create; verification never installs "
                 "packages or relies on system/user-site jsonschema"
             ),
+            scrubbed_pilot_environment=True,
         ),
         Gate(
             name="workflow-pilot-baseline",
@@ -2426,6 +2427,7 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "issue #176 host lane: validates the frozen workflow-pilot "
                 "baseline against checked-out Git history"
             ),
+            scrubbed_pilot_environment=True,
         ),
         Gate(
             name="localization-host-suite",
@@ -2830,7 +2832,7 @@ def run_gates(
         if gate.scrubbed_pilot_environment:
             for entry in _SCRUBBED_PILOT_ENV:
                 name, value = entry.split(": ", 1)
-                env_overrides[name] = shlex.split(value)[0]
+                env_overrides.setdefault(name, shlex.split(value)[0])
         child_env = None
         if env_overrides:
             child_env = dict(os.environ)

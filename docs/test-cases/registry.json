@@ -3024,6 +3024,10 @@
           "evidence": "tests/upstream_port/test_verify.py"
         },
         {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.HostOnlyEnvGateMirrorTests.test_pilot_gates_receive_the_workflow_scrubbed_environment tests.upstream_port.test_verify.HostOnlyEnvGateMirrorTests.test_scrubbed_gate_command_assignments_override_step_environment -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
           "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_and_full_game_checks_keep_worker_ownership -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
         }
