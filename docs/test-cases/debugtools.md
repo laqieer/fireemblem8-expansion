@@ -357,6 +357,10 @@ make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=debug MODERN_AB
 make expansion-modern-debugtools-diagnostics-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```
 
+The host driver reuses poisoned Proc payloads and checks scratch clearing,
+lock ownership, and normal versus parent teardown. It does not replace the
+target-ROM checks.
+
 No framebuffer, screenshot, pointer, or subjective visual criterion is an
 acceptance oracle. Close or force-end the session and reset the disposable
 fixture after testing.

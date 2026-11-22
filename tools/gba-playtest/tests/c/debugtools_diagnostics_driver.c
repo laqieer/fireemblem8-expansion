@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "global.h"
 
@@ -16,6 +17,8 @@ void DebugToolsDiagnosticsHost_OverwriteDisplay(u16 value);
 int DebugToolsDiagnosticsHost_GetFontCounter(void);
 int DebugToolsDiagnosticsHost_GetGameLock(void);
 int DebugToolsDiagnosticsHost_GetRestoredCount(void);
+int DebugToolsDiagnosticsHost_GetTransitionEndCount(void);
+void DebugToolsDiagnosticsHost_ReopenHub(void);
 void DebugToolsDiagnosticsHost_EndContext(void);
 
 #define CHECK(cond, message) \
@@ -105,6 +108,8 @@ static int TestMapAndEmptyUnit(void)
           && snapshot.maxHp == 24,
           "map capture must use the validated cursor unit");
     DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "map teardown must not release an unowned game lock");
 
     DebugToolsDiagnosticsHost_Reset();
     DebugToolsDiagnosticsHost_SetMap(1, 0);
@@ -125,6 +130,8 @@ static int TestMapAndEmptyUnit(void)
           && snapshot.classId == 0,
           "empty tile must zero unavailable unit fields");
     DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "prep teardown must not release an unowned game lock");
 
     return 0;
 }
@@ -179,6 +186,47 @@ static int TestParentTeardown(void)
     return 0;
 }
 
+static int TestReusedProcPayload(void)
+{
+    const unsigned char* scratch;
+    unsigned int i;
+
+    DebugToolsDiagnosticsHost_Reset();
+    DebugToolsDiagnosticsHost_SetMap(0, 1);
+    DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_MAP);
+    CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
+          "reused map session must start");
+    CHECK(!DebugToolsDiagnostics_IsRestoring(),
+          "a new owner must not be restoring");
+    scratch = (const unsigned char*)DebugToolsDiagnostics_GetSnapshot();
+    CHECK(scratch != NULL, "a new session must expose its scratch snapshot");
+    for (i = 0; i < sizeof(struct DebugToolsDiagnosticsSnapshot); ++i)
+        CHECK(scratch[i] == 0, "a new scratch snapshot must not retain old payload");
+
+    memset(DebugToolsDiagnostics_GetStatusBuffer(), 0xA5,
+           sizeof(struct DebugToolsDiagnosticsSnapshot));
+    DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "normal map teardown must not release an unowned game lock");
+    CHECK(DebugToolsDiagnosticsHost_GetTransitionEndCount() == 0,
+          "normal teardown must not end the deferred transition");
+
+    DebugToolsDiagnosticsHost_ReopenHub();
+    DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_MAP);
+    CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
+          "a subsequent session must reuse the released slots");
+    scratch = (const unsigned char*)DebugToolsDiagnostics_GetSnapshot();
+    CHECK(scratch != NULL, "the reopened session must expose its scratch snapshot");
+    for (i = 0; i < sizeof(struct DebugToolsDiagnosticsSnapshot); ++i)
+        CHECK(scratch[i] == 0, "reused scratch must not expose the prior session");
+    DebugToolsDiagnosticsHost_EndContext();
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "external map teardown must not release an unowned game lock");
+    CHECK(DebugToolsDiagnosticsHost_GetTransitionEndCount() == 1,
+          "external teardown must end the deferred transition");
+    return 0;
+}
+
 int main(void)
 {
     CHECK(sizeof(struct DebugToolsDiagnosticsSnapshot) == 0x40,
@@ -191,6 +239,8 @@ int main(void)
           "unavailable-context case failed");
     CHECK(TestParentTeardown() == 0,
           "parent-teardown case failed");
+    CHECK(TestReusedProcPayload() == 0,
+          "reused Proc payload case failed");
     printf("DEBUGTOOLS_DIAGNOSTICS_HOST_TEST: PASS\n");
     return 0;
 }

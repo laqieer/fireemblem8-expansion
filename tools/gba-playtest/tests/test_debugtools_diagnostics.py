@@ -125,20 +125,6 @@ class DebugToolsDiagnosticsHostTests(unittest.TestCase):
                 self.assertNotIn('"framebuffer": true', text)
                 self.assertNotIn("fnv1a64-rgb24", text)
 
-    def test_reused_owner_proc_payload_is_initialized(self):
-        source = SRC.read_text(encoding="utf-8")
-        begin = source.index("enum DebugToolsResult DebugToolsDiagnostics_BeginSession")
-        end = source.index("void DebugToolsDiagnostics_EndSession", begin)
-        body = source[begin:end]
-
-        for initialization in (
-            "displayOwner->ownerLock = 0;",
-            "displayOwner->restoring = 0;",
-            "displayOwner->endMode = DEBUGTOOLS_END_EXTERNAL;",
-            "memset(&scratch->scratch, 0, sizeof(scratch->scratch));",
-        ):
-            self.assertIn(initialization, body)
-
     def test_scenario_specs_are_scalar_and_cover_all_frozen_contexts(self):
         scenarios = ROOT / "tools/gba-playtest/specs"
         debug = json.loads(
