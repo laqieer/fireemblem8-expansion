@@ -524,6 +524,53 @@ class MapMenuHelpSizingTests(unittest.TestCase):
         self.assertIn("MAP_MENU_HELP_SIZING_ARCHIVAL: PASS", output)
 
 
+def _cleanup_plan_removes_fixture(plan, fixture):
+    removed = False
+    for line in plan.replace("\\\n", "").splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()<>")
+        lexer.whitespace_split = True
+        arguments = list(lexer)
+        if not arguments or Path(arguments[0]).name != "rm":
+            continue
+        if any(
+            argument and all(character in ";&|()<>" for character in argument)
+            for argument in arguments[1:]
+        ):
+            raise ValueError(f"unsupported cleanup shell syntax: {line}")
+        options = []
+        paths = []
+        parsing_options = True
+        for argument in arguments[1:]:
+            if parsing_options and argument == "--":
+                parsing_options = False
+            elif parsing_options and argument.startswith("-") and argument != "-":
+                if argument.startswith("--"):
+                    supported = argument in ("--force", "--recursive", "--verbose")
+                else:
+                    supported = all(character in "frRv" for character in argument[1:])
+                if not supported:
+                    raise ValueError(f"unsupported cleanup rm option: {argument}")
+                options.append(argument)
+            else:
+                paths.append(argument)
+        recursive = any(
+            option == "--recursive"
+            or (
+                option.startswith("-")
+                and not option.startswith("--")
+                and ("r" in option or "R" in option)
+            )
+            for option in options
+        )
+        for path in paths:
+            target = Path(os.path.abspath(ROOT / path))
+            if target == fixture or (
+                recursive and not target.is_symlink() and fixture.is_relative_to(target)
+            ):
+                removed = True
+    return removed
+
+
 class MapMenuRuntimeContractTests(unittest.TestCase):
     def _runtime_module_and_capture(self):
         module = runpy.run_path(str(RUNTIME_RUNNER))
@@ -684,16 +731,30 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
 
     def test_documented_nine_row_sram_is_in_clean_fast_plan(self):
         with tempfile.TemporaryDirectory() as temporary:
-            asset_include = Path(temporary) / "asset-discovery.mk"
-            asset_include.touch()
-            # Make can remake includes and execute '+' recipes even with -n.
-            completed = subprocess.run(
-                [
-                    "make", "-f", "Makefile", "-f", "-", "-o", str(asset_include),
-                    "-p", "-n", f"ASSET_DISCOVERY_MK={asset_include}",
+            includes = {
+                name: Path(temporary) / f"{name}.mk"
+                for name in (
+                    "ASSET_DISCOVERY_MK",
+                    "ASSET_OUTPUT_MK",
+                    "GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE",
+                    "GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE",
+                    "GENERATED_DATA_CH2_EVENTLISTS_DEPFILE",
+                )
+            }
+            command = ["make", "-f", "Makefile", "-f", "-"]
+            for name, path in includes.items():
+                path.touch()
+                command.extend(("-o", str(path), f"{name}={path}"))
+            command.extend(
+                (
+                    "-p", "-n", "NODEP=1", "MAKECMDGOALS_NOSCANINC=clean_fast",
                     "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
                     "FE8_PROJECT=default", "clean_fast",
-                ],
+                )
+            )
+            # Make can remake includes and execute '+' recipes even with -n.
+            completed = subprocess.run(
+                command,
                 cwd=ROOT,
                 input="clean_fast: SHELL := /bin/sh\nclean_fast: .SHELLFLAGS := -c :\n",
                 capture_output=True,
@@ -713,43 +774,33 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             if entry["id"] == "TC-MAP-MENU-168"
         )
         documented_paths = {
-            os.path.normpath(word.strip("`.,;()"))
+            os.path.normpath(word.strip("`,;()").rstrip("."))
             for word in case["cleanup"].split()
         }
         self.assertIn(os.path.normpath(fixture), documented_paths)
 
         fixture_path = Path(os.path.abspath(ROOT / fixture))
-        removed = False
-        for line in plan.splitlines():
-            arguments = shlex.split(line)
-            if not arguments or Path(arguments[0]).name != "rm":
-                continue
-            options = []
-            paths = []
-            parsing_options = True
-            for argument in arguments[1:]:
-                if parsing_options and argument == "--":
-                    parsing_options = False
-                elif parsing_options and argument.startswith("-"):
-                    options.append(argument)
-                else:
-                    paths.append(argument)
-            recursive = any(
-                option == "--recursive"
-                or (
-                    option.startswith("-")
-                    and not option.startswith("--")
-                    and ("r" in option or "R" in option)
-                )
-                for option in options
+        self.assertTrue(
+            _cleanup_plan_removes_fixture(plan, fixture_path),
+            f"clean_fast does not plan to remove {fixture}",
+        )
+
+    def test_cleanup_plan_respects_shell_boundaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "directory with spaces" / "fixture.sav"
+            directory = shlex.quote(str(fixture.parent))
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf \\\n {directory}", fixture)
             )
-            for path in paths:
-                target = Path(os.path.abspath(ROOT / path))
-                if target == fixture_path or (
-                    recursive and not target.is_symlink() and fixture_path.is_relative_to(target)
-                ):
-                    removed = True
-        self.assertTrue(removed, f"clean_fast does not plan to remove {fixture}")
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -rf unrelated # {directory}", fixture)
+            )
+            with self.assertRaisesRegex(ValueError, "unsupported cleanup shell syntax"):
+                _cleanup_plan_removes_fixture(f"rm -rf unrelated && echo {directory}", fixture)
+            for option in ("--help", "--interactive=always", "-i"):
+                with self.subTest(option=option):
+                    with self.assertRaisesRegex(ValueError, "unsupported cleanup rm option"):
+                        _cleanup_plan_removes_fixture(f"rm -rf {option} {directory}", fixture)
 
 
 if __name__ == "__main__":
