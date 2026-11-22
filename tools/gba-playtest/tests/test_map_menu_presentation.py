@@ -4,8 +4,10 @@ import contextlib
 import copy
 import io
 import json
+import os
 import re
 import runpy
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +21,11 @@ from scripts.localization.game_locales.ending_metrics import (
     _cjk_widths,
     _line_width,
 )
+
+if __package__:
+    from . import modern_mk_query
+else:
+    import modern_mk_query
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -675,18 +682,74 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             )
         )
 
-    def test_case_registry_owns_disposable_nine_row_sram_cleanup(self):
+    def test_documented_nine_row_sram_is_in_clean_fast_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            asset_include = Path(temporary) / "asset-discovery.mk"
+            asset_include.touch()
+            # Make can remake includes and execute '+' recipes even with -n.
+            completed = subprocess.run(
+                [
+                    "make", "-f", "Makefile", "-f", "-", "-o", str(asset_include),
+                    "-p", "-n", f"ASSET_DISCOVERY_MK={asset_include}",
+                    "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                    "FE8_PROJECT=default", "clean_fast",
+                ],
+                cwd=ROOT,
+                input="clean_fast: SHELL := /bin/sh\nclean_fast: .SHELLFLAGS := -c :\n",
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        plan, marker, database = completed.stdout.partition("# GNU Make")
+        self.assertTrue(marker, "Make did not emit its database")
+        fixture = modern_mk_query.variable_value(database, "MODERN_MAP_MENU_NINE_ROW_SRAM")
+        self.assertTrue(fixture, "Make did not resolve the nine-row SRAM fixture")
+
         registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
         case = next(
             entry
             for entry in registry["cases"]
             if entry["id"] == "TC-MAP-MENU-168"
         )
-        cleanup = case["cleanup"]
-        self.assertIn("debugtools-current.sav", cleanup)
-        self.assertIn("disposable ignored build output", cleanup)
-        self.assertIn("make clean_fast removes it", cleanup)
-        self.assertNotIn("no save or savestate is created", cleanup)
+        documented_paths = {
+            os.path.normpath(word.strip("`.,;()"))
+            for word in case["cleanup"].split()
+        }
+        self.assertIn(os.path.normpath(fixture), documented_paths)
+
+        fixture_path = Path(os.path.abspath(ROOT / fixture))
+        removed = False
+        for line in plan.splitlines():
+            arguments = shlex.split(line)
+            if not arguments or Path(arguments[0]).name != "rm":
+                continue
+            options = []
+            paths = []
+            parsing_options = True
+            for argument in arguments[1:]:
+                if parsing_options and argument == "--":
+                    parsing_options = False
+                elif parsing_options and argument.startswith("-"):
+                    options.append(argument)
+                else:
+                    paths.append(argument)
+            recursive = any(
+                option == "--recursive"
+                or (
+                    option.startswith("-")
+                    and not option.startswith("--")
+                    and ("r" in option or "R" in option)
+                )
+                for option in options
+            )
+            for path in paths:
+                target = Path(os.path.abspath(ROOT / path))
+                if target == fixture_path or (
+                    recursive and not target.is_symlink() and fixture_path.is_relative_to(target)
+                ):
+                    removed = True
+        self.assertTrue(removed, f"clean_fast does not plan to remove {fixture}")
 
 
 if __name__ == "__main__":
