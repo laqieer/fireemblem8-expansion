@@ -53,6 +53,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
@@ -557,21 +558,43 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("--state open", text)
 
     def test_remote_completion_requires_successful_exact_master_push(self):
+        environments = (
+            ("inherited", {}),
+            ("conflicting", {
+                "AUTOTOOLS_CONFIG_MK": "/nonexistent/config.autotools.mk",
+                "FE8_PROJECT": "invalid",
+                "FE8_PROJECT_PROFILE": "invalid",
+                "EXPANSION_ENABLED_LOCALES": "invalid",
+                "EXPANSION_DEFAULT_LOCALE": "invalid",
+                "EXPANSION_PSEUDO_LOCALE": "invalid",
+                "MODERN_BUILD_ROOT": "/nonexistent/modern",
+                "ASSET_DISCOVERY_MK": "/nonexistent/asset-discovery.mk",
+                "MAKEFILES": "/nonexistent/other.mk",
+                "MAKEFLAGS": "--invalid-fixture-option",
+            }),
+        )
+        for name, ambient in environments:
+            with self.subTest(environment=name), mock.patch.dict(os.environ, ambient):
+                self._check_remote_completion_fixture()
+
+    def _check_remote_completion_fixture(self):
         git = shutil.which("git")
+        make = shutil.which("make")
         self.assertIsNotNone(git)
-        env = {
-            key: value for key, value in os.environ.items()
-            if not key.startswith("GIT_")
-            and key not in {"MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL"}
-        }
-        env.update({
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_TERMINAL_PROMPT": "0",
-            "LC_ALL": "C",
-        })
+        self.assertIsNotNone(make)
         with tempfile.TemporaryDirectory(prefix="remote-completion-") as directory:
             root = Path(directory)
+            env = {
+                "PATH": os.defpath,
+                "HOME": str(root),
+                "TMPDIR": str(root),
+                "LC_ALL": "C",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+                "PYTHON": sys.executable,
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
             repository = root / "repository"
             subprocess.run([git, "init", "-q", "-b", "master", str(repository)], env=env, check=True)
             (repository / "fixture").write_text("fixture\n", encoding="ascii")
@@ -634,6 +657,7 @@ class RemoteCompletionGateTests(unittest.TestCase):
             gh.chmod(0o755)
             log = root / "gh-arguments.json"
             env.update({
+                "PATH": str(binaries) + os.pathsep + os.defpath,
                 "TOOLCHAIN": str(toolchain),
                 "FIXTURE_GH_LOG": str(log),
             })
@@ -659,8 +683,11 @@ class RemoteCompletionGateTests(unittest.TestCase):
                 with self.subTest(case=name):
                     log.unlink(missing_ok=True)
                     result = subprocess.run(
-                        ["make", "--no-print-directory", "-f", str(MAKEFILE),
+                        [make, "--no-print-directory", "-f", str(MAKEFILE),
                          "-o", str(discovery), "-o", str(assets), "NODEP=1",
+                         "AUTOTOOLS_CONFIG_MK=", "FE8_PROJECT=default",
+                         "FE8_PROJECT_PROFILE=default", "EXPANSION_ENABLED_LOCALES=en",
+                         "EXPANSION_DEFAULT_LOCALE=en", "EXPANSION_PSEUDO_LOCALE=0",
                          f"ASSET_DISCOVERY_MK={discovery}", f"ASSET_OUTPUT_MK={assets}",
                          f"MODERN_BUILD_ROOT={root / 'build'}",
                          f"GENERATED_DATA_OUT_DIR={root / 'generated-data'}",

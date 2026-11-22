@@ -2509,6 +2509,17 @@ def _remote_completion_errors(makefile_text: str) -> list[str]:
     return errors
 
 
+def _remote_completion_fixture(query_args: list[str]) -> str:
+    command = shlex.join(["gh", "run", "list", *query_args])
+    return (
+        "remote-completion-check:\n"
+        '\t@if [ "$$branch" != master ]; then '
+        "printf 'remote completion requires master, not %s\\n' \"$$branch\"; fi; \\\n"
+        f"\trun=$$({command}); \\\n"
+        "\t:\n"
+    )
+
+
 class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def setUp(self):
         self.text = WORKFLOW.read_text(encoding="utf-8")
@@ -9413,26 +9424,37 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
 
     def test_retired_workflow_remote_completion_dependency_fails(self):
-        changed = MAKEFILE.read_text(encoding="utf-8").replace(
-            "--workflow build.yml",
-            f"--workflow {RETIRED_WORKFLOW_FILENAME}",
-            1,
+        text = _remote_completion_fixture(
+            ["--event=push", "--branch=master", "--commit=$$head_sha",
+             f"--workflow={RETIRED_WORKFLOW_FILENAME}"]
         )
-        self.assertTrue(any("retired workflow" in error for error in _remote_completion_errors(changed)))
+        self.assertTrue(any("retired workflow" in error for error in _remote_completion_errors(text)))
 
     def test_pull_request_remote_completion_dependency_fails(self):
-        changed = MAKEFILE.read_text(encoding="utf-8").replace("--event push ", "", 1)
-        self.assertTrue(any("--event push" in error for error in _remote_completion_errors(changed)))
+        cases = (
+            (["--commit", "$$head_sha", "--branch=master", "--workflow=build.yml"],
+             "--event push"),
+            (["--event=push", "--commit", "$$head_sha", "--workflow=build.yml"],
+             "--branch master"),
+            (["--event=pull_request", "--branch=master", "--commit", "$$head_sha",
+              "--workflow=build.yml"], "--event push"),
+        )
+        for query, expected in cases:
+            with self.subTest(query=query):
+                errors = _remote_completion_errors(_remote_completion_fixture(query))
+                self.assertTrue(any(expected in error for error in errors), errors)
 
     def test_remote_completion_query_option_order_is_semantic(self):
-        original = MAKEFILE.read_text(encoding="utf-8")
-        changed = original.replace(
-            '--event push --branch master --commit "$$head_sha"',
-            '--commit "$$head_sha" --branch=master --event=push',
-            1,
+        queries = (
+            ["--event", "push", "--branch", "master", "--commit", "$$head_sha",
+             "--workflow", "build.yml"],
+            ["--commit=$$head_sha", "--branch=master", "--workflow=build.yml",
+             "--event=push"],
         )
-        self.assertNotEqual(changed, original)
-        self.assertEqual(_remote_completion_errors(changed), [])
+        self.assertEqual(_remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")), [])
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertEqual(_remote_completion_errors(_remote_completion_fixture(query)), [])
 
     def test_comment_only_change_preserves_contract(self):
         self.assertEqual(_errors(self.text + "\n# no graph change\n", False), [])
