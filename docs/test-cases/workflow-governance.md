@@ -4,6 +4,55 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-REMOTE-COMPLETION-001: Require the exact automatic master Build
+
+- **Feature / issues:** `workflow-governance` /
+  [#108](https://github.com/laqieer/fireemblem8-expansion/issues/108) and
+  [#393](https://github.com/laqieer/fireemblem8-expansion/issues/393).
+- **Configuration and prerequisites:** Linux source checkout, Python 3, Git
+  and GNU Make. Run from the repository root; no credentials, network, ROM or
+  saved game is needed. The test owns a temporary clean Git repository.
+
+### Actions
+
+Run the real Make target against the fixture's inert GitHub CLI boundary:
+
+```bash
+python3 -m unittest scripts.modernize.tests.test_build_default_lane.RemoteCompletionGateTests.test_remote_completion_requires_successful_exact_master_push tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_pull_request_remote_completion_dependency_fails tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_remote_completion_query_option_order_is_semantic -v
+```
+
+### Expected result
+
+The exact SHA's successful master push Build passes. The target queries the
+fixture repository, push event, master branch, exact SHA and `build.yml`.
+Reordering equivalent query options remains valid.
+
+### Negative control
+
+A same-SHA feature push or PR, a different SHA, a failed or pending master
+Build, and no matching run all fail. Removing the event or branch filter must
+fail even if the old query text is retained in a comment.
+
+### Interactions and save compatibility
+
+This depends on the existing Make completion gate and Git; it does not change
+CI scheduling, ROM/RAM, saves, generated data, localization, debug/release or
+the archival lane. It conflicts with accepting feature or PR evidence as
+automatic master evidence.
+
+### Automation
+
+The command above executes the actual Make recipe with real fixture Git state
+and controlled CLI results, then checks the parsed workflow contract. Live
+GitHub availability and the CLI's JSON/`--jq` implementation remain covered by
+the real remote completion gate, not the fixture.
+
+### Cleanup and limitations
+
+The temporary repository, fake CLI and generated fixture files clean
+themselves up. No live GitHub state or user worktree is changed; no
+manual-only criterion applies.
+
 ## TC-WORKFLOW-PRIVATE-CI-001: Preserve CI for private repositories
 
 - **Bug / originating issue:** `workflow-governance` /

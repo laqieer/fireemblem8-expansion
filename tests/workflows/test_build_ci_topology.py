@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -2476,12 +2477,33 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
 
 def _remote_completion_errors(makefile_text: str) -> list[str]:
     recipe = _make_recipe(makefile_text, "remote-completion-check")
-    required = (
-        "--event push --branch master --commit",
-        "--workflow build.yml",
-        "requires master, not",
-    )
-    errors = [f"remote completion lacks {item}" for item in required if item not in recipe]
+    errors = []
+    match = re.search(r"\bgh\s+run\s+list\b", recipe)
+    if match is None:
+        errors.append("remote completion lacks gh run list")
+    else:
+        try:
+            command = recipe[match.start():].split(");", 1)[0].replace("\\\n", " ")
+            args = shlex.split(command)
+        except ValueError:
+            errors.append("remote completion has malformed gh run list arguments")
+            args = []
+        for flag, expected in (
+            ("--event", "push"),
+            ("--branch", "master"),
+            ("--commit", "$$head_sha"),
+            ("--workflow", "build.yml"),
+        ):
+            values = []
+            for index, arg in enumerate(args):
+                if arg == flag and index + 1 < len(args):
+                    values.append(args[index + 1])
+                elif arg.startswith(flag + "="):
+                    values.append(arg[len(flag) + 1:])
+            if not values or values[-1] != expected:
+                errors.append(f"remote completion lacks {flag} {expected}")
+    if "requires master, not" not in recipe:
+        errors.append("remote completion lacks master branch refusal")
     if RETIRED_WORKFLOW_FILENAME in recipe:
         errors.append("remote completion still depends on the retired workflow")
     return errors
@@ -9401,6 +9423,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_pull_request_remote_completion_dependency_fails(self):
         changed = MAKEFILE.read_text(encoding="utf-8").replace("--event push ", "", 1)
         self.assertTrue(any("--event push" in error for error in _remote_completion_errors(changed)))
+
+    def test_remote_completion_query_option_order_is_semantic(self):
+        original = MAKEFILE.read_text(encoding="utf-8")
+        changed = original.replace(
+            '--event push --branch master --commit "$$head_sha"',
+            '--commit "$$head_sha" --branch=master --event=push',
+            1,
+        )
+        self.assertNotEqual(changed, original)
+        self.assertEqual(_remote_completion_errors(changed), [])
 
     def test_comment_only_change_preserves_contract(self):
         self.assertEqual(_errors(self.text + "\n# no graph change\n", False), [])
