@@ -692,7 +692,9 @@ normally.
 
 The focused host/backend fixture rejects malformed profile configuration,
 duplicate traces, unexpected framebuffer output, terminal-impossible
-configuration/trace timestamps, and over-budget trace output. The paired
+configuration/trace timestamps, and over-budget trace output. The benchmark
+tests also reject an in-place non-atomic overwrite or empty JSON report and
+confirm failed runs do not publish stale success output. The paired
 runner flips one committed semantic trace value after capture and requires the
 comparator to reject it; same-profile samples with shifted terminal or trace
 frames, an event-telemetry overflow, or a non-OFF cached presentation policy
@@ -717,7 +719,9 @@ localization, or archival-lane behavior.
 
 - `tools/gba-playtest/tests/test_accelerated_fidelity.py` validates strict
   schema-v3/profile parsing, plan-v5 semantic-only hashing, one real
-  `runFrame()` per fixture frame, profile application, and trace perturbation.
+  `runFrame()` per fixture frame, profile application, trace perturbation,
+  parsed benchmark provenance/profile/sample metadata, and replacement that
+  preserves an already-open reader's previous snapshot.
 - `expansion-modern-autoplay-accelerated-fidelity-check` runs the paired
   modern-debug libmGBA fixture, freezes the frame target, and writes the
   reproducible benchmark report. Wall-clock samples are report-only rather

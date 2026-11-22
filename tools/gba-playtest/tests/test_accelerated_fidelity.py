@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import subprocess
 import sys
 import tempfile
@@ -642,23 +643,61 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
         self.assertFalse(benchmark.exists())
 
     def test_benchmark_success_replaces_output_atomically(self):
-        capture = {
-            "rom": {"sha1": "0" * 40, "size": 1, "title": "", "game_code": ""},
-            "scenario": "fixture",
-            "terminal": {"frame": 0},
+        baseline = {
+            "rom": {"sha1": "a" * 40, "size": 1024, "title": "fixture", "game_code": "TEST"},
+            "scenario": "normal-fidelity",
+            "terminal": {"frame": 42},
         }
+        accelerated = {
+            "rom": baseline["rom"],
+            "scenario": "accelerated-fidelity",
+            "terminal": {"frame": 30},
+        }
+        samples = [
+            {
+                "sample": 1,
+                "baseline": 2.5,
+                "accelerated": 1.5,
+                "baseline_emulated_frames": 43,
+                "accelerated_emulated_frames": 31,
+            }
+        ]
+        previous = b'{"previous": true}\n'
         with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
             benchmark = Path(temporary) / "accelerated-fidelity-benchmark.json"
-            accelerated_fidelity_checks._write_benchmark(
-                benchmark,
-                "test",
-                "0" * 40,
-                capture,
-                capture,
-                [],
-            )
-            self.assertTrue(benchmark.is_file())
-            self.assertFalse((Path(temporary) / f".{benchmark.name}.tmp").exists())
+            benchmark.write_bytes(previous)
+            with benchmark.open("rb") as reader:
+                accelerated_fidelity_checks._write_benchmark(
+                    benchmark, "test", "b" * 40, baseline, accelerated, samples
+                )
+                self.assertEqual(reader.read(), previous)
+            report = json.loads(benchmark.read_text(encoding="utf-8"))
+            self.assertEqual(set(Path(temporary).iterdir()), {benchmark})
+
+        self.assertEqual(report["configuration"], "test")
+        self.assertEqual(report["rom_commit"], "b" * 40)
+        self.assertEqual(report["rom"], baseline["rom"])
+        self.assertIs(report["same_rom_provenance"], True)
+        self.assertEqual(report["scenario"], {
+            "baseline": "normal-fidelity",
+            "accelerated": "accelerated-fidelity",
+        })
+        self.assertEqual(report["emulated_frames"], {
+            "baseline": 43,
+            "accelerated": 31,
+            "reduction": 12,
+        })
+        self.assertEqual(report["wall_clock_samples_seconds"], samples)
+        self.assertIsInstance(report["format_version"], int)
+        for field in ("machine", "platform", "python", "python_implementation"):
+            self.assertIsInstance(report["host"][field], str)
+            self.assertTrue(report["host"][field])
+        for field in ("path", "python_executable"):
+            self.assertIsInstance(report["runner"][field], str)
+            self.assertTrue(report["runner"][field])
+        for field in ("libmgba_version", "repository_commit"):
+            self.assertIsInstance(report[field], str)
+            self.assertTrue(report[field])
 
     def test_event_transition_endpoint_divergence_is_not_equivalent(self):
         baseline = self._capture(gba_playtest.EXECUTION_PROFILE_NORMAL_FIDELITY)
