@@ -424,11 +424,11 @@ void Proc_End(ProcPtr proc)
 
     if (proc == &sOwnerProc)
     {
+        sScratchProc.proc_script = NULL;
         if (sOwnerEndCb != NULL)
         {
             ProcFunc end = sOwnerEndCb;
             sOwnerEndCb = NULL;
-            sScratchProc.proc_script = NULL;
             end(proc);
         }
         sOwnerProc.proc_script = NULL;

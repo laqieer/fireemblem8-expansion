@@ -4,6 +4,7 @@
 #include "global.h"
 
 #include "bm.h"
+#include "proc.h"
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
 
@@ -206,6 +207,8 @@ static int TestContextParentTeardown(
     DebugToolsDiagnosticsHost_OverwriteDisplay(0x147A);
     DebugToolsDiagnosticsHost_EndContext();
     CHECK(DebugToolsDiagnosticsHost_DisplayEquals(0x369C), message);
+    CHECK(DebugToolsDiagnostics_GetSnapshot() == NULL,
+          "parent teardown must retire the scratch child");
     CHECK(gDebugToolsDiagnosticsProbe.forcedTeardownCount == 0
           && gDebugToolsDiagnosticsProbe.restorationCount == 1,
           "parent teardown is restored once without counting as explicit force");
@@ -231,10 +234,28 @@ static int TestParentTeardown(void)
     return 0;
 }
 
+static int TestProcChildTeardownWithoutCallback(void)
+{
+    static const struct ProcCmd ownerScript[] = {PROC_BLOCK};
+    static const struct ProcCmd childScript[] = {PROC_BLOCK};
+    ProcPtr owner;
+    ProcPtr child;
+
+    DebugToolsDiagnosticsHost_Reset();
+    owner = Proc_Start(ownerScript, PROC_TREE_1);
+    child = Proc_Start(childScript, owner);
+    CHECK(owner != NULL && child != NULL && Proc_Find(childScript) == child,
+          "owner without callback must have an active child");
+    Proc_End(owner);
+    CHECK(Proc_Find(childScript) == NULL,
+          "owner teardown must retire a child without an end callback");
+    return 0;
+}
+
 static int TestReusedProcPayload(void)
 {
     const unsigned char* scratch;
-    unsigned int i;
+    size_t i;
 
     DebugToolsDiagnosticsHost_Reset();
     DebugToolsDiagnosticsHost_SetMap(0, 1);
@@ -251,6 +272,8 @@ static int TestReusedProcPayload(void)
     memset(DebugToolsDiagnostics_GetStatusBuffer(), 0xA5,
            sizeof(struct DebugToolsDiagnosticsSnapshot));
     DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnostics_GetSnapshot() == NULL,
+          "normal teardown must retire the scratch child");
     CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
           "normal map teardown must not release an unowned game lock");
     CHECK(DebugToolsDiagnosticsHost_GetTransitionEndCount() == 0,
@@ -286,6 +309,8 @@ int main(void)
           "unavailable-context case failed");
     CHECK(TestParentTeardown() == 0,
           "parent-teardown case failed");
+    CHECK(TestProcChildTeardownWithoutCallback() == 0,
+          "callback-free child-teardown case failed");
     CHECK(TestReusedProcPayload() == 0,
           "reused Proc payload case failed");
     printf("DEBUGTOOLS_DIAGNOSTICS_HOST_TEST: PASS\n");
