@@ -563,9 +563,15 @@ def _cleanup_plan_removes_fixture(plan, fixture):
             for option in options
         )
         for path in paths:
+            final_component = path.rstrip("/").rsplit("/", 1)[-1]
+            if not final_component or final_component in (".", ".."):
+                continue
             target = Path(os.path.abspath(ROOT / path))
-            if target == fixture or (
-                recursive and not target.is_symlink() and fixture.is_relative_to(target)
+            if (
+                recursive
+                and target != fixture
+                and not target.is_symlink()
+                and fixture.is_relative_to(target)
             ):
                 removed = True
     return removed
@@ -756,7 +762,11 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             completed = subprocess.run(
                 command,
                 cwd=ROOT,
-                input="clean_fast: SHELL := /bin/sh\nclean_fast: .SHELLFLAGS := -c :\n",
+                input=(
+                    "clean_fast: SHELL := /bin/sh\n"
+                    "clean_fast: .SHELLFLAGS := -c :\n"
+                    "__MAP_MENU_CLEANUP_FIXTURE := $(MODERN_MAP_MENU_NINE_ROW_SRAM)\n"
+                ),
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -764,7 +774,7 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         plan, marker, database = completed.stdout.partition("# GNU Make")
         self.assertTrue(marker, "Make did not emit its database")
-        fixture = modern_mk_query.variable_value(database, "MODERN_MAP_MENU_NINE_ROW_SRAM")
+        fixture = modern_mk_query.variable_value(database, "__MAP_MENU_CLEANUP_FIXTURE")
         self.assertTrue(fixture, "Make did not resolve the nine-row SRAM fixture")
 
         registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
@@ -794,6 +804,17 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             )
             self.assertFalse(
                 _cleanup_plan_removes_fixture(f"rm -rf unrelated # {directory}", fixture)
+            )
+            for path in (
+                '""',
+                shlex.quote(f"{fixture.parent}/."),
+                shlex.quote(f"{fixture.parent}/.."),
+                shlex.quote(str(fixture)),
+            ):
+                with self.subTest(path=path):
+                    self.assertFalse(_cleanup_plan_removes_fixture(f"rm -rf {path}", fixture))
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -f {shlex.quote(str(fixture))}", fixture)
             )
             with self.assertRaisesRegex(ValueError, "unsupported cleanup shell syntax"):
                 _cleanup_plan_removes_fixture(f"rm -rf unrelated && echo {directory}", fixture)
