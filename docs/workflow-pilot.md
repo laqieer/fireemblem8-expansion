@@ -464,8 +464,18 @@ Native PID/exit/RSS belongs to the **check process**, not an LLM owner.
 Unmeasured quantities remain `null`, not guessed zeroes or resource claims.
 
 Every registered check must finish successfully at the same head/base/worktree.
-Each observation retains the complete registered definition set, so changing,
-adding or removing a criterion invalidates even the remaining captures.
+Each observation retains its exact registered definition set through a
+per-candidate collection of distinct sets, so changing, adding or removing a
+criterion invalidates even the remaining captures. Older v3 documents with
+inline sets remain readable; `agent-handoff compact` converts them under the
+existing lock without discarding observations or distinct stale sets. A legacy
+record stays inline when conversion would not reduce either bounded resource
+without increasing the other. Use one reviewed tool revision for the
+coordinator: older readers reject compact records rather than interpreting
+them. Failures before replacement leave the canonical document unchanged. If
+directory sync fails after replacement, the command reports uncertain
+durability and the coordinator must reload with a compatible reader; it must
+not assume either version was durably committed.
 Re-register after changing a criterion or its
 trusted evidence contract; registration clears all prior captures. Capture
 failures replace prior success with explicit incomplete evidence. Git drift,
@@ -2759,6 +2769,11 @@ before creating a replacement assignment or PR.
 ```bash
 /usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff reconcile-run \
   --state "$COORDINATOR_STATE" --run-id 123456
+```
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff compact \
+  --state "$COORDINATOR_STATE"
 ```
 
 `assign` reserves ownership before dispatch; it does not launch agents.

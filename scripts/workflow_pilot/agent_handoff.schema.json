@@ -355,17 +355,35 @@
             {"not": {"additionalProperties": {"properties": {"contract": {"enum": ["git-diff-check", "protocol-json"]}}}}}
           ]
         },
+        "definition_sets": {
+          "type": "array", "maxItems": 32, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/coordinatorLocal/properties/required_checks"}
+        },
         "checks": {
           "type": "object", "maxProperties": 32, "propertyNames": {"$ref": "#/$defs/id"},
           "additionalProperties": {
-            "type": "object", "additionalProperties": false, "required": ["definitions", "observation"],
-            "properties": {
-              "definitions": {"$ref": "#/$defs/coordinatorLocal/properties/required_checks"},
-              "observation": {"$ref": "#/$defs/check"}
-            }
+            "oneOf": [
+              {
+                "type": "object", "additionalProperties": false, "required": ["definitions", "observation"],
+                "properties": {
+                  "definitions": {"$ref": "#/$defs/coordinatorLocal/properties/required_checks"},
+                  "observation": {"$ref": "#/$defs/check"}
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["definition_index", "observation"],
+                "properties": {
+                  "definition_index": {"$ref": "#/$defs/integer", "maximum": 31},
+                  "observation": {"$ref": "#/$defs/check"}
+                }
+              }
+            ]
           }
         }
-      }
+      },
+      "if": {"required": ["definition_sets"]},
+      "then": {"properties": {"checks": {"additionalProperties": {"required": ["definition_index"]}}}},
+      "else": {"properties": {"checks": {"additionalProperties": {"required": ["definitions"]}}}}
     },
     "pilotControl": {
       "type": "object", "additionalProperties": false,

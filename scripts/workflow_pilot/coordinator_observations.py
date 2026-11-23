@@ -33,6 +33,10 @@ class ObservationError(ValueError):
     pass
 
 
+class PersistenceUncertain(OSError):
+    pass
+
+
 def require(condition, message):
     if not condition:
         raise ObservationError(message)
@@ -254,7 +258,13 @@ def locked_state(path):
                     output.flush()
                     os.fsync(output.fileno())
                 os.replace(staging, path.name, src_dir_fd=parent, dst_dir_fd=parent)
-                os.fsync(parent)
+                try:
+                    os.fsync(parent)
+                except OSError as error:
+                    raise PersistenceUncertain(
+                        "coordinator state was replaced but directory sync failed; "
+                        f"durability is uncertain, reload with a compatible reader: {error}"
+                    ) from error
             finally:
                 with contextlib.suppress(FileNotFoundError):
                     os.unlink(staging, dir_fd=parent)

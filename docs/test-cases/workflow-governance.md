@@ -6538,7 +6538,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
-  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367).
+  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367);
+  snapshot regression [issue #462](https://github.com/laqieer/fireemblem8-expansion/issues/462).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6554,7 +6555,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    ```bash
    build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
      scripts.workflow_pilot.tests.test_agent_handoff \
-     scripts.workflow_pilot.tests.test_coordinator_observations -v
+     scripts.workflow_pilot.tests.test_coordinator_observations \
+     scripts.workflow_pilot.tests.test_coordinator_local -v
    ```
 
 2. Inspect the real-Git positive fixture: exact clean strict descendant, named
@@ -6726,6 +6728,22 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    Distinct live processes pass; an owned unreaped zombie cannot reserve a
    watcher. Running/ended records must agree with process state and exit data;
    completed observations with unknown exit/RSS remain valid and reconcilable.
+   Migrate repeated and deliberately different stale local-check definition
+   snapshots with `agent-handoff compact`, reload the state and compare the
+   expanded records with the original. Current complete checks remain ready;
+   stale, removed or changed criteria remain non-ready until recaptured or
+   re-registered. Duplicate sets and invalid references reject. Fill a
+   synthetic legacy document to just below the existing JSON node bound and
+   attempt a locked append: it fails without changing canonical bytes.
+   Compact and retry the same append successfully. At a controlled node
+   boundary, leave non-saving records inline while compacting repeated sets.
+   Reload mixed compact snapshots at a controlled byte boundary: compaction
+   preserves every capture without growing the state, and recapturing stale
+   checks releases unused snapshots.
+   Force a replacement failure: the CLI reports failure, emits no success
+   result and retains the original bytes. Force directory-sync failure after
+   replacement: the CLI reports uncertain durability and no success; reload
+   the complete replacement with a compatible reader and verify its evidence.
    Reuse a dispatch ID with otherwise fresh assignment/owner/session IDs in
    a review or independent reservation, and mutate a loaded state similarly:
    reject. A genuinely fresh dispatch remains valid, and the existing other
@@ -6798,11 +6816,13 @@ history does not need this session's trailers. Each lifecycle state has a
 separate actual observation. Ownership and watcher reservations are exclusive,
 the implementation owner retires, and one interrupted-worktree replacement is
 bounded. GitHub remains CI authority. No validation result publishes anything
-or satisfies the separate full-PR/final delivery gates.
+or satisfies the separate full-PR/final delivery gates. Exact local-check
+snapshots survive compaction and restart within the existing document bounds.
 
 ### Negative control
 
 Each adversary above fails or remains explicitly unknown/incomplete.
+Before #462, a further candidate cannot be serialized at the node limit.
 Runtime-check mutation must fail even if command/pass labels are preserved.
 Equivalent source/JSON wording or order does not affect semantic evidence.
 There is no disabled gameplay profile: omitting optional handoff reporting

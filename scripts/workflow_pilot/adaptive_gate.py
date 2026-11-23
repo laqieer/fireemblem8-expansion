@@ -1137,7 +1137,8 @@ def _validate_local_checks(checks):
 
 def validate_local_validation(local):
     handoff.fields(local, "coordinator_id repository pr_number head_sha base_sha base_ref branch worktree "
-                   "git_identity registered_at clock required_checks checks")
+                   "git_identity registered_at clock required_checks checks"
+                   + (" definition_sets" if isinstance(local, dict) and "definition_sets" in local else ""))
     handoff.text(local["coordinator_id"], maximum=128, pattern=handoff.ID_RE)
     handoff.text(local["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
     handoff.integer(local["pr_number"], minimum=1)
@@ -1155,11 +1156,77 @@ def validate_local_validation(local):
     for key in ("device", "inode"):
         handoff.integer(local["git_identity"][key])
     _validate_local_checks(local["required_checks"])
+    has_definition_sets = "definition_sets" in local
+    definitions = local["definition_sets"] if has_definition_sets else None
+    if has_definition_sets:
+        for definition_set in handoff.items(definitions, maximum=32):
+            _validate_local_checks(definition_set)
+        require(all(definition_set not in definitions[:index]
+                    for index, definition_set in enumerate(definitions)),
+                "duplicate captured definition set")
     for check_id, captured in handoff.named_records(local["checks"]):
-        handoff.fields(captured, "definitions observation")
+        handoff.fields(captured, ("definition_index" if has_definition_sets else "definitions")
+                       + " observation")
         handoff.validate_check(captured["observation"])
         require(captured["observation"]["id"] == check_id, "captured check ID mismatch")
-        _validate_local_checks(captured["definitions"])
+        if not has_definition_sets:
+            _validate_local_checks(captured["definitions"])
+        else:
+            handoff.integer(captured["definition_index"], maximum=31)
+            require(captured["definition_index"] < len(definitions), "captured definition index missing")
+
+
+def _captured_definitions(local, captured):
+    if "definition_sets" in local:
+        return local["definition_sets"][captured["definition_index"]]
+    return captured["definitions"]
+
+
+def _json_footprint(value):
+    pending = [value]
+    nodes = 0
+    while pending:
+        item = pending.pop()
+        nodes += 1
+        if isinstance(item, dict):
+            nodes += len(item)
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    size = len(json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True,
+                          separators=(",", ":")))
+    return nodes, size
+
+
+def compact_local_validation(local):
+    validate_local_validation(local)
+    if "definition_sets" in local:
+        used = {captured["definition_index"] for captured in local["checks"].values()}
+        definitions = [snapshot for index, snapshot in enumerate(local["definition_sets"])
+                       if index in used]
+    else:
+        definitions = []
+    checks = {}
+    for check_id, captured in local["checks"].items():
+        snapshot = _captured_definitions(local, captured)
+        try:
+            index = definitions.index(snapshot)
+        except ValueError:
+            index = len(definitions)
+            definitions.append(snapshot)
+        checks[check_id] = {"definition_index": index, "observation": captured["observation"]}
+    prepared = {**local, "definition_sets": definitions, "checks": checks}
+    if prepared == local:
+        return False
+    before_nodes, before_bytes = _json_footprint(local)
+    after_nodes, after_bytes = _json_footprint(prepared)
+    if (after_nodes > before_nodes or after_bytes > before_bytes
+            or (after_nodes, after_bytes) == (before_nodes, before_bytes)):
+        return False
+    local["definition_sets"] = definitions
+    local["checks"] = checks
+    validate_local_validation(local)
+    return True
 
 
 def _local_delegations(state, pr):
@@ -1203,7 +1270,7 @@ def register_local_validation(state, record, pr, worktree, required_checks):
         "head_sha": pr.head_sha, "base_sha": record["base_sha"], "base_ref": pr.base_ref,
         "branch": pr.head_ref, "worktree": str(worktree), "git_identity": current["identity"],
         "registered_at": clock["at"], "clock": clock,
-        "required_checks": copy.deepcopy(required_checks), "checks": {},
+        "required_checks": copy.deepcopy(required_checks), "definition_sets": [], "checks": {},
     }
     validate_local_validation(local)
     record["local_validation"] = local
@@ -1232,6 +1299,7 @@ def capture_local_check(state, record, pr, check_id, trusted_executor=None):
                "required_checks": definitions}
     entry = {"assignment": context, "checks": []}
     local["checks"].pop(check_id, None)
+    compact_local_validation(local)
     started = observations.utc_now()
     try:
         check = handoff.capture_check(entry, check_id, pr.head_sha, trusted_executor, task_owned=False)
@@ -1245,7 +1313,16 @@ def capture_local_check(state, record, pr, check_id, trusted_executor=None):
                  "measurements": dict.fromkeys(handoff.METRICS),
                  "detail": "local capture unavailable: " + str(error)[:2000]}
         handoff.validate_check(check)
-    local["checks"][check_id] = {"definitions": definitions, "observation": check}
+    if "definition_sets" in local:
+        try:
+            definition_index = local["definition_sets"].index(definitions)
+        except ValueError:
+            definition_index = len(local["definition_sets"])
+            local["definition_sets"].append(definitions)
+        local["checks"][check_id] = {"definition_index": definition_index, "observation": check}
+    else:
+        local["checks"][check_id] = {"definitions": definitions, "observation": check}
+        compact_local_validation(local)
     return check
 
 
@@ -1257,7 +1334,7 @@ def coordinator_local_ready(state, record, pr):
         for check_id, definition in local["required_checks"].items():
             captured = local["checks"][check_id]
             check = captured["observation"]
-            if (captured["definitions"] != local["required_checks"]
+            if (_captured_definitions(local, captured) != local["required_checks"]
                     or any(check[key] != expected for key, expected in (
                         ("contract", definition["contract"]), ("evidence_id", definition["evidence_id"]),
                         ("parent_sha", local["base_sha"]), ("result_sha", local["head_sha"]),
