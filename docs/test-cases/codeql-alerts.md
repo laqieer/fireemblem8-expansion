@@ -5,6 +5,10 @@ host/runtime correctness findings from the same CodeQL snapshot. They are bug
 fixes, not optional features: valid protocol bytes and supported build
 profiles remain compatible.
 
+For both cases, the workflow test uses temporary compiler and harness stubs to
+check execution order and failure propagation. It does not execute sanitizers
+or replace the real `make codeql-alerts-test` and ROM gates.
+
 ## TC-SIO-084: bounded Link Arena transfer
 
 **Issue:** #84.
@@ -23,13 +27,14 @@ required evidence.
 **Actions:**
 
 1. Run `make codeql-alerts-test`.
-2. Run the modern debug and release linker/runtime gates documented in the PR.
-3. In the packet harness, send canonical payloads of 4 bytes, 0x28 bytes, and
+2. Run `python3 -m unittest tests.workflows.test_codeql_fanalyzer_gate -v`.
+3. Run the modern debug and release linker/runtime gates documented in the PR.
+4. In the packet harness, send canonical payloads of 4 bytes, 0x28 bytes, and
    `SIO_MAX_DATA` bytes. Run the XMAP layout/copy case for exactly 0xC00 bytes.
-4. Submit a truncated physical frame, a claim of `SIO_MAX_DATA + 1`, a payload
+5. Submit a truncated physical frame, a claim of `SIO_MAX_DATA + 1`, a payload
    larger than its destination, sender IDs 4 and 0xFF, a sender that does not
    match the physical lane, and one extra record to each full pending ring.
-5. Submit a verifier-rejected payload and an invalid big-transfer header.
+6. Submit a verifier-rejected payload and an invalid big-transfer header.
 
 **Expected result:** Valid payloads arrive byte-for-byte. XMAP uses 26 payload
 blocks (25 full blocks and a 22-byte final block) and changes exactly 0xC00
@@ -60,7 +65,9 @@ physical consoles; timing is outside this memory-safety bug contract.
 **Automation:** `make codeql-alerts-test` runs
 `tests/codeql/sio_protocol_host_test.c` under AddressSanitizer and
 UndefinedBehaviorSanitizer. Modern debug/release/default builds provide target
-compile, link, boot, and existing runtime integration evidence.
+compile, link, boot, and existing runtime integration evidence. The workflow
+test checks that this harness runs before the analyzer and that a harness
+failure stops the gate.
 
 ## TC-CODEQL-084: remaining confirmed alert boundaries
 
@@ -79,9 +86,10 @@ Ubuntu/GCC analyzer lane cannot silently skip.
 **Actions:**
 
 1. Run `make codeql-alerts-test`.
-2. Run the complete modernization audit suite and documentation checker.
-3. Build `gbagfx` and `mid2agb`.
-4. Run the modern debug, release, and default release gates.
+2. Run `python3 -m unittest tests.workflows.test_codeql_fanalyzer_gate -v`.
+3. Run the complete modernization audit suite and documentation checker.
+4. Build `gbagfx` and `mid2agb`.
+5. Run the modern debug, release, and default release gates.
 
 **Expected result:** The bitfield matcher accepts valid qualified
 declarations and rejects 5000 repeated qualifiers within its five-second
@@ -116,4 +124,7 @@ sanitizer/runtime harnesses pass.
 **Automation:** `tests/codeql/runtime_bounds_host_test.c`,
 `tests/codeql/png_bounds_host_test.c`, and
 `scripts/modernize/tests/test_audit.py` are all invoked by
-`make codeql-alerts-test`.
+`make codeql-alerts-test`. The workflow test checks that both runtime harnesses
+run before the analyzer and that either harness failure stops the gate. Its
+controlled recursive analyzer uses the same PATH-selected Make as the outer
+test.
