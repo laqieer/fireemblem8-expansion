@@ -613,13 +613,15 @@ class Triage:
         require(len(self.findings) <= MAX_FINDINGS, "review finding budget exceeded")
         sha(self.fact.head)
         timestamp(self.fact.submitted_at)
+        require(isinstance(self.fact.body, str), "invalid review body")
         unique([item.id for item in self.findings], "accepted findings")
         for finding in self.findings:
             require(finding.origin == self.fact.head and finding.review_id == self.fact.id,
                     "finding has wrong review origin")
         error_response = (self.fact.actor == COPILOT_REVIEWER_ID
-                          and self.fact.body == FAILED_REVIEW_BODY)
-        failed_review = error_response and self.fact.state == "COMMENTED"
+                          and FAILED_REVIEW_BODY in self.fact.body)
+        failed_review = (error_response and self.fact.body == FAILED_REVIEW_BODY
+                         and self.fact.state == "COMMENTED")
         if self.outcome == "clean":
             require(not self.findings and not self.fact.unresolved_threads
                     and self.fact.state in {"COMMENTED", "APPROVED"} and not error_response,
@@ -1081,11 +1083,12 @@ class ReviewSession:
                     timestamp(item.submitted_at) for item in facts),
                     "fresh pre-review did not precede the first remote review")
         ready = all(item.outcome != "untriaged" and not item.fact.unresolved_threads for item in triage)
-        last_failed = max((index for index, item in enumerate(triage) if item.outcome == "failed"),
-                          default=-1)
-        if last_failed >= 0:
+        last_failed = max((timestamp(item.fact.submitted_at) for item in triage
+                           if item.outcome == "failed"), default=None)
+        if last_failed is not None:
             ready = ready and any(item.outcome == "clean" and item.fact.head == self.head
-                                  for item in triage[last_failed + 1:])
+                                  and timestamp(item.fact.submitted_at) > last_failed
+                                  for item in triage)
         latest = triage[-1] if triage else None
         return ready, bool(ready and latest and latest.fact.head == self.head
                            and latest.outcome == "clean")

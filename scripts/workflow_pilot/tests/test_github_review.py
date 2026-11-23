@@ -194,6 +194,8 @@ class GitHubReviewTests(unittest.TestCase):
             data, session, github, tuple(session.rounds.events), pre_review_required=True)
         self.assertFalse(result["handoff_eligible"])
         self.assertFalse(result["exact_head_review_clean"])
+        with self.assertRaisesRegex(ValueError, "clean triage"):
+            session.triage(self.model.Triage(session.rounds.events[0].fact, "clean"))
 
     def test_exact_merge_base_allows_only_unrelated_base_fast_forward(self):
         common = self.repo.commit({"lineage-common": "branch point"})

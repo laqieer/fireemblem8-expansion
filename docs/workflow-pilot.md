@@ -1059,9 +1059,11 @@ fact; it completes historical triage without granting clean authority.
 The explicit `failed` outcome is limited to the authenticated Copilot
 COMMENTED review containing the exact observed execution-error response and
 no inline comments, unresolved threads or accepted findings. Unknown or
-mixed error content stays untriaged. A failed review is never clean and does
-not reset change-request rounds or a sticky hold; readiness requires a later
-fully triaged clean review of the current head. Changed review content
+mixed error content stays untriaged; a body containing the exact error response
+plus other content cannot be triaged clean. A failed review is never clean and
+does not reset change-request rounds or a sticky hold; readiness requires a
+fully triaged clean review of the current head with a strictly later submission
+timestamp. Equal timestamps do not prove review order. Changed review content
 invalidates the failed disposition normally, and a finding cannot be accepted
 against a review while its failed disposition remains current. The exact
 error text is an external response boundary: an unrecognized response fails

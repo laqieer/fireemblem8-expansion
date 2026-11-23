@@ -1301,9 +1301,12 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    the current head. A stale-head clean review does not satisfy that
    requirement. A changed or ambiguous error, inline comment, unresolved
    thread or accepted finding cannot establish the failed disposition,
-   including a finding accepted afterward. The exact error response cannot
-   be triaged clean even if marked approved. Verify a failed review does not
-   reset prior
+   including a finding accepted afterward. A body containing the exact error
+   response cannot be triaged clean even with additional content or if marked
+   approved. A clean review with the same submission timestamp as a failed
+   review cannot establish later chronology, regardless of review ID order;
+   a strictly later clean current-head review can. Verify a failed review does
+   not reset prior
    change-request rounds or clear a sticky architecture hold. The
    `RoundTests` and `GitHubReviewTests` failed-review controls exercise the
    reducer and authenticated adapter against the observed error response.
