@@ -1004,6 +1004,32 @@
       ]
     },
     {
+      "id": "TC-CJK-INDEX-COST-001",
+      "title": "CJK index regeneration cost",
+      "feature_id": "cjk-resource-storage",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/459"
+      ],
+      "document": "docs/cjk_fonts.md",
+      "anchor": "tc-cjk-index-cost-001-cjk-index-regeneration-cost",
+      "profiles": ["Host Python 3 with committed CJK inputs"],
+      "purpose": "Avoid repeating the final FEHRR regeneration check while preserving real consumer and refusal evidence.",
+      "prerequisites": "Clean source checkout with Python 3 and committed CJK inputs; no ROM or emulator.",
+      "actions": "Run the focused actual CLI round-trip in its owned source/font fixture. Exercise both FEHRR and runtime-usage representations, generated consumers, compact assets and fresh-root output. In a disposable source copy, change the global.h include spacing in src/uiarena.c and rerun the test.",
+      "expected_result": "The first FEHRR state passes direct regeneration and the final state passes the following runtime-usage CLI precheck. Both formats and independent fresh outputs remain correct.",
+      "negative_control": "A stale inventory with a matching manifest checksum and a broken FEHRR index are rejected without changing named outputs; restored metadata and equivalent source formatting remain valid.",
+      "interactions": "Uses existing CJK inventory, compact-asset and runtime-usage consumers; no new dependency or feature conflict.",
+      "save_compatibility": "Host-only test; no save, game data, locale content, configuration, ROM/RAM or archival change.",
+      "cleanup": "The test removes its owned temporary roots without changing the source checkout.",
+      "limitations": "Host generated-index evidence only; no rendered font, target-ROM or manual criterion.",
+      "automation": [
+        {
+          "command": "python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index.ResourceIndexTests.test_actual_cli_round_trips_both_indexes_with_existing_consumers -v",
+          "evidence": "scripts/fonttools/cjk/tests/test_resource_index.py"
+        }
+      ]
+    },
+    {
       "id": "TC-CJK-INVENTORY-ORDER-001",
       "title": "Deterministic CJK consumer inventory",
       "feature_id": "full-game-localization",

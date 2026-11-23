@@ -342,8 +342,9 @@ PY
 
 Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index.ResourceIndexTests.test_actual_cli_round_trips_both_indexes_with_existing_consumers -v`.
 Its owned complete source/font fixture captures an actual plain usage output
-record, packs the input, reinserts that stale byte-count/hash and requires the
-real generated-file consumer to reject without changing any named output.
+record, packs the input, reinserts that stale byte-count/hash and updates the
+manifest's inventory checksum. Compact-asset validation must still succeed,
+but the real runtime-usage CLI must reject without changing any named output.
 Restoring current metadata must succeed. Before packing, it also copies the
 plain state to a second independent owned root; both actual CLI fresh encodes
 must produce identical usage, inventory and manifest bytes with the same
@@ -354,6 +355,29 @@ This is another indivisible generated-index conversion: report every deleted
 line and alternative complete-data proof, retain the unchanged 4 MiB raw
 boundary and all parent-first candidate/master completion gates. No manual
 judgment, font art or production-game qualification is supplied.
+
+### TC-CJK-INDEX-COST-001: CJK index regeneration cost
+
+For issue [#459](https://github.com/laqieer/fireemblem8-expansion/issues/459),
+start from a clean source checkout with Python 3 and the committed CJK inputs.
+No optional profile, ROM, emulator or manual judgment is required.
+
+1. Run `python3 -B -m unittest scripts.fonttools.cjk.tests.test_resource_index.ResourceIndexTests.test_actual_cli_round_trips_both_indexes_with_existing_consumers -v`.
+   Both FEHRR representations and both runtime-usage representations must
+   round-trip; the first FEHRR state is checked directly and the final one is
+   checked by the next runtime-usage CLI precheck. Fresh-root output and
+   compact assets must match.
+2. The owned fixture must reject a stale inventory through the CLI without
+   writing any named output, even when the manifest checksum matches the stale
+   inventory. It must also reject the broken FEHRR index without writes.
+   Restored valid metadata must remain valid.
+3. In a disposable source copy, change `#include "global.h"` in
+   `src/uiarena.c` to `#include    "global.h"` and rerun the same test. The
+   semantically equivalent formatting must pass; discard the copy afterward.
+
+The test owns and removes its temporary roots. This host-only case does not
+change game data, saves, locale content, configuration, ROM/RAM or archival
+behavior, and does not qualify rendered fonts or game behavior.
 
 ## Inventory contract
 
