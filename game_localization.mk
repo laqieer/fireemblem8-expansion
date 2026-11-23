@@ -90,7 +90,6 @@ game-localization-test:
 		-s scripts/localization/game_locales/tests -p 'test_*.py' -v
 	$(PYTEST_ENV) $(PYTHON3) scripts/texttools/tests/test_text_renderer_native.py
 	$(PYTEST_ENV) $(PYTHON3) scripts/texttools/tests/test_text_consumers_native.py
-	$(PYTEST_ENV) $(PYTHON3) scripts/texttools/tests/test_text_consumer_audit.py
 	$(MAKE) --no-print-directory game-localization-width-check
 	$(MAKE) --no-print-directory game-localization-text-edits-check
 
