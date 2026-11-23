@@ -6,8 +6,11 @@ fixes, not optional features: valid protocol bytes and supported build
 profiles remain compatible.
 
 For both cases, the workflow test uses temporary compiler and harness stubs to
-check execution order and failure propagation. It does not execute sanitizers
-or replace the real `make codeql-alerts-test` and ROM gates.
+check execution order, source-to-output provenance and failure propagation.
+It observes analyzer-enabled compilation of the three named production
+sources and checks the requested sanitizer flags and environment. It does not
+execute sanitizers, prove their instrumentation or replace the real
+`make codeql-alerts-test` and ROM gates.
 
 ## TC-SIO-084: bounded Link Arena transfer
 

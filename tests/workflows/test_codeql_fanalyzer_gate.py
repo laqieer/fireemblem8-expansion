@@ -15,6 +15,54 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
+UBSAN_CHECKS = frozenset({
+    "shift-base", "shift-exponent", "integer-divide-by-zero", "unreachable",
+    "vla-bound", "null", "return", "signed-integer-overflow", "bounds",
+    "alignment", "object-size", "nonnull-attribute", "returns-nonnull-attribute",
+    "bool", "enum", "vptr", "pointer-overflow", "builtin",
+})
+
+
+def sanitizer_flags_enabled(arguments):
+    enabled = set()
+    for argument in arguments:
+        if argument.startswith("-fsanitize="):
+            add = True
+            names = argument.removeprefix("-fsanitize=").split(",")
+        elif argument.startswith("-fno-sanitize="):
+            add = False
+            names = argument.removeprefix("-fno-sanitize=").split(",")
+        else:
+            continue
+        for name in names:
+            if name == "all" and not add:
+                enabled.clear()
+                continue
+            if name == "undefined":
+                expanded = UBSAN_CHECKS
+            elif name == "shift":
+                expanded = {"shift-base", "shift-exponent"}
+            elif name == "bounds-strict":
+                expanded = {"bounds", "bounds-strict"}
+            else:
+                expanded = {name}
+            if add:
+                enabled.update(expanded)
+            else:
+                enabled.difference_update(expanded)
+    return {"address", *UBSAN_CHECKS} <= enabled
+
+
+def analyzer_enabled(arguments):
+    enabled = False
+    for argument in arguments:
+        if argument == "-fanalyzer":
+            enabled = True
+        elif argument == "-fno-analyzer":
+            enabled = False
+    return enabled
+
+
 FAKE_COMPILER = """#!/usr/bin/env python3
 import json
 import os
@@ -25,6 +73,23 @@ arguments = sys.argv[1:]
 with open(os.environ["FAKE_CC_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps(arguments) + "\\n")
 
+if "FAKE_HARNESS_LOG" in os.environ:
+    repository = pathlib.Path(os.environ["FAKE_REPOSITORY"]).resolve()
+    harnesses = {str((repository / "tests" / "codeql" / (name + ".c")).resolve()): name
+                 for name in ("sio_protocol_host_test", "runtime_bounds_host_test",
+                              "png_bounds_host_test")}
+    sources = [harnesses[str(pathlib.Path(arg).resolve())] for arg in arguments
+               if not arg.startswith("-") and str(pathlib.Path(arg).resolve()) in harnesses]
+    state = pathlib.Path(os.environ["FAKE_CC_OUTPUTS"])
+    outputs = json.loads(state.read_text()) if state.exists() else {}
+    for arg in arguments:
+        if not arg.startswith("-"):
+            sources.extend(outputs.get(str(pathlib.Path(arg).resolve()), []))
+    sources = sorted(set(sources))
+    with open(os.environ["FAKE_HARNESS_LOG"], "a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"event": "compiler", "arguments": arguments,
+                                 "harnesses": sources}) + "\\n")
+
 if "-fanalyzer" in arguments and os.environ["FAKE_ANALYZER_SUPPORTED"] != "1":
     sys.exit(2)
 
@@ -33,12 +98,14 @@ if "-o" in arguments:
     output.parent.mkdir(parents=True, exist_ok=True)
     if "FAKE_HARNESS_LOG" not in os.environ:
         output.touch()
+    elif "-fsyntax-only" in arguments:
+        pass
+    elif any(flag in arguments for flag in ("-c", "-E", "-S")):
+        output.touch()
+        outputs[str(output.resolve())] = sources
+        state.write_text(json.dumps(outputs))
     else:
-        sources = [pathlib.Path(arg).stem for arg in arguments
-                   if pathlib.Path(arg).name in (
-                       "sio_protocol_host_test.c", "runtime_bounds_host_test.c",
-                       "png_bounds_host_test.c")]
-        name = sources[0] if len(sources) == 1 else output.name
+        name = sources[0] if len(sources) == 1 else ""
         output.write_text(
             "#!/usr/bin/env python3\\n"
             "import json, os\\n"
@@ -88,7 +155,7 @@ if targets == ["codeql-fanalyzer-test"] and directory.resolve() == repository:
     real_make = os.environ["FAKE_REAL_MAKE"]
     os.execv(real_make, [real_make, *arguments])
 allowed = {(repository / "tools" / name).resolve() for name in ("gbagfx", "mid2agb")}
-if not targets and directory.resolve() in allowed:
+if directory.resolve() in allowed:
     raise SystemExit(0)
 raise SystemExit("unexpected recursive make")
 """
@@ -151,7 +218,8 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
         make = shutil.which("make")
         if make is None:
             self.fail("make is not available on PATH")
-        make = os.path.abspath(make)
+        if not os.path.isabs(make):
+            make = os.path.join(os.getcwd(), make)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bin_dir = root / "bin"
@@ -187,6 +255,7 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                 {
                     "FAKE_ANALYZER_SUPPORTED": "1",
                     "FAKE_CC_LOG": str(compiler_log),
+                    "FAKE_CC_OUTPUTS": str(root / "compiler-outputs.json"),
                     "FAKE_HARNESS_LOG": str(harness_log),
                     "FAKE_HARNESS_FAILURE": failing_harness or "",
                     "FAKE_REAL_MAKE": make,
@@ -294,6 +363,42 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
             self.assertTrue(any("codeql-alerts-test" in call for call in calls))
             self.assertTrue(any("codeql-fanalyzer-test" in call for call in calls))
 
+    def test_recursive_analyzer_preserves_path_symlink_parent(self):
+        real_make = shutil.which("make")
+        if real_make is None:
+            self.fail("make is not available on PATH")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            actual = root / "actual"
+            (actual / "target").mkdir(parents=True)
+            (actual / "bin").mkdir()
+            (root / "bin").mkdir()
+            (root / "link").symlink_to(actual / "target", target_is_directory=True)
+            selected = actual / "bin" / "make"
+            selected.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "with open(os.environ['FAKE_MAKE_LOG'], 'a', encoding='utf-8') as stream:\n"
+                "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                f"os.execv({real_make!r}, [{real_make!r}, *sys.argv[1:]])\n",
+                encoding="utf-8",
+            )
+            selected.chmod(0o755)
+            wrong = root / "bin" / "make"
+            wrong.write_text("#!/bin/sh\nexit 87\n", encoding="utf-8")
+            wrong.chmod(0o755)
+            log = root / "make.jsonl"
+            with mock.patch.dict(os.environ, {
+                "FAKE_MAKE_LOG": str(log),
+                "PATH": f"{root}/link/../bin{os.pathsep}{os.environ['PATH']}",
+            }):
+                result, _, _ = self.run_runtime_gate()
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+            self.assertTrue(any("codeql-alerts-test" in call for call in calls))
+            self.assertTrue(any("codeql-fanalyzer-test" in call for call in calls))
+
     def test_runtime_harnesses_precede_the_optional_analyzer_gate(self):
         harnesses = {
             "sio_protocol_host_test",
@@ -302,7 +407,6 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
         }
         result, invocations, events = self.run_runtime_gate()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertTrue(any("-fanalyzer" in args for args in invocations))
         sources = {
             harness: (ROOT / "tests/codeql" / f"{harness}.c").resolve()
             for harness in harnesses
@@ -316,28 +420,33 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
         ]
         self.assertEqual(len(runtime_compiles), len(harnesses))
         self.assertEqual({harness for harness, _ in runtime_compiles}, harnesses)
-        for harness, args in runtime_compiles:
-            with self.subTest(compile=harness):
-                sanitizers = set()
-                for arg in args:
-                    if arg.startswith("-fsanitize="):
-                        sanitizers.update(arg.removeprefix("-fsanitize=").split(","))
-                    elif arg.startswith("-fno-sanitize="):
-                        disabled = arg.removeprefix("-fno-sanitize=").split(",")
-                        if "all" in disabled:
-                            sanitizers.clear()
-                        else:
-                            sanitizers.difference_update(disabled)
-                self.assertTrue({"address", "undefined"} <= sanitizers)
-                self.assertNotIn("-fanalyzer", args)
+        for event in events:
+            if event["event"] == "compiler" and event["harnesses"]:
+                with self.subTest(compile=event["harnesses"]):
+                    self.assertTrue(sanitizer_flags_enabled(event["arguments"]))
+                    self.assertFalse(analyzer_enabled(event["arguments"]))
 
         executions = [(index, event) for index, event in enumerate(events)
                       if event["event"] == "harness"]
         analyzers = [index for index, event in enumerate(events)
                      if event["event"] == "analyzer"]
+        analyzer_compiles = [(index, event["arguments"]) for index, event in enumerate(events)
+                             if event["event"] == "compiler"
+                             and analyzer_enabled(event["arguments"])]
         self.assertEqual(len(executions), len(harnesses))
         self.assertEqual({event["name"] for _, event in executions}, harnesses)
         self.assertTrue(analyzers)
+        self.assertTrue(analyzer_compiles)
+        analyzed_sources = {
+            (ROOT / arg).resolve()
+            for index, args in analyzer_compiles if index > analyzers[0] and "-c" in args
+            for arg in args if Path(arg).suffix == ".c"
+        }
+        self.assertTrue({
+            (ROOT / "src/sio_core.c").resolve(),
+            (ROOT / "src/event.c").resolve(),
+            (ROOT / "tools/gbagfx/convert_png.c").resolve(),
+        } <= analyzed_sources)
         for index, event in executions:
             with self.subTest(execution=event["name"]):
                 asan = dict(item.split("=", 1) for item in (event["asan"] or "").split(":")
@@ -345,6 +454,7 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                 ubsan = dict(item.split("=", 1) for item in (event["ubsan"] or "").split(":")
                              if "=" in item)
                 self.assertLess(index, analyzers[0])
+                self.assertLess(index, analyzer_compiles[0][0])
                 self.assertEqual(asan.get("detect_leaks"), "0")
                 self.assertEqual(ubsan.get("halt_on_error"), "1")
 
@@ -355,6 +465,9 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                 self.assertTrue(any(event["event"] == "harness" and event["name"] == harness
                                     for event in events))
                 self.assertFalse(any(event["event"] == "analyzer" for event in events))
+                self.assertFalse(any(event["event"] == "compiler"
+                                     and analyzer_enabled(event["arguments"])
+                                     for event in events))
 
 
 if __name__ == "__main__":
