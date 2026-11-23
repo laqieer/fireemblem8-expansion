@@ -2489,8 +2489,9 @@ The focused checks reject a missing or duplicated group, missing checkout,
 prerequisite, summary dependency or result, and failed, cancelled or skipped
 new workers. Partial new job shapes fail; removing all three new jobs cannot
 make a historical full run authoritative. Malformed, active, unbound or
-contradictory preflight history still blocks a retry. The unchanged pre-split
-topology lacks the three independent jobs.
+contradictory preflight history still blocks a retry, including when a failed,
+cancelled or timed-out adapter is present. The unchanged pre-split topology
+lacks the three independent jobs.
 
 ### Interactions and save compatibility
 
@@ -2515,9 +2516,10 @@ surfaces; #387–#389 remain independent follow-ups.
 - `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.CIHistoryFamilyTests -v`
   exercises the existing `ci-lane-history` review-family binding against real
   lane, job-shape, metadata and dispatch predicates, including legacy
-  validator, malformed history with a valid retry, partial and metadata job
-  shapes, parsed run chronology, pinned dispatch identity and attempt,
-  mixed-worker candidate provenance, and semantics-preserving controls.
+  validator, malformed failed attempts with a valid retry, partial and metadata
+  job shapes, parsed and dependency-ordered chronology, an unrelated live-base
+  advance, pinned dispatch identity and attempt, mixed-worker candidate and
+  reviewed-checker provenance, and semantics-preserving controls.
 - `python3 -m unittest scripts.workflow_pilot.tests.test_cjk_subjects.CjkSubjectTests.test_history_and_generated_split_preserves_candidate_session_dependency -v`
   checks candidate dependency provenance through the nested history,
   generated-resource and review-session workers.

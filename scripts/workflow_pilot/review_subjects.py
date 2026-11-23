@@ -62,6 +62,7 @@ CASE_REGISTRY = "docs/test-cases/registry.json"
 CASE_TEMPLATE = "docs/test-cases/template.md"
 CASE_DOCUMENT = "docs/test-cases/localization.md"
 CASE_REFERENCE = "docs/game_localization_catalog.md"
+CASE_CHECKER_PROGRAM = "build/review-case-check-docs.py"
 LOCALE_CASE_CONSUMER = "tools/gba-playtest/tests/test_locale_tester_cases.py"
 LOCALE_CASE_PROGRAM = "build/review-locale-case-consumer.py"
 AUTHORED_CASE_ID = "TC-LOCALIZATION-AUTHORED-SCOPE-001"
@@ -691,7 +692,10 @@ def _native(probe: str) -> dict:
 
 @probe_result("parsed")
 def _authored_case(probe):
-    from scripts import check_docs
+    checker = Path(CASE_CHECKER_PROGRAM)
+    check_docs = types.ModuleType("reviewed_case_check_docs")
+    check_docs.__file__ = str(checker.resolve())
+    exec(compile(checker.read_bytes(), str(checker), "exec"), check_docs.__dict__)
 
     catalog, feature, case = authored_case_declaration(Path(CASE_REGISTRY).read_bytes())
     role = probe.partition(":")[2]
@@ -2312,10 +2316,12 @@ def _ci_history(probe: str) -> dict:
         return replace(value, **updates)
 
     def job(name, conclusion, number, index):
-        created = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(
-            minutes=number * 3, seconds=2)
         classifier = name in {"event-classifier", "metadata-classifier",
                               "review-first-classifier"}
+        offset = (2 if name == "event-identity" else 4 if name == "event-router"
+                  else 6 if classifier else 10 if name in {"summary", "patch-release"} else 8)
+        created = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(
+            minutes=number * 3, seconds=offset)
         return pr_metadata.JobState(
             job_id=number * 100 + index + 1, run_id=number, name=name,
             status="completed", conclusion=conclusion,
@@ -2326,8 +2332,11 @@ def _ci_history(probe: str) -> dict:
             candidate_base_ref=pr.base_ref if classifier else None)
 
     head, base = "a" * 40, "b" * 40
-    pr = types.SimpleNamespace(number=42, head_sha=head, head_ref="topic", base_ref="master",
-                               repository="owner/repo", repository_id=123)
+    pr = pr_metadata.PullRequestState(
+        repository="owner/repo", repository_id=123, repository_owner_id=456,
+        pull_request_id=789, pull_request_node_id="PR_fixture", number=42,
+        head_sha=head, head_ref="topic", base_sha=base, base_ref="master",
+        title="fixture", body="", updated_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
     binding = (pr.number, head, base)
     workers = (
         "host-tests", "workflow-pilot-tests", "build", "extended-host-tests",
@@ -2371,8 +2380,8 @@ def _ci_history(probe: str) -> dict:
     def statuses(value):
         return {item.name: (item.status, item.conclusion) for item in value.jobs}
 
-    def lane(*runs):
-        return adaptive_gate._history_lane(pr, base, runs)
+    def lane(*runs, pull_request=pr):
+        return adaptive_gate._history_lane(pull_request, base, runs)
 
     def classified(value):
         return changed(value, mode=pr_metadata._run_mode(
@@ -2526,6 +2535,14 @@ def _ci_history(probe: str) -> dict:
         equal(lambda: candidate_evidence.preflight_success(publisher, **historical_arg), False,
               "active historical publisher accepted")
         retry = run("preflight", 5)
+
+        def reject_with_retry(malformed, label):
+            rejects(lambda: lane(malformed, retry), label)
+            for adapter in ("host-tests", "build"):
+                for conclusion in ("failure", "cancelled", "timed_out"):
+                    failed = edit_job(malformed, adapter, conclusion=conclusion)
+                    rejects(lambda: lane(failed, retry), label + " with failed " + adapter)
+
         for value in (old, current):
             for name in ("event-identity", "event-router", "review-first-classifier",
                          "extended-host-tests", "legacy", "summary"):
@@ -2533,13 +2550,11 @@ def _ci_history(probe: str) -> dict:
                     "event-identity", "event-router", "review-first-classifier",
                 } else "success"
                 malformed = edit_job(value, name, conclusion=conclusion, runner_name="runner")
-                rejects(lambda: lane(malformed, retry),
-                        f"malformed {name} accepted with a valid retry")
+                reject_with_retry(malformed, f"malformed {name} accepted with a valid retry")
             if value is current:
                 for name in new_workers:
                     malformed = edit_job(value, name, conclusion="success", runner_name="runner")
-                    rejects(lambda: lane(malformed, retry),
-                            f"malformed {name} accepted with a valid retry")
+                    reject_with_retry(malformed, f"malformed {name} accepted with a valid retry")
         duplicate = changed(current, jobs=(*current.jobs, current.jobs[0]))
         rejects(lambda: lane(duplicate), "duplicate job identity accepted")
     elif probe == "ci-history:wire:replay":
@@ -2558,6 +2573,12 @@ def _ci_history(probe: str) -> dict:
         )
         for unrelated in foreign:
             equal(lambda: lane(current, unrelated), "review-first", "unrelated run changed the lane")
+        advanced = changed(pr, base_sha="c" * 40)
+        equal(lambda: lane(old, current, pull_request=advanced), "review-first",
+              "unrelated live base advance changed the frozen initial lane")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, advanced, dispatch,
+                                                       (current, dispatch)),
+              True, "unrelated live base advance invalidated a bound dispatch")
         for unbound in (changed(old, candidate_binding=None), changed(old, candidate_base_ref=None)):
             rejects(lambda: lane(unbound, current), "unbound historical preflight accepted")
         equal(lambda: pr_metadata._pre_full_preparation(

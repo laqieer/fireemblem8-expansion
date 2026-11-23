@@ -757,15 +757,18 @@ The `TC-WORKFLOW-BUILD-CI-SPLIT-001/ci-lane-history` binding executes the
 historical and current lane, run-shape, metadata and dispatch predicates across
 the lifecycle and wire families. Historical preflight preserves lane
 provenance without authorizing a current dispatch or full Build. Its fixtures
-use distinct, chronologically valid instances of the parsed run and job
-models. Lifecycle entries execute the classifier and lane together; the wire
+use parsed pull-request, run and job models with dependency-ordered timestamps,
+and exercise an unrelated live-base advance against the frozen base. Malformed
+history remains rejected when a failed, cancelled or timed-out adapter precedes
+a valid retry. Lifecycle entries execute the classifier and lane together; the wire
 producer also checks metadata and partial job shapes, while unrelated consumers use
 independently constructed modes. The fixed probe loads from a separate
 reviewed-tool directory, then imports the candidate package and its
-dependencies from the selected Git tree. Both workers in a CI-history mix
-preserve candidate imports; an import failure is unavailable evidence, not a
-passing observation. This separation establishes source provenance, not
-same-UID process isolation.
+dependencies from the selected Git tree. Mixed workers preserve candidate
+imports; the authored-case worker stages its reviewed documentation checker
+separately instead of overwriting the candidate dependency. An import failure
+is unavailable evidence, not a passing observation. This separation establishes
+source provenance, not same-UID process isolation.
 
 `resolve_subject` joins an existing catalog case to the reviewed binding.
 `expand_members` derives the finite source-backed obligations at the finding

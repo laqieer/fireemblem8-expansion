@@ -430,7 +430,8 @@ class ReviewTools:
         else:
             self.tool_tree.materialize(root, tool_paths)
         if any(probe.startswith("authored-case:") for probe in probes):
-            self.tool_tree.materialize(root, ("scripts/check_docs.py",))
+            (root / self.subjects.CASE_CHECKER_PROGRAM).write_bytes(
+                self.tool_tree.read("scripts/check_docs.py"))
             (root / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
                 self.tool_tree.read(self.subjects.LOCALE_CASE_CONSUMER))
         if any(probe.startswith(("lifecycle:", "wire:")) for probe in probes):
