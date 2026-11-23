@@ -352,11 +352,14 @@ class CjkSubjectTests(unittest.TestCase):
                     if item.family == "generated"
                 )
                 self.assertTrue(all(paths <= set(item.inputs) for item in members))
+                observed = self.tools.run_obligations(members, before)
                 self.assertEqual(
                     [(item.verdict, item.checks)
-                     for item in self.tools.run_obligations(members, before)
+                     for item in observed
                      if item.obligation.role == "drift-checks"],
                     [("contract-violation", 1)],
+                    [(item.obligation.role, item.verdict, item.checks, item.detail)
+                     for item in observed],
                 )
     def test_untyped_xz_parser_failure_is_a_contract_violation(self):
         path = "scripts/fonttools/cjk/resource_index.py"
