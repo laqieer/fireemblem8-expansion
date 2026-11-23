@@ -2,6 +2,7 @@
 
 import contextlib
 import copy
+import getopt
 import io
 import json
 import os
@@ -14,6 +15,7 @@ import tempfile
 import unicodedata
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.localization.generate import _c_string_literal, generate
 from scripts.localization.game_locales.ending_metrics import (
@@ -532,44 +534,44 @@ def _cleanup_plan_removes_fixture(plan, fixture):
         arguments = list(lexer)
         if not arguments or Path(arguments[0]).name != "rm":
             continue
+        syntax = subprocess.run(
+            ["/bin/sh", "-n", "-c", line], capture_output=True, text=True, timeout=5
+        )
+        if syntax.returncode:
+            raise ValueError(f"invalid cleanup shell syntax: {syntax.stderr.strip()}")
+        hash_position = line.find("#")
+        code = line if hash_position < 0 else line[:hash_position]
         if any(
             argument and all(character in ";&|()<>" for character in argument)
             for argument in arguments[1:]
+        ) or any(character in code for character in "$`") or (
+            hash_position >= 0
+            and (
+                hash_position == 0
+                or line[hash_position - 1] not in " \t"
+                or (hash_position > 1 and line[hash_position - 2] == "\\")
+                or any("#" in argument for argument in arguments)
+            )
         ):
             raise ValueError(f"unsupported cleanup shell syntax: {line}")
-        options = []
-        paths = []
-        parsing_options = True
-        for argument in arguments[1:]:
-            if parsing_options and argument == "--":
-                parsing_options = False
-            elif parsing_options and argument.startswith("-") and argument != "-":
-                if argument.startswith("--"):
-                    supported = argument in ("--force", "--recursive", "--verbose")
-                else:
-                    supported = all(character in "frRv" for character in argument[1:])
-                if not supported:
-                    raise ValueError(f"unsupported cleanup rm option: {argument}")
-                options.append(argument)
-            else:
-                paths.append(argument)
-        recursive = any(
-            option == "--recursive"
-            or (
-                option.startswith("-")
-                and not option.startswith("--")
-                and ("r" in option or "R" in option)
+        try:
+            options, paths = getopt.gnu_getopt(
+                arguments[1:], "frRv", ("force", "recursive", "verbose")
             )
-            for option in options
-        )
+        except getopt.GetoptError as error:
+            raise ValueError(f"unsupported cleanup rm option: {error.opt}") from error
+        recursive = any(option in ("-r", "-R", "--recursive") for option, _ in options)
         for path in paths:
             final_component = path.rstrip("/").rsplit("/", 1)[-1]
             if not final_component or final_component in (".", ".."):
                 continue
+            if recursive and any(character in path for character in "*?[]~"):
+                raise ValueError(f"unsupported cleanup shell syntax: {line}")
             target = Path(os.path.abspath(ROOT / path))
             if (
                 recursive
                 and target != fixture
+                and target != Path(target.anchor)
                 and not target.is_symlink()
                 and fixture.is_relative_to(target)
             ):
@@ -805,6 +807,26 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             self.assertFalse(
                 _cleanup_plan_removes_fixture(f"rm -rf unrelated # {directory}", fixture)
             )
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf {directory} # cleanup", fixture)
+            )
+            with mock.patch.dict(os.environ):
+                os.environ.pop("POSIXLY_CORRECT", None)
+                self.assertTrue(
+                    _cleanup_plan_removes_fixture(f"rm {directory} -rf", fixture)
+                )
+                self.assertFalse(
+                    _cleanup_plan_removes_fixture(f"rm {directory} -- -rf", fixture)
+                )
+            with mock.patch.dict(os.environ, {"POSIXLY_CORRECT": "1"}):
+                self.assertFalse(
+                    _cleanup_plan_removes_fixture(f"rm {directory} -rf", fixture)
+                )
+            hyphen_directory = f"-{Path(temporary).name}"
+            hyphen_fixture = ROOT / hyphen_directory / "fixture.sav"
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf -- {hyphen_directory}", hyphen_fixture)
+            )
             for path in (
                 '""',
                 shlex.quote(f"{fixture.parent}/."),
@@ -818,6 +840,14 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "unsupported cleanup shell syntax"):
                 _cleanup_plan_removes_fixture(f"rm -rf unrelated && echo {directory}", fixture)
+            for command in (
+                f"rm -rf {directory}#retained",
+                f"rm -rf {directory} `",
+                f"rm -rf {directory}$(printf retained)",
+            ):
+                with self.subTest(command=command):
+                    with self.assertRaisesRegex(ValueError, "cleanup shell syntax"):
+                        _cleanup_plan_removes_fixture(command, fixture)
             for option in ("--help", "--interactive=always", "-i"):
                 with self.subTest(option=option):
                     with self.assertRaisesRegex(ValueError, "unsupported cleanup rm option"):
