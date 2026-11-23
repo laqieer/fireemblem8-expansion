@@ -25,6 +25,30 @@
       }
     },
     {
+      "pull_request": 466,
+      "risk_boundaries": [
+        "generated-data"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
       "pull_request": 414,
       "risk_boundaries": [
         "none"
