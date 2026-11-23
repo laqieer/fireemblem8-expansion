@@ -2631,8 +2631,10 @@ Those SHAs are illustrative, not executable evidence. `load_assignment`,
 `load_result`, `parse_assignment(bytes)` and `parse_result(bytes)` reject
 over-1-MiB input **before** decoding/copying; duplicate keys, nonfinite values,
 unknown fields, invalid Unicode, excessive depth/nodes/strings and unsupported
-versions reject. Collections are bounded: 128 assignments/watchers, 256 scope
-entries, 32 checks/criteria, 16 upstream inputs and 16 inputs per protocol check.
+versions reject. Collections are bounded: 128 assignments and 128 active
+watchers, 256 scope entries, 32 checks/criteria, 16 upstream inputs and 16 inputs
+per protocol check. Retained watcher history shares the existing 1 MiB and
+32,768-node document bounds; it is not an unlimited archive.
 There are five lifecycle states; text is at most 16 KiB. Keyed criteria/checks and unique
 arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
 exercise structural/schema agreement. Git identity, cross-record correlation,
@@ -2880,6 +2882,13 @@ Register the existing direct shell watcher with `reserve_watcher`, binding
 repository/run/attempt/head and an actually running process. Boot/PID/start
 identity is unique across all owners and watchers regardless of runtime handle,
 run or attempt; an exited or unreaped zombie cannot be reserved as active.
+Only records without `ended_at` count toward the 128-active-watcher cap, even
+when their processes have since exited; finish them only after an actual exit
+observation. All rows stay in their original order, including old attempts,
+unknown exits and pending or failed runs. No row automatically leaves the
+document. If the overall document bound is reached, the update fails
+atomically; do not delete history, infer exits or create a competing coordinator
+to bypass it.
 Use the established
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status` command through
 the shell runtime; no reasoning agent waits for it. `finish_watcher` consumes

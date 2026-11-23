@@ -491,8 +491,10 @@
           "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}
         },
         "watchers": {
-          "description": "Runtime also enforces unique boot/PID/start identities across owners and all watchers.",
-          "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}
+          "description": "At most 128 active watchers; retained history shares the overall bounded JSON budget. Runtime also enforces unique boot/PID/start identities across owners and all watchers.",
+          "type": "array", "maxItems": 32768, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"},
+          "contains": {"type": "object", "required": ["ended_at"], "properties": {"ended_at": {"type": "null"}}},
+          "minContains": 0, "maxContains": 128
         }
       }
     }

@@ -11,6 +11,8 @@ from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
+from jsonschema import Draft202012Validator
+
 from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import raw_diff_check as raw
@@ -509,6 +511,80 @@ class WatcherObservationTests(unittest.TestCase):
         watcher["coordinator_id"] = "other-coordinator"
         with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
             handoff.validate_state(f.state)
+
+    def test_retained_watcher_history_does_not_exhaust_active_ownership(self):
+        f = self.fixture
+        finished = f.waiting_process()
+        template = handoff.reserve_watcher(f.state, "template", 91, 1, f.parent, finished.pid)
+        finished.stdin.write(b"done\n")
+        finished.stdin.flush()
+        os.waitid(os.P_PID, finished.pid, os.WEXITED | os.WNOWAIT)
+        handoff.finish_watcher(f.state, template["id"])
+        self.assertIsNone(template["exit_code"])
+        finished.wait()
+        history = []
+        for index in range(128):
+            watcher = copy.deepcopy(template)
+            watcher.update(id=f"history-{index}", run_id=1000 + index, exit_code=None)
+            watcher["process"].update(runtime_handle=watcher["id"], pid=1000000 + index,
+                                      exit_code=None, peak_rss_bytes=None, rss_complete=False)
+            if index < 3:
+                status, conclusion = (("completed", "failure"), ("in_progress", None),
+                                      ("completed", "success"))[index]
+                watcher["run"] = {
+                    "repository": f.state["repository"], "run_id": watcher["run_id"], "attempt": 1,
+                    "head_sha": watcher["head_sha"], "workflow_id": 17,
+                    "status": status, "conclusion": conclusion, "observed_at": observations.utc_now(),
+                }
+            history.append(watcher)
+        history[-1] = copy.deepcopy(template)
+        f.state["watchers"] = history
+        handoff.validate_state(f.state)
+        before = copy.deepcopy(history)
+        process = f.waiting_process()
+        handoff.reserve_watcher(f.state, "new-watch", 91, 1, f.parent, process.pid)
+        self.assertEqual(f.state["watchers"][:-1], before)
+        self.assertEqual([handoff.watcher_ci_state(w) for w in history[:4]],
+                         ["failure", "pending", "success", "unknown"])
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.reserve_watcher(f.state, "duplicate-run", 91, 1, f.parent, f.waiting_process().pid)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "process reused"):
+            handoff.reserve_watcher(f.state, "duplicate-process", 2001, 1, f.parent, process.pid)
+        path = f.home / "watchers.json"
+        write_json(path, f.state)
+        reloaded = observations.load_json(path)
+        handoff.validate_state(reloaded)
+        self.assertTrue(Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).is_valid(reloaded))
+        self.assertEqual(reloaded["watchers"][:-1], before)
+
+    def test_active_watcher_limit_remains_bounded(self):
+        f = self.fixture
+        process = f.waiting_process()
+        template = handoff.reserve_watcher(f.state, "template", 91, 1, f.parent, process.pid)
+        active = []
+        for index in range(128):
+            watcher = copy.deepcopy(template)
+            watcher.update(id=f"active-{index}", run_id=1000 + index)
+            watcher["process"].update(runtime_handle=watcher["id"], pid=1000000 + index)
+            active.append(watcher)
+        f.state["watchers"] = active
+        handoff.validate_state(f.state)
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(validator.is_valid(f.state))
+        before = copy.deepcopy(f.state)
+        next_process = f.waiting_process()
+        overflow = copy.deepcopy(template)
+        overflow.update(id="overflow", run_id=2000,
+                        process=observations.process_identity(next_process.pid, "overflow"))
+        schema_overflow = copy.deepcopy(f.state)
+        schema_overflow["watchers"].append(overflow)
+        self.assertFalse(validator.is_valid(schema_overflow))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "active watcher"):
+            handoff.reserve_watcher(f.state, "overflow", 2000, 1, f.parent, next_process.pid)
+        self.assertEqual(f.state, before)
 
     def test_process_identity_is_unique_across_watcher_runs_and_loaded_state(self):
         f = self.fixture

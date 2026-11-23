@@ -6538,7 +6538,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
-  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367).
+  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367);
+  capacity regression [issue #446](https://github.com/laqieer/fireemblem8-expansion/issues/446).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6726,6 +6727,13 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    Distinct live processes pass; an owned unreaped zombie cannot reserve a
    watcher. Running/ended records must agree with process state and exit data;
    completed observations with unknown exit/RSS remain valid and reconcilable.
+   In temporary v3 state, retain 128 ended records with unknown exits and
+   failed, pending and successful run observations. Reserve a real new
+   watcher, including a nonoverlapping retry of an actually exited process;
+   verify every prior record remains identical after restart. A duplicate
+   live run or process still rejects, as does a 129th active watcher.
+   These fixture histories are synthetic except for explicitly observed child
+   processes.
    Reuse a dispatch ID with otherwise fresh assignment/owner/session IDs in
    a review or independent reservation, and mutate a loaded state similarly:
    reject. A genuinely fresh dispatch remains valid, and the existing other
@@ -6797,12 +6805,15 @@ first-parent commits carry both Copilot trailers; authorized imported upstream
 history does not need this session's trailers. Each lifecycle state has a
 separate actual observation. Ownership and watcher reservations are exclusive,
 the implementation owner retires, and one interrupted-worktree replacement is
-bounded. GitHub remains CI authority. No validation result publishes anything
-or satisfies the separate full-PR/final delivery gates.
+bounded. Retained watcher history survives restart without weakening the
+active cap or document bounds. GitHub remains CI authority. No validation
+result publishes anything or satisfies the separate full-PR/final delivery
+gates.
 
 ### Negative control
 
 Each adversary above fails or remains explicitly unknown/incomplete.
+Before #446, a 129th watcher is rejected even when prior watchers have ended.
 Runtime-check mutation must fail even if command/pass labels are preserved.
 Equivalent source/JSON wording or order does not affect semantic evidence.
 There is no disabled gameplay profile: omitting optional handoff reporting

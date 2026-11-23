@@ -452,7 +452,7 @@ def validate_state(value):
                     and a["assigned_parent_sha"] == previous["validation"]["result_sha"],
                     "review successor needs the previous accepted result")
     watcher_ids, watcher_processes, active_runs = set(), set(), set()
-    for watcher in items(value["watchers"]):
+    for watcher in items(value["watchers"], maximum=observations.MAX_NODES):
         fields(watcher, "id coordinator_id run_id attempt head_sha process started_at ended_at "
                "exit_code run query_error")
         text(watcher["id"], maximum=128, pattern=ID_RE)
@@ -477,6 +477,7 @@ def validate_state(value):
             identity = (watcher["run_id"], watcher["attempt"])
             require(identity not in active_runs, "duplicate active watcher")
             active_runs.add(identity)
+            require(len(active_runs) <= 128, "active watcher limit exceeded")
         else:
             require(timestamp(watcher["ended_at"]) >= timestamp(watcher["started_at"]),
                     "watcher times reversed")
