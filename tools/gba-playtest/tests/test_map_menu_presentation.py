@@ -555,7 +555,8 @@ def _cleanup_plan_removes_fixture(plan, fixture):
         ):
             raise ValueError(f"unsupported cleanup shell syntax: {line}")
         try:
-            options, paths = getopt.gnu_getopt(
+            parse_options = getopt.getopt if "POSIXLY_CORRECT" in os.environ else getopt.gnu_getopt
+            options, paths = parse_options(
                 arguments[1:], "frRv", ("force", "recursive", "verbose")
             )
         except getopt.GetoptError as error:
@@ -818,10 +819,12 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
                 self.assertFalse(
                     _cleanup_plan_removes_fixture(f"rm {directory} -- -rf", fixture)
                 )
-            with mock.patch.dict(os.environ, {"POSIXLY_CORRECT": "1"}):
-                self.assertFalse(
-                    _cleanup_plan_removes_fixture(f"rm {directory} -rf", fixture)
-                )
+            for value in ("", "1"):
+                with self.subTest(POSIXLY_CORRECT=value):
+                    with mock.patch.dict(os.environ, {"POSIXLY_CORRECT": value}):
+                        self.assertFalse(
+                            _cleanup_plan_removes_fixture(f"rm {directory} -rf", fixture)
+                        )
             hyphen_directory = f"-{Path(temporary).name}"
             hyphen_fixture = ROOT / hyphen_directory / "fixture.sav"
             self.assertTrue(
