@@ -258,7 +258,8 @@ menu routes; it does not evaluate translation quality.
 
 - **Feature / originating issue:** `full-game-localization` /
   [#18](https://github.com/laqieer/fireemblem8-expansion/issues/18) and
-  [#56](https://github.com/laqieer/fireemblem8-expansion/issues/56).
+  [#56](https://github.com/laqieer/fireemblem8-expansion/issues/56);
+  host test reuse: [#387](https://github.com/laqieer/fireemblem8-expansion/issues/387).
 - **Supported configuration or artifact:** named 32 MiB CJK, European, and
   all-locale modern AAPCS profiles.
 - **Prerequisites and clean starting state:** repository root, host compiler,
@@ -269,10 +270,13 @@ menu routes; it does not evaluate translation quality.
 
 1. Run `make game-localization-check` and `make game-localization-test`.
 2. Run
+   `python3 -m unittest scripts.localization.game_catalog.tests.test_generate_real.DefaultCatalogFixtureTests -v`
+   to check the host fixture's class-run lifetime and failure handling.
+3. Run
    `make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
    and
    `make expansion-modern-localization-runtime-eu-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
-3. In the named profile, select English, Japanese, Simplified Chinese, French,
+4. In the named profile, select English, Japanese, Simplified Chinese, French,
    German, Spanish, and Italian in turn; inspect one expansion UI surface and
    one ordinary full-game message route for the selected profile.
 
@@ -287,7 +291,8 @@ from five rows. English remains the explicit fallback locale.
 
 The 16 MiB English-only ROM deliberately contains no real-locale game
 payload. A disabled or absent locale is unavailable rather than silently
-selecting an unintended catalog.
+selecting an unintended catalog. A failed catalog construction is not cached,
+and a later class run rebuilds from changed inputs.
 
 ### Interactions and save compatibility
 
@@ -299,6 +304,8 @@ message ID, locale ID, save layout, or compatibility epoch changes.
 
 - `python3 -m unittest scripts.localization.tests.test_catalog scripts.localization.tests.test_eu_localization tools.gba-playtest.tests.test_locale_tester_cases -v`
   — `scripts/localization/tests/test_eu_localization.py`.
+- `python3 -m unittest scripts.localization.game_catalog.tests.test_generate_real.DefaultCatalogFixtureTests -v`
+  — immutable projection, class-run reuse, fresh inputs, and failure controls.
 - `make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/scenarios/locale-cjk-first-start-ja-modern-debug.json`.
 - `make expansion-modern-localization-runtime-eu-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
@@ -308,6 +315,9 @@ message ID, locale ID, save layout, or compatibility epoch changes.
 
 Use a separate blank SRAM image for each selected locale. The deterministic
 checks prove catalog selection and coverage, not linguistic editorial review.
+The three read-only default-catalog checks share only immutable projected
+entries during one class run; independent generation and profile tests remain
+separate. Do not edit catalog inputs concurrently with that class run.
 
 ## TC-LOCALIZATION-004: Preference repair, no-wipe behavior, and soft-reset persistence
 

@@ -3942,7 +3942,8 @@
       "feature_id": "full-game-localization",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/18",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/56"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/56",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/387"
       ],
       "document": "docs/test-cases/localization.md",
       "anchor": "tc-localization-003-production-expansion-and-full-game-locale-catalogs",
@@ -3962,6 +3963,10 @@
         {
           "command": "python3 -m unittest scripts.localization.tests.test_catalog scripts.localization.tests.test_eu_localization tools.gba-playtest.tests.test_locale_tester_cases -v",
           "evidence": "scripts/localization/tests/test_eu_localization.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_generate_real.DefaultCatalogFixtureTests -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_generate_real.py"
         },
         {
           "command": "make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs",

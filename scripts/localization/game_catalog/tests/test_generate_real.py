@@ -3,6 +3,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from typing import NamedTuple
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
 TEST_DIR = Path(__file__).resolve().parent
@@ -22,7 +25,45 @@ from scripts.localization.game_catalog.english_source import (
 from scripts.localization.game_locales.controls import expand_canonical_text
 
 
+class _LocaleEntry(NamedTuple):
+    target_id: int
+    source_text: str | None
+    encoded_bytes: bytes | None
+
+
+class _DefaultCatalog(NamedTuple):
+    english_streams: tuple[bytes, ...]
+    ja_entries: tuple[_LocaleEntry, ...]
+    zh_entries: tuple[_LocaleEntry, ...]
+
+
 class RealGenerateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._default_catalog = None
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._default_catalog = None
+
+    @classmethod
+    def _default_entries(cls):
+        if cls._default_catalog is None:
+            build = build_game_catalog()
+
+            def project(locale):
+                return tuple(
+                    _LocaleEntry(entry.target_id, entry.source_text, entry.encoded_bytes)
+                    for entry in build.locale_bundle(locale).entries
+                )
+
+            cls._default_catalog = _DefaultCatalog(
+                tuple(entry.encoded_bytes for entry in build.english.entries),
+                project("ja"),
+                project("zh-Hans"),
+            )
+        return cls._default_catalog
+
     def _tmpdir(self):
         return tempfile.TemporaryDirectory(dir=TEST_DIR)
 
@@ -91,9 +132,7 @@ class RealGenerateTests(unittest.TestCase):
                 )
 
     def test_deferred_game_id_surfaces_emit_exact_japanese_and_chinese(self):
-        build = build_game_catalog()
-        ja = build.locale_bundle("ja")
-        zh = build.locale_bundle("zh-Hans")
+        catalog = self._default_entries()
         decisions = json.loads(
             (
                 ROOT / "texts/locales/mapping/raw_surface_decisions.json"
@@ -146,27 +185,25 @@ class RealGenerateTests(unittest.TestCase):
                 expected_zh = raw[decision["import_id"]]
             with self.subTest(import_id=decision["import_id"]):
                 self.assertEqual(
-                    ja.entries[target_id].source_text,
+                    catalog.ja_entries[target_id].source_text,
                     expected_ja,
                 )
                 self.assertEqual(
-                    zh.entries[target_id].source_text,
+                    catalog.zh_entries[target_id].source_text,
                     expected_zh,
                 )
 
     def test_transformed_messages_fit_dedicated_runtime_scratch(self):
-        build = build_game_catalog()
+        catalog = self._default_entries()
         substitution_controls = tuple(
             b"\x80" + bytes((payload,))
             for payload in (0x12, 0x13, 0x14, 0x15, 0x20, 0x22)
         )
-        streams = [
-            entry.encoded_bytes for entry in build.english.entries
-        ]
-        for locale in ("ja", "zh-Hans"):
+        streams = list(catalog.english_streams)
+        for entries in (catalog.ja_entries, catalog.zh_entries):
             streams.extend(
                 entry.encoded_bytes
-                for entry in build.locale_bundle(locale).entries
+                for entry in entries
                 if entry.encoded_bytes is not None
             )
 
@@ -189,7 +226,7 @@ class RealGenerateTests(unittest.TestCase):
         self.assertLessEqual(max(bounds), 0x400)
 
     def test_every_0a_byte_in_final_localized_streams_comes_from_an_explicit_control(self):
-        build = build_game_catalog()
+        catalog = self._default_entries()
         definitions = load_english_definitions(ROOT / "texts/textdefs.txt")
 
         def explicit_0a_count(text):
@@ -221,8 +258,7 @@ class RealGenerateTests(unittest.TestCase):
                     count += _encode_control_unit(unit).count(b"\x0A")
             return count
 
-        for locale in ("ja", "zh-Hans"):
-            entries = build.locale_bundle(locale).entries
+        for locale, entries in (("ja", catalog.ja_entries), ("zh-Hans", catalog.zh_entries)):
             for entry in entries:
                 with self.subTest(locale=locale, target_id=entry.target_id):
                     self.assertEqual(
@@ -337,6 +373,60 @@ class RealGenerateTests(unittest.TestCase):
                 ja_budget["totals"]["shared_english_bytes"],
                 both_budget["totals"]["shared_english_bytes"],
             )
+
+
+class DefaultCatalogFixtureTests(unittest.TestCase):
+    def test_projection_is_shared_but_rebuilt_for_each_class_run(self):
+        english = SimpleNamespace(encoded_bytes=b"english")
+        ja = SimpleNamespace(target_id=0, source_text="old", encoded_bytes=b"old")
+        zh = SimpleNamespace(target_id=0, source_text="zh", encoded_bytes=b"zh")
+        entries = {"ja": (ja,), "zh-Hans": (zh,)}
+        build = SimpleNamespace(
+            english=SimpleNamespace(entries=(english,)),
+            locale_bundle=lambda locale: SimpleNamespace(entries=entries[locale]),
+        )
+        observed = []
+
+        class Consumer(RealGenerateTests):
+            def runTest(self):
+                observed.append(self._default_entries())
+
+        def run_consumers(count):
+            suite = unittest.TestSuite(Consumer() for _ in range(count))
+            result = unittest.TestResult()
+            suite.run(result)
+            self.assertTrue(result.wasSuccessful(), (result.errors, result.failures))
+
+        with patch(__name__ + ".build_game_catalog", return_value=build) as generate_catalog:
+            run_consumers(2)
+            self.assertIs(observed[0], observed[1])
+            self.assertEqual(generate_catalog.call_count, 1)
+            with self.assertRaises(AttributeError):
+                setattr(observed[0].ja_entries[0], "source_text", "mutated")
+
+            ja.source_text, ja.encoded_bytes = "new", b"new"
+            english.encoded_bytes = b"changed"
+            self.assertEqual(observed[0].ja_entries[0].source_text, "old")
+            self.assertEqual(observed[0].english_streams, (b"english",))
+
+            run_consumers(1)
+            self.assertEqual(generate_catalog.call_count, 2)
+            self.assertEqual(observed[2].ja_entries[0].source_text, "new")
+            self.assertEqual(observed[2].english_streams, (b"changed",))
+
+    def test_failed_generation_does_not_cache_a_result(self):
+        build = SimpleNamespace(
+            english=SimpleNamespace(entries=()),
+            locale_bundle=lambda locale: SimpleNamespace(entries=()),
+        )
+        with patch(__name__ + ".build_game_catalog", side_effect=[ValueError("invalid input"), build]):
+            RealGenerateTests.setUpClass()
+            try:
+                with self.assertRaisesRegex(ValueError, "invalid input"):
+                    RealGenerateTests._default_entries()
+                self.assertEqual(RealGenerateTests._default_entries().english_streams, ())
+            finally:
+                RealGenerateTests.tearDownClass()
 
 
 if __name__ == "__main__":
