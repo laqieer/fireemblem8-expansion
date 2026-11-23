@@ -480,7 +480,10 @@ class ReviewTools:
         try:
             root = Path(directory.name)
             isolate_candidate = _isolate_candidate or bool(history)
-            self._stage(tree, root, members, isolate_candidate=isolate_candidate)
+            if _isolate_candidate:
+                self._stage(tree, root, members, isolate_candidate=True)
+            else:
+                self._stage(tree, root, members)
             home = root / "build/home"
             home.mkdir()
             environment = {
