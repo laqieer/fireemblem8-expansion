@@ -753,6 +753,20 @@ independently review and trust that launcher from this PR in another checkout.
 This explicit introducing-PR boundary does not require a separate adapter PR,
 broker, source ledger or generic bootstrap service.
 
+The `TC-WORKFLOW-BUILD-CI-SPLIT-001/ci-lane-history` binding executes the
+historical and current lane, run-shape, metadata and dispatch predicates across
+the lifecycle and wire families. Historical preflight preserves lane
+provenance without authorizing a current dispatch or full Build. Its fixtures
+use distinct, chronologically valid instances of the parsed run and job
+models. Lifecycle entries execute the classifier and lane together; the wire
+producer also checks metadata and partial job shapes, while unrelated consumers use
+independently constructed modes. The fixed probe loads from a separate
+reviewed-tool directory, then imports the candidate package and its
+dependencies from the selected Git tree. Both workers in a CI-history mix
+preserve candidate imports; an import failure is unavailable evidence, not a
+passing observation. This separation establishes source provenance, not
+same-UID process isolation.
+
 `resolve_subject` joins an existing catalog case to the reviewed binding.
 `expand_members` derives the finite source-backed obligations at the finding
 origin and candidate. `run_obligations` executes their closed selectors and

@@ -6,6 +6,7 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+import ast
 import copy
 from dataclasses import replace
 import json
@@ -346,6 +347,336 @@ class AuthoredCaseFamilyTests(SubjectTestCase):
                 head = self.repo.commit({path: json.dumps(catalog)})
                 with self.assertRaisesRegex(ValueError, "reviewed finite model"):
                     self.tools.members(self.case_scope(head))
+
+class CIHistoryFamilyTests(SubjectTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
+        for name in cls.tools.subjects.local_python_inputs(
+                source, cls.tools.subjects.CI_HISTORY_SOURCES):
+            target = cls.repo.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, target)
+        git(cls.repo.root, "add", "scripts")
+        git(cls.repo.root, "commit", "-qm", "source-backed CI history predicates")
+        cls.repo.base = git(cls.repo.root, "rev-parse", "HEAD")
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+
+    def history_scope(self, head=None):
+        return request("TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history",
+                       self.repo.base, head or self.repo.base)
+
+    def mutate_predicate(self, path, name, value):
+        tree = ast.parse((self.repo.root / path).read_text())
+        functions = [item for item in tree.body
+                     if isinstance(item, ast.FunctionDef) and item.name == name]
+        self.assertEqual(len(functions), 1)
+        functions[0].body = [ast.Return(value=ast.Constant(value=value))]
+        return self.repo.commit({path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+
+    def wrap_predicate(self, path, name, wrapper):
+        tree = ast.parse((self.repo.root / path).read_text())
+        functions = [item for item in tree.body
+                     if isinstance(item, ast.FunctionDef) and item.name == name]
+        self.assertEqual(len(functions), 1)
+        functions[0].name = "_original_" + name.lstrip("_")
+        tree.body.extend(ast.parse(wrapper).body)
+        return self.repo.commit({path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+
+    def test_complete_source_backed_lifecycle_and_wire_family(self):
+        members = self.tools.members(self.history_scope())
+        self.assertEqual({(item.family, item.role) for item in members}, {
+            (family, role) for family in ("lifecycle", "wire")
+            for role in self.model.FAMILIES[family]
+        })
+        self.assertTrue(all(item.subject.endswith("/ci-lane-history") for item in members))
+        observations = self.run_members(members, self.repo.base)
+        self.assert_satisfied(observations)
+        self.assertTrue(all(item.kind == "host" and item.checks > 1 for item in observations))
+
+    def test_lane_and_stale_identity_mutations_fail_their_actual_members(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        for value, role in (("concurrent", "consumers"), ("review-first", "stale-bindings")):
+            with self.subTest(value=value, role=role):
+                revision = self.mutate_predicate(path, "_history_lane", value)
+                members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+                observations = self.run_members(members, revision)
+                target = next(item for item in observations
+                              if item.obligation.family == "wire" and item.obligation.role == role)
+                self.assertEqual(target.verdict, "contract-violation", target.detail)
+
+    def test_metadata_preparation_mutation_fails_its_lifecycle_member(self):
+        path = "scripts/workflow_pilot/pr_metadata.py"
+        revision = self.mutate_predicate(path, "_pre_full_preparation", False)
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        observations = self.run_members(members, revision)
+        terminal = next(item for item in observations
+                        if item.obligation.family == "lifecycle" and item.obligation.role == "terminals")
+        self.assertEqual(terminal.verdict, "contract-violation", terminal.detail)
+
+    def test_legacy_preflight_validator_reports_a_contract_violation(self):
+        path = "scripts/workflow_pilot/candidate_evidence.py"
+        tree = ast.parse((self.repo.root / path).read_text())
+        function = next(item for item in tree.body
+                        if isinstance(item, ast.FunctionDef) and item.name == "preflight_success")
+        function.args.kwonlyargs = []
+        function.args.kw_defaults = []
+        function.body = [ast.Return(value=ast.Constant(value=False))]
+        revision = self.repo.commit({path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        observation = next(item for item in self.run_members(members, revision)
+                           if item.obligation.family == "wire"
+                           and item.obligation.role == "validators")
+        self.assertEqual(observation.verdict, "contract-violation", observation.detail)
+
+    def test_intake_consumer_mutation_fails_its_own_member(self):
+        revision = self.mutate_predicate(
+            "scripts/workflow_pilot/adaptive_gate.py", "_finalize_intake", None)
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        consumer = next(item for item in self.run_members(members, revision)
+                        if item.obligation.family == "wire"
+                        and item.obligation.role == "consumers")
+        self.assertEqual(consumer.verdict, "contract-violation", consumer.detail)
+
+    def test_classifier_mutation_is_not_attributed_to_unrelated_members(self):
+        revision = self.mutate_predicate(
+            "scripts/workflow_pilot/pr_metadata.py", "_run_mode", "review-first")
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        observations = self.run_members(members, revision)
+        rejected = [item for item in observations if item.verdict != "satisfied"]
+        self.assertEqual({(item.obligation.family, item.obligation.role, item.verdict)
+                          for item in rejected}, {
+            ("lifecycle", "entries", "contract-violation"),
+            ("wire", "producers", "contract-violation"),
+        })
+        self.assert_satisfied([item for item in observations if item not in rejected])
+
+    def test_classifier_rejects_metadata_and_single_new_worker_mutations(self):
+        path = "scripts/workflow_pilot/pr_metadata.py"
+        variants = (
+            "    if 'metadata-classifier' in names and not names & new_workers:\n"
+            "        return 'historical-full'\n",
+            "    if 'review-first-classifier' in names and len(names & new_workers) == 1:\n"
+            "        return 'review-first'\n",
+        )
+        for mutation in variants:
+            with self.subTest(mutation=mutation):
+                revision = self.wrap_predicate(path, "_run_mode",
+                    "def _run_mode(jobs, *, run_id, status):\n"
+                    "    names = {job.name for job in jobs}\n"
+                    "    new_workers = {'workflow-pilot-tests', 'ownership-probe-tests', "
+                    "'game-localization-tests'}\n"
+                    + mutation
+                    + "    return _original_run_mode(jobs, run_id=run_id, status=status)\n")
+                members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+                producer = next(item for item in self.run_members(members, revision)
+                                if item.obligation.family == "wire"
+                                and item.obligation.role == "producers")
+                self.assertEqual(producer.verdict, "contract-violation", producer.detail)
+
+    def test_lane_consumer_rejects_malformed_history_with_valid_retry(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        revision = self.wrap_predicate(path, "_history_lane",
+            "def _history_lane(pr, base, runs):\n"
+            "    normalized = []\n"
+            "    for run in runs:\n"
+            "        if run.mode == 'historical-review-first':\n"
+            "            jobs = tuple(SimpleNamespace(**{**vars(job), 'conclusion': 'success'})\n"
+            "                         if job.name == 'event-identity' and job.conclusion == 'failure'\n"
+            "                         else job for job in run.jobs)\n"
+            "            run = SimpleNamespace(**{**vars(run), 'jobs': jobs})\n"
+            "        normalized.append(run)\n"
+            "    return _original_history_lane(pr, base, tuple(normalized))\n")
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        validator = next(item for item in self.run_members(members, revision)
+                         if item.obligation.family == "wire"
+                         and item.obligation.role == "validators")
+        self.assertEqual(validator.verdict, "contract-violation", validator.detail)
+
+    def test_run_fixtures_match_parsed_job_types_and_timing(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        revision = self.wrap_predicate(path, "_history_lane",
+            "def _history_lane(pr, base, runs):\n"
+            "    from scripts.workflow_pilot import pr_metadata\n"
+            "    for run in runs:\n"
+            "        if not isinstance(run, pr_metadata.RunState):\n"
+            "            raise ValueError('run is not parsed')\n"
+            "        for job in run.jobs:\n"
+            "            if not isinstance(job, pr_metadata.JobState):\n"
+            "                raise ValueError('job is not parsed')\n"
+            "            pr_metadata._validate_job_timing(\n"
+            "                job_id=job.job_id, status=job.status, conclusion=job.conclusion,\n"
+            "                assigned=job.runner_name is not None, created_at=job.created_at,\n"
+            "                started_at=job.started_at, completed_at=job.completed_at,\n"
+            "                run_created_at=run.created_at, run_started_at=run.run_started_at,\n"
+            "                run_updated_at=run.updated_at)\n"
+            "    return _original_history_lane(pr, base, runs)\n")
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(members, revision))
+
+        revision = self.wrap_predicate(path, "_history_lane",
+            "def _history_lane(pr, base, runs):\n"
+            "    for run in runs:\n"
+            "        for job in run.jobs:\n"
+            "            if job.started_at is not None:\n"
+            "                job.started_at.endswith('Z')\n"
+            "    return _original_history_lane(pr, base, runs)\n")
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        entry = next(item for item in self.run_members(members, revision)
+                     if item.obligation.family == "lifecycle"
+                     and item.obligation.role == "entries")
+        self.assertNotEqual(entry.verdict, "satisfied", entry.detail)
+
+    def test_reservation_follows_the_completed_preflight(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        revision = self.wrap_predicate(path, "_reserved_dispatch",
+            "def _reserved_dispatch(record, pr, run, runs):\n"
+            "    requested = reporter.parse_time(record['dispatch_requested_at'], 'dispatch')\n"
+            "    for prior in runs:\n"
+            "        if prior.mode in {'review-first', 'historical-review-first'} "
+            "and prior.run_number <= record['watermark'] and prior.updated_at > requested:\n"
+            "            raise ValueError('preflight completed after reservation')\n"
+            "    return _original_reserved_dispatch(record, pr, run, runs)\n")
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(members, revision))
+
+    def test_historical_validator_rejects_malformed_preflights(self):
+        path = "scripts/workflow_pilot/candidate_evidence.py"
+        tree = ast.parse((self.repo.root / path).read_text())
+        function = next(item for item in tree.body
+                        if isinstance(item, ast.FunctionDef) and item.name == "preflight_success")
+        function.body.insert(0, ast.parse("if historical:\n    return True\n").body[0])
+        revision = self.repo.commit({path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        validator = next(item for item in self.run_members(members, revision)
+                         if item.obligation.family == "wire"
+                         and item.obligation.role == "validators")
+        self.assertEqual(validator.verdict, "contract-violation", validator.detail)
+
+    def test_dispatch_identity_and_attempt_pins_are_exercised(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        for field in ("full_run_id", "full_attempt"):
+            with self.subTest(field=field):
+                tree = ast.parse((self.repo.root / path).read_text())
+                original = next(item for item in tree.body
+                                if isinstance(item, ast.FunctionDef)
+                                and item.name == "_reserved_dispatch")
+                original.name = "_original_reserved_dispatch"
+                tree.body.extend(ast.parse(
+                    "def _reserved_dispatch(record, pr, run, runs):\n"
+                    f"    return _original_reserved_dispatch({{**record, {field!r}: None}}, "
+                    "pr, run, runs)\n").body)
+                revision = self.repo.commit({
+                    path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+                members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+                stale = next(item for item in self.run_members(members, revision)
+                             if item.obligation.family == "wire"
+                             and item.obligation.role == "stale-bindings")
+                self.assertEqual(stale.verdict, "contract-violation", stale.detail)
+
+    def test_fixture_runs_do_not_repeat_a_run_attempt(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        tree = ast.parse((self.repo.root / path).read_text())
+        original = next(item for item in tree.body
+                        if isinstance(item, ast.FunctionDef) and item.name == "_history_lane")
+        original.name = "_original_history_lane"
+        tree.body.extend(ast.parse(
+            "def _history_lane(pr, base, runs):\n"
+            "    identities = [(run.run_id, run.run_attempt) for run in runs]\n"
+            "    if len(identities) != len(set(identities)):\n"
+            "        raise ValueError('duplicate run attempt')\n"
+            "    return _original_history_lane(pr, base, runs)\n").body)
+        revision = self.repo.commit({path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(members, revision))
+
+    def test_keyword_accepting_validator_signature_preserves_behavior(self):
+        path = "scripts/workflow_pilot/candidate_evidence.py"
+        tree = ast.parse((self.repo.root / path).read_text())
+        function = next(item for item in tree.body
+                        if isinstance(item, ast.FunctionDef) and item.name == "preflight_success")
+        function.args.kwonlyargs = []
+        function.args.kw_defaults = []
+        function.args.kwarg = ast.arg(arg="options")
+        function.body.insert(0, ast.parse("historical = options.get('historical', False)").body[0])
+        revision = self.repo.commit({path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(members, revision))
+
+    def test_candidate_package_imports_are_not_replaced_by_trusted_tools(self):
+        for path in ("scripts/workflow_pilot/__init__.py",
+                     "scripts/workflow_pilot/raw_diff_check.py"):
+            with self.subTest(path=path):
+                revision = self.repo.commit({path: "raise RuntimeError('candidate import reached')\n"})
+                members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+                observations = self.run_members(members, revision)
+                self.assertTrue(all(item.verdict == "unavailable" for item in observations))
+                self.assertTrue(all("candidate import reached" in item.detail for item in observations))
+
+    def test_equivalent_candidate_package_initializer_is_accepted(self):
+        path = "scripts/workflow_pilot/__init__.py"
+        source = (self.repo.root / path).read_text()
+        revision = self.repo.commit({path: source + "\n# Equivalent package initialization.\n"})
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(members, revision))
+
+    def test_mixed_subject_workers_preserve_candidate_and_tool_sources(self):
+        paths = (
+            "scripts/workflow_pilot/__init__.py",
+            "scripts/workflow_pilot/raw_diff_check.py",
+            "scripts/workflow_pilot/review_family.py",
+        )
+        changes = {path: (self.repo.root / path).read_text() + "\n# Equivalent candidate.\n"
+                   for path in paths}
+        revision = self.repo.commit(changes)
+        scope = self.history_scope(revision)
+        scope["subjects"].extend(self.scope("session")["subjects"])
+        members = self.tools.members(scope, (self.repo.base,))
+        tree = self.tools.tree(revision)
+        with tempfile.TemporaryDirectory(dir=self.repo.root / "build") as directory:
+            root = Path(directory)
+            self.tools._stage(tree, root, members)
+            for path in members[0].source_inputs:
+                self.assertEqual((root / path).read_bytes(), tree.read(path), path)
+            for path in paths:
+                self.assertEqual((root / "build/ci-history-tools" / path).read_bytes(),
+                                 self.tools.tool_tree.read(path))
+                self.assertNotEqual(tree.read(path), self.tools.tool_tree.read(path))
+        self.assert_satisfied(self.run_members(members, revision))
+
+    def test_mixed_session_worker_executes_candidate_dependency(self):
+        raw_path = "scripts/workflow_pilot/raw_diff_check.py"
+        family_path = "scripts/workflow_pilot/review_family.py"
+        raw_source = (self.repo.root / raw_path).read_text()
+        family_source = (self.repo.root / family_path).read_text()
+        raw = raw_source.replace(
+            'SHA_RE = re.compile(r"^[0-9a-f]{40}$")',
+            'SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|HEAD)$")', 1)
+        family = family_source.replace(
+            'SHA_PATTERN = r"[0-9a-f]{40}"',
+            'from scripts.workflow_pilot.raw_diff_check import SHA_RE\nSHA_PATTERN = SHA_RE.pattern', 1)
+        self.assertNotEqual(raw, raw_source)
+        self.assertNotEqual(family, family_source)
+        revision = self.repo.commit({raw_path: raw, family_path: family})
+        scope = self.history_scope(revision)
+        scope["subjects"].extend(self.scope("session")["subjects"])
+        members = self.tools.members(scope, (self.repo.base,))
+        validator = next(item for item in self.run_members(members, revision)
+                         if item.obligation.subject.endswith("/review-session")
+                         and item.obligation.family == "wire"
+                         and item.obligation.role == "validators")
+        self.assertEqual(validator.verdict, "contract-violation", validator.detail)
+
+    def test_semantics_preserving_python_reformat_keeps_the_family_green(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        source = (self.repo.root / path).read_text()
+        reformatted = ast.unparse(ast.parse(source)) + "\n"
+        revision = self.repo.commit({path: reformatted})
+        members = self.tools.members(self.history_scope(revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(members, revision))
+
 
 class SubjectTests(SubjectTestCase):
     @staticmethod

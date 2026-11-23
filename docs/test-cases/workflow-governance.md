@@ -2512,6 +2512,15 @@ surfaces; #387–#389 remain independent follow-ups.
   checks historical lane provenance and current preflight preparation.
 - `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_history_does_not_block_a_successful_retry scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_retry_still_rejects_unproven_history -v`
   checks failed-adapter retries and rejects unproven history.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.CIHistoryFamilyTests -v`
+  exercises the existing `ci-lane-history` review-family binding against real
+  lane, job-shape, metadata and dispatch predicates, including legacy
+  validator, malformed history with a valid retry, partial and metadata job
+  shapes, parsed run chronology, pinned dispatch identity and attempt,
+  mixed-worker candidate provenance, and semantics-preserving controls.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_cjk_subjects.CjkSubjectTests.test_history_and_generated_split_preserves_candidate_session_dependency -v`
+  checks candidate dependency provenance through the nested history,
+  generated-resource and review-session workers.
 
 ### Cleanup and limitations
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, replace
+import inspect
 import io
 import json
 import os
@@ -33,6 +34,7 @@ BINDINGS = (
     SubjectSpec("TC-GAMEPLAY-006", "aoe-item-dispatch", "aoe"),
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
+    SubjectSpec("TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history", "ci-lane-history"),
     SubjectSpec("TC-CJK-RESOURCE-STORAGE-001", "cjk-resource-index", "cjk-resource"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
     SubjectSpec("TC-PROJECT-SELECTION-001", "project-selection", "project-selection"),
@@ -43,6 +45,10 @@ AOE_REFERENCE = "src/expansion_aoe_reference.c"
 AOE_DRIVER = "tools/gba-playtest/tests/c/expansion_aoe_driver.c"
 AOE_DISABLED = "tools/gba-playtest/tests/c/expansion_aoe_disabled_driver.c"
 REVIEW_SOURCE = "scripts/workflow_pilot/review_family.py"
+CI_ADAPTIVE = "scripts/workflow_pilot/adaptive_gate.py"
+CI_METADATA = "scripts/workflow_pilot/pr_metadata.py"
+CI_EVIDENCE = "scripts/workflow_pilot/candidate_evidence.py"
+CI_HISTORY_SOURCES = (CI_ADAPTIVE, CI_METADATA, CI_EVIDENCE)
 EVENT_SCHEMA = "scripts/generated_data/eventlists/schema.py"
 EVENT_SOURCE = "src/data/ch2_eventlists.json"
 PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
@@ -558,6 +564,46 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                     "trusted coordinator", "typed requests/rounds/task observations",
                     "exact scope/head/round and sticky hold", family + ":" + role,
                     (REVIEW_SOURCE,))
+    elif spec.model == "ci-lane-history":
+        predicates = {
+            ("lifecycle", "entries"): (CI_METADATA + ":_run_mode", CI_ADAPTIVE + ":_history_lane",
+                                       CI_HISTORY_SOURCES),
+            ("lifecycle", "preservation"): (CI_ADAPTIVE + ":_history_lane",
+                                            CI_ADAPTIVE + ":_reserved_dispatch",
+                                            CI_HISTORY_SOURCES),
+            ("lifecycle", "resets"): (CI_ADAPTIVE + ":_history_lane", CI_ADAPTIVE + ":_history_lane",
+                                      CI_HISTORY_SOURCES),
+            ("lifecycle", "terminals"): (CI_METADATA + ":_pre_full_preparation",
+                                         CI_ADAPTIVE + ":_reserved_dispatch",
+                                         CI_HISTORY_SOURCES),
+            ("wire", "producers"): (CI_METADATA + ":_run_mode", CI_METADATA + ":_run_mode",
+                                    (CI_METADATA, CI_EVIDENCE)),
+            ("wire", "consumers"): (CI_ADAPTIVE + ":_history_lane", CI_ADAPTIVE + ":_finalize_intake",
+                                    CI_HISTORY_SOURCES),
+            ("wire", "validators"): (CI_EVIDENCE + ":preflight_success",
+                                     CI_ADAPTIVE + ":_history_lane", CI_HISTORY_SOURCES),
+            ("wire", "replay"): (CI_ADAPTIVE + ":_history_lane", CI_ADAPTIVE + ":_history_lane",
+                                 CI_HISTORY_SOURCES),
+            ("wire", "stale-bindings"): (CI_ADAPTIVE + ":_history_lane",
+                                         CI_ADAPTIVE + ":_reserved_dispatch",
+                                         CI_HISTORY_SOURCES),
+        }
+        for path, names in (
+            (CI_ADAPTIVE, {"_history_lane", "_finalize_intake", "_reserved_dispatch"}),
+            (CI_METADATA, {"_run_mode", "_pre_full_preparation", "_current_full_authorization"}),
+            (CI_EVIDENCE, {"preflight_success"}),
+        ):
+            functions = [item.name for item in ast.parse(tree.read(path)).body
+                         if isinstance(item, ast.FunctionDef)]
+            review.require(all(functions.count(name) == 1 for name in names),
+                           "CI history predicate needs a reviewed finite model")
+        for (family, role), (producer, consumer, paths) in predicates.items():
+            add(family, role, "ci-lane-history", producer, consumer,
+                "bound historical/current Build jobs and candidate identity",
+                "exact lane, retry, metadata and dispatch authority",
+                "ci-history:" + family + ":" + role, paths)
+        closure = local_python_inputs(tree, CI_HISTORY_SOURCES)
+        result = [replace(member, execution_inputs=closure) for member in result]
     else:
         raise review.ReviewError("unknown finite source model")
     for path in {path for member in result for path in member.inputs}:
@@ -2236,6 +2282,299 @@ def _session_probe(probe: str) -> dict:
     return {"kind": "host", "checks": 2, "detail": "registered production reducer executed"}
 
 
+@probe_result("host")
+def _ci_history(probe: str) -> dict:
+    from datetime import datetime, timedelta, timezone
+    from itertools import combinations
+    from scripts.workflow_pilot import adaptive_gate, candidate_evidence, pr_metadata
+
+    checks = 0
+
+    def equal(action, expected, label):
+        nonlocal checks
+        try:
+            actual = action()
+        except ValueError as error:
+            raise ContractViolation(f"{label}: {error}") from error
+        check(actual == expected, label)
+        checks += 1
+
+    def rejects(action, label):
+        nonlocal checks
+        try:
+            action()
+        except ValueError:
+            checks += 1
+            return
+        raise ContractViolation(label)
+
+    def changed(value, **updates):
+        return replace(value, **updates)
+
+    def job(name, conclusion, number, index):
+        created = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(
+            minutes=number * 3, seconds=2)
+        classifier = name in {"event-classifier", "metadata-classifier",
+                              "review-first-classifier"}
+        return pr_metadata.JobState(
+            job_id=number * 100 + index + 1, run_id=number, name=name,
+            status="completed", conclusion=conclusion,
+            runner_name=None if conclusion == "skipped" else "runner",
+            created_at=created, started_at=created,
+            completed_at=created if conclusion == "skipped" else created + timedelta(seconds=1),
+            candidate_binding=binding if classifier else None,
+            candidate_base_ref=pr.base_ref if classifier else None)
+
+    head, base = "a" * 40, "b" * 40
+    pr = types.SimpleNamespace(number=42, head_sha=head, head_ref="topic", base_ref="master",
+                               repository="owner/repo", repository_id=123)
+    binding = (pr.number, head, base)
+    workers = (
+        "host-tests", "workflow-pilot-tests", "build", "extended-host-tests",
+        "ownership-probe-tests", "game-localization-tests", "legacy",
+    )
+    new_workers = ("workflow-pilot-tests", "ownership-probe-tests", "game-localization-tests")
+
+    def run(kind, number, *, historical=False, event="pull_request"):
+        classifier = {
+            "preflight": "review-first-classifier",
+            "metadata": "metadata-classifier",
+            "full": "event-classifier",
+        }[kind]
+        definitions = [("event-identity", "success"), ("event-router", "success"),
+                       (classifier, "success")]
+        for name in workers:
+            if historical and name in new_workers:
+                continue
+            conclusion = "success" if kind == "full" or name in {"host-tests", "build"} else "skipped"
+            definitions.append((name, conclusion))
+        definitions.append(("summary", "failure" if kind == "preflight" else "success"))
+        jobs = tuple(job(name, conclusion, number, index)
+                     for index, (name, conclusion) in enumerate(definitions))
+        mode = {"preflight": "review-first", "metadata": "metadata-only", "full": "full"}[kind]
+        if historical:
+            mode = "historical-" + mode
+        created = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=number * 3)
+        return pr_metadata.RunState(
+            run_id=number, run_attempt=1, run_number=number, workflow_id=7,
+            head_sha=head, head_branch=pr.head_ref, created_at=created,
+            run_started_at=created + timedelta(seconds=1),
+            updated_at=created + timedelta(seconds=30),
+            candidate_binding=binding, candidate_base_ref=pr.base_ref,
+            binding="explicit-same", mode=mode, event=event, status="completed",
+            conclusion="failure" if kind == "preflight" else "success", jobs=jobs)
+
+    def edit_job(value, name, **updates):
+        return changed(value, jobs=tuple(
+            changed(item, **updates) if item.name == name else item for item in value.jobs))
+
+    def statuses(value):
+        return {item.name: (item.status, item.conclusion) for item in value.jobs}
+
+    def lane(*runs):
+        return adaptive_gate._history_lane(pr, base, runs)
+
+    def classified(value):
+        return changed(value, mode=pr_metadata._run_mode(
+            value.jobs, run_id=value.run_id, status=value.status))
+
+    old = run("preflight", 1, historical=True)
+    current = run("preflight", 2)
+    dispatch = run("full", 3, event="workflow_dispatch")
+    concurrent = run("full", 3)
+    old_metadata = run("metadata", 4, historical=True)
+    record = {
+        "pr_number": pr.number, "head_sha": head, "base_sha": base, "base_ref": pr.base_ref,
+        "watermark": 2, "dispatch_requested_at": "2026-01-01T00:08:00Z",
+        "full_run_id": None, "full_attempt": None,
+    }
+
+    if probe == "ci-history:lifecycle:entries":
+        equal(lambda: lane(), None, "empty history should have no initial lane")
+        equal(lambda: lane(classified(old)), "review-first", "historical preflight lost its lane")
+        equal(lambda: lane(classified(current)), "review-first", "current preflight lost its lane")
+        equal(lambda: lane(classified(old), classified(current)), "review-first",
+              "compatible preflights disagree")
+        equal(lambda: pr_metadata._run_mode(
+            old_metadata.jobs, run_id=old_metadata.run_id, status=old_metadata.status),
+              "historical-metadata-only", "historical metadata misclassified")
+        rejects(lambda: lane(classified(old_metadata)), "metadata alone established an initial lane")
+    elif probe == "ci-history:lifecycle:preservation":
+        equal(lambda: lane(old, dispatch), "review-first", "historical provenance was discarded")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, dispatch, (old, dispatch)),
+              False, "old preflight authorized a current dispatch")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, dispatch, (current, dispatch)),
+              True, "current preflight failed to authorize its reserved dispatch")
+        rejects(lambda: pr_metadata._current_full_authorization((old, current)),
+                "preflight history authorized a full Build")
+    elif probe == "ci-history:lifecycle:resets":
+        retry = run("preflight", 5)
+        for first in (old, current):
+            for adapter in ("host-tests", "build"):
+                for conclusion in ("failure", "cancelled", "timed_out"):
+                    failed = edit_job(first, adapter, conclusion=conclusion)
+                    equal(lambda: lane(failed, retry), "review-first", "valid retry lost its lane")
+                    rejects(lambda: lane(failed), "failed preflight alone established a lane")
+    elif probe == "ci-history:lifecycle:terminals":
+        equal(lambda: pr_metadata._pre_full_preparation((old, current, old_metadata)),
+              True, "current preflight with historical metadata was refused")
+        equal(lambda: pr_metadata._pre_full_preparation((old,)), False,
+              "old preflight alone authorized metadata preparation")
+        equal(lambda: pr_metadata._pre_full_preparation((old, current, concurrent)), False,
+              "full run allowed pre-full preparation")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, dispatch, (current, dispatch)),
+              True, "bound current dispatch was refused")
+        wrong_workflow = changed(dispatch, workflow_id=8)
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, wrong_workflow,
+                                                       (current, wrong_workflow)),
+              False, "different workflow authorized a dispatch")
+        rejects(lambda: pr_metadata._current_full_authorization((old, current)),
+                "preflight became full-Build authority")
+    elif probe == "ci-history:wire:producers":
+        metadata = run("metadata", 6)
+        historical_full = run("full", 7, historical=True)
+        for value, expected in (
+            (old, "historical-review-first"), (current, "review-first"),
+            (old_metadata, "historical-metadata-only"), (metadata, "metadata-only"),
+            (historical_full, "historical-full"), (dispatch, "full"),
+        ):
+            equal(lambda: pr_metadata._run_mode(
+                value.jobs, run_id=value.run_id, status=value.status),
+                  expected, f"{expected} shape misclassified")
+        equal(lambda: pr_metadata._run_mode(
+            tuple(reversed(current.jobs)), run_id=current.run_id, status="completed"),
+              "review-first", "job ordering changed classification")
+        for value in (current, metadata, dispatch):
+            for count in (1, 2):
+                for kept in combinations(new_workers, count):
+                    partial = tuple(item for item in value.jobs
+                                    if item.name not in new_workers or item.name in kept)
+                    rejects(lambda: pr_metadata._run_mode(
+                        partial, run_id=value.run_id, status=value.status),
+                            "partial current job shape accepted")
+        publisher = job("patch-release", "skipped", old.run_id, len(old.jobs))
+        equal(lambda: pr_metadata._run_mode(
+            (*old.jobs, publisher), run_id=old.run_id, status="completed"),
+              "historical-review-first", "skipped historical publisher rejected")
+        rejects(lambda: pr_metadata._run_mode(
+            (*old.jobs, changed(publisher, conclusion="success", runner_name="runner")),
+            run_id=old.run_id, status="completed"), "active historical publisher accepted")
+    elif probe == "ci-history:wire:consumers":
+        equal(lambda: lane(old, dispatch), "review-first",
+              "historical preflight plus current full dispatch lost its initial lane")
+        equal(lambda: lane(old, current), "review-first", "current and historical lanes disagree")
+        rejects(lambda: lane(old, concurrent), "contradictory pull-request full run accepted")
+        equal(lambda: pr_metadata._pre_full_preparation((old, current, old_metadata)),
+              True, "historical metadata blocked valid current preparation")
+        provisional = {
+            "base_sha": base, "mode": "concurrent", "full_run_id": None,
+            "dispatch_requested_at": None, "abandoned_reason": None,
+            "intake_control": {"repository": pr.repository, "repository_id": pr.repository_id},
+        }
+        equal(lambda: (adaptive_gate._finalize_intake(provisional, pr, (old, dispatch)),
+                       provisional["mode"], "intake_control" in provisional),
+              (None, "review-first", False), "historical lane was not finalized")
+        rejects(lambda: adaptive_gate._finalize_intake(
+            {"base_sha": base, "mode": "concurrent"}, pr, (old, dispatch)),
+            "contradictory finalized intake accepted")
+    elif probe == "ci-history:wire:validators":
+        try:
+            inspect.signature(candidate_evidence.preflight_success).bind(
+                statuses(old), historical=True)
+        except TypeError:
+            historical_arg = {}
+        else:
+            historical_arg = {"historical": True}
+        equal(lambda: candidate_evidence.preflight_success(statuses(old), **historical_arg), True,
+              "valid historical preflight rejected")
+        equal(lambda: candidate_evidence.preflight_success(statuses(current)), True,
+              "valid current preflight rejected")
+        for value, kwargs in ((old, historical_arg), (current, {})):
+            for name in (
+                "event-identity", "event-router", "review-first-classifier",
+                "host-tests", "build", "extended-host-tests", "legacy", "summary",
+            ):
+                missing = statuses(value)
+                del missing[name]
+                equal(lambda: candidate_evidence.preflight_success(missing, **kwargs), False,
+                      f"missing {name} accepted")
+                incorrect = dict(statuses(value))
+                conclusion = incorrect[name][1]
+                incorrect[name] = ("completed", "failure" if conclusion == "success" else "success")
+                equal(lambda: candidate_evidence.preflight_success(incorrect, **kwargs), False,
+                      f"incorrect {name} accepted")
+                incorrect[name] = ("in_progress", None)
+                equal(lambda: candidate_evidence.preflight_success(incorrect, **kwargs), False,
+                      f"active {name} accepted")
+        for name in new_workers:
+            incomplete = statuses(current)
+            del incomplete[name]
+            equal(lambda: candidate_evidence.preflight_success(incomplete), False,
+                  "missing current worker accepted")
+            incorrect = dict(statuses(current))
+            incorrect[name] = ("completed", "success")
+            equal(lambda: candidate_evidence.preflight_success(incorrect), False,
+                  "active current worker accepted")
+            unexpected = dict(statuses(old))
+            unexpected[name] = ("completed", "skipped")
+            equal(lambda: candidate_evidence.preflight_success(unexpected, **historical_arg), False,
+                  "partial historical worker shape accepted")
+        publisher = {**statuses(old), "patch-release": ("completed", "skipped")}
+        equal(lambda: candidate_evidence.preflight_success(publisher, **historical_arg), True,
+              "skipped historical publisher rejected")
+        publisher["patch-release"] = ("completed", "success")
+        equal(lambda: candidate_evidence.preflight_success(publisher, **historical_arg), False,
+              "active historical publisher accepted")
+        retry = run("preflight", 5)
+        for value in (old, current):
+            for name in ("event-identity", "event-router", "review-first-classifier",
+                         "extended-host-tests", "legacy", "summary"):
+                conclusion = "failure" if name in {
+                    "event-identity", "event-router", "review-first-classifier",
+                } else "success"
+                malformed = edit_job(value, name, conclusion=conclusion, runner_name="runner")
+                rejects(lambda: lane(malformed, retry),
+                        f"malformed {name} accepted with a valid retry")
+            if value is current:
+                for name in new_workers:
+                    malformed = edit_job(value, name, conclusion="success", runner_name="runner")
+                    rejects(lambda: lane(malformed, retry),
+                            f"malformed {name} accepted with a valid retry")
+        duplicate = changed(current, jobs=(*current.jobs, current.jobs[0]))
+        rejects(lambda: lane(duplicate), "duplicate job identity accepted")
+    elif probe == "ci-history:wire:replay":
+        failed = edit_job(old, "host-tests", conclusion="failure")
+        retry = run("preflight", 5)
+        equal(lambda: lane(failed, retry), "review-first", "successful retry was blocked")
+        equal(lambda: lane(retry, failed), "review-first", "retry depended on observation order")
+        rejects(lambda: lane(failed), "failed attempt alone established authority")
+        rejects(lambda: lane(failed, retry, concurrent), "contradictory replay accepted")
+    elif probe == "ci-history:wire:stale-bindings":
+        foreign = (
+            changed(concurrent, head_sha="c" * 40),
+            changed(concurrent, head_branch="other"),
+            changed(concurrent, candidate_binding=(pr.number, head, "c" * 40)),
+            changed(concurrent, candidate_base_ref="other"),
+        )
+        for unrelated in foreign:
+            equal(lambda: lane(current, unrelated), "review-first", "unrelated run changed the lane")
+        for unbound in (changed(old, candidate_binding=None), changed(old, candidate_base_ref=None)):
+            rejects(lambda: lane(unbound, current), "unbound historical preflight accepted")
+        equal(lambda: pr_metadata._pre_full_preparation(
+            (current, changed(old, binding="unbound", candidate_binding=None))),
+              False, "unbound history authorized metadata preparation")
+        pinned = {**record, "full_run_id": dispatch.run_id, "full_attempt": dispatch.run_attempt}
+        equal(lambda: adaptive_gate._reserved_dispatch(pinned, pr, dispatch, (current, dispatch)),
+              True, "exact pinned dispatch was rejected")
+        for field in ("full_run_id", "full_attempt"):
+            stale = {**pinned, field: pinned[field] + 1}
+            equal(lambda: adaptive_gate._reserved_dispatch(stale, pr, dispatch, (current, dispatch)),
+                  False, f"stale dispatch {field} accepted")
+    else:
+        raise review.ReviewError("unknown CI history probe")
+    return {"kind": "host", "checks": checks, "detail": "selected production history predicates executed"}
+
+
 def run_probe(probe: str) -> dict:
     allowed = {
         *(f"aoe-phase:{phase}" for phase in PHASES),
@@ -2251,6 +2590,8 @@ def run_probe(probe: str) -> dict:
         *("project-wire:" + role for role in review.FAMILIES["wire"]),
         *("project-generated:" + role for role in review.FAMILIES["generated"]),
         *("project-resource:" + role for role in review.FAMILIES["resource"]),
+        *("ci-history:" + family + ":" + role for family in ("lifecycle", "wire")
+          for role in review.FAMILIES[family]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -2273,6 +2614,8 @@ def run_probe(probe: str) -> dict:
                          "project-resource:")):
         kind = "arm-object" if probe.startswith("project-resource:") else "host"
         return probe_result(kind)(_project)(probe)
+    if probe.startswith("ci-history:"):
+        return _ci_history(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")
