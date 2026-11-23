@@ -34,6 +34,11 @@ MAX_REVIEW_SECONDS = 3600
 EVIDENCE_KINDS = frozenset({"native", "arm-object", "parsed", "host"})
 REVIEW_SIDES = ("base", "head")
 REVIEW_BLOB_MODES = frozenset({"100644", "100755"})
+COPILOT_REVIEWER_ID = "BOT_kgDOCnlnWA"
+FAILED_REVIEW_BODY = (
+    "Copilot encountered an error and was unable to review this pull request. "
+    "You can try again by re-requesting a review."
+)
 _MISSING = object()
 
 
@@ -603,7 +608,7 @@ class Triage:
     findings: tuple[Finding, ...] = ()
 
     def validate(self) -> None:
-        require(self.outcome in {"clean", "changes-requested", "untriaged", "dismissed"},
+        require(self.outcome in {"clean", "changes-requested", "untriaged", "dismissed", "failed"},
                 "unknown coordinator triage")
         require(len(self.findings) <= MAX_FINDINGS, "review finding budget exceeded")
         sha(self.fact.head)
@@ -612,12 +617,19 @@ class Triage:
         for finding in self.findings:
             require(finding.origin == self.fact.head and finding.review_id == self.fact.id,
                     "finding has wrong review origin")
+        error_response = (self.fact.actor == COPILOT_REVIEWER_ID
+                          and self.fact.body == FAILED_REVIEW_BODY)
+        failed_review = error_response and self.fact.state == "COMMENTED"
         if self.outcome == "clean":
             require(not self.findings and not self.fact.unresolved_threads
-                    and self.fact.state in {"COMMENTED", "APPROVED"},
+                    and self.fact.state in {"COMMENTED", "APPROVED"} and not error_response,
                     "clean triage contradicts review facts")
         if self.outcome == "dismissed":
             require(self.fact.state == "DISMISSED", "dismissed triage requires an actual dismissal")
+        if self.outcome == "failed":
+            require(failed_review and not self.findings and not self.fact.comments
+                    and not self.fact.unresolved_threads,
+                    "failed triage requires the unambiguous Copilot error without findings")
 
 
 @dataclass(frozen=True)
@@ -1019,12 +1031,18 @@ class ReviewSession:
 
     def accept(self, finding: Finding) -> None:
         require(finding.id not in self.accepted, "duplicate accepted finding")
+        require(not any(item.fact.id == finding.review_id and item.outcome == "failed"
+                        for item in self.rounds.events),
+                "failed review has accepted findings")
         require(finding.subject in self.scope and finding.family in FAMILIES,
                 "finding is outside accepted scope")
         sha(finding.origin)
         self.accepted[finding.id] = finding
 
     def triage(self, decision: Triage) -> None:
+        if decision.outcome == "failed":
+            require(not any(item.review_id == decision.fact.id for item in self.accepted.values()),
+                    "failed review has accepted findings")
         for finding in decision.findings:
             require(finding.subject in self.scope and finding.family in FAMILIES,
                     "finding is outside accepted scope")
@@ -1063,6 +1081,11 @@ class ReviewSession:
                     timestamp(item.submitted_at) for item in facts),
                     "fresh pre-review did not precede the first remote review")
         ready = all(item.outcome != "untriaged" and not item.fact.unresolved_threads for item in triage)
+        last_failed = max((index for index, item in enumerate(triage) if item.outcome == "failed"),
+                          default=-1)
+        if last_failed >= 0:
+            ready = ready and any(item.outcome == "clean" and item.fact.head == self.head
+                                  for item in triage[last_failed + 1:])
         latest = triage[-1] if triage else None
         return ready, bool(ready and latest and latest.fact.head == self.head
                            and latest.outcome == "clean")

@@ -19,6 +19,11 @@ from contextlib import redirect_stdout, redirect_stderr
 from scripts.workflow_pilot import trusted_review_gate as gate
 from scripts.workflow_pilot.tests.review_support import ENV, ROOT, TRUSTED_LAUNCHER, Runtime, git, request, snapshot
 
+FAILED_REVIEW_BODY = (
+    "Copilot encountered an error and was unable to review this pull request. "
+    "You can try again by re-requesting a review."
+)
+
 
 def response(base, head, body="Complete review content", *, actor=None):
     return {"data": {"repository": {"nameWithOwner": "owner/repo", "pullRequest": {
@@ -157,6 +162,38 @@ class GitHubReviewTests(unittest.TestCase):
         result = self.tools.assess(data, session, github, (triage,), pre_review_required=True)
         self.assertFalse(result["exact_head_review_clean"])
         self.assertFalse(result["handoff_eligible"])
+
+    def test_failed_review_requires_a_later_observed_clean_review(self):
+        data, session, _, github, _ = self.setup_review(FAILED_REVIEW_BODY)
+        pr = github.payload["data"]["repository"]["pullRequest"]
+        first = pr["reviews"]["nodes"][0]
+        first["comments"]["nodes"] = []
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        failed = self.model.Triage(facts[0], "failed")
+        session.triage(failed)
+        self.assertEqual(session.review_state(facts, (failed,), pre_review_required=True),
+                         (False, False))
+
+        latest = copy.deepcopy(first)
+        latest.update(id="review-2", submittedAt="2026-01-01T00:00:20Z",
+                      body="Complete clean review of the current head.")
+        pr["reviews"]["nodes"].append(latest)
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        clean = self.model.Triage(facts[1], "clean")
+        session.triage(clean)
+        triage = (failed, clean)
+        result = self.tools.assess(data, session, github, triage, pre_review_required=True)
+        self.assertTrue(result["handoff_eligible"])
+        self.assertTrue(result["exact_head_review_clean"])
+
+        first["body"] += " Changed."
+        with self.assertRaises(ValueError):
+            self.tools.assess(data, session, github, triage, pre_review_required=True)
+        self.assertEqual(session.rounds.events[0].outcome, "untriaged")
+        result = self.tools.assess(
+            data, session, github, tuple(session.rounds.events), pre_review_required=True)
+        self.assertFalse(result["handoff_eligible"])
+        self.assertFalse(result["exact_head_review_clean"])
 
     def test_exact_merge_base_allows_only_unrelated_base_fast_forward(self):
         common = self.repo.commit({"lineage-common": "branch point"})

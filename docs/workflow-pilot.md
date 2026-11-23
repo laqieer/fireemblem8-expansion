@@ -1056,6 +1056,16 @@ record instead of adding a round. Formal CHANGES_REQUESTED observations count
 before content triage, but do not emit actionable handoffs until triaged.
 The finalized `dismissed` outcome is permitted only for an actual DISMISSED
 fact; it completes historical triage without granting clean authority.
+The explicit `failed` outcome is limited to the authenticated Copilot
+COMMENTED review containing the exact observed execution-error response and
+no inline comments, unresolved threads or accepted findings. Unknown or
+mixed error content stays untriaged. A failed review is never clean and does
+not reset change-request rounds or a sticky hold; readiness requires a later
+fully triaged clean review of the current head. Changed review content
+invalidates the failed disposition normally, and a finding cannot be accepted
+against a review while its failed disposition remains current. The exact
+error text is an external response boundary: an unrecognized response fails
+closed.
 Previously accepted finding bindings remain required, including when newer
 content omits them. Retriage refreshes handoffs from that accepted set.
 
