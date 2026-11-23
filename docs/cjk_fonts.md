@@ -167,8 +167,13 @@ contract violations, not unavailable setup evidence. The two candidate-call
 paths share that finite error-family definition; independent reference and
 OS/backend setup failures remain unavailable. Unrecognized failures never
 supply success or affected-fixed credit and require explicit source triage.
-Only the complete generated CJK family stages its additional fixtures, in
-its own existing worker root. Mixed requests retain their declared execution
+For consumer programming-error controls, the test validates the complete
+generated family before using a test-only admission patch to run the mapped
+consumer alone. Unpatched production calls still reject incomplete generated,
+wire and resource families. Complete positive and unavailable-negative runs
+execute all generated roles; focused runs do not credit unexecuted siblings.
+In production, only the complete generated CJK family stages its additional
+fixtures, in its own existing worker root. Mixed requests retain their declared execution
 union and observation order, but other probes cannot see CJK-only fixture
 trees. Wire/resource-only observations read their declared indexes without
 copying those fixture trees. The malformed-input decoder and CLI diagnostic

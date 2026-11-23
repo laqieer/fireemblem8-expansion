@@ -2,6 +2,7 @@
 
 import ast
 import base64
+from dataclasses import replace
 import json
 import lzma
 import shutil
@@ -52,6 +53,26 @@ class CjkSubjectTests(unittest.TestCase):
         self.assertEqual([(item.obligation.member, item.verdict, item.detail)
                           for item in observed if item.verdict != "satisfied"], [])
         self.assertTrue(all(item.kind == "host" and item.checks > 0 for item in observed))
+
+    def focused_generated_consumer(self, members, revision):
+        members = tuple(members)
+        validate_members = self.tools.model.validate_members
+        validate_members(members)
+        self.assertEqual({item.family for item in members}, {"generated"})
+        consumers = tuple(item for item in members if item.role == "consumers")
+        self.assertEqual(len(consumers), 1)
+        consumer = consumers[0]
+
+        def validate_focused(selected):
+            self.assertEqual(tuple(selected), (consumer,))
+            validate_members(members)
+
+        # Only this test call narrows execution after validating the full family.
+        with mock.patch.object(self.tools.model, "validate_members",
+                               side_effect=validate_focused) as validation:
+            observed = self.tools.run_obligations((consumer,), revision)
+        validation.assert_called()
+        return observed
 
     def test_complete_codec_wire_generated_and_resource_obligations(self):
         members = self.tools.members(self.scope())
@@ -470,11 +491,38 @@ class CjkSubjectTests(unittest.TestCase):
         renamed = self.repo.commit({path: original.replace("previous", "old_data")})
         members = self.tools.members(self.scope(renamed))
         self.assert_satisfied(self.tools.run_obligations(members, renamed))
+        generated = tuple(item for item in members if item.family == "generated")
+        self.assert_satisfied(self.focused_generated_consumer(generated, renamed))
 
     def test_generated_consumer_programming_errors_are_not_backend_failures(self):
-        baseline = tuple(item for item in self.tools.members(self.scope())
-                         if item.family == "generated")
+        all_members = self.tools.members(self.scope())
+        for family in ("generated", "wire", "resource"):
+            members = tuple(item for item in all_members if item.family == family)
+            self.assertTrue(members, family)
+            for missing in members:
+                with self.subTest(family=family, missing=missing.role):
+                    with self.assertRaises(self.tools.model.ReviewError):
+                        self.tools.run_obligations(
+                            tuple(item for item in members if item != missing), self.repo.base)
+        baseline = tuple(item for item in all_members if item.family == "generated")
         self.assert_satisfied(self.tools.run_obligations(baseline, self.repo.base))
+
+        other = next(item for item in baseline if item.role != "consumers")
+        run_process = self.tools.subjects.run_process
+        mapped = []
+
+        def wrong_probe(*args, **kwargs):
+            completed = run_process(*args, **kwargs)
+            rows = json.loads(completed.stdout)
+            rows[0]["probe"] = other.probe
+            mapped.append(True)
+            return replace(completed, stdout=json.dumps(rows).encode())
+
+        with mock.patch.object(self.tools.subjects, "run_process", side_effect=wrong_probe):
+            with self.assertRaises(self.tools.model.ReviewError):
+                self.focused_generated_consumer(baseline, self.repo.base)
+        self.assertEqual(len(mapped), 1)
+
         sources = {
             path: (self.repo.root / path).read_text()
             for path in ("scripts/fonttools/cjk/resource_index.py", "scripts/fonttools/cjk/cli.py")
@@ -503,7 +551,13 @@ class CjkSubjectTests(unittest.TestCase):
                 head = self.repo.commit({path: ast.unparse(tree) + "\n"})
                 members = tuple(item for item in self.tools.members(self.scope(head))
                                 if item.family == "generated")
-                observed = self.tools.run_obligations(members, head)
+                if failure == "OSError":
+                    observed = self.tools.run_obligations(members, head)
+                    self.assertEqual({item.obligation for item in observed}, set(members))
+                    self.assert_satisfied(
+                        [item for item in observed if item.obligation.role != "consumers"])
+                else:
+                    observed = self.focused_generated_consumer(members, head)
                 self.assertEqual(
                     [(item.verdict, item.checks) for item in observed
                      if item.obligation.role == "consumers"],
