@@ -6734,6 +6734,22 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    live run or process still rejects, as does a 129th active watcher.
    These fixture histories are synthetic except for explicitly observed child
    processes.
+   Run the capacity and recovery controls with the same interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_locked_state_preserves_local_proof_beyond_previous_node_limit \
+     scripts.workflow_pilot.tests.test_coordinator_observations.RecoveryObservationTests.test_recovery_enumeration_is_independent_of_json_node_budget \
+     scripts.workflow_pilot.tests.test_coordinator_observations.WatcherObservationTests.test_retained_watcher_limit_matches_schema_independently_of_json_budget -v
+   ```
+
+   A synthetic history containing real fixture check captures reloads with its
+   previous records intact beyond 32,768 JSON nodes. The previous node limit
+   rejects that same update without changing the state file; 65,536 nodes
+   pass and overflow rejects atomically. A reduced recovery scan
+   limit still rejects independently of the JSON budget; the runtime and
+   schema retain the 32,768-record watcher bound. Older readers cannot
+   reopen expanded states; select a reviewed compatible reader first.
    Reuse a dispatch ID with otherwise fresh assignment/owner/session IDs in
    a review or independent reservation, and mutate a loaded state similarly:
    reject. A genuinely fresh dispatch remains valid, and the existing other
@@ -6814,6 +6830,7 @@ gates.
 
 Each adversary above fails or remains explicitly unknown/incomplete.
 Before #446, a 129th watcher is rejected even when prior watchers have ended.
+The former 32,768-node bound also rejects the preserved local-proof update.
 Runtime-check mutation must fail even if command/pass labels are preserved.
 Equivalent source/JSON wording or order does not affect semantic evidence.
 There is no disabled gameplay profile: omitting optional handoff reporting

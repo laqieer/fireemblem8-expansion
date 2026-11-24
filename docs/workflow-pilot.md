@@ -2633,8 +2633,12 @@ over-1-MiB input **before** decoding/copying; duplicate keys, nonfinite values,
 unknown fields, invalid Unicode, excessive depth/nodes/strings and unsupported
 versions reject. Collections are bounded: 128 assignments and 128 active
 watchers, 256 scope entries, 32 checks/criteria, 16 upstream inputs and 16 inputs
-per protocol check. Retained watcher history shares the existing 1 MiB and
-32,768-node document bounds; it is not an unlimited archive.
+per protocol check. Retained watcher history shares the 1 MiB and
+65,536-node document bounds; it is not an unlimited archive. The separate
+retained-watcher and recovery-enumeration limits remain 32,768 each.
+Readers with the previous 32,768-node bound reject larger states: select a
+reviewed compatible reader before writing or reopening such a state. This
+finite headroom does not replace the longer-term compaction work in #462.
 There are five lifecycle states; text is at most 16 KiB. Keyed criteria/checks and unique
 arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
 exercise structural/schema agreement. Git identity, cross-record correlation,

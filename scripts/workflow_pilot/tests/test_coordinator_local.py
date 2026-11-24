@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
@@ -79,6 +80,81 @@ class CoordinatorLocalTests(unittest.TestCase):
                          self.head)
         self.assertIsNone(self.record["full_run_id"])
         self.assertIsNone(self.record["dispatch_requested_at"])
+
+    def test_locked_state_preserves_local_proof_beyond_previous_node_limit(self):
+        self.complete()
+        actual = copy.deepcopy(self.record)
+        seed = copy.deepcopy(actual)
+        local = seed["local_validation"]
+        definitions = {
+            "raw": CHECKS["raw"],
+            **{f"case-{index}": {**CHECKS["config"], "evidence_id": f"case-{index}"}
+               for index in range(12)},
+        }
+        captures = {}
+        for check_id, definition in definitions.items():
+            observation = copy.deepcopy(
+                local["checks"]["raw" if check_id == "raw" else "config"]["observation"])
+            observation.update(id=check_id, evidence_id=definition["evidence_id"])
+            captures[check_id] = {"definitions": copy.deepcopy(definitions), "observation": observation}
+        local.update(required_checks=copy.deepcopy(definitions), checks=captures)
+        state = copy.deepcopy(self.state)
+        state["candidates"] = []
+
+        def append_candidate(source, number):
+            candidate = copy.deepcopy(source)
+            candidate["pr_number"] = candidate["local_validation"]["pr_number"] = number
+            state["candidates"].append(candidate)
+            return candidate
+
+        number = 200
+        with mock.patch.object(observations, "MAX_NODES", 32768):
+            while True:
+                append_candidate(seed, number)
+                try:
+                    observations.json_bytes(state)
+                except ValueError:
+                    state["candidates"].pop()
+                    break
+                number += 1
+            while True:
+                append_candidate(actual, number)
+                try:
+                    observations.json_bytes(state)
+                except ValueError:
+                    state["candidates"].pop()
+                    break
+                number += 1
+            handoff.validate_state(state)
+            path = self.fixture.home / "capacity.json"
+            before = observations.json_bytes(state)
+            path.write_bytes(before)
+            with self.assertRaisesRegex(ValueError, "node limit"):
+                with observations.locked_state(path) as current:
+                    current["candidates"].append(actual)
+            self.assertEqual(path.read_bytes(), before)
+
+        with observations.locked_state(path) as current:
+            candidate = copy.deepcopy(actual)
+            del candidate["local_validation"]
+            current["candidates"].append(candidate)
+            gate.register_local_validation(current, candidate, self.pr, self.fixture.worktree, CHECKS)
+            gate.capture_local_check(current, candidate, self.pr, "raw")
+            gate.capture_local_check(current, candidate, self.pr, "config", self.executor)
+            handoff.validate_state(current)
+        restored = observations.load_json(path)
+        self.assertEqual(restored["candidates"][:-1], state["candidates"])
+        restored_record = gate.find_candidate(restored, gate.candidate_identity(actual))
+        self.assertTrue(gate._local_ready(restored, self.pr, restored_record))
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "node limit"):
+            with observations.locked_state(path) as current:
+                current["overflow"] = [None] * 65536
+        self.assertEqual(path.read_bytes(), before)
+        boundary = [None] * 65535
+        self.assertEqual(observations.parse_bytes(observations.json_bytes(boundary)), boundary)
+        with self.assertRaisesRegex(ValueError, "node limit"):
+            observations.parse_bytes(json.dumps(boundary + [None]).encode())
 
     def test_raw_only_and_candidate_success_or_commands_are_not_registration(self):
         for definitions in (

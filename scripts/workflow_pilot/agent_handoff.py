@@ -31,6 +31,7 @@ ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 MAX_OPEN_PULL_REQUESTS = 1000
+MAX_RETAINED_WATCHERS = 32768
 HandoffDataError = observations.ObservationError
 require = observations.require
 load_json = observations.load_json
@@ -452,7 +453,7 @@ def validate_state(value):
                     and a["assigned_parent_sha"] == previous["validation"]["result_sha"],
                     "review successor needs the previous accepted result")
     watcher_ids, watcher_processes, active_runs = set(), set(), set()
-    for watcher in items(value["watchers"], maximum=observations.MAX_NODES):
+    for watcher in items(value["watchers"], maximum=MAX_RETAINED_WATCHERS):
         fields(watcher, "id coordinator_id run_id attempt head_sha process started_at ended_at "
                "exit_code run query_error")
         text(watcher["id"], maximum=128, pattern=ID_RE)

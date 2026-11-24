@@ -586,6 +586,16 @@ class WatcherObservationTests(unittest.TestCase):
             handoff.reserve_watcher(f.state, "overflow", 2000, 1, f.parent, next_process.pid)
         self.assertEqual(f.state, before)
 
+    def test_retained_watcher_limit_matches_schema_independently_of_json_budget(self):
+        state = copy.deepcopy(self.fixture.state)
+        state["watchers"] = [None] * 32769
+        schema = json.loads((ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text())
+        validator = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/state"})
+        self.assertTrue(any(error.validator == "maxItems" and list(error.path) == ["watchers"]
+                            for error in validator.iter_errors(state)))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "bounded list"):
+            handoff.validate_state(state)
+
     def test_process_identity_is_unique_across_watcher_runs_and_loaded_state(self):
         f = self.fixture
         owner = f.owner_process()
@@ -842,6 +852,15 @@ class RecoveryObservationTests(unittest.TestCase):
         handoff.assign(f.state, replacement)
         self.assertEqual([(file.read_bytes(), file.stat().st_mode & 0o7777) for file, _, _ in original],
                          [(content, mode) for _, content, mode in original])
+
+    def test_recovery_enumeration_is_independent_of_json_node_budget(self):
+        f = self.fixture
+        identity = f.entry["git_identity"]
+        expected = observations.retained_data_sha256(identity, [])
+        with mock.patch.object(observations, "MAX_RECOVERY_ENTRIES", 1):
+            with self.assertRaisesRegex(observations.ObservationError, "recovery enumeration limit"):
+                observations.retained_data_sha256(identity, [])
+        self.assertEqual(observations.retained_data_sha256(identity, []), expected)
 
     def test_unreadable_recovery_holds_without_closing_or_destroying_work(self):
         for unsafe in ("fifo", "oversized"):
