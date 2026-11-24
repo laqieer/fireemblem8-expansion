@@ -34,6 +34,7 @@ BINDINGS = (
     SubjectSpec("TC-GAMEPLAY-006", "aoe-item-dispatch", "aoe"),
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
+    SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-staging", "review-staging"),
     SubjectSpec("TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history", "ci-lane-history"),
     SubjectSpec("TC-CJK-RESOURCE-STORAGE-001", "cjk-resource-index", "cjk-resource"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
@@ -45,6 +46,8 @@ AOE_REFERENCE = "src/expansion_aoe_reference.c"
 AOE_DRIVER = "tools/gba-playtest/tests/c/expansion_aoe_driver.c"
 AOE_DISABLED = "tools/gba-playtest/tests/c/expansion_aoe_disabled_driver.c"
 REVIEW_SOURCE = "scripts/workflow_pilot/review_family.py"
+STAGING_SOURCE = "scripts/workflow_pilot/trusted_review_gate.py"
+REPORTER_SOURCE = "scripts/workflow_pilot/reporter.py"
 CI_ADAPTIVE = "scripts/workflow_pilot/adaptive_gate.py"
 CI_METADATA = "scripts/workflow_pilot/pr_metadata.py"
 CI_EVIDENCE = "scripts/workflow_pilot/candidate_evidence.py"
@@ -565,6 +568,31 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                     "trusted coordinator", "typed requests/rounds/task observations",
                     "exact scope/head/round and sticky hold", family + ":" + role,
                     (REVIEW_SOURCE,))
+    elif spec.model == "review-staging":
+        classes = [item for item in ast.parse(tree.read(STAGING_SOURCE)).body
+                   if isinstance(item, ast.ClassDef) and item.name == "ReviewTools"]
+        review.require(len(classes) == 1, "staging owner needs a reviewed finite model")
+        methods = [item.name for item in classes[0].body if isinstance(item, ast.FunctionDef)]
+        review.require(all(methods.count(name) == 1 for name in ("_stage", "run_obligations")),
+                       "staging predicates need a reviewed finite model")
+        predicates = {
+            ("lifecycle", "entries"): ("_stage", "run_obligations"),
+            ("lifecycle", "preservation"): ("run_obligations", "unconfirmed cleanup"),
+            ("lifecycle", "resets"): ("_stage", "fresh staging"),
+            ("lifecycle", "terminals"): ("run_obligations", "owned worker exit"),
+            ("wire", "producers"): ("_stage", "selected source trees"),
+            ("wire", "consumers"): ("_stage", "mixed worker imports"),
+            ("wire", "validators"): ("run_obligations", "worker observation validation"),
+            ("wire", "replay"): ("run_obligations", "exact source observations"),
+            ("wire", "stale-bindings"): ("_stage", "candidate/tool provenance"),
+        }
+        for (family, role), (producer, consumer) in predicates.items():
+            add(family, role, "review-staging", STAGING_SOURCE + ":" + producer,
+                consumer, "candidate sources, reviewed worker and owned staging directory",
+                "ordinary, isolated, mixed and nested process execution",
+                "review-staging:" + family + ":" + role, (STAGING_SOURCE, REPORTER_SOURCE))
+        closure = local_python_inputs(tree, (STAGING_SOURCE,))
+        result = [replace(member, execution_inputs=closure) for member in result]
     elif spec.model == "ci-lane-history":
         predicates = {
             ("lifecycle", "entries"): (CI_METADATA + ":_run_mode", CI_ADAPTIVE + ":_history_lane",
@@ -2287,6 +2315,202 @@ def _session_probe(probe: str) -> dict:
 
 
 @probe_result("host")
+def _staging_probe(probe: str) -> dict:
+    import hashlib
+    import tempfile
+
+    module = types.ModuleType("_review_staging_subject")
+    module.__package__ = "scripts.workflow_pilot"
+    sys.modules[module.__name__] = module
+    exec(compile(Path(STAGING_SOURCE).read_bytes(), STAGING_SOURCE, "exec"), module.__dict__)
+    initializer = "scripts/workflow_pilot/__init__.py"
+    helper = "scripts/workflow_pilot/raw_diff_check.py"
+    subjects = "scripts/workflow_pilot/review_subjects.py"
+    inputs = ("scripts/__init__.py", initializer, helper, subjects)
+    worker = b"""\
+def worker(probes):
+    from scripts.workflow_pilot import raw_diff_check
+    expected = "trusted" if probes[0].startswith("ordinary:") else "candidate"
+    actual = raw_diff_check.marker()
+    verdict = "satisfied" if actual == expected else "contract-violation"
+    return [{"probe": probe, "blocked_by": [], "verdict": verdict, "checks": 1,
+             "kind": "host", "detail": actual} for probe in probes]
+"""
+    checks = 0
+
+    def verify(condition, detail):
+        nonlocal checks
+        check(condition, detail)
+        checks += 1
+
+    class FixtureTree:
+        def __init__(self, revision, blobs):
+            self.revision, self.blobs = revision, blobs
+
+        def read(self, path):
+            return self.blobs[path]
+
+        def oid(self, path):
+            content = self.read(path)
+            return hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest()
+
+        def materialize(self, root, paths):
+            for path in paths:
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(self.read(path))
+
+    def candidate(changes=None):
+        return FixtureTree("a" * 40, {
+            "scripts/__init__.py": b"", initializer: b"# candidate package\n",
+            helper: b"def marker(): return 'candidate'\n",
+            subjects: b"raise RuntimeError('candidate worker substituted')\n",
+            **(changes or {}),
+        })
+
+    def members(prefix, family="lifecycle"):
+        return tuple(review.Obligation(
+            "fixture/" + prefix, family, role, role, "_stage", "worker",
+            "fixture", "staging execution", prefix + ":" + role,
+            "host", ("positive",), inputs,
+        ) for role in review.FAMILIES[family])
+
+    with tempfile.TemporaryDirectory(prefix="staging-probe-", dir="build") as directory:
+        root = Path(directory).resolve()
+        invocation = 0
+
+        def execute(selected, *, tree=None, wrapper=False, program=worker, runner=run_process):
+            nonlocal invocation
+            invocation += 1
+            workspace = root / str(invocation)
+            workspace.mkdir()
+            tree = tree or candidate()
+            tools = module.ReviewTools.__new__(module.ReviewTools)
+            tools.model = review
+            tools.subjects = types.SimpleNamespace(
+                REVIEW_SOURCE=REVIEW_SOURCE, AOE_DRIVER=AOE_DRIVER,
+                AOE_DISABLED=AOE_DISABLED, run_process=runner,
+            )
+            tools.tool_tree = FixtureTree("b" * 40, {
+                initializer: b"", helper: b"def marker(): return 'trusted'\n",
+                REVIEW_SOURCE: b"", subjects: program, AOE_DRIVER: b"", AOE_DISABLED: b"",
+            })
+            tools.subject_root, tools.arm_tools = workspace, {}
+            tools.tree = lambda revision: tree
+            if wrapper:
+                original = tools._stage
+
+                def stage(source, destination, obligations):
+                    return original(source, destination, obligations)
+
+                tools._stage = stage
+            try:
+                rows = tools.run_obligations(selected, tree.revision)
+            except TypeError as error:
+                raise ContractViolation(f"staging call contract: {error}") from error
+            verify([item.obligation.identity for item in rows] ==
+                   [item.identity for item in selected], "staging lost or reordered observations")
+            return rows, workspace / "build"
+
+        def verdict(rows, expected):
+            verify(all(item.verdict == expected for item in rows), "wrong staged worker verdict")
+            verify(all(item.checks == (0 if expected == "unavailable" else 1) for item in rows),
+                   "wrong staged worker check count")
+
+        def cleaned(build):
+            verify(not list(build.iterdir()), "confirmed cleanup left staging behind")
+
+        ordinary, history = members("ordinary"), members("ci-history")
+        role = probe.removeprefix("review-staging:")
+        if role == "lifecycle:entries":
+            rows, build = execute(ordinary, wrapper=True)
+            verdict(rows, "satisfied")
+            cleaned(build)
+        elif role == "lifecycle:preservation":
+            def unconfirmed(*args, **kwargs):
+                raise ProcessCleanupError("controlled unconfirmed cleanup")
+
+            rows, build = execute(ordinary, runner=unconfirmed)
+            verdict(rows, "unavailable")
+            retained = list(build.iterdir())
+            verify(len(retained) == 1 and retained[0].is_dir(),
+                   "unconfirmed cleanup discarded staging")
+            verify(all(str(retained[0]) in item.detail for item in rows),
+                   "unconfirmed cleanup omitted retained path")
+        elif role == "lifecycle:resets":
+            for value, expected in ((b"def marker(): return 'wrong'\n", "contract-violation"),
+                                    (b"def marker(): return 'candidate'\n", "satisfied")):
+                tree = candidate({helper: value})
+                rows, build = execute(history, tree=tree)
+                verdict(rows, expected)
+                cleaned(build)
+        elif role == "wire:replay":
+            for suffix in (b"", b"# equivalent\n"):
+                tree = candidate({helper: b"def marker(): return 'candidate'\n" + suffix})
+                rows, build = execute(history, tree=tree)
+                verdict(rows, "satisfied")
+                cleaned(build)
+                verify(all(dict(item.source_objects) ==
+                           {path: tree.oid(path) for path in inputs} for item in rows),
+                       "replayed staging reused stale source identity")
+        elif role == "lifecycle:terminals":
+            def timeout(*args, **kwargs):
+                kwargs["timeout"] = 0.2
+                return run_process(*args, **kwargs)
+
+            rows, build = execute(
+                ordinary, runner=timeout,
+                program=b"def worker(probes):\n import time\n time.sleep(20)\n")
+            verdict(rows, "unavailable")
+            verify(all("timed out" in item.detail for item in rows), "timeout lost its diagnostic")
+            cleaned(build)
+            rows, build = execute(ordinary)
+            verdict(rows, "satisfied")
+            cleaned(build)
+        elif role == "wire:producers":
+            for selected in (ordinary, history):
+                rows, build = execute(selected)
+                verdict(rows, "satisfied")
+                verify(all(item.tool_revision == "b" * 40 and item.revision == "a" * 40
+                           for item in rows), "tool/candidate identity confused")
+                cleaned(build)
+        elif role == "wire:consumers":
+            selected = (*history, *members("cjk-resource:generated", "generated"),
+                        *members("mixed"))
+            rows, build = execute(selected)
+            verdict(rows, "satisfied")
+            cleaned(build)
+        elif role == "wire:validators":
+            rows, build = execute(ordinary, program=b"print('invalid framing')\n" + worker)
+            verdict(rows, "unavailable")
+            cleaned(build)
+            try:
+                execute(ordinary, program=b"def worker(probes): return []\n")
+            except ValueError as error:
+                verify("missing/extra probe observations" in str(error),
+                       "wrong missing-observation refusal")
+            else:
+                raise ContractViolation("missing worker observations accepted")
+            cleaned(root / str(invocation) / "build")
+        elif role == "wire:stale-bindings":
+            for path in (initializer, helper):
+                rows, build = execute(history, tree=candidate({
+                    path: b"raise RuntimeError('candidate import reached')\n",
+                }))
+                verdict(rows, "unavailable")
+                verify(all("candidate import reached" in item.detail for item in rows),
+                       "trusted source masked broken candidate import")
+                cleaned(build)
+            rows, build = execute(history, tree=candidate({initializer: b"# equivalent\n"}))
+            verdict(rows, "satisfied")
+            cleaned(build)
+        else:
+            raise review.ReviewError("unknown staging probe")
+    return {"kind": "host", "checks": checks,
+            "detail": "captured staging implementation executed with owned source/process fixtures"}
+
+
+@probe_result("host")
 def _ci_history(probe: str) -> dict:
     from datetime import datetime, timedelta, timezone
     from itertools import combinations
@@ -2613,6 +2837,8 @@ def run_probe(probe: str) -> dict:
         *("project-resource:" + role for role in review.FAMILIES["resource"]),
         *("ci-history:" + family + ":" + role for family in ("lifecycle", "wire")
           for role in review.FAMILIES[family]),
+        *("review-staging:" + family + ":" + role for family in ("lifecycle", "wire")
+          for role in review.FAMILIES[family]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
     if probe.startswith("generated-owner:"):
@@ -2637,6 +2863,8 @@ def run_probe(probe: str) -> dict:
         return probe_result(kind)(_project)(probe)
     if probe.startswith("ci-history:"):
         return _ci_history(probe)
+    if probe.startswith("review-staging:"):
+        return _staging_probe(probe)
     if probe.startswith(("lifecycle:", "wire:")):
         return _session_probe(probe)
     raise review.ReviewError("unregistered probe")

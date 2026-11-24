@@ -1117,6 +1117,25 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    exact selected tool-tree bytes. Overlapping tool module instances must also
    restore the process-wide reaper setting after their owned work finishes.
 
+   For the #390 staging-wrapper regression and its finite source binding, run:
+
+   ```bash
+   python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.StagingFamilyTests -v
+   ```
+
+   The `review-staging` subject executes the captured gate with owned
+   source/process fixtures. Observe ordinary wrapper compatibility, fresh
+   staging, confirmed cleanup and retained unconfirmed staging. History-only,
+   mixed and nested workers must execute candidate imports using the selected
+   trusted worker; broken candidate imports cannot borrow trusted results.
+   Malformed/missing worker output and an actual owned timeout must not pass.
+   Repeated invocations must report their own source objects; an equivalent
+   reformat remains valid. Restoring the unconditional staging keyword fails
+   the entries member; falsely confirming cleanup fails preservation; dropping
+   mixed-worker isolation fails the consumer member. The original lifetime
+   tests above remain required for real descendant and signal behavior.
+   These fixtures are not real candidate review records or merge authority.
+
 2. With the supported ARM compiler/binutils on PATH (or the resolved
    `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
    separate ARM-positive selector:

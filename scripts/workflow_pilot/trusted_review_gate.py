@@ -424,7 +424,8 @@ class ReviewTools:
                       "scripts/workflow_pilot/raw_diff_check.py",
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
-        if isolate_candidate or any(probe.startswith("ci-history:") for probe in probes):
+        if isolate_candidate or any(probe.startswith(("ci-history:", "review-staging:"))
+                                    for probe in probes):
             self.tool_tree.materialize(root / "build/ci-history-tools", tool_paths[:4])
             self.tool_tree.materialize(root, tool_paths[4:])
         else:
@@ -447,8 +448,10 @@ class ReviewTools:
                       "obligation omits shared worker candidate inputs")
         probes = [item.probe for item in members]
         model.unique(probes, "probe bindings")
-        history = tuple(item for item in members if item.probe.startswith("ci-history:"))
-        other = tuple(item for item in members if not item.probe.startswith("ci-history:"))
+        history = tuple(item for item in members
+                        if item.probe.startswith(("ci-history:", "review-staging:")))
+        other = tuple(item for item in members
+                      if not item.probe.startswith(("ci-history:", "review-staging:")))
         if history and other:
             observed = (*self.run_obligations(history, revision),
                         *self.run_obligations(other, revision, _isolate_candidate=True))

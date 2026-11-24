@@ -795,6 +795,127 @@ class CIHistoryFamilyTests(SubjectTestCase):
         self.assert_satisfied(self.run_members(members, revision))
 
 
+class StagingFamilyTests(SubjectTestCase):
+    gate_path = "scripts/workflow_pilot/trusted_review_gate.py"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
+        for name in cls.tools.subjects.local_python_inputs(source, (cls.gate_path,)):
+            target = cls.repo.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, target)
+        git(cls.repo.root, "add", "scripts")
+        git(cls.repo.root, "commit", "-qm", "source-backed staging predicates")
+        cls.repo.base = git(cls.repo.root, "rev-parse", "HEAD")
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+
+    def staging_scope(self, head=None):
+        return request("TC-WORKFLOW-REVIEW-FAMILY-001", "review-staging",
+                       self.repo.base, head or self.repo.base)
+
+    def mutate_gate(self, transform):
+        tree = ast.parse((self.repo.root / self.gate_path).read_text())
+        transform(tree)
+        return self.repo.commit({self.gate_path: ast.unparse(ast.fix_missing_locations(tree)) + "\n"})
+
+    def staging_observations(self, revision):
+        members = self.tools.members(self.staging_scope(revision), (self.repo.base,))
+        return self.run_members(members, revision)
+
+    def test_complete_staging_family_executes_bound_source(self):
+        members = self.tools.members(self.staging_scope())
+        self.assertEqual({(item.family, item.role) for item in members}, {
+            (family, role) for family in ("lifecycle", "wire")
+            for role in self.model.FAMILIES[family]
+        })
+        observations = self.run_members(members, self.repo.base)
+        self.assert_satisfied(observations)
+        self.assertTrue(all(item.kind == "host" and item.checks > 1 for item in observations))
+        self.assertTrue(all(
+            self.gate_path in dict(item.source_objects) for item in observations))
+
+    def test_old_keyword_call_breaks_the_existing_wrapper_member(self):
+        def restore_regression(tree):
+            classes = [item for item in tree.body
+                       if isinstance(item, ast.ClassDef) and item.name == "ReviewTools"]
+            self.assertEqual(len(classes), 1)
+            method = next(item for item in classes[0].body
+                          if isinstance(item, ast.FunctionDef) and item.name == "run_obligations")
+            matches = []
+            for node in ast.walk(method):
+                if (isinstance(node, ast.If) and isinstance(node.test, ast.Name)
+                        and node.test.id == "_isolate_candidate" and node.orelse
+                        and isinstance(node.body[0], ast.Expr)
+                        and isinstance(node.body[0].value, ast.Call)
+                        and isinstance(node.body[0].value.func, ast.Attribute)
+                        and node.body[0].value.func.attr == "_stage"):
+                    matches.append(node)
+            self.assertEqual(len(matches), 1)
+            node = matches[0]
+            node.test = ast.Constant(value=True)
+            node.body[0].value.keywords[0].value = ast.Name(
+                id="isolate_candidate", ctx=ast.Load())
+            node.orelse = []
+
+        revision = self.mutate_gate(restore_regression)
+        observation = next(item for item in self.staging_observations(revision)
+                           if item.obligation.family == "lifecycle"
+                           and item.obligation.role == "entries")
+        self.assertEqual(observation.verdict, "contract-violation", observation.detail)
+
+    def test_unconfirmed_cleanup_mutation_fails_its_own_member(self):
+        def falsely_confirm_cleanup(tree):
+            cls = next(item for item in tree.body
+                       if isinstance(item, ast.ClassDef) and item.name == "ReviewTools")
+            method = next(item for item in cls.body
+                          if isinstance(item, ast.FunctionDef) and item.name == "run_obligations")
+            matches = [item for item in ast.walk(method)
+                       if isinstance(item, ast.Assign) and len(item.targets) == 1
+                       and isinstance(item.targets[0], ast.Name)
+                       and item.targets[0].id == "cleanup"
+                       and isinstance(item.value, ast.Constant) and item.value.value is False]
+            self.assertEqual(len(matches), 1)
+            matches[0].value = ast.Constant(value=True)
+
+        revision = self.mutate_gate(falsely_confirm_cleanup)
+        observation = next(item for item in self.staging_observations(revision)
+                           if item.obligation.family == "lifecycle"
+                           and item.obligation.role == "preservation")
+        self.assertEqual(observation.verdict, "contract-violation", observation.detail)
+
+    def test_mixed_worker_isolation_mutation_fails_its_consumer(self):
+        def drop_isolation(tree):
+            matches = [item for item in ast.walk(tree)
+                       if isinstance(item, ast.keyword) and item.arg == "_isolate_candidate"
+                       and isinstance(item.value, ast.Constant) and item.value.value is True]
+            self.assertEqual(len(matches), 1)
+            matches[0].value = ast.Constant(value=False)
+
+        revision = self.mutate_gate(drop_isolation)
+        observation = next(item for item in self.staging_observations(revision)
+                           if item.obligation.family == "wire"
+                           and item.obligation.role == "consumers")
+        self.assertEqual(observation.verdict, "contract-violation", observation.detail)
+
+    def test_equivalent_gate_reformat_keeps_the_staging_family_green(self):
+        source = (self.repo.root / self.gate_path).read_text()
+        revision = self.repo.commit({self.gate_path: ast.unparse(ast.parse(source)) + "\n"})
+        self.assert_satisfied(self.staging_observations(revision))
+
+    def test_candidate_package_failure_is_not_masked_by_the_probe_tools(self):
+        revision = self.repo.commit({
+            "scripts/workflow_pilot/__init__.py":
+                "raise RuntimeError('candidate package import reached')\n",
+        })
+        observations = self.staging_observations(revision)
+        self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
+                            and "candidate package import reached" in item.detail
+                            for item in observations))
+
+
 class SubjectTests(SubjectTestCase):
     @staticmethod
     def host_members(members):

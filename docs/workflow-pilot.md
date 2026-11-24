@@ -770,6 +770,22 @@ separately instead of overwriting the candidate dependency. An import failure
 is unavailable evidence, not a passing observation. This separation establishes
 source provenance, not same-UID process isolation.
 
+The existing `TC-WORKFLOW-REVIEW-FAMILY-001/review-staging` binding covers
+`ReviewTools._stage` and `run_obligations` themselves, separately from
+CI-history lane predicates. Its nine lifecycle/wire members execute the
+captured candidate gate in disposable source/process fixtures. They observe
+the ordinary three-argument wrapper, confirmed versus unconfirmed cleanup,
+fresh staging, worker timeout, trusted worker versus candidate import selection,
+mixed/nested workers, malformed or missing observations, exact source identities
+and equivalent source changes. The selected probe and process runner remain
+reviewed tools; fixture object IDs and worker results are synthetic inputs to
+the actual gate, not GitHub or native review-admission facts.
+The binding captures the gate's local Python dependency closure and uses the
+existing separate tool/candidate worker route. Import failure is unavailable
+evidence. The original process-lifetime tests remain responsible for real
+descendant, interruption and unsafe-termination controls; this binding does not
+replace them or turn a focused pass into complete reporter/Build evidence.
+
 `resolve_subject` joins an existing catalog case to the reviewed binding.
 `expand_members` derives the finite source-backed obligations at the finding
 origin and candidate. `run_obligations` executes their closed selectors and
