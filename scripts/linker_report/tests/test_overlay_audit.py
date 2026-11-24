@@ -10,8 +10,10 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import overlay_audit
+from real_artifact_contract import assert_modern_overlays
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -325,7 +327,7 @@ ROM             0x08000000      0x100
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(out.read_text())
-        self.assertEqual(len(report["overlays"]), 8)
+        assert_modern_overlays(self, report["overlays"])
         self.assertFalse(report["overflow"])
 
     @unittest.skipUnless(REAL_MODERN_MAP.exists(), "modern map artifact not available")
