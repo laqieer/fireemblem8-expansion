@@ -1,17 +1,20 @@
 """Unit tests for linker_report.budget."""
 
+import copy
 import json
 import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import budget
 from real_artifact_contract import (
+    REQUIRED_OVERLAYS,
     assert_iwram_margin,
     assert_iwram_symbols,
     assert_locale_identity,
@@ -642,12 +645,52 @@ Linker script and memory map
         )
         self.assertEqual(r.returncode, 0, r.stderr)
         report = json.loads(out.read_text())
+        assert_modern_overlays(self, report["overlays"])
         assert_iwram_margin(self, report)
         assert_iwram_symbols(self, report, linked_iwram_symbols(REAL_CJK_ELF))
         self.assertEqual(
             report["elf"]["cross_validation"]["section_mismatches"], []
         )
         assert_locale_identity(self, report)
+
+    @unittest.skipUnless(
+        REAL_CJK_MAP.exists() and REAL_CJK_ELF.exists(),
+        "CJK map/ELF artifacts not available",
+    )
+    def test_real_cjk_report_rejects_each_missing_overlay(self):
+        out = self.make_output_path("real-cjk-overlay-control")
+        result = run_budget(
+            "--map", str(REAL_CJK_MAP), "--elf", str(REAL_CJK_ELF),
+            "--output", str(out), "--validate-elf",
+            "--require-positive-headroom", "iwram",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        original = json.loads(out.read_text())
+        self.assertTrue(REQUIRED_OVERLAYS <= {item["name"] for item in original["overlays"]})
+
+        for missing in sorted(REQUIRED_OVERLAYS):
+            with self.subTest(missing=missing):
+                report = copy.deepcopy(original)
+                report["overlays"] = [item for item in report["overlays"] if item["name"] != missing]
+                report["sections"] = [item for item in report["sections"] if item["name"] != missing]
+                report["elf"]["sections"] = [
+                    item for item in report["elf"]["sections"] if item["name"] != missing
+                ]
+                report["elf"]["section_count"] = len(report["elf"]["sections"])
+                cross_validation = report["elf"]["cross_validation"]
+                for field in ("in_elf_not_map", "in_map_not_elf"):
+                    cross_validation[field] = [
+                        name for name in cross_validation[field] if name != missing
+                    ]
+
+                def report_without_overlay(*args):
+                    Path(args[args.index("--output") + 1]).write_text(json.dumps(report))
+                    return subprocess.CompletedProcess(args, 0, "", "")
+
+                with mock.patch(f"{__name__}.run_budget", side_effect=report_without_overlay):
+                    with self.assertRaises(AssertionError) as error:
+                        self.test_real_cjk_map_and_elf_preserve_stack_margin_and_locale_identity()
+                self.assertIn(missing, str(error.exception))
 
 
 if __name__ == "__main__":
