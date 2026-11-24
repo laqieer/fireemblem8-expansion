@@ -1134,6 +1134,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    the entries member; falsely confirming cleanup fails preservation; dropping
    mixed-worker isolation fails the consumer member. The original lifetime
    tests above remain required for real descendant and signal behavior.
+   The binding's own nested workers must remain in their parent session.
+   Injecting uncertainty at its real runner boundary must retain the enclosing
+   fixture and report unavailable evidence, not delete the inner retained work.
    These fixtures are not real candidate review records or merge authority.
 
 2. With the supported ARM compiler/binutils on PATH (or the resolved

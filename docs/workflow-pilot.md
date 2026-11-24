@@ -780,6 +780,10 @@ mixed/nested workers, malformed or missing observations, exact source identities
 and equivalent source changes. The selected probe and process runner remain
 reviewed tools; fixture object IDs and worker results are synthetic inputs to
 the actual gate, not GitHub or native review-admission facts.
+Nested workers remain in the enclosing worker's session. Actual unconfirmed
+nested cleanup retains the enclosing fixture and reports unavailable evidence;
+only the explicitly simulated no-process cleanup fault is cleaned by the
+fixture itself.
 The binding captures the gate's local Python dependency closure and uses the
 existing separate tool/candidate worker route. Import failure is unavailable
 evidence. The original process-lifetime tests remain responsible for real

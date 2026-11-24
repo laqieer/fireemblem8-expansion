@@ -2375,11 +2375,30 @@ def worker(probes):
             "host", ("positive",), inputs,
         ) for role in review.FAMILIES[family])
 
-    with tempfile.TemporaryDirectory(prefix="staging-probe-", dir="build") as directory:
-        root = Path(directory).resolve()
+    directory = tempfile.TemporaryDirectory(prefix="staging-probe-", dir="build", delete=False)
+    root = Path(directory.name).resolve()
+    safe_to_cleanup = True
+    try:
         invocation = 0
 
-        def execute(selected, *, tree=None, wrapper=False, program=worker, runner=run_process):
+        def nested_runner(*args, **kwargs):
+            nonlocal safe_to_cleanup
+            confirmed = False
+            callback = kwargs.pop("_on_cleanup")
+
+            def cleanup_confirmed():
+                nonlocal confirmed
+                confirmed = True
+                callback()
+
+            try:
+                return run_process(*args, **kwargs, new_session=False,
+                                   _on_cleanup=cleanup_confirmed)
+            finally:
+                if not confirmed:
+                    safe_to_cleanup = False
+
+        def execute(selected, *, tree=None, wrapper=False, program=worker, runner=nested_runner):
             nonlocal invocation
             invocation += 1
             workspace = root / str(invocation)
@@ -2456,7 +2475,7 @@ def worker(probes):
         elif role == "lifecycle:terminals":
             def timeout(*args, **kwargs):
                 kwargs["timeout"] = 0.2
-                return run_process(*args, **kwargs)
+                return nested_runner(*args, **kwargs)
 
             rows, build = execute(
                 ordinary, runner=timeout,
@@ -2506,6 +2525,11 @@ def worker(probes):
             cleaned(build)
         else:
             raise review.ReviewError("unknown staging probe")
+    finally:
+        if safe_to_cleanup:
+            directory.cleanup()
+        else:
+            raise ProcessCleanupError(f"nested cleanup unconfirmed; fixture retained at {root}")
     return {"kind": "host", "checks": checks,
             "detail": "captured staging implementation executed with owned source/process fixtures"}
 

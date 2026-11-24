@@ -915,6 +915,59 @@ class StagingFamilyTests(SubjectTestCase):
                             and "candidate package import reached" in item.detail
                             for item in observations))
 
+    def test_nested_staging_workers_stay_in_the_enclosing_session(self):
+        (self.repo.root / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self.repo.root / "build") as directory:
+            record = Path(directory) / "sessions.jsonl"
+            original = self.tools.subjects.run_process
+
+            def observe(argv, **kwargs):
+                argv = list(argv)
+                index = argv.index("-c") + 1
+                argv[index] = (
+                    "import os,json\n"
+                    f"with open({str(record)!r},'a') as output:\n"
+                    " output.write(json.dumps([os.getsid(0),os.getsid(os.getppid())])+'\\n')\n"
+                ) + argv[index]
+                return original(argv, **kwargs)
+
+            previous = Path.cwd()
+            try:
+                os.chdir(self.repo.root)
+                with patch.object(self.tools.subjects, "run_process", observe):
+                    observed = self.tools.subjects._staging_probe(
+                        "review-staging:lifecycle:terminals")
+            finally:
+                os.chdir(previous)
+            self.assertEqual(observed["verdict"], "satisfied", observed)
+            sessions = [json.loads(line) for line in record.read_text().splitlines()]
+            self.assertEqual(len(sessions), 2)
+            self.assertTrue(all(child == parent for child, parent in sessions), sessions)
+
+    def test_unconfirmed_real_runner_does_not_discard_enclosing_fixture(self):
+        (self.repo.root / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=self.repo.root / "build") as directory:
+            root = Path(directory)
+            (root / "build").mkdir()
+            target = root / self.gate_path
+            target.parent.mkdir(parents=True)
+            target.write_bytes((self.repo.root / self.gate_path).read_bytes())
+            error = self.tools.subjects.ProcessCleanupError("injected runner cleanup uncertainty")
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.object(self.tools.subjects, "run_process", side_effect=error):
+                    observed = self.tools.subjects._staging_probe(
+                        "review-staging:lifecycle:entries")
+            finally:
+                os.chdir(previous)
+            self.assertEqual(observed["verdict"], "unavailable", observed)
+            self.assertEqual(observed["checks"], 0)
+            retained = list((root / "build").iterdir())
+            self.assertEqual(len(retained), 1)
+            self.assertTrue(retained[0].is_dir())
+            self.assertIn(str(retained[0]), observed["detail"])
+
 
 class SubjectTests(SubjectTestCase):
     @staticmethod
