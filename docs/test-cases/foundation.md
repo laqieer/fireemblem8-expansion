@@ -78,6 +78,7 @@ and its fail-closed all-current-feature coverage assertion.
    ```sh
    python3 -m unittest \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_worker_blocks_can_precede_other_job_fields \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_blank_lines_cannot_hide_step_fields \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_every_combined_worker_has_a_closed_execution_context \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_execution_context_key_syntax_bypasses_fail_closed \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
@@ -103,6 +104,8 @@ semantic parser rather than a raw phrase search is enforcing the contract.
 Before the #481 fix, the worker-order regressions reject equivalent mappings.
 Changed runners or timeouts, duplicate keys, additional execution fields,
 unsupported key syntax and altered permissions remain rejected after the fix.
+Blank lines with varying whitespace must not hide an advisory step field or
+turn the full-game localization gate into a success.
 
 ### Interactions and save compatibility
 

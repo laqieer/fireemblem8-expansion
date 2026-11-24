@@ -1268,7 +1268,7 @@ def _contains_command(job: str, command: str) -> bool:
 
 def _step_blocks(job: str) -> list[str]:
     matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
-    direct_fields = list(re.finditer(r"^    (?=[^ \t#-])", job, re.MULTILINE))
+    direct_fields = list(re.finditer(r"^    (?=[^ \t#\r\n-])", job, re.MULTILINE))
     return [
         job[
             match.start():
@@ -5620,6 +5620,32 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     changed = self.text.replace(job, reordered, 1)
                     self.assertEqual(_errors(changed, False), [])
                     self.assertEqual(verify._parse_workflow_structure_text(changed), baseline)
+
+    def test_blank_lines_cannot_hide_step_fields(self):
+        for job_name, job in _job_blocks(self.text).items():
+            for index, step in enumerate(_step_blocks(job)):
+                for blank in ("", "    ", "    \r", "    \t", "        "):
+                    with self.subTest(job=job_name, step=index, blank=repr(blank)):
+                        changed_step = step.replace(
+                            "\n", f"\n{blank}\n      continue-on-error: true\n", 1
+                        )
+                        changed_job = job.replace(step, changed_step, 1)
+                        self.assertIn(
+                            "      continue-on-error: true",
+                            _step_blocks(changed_job)[index],
+                        )
+
+        job = _job_blocks(self.text)["extended-host-tests"]
+        width = next(
+            step for step in _step_blocks(job)
+            if _step_name(step) == "Run full-game localization width contract (issue #18)"
+        )
+        changed = self.text.replace(
+            width, width + "    \n      continue-on-error: true\n", 1
+        )
+        self.assertTrue(
+            any("lost exact full-game evidence" in error for error in _errors(changed, False))
+        )
 
     def test_execution_context_key_syntax_bypasses_fail_closed(self):
         execution_fields = {
