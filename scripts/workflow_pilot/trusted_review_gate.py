@@ -29,17 +29,6 @@ sys.path.insert(0, sys.argv[1])
 from scripts.workflow_pilot.review_subjects import worker
 print(json.dumps(worker(json.loads(sys.stdin.buffer.read()))))
 """
-CI_HISTORY_WORKER_CODE = """
-import json, sys
-sys.path.insert(0, sys.argv[1])
-from scripts.workflow_pilot.review_subjects import worker
-for name in tuple(sys.modules):
-    if name == "scripts" or name.startswith("scripts."):
-        del sys.modules[name]
-sys.path.remove(sys.argv[1])
-sys.path.insert(0, sys.argv[2])
-print(json.dumps(worker(json.loads(sys.stdin.buffer.read()))))
-"""
 REVIEW_QUERY = """
 query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
   repository(owner:$owner, name:$name) {
@@ -412,7 +401,7 @@ class ReviewTools:
         model.validate_members(result)
         return result
 
-    def _stage(self, tree, root, members, *, isolate_candidate=False):
+    def _stage(self, tree, root, members):
         paths = {path for member in members for path in member.source_inputs}
         probes = {item.probe for item in members}
         fixtures = getattr(self.subjects, "fixture_inputs", None)
@@ -424,21 +413,15 @@ class ReviewTools:
                       "scripts/workflow_pilot/raw_diff_check.py",
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
-        if isolate_candidate or any(probe.startswith(("ci-history:", "review-staging:"))
-                                    for probe in probes):
-            self.tool_tree.materialize(root / "build/ci-history-tools", tool_paths[:4])
-            self.tool_tree.materialize(root, tool_paths[4:])
-        else:
-            self.tool_tree.materialize(root, tool_paths)
+        self.tool_tree.materialize(root, tool_paths)
         if any(probe.startswith("authored-case:") for probe in probes):
-            (root / self.subjects.CASE_CHECKER_PROGRAM).write_bytes(
-                self.tool_tree.read("scripts/check_docs.py"))
+            self.tool_tree.materialize(root, ("scripts/check_docs.py",))
             (root / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
                 self.tool_tree.read(self.subjects.LOCALE_CASE_CONSUMER))
         if any(probe.startswith(("lifecycle:", "wire:")) for probe in probes):
             (root / "build/review-subject.py").write_bytes(tree.read(self.subjects.REVIEW_SOURCE))
 
-    def run_obligations(self, members, revision, *, _isolate_candidate=False):
+    def run_obligations(self, members, revision):
         model = self.model
         tree = self.tree(revision)
         members = tuple(members)
@@ -448,24 +431,13 @@ class ReviewTools:
                       "obligation omits shared worker candidate inputs")
         probes = [item.probe for item in members]
         model.unique(probes, "probe bindings")
-        history = tuple(item for item in members
-                        if item.probe.startswith(("ci-history:", "review-staging:")))
-        other = tuple(item for item in members
-                      if not item.probe.startswith(("ci-history:", "review-staging:")))
-        if history and other:
-            observed = (*self.run_obligations(history, revision),
-                        *self.run_obligations(other, revision, _isolate_candidate=True))
-            by_member = {item.obligation.identity: item for item in observed}
-            return tuple(by_member[item.identity] for item in members)
         generated = tuple(item for item in members
                           if item.probe.startswith("cjk-resource:generated:"))
         remaining = tuple(item for item in members
                           if not item.probe.startswith("cjk-resource:generated:"))
         if generated and remaining:
-            observed = (*self.run_obligations(generated, revision,
-                                              _isolate_candidate=_isolate_candidate),
-                        *self.run_obligations(remaining, revision,
-                                              _isolate_candidate=_isolate_candidate))
+            observed = (*self.run_obligations(generated, revision),
+                        *self.run_obligations(remaining, revision))
             by_member = {item.obligation.identity: item for item in observed}
             return tuple(by_member[item.identity] for item in members)
         objects = {item.identity: tuple((path, tree.oid(path)) for path in item.source_inputs)
@@ -482,11 +454,7 @@ class ReviewTools:
 
         try:
             root = Path(directory.name)
-            isolate_candidate = _isolate_candidate or bool(history)
-            if _isolate_candidate:
-                self._stage(tree, root, members, isolate_candidate=True)
-            else:
-                self._stage(tree, root, members)
+            self._stage(tree, root, members)
             home = root / "build/home"
             home.mkdir()
             environment = {
@@ -496,14 +464,8 @@ class ReviewTools:
             }
             try:
                 cleanup = False
-                if isolate_candidate:
-                    code = CI_HISTORY_WORKER_CODE
-                    roots = [str(root / "build/ci-history-tools"), str(root)]
-                else:
-                    code = WORKER_CODE
-                    roots = [str(root)]
                 completed = self.subjects.run_process(
-                    [sys.executable, "-I", "-B", "-c", code, *roots],
+                    [sys.executable, "-I", "-B", "-c", WORKER_CODE, str(root)],
                     input=json.dumps(probes).encode(), cwd=root, env=environment,
                     timeout=240, _on_cleanup=cleanup_confirmed)
                 model.require(cleanup, "owned process cleanup was not confirmed")

@@ -174,45 +174,6 @@ class CjkSubjectTests(unittest.TestCase):
                 for item in observed:
                     self.assertEqual(set(dict(item.source_objects)), declared)
 
-    def test_history_and_generated_split_preserves_candidate_session_dependency(self):
-        raw_path = "scripts/workflow_pilot/raw_diff_check.py"
-        family_path = "scripts/workflow_pilot/review_family.py"
-        raw_source = (self.repo.root / raw_path).read_text()
-        family_source = (self.repo.root / family_path).read_text()
-        raw = raw_source.replace(
-            'SHA_RE = re.compile(r"^[0-9a-f]{40}$")',
-            'SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|HEAD)$")', 1)
-        family = family_source.replace(
-            'SHA_PATTERN = r"[0-9a-f]{40}"',
-            'from scripts.workflow_pilot.raw_diff_check import SHA_RE\nSHA_PATTERN = SHA_RE.pattern', 1)
-        self.assertNotEqual(raw, raw_source)
-        self.assertNotEqual(family, family_source)
-        head = self.repo.commit({
-            raw_path: raw,
-            family_path: family,
-            "scripts/fonttools/cjk/__init__.py": "raise RuntimeError('candidate CJK dependency reached')\n",
-        })
-        data = self.scope(head)
-        data["subjects"].extend(request(
-            "TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history")["subjects"])
-        data["subjects"].extend(request()["subjects"])
-        members = tuple(item for item in self.tools.members(data, (self.repo.base,))
-                        if item.probe.startswith((
-                            "cjk-resource:generated:", "ci-history:wire:", "wire:")))
-        observed = self.tools.run_obligations(members, head)
-        generated = [item for item in observed
-                     if item.obligation.probe.startswith("cjk-resource:generated:")]
-        self.assertEqual(len(generated), 4)
-        self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
-                            and "candidate CJK dependency reached" in item.detail
-                            for item in generated))
-        self.assertEqual(
-            {item.obligation.probe: item.verdict for item in observed
-             if item not in generated and item.verdict != "satisfied"},
-            {"wire:validators": "contract-violation"},
-        )
-        self.assertTrue(all(item.checks > 0 for item in observed if item not in generated))
-
     def test_execution_only_closure_uses_the_stable_candidate_universe(self):
         path = "scripts/fonttools/cjk/unused_review_fixture.py"
         head = self.repo.commit({path: '"""Unused captured production module."""\n'})

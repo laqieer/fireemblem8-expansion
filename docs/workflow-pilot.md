@@ -753,43 +753,6 @@ independently review and trust that launcher from this PR in another checkout.
 This explicit introducing-PR boundary does not require a separate adapter PR,
 broker, source ledger or generic bootstrap service.
 
-The `TC-WORKFLOW-BUILD-CI-SPLIT-001/ci-lane-history` binding executes the
-historical and current lane, run-shape, metadata and dispatch predicates across
-the lifecycle and wire families. Historical preflight preserves lane
-provenance without authorizing a current dispatch or full Build. Its fixtures
-use parsed pull-request, run and job models with dependency-ordered timestamps,
-and exercise an unrelated live-base advance against the frozen base. Malformed
-history remains rejected when a failed, cancelled or timed-out adapter precedes
-a valid retry. Lifecycle entries execute the classifier and lane together; the wire
-producer also checks metadata and partial job shapes, while unrelated consumers use
-independently constructed modes. The fixed probe loads from a separate
-reviewed-tool directory, then imports the candidate package and its
-dependencies from the selected Git tree. Mixed workers preserve candidate
-imports; the authored-case worker stages its reviewed documentation checker
-separately instead of overwriting the candidate dependency. An import failure
-is unavailable evidence, not a passing observation. This separation establishes
-source provenance, not same-UID process isolation.
-
-The existing `TC-WORKFLOW-REVIEW-FAMILY-001/review-staging` binding covers
-`ReviewTools._stage` and `run_obligations` themselves, separately from
-CI-history lane predicates. Its nine lifecycle/wire members execute the
-captured candidate gate in disposable source/process fixtures. They observe
-the ordinary three-argument wrapper, confirmed versus unconfirmed cleanup,
-fresh staging, worker timeout, trusted worker versus candidate import selection,
-mixed/nested workers, malformed or missing observations, exact source identities
-and equivalent source changes. The selected probe and process runner remain
-reviewed tools; fixture object IDs and worker results are synthetic inputs to
-the actual gate, not GitHub or native review-admission facts.
-Nested workers remain in the enclosing worker's session. Actual unconfirmed
-nested cleanup retains the enclosing fixture and reports unavailable evidence;
-only the explicitly simulated no-process cleanup fault is cleaned by the
-fixture itself.
-The binding captures the gate's local Python dependency closure and uses the
-existing separate tool/candidate worker route. Import failure is unavailable
-evidence. The original process-lifetime tests remain responsible for real
-descendant, interruption and unsafe-termination controls; this binding does not
-replace them or turn a focused pass into complete reporter/Build evidence.
-
 `resolve_subject` joins an existing catalog case to the reviewed binding.
 `expand_members` derives the finite source-backed obligations at the finding
 origin and candidate. `run_obligations` executes their closed selectors and

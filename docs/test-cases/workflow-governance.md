@@ -1117,28 +1117,6 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    exact selected tool-tree bytes. Overlapping tool module instances must also
    restore the process-wide reaper setting after their owned work finishes.
 
-   For the #390 staging-wrapper regression and its finite source binding, run:
-
-   ```bash
-   python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.StagingFamilyTests -v
-   ```
-
-   The `review-staging` subject executes the captured gate with owned
-   source/process fixtures. Observe ordinary wrapper compatibility, fresh
-   staging, confirmed cleanup and retained unconfirmed staging. History-only,
-   mixed and nested workers must execute candidate imports using the selected
-   trusted worker; broken candidate imports cannot borrow trusted results.
-   Malformed/missing worker output and an actual owned timeout must not pass.
-   Repeated invocations must report their own source objects; an equivalent
-   reformat remains valid. Restoring the unconditional staging keyword fails
-   the entries member; falsely confirming cleanup fails preservation; dropping
-   mixed-worker isolation fails the consumer member. The original lifetime
-   tests above remain required for real descendant and signal behavior.
-   The binding's own nested workers must remain in their parent session.
-   Injecting uncertainty at its real runner boundary must retain the enclosing
-   fixture and report unavailable evidence, not delete the inner retained work.
-   These fixtures are not real candidate review records or merge authority.
-
 2. With the supported ARM compiler/binutils on PATH (or the resolved
    `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
    separate ARM-positive selector:
@@ -2511,9 +2489,8 @@ The focused checks reject a missing or duplicated group, missing checkout,
 prerequisite, summary dependency or result, and failed, cancelled or skipped
 new workers. Partial new job shapes fail; removing all three new jobs cannot
 make a historical full run authoritative. Malformed, active, unbound or
-contradictory preflight history still blocks a retry, including when a failed,
-cancelled or timed-out adapter is present. The unchanged pre-split topology
-lacks the three independent jobs.
+contradictory preflight history still blocks a retry. The unchanged pre-split
+topology lacks the three independent jobs.
 
 ### Interactions and save compatibility
 
@@ -2535,16 +2512,6 @@ surfaces; #387–#389 remain independent follow-ups.
   checks historical lane provenance and current preflight preparation.
 - `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_history_does_not_block_a_successful_retry scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_retry_still_rejects_unproven_history -v`
   checks failed-adapter retries and rejects unproven history.
-- `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.CIHistoryFamilyTests -v`
-  exercises the existing `ci-lane-history` review-family binding against real
-  lane, job-shape, metadata and dispatch predicates, including legacy
-  validator, malformed failed attempts with a valid retry, partial and metadata
-  job shapes, parsed and dependency-ordered chronology, an unrelated live-base
-  advance, pinned dispatch identity and attempt, mixed-worker candidate and
-  reviewed-checker provenance, and semantics-preserving controls.
-- `python3 -m unittest scripts.workflow_pilot.tests.test_cjk_subjects.CjkSubjectTests.test_history_and_generated_split_preserves_candidate_session_dependency -v`
-  checks candidate dependency provenance through the nested history,
-  generated-resource and review-session workers.
 
 ### Cleanup and limitations
 
