@@ -72,12 +72,26 @@ and its fail-closed all-current-feature coverage assertion.
 2. Run `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 3. Run `python3 -m unittest scripts.docs_check_tests.test_check_docs -v`.
 4. Run `python3 scripts/check_docs.py --check --check-examples`.
+5. For [issue #481](https://github.com/laqieer/fireemblem8-expansion/issues/481),
+   run the following host-side workflow regression cases:
+
+   ```sh
+   python3 -m unittest \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_worker_blocks_can_precede_other_job_fields \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_every_combined_worker_has_a_closed_execution_context \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_execution_context_key_syntax_bypasses_fail_closed \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence
+   ```
 
 ### Expected result
 
 The three policy surfaces parse to the same canonical AST. Explicit
 whitespace, line-wrap, `behavior`/`behaviour`, ordering, and level-1
 terminator variations remain valid; the commands report no findings.
+For each Build worker, moving `env` or `steps` as a whole, or swapping the
+runner and timeout fields, retains the same workflow contract and gate
+equivalence. The step sequence itself remains ordered.
 
 ### Negative control
 
@@ -86,6 +100,9 @@ permission and polarity inversion, contradictory rationale detail, unexpected
 paragraph, duplicate or lower-level policy heading, Markdown markup, and
 invalid syntax. These mutations preserve enough surrounding text to prove the
 semantic parser rather than a raw phrase search is enforcing the contract.
+Before the #481 fix, the worker-order regressions reject equivalent mappings.
+Changed runners or timeouts, duplicate keys, additional execution fields,
+unsupported key syntax and altered permissions remain rejected after the fix.
 
 ### Interactions and save compatibility
 
@@ -102,6 +119,8 @@ cleanup.
 scripts.docs_check_tests.test_check_docs -v` validates the registry and anchor.
 `python3 scripts/check_docs.py --check --check-examples` validates the
 repository documentation and named examples. No manual-only criterion applies.
+The #481 commands exercise the topology validator and upstream-port verifier
+against in-memory permutations and temporary target checkouts.
 
 ### Cleanup and limitations
 

@@ -1842,6 +1842,17 @@ class VerifyCliCwdTests(unittest.TestCase):
 
             for job_name in verify_mod._COMBINED_JOBS:
                 timeout = "60" if job_name == "legacy" else "90"
+                job = topology_tests._job_blocks(original)[job_name]
+                fields, separator, steps = job.partition("    steps:\n")
+                self.assertTrue(separator)
+                reordered = original.replace(job, separator + steps + fields, 1)
+                with open(workflow_path, "w", encoding="utf-8") as handle:
+                    handle.write(reordered)
+                with self.subTest(job=job_name, mutation="reordered-steps-block"):
+                    self.assertEqual(
+                        len(verify_mod.run_gates(target_root, dry_run=True)),
+                        len(verify_mod.gates()),
+                    )
                 job_mutations = {
                     "self-hosted": self.replace_in_job(
                         original,
@@ -1906,21 +1917,6 @@ class VerifyCliCwdTests(unittest.TestCase):
                         f"    timeout-minutes: {timeout}\n"
                         f"    timeout-minutes: {timeout}",
                     ),
-                    "reordered-keys": self.replace_in_job(
-                        self.replace_in_job(
-                            original,
-                            job_name,
-                            "    runs-on: ubuntu-24.04",
-                            "    __RUNS_ON__",
-                        ),
-                        job_name,
-                        f"    timeout-minutes: {timeout}",
-                        "    runs-on: ubuntu-24.04",
-                    ).replace(
-                        "    __RUNS_ON__",
-                        f"    timeout-minutes: {timeout}",
-                        1,
-                    ),
                 }
                 for mutation, changed in job_mutations.items():
                     with self.subTest(job=job_name, mutation=mutation):
@@ -1932,6 +1928,41 @@ class VerifyCliCwdTests(unittest.TestCase):
                             handle.write(changed)
                         with self.assertRaises(ValueError):
                             verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_worker_mapping_order_preserves_target_gate_equivalence(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as handle:
+            original = handle.read()
+        baseline = verify_mod._parse_workflow_structure_text(original)
+        for job_name in verify_mod._COMBINED_JOBS:
+            job = topology_tests._job_blocks(original)[job_name]
+            fields, separator, steps = job.partition("    steps:\n")
+            self.assertTrue(separator)
+            with self.subTest(job=job_name):
+                changed = original.replace(job, separator + steps + fields, 1)
+                self.assertEqual(
+                    verify_mod._parse_workflow_structure_text(changed), baseline
+                )
+                for mutation in (
+                    changed.replace(
+                        separator + steps + fields,
+                        separator + steps + fields.replace(
+                            "    runs-on: ubuntu-24.04", "    runs-on: self-hosted", 1
+                        ),
+                        1,
+                    ),
+                    changed.replace(
+                        separator + steps + fields,
+                        separator + steps + fields + "    permissions: write-all\n",
+                        1,
+                    ),
+                    changed.replace(
+                        separator + steps + fields,
+                        separator + steps + fields + "    - run: echo stray\n",
+                        1,
+                    ),
+                ):
+                    with self.assertRaises(ValueError):
+                        verify_mod._parse_workflow_structure_text(mutation)
 
     def test_publisher_and_summary_contexts_are_closed_before_dry_run(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")

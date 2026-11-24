@@ -1268,10 +1268,14 @@ def _contains_command(job: str, command: str) -> bool:
 
 def _step_blocks(job: str) -> list[str]:
     matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
+    direct_fields = list(re.finditer(r"^    (?=[^ \t#-])", job, re.MULTILINE))
     return [
         job[
             match.start():
-            matches[index + 1].start() if index + 1 < len(matches) else len(job)
+            min(
+                [matches[index + 1].start() if index + 1 < len(matches) else len(job)]
+                + [field.start() for field in direct_fields if field.start() > match.start()]
+            )
         ]
         for index, match in enumerate(matches)
     ]
@@ -1646,7 +1650,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         "    steps:",
     ]
     errors = []
-    if direct_lines != expected_direct:
+    if sorted(direct_lines) != sorted(expected_direct):
         errors.append(
             f"{job_name} direct job mapping differs from the reviewed "
             "runs-on, timeout, env, and steps contract"
@@ -5573,11 +5577,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
             with self.subTest(job=job_name, reordered=True):
                 changed = self.text.replace(job, reordered, 1)
-                self.assertTrue(
-                    any(
-                        f"{job_name} direct job mapping differs" in error
-                        for error in _errors(changed, False)
-                    )
+                self.assertEqual(_errors(changed, False), [])
+                self.assertEqual(
+                    verify._parse_workflow_structure_text(changed),
+                    verify._parse_workflow_structure_text(self.text),
                 )
 
             for original, replacement in (
@@ -5600,6 +5603,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             for error in _errors(changed, False)
                         )
                     )
+
+    def test_worker_blocks_can_precede_other_job_fields(self):
+        baseline = verify._parse_workflow_structure_text(self.text)
+        for job_name in COMBINED_WORKERS:
+            job = _job_blocks(self.text)[job_name]
+            fields, separator, steps = job.partition("    steps:\n")
+            self.assertTrue(separator)
+            before_env, separator, env = fields.partition("    env:\n")
+            self.assertTrue(separator)
+            for block, reordered in (
+                ("steps", "    steps:\n" + steps + fields),
+                ("env", "    env:\n" + env + before_env + "    steps:\n" + steps),
+            ):
+                with self.subTest(job=job_name, block=block):
+                    changed = self.text.replace(job, reordered, 1)
+                    self.assertEqual(_errors(changed, False), [])
+                    self.assertEqual(verify._parse_workflow_structure_text(changed), baseline)
 
     def test_execution_context_key_syntax_bypasses_fail_closed(self):
         execution_fields = {
