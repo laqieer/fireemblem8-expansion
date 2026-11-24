@@ -21,8 +21,9 @@
 ### Expected result
 
 The real maps contain the required named EWRAM overlays within hardware
-bounds. The CJK map and ELF contain a matching nonempty allocatable locale
-section and the linker-defined IWRAM user-stack margin is at least `0x1000`.
+bounds. The CJK map and ELF contain a matching nonempty allocatable
+`PROGBITS` locale section and the linker-defined IWRAM user-stack margin is
+at least `0x1000`.
 The reported stack boundary symbols match the linked ELF.
 The existing real partition check retains persistent EWRAM after all overlays.
 Exact free-byte totals are not fixed across toolchains.
@@ -30,7 +31,7 @@ Exact free-byte totals are not fixed across toolchains.
 ### Negative control
 
 The focused host controls reject a missing required overlay, an oversized
-overlay, a missing, empty, nonallocatable or mismatched locale section,
+overlay, a missing, empty, nonallocatable, `NOBITS` or mismatched locale section,
 insufficient IWRAM stack margin, and an incorrect linked stack boundary.
 Before #478, the real CJK case and
 both overlay count checks failed on valid artifacts due to stale values.

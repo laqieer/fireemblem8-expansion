@@ -75,5 +75,6 @@ def assert_locale_identity(test, report):
     locale, elf_locale = locales[0], elf_locales[0]
     test.assertGreater(locale["size_bytes"], 0)
     test.assertIn("A", elf_locale["flags"])
+    test.assertEqual(elf_locale["type"], "PROGBITS")
     test.assertEqual(locale["address"], elf_locale["address"])
     test.assertEqual(locale["size_bytes"], elf_locale["size_bytes"])

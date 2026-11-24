@@ -579,6 +579,7 @@ Linker script and memory map
             ([locale], [budget.ElfSection(".locale_data", "PROGBITS", 0x09000000, 0x100, "A")]),
             ([locale], [budget.ElfSection(".locale_data", "PROGBITS", 0x09000100, 0x200, "A")]),
             ([locale], [budget.ElfSection(".locale_data", "PROGBITS", 0x09000000, 0x200, "")]),
+            ([locale], [budget.ElfSection(".locale_data", "NOBITS", 0x09000000, 0x200, "A")]),
         ):
             with self.subTest(map_sections=map_sections, elf_sections=elf_sections):
                 report = budget.generate_report([region], map_sections, [], elf_sections)
