@@ -5635,11 +5635,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             _step_blocks(changed_job)[index],
                         )
 
-        job = _job_blocks(self.text)["extended-host-tests"]
-        width = next(
-            step for step in _step_blocks(job)
+        width_steps = [
+            step for job in _job_blocks(self.text).values()
+            for step in _step_blocks(job)
             if _step_name(step) == "Run full-game localization width contract (issue #18)"
-        )
+        ]
+        self.assertEqual(len(width_steps), 1)
+        width = width_steps[0]
         changed = self.text.replace(
             width, width + "    \n      continue-on-error: true\n", 1
         )
