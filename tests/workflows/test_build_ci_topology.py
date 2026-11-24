@@ -1268,7 +1268,7 @@ def _contains_command(job: str, command: str) -> bool:
 
 def _step_blocks(job: str) -> list[str]:
     matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
-    direct_fields = list(re.finditer(r"^    (?=[^ \t#\r\n-])", job, re.MULTILINE))
+    direct_fields = list(re.finditer(r"^    (?=[^\s#-])", job, re.MULTILINE))
     return [
         job[
             match.start():
@@ -5622,9 +5622,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     self.assertEqual(verify._parse_workflow_structure_text(changed), baseline)
 
     def test_blank_lines_cannot_hide_step_fields(self):
+        blanks = ("", "    ", "    \r", "    \t", "        ",
+                  "    \u0085", "    \u2028", "    \u2029")
         for job_name, job in _job_blocks(self.text).items():
             for index, step in enumerate(_step_blocks(job)):
-                for blank in ("", "    ", "    \r", "    \t", "        "):
+                for blank in blanks:
                     with self.subTest(job=job_name, step=index, blank=repr(blank)):
                         changed_step = step.replace(
                             "\n", f"\n{blank}\n      continue-on-error: true\n", 1
@@ -5642,12 +5644,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         ]
         self.assertEqual(len(width_steps), 1)
         width = width_steps[0]
-        changed = self.text.replace(
-            width, width + "    \n      continue-on-error: true\n", 1
-        )
-        self.assertTrue(
-            any("lost exact full-game evidence" in error for error in _errors(changed, False))
-        )
+        for blank in blanks:
+            with self.subTest(blank=repr(blank)):
+                changed = self.text.replace(
+                    width, width + f"{blank}\n      continue-on-error: true\n", 1
+                )
+                self.assertTrue(
+                    any("lost exact full-game evidence" in error for error in _errors(changed, False))
+                )
 
     def test_execution_context_key_syntax_bypasses_fail_closed(self):
         execution_fields = {
