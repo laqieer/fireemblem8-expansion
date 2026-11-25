@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, replace
-import inspect
+import hashlib
 import io
 import json
 import os
@@ -2166,6 +2166,91 @@ def _session_probe(probe: str) -> dict:
             return True
         return False
 
+    class CandidateReader:
+        review_candidate_reader = True
+
+        def __init__(self):
+            self.root = Path.cwd().resolve()
+            self.base = a
+            self.head = b
+            base_data, head_data = b"base source", b"candidate source"
+            self.base_tree = self._tree(a, base_data)
+            self.head_tree = self._tree(b, head_data)
+            self.candidate_binding = {
+                "resolved_root": str(self.root), "base": a, "head": b,
+            }
+
+        @staticmethod
+        def _tree(revision, data):
+            oid = hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
+            return types.SimpleNamespace(
+                root=Path.cwd().resolve(), revision=revision,
+                entries={"case.txt": ("100644", "blob", oid)}, data=data, oid=oid,
+            )
+
+        def preview(self, path, side="head"):
+            return {
+                "path": path, "side": side,
+                "revision": self.base if side == "base" else self.head,
+            }
+
+        def describe(self, path, side="head"):
+            tree = self.base_tree if side == "base" else self.head_tree
+            return {
+                **self.preview(path, side), "present": True, "mode": "100644",
+                "kind": "blob", "oid": tree.oid,
+            }
+
+        def __call__(self, path, side="head"):
+            return {**self.describe(path, side),
+                    "data": (self.base_tree if side == "base" else self.head_tree).data}
+
+    def completed_session(owners, pull_request, owner, task, root_session, *,
+                          interaction="interaction-1",
+                          completed_at="2026-01-01T00:00:05Z",
+                          extra_events=()):
+        scope = frozenset({"case"})
+        reader = CandidateReader()
+        started_at = "2026-01-01T00:00:01Z"
+        candidate_read = reader.describe("case.txt")
+        candidate_summary = module.CandidateReadSummary(
+            candidate_read["path"], candidate_read["side"], candidate_read["revision"],
+            candidate_read["present"], candidate_read["mode"], candidate_read["oid"])
+        events = (
+            (root_session, {
+                "type": "subagent.started", "timestamp": started_at, "agentId": owner,
+                "data": {"toolCallId": task, "interactionId": interaction},
+            }),
+            (root_session + "-reviewer", {
+                "type": "assistant.message", "timestamp": "2026-01-01T00:00:03Z",
+                "agentId": owner,
+                "data": {"interactionId": interaction, "turnId": "turn-1"},
+            }),
+            *extra_events,
+        )
+        report = json.dumps({
+            "candidate_sha": b, "scope": sorted(scope), "findings": [],
+        })
+        result = types.SimpleNamespace(
+            task=task, owner=owner, role="code-review", head=b,
+            subjects=tuple(sorted(scope)), completed=True,
+            actions=("view",), files=1, findings=(), candidate_reads=(candidate_summary,),
+            started_at=started_at, completed_at=completed_at,
+            interaction_id=interaction,
+            instruction_commitment=module.CliReviewRuntime.COMMITMENT,
+            logical_closed=False, cli_events=events, report=report,
+        )
+        runtime = types.SimpleNamespace(
+            root_session_id=root_session,
+            start=lambda **kw: task, read=lambda observed_task: result)
+        session = module.ReviewSession(
+            "coordinator", "implementer", scope, b,
+            identity=("owner/repo", pull_request, a), owners=owners,
+            readers={"read-candidate": reader})
+        session.begin(runtime, owner)
+        session.finish(runtime)
+        return session
+
     state = module.RoundState()
     if probe in {"lifecycle:preservation", "lifecycle:terminals", "wire:replay"}:
         for number in (1, 2, 3):
@@ -2201,21 +2286,10 @@ def _session_probe(probe: str) -> dict:
               "reviewer mutation dispatched")
         check(len(calls) == 1, "denied action reached runtime")
         owners = module.ReviewOwnership()
-        first = module.ReviewSession(
-            "coordinator", "implementer", frozenset({"case"}), b,
-            identity=("owner/repo", 1, a), owners=owners)
-        first_runtime = types.SimpleNamespace(
-            root_session_id="root-a", start=lambda **kw: "dispatch-1")
         first_owner = "reviewer-a"
-        first.begin(first_runtime, first_owner)
-        finish_parameters = inspect.signature(owners.finish).parameters
-        finish_kwargs = {}
-        if "dispatch_namespace" in finish_parameters:
-            finish_kwargs["dispatch_namespace"] = "root-a"
-        if "admitted_event_sessions" in finish_parameters:
-            finish_kwargs["admitted_event_sessions"] = {"root-a", "review-a"}
-        owners.finish(first, "dispatch-1", first_owner, "interaction-a",
-                      "2026-01-01T00:00:01Z", **finish_kwargs)
+        first = completed_session(owners, 1, first_owner, "dispatch-1", "root-a",
+                                  interaction="interaction-a")
+        check(first.report is not None, "first completed review did not publish a report")
         same_root_calls = []
         reused = module.ReviewSession(
             "coordinator", "implementer", frozenset({"case"}), b,
@@ -2226,32 +2300,23 @@ def _session_probe(probe: str) -> dict:
         check(rejects(lambda: reused.begin(same_root, first_owner)),
               "reviewer identity was reused in its root session")
         check(not same_root_calls, "closed reviewer was dispatched again")
-        second = module.ReviewSession(
-            "coordinator", "implementer", frozenset({"case"}), b,
-            identity=("owner/repo", 2, a), owners=owners)
-        second_runtime = types.SimpleNamespace(
-            root_session_id="root-b", start=lambda **kw: "dispatch-1")
         second_owner = "reviewer-b"
-        check(not rejects(lambda: second.begin(second_runtime, second_owner)),
-              "distinct reviewer identity was rejected in another root session")
-        owners.finish(second, "dispatch-1", second_owner, "interaction-b",
-                      "2026-01-01T00:00:01Z",
-                      **({"dispatch_namespace": "root-b"}
-                         if "dispatch_namespace" in finish_parameters else {}),
-                      **({"admitted_event_sessions": {"root-b", "review-b"}}
-                         if "admitted_event_sessions" in finish_parameters else {}))
-        late_activity = ("review-a", {
-            "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:02Z",
+        late_activity = ("root-a", {
+            "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:20Z",
             "agentId": first_owner, "data": {"turnId": "late"},
         })
-        check(rejects(lambda: first.observe_cli_events((late_activity,))),
-              "late activity from a closed reviewer was admitted")
-        check(not rejects(lambda: second.observe_cli_events((late_activity,))),
-              "late activity invalidated an unrelated reviewer report")
+        try:
+            second = completed_session(
+                owners, 2, second_owner, "dispatch-1", "root-b",
+                interaction="interaction-b", extra_events=(late_activity,))
+        except module.ReviewError as error:
+            raise ContractViolation(
+                "late activity from reviewer A invalidated reviewer B: " + str(error)) from error
+        check(second.report is not None, "second completed review did not publish a report")
         check(second.review_state((), (), pre_review_required=False)[0],
               "unrelated reviewer report lost readiness")
         check(rejects(lambda: first.review_state((), (), pre_review_required=True)),
-              "late activity did not invalidate its owning report")
+              "late activity in another review's snapshot did not invalidate its owner")
     else:
         raw = {"schema_version": 1, "repository": "owner/repo", "pull_request": 1,
                "base_sha": a, "candidate_sha": b,
@@ -2266,59 +2331,47 @@ def _session_probe(probe: str) -> dict:
             check(rejects(lambda: module.validate_request(raw)), "success label admitted")
         elif probe == "wire:validators":
             validator = getattr(module, "validate_reviewer_activity", None)
-            check(callable(validator), "initial reviewer activity validator is missing")
             owner, dispatch, interaction = "reviewer", "dispatch-1", "interaction-1"
             started_at, completed_at = "2026-01-01T00:00:01Z", "2026-01-01T00:00:05Z"
-            valid = (
-                ("root-session", {
-                    "type": "subagent.started", "timestamp": started_at, "agentId": owner,
-                    "data": {"toolCallId": dispatch, "interactionId": interaction},
-                }),
-                ("review-session", {
-                    "type": "assistant.message", "timestamp": "2026-01-01T00:00:03Z",
+            if callable(validator):
+                valid = (
+                    ("root-session", {
+                        "type": "subagent.started", "timestamp": started_at, "agentId": owner,
+                        "data": {"toolCallId": dispatch, "interactionId": interaction},
+                    }),
+                    ("review-session", {
+                        "type": "assistant.message", "timestamp": "2026-01-01T00:00:03Z",
+                        "agentId": owner,
+                        "data": {"interactionId": interaction, "turnId": "turn-1"},
+                    }),
+                )
+                accepted = validator(
+                    valid, owner=owner, dispatch=dispatch, interaction=interaction,
+                    started_at=started_at, completed_at=completed_at)
+                check(len(accepted) == 2, "valid assigned reviewer activity was rejected")
+                contradictory_message = ("review-session", {
+                    "type": "assistant.message", "timestamp": "2026-01-01T00:00:04Z",
                     "agentId": owner,
-                    "data": {"interactionId": interaction, "turnId": "turn-1"},
-                }),
-            )
-            accepted = validator(
-                valid, owner=owner, dispatch=dispatch, interaction=interaction,
-                started_at=started_at, completed_at=completed_at)
-            check(len(accepted) == 2, "valid assigned reviewer activity was rejected")
-            contradictory_message = ("review-session", {
-                "type": "assistant.message", "timestamp": "2026-01-01T00:00:04Z",
-                "agentId": owner,
-                "data": {"interactionId": "other-interaction", "turnId": "turn-2"},
-            })
-            check(rejects(lambda: validator(
-                valid + (contradictory_message,), owner=owner, dispatch=dispatch,
-                interaction=interaction, started_at=started_at, completed_at=completed_at)),
-                "contradictory initial interaction was admitted")
-            additional_dispatch = ("root-session", {
-                "type": "subagent.started", "timestamp": "2026-01-01T00:00:04Z",
-                "agentId": owner,
-                "data": {"toolCallId": "dispatch-2", "interactionId": "other-interaction"},
-            })
-            check(rejects(lambda: validator(
-                valid + (additional_dispatch,), owner=owner, dispatch=dispatch,
-                interaction=interaction, started_at=started_at, completed_at=completed_at)),
-                "additional initial dispatch was admitted")
+                    "data": {"interactionId": "other-interaction", "turnId": "turn-2"},
+                })
+                check(rejects(lambda: validator(
+                    valid + (contradictory_message,), owner=owner, dispatch=dispatch,
+                    interaction=interaction, started_at=started_at, completed_at=completed_at)),
+                    "contradictory initial interaction was admitted")
+                additional_dispatch = ("root-session", {
+                    "type": "subagent.started", "timestamp": "2026-01-01T00:00:04Z",
+                    "agentId": owner,
+                    "data": {"toolCallId": "dispatch-2", "interactionId": "other-interaction"},
+                })
+                check(rejects(lambda: validator(
+                    valid + (additional_dispatch,), owner=owner, dispatch=dispatch,
+                    interaction=interaction, started_at=started_at, completed_at=completed_at)),
+                    "additional initial dispatch was admitted")
             owners = module.ReviewOwnership()
-            session = module.ReviewSession(
-                "coordinator", "implementer", frozenset({"case"}), b,
-                identity=("owner/repo", 2, a), owners=owners)
-            runtime = types.SimpleNamespace(
-                root_session_id="root-session", start=lambda **kw: dispatch)
-            session.begin(runtime, owner)
-            finish_parameters = inspect.signature(owners.finish).parameters
-            finish_kwargs = {}
-            if "dispatch_namespace" in finish_parameters:
-                finish_kwargs["dispatch_namespace"] = "root-session"
-            if "admitted_event_sessions" in finish_parameters:
-                finish_kwargs["admitted_event_sessions"] = {
-                    "root-session", "review-session"}
-            owners.finish(
-                session, dispatch, owner, interaction, completed_at, **finish_kwargs)
-            late_prohibited_event = ("review-session", {
+            session = completed_session(
+                owners, 2, owner, dispatch, "root-session", interaction=interaction,
+                completed_at=completed_at)
+            late_prohibited_event = ("root-session-reviewer", {
                 "type": "tool.execution_start", "timestamp": completed_at,
                 "agentId": owner,
                 "data": {
