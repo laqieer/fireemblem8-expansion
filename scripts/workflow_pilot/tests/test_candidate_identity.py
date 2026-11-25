@@ -45,8 +45,8 @@ class CandidateIdentityFixture:
         self.old = gate.begin_candidate(self.state, self.pr, self.fixture.parent, self.decision, runs=())
         self.owners = review.ReviewOwnership()
         # Both immutable Git bases exist and are reviewed before the first remote fixture review.
-        self.old_session = self.session(self.fixture.parent)
-        self.new_session = self.session(self.middle)
+        self.old_session = self.session(self.fixture.parent, "reviewer-old")
+        self.new_session = self.session(self.middle, "reviewer-new")
         self.complete_local(self.old, self.pr)
         self.old_fact = self.fact("review-old")
         self.old_session.triage(review.Triage(self.old_fact, "clean"))
@@ -71,7 +71,7 @@ class CandidateIdentityFixture:
         raw["head"]["ref"] = "agent/test"
         return raw
 
-    def session(self, base):
+    def session(self, base, reviewer):
         scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
         owner = self.state["coordinator_id"]
         session = review.ReviewSession(owner, owner, scope, self.head,
@@ -79,7 +79,7 @@ class CandidateIdentityFixture:
         runtime = Runtime(self.head, scope)
         runtime.result.task = "review-" + base[:12]
         runtime.result.started_at = observations.utc_now()
-        session.begin(runtime, "reviewer")
+        session.begin(runtime, reviewer)
         runtime.result.completed_at = observations.utc_now()
         session.finish(runtime)
         return session
