@@ -1229,11 +1229,12 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    any result has `kind: null`; unavailable rows always have zero checks.
 7. Launch a genuine fresh `code-review` task for the exact candidate and
    assigned scope. Its original prompt must bind the full candidate SHA, scope,
-   direct-read paths/sides and each exact supplied file path, structured report
-   format and explicit read-only commitment. Verify the dispatch ID, assigned
-   reviewer identity, original received instructions, and commitment before
-   the first tool call, complete `view` start/completion events, successful
-   results equal to each required immutable Git blob, exact final report, and
+   direct-read paths/sides and each exact supplied file path and `utf-8` or
+   `base64` encoding, structured report format and exact standalone read-only
+   commitment. Verify the dispatch ID, assigned reviewer identity, original
+   received instructions, and exact commitment message before the first tool
+   call, complete `view` start/completion events, successful results equal to
+   each required immutable Git blob, exact final report, and
    completed-turn event chronology before any remote review. A successful
    task-call completion is only a dispatch receipt and may precede the
    reviewer's `subagent.completed` event; require both, and use the latter as
@@ -1243,14 +1244,17 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    termination.
    The coordinator then logically closes the completed reviewer identity and
    dispatch. A second admission using that reviewer must reject before another
-   task starts. Feed a later contradictory event for that reviewer and require
-   admission to fail. A completed-turn event is not evidence that the CLI
-   terminated the agent.
+   task starts. Feed a later assistant turn-start event for that reviewer from
+   another session and require the shared ownership index to invalidate the
+   earlier report. Confirm that invalid observations never publish a report.
+   A completed-turn event is not evidence that the CLI terminated the agent.
    In source-backed event tests, reject missing/mismatched dispatch or
    assignment, wrong candidate/scope, missing or late commitment, an observed
    non-`view` operation, missing or contradictory tool interaction identity,
    failed/partial/unassigned/duplicate file reads,
-   wrong blob bytes, omitted required paths/sides, malformed report/finding,
+   wrong blob bytes, noncanonical base64 or decoded binary mismatch, omitted
+   required paths/sides, unavailable additional sides, unchanged-path reads,
+   malformed report/finding,
    duplicate task/reviewer or closed-dispatch reuse, post-closure activity, missing or failed
    dispatch receipts, and invalid chronology. Require actual parsed report
    findings, candidate binding,

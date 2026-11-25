@@ -640,16 +640,21 @@ proves its turn is complete. After that completed-turn notification,
 `finish` validates the reviewer's observations and report. It returns
 immediately and does not poll. This is the owner-approved
 instruction-based trust model: the reviewer must state the exact read-only
-commitment before any tool operation. This does **not** claim that the CLI has
+commitment as a standalone commentary message before any tool operation; extra
+text in that message does not satisfy the commitment. This does **not** claim that the CLI has
 technically terminated the reviewer or enforced read-only permissions.
 
 Admission binds the assigned reviewer and dispatch to the candidate SHA and
 scope, every observed full-file `view` start and successful completion, and the
 reviewer's final structured report. The observed paths and returned bytes must
 match the immutable candidate blobs from `CandidateReader`; every required
-candidate path and side must be present. The assigned-read JSON maps each
-candidate path and side to the exact supplied file path the reviewer must read,
-including materialized base-side content. Any observed operation other than a
+candidate path and side must be present. Additional base/head sides are
+permitted only for changed paths when each side is an available regular blob.
+The assigned-read JSON maps each candidate path and side to the exact supplied
+file path and its `utf-8` or `base64` encoding. Invalid UTF-8 blobs use
+canonical base64 materializations; the observed base64 is decoded and compared
+byte-for-byte with the immutable Git object. Candidate read summaries are
+normalized typed values after validation. Any observed operation other than a
 direct full-file `view`, a failed or partial read, an unassigned path, missing
 dispatch receipt or reviewer completion, or malformed report rejects
 admission. Every reviewer tool event must bind to the assigned interaction;
@@ -664,8 +669,11 @@ substituted with coordinator-side rereads.
 
 `ReviewOwnership` logically closes the completed reviewer turn after the
 coordinator accepts its evidence. It rejects reuse of that reviewer identity
-or dispatch for admission and checks later observed events for post-closure
-activity or contradictory interactions. The logical closure is separate from
+or dispatch for admission and checks later observed user, assistant (including
+turn-start), tool and subagent events for post-closure activity or contradictory
+interactions. A violation is retained in the shared ownership index and
+invalidates the report for every session using it; report fields are published
+only after all observations validate. The logical closure is separate from
 technical task termination. A later event invalidates admission when observed;
 the record does not claim that no unobserved event can occur. Exact reviewer
 identity, candidate binding, complete read coverage and original chronology
@@ -789,8 +797,8 @@ bounded duration is exceeded; it makes no task-termination claim. Subsequent
 head changes preserve the old report's origin rather than rebinding it to the
 new head.
 
-`ReviewSession.finish` snapshots validated runtime fields into an internal
-frozen report before releasing ownership. Scope/actions are immutable sets,
+`ReviewSession.finish` validates every observation before publishing an
+internal frozen report and releasing ownership. Scope/actions are immutable sets,
 findings are a tuple of frozen typed values, and timestamps and bounds are
 copied values. Later runtime-record mutations cannot change the accepted
 report or its pre-review chronology. This is a value snapshot, not a receipt,

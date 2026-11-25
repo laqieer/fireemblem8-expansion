@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
@@ -134,7 +136,7 @@ def timestamp(value):
 
 def is_review_activity(event):
     kind = event.get("type")
-    return kind in {"user.message", "assistant.message"} or (
+    return kind in {"user.message", "assistant.message", "assistant.turn_start"} or (
         isinstance(kind, str) and kind.startswith(("tool.", "subagent."))
     )
 
@@ -760,6 +762,7 @@ class ReviewOwnership:
         self.closed_tasks: dict[tuple[str, str], tuple[str, str, str]] = {}
         self.closed_owners: dict[str, tuple[str, str]] = {}
         self.closed_dispatches: set[tuple[str, str]] = set()
+        self.invalidated_tasks: dict[tuple[str, str], str] = {}
 
     def reserve(self, session):
         require(session.identity is not None, "ownership requires frozen PR identity")
@@ -793,6 +796,7 @@ class ReviewOwnership:
             self.closed_dispatches.add(dispatch)
 
     def validate_closed_events(self, events):
+        violations = []
         for _, event in events:
             if not is_review_activity(event):
                 continue
@@ -800,13 +804,40 @@ class ReviewOwnership:
             task = self.closed_owners.get(agent)
             if task is None:
                 continue
-            owner, closed_interaction, completed_at = self.closed_tasks[task]
-            if timestamp(event.get("timestamp")) > timestamp(completed_at):
-                raise ReviewError("review task emitted an event after logical closure")
-            interaction = event.get("data", {}).get("interactionId")
+            _, closed_interaction, completed_at = self.closed_tasks[task]
+            try:
+                event_time = timestamp(event.get("timestamp"))
+            except ReviewError:
+                message = "review task emitted an event with invalid chronology"
+                self.invalidated_tasks.setdefault(task, message)
+                violations.append(message)
+                continue
+            if event_time > timestamp(completed_at):
+                message = "review task emitted an event after logical closure"
+                self.invalidated_tasks.setdefault(task, message)
+                violations.append(message)
+                continue
+            data = event.get("data")
+            if not isinstance(data, dict):
+                message = "review task emitted an event with invalid data"
+                self.invalidated_tasks.setdefault(task, message)
+                violations.append(message)
+                continue
+            interaction = data.get("interactionId")
             if interaction is not None:
-                require(interaction == closed_interaction,
-                        "review task emitted a contradictory interaction")
+                if interaction != closed_interaction:
+                    message = "review task emitted a contradictory interaction"
+                    self.invalidated_tasks.setdefault(task, message)
+                    violations.append(message)
+        if violations:
+            raise ReviewError(violations[0])
+
+    def validate_session(self, session):
+        lease = session.lease
+        if lease is not None:
+            key = lease.task, lease.owner
+            reason = self.invalidated_tasks.get(key)
+            require(reason is None, f"review task evidence was invalidated: {reason}")
 
 
 class CliReviewRuntime:
@@ -822,7 +853,8 @@ class CliReviewRuntime:
         self.candidate_reader = candidate_reader
         require(isinstance(required_reads, dict) and bool(required_reads),
                 "exact candidate read requirements are missing")
-        self.required_reads = dict(required_reads)
+        supplied_reads = dict(required_reads)
+        self.required_reads = {}
         base_entries = candidate_reader.base_tree.entries
         head_entries = candidate_reader.head_tree.entries
         changed_paths = {
@@ -830,6 +862,7 @@ class CliReviewRuntime:
             if base_entries.get(path) != head_entries.get(path)
         }
         required_keys = set()
+        supported_keys = set()
         for path in changed_paths:
             base_entry = base_entries.get(path)
             head_entry = head_entries.get(path)
@@ -845,17 +878,31 @@ class CliReviewRuntime:
                 None if head_entry is None else head_entry[2],
             )
             required_keys.update((path, side) for side in change.required_reads())
-        require(set(self.required_reads) == required_keys,
+            supported_keys.update((path, side) for side in REVIEW_SIDES
+                                  if change._supports_blob_read(side))
+        require(required_keys <= set(supplied_reads),
                 "review reads do not cover the complete candidate diff")
-        for key, target in self.required_reads.items():
+        require(set(supplied_reads) <= supported_keys,
+                "review read is not an available side of a changed candidate path")
+        for key, target in supplied_reads.items():
             require(isinstance(key, tuple) and len(key) == 2,
                     "invalid candidate read identity")
             path = repo_path(key[0], "candidate read path")
             side = review_side(key[1])
-            keys(target, ("tool_path", "content", "summary"), "candidate read target")
+            keys(target, ("tool_path", "content", "summary", "encoding"),
+                 "candidate read target")
             require(isinstance(target["tool_path"], str) and target["tool_path"]
-                    and isinstance(target["content"], bytes),
+                    and isinstance(target["content"], bytes)
+                    and isinstance(target["encoding"], str)
+                    and target["encoding"] in {"utf-8", "base64"},
                     "invalid candidate read materialization")
+            try:
+                target["content"].decode("utf-8")
+                encoding = "utf-8"
+            except UnicodeDecodeError:
+                encoding = "base64"
+            require(target["encoding"] == encoding,
+                    "candidate read encoding does not match its Git blob")
             summary = validate_candidate_read_summary(
                 target["summary"], base_sha=candidate_reader.base,
                 head_sha=candidate_reader.head)
@@ -870,6 +917,12 @@ class CliReviewRuntime:
             require(summary == described == observed.summary()
                     and target["content"] == observed.data,
                     "candidate read materialization differs from the immutable Git object")
+            self.required_reads[(path, side)] = {
+                "tool_path": target["tool_path"], "content": target["content"],
+                "summary": summary, "encoding": encoding,
+            }
+        unique([target["tool_path"] for target in self.required_reads.values()],
+               "candidate materialization paths")
         self.reviewer = None
         self.interaction = None
         self.prompt = None
@@ -1001,7 +1054,8 @@ class CliReviewRuntime:
                 "reviewer message predates the assigned instructions")
         commitments = [event for event in messages
                        if event.get("data", {}).get("phase") == "commentary"
-                       and self.COMMITMENT in event.get("data", {}).get("content", "")]
+                       and event.get("data", {}).get("content", "").strip()
+                       == self.COMMITMENT]
         tool_starts = [event for event in turn_events if event.get("type") == "tool.execution_start"]
         require(len(commitments) == 1
                 and timestamp(commitments[0]["timestamp"])
@@ -1041,7 +1095,15 @@ class CliReviewRuntime:
                         "reviewer file result is incomplete")
                 key, start = starts[call_id]
                 expected = self.required_reads[key]
-                content = result["content"].encode("utf-8")
+                if expected["encoding"] == "utf-8":
+                    content = result["content"].encode("utf-8")
+                else:
+                    try:
+                        content = base64.b64decode(result["content"], validate=True)
+                    except (ValueError, binascii.Error) as error:
+                        raise ReviewError("reviewer binary read is not valid base64") from error
+                    require(base64.b64encode(content).decode("ascii") == result["content"],
+                            "reviewer binary read is not canonical base64")
                 require(content == expected["content"],
                         "reviewer observed bytes differ from the exact candidate Git blob")
                 require(timestamp(start["timestamp"]) <= timestamp(event["timestamp"]),
@@ -1226,7 +1288,7 @@ class ReviewSession:
             self.owners.reserve(self)
         try:
             assigned_reads = json.dumps(
-                [[path, side, target["tool_path"]]
+                [[path, side, target["tool_path"], target["encoding"]]
                  for (path, side), target in sorted(runtime.required_reads.items())]
                 if isinstance(runtime, CliReviewRuntime) else [],
                 ensure_ascii=True, separators=(",", ":"))
@@ -1239,7 +1301,8 @@ class ReviewSession:
                 f"{CliReviewRuntime.COMMITMENT} Candidate SHA: {self.head}. "
                 f"Review scope: {', '.join(sorted(self.scope))}. "
                 f"Assigned candidate reads (JSON): {assigned_reads}. "
-                "Each entry maps a candidate path and side to its exact supplied file path. "
+                "Each entry maps a candidate path and side to its exact supplied file path "
+                "and encoding. Base64 materializations must be decoded before review. "
                 "Use complete direct file reads of every mapped file; for a file too large for "
                 "the default view limit, request a full read with forceReadLargeFiles and do not "
                 "use ranges. Return only JSON with keys "
@@ -1457,11 +1520,12 @@ class ReviewSession:
             None if binding is None else binding.base,
             tuple(external_reads[key] for key in sorted(external_reads)))
         require(self._retire(result, "completed") == "completed", "review exceeded duration bound")
-        self.local_findings = {finding.id: finding for finding in report.findings}
-        self.report = report
         self.latest_cli_events = tuple(getattr(result, "cli_events", ()))
         if self.owners is not None:
             self.owners.validate_closed_events(self.latest_cli_events)
+            self.owners.validate_session(self)
+        self.local_findings = {finding.id: finding for finding in report.findings}
+        self.report = report
         return report
 
     def observe_cli_events(self, events) -> None:
@@ -1528,6 +1592,8 @@ class ReviewSession:
     def review_state(self, facts, triage, *, pre_review_required, cli_events=()):
         if cli_events:
             self.observe_cli_events(cli_events)
+        if pre_review_required and self.owners is not None:
+            self.owners.validate_session(self)
         require(len({fact.id for fact in facts}) == len(facts), "duplicate remote review")
         self.refresh_reviews(facts)
         self.validate_local_triage()

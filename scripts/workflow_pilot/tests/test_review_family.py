@@ -11,9 +11,11 @@ from types import SimpleNamespace
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+import base64
 import copy
 from dataclasses import FrozenInstanceError, replace
 import json
+import string
 import unittest
 from unittest.mock import patch
 
@@ -1268,26 +1270,45 @@ class RoleTests(unittest.TestCase):
 
 
 class CliReviewRuntimeTests(unittest.TestCase):
-    def native_runtime(self, root, *, findings=None):
+    def native_runtime(self, root, *, findings=None, both_sides=False, raw_summary=False,
+                       binary_content=None):
         fixture = candidate_fixture(root)
+        if binary_content is not None:
+            fixture["paths"]["binary"] = "candidate-review-paths/asset.bin"
+            fixture["head"] = root.commit(
+                {fixture["paths"]["binary"]: binary_content}, parent=fixture["base"])
         tools = gate.ReviewTools(gate.GitTree(root.root, fixture["head"]), root.root)
         reader = tools.candidate_reader(fixture["base"], fixture["head"])
         changes = tools.candidate_changes(fixture["base"], fixture["head"])
         targets = {}
         for index, change in enumerate(changes.changes):
-            for side in change.required_reads():
+            sides = change.required_reads()
+            if both_sides and change.path == fixture["paths"]["modified"]:
+                sides = ("base", "head")
+            for side in sides:
                 summary = model.validate_candidate_read_summary(
                     reader.describe(change.path, side),
                     base_sha=fixture["base"], head_sha=fixture["head"])
                 blob = reader(change.path, side)["data"]
-                materialized = root.root / f"reviewer-input-{index}-{side}.txt"
-                materialized.write_bytes(blob)
+                try:
+                    blob.decode("utf-8")
+                    encoding = "utf-8"
+                    materialized_bytes = blob
+                    suffix = "txt"
+                except UnicodeDecodeError:
+                    encoding = "base64"
+                    materialized_bytes = base64.b64encode(blob)
+                    suffix = "base64.txt"
+                materialized = root.root / f"reviewer-input-{index}-{side}.{suffix}"
+                materialized.write_bytes(materialized_bytes)
                 targets[(change.path, side)] = {
-                    "tool_path": str(materialized), "content": blob, "summary": summary,
+                    "tool_path": str(materialized), "content": blob,
+                    "summary": summary.__dict__ if raw_summary else summary,
+                    "encoding": encoding,
                 }
         scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
         assigned_reads = json.dumps(
-            [[path, side, target["tool_path"]]
+            [[path, side, target["tool_path"], target["encoding"]]
              for (path, side), target in sorted(targets.items())],
             ensure_ascii=True, separators=(",", ":"))
         instructions = (
@@ -1297,7 +1318,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
             f"{model.CliReviewRuntime.COMMITMENT} Candidate SHA: {fixture['head']}. "
             f"Review scope: {', '.join(sorted(scope))}. "
             f"Assigned candidate reads (JSON): {assigned_reads}. "
-            "Each entry maps a candidate path and side to its exact supplied file path. "
+            "Each entry maps a candidate path and side to its exact supplied file path "
+            "and encoding. Base64 materializations must be decoded before review. "
             "Use complete direct file reads of every mapped file; for a file too large for "
             "the default view limit, request a full read with forceReadLargeFiles and do not "
             "use ranges. Return only JSON with keys "
@@ -1354,7 +1376,11 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 event("tool.execution_complete", end_at, reviewer, {
                     "interactionId": interaction, "turnId": "turn-0",
                     "toolCallId": call_id, "success": True,
-                    "result": {"content": target["content"].decode("utf-8")},
+                    "result": {"content": (
+                        target["content"].decode("utf-8")
+                        if target["encoding"] == "utf-8"
+                        else base64.b64encode(target["content"]).decode("ascii")
+                    )},
                 }),
             ))
             second += 2
@@ -1406,6 +1432,98 @@ class CliReviewRuntimeTests(unittest.TestCase):
             self.assertEqual(report.findings[0].detail, finding["detail"])
             self.assertTrue(report.logical_closed)
             self.assertFalse(any(event.get("type") == "subagent.selected" for _, event in events))
+
+    def test_instruction_commitment_must_be_standalone(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session_id, event = events[3]
+            events[3] = session_id, {**event, "data": {
+                **event["data"],
+                "content": model.CliReviewRuntime.COMMITMENT + " I may also edit files.",
+            }}
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            with self.assertRaisesRegex(model.ReviewError, "commitment"):
+                session.finish(runtime)
+
+    def test_candidate_reads_accept_explicit_base_and_head_sides(self):
+        with snapshot() as root:
+            fixture, runtime, session, _, _, reviewer, _ = self.native_runtime(
+                root, both_sides=True)
+            session.begin(runtime, reviewer)
+            report = session.finish(runtime)
+            reads = {(item.path, item.side) for item in report.candidate_reads}
+            self.assertIn((fixture["paths"]["modified"], "base"), reads)
+            self.assertIn((fixture["paths"]["modified"], "head"), reads)
+
+    def test_candidate_reads_reject_unchanged_paths_and_normalize_summaries(self):
+        with snapshot() as root:
+            fixture, runtime, _, _, _, _, _ = self.native_runtime(root, raw_summary=True)
+            self.assertTrue(all(isinstance(target["summary"], model.CandidateReadSummary)
+                                for target in runtime.required_reads.values()))
+            unchanged = next(
+                path for path, entry in runtime.candidate_reader.base_tree.entries.items()
+                if runtime.candidate_reader.head_tree.entries.get(path) == entry)
+            summary = model.validate_candidate_read_summary(
+                runtime.candidate_reader.describe(unchanged, "head"),
+                base_sha=fixture["base"], head_sha=fixture["head"])
+            content = runtime.candidate_reader(unchanged, "head")["data"]
+            invalid_reads = dict(runtime.required_reads)
+            invalid_reads[(unchanged, "head")] = {
+                "tool_path": "/tmp/unchanged-input.txt", "content": content,
+                "summary": summary, "encoding": "utf-8",
+            }
+            with self.assertRaisesRegex(model.ReviewError, "changed candidate path"):
+                model.CliReviewRuntime(
+                    runtime.events, dispatch_id="dispatch-1", root_session_id="root-session",
+                    candidate_reader=runtime.candidate_reader, required_reads=invalid_reads)
+
+    def test_non_utf8_candidate_blobs_use_exact_canonical_base64(self):
+        with snapshot() as root:
+            content = b"\x89PNG\r\n\x1a\n\x00\xff"
+            fixture, runtime, session, events, _, reviewer, _ = self.native_runtime(
+                root, binary_content=content)
+            session.begin(runtime, reviewer)
+            report = session.finish(runtime)
+            self.assertIn(
+                (fixture["paths"]["binary"], "head"),
+                {(item.path, item.side) for item in report.candidate_reads})
+            binary_call = next(
+                event["data"]["toolCallId"] for _, event in runtime.events
+                if event.get("type") == "tool.execution_start"
+                and event["data"].get("arguments", {}).get("path")
+                == runtime.required_reads[(fixture["paths"]["binary"], "head")]["tool_path"])
+            canonical = base64.b64encode(content).decode("ascii")
+            alphabet = string.ascii_uppercase + string.ascii_lowercase + string.digits + "+/"
+            changed_index = canonical.index("=") - 1
+            alphabet_index = alphabet.index(canonical[changed_index])
+            noncanonical = (
+                canonical[:changed_index]
+                + alphabet[(alphabet_index // 16) * 16 + (alphabet_index % 16 + 1) % 16]
+                + canonical[changed_index + 1:]
+            )
+            for encoded, reason in (
+                (base64.b64encode(b"wrong").decode("ascii"), "exact candidate Git blob"),
+                (noncanonical, "canonical base64"),
+            ):
+                with self.subTest(reason=reason):
+                    corrupted = [
+                        (session_id, {**event, "data": {
+                            **event["data"], "result": {"content": encoded},
+                        }} if event.get("type") == "tool.execution_complete"
+                        and event.get("data", {}).get("toolCallId") == binary_call else event)
+                        for session_id, event in runtime.events
+                    ]
+                    invalid = model.CliReviewRuntime(
+                        corrupted, dispatch_id="dispatch-1", root_session_id="root-session",
+                        candidate_reader=runtime.candidate_reader,
+                        required_reads=runtime.required_reads)
+                    invalid.start(candidate=fixture["head"],
+                                  subjects=["TC-WORKFLOW-REVIEW-FAMILY-001/review-session"],
+                                  instructions="Review only the bound candidate",
+                                  owner=reviewer, duration=1200)
+                    with self.assertRaisesRegex(model.ReviewError, reason):
+                        invalid.read("dispatch-1")
 
     def test_missing_or_failed_dispatch_receipt_rejects_completed_reviewer_turn(self):
         for case in ("missing", "failed"):
@@ -1590,7 +1708,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
 
     def test_logical_closure_rejects_reused_reviewer_and_later_events(self):
         with snapshot() as root:
-            _, runtime, session, _, _, reviewer, interaction = self.native_runtime(root)
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
             session.begin(runtime, reviewer)
             session.finish(runtime)
             second = model.ReviewSession(
@@ -1599,11 +1717,50 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
                 second.begin(Runtime(session.head, session.scope), reviewer)
             event = ("root-session", {
-                "type": "user.message", "timestamp": "2026-01-01T00:00:20Z",
-                "agentId": reviewer, "data": {"interactionId": interaction},
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:20Z",
+                "agentId": reviewer, "data": {"turnId": "turn-1"},
             })
             with self.assertRaisesRegex(model.ReviewError, "after logical closure"):
                 session.observe_cli_events((event,))
+
+    def test_post_closure_invalidation_is_shared_with_existing_reports(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            other = model.ReviewSession(
+                "coordinator", "different-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners)
+            late_turn = ("root-session", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:20Z",
+                "agentId": reviewer, "data": {"turnId": "turn-1"},
+            })
+            with self.assertRaisesRegex(model.ReviewError, "after logical closure"):
+                other.observe_cli_events((late_turn,))
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
+    def test_invalid_cli_observations_do_not_publish_a_report(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            read = runtime.read
+
+            def read_with_late_turn(task):
+                result = read(task)
+                result.cli_events = result.cli_events + (("root-session", {
+                    "type": "assistant.turn_start",
+                    "timestamp": "not-a-utc-time", "agentId": reviewer,
+                    "data": {"turnId": "turn-1"},
+                }),)
+                return result
+
+            runtime.read = read_with_late_turn
+            with self.assertRaisesRegex(model.ReviewError, "invalid chronology"):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+            self.assertEqual(session.local_findings, {})
+            self.assertIn(("dispatch-1", reviewer), session.owners.invalidated_tasks)
 
 
 class RemainingRoleTests(RoleTests):
