@@ -1929,6 +1929,23 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 session.review_state((), (), pre_review_required=True)
 
+    def test_mutated_closed_event_rejects_the_same_readiness_assessment(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            event = next(
+                event for _, event in session.latest_cli_events
+                if event.get("agentId") == reviewer
+                and event.get("type") == "assistant.message"
+                and event.get("data", {}).get("phase") == "commentary")
+            event["data"]["content"] += " altered"
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
     def test_initial_reviewer_activity_must_match_assigned_dispatch(self):
         for case in ("contradictory-message", "additional-dispatch"):
             with self.subTest(case=case), snapshot() as root:

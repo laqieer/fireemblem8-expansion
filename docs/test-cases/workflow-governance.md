@@ -1263,6 +1263,10 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    timestamp equal to completion; it must invalidate the closed report even
    though ordinary timestamp and interaction checks would pass. Confirm that
    invalid observations never publish a report.
+   After an unchanged closed report passes readiness, mutate one captured
+   reviewer commentary event. The first readiness assessment that detects
+   the altered event must reject, as must every subsequent assessment; the
+   pre-fix negative control incorrectly grants readiness once.
    Before closure, include a reviewer message with a contradictory interaction
    and a second `subagent.started` event for another dispatch in the original
    snapshot. Each must reject admission and leave the report unpublished;

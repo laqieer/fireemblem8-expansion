@@ -690,7 +690,8 @@ interaction and dispatch and fall within the task chronology. A contradictory
 message or additional dispatch in that snapshot rejects admission instead of
 being absorbed as previously admitted activity. Logical closure is separate
 from technical task termination. A later event invalidates admission when
-observed; the record does not claim that no unobserved event can occur. Exact
+observed, including in the same readiness assessment that detects it; the
+record does not claim that no unobserved event can occur. Exact
 reviewer identity, candidate binding, complete read coverage and original
 chronology remain mandatory. The reviewer must be distinct from implementation
 and coordination; those latter roles may be the same actual owner for

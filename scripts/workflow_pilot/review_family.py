@@ -1797,6 +1797,7 @@ class ReviewSession:
                     "review turn lacks instruction commitment or logical closure")
             require(self.owners is not None, "coordinator review ownership index required")
             self.owners.validate_closed_events(getattr(self, "latest_cli_events", ()))
+            self.owners.validate_session(self)
             if facts:
                 require(timestamp(self.report.completed_at) < min(
                     timestamp(item.submitted_at) for item in facts),
