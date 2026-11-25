@@ -143,15 +143,17 @@ permission list from candidate JSON.
 
 For review-family convergence, follow the complete
 [executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
-For accepted findings, the coordinator must expand the complete sibling family
-and bind actual source-backed evidence.
+For accepted findings, the coordinator must bind each to its existing case,
+actual production predicate and finite source model, then expand the complete
+sibling family using actual source-backed evidence.
 The third change request creates a sticky architecture/decomposition hold;
 new heads and clean reviews cannot clear it without a bound coordinator
-disposition. Immediately publish already-created commits on their assigned
-branch as ineligible WIP. COMMENTED or zero new inline comments is not approval;
-local audits never replace exact-head Copilot/security/Build or exact-master
-completion. Read-only roles and minimal environments are operational controls,
-not hostile same-UID OS isolation.
+redesign, decompose or retain-with-evidence disposition. Stop new narrow work
+and eligibility during the hold, but immediately publish already-created
+commits on their assigned branch as ineligible WIP. COMMENTED or zero new inline
+comments is not approval; local audits never replace exact-head
+Copilot/security/Build or exact-master completion. Read-only roles and minimal
+environments are operational controls, not hostile same-UID OS isolation.
 
 - **Reviewer:** distinct-from-coordinator, distinct-from-implementer, read-only, bounded
 - **Coordinator implementation:** same-actual-owner-permitted, no-aliases
@@ -220,6 +222,8 @@ For delegated cycles, follow the
 including coordinator-owned assignment, observations, locked state, owner
 retirement, exact-SHA validation, recovery and availability. Use actual CLI
 events and OS exit observations, not transport success or printed pass labels.
+Implementation-submitted results cannot replace coordinator Git, focused-check,
+process or GitHub observations or alter scope, budgets or permitted actions.
 Only the coordinator publishes; handoff tooling has no publication authority.
 
 For coordinator-authored work, follow
