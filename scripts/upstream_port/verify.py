@@ -1662,7 +1662,7 @@ def _literal_run_script(lines, start, end, value, step_label):
         raise ValueError(f"{step_label} must use a literal run block")
     script = []
     for line in lines[start:end]:
-        if line and not line.startswith("        "):
+        if line.strip() and not line.startswith("        "):
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"

@@ -697,7 +697,9 @@ def _run_block_commands(job: str) -> list[str]:
         ):
             index += 1
             block = []
-            while index < len(lines) and lines[index].startswith("        "):
+            while index < len(lines) and (
+                not lines[index].strip() or lines[index].startswith("        ")
+            ):
                 line = lines[index].strip()
                 if line and not line.startswith("#"):
                     block.append(line)
@@ -719,7 +721,7 @@ def _literal_run_script(step: str) -> str:
         raise AssertionError("step lacks a literal run block") from error
     script = []
     for line in lines[run_index + 1 :]:
-        if line and not line.startswith("        "):
+        if line.strip() and not line.startswith("        "):
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
@@ -5651,6 +5653,65 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     any("lost exact full-game evidence" in error for error in _errors(changed, False))
+                )
+
+    def test_literal_run_scripts_preserve_blank_lines(self):
+        header = "      run: |\n"
+        blanks = ("    ", "", " ", "      ", "        ", "        \t", "    \r")
+        for job_name, job in _job_blocks(self.text).items():
+            for index, step in enumerate(_step_blocks(job)):
+                if header not in step:
+                    continue
+                script = _literal_run_script(step)
+                commands = _run_block_commands(step)
+                for blank in blanks:
+                    with self.subTest(job=job_name, step=index, blank=repr(blank)):
+                        changed = step.replace(header, header + blank + "\n", 1)
+                        expected = blank[8:] + "\n" + script
+                        self.assertEqual(_literal_run_script(changed), expected)
+                        self.assertEqual(_run_block_commands(changed), commands)
+                        lines = changed.split("\n")
+                        start = lines.index("      run: |") + 1
+                        self.assertEqual(
+                            verify._literal_run_script(
+                                lines, start, len(lines), "|", f"{job_name} step {index}"
+                            ),
+                            expected,
+                        )
+
+    def test_blank_lines_cannot_hide_run_commands(self):
+        width = next(
+            step for job in _job_blocks(self.text).values()
+            for step in _step_blocks(job)
+            if _step_name(step) == "Run full-game localization width contract (issue #18)"
+        )
+        commands = _run_block_commands(width)
+        first = f"        {commands[0]}\n"
+        last = f"        {commands[-1]}\n"
+        baseline = verify._parse_workflow_structure_text(self.text)
+        for blank in ("    ", "", " ", "      ", "        ", "        \t", "    \r"):
+            with self.subTest(blank=repr(blank), mutation="whitespace-only"):
+                equivalent = self.text.replace(
+                    width, width.replace(first, first + blank + "\n", 1), 1
+                )
+                self.assertEqual(_errors(equivalent, False), [])
+                self.assertEqual(
+                    verify._parse_workflow_structure_text(equivalent), baseline
+                )
+            with self.subTest(blank=repr(blank), mutation="extra-command"):
+                changed = self.text.replace(
+                    width,
+                    width.replace(last, last + blank + "\n        exit 73\n", 1),
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "lost exact full-game evidence" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+                self.assertNotEqual(
+                    verify._parse_workflow_structure_text(changed), baseline
                 )
 
     def test_execution_context_key_syntax_bypasses_fail_closed(self):

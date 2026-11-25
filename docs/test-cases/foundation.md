@@ -79,6 +79,8 @@ and its fail-closed all-current-feature coverage assertion.
    python3 -m unittest \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_worker_blocks_can_precede_other_job_fields \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_blank_lines_cannot_hide_step_fields \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_literal_run_scripts_preserve_blank_lines \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_blank_lines_cannot_hide_run_commands \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_every_combined_worker_has_a_closed_execution_context \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_execution_context_key_syntax_bypasses_fail_closed \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
@@ -92,7 +94,9 @@ whitespace, line-wrap, `behavior`/`behaviour`, ordering, and level-1
 terminator variations remain valid; the commands report no findings.
 For each Build worker, moving `env` or `steps` as a whole, or swapping the
 runner and timeout fields, retains the same workflow contract and gate
-equivalence. The step sequence itself remains ordered.
+equivalence. The step sequence itself remains ordered. Blank lines in literal
+`run` blocks retain the full script and command sequence, including when a
+blank line has less indentation than the surrounding shell commands.
 
 ### Negative control
 
@@ -106,6 +110,9 @@ Changed runners or timeouts, duplicate keys, additional execution fields,
 unsupported key syntax and altered permissions remain rejected after the fix.
 Blank lines with varying whitespace must not hide an advisory step field or
 turn the full-game localization gate into a success.
+Adding `exit 73` after a shallow blank in the real full-game width script must
+lose exact full-game evidence and change the upstream-port workflow contract.
+Before the script-extraction fix, both parsers silently omit that command.
 
 ### Interactions and save compatibility
 
