@@ -1271,7 +1271,8 @@ class RoleTests(unittest.TestCase):
 
 class CliReviewRuntimeTests(unittest.TestCase):
     def native_runtime(self, root, *, findings=None, both_sides=False, raw_summary=False,
-                       binary_content=None):
+                       binary_content=None, root_session_id="root-session",
+                       reviewer_session_id=None):
         fixture = candidate_fixture(root)
         if binary_content is not None:
             fixture["paths"]["binary"] = "candidate-review-paths/asset.bin"
@@ -1336,15 +1337,18 @@ class CliReviewRuntimeTests(unittest.TestCase):
         dispatch_id = "dispatch-1"
         interaction = "interaction-1"
         reviewer = "reviewer-1"
-        root_session = "root-session"
         def at(second):
             return f"2026-01-01T00:00:{second:02d}Z"
         times = {"dispatch": at(0), "started": at(1), "received": at(2),
                  "commitment": at(3), "view_end": at(5)}
 
         def event(kind, at, agent, data):
-            return (root_session, {"type": kind, "timestamp": at, "agentId": agent,
-                                   "data": data})
+            session_id = root_session_id
+            if (reviewer_session_id is not None and agent == reviewer
+                    and kind not in {"subagent.started", "subagent.completed"}):
+                session_id = reviewer_session_id
+            return (session_id, {"type": kind, "timestamp": at, "agentId": agent,
+                                 "data": data})
 
         events = [
             event("tool.execution_start", at(0), "coordinator", {
@@ -1401,7 +1405,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
             }),
         ))
         runtime = model.CliReviewRuntime(
-            events, dispatch_id=dispatch_id, root_session_id=root_session,
+            events, dispatch_id=dispatch_id, root_session_id=root_session_id,
             candidate_reader=reader, required_reads=targets)
         session = model.ReviewSession(
             "coordinator", "implementer",
@@ -1723,6 +1727,44 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "after logical closure"):
                 session.observe_cli_events((event,))
 
+    def test_reviewer_identity_and_late_events_are_scoped_to_their_sessions(self):
+        with snapshot() as root:
+            owners = model.ReviewOwnership()
+            _, first_runtime, first, _, _, reviewer, _ = self.native_runtime(
+                root, root_session_id="root-session-1",
+                reviewer_session_id="review-session-1")
+            first.owners = owners
+            first.begin(first_runtime, reviewer)
+            first.finish(first_runtime)
+
+            _, second_runtime, second, _, _, second_reviewer, _ = self.native_runtime(
+                root, root_session_id="root-session-2",
+                reviewer_session_id="review-session-2")
+            second.owners = owners
+            second.begin(second_runtime, second_reviewer)
+            second.finish(second_runtime)
+
+            same_session = model.ReviewSession(
+                "coordinator", "implementer", first.scope, first.head,
+                identity=first.identity, owners=owners)
+            with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
+                same_session.begin(first_runtime, reviewer)
+
+            late_event = ("review-session-2", {
+                "type": "assistant.turn_start",
+                "timestamp": "2026-01-01T00:01:00Z",
+                "agentId": second_reviewer,
+                "data": {"turnId": "late-turn"},
+            })
+            first.observe_cli_events((late_event,))
+            self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                second.review_state((), (), pre_review_required=True)
+            self.assertNotIn(
+                ("root-session-1", "dispatch-1", reviewer), owners.invalidated_tasks)
+            self.assertIn(
+                ("root-session-2", "dispatch-1", second_reviewer), owners.invalidated_tasks)
+
     def test_post_closure_invalidation_is_shared_with_existing_reports(self):
         with snapshot() as root:
             _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
@@ -1830,7 +1872,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 session.finish(runtime)
             self.assertIsNone(session.report)
             self.assertEqual(session.local_findings, {})
-            self.assertIn(("dispatch-1", reviewer), session.owners.invalidated_tasks)
+            self.assertIn(
+                ("root-session", "dispatch-1", reviewer), session.owners.invalidated_tasks)
 
 
 class RemainingRoleTests(RoleTests):

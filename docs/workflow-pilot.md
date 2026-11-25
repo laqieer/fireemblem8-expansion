@@ -668,22 +668,25 @@ the exact candidate SHA and complete scope. Missing observations cannot be
 substituted with coordinator-side rereads.
 
 `ReviewOwnership` logically closes the completed reviewer turn after the
-coordinator accepts its evidence. It rejects reuse of that reviewer identity
-or dispatch for admission and checks later observed user, assistant (including
-turn-start), tool and subagent events for post-closure activity or contradictory
-interactions. A violation is retained in the shared ownership index and
-invalidates only its owning `(task, owner)` report; report fields are published
-only after all observations validate. Before that closure snapshot is captured,
-every reviewer activity record in the initial event snapshot must match the
-assigned interaction and dispatch and fall within the task chronology. A
-contradictory message or additional dispatch in that snapshot rejects
-admission instead of being absorbed as previously admitted activity. Logical
-closure is separate from technical task termination. A later event invalidates
-admission when observed; the record does not claim that no unobserved event can
-occur. Exact reviewer
-identity, candidate binding, complete read coverage and original chronology
-remain mandatory. The reviewer must be distinct from implementation and
-coordination; those latter roles may be the same actual owner for
+coordinator accepts its evidence. Reviewer identity is scoped by the
+coordinator's root CLI session and reviewer agent ID; dispatch is scoped by
+root session and tool-call ID. It rejects reuse of either identity within that
+session. Admitted activity records retain their event-session association, so
+later user, assistant (including turn-start), tool and subagent events
+invalidate only the report they belong to; identical agent IDs in unrelated
+root sessions cannot invalidate or block one another. A violation is retained
+in the shared ownership index and invalidates only its owning
+`(root session, task, owner)` report; report fields are published only after
+all observations validate. Before that closure snapshot is captured, every
+reviewer activity record in the initial event snapshot must match the assigned
+interaction and dispatch and fall within the task chronology. A contradictory
+message or additional dispatch in that snapshot rejects admission instead of
+being absorbed as previously admitted activity. Logical closure is separate
+from technical task termination. A later event invalidates admission when
+observed; the record does not claim that no unobserved event can occur. Exact
+reviewer identity, candidate binding, complete read coverage and original
+chronology remain mandatory. The reviewer must be distinct from implementation
+and coordination; those latter roles may be the same actual owner for
 coordinator-authored work.
 
 Requested duration (1–3,600 seconds), file count (1–200, default 200) and
@@ -790,8 +793,10 @@ a second active reviewer on the same PR; another PR does not permit duplicate
 active review of the same candidate head. Only work with both a different
 repository/PR identity and a different head remains independent. Completion
 releases those active-review exclusions, but the coordinator permanently
-rejects reuse of the completed reviewer identity or task dispatch for review
-admission.
+rejects reuse of the completed `(root session, reviewer)` identity or
+`(root session, task dispatch)` for review admission. Event invalidation uses
+the observed event-session plus reviewer identity, preventing identical agent
+IDs in unrelated sessions from cross-attributing activity.
 `begin` requires `runtime.start` to return a nonblank string task identity,
 preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
 reservation before any lease or local report can be created; a later valid

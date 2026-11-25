@@ -2199,6 +2199,43 @@ def _session_probe(probe: str) -> dict:
         check(rejects(lambda: session.read_action("push", lambda: calls.append("push"))),
               "reviewer mutation dispatched")
         check(len(calls) == 1, "denied action reached runtime")
+        owners = module.ReviewOwnership()
+        first = module.ReviewSession(
+            "coordinator", "implementer", frozenset({"case"}), b,
+            identity=("owner/repo", 1, a), owners=owners)
+        first_runtime = types.SimpleNamespace(
+            root_session_id="root-a", start=lambda **kw: "dispatch-1")
+        first.begin(first_runtime, "reviewer")
+        owners.finish(first, "dispatch-1", "reviewer", "interaction-a",
+                      "2026-01-01T00:00:01Z", "root-a",
+                      admitted_event_sessions={"root-a", "review-a"})
+        same_root_calls = []
+        reused = module.ReviewSession(
+            "coordinator", "implementer", frozenset({"case"}), b,
+            identity=("owner/repo", 1, a), owners=owners)
+        same_root = types.SimpleNamespace(
+            root_session_id="root-a",
+            start=lambda **kw: same_root_calls.append(kw) or "dispatch-2")
+        check(rejects(lambda: reused.begin(same_root, "reviewer")),
+              "reviewer identity was reused in its root session")
+        check(not same_root_calls, "closed reviewer was dispatched again")
+        second = module.ReviewSession(
+            "coordinator", "implementer", frozenset({"case"}), b,
+            identity=("owner/repo", 2, a), owners=owners)
+        second_runtime = types.SimpleNamespace(
+            root_session_id="root-b", start=lambda **kw: "dispatch-1")
+        second.begin(second_runtime, "reviewer")
+        owners.finish(second, "dispatch-1", "reviewer", "interaction-b",
+                      "2026-01-01T00:00:01Z", "root-b",
+                      admitted_event_sessions={"root-b", "review-b"})
+        owners.validate_closed_events((("review-b", {
+            "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:02Z",
+            "agentId": "reviewer", "data": {"turnId": "late"},
+        }),))
+        check(("root-a", "dispatch-1", "reviewer") not in owners.invalidated_tasks,
+              "activity from another root invalidated the first report")
+        check(("root-b", "dispatch-1", "reviewer") in owners.invalidated_tasks,
+              "activity did not invalidate its owning report")
     else:
         raw = {"schema_version": 1, "repository": "owner/repo", "pull_request": 1,
                "base_sha": a, "candidate_sha": b,

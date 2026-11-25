@@ -1243,12 +1243,14 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    trust model: it does not claim technically enforced permissions or task
    termination.
    The coordinator then logically closes the completed reviewer identity and
-   dispatch. A second admission using that reviewer must reject before another
-   task starts. Feed a later assistant turn-start event for that reviewer from
-   another session and require the shared ownership index to invalidate only
-   the earlier report. Include that late event in a second reviewer's aggregate
-   snapshot; the second report must still publish and remain ready while the
-   affected report fails readiness. Also append a previously unseen in-turn
+   dispatch, scoped to the root CLI session. A second admission reusing the
+   same reviewer and dispatch in that root session must reject before another
+   task starts. Repeat across two distinct root CLI sessions that deliberately
+   reuse the same reviewer and dispatch identifiers: both independent tasks
+   must admit, and a late assistant turn-start in the second reviewer's event
+   session must invalidate only the second report. Include that late event in
+   the first reviewer's aggregate snapshot; the first report must remain ready.
+   Also append a previously unseen in-turn
    `tool.execution_start` for `bash` with the original interaction and a
    timestamp equal to completion; it must invalidate the closed report even
    though ordinary timestamp and interaction checks would pass. Confirm that
