@@ -1107,6 +1107,12 @@ class CliReviewRuntime:
             child, owner=self.reviewer, dispatch=self.dispatch_id,
             interaction=self.interaction, started_at=self.started_at,
             completed_at=completed_at)
+        turn_ids = {
+            event.get("data", {}).get("turnId")
+            for _, event in child
+            if event.get("data", {}).get("interactionId") == self.interaction
+            and isinstance(event.get("data", {}).get("turnId"), str)
+        }
         turn_events = [
             event for _, event in child
             if (event.get("data", {}).get("interactionId") == self.interaction
