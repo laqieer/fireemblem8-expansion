@@ -1245,8 +1245,14 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    The coordinator then logically closes the completed reviewer identity and
    dispatch. A second admission using that reviewer must reject before another
    task starts. Feed a later assistant turn-start event for that reviewer from
-   another session and require the shared ownership index to invalidate the
-   earlier report. Confirm that invalid observations never publish a report.
+   another session and require the shared ownership index to invalidate only
+   the earlier report. Include that late event in a second reviewer's aggregate
+   snapshot; the second report must still publish and remain ready while the
+   affected report fails readiness. Also append a previously unseen in-turn
+   `tool.execution_start` for `bash` with the original interaction and a
+   timestamp equal to completion; it must invalidate the closed report even
+   though ordinary timestamp and interaction checks would pass. Confirm that
+   invalid observations never publish a report.
    A completed-turn event is not evidence that the CLI terminated the agent.
    In source-backed event tests, reject missing/mismatched dispatch or
    assignment, wrong candidate/scope, missing or late commitment, an observed
@@ -1255,7 +1261,8 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    wrong blob bytes, noncanonical base64 or decoded binary mismatch, omitted
    required paths/sides, unavailable additional sides, unchanged-path reads,
    malformed report/finding,
-   duplicate task/reviewer or closed-dispatch reuse, post-closure activity, missing or failed
+   duplicate task/reviewer or closed-dispatch reuse, late activity including
+   same-interaction events at the completion timestamp, missing or failed
    dispatch receipts, and invalid chronology. Require actual parsed report
    findings, candidate binding,
    immutable summaries and local finding triage; a coordinator-side read alone

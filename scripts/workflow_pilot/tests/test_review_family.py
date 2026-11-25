@@ -1728,15 +1728,46 @@ class CliReviewRuntimeTests(unittest.TestCase):
             _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
             session.begin(runtime, reviewer)
             session.finish(runtime)
-            other = model.ReviewSession(
-                "coordinator", "different-implementer", session.scope, session.head,
-                identity=session.identity, owners=session.owners)
             late_turn = ("root-session", {
                 "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:20Z",
                 "agentId": reviewer, "data": {"turnId": "turn-1"},
             })
-            with self.assertRaisesRegex(model.ReviewError, "after logical closure"):
-                other.observe_cli_events((late_turn,))
+            other = model.ReviewSession(
+                "coordinator", "different-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            other_runtime = Runtime(session.head, session.scope)
+            other_reads = tuple(
+                target["summary"] for target in runtime.required_reads.values())
+            other_runtime.result.files = len(other_reads)
+            other_runtime.result.candidate_reads = other_reads
+            other_runtime.result.cli_events = session.latest_cli_events + (late_turn,)
+            other.begin(other_runtime, "reviewer-b")
+            other.finish(other_runtime)
+            self.assertIsNotNone(other.report)
+            self.assertTrue(other.review_state((), (), pre_review_required=True)[0])
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
+    def test_late_in_turn_tool_event_at_completion_invalidates_report(self):
+        with snapshot() as root:
+            _, runtime, session, _, times, reviewer, interaction = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            late_bash = ("root-session", {
+                "type": "tool.execution_start",
+                "timestamp": times["completed"],
+                "agentId": reviewer,
+                "data": {
+                    "interactionId": interaction,
+                    "turnId": "turn-1",
+                    "toolCallId": "late-bash",
+                    "toolName": "bash",
+                    "arguments": {"command": "not permitted"},
+                },
+            })
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.observe_cli_events((late_bash,))
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 session.review_state((), (), pre_review_required=True)
 

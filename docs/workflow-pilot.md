@@ -811,6 +811,16 @@ wrong-task or contradictory dispositions cannot establish eligibility, even
 after a later candidate passes its probes. This is coordinator-owned triage,
 not authenticated provenance from a JSON author.
 
+At logical closure, the shared ownership index captures the exact review
+activity records admitted for that task. Later aggregate snapshots compare
+complete event records with that closure snapshot. Previously unseen review
+activity invalidates only its owning `(task, owner)`, including an in-turn
+event with the same interaction and a timestamp equal to completion; unrelated
+sessions carrying the event do not fail. Each session checks its own task's
+invalidation after lease retirement, so another review can complete while the
+affected report loses eligibility. An unchanged previously admitted event is
+not treated as late activity.
+
 For diagnostic planning/checking, use the closed launcher mode:
 
 ```bash

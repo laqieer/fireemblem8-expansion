@@ -754,12 +754,25 @@ class ReviewLease:
     outcome: str | None = None
 
 
+def _cli_event_key(record):
+    require(isinstance(record, (tuple, list)) and len(record) == 2,
+            "invalid CLI event record")
+    session, event = record
+    require(isinstance(session, str) and isinstance(event, dict),
+            "invalid CLI event record")
+    try:
+        return json.dumps(
+            (session, event), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as error:
+        raise ReviewError("CLI event record is not serializable") from error
+
+
 class ReviewOwnership:
     """Small in-process index owned/shared by the existing coordinator."""
 
     def __init__(self):
         self.records = {}
-        self.closed_tasks: dict[tuple[str, str], tuple[str, str, str]] = {}
+        self.closed_tasks: dict[tuple[str, str], tuple[str, str, str, frozenset[str]]] = {}
         self.closed_owners: dict[str, tuple[str, str]] = {}
         self.closed_dispatches: set[tuple[str, str]] = set()
         self.invalidated_tasks: dict[tuple[str, str], str] = {}
@@ -776,7 +789,8 @@ class ReviewOwnership:
         self.records[id(session)] = (
             session.identity, session.head, session.scope, True, session.owner)
 
-    def finish(self, session, task, owner, interaction, completed_at, dispatch_namespace=None):
+    def finish(self, session, task, owner, interaction, completed_at,
+               dispatch_namespace=None, events=()):
         key = task, owner
         dispatch = ((dispatch_namespace, task)
                     if dispatch_namespace is not None else None)
@@ -787,50 +801,58 @@ class ReviewOwnership:
         identifier(owner, NAME_PATTERN, "reviewer identity")
         identifier(interaction, NAME_PATTERN, "review interaction")
         timestamp(completed_at)
+        require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
         identity, head, scope, _, assigned_owner = self.records[id(session)]
         require(assigned_owner == owner, "review owner changed before logical closure")
         self.records[id(session)] = identity, head, scope, False, assigned_owner
-        self.closed_tasks[key] = owner, interaction, completed_at
+        admitted_events = frozenset(
+            _cli_event_key(record) for record in events
+            if isinstance(record, (tuple, list)) and len(record) == 2
+            and isinstance(record[1], dict) and record[1].get("agentId") == owner
+            and is_review_activity(record[1]))
+        self.closed_tasks[key] = owner, interaction, completed_at, admitted_events
         self.closed_owners[owner] = key
         if dispatch is not None:
             self.closed_dispatches.add(dispatch)
 
     def validate_closed_events(self, events):
-        violations = []
-        for _, event in events:
+        require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
+        for record in events:
+            if not isinstance(record, (tuple, list)) or len(record) != 2:
+                continue
+            _, event = record
+            if not isinstance(event, dict):
+                continue
             if not is_review_activity(event):
                 continue
             agent = event.get("agentId")
-            task = self.closed_owners.get(agent)
-            if task is None:
+            task_key = self.closed_owners.get(agent)
+            if task_key is None:
                 continue
-            _, closed_interaction, completed_at = self.closed_tasks[task]
+            _, closed_interaction, completed_at, admitted_events = self.closed_tasks[task_key]
+            try:
+                event_key = _cli_event_key(record)
+            except ReviewError:
+                self.invalidated_tasks.setdefault(
+                    task_key, "review task emitted an unrecognized event record")
+                continue
+            if event_key in admitted_events:
+                continue
             try:
                 event_time = timestamp(event.get("timestamp"))
             except ReviewError:
                 message = "review task emitted an event with invalid chronology"
-                self.invalidated_tasks.setdefault(task, message)
-                violations.append(message)
-                continue
-            if event_time > timestamp(completed_at):
-                message = "review task emitted an event after logical closure"
-                self.invalidated_tasks.setdefault(task, message)
-                violations.append(message)
-                continue
-            data = event.get("data")
-            if not isinstance(data, dict):
-                message = "review task emitted an event with invalid data"
-                self.invalidated_tasks.setdefault(task, message)
-                violations.append(message)
-                continue
-            interaction = data.get("interactionId")
-            if interaction is not None:
-                if interaction != closed_interaction:
+            else:
+                data = event.get("data")
+                if not isinstance(data, dict):
+                    message = "review task emitted an event with invalid data"
+                elif event_time > timestamp(completed_at):
+                    message = "review task emitted an event after logical closure"
+                elif data.get("interactionId") not in (None, closed_interaction):
                     message = "review task emitted a contradictory interaction"
-                    self.invalidated_tasks.setdefault(task, message)
-                    violations.append(message)
-        if violations:
-            raise ReviewError(violations[0])
+                else:
+                    message = "new review activity was observed after logical closure"
+            self.invalidated_tasks.setdefault(task_key, message)
 
     def validate_session(self, session):
         lease = session.lease
@@ -1393,7 +1415,7 @@ class ReviewSession:
                 and type(result.completed) is bool, "wrong or stale runtime task observation")
         return result
 
-    def _retire(self, result, outcome):
+    def _retire(self, result, outcome, *, events=()):
         require(result.completed is True, "review turn is incomplete")
         require(timestamp(getattr(result, "started_at", None))
                 <= timestamp(getattr(result, "completed_at", None)),
@@ -1404,7 +1426,7 @@ class ReviewSession:
             self.owners.finish(
                 self, self.lease.task, self.lease.owner,
                     getattr(result, "interaction_id", ""), result.completed_at,
-                    self.dispatch_namespace)
+                    self.dispatch_namespace, events)
         self.lease.finished = True
         self.lease.outcome = outcome
         return outcome
@@ -1519,8 +1541,11 @@ class ReviewSession:
             None if binding is None else binding.resolved_root,
             None if binding is None else binding.base,
             tuple(external_reads[key] for key in sorted(external_reads)))
-        require(self._retire(result, "completed") == "completed", "review exceeded duration bound")
-        self.latest_cli_events = tuple(getattr(result, "cli_events", ()))
+        cli_events = tuple(getattr(result, "cli_events", ()))
+        admitted_events = runtime.events if isinstance(runtime, CliReviewRuntime) else cli_events
+        require(self._retire(result, "completed", events=admitted_events) == "completed",
+                "review exceeded duration bound")
+        self.latest_cli_events = cli_events
         if self.owners is not None:
             self.owners.validate_closed_events(self.latest_cli_events)
             self.owners.validate_session(self)
@@ -1533,6 +1558,7 @@ class ReviewSession:
         self.latest_cli_events = self.latest_cli_events + tuple(events)
         if self.owners is not None:
             self.owners.validate_closed_events(self.latest_cli_events)
+            self.owners.validate_session(self)
 
     def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
         require(self.report is not None and finding_id in self.local_findings
