@@ -1298,7 +1298,9 @@ class CliReviewRuntimeTests(unittest.TestCase):
             f"Review scope: {', '.join(sorted(scope))}. "
             f"Assigned candidate reads (JSON): {assigned_reads}. "
             "Each entry maps a candidate path and side to its exact supplied file path. "
-            "Use complete direct file reads of every mapped file. Return only JSON with keys "
+            "Use complete direct file reads of every mapped file; for a file too large for "
+            "the default view limit, request a full read with forceReadLargeFiles and do not "
+            "use ranges. Return only JSON with keys "
             "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
             "scope to the exact assigned scope array, and findings to an array of objects "
             "with keys id, subject, family, member, source_path, detail. Use an empty "
@@ -1332,10 +1334,11 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 "agentType": "code-review",
             }),
             event("user.message", at(2), reviewer, {
-                "interactionId": interaction, "transformedContent": instructions,
+                "interactionId": interaction, "turnId": "turn-0",
+                "transformedContent": instructions,
             }),
             event("assistant.message", at(3), reviewer, {
-                "interactionId": interaction, "phase": "commentary",
+                "interactionId": interaction, "turnId": "turn-0", "phase": "commentary",
                 "content": model.CliReviewRuntime.COMMITMENT,
             }),
         ]
@@ -1345,11 +1348,12 @@ class CliReviewRuntimeTests(unittest.TestCase):
             call_id = f"view-{index + 1}"
             events.extend((
                 event("tool.execution_start", start_at, reviewer, {
-                    "interactionId": interaction, "toolCallId": call_id,
+                    "turnId": "turn-0", "toolCallId": call_id,
                     "toolName": "view", "arguments": {"path": target["tool_path"]},
                 }),
                 event("tool.execution_complete", end_at, reviewer, {
-                    "interactionId": interaction, "toolCallId": call_id, "success": True,
+                    "interactionId": interaction, "turnId": "turn-0",
+                    "toolCallId": call_id, "success": True,
                     "result": {"content": target["content"].decode("utf-8")},
                 }),
             ))
@@ -1357,10 +1361,11 @@ class CliReviewRuntimeTests(unittest.TestCase):
         times["view_end"] = at(second - 1)
         times["report"] = at(second)
         times["completed"] = at(second + 1)
-        times["dispatch_end"] = at(second + 2)
+        times["dispatch_end"] = at(3)
         events.extend((
             event("assistant.message", times["report"], reviewer, {
-                "interactionId": interaction, "phase": "final_answer", "content": report,
+                "interactionId": interaction, "turnId": "turn-1",
+                "phase": "final_answer", "content": report,
             }),
             event("subagent.completed", times["completed"], reviewer, {
                 "toolCallId": dispatch_id,
@@ -1390,16 +1395,172 @@ class CliReviewRuntimeTests(unittest.TestCase):
         "source_path": "candidate-review-paths/modify.txt",
         "detail": "The candidate path has an observable contract gap.",
             }
-            fixture, runtime, session, events, _, reviewer, _ = self.native_runtime(
+            fixture, runtime, session, events, times, reviewer, _ = self.native_runtime(
         root, findings=[finding])
             session.begin(runtime, reviewer)
             report = session.finish(runtime)
+            self.assertLess(times["dispatch_end"], times["completed"])
             self.assertEqual(report.head, fixture["head"])
             self.assertIn(finding["source_path"],
                           {item.path for item in report.candidate_reads})
             self.assertEqual(report.findings[0].detail, finding["detail"])
             self.assertTrue(report.logical_closed)
             self.assertFalse(any(event.get("type") == "subagent.selected" for _, event in events))
+
+    def test_missing_or_failed_dispatch_receipt_rejects_completed_reviewer_turn(self):
+        for case in ("missing", "failed"):
+            with self.subTest(case=case), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                if case == "missing":
+                    events[:] = [
+                        event for event in events
+                        if not (event[0] == "root-session"
+                                and event[1].get("type") == "tool.execution_complete"
+                                and event[1].get("data", {}).get("toolCallId") == "dispatch-1")
+                    ]
+                else:
+                    index = next(
+                        index for index, (_, event) in enumerate(events)
+                        if event.get("type") == "tool.execution_complete"
+                        and event.get("data", {}).get("toolCallId") == "dispatch-1")
+                    session_id, event = events[index]
+                    events[index] = (session_id, {
+                        **event, "data": {**event["data"], "success": False},
+                    })
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                with self.assertRaisesRegex(model.ReviewError, "dispatch completion"):
+                    session.finish(runtime)
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_invalid_completed_review_can_be_retired_without_admission(self):
+        mutations = (
+            ("missing-commitment", lambda events: events.__setitem__(
+                3, (events[3][0], {**events[3][1], "data": {
+                    **events[3][1]["data"], "content": "I will read files.",
+                }}))),
+            ("prohibited-operation", lambda events: events.insert(
+                4, (events[4][0], {**events[4][1], "data": {
+                    **events[4][1]["data"], "toolName": "bash",
+                }}))),
+            ("malformed-report", lambda events: next(
+                events.__setitem__(index, (session_id, {
+                    **event, "data": {**event["data"], "content": "not JSON"},
+                }))
+                for index, (session_id, event) in enumerate(events)
+                if event.get("type") == "assistant.message"
+                and event.get("data", {}).get("phase") == "final_answer")),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                mutate(events)
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+                fresh = model.ReviewSession(
+                    "coordinator", "another-implementer", session.scope, session.head,
+                    identity=session.identity, owners=session.owners)
+                next_runtime = Runtime(session.head, session.scope)
+                next_runtime.result.task = "task-next"
+                fresh.begin(next_runtime, "reviewer-next")
+
+    def test_missing_or_contradictory_tool_interaction_rejects_admission(self):
+        for case in ("missing-turn", "contradictory"):
+            with self.subTest(case=case), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                index = next(
+                    index for index, (_, event) in enumerate(events)
+                    if event.get("type") == "tool.execution_start"
+                    and event.get("data", {}).get("turnId") == "turn-0")
+                session_id, event = events[index]
+                data = dict(event["data"])
+                if case == "missing-turn":
+                    data.pop("turnId")
+                else:
+                    data["interactionId"] = "another-interaction"
+                events[index] = session_id, {**event, "data": data}
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                with self.assertRaisesRegex(model.ReviewError, "interaction"):
+                    session.finish(runtime)
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_closed_dispatch_cannot_be_reused_by_another_reviewer(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            replacement = [
+                (session_id, {**event, "agentId": "reviewer-2"}
+                 if event.get("agentId") == reviewer else event)
+                for session_id, event in events
+            ]
+            fresh_runtime = model.CliReviewRuntime(
+                replacement, dispatch_id="dispatch-1", root_session_id="root-session",
+                candidate_reader=runtime.candidate_reader,
+                required_reads=runtime.required_reads)
+            fresh = model.ReviewSession(
+                "coordinator", "another-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners)
+            with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
+                fresh.begin(fresh_runtime, "reviewer-2")
+
+    def test_duplicate_candidate_read_and_overlong_turn_are_rejected(self):
+        for case in ("duplicate-read", "overlong"):
+            with self.subTest(case=case), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                if case == "duplicate-read":
+                    starts = [index for index, (_, event) in enumerate(events)
+                              if event.get("type") == "tool.execution_start"
+                              and event.get("data", {}).get("toolName") == "view"]
+                    first_path = events[starts[0]][1]["data"]["arguments"]["path"]
+                    second_index = starts[1]
+                    session_id, event = events[second_index]
+                    events[second_index] = session_id, {
+                        **event, "data": {**event["data"], "arguments": {"path": first_path}},
+                    }
+                    runtime.events = tuple(events)
+                session.begin(runtime, reviewer, duration=5 if case == "overlong" else 1200)
+                with self.assertRaisesRegex(model.ReviewError, "duplicate|duration"):
+                    session.finish(runtime)
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_deleted_path_finding_can_bind_to_observed_base_side(self):
+        with snapshot() as root:
+            fixture, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            finding = {
+                "id": "finding-deletion",
+                "subject": "TC-WORKFLOW-REVIEW-FAMILY-001/review-session",
+                "family": "wire", "member": "validators:review-session",
+                "source_path": fixture["paths"]["deleted"],
+                "detail": "Deleting this path removes an observable contract.",
+            }
+            report_event = next(
+                event for _, event in runtime.events
+                if event.get("type") == "assistant.message"
+                and event.get("data", {}).get("phase") == "final_answer")
+            report = json.loads(report_event["data"]["content"])
+            report["findings"] = [finding]
+            updated = [
+                (session_id, {**event, "data": {
+                    **event["data"], "content": json.dumps(report),
+                }} if event is report_event else event)
+                for session_id, event in runtime.events
+            ]
+            runtime.events = tuple(updated)
+            session.begin(runtime, reviewer)
+            report = session.finish(runtime)
+            self.assertEqual(report.findings[0].source_path, fixture["paths"]["deleted"])
+            self.assertIn(
+                (fixture["paths"]["deleted"], "base"),
+                {(item.path, item.side) for item in report.candidate_reads})
 
     def test_missing_commitment_prohibited_action_wrong_blob_and_bad_chronology_fail(self):
         mutations = (

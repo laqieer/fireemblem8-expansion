@@ -1234,7 +1234,10 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    reviewer identity, original received instructions, and commitment before
    the first tool call, complete `view` start/completion events, successful
    results equal to each required immutable Git blob, exact final report, and
-   completed-turn event chronology before any remote review. Do not substitute
+   completed-turn event chronology before any remote review. A successful
+   task-call completion is only a dispatch receipt and may precede the
+   reviewer's `subagent.completed` event; require both, and use the latter as
+   the turn-completion boundary. Do not substitute
    coordinator rereads for reviewer observations. This is the owner-approved instruction-based
    trust model: it does not claim technically enforced permissions or task
    termination.
@@ -1245,10 +1248,12 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    terminated the agent.
    In source-backed event tests, reject missing/mismatched dispatch or
    assignment, wrong candidate/scope, missing or late commitment, an observed
-   non-`view` operation, failed/partial/unassigned/duplicate file reads,
+   non-`view` operation, missing or contradictory tool interaction identity,
+   failed/partial/unassigned/duplicate file reads,
    wrong blob bytes, omitted required paths/sides, malformed report/finding,
-   duplicate task/reviewer reuse, post-closure activity, and invalid
-   chronology. Require actual parsed report findings, candidate binding,
+   duplicate task/reviewer or closed-dispatch reuse, post-closure activity, missing or failed
+   dispatch receipts, and invalid chronology. Require actual parsed report
+   findings, candidate binding,
    immutable summaries and local finding triage; a coordinator-side read alone
    cannot establish coverage. Bound duration, file and finding counts with
    strict integers and exercise their negative controls. Check that overlap

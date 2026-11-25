@@ -632,10 +632,13 @@ another active reviewer for the same repository/PR or the same candidate head,
 regardless of scope, before another task can start.
 
 `ReviewSession.begin` binds the exact head, scope, reviewer identity and
-instructions to the existing `task` tool dispatch. After the completed-turn
-notification, `finish` verifies the original dispatch, the matching
-`subagent.started` and reviewer instruction message, and the task's completion
-events. It returns immediately and does not poll. This is the owner-approved
+instructions to the existing `task` tool dispatch. `finish` verifies the
+successful task-call completion as a dispatch receipt, and the matching
+`subagent.started` and reviewer instruction message. That receipt may arrive
+before the reviewer finishes: only the reviewer's `subagent.completed` event
+proves its turn is complete. After that completed-turn notification,
+`finish` validates the reviewer's observations and report. It returns
+immediately and does not poll. This is the owner-approved
 instruction-based trust model: the reviewer must state the exact read-only
 commitment before any tool operation. This does **not** claim that the CLI has
 technically terminated the reviewer or enforced read-only permissions.
@@ -648,8 +651,12 @@ candidate path and side must be present. The assigned-read JSON maps each
 candidate path and side to the exact supplied file path the reviewer must read,
 including materialized base-side content. Any observed operation other than a
 direct full-file `view`, a failed or partial read, an unassigned path, missing
-completion, or malformed report rejects admission. These are checks of actual
-observations, not dispatch-level permission controls. Findings are parsed from
+dispatch receipt or reviewer completion, or malformed report rejects
+admission. Every reviewer tool event must bind to the assigned interaction;
+when a CLI tool-start event omits `interactionId`, its `turnId` must match a
+turn observed within that interaction. Missing or contradictory identities
+reject admission. These are checks of actual observations, not dispatch-level
+permission controls. Findings are parsed from
 the original report, joined to the assigned subject and sibling family, and
 bound to a source path the reviewer actually read. The final report must bind
 the exact candidate SHA and complete scope. Missing observations cannot be
