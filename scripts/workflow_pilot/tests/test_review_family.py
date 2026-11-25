@@ -1881,6 +1881,92 @@ class CliReviewRuntimeTests(unittest.TestCase):
                         invalid.begin(invalid_runtime, reviewer)
                     self.assertIsNone(invalid.report)
 
+    def test_finish_and_abort_reject_another_root_runtime(self):
+        for operation in ("finish", "abort"):
+            with self.subTest(operation=operation), snapshot() as root:
+                fixture, first_runtime, first, events, _, reviewer, _ = self.native_runtime(
+                    root, root_session_id="root-A", reviewer_session_id="reviewer-A")
+                other_events = []
+                for event_session, event in events:
+                    event = copy.deepcopy(event)
+                    if event.get("type") == "user.message":
+                        event["data"]["source"] = "agent-root-B"
+                    other_events.append(({
+                        "root-A": "root-B", "reviewer-A": "reviewer-B",
+                    }[event_session], event))
+                first_runtime.events = tuple(events + other_events)
+                second_runtime = model.CliReviewRuntime(
+                    first_runtime.events, dispatch_id=first_runtime.dispatch_id,
+                    root_session_id="root-B", candidate_reader=first_runtime.candidate_reader,
+                    required_reads=first_runtime.required_reads)
+                second = model.ReviewSession(
+                    "coordinator", "implementer", first.scope, fixture["head"],
+                    identity=("owner/repo", 2, fixture["base"]),
+                    owners=model.ReviewOwnership(),
+                    readers={"read-candidate": first_runtime.candidate_reader})
+                first.begin(first_runtime, reviewer)
+                second.begin(second_runtime, reviewer)
+                with self.assertRaisesRegex(model.ReviewError, "root.*session"):
+                    getattr(first, operation)(second_runtime)
+                self.assertFalse(first.lease.finished)
+                self.assertIsNone(first.report)
+                first.finish(first_runtime)
+                second.finish(second_runtime)
+                self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+                self.assertTrue(second.review_state((), (), pre_review_required=True)[0])
+
+    def test_failed_terminal_read_propagates_shared_activity_and_allows_abort(self):
+        with snapshot() as root:
+            _, first_runtime, first, first_events, _, first_reviewer, _ = self.native_runtime(
+                root, root_session_id="root-A", reviewer_session_id="reviewer-A")
+            first.begin(first_runtime, first_reviewer)
+            first.finish(first_runtime)
+            self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+            _, second_runtime, second, second_events, _, second_reviewer, _ = self.native_runtime(
+                root, root_session_id="root-B", reviewer_session_id="reviewer-B")
+            second.owners = first.owners
+            second.identity = ("owner/repo", 2, second.identity[2])
+
+            def late(event_session, reviewer):
+                return (event_session, {
+                    "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                    "agentId": reviewer, "data": {"turnId": "late-turn"},
+                })
+
+            second_runtime.events = tuple(first_events + second_events + [
+                late("reviewer-A", first_reviewer), late("reviewer-B", second_reviewer),
+            ])
+            second.begin(second_runtime, second_reviewer)
+            with self.assertRaises(model.ReviewError):
+                second.finish(second_runtime)
+            self.assertIsNone(second.report)
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                first.review_state((), (), pre_review_required=True)
+            second.abort(second_runtime)
+            self.assertEqual(second.lease.outcome, "aborted")
+            self.assertIsNone(second.report)
+            replacement = model.ReviewSession(
+                "coordinator", "another-implementer", second.scope, second.head,
+                identity=second.identity, owners=second.owners)
+            replacement.begin(Runtime(second.head, second.scope), "reviewer-next")
+
+    def test_abort_without_completed_turn_keeps_ownership(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            runtime.events = tuple(
+                (event_session, event) for event_session, event in events
+                if event.get("type") != "subagent.completed")
+            session.begin(runtime, reviewer)
+            with self.assertRaisesRegex(model.ReviewError, "completion event is missing"):
+                session.abort(runtime)
+            self.assertFalse(session.lease.finished)
+            self.assertIsNone(session.report)
+            replacement = model.ReviewSession(
+                "coordinator", "another-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners)
+            with self.assertRaisesRegex(model.ReviewError, "overlapping"):
+                replacement.begin(Runtime(session.head, session.scope), "reviewer-next")
+
     def test_post_closure_invalidation_is_shared_with_existing_reports(self):
         with snapshot() as root:
             _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)

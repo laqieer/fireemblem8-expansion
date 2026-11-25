@@ -1152,7 +1152,6 @@ class CliReviewRuntime:
     def read_terminal(self, task):
         require(task == self.dispatch_id and self.reviewer is not None,
                 "review task identity differs from its dispatch")
-        child = self._review_activity_records()
         completion = [event for session, event in self.events
                       if session == self.root_session_id
                       and event.get("agentId") == self.reviewer
@@ -1164,10 +1163,6 @@ class CliReviewRuntime:
         require(self.received_at is not None
                 and self.received_at <= timestamp(completed_at),
                 "reviewer instructions fall outside the assigned task interval")
-        later = [(session, event) for session, event in child
-                 if is_review_activity(event)
-                 and timestamp(event.get("timestamp")) > timestamp(completed_at)]
-        require(not later, "review task continued after its accepted completion event")
         return SimpleNamespace(
             task=self.dispatch_id, owner=self.reviewer, role="code-review",
             head=self.assigned_candidate, subjects=self.assigned_subjects,
@@ -1543,6 +1538,10 @@ class ReviewSession:
     def _read_task(self, runtime, *, terminal=False):
         lease = self.lease
         require(lease is not None and not lease.finished, "no active review task")
+        require(getattr(runtime, "root_session_id", None) == self.dispatch_namespace,
+                "review runtime root session differs from the assigned task")
+        if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
+            self.owners.validate_closed_events(runtime.events)
         reader = getattr(runtime, "read_terminal", None) if terminal else None
         result = reader(lease.task) if callable(reader) else runtime.read(lease.task)
         require(all(hasattr(result, field) for field in (

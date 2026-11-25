@@ -2208,7 +2208,7 @@ def _session_probe(probe: str) -> dict:
     def completed_session(owners, pull_request, owner, task, root_session, *,
                           interaction="interaction-1",
                           completed_at="2026-01-01T00:00:05Z",
-                          extra_events=()):
+                          extra_events=(), finish=True):
         scope = frozenset({"case"})
         reader = CandidateReader()
         started_at = "2026-01-01T00:00:01Z"
@@ -2248,8 +2248,10 @@ def _session_probe(probe: str) -> dict:
             identity=("owner/repo", pull_request, a), owners=owners,
             readers={"read-candidate": reader})
         session.begin(runtime, owner)
-        session.finish(runtime)
-        return session
+        if finish:
+            session.finish(runtime)
+            return session
+        return session, runtime
 
     state = module.RoundState()
     if probe in {"lifecycle:preservation", "lifecycle:terminals", "wire:replay"}:
@@ -2267,6 +2269,55 @@ def _session_probe(probe: str) -> dict:
             state.dispose(module.Disposition("3", a, "coordinator", "redesign", "new model"),
                           "coordinator")
             check(state.hold is None, "valid architecture disposition did not resume")
+            owners = module.ReviewOwnership()
+            first = completed_session(owners, 1, "reviewer-a", "dispatch-a", "root-a")
+            second, _ = completed_session(
+                owners, 2, "reviewer-b", "dispatch-b", "root-b", finish=False)
+            late_a = ("root-a-reviewer", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                "agentId": "reviewer-a", "data": {"turnId": "late"},
+            })
+            late_b = ("root-b-reviewer", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                "agentId": "reviewer-b", "data": {"turnId": "late"},
+            })
+            native = object.__new__(module.CliReviewRuntime)
+            native.root_session_id = "root-b"
+            native.reviewer_session_id = "root-b-reviewer"
+            native.reviewer = "reviewer-b"
+            native.dispatch_id = "dispatch-b"
+            native.interaction = "interaction-1"
+            native.started_at = "2026-01-01T00:00:01Z"
+            native.dispatch_started_at = "2026-01-01T00:00:00Z"
+            native.received_at = module.timestamp("2026-01-01T00:00:02Z")
+            native.assigned_candidate = b
+            native.assigned_subjects = tuple(sorted(second.scope))
+            native.events = first.latest_cli_events + (
+                ("root-b", {
+                    "type": "subagent.started", "timestamp": native.started_at,
+                    "agentId": native.reviewer,
+                    "data": {"toolCallId": native.dispatch_id,
+                             "interactionId": native.interaction},
+                }),
+                ("root-b", {
+                    "type": "subagent.completed", "timestamp": "2026-01-01T00:00:05Z",
+                    "agentId": native.reviewer, "data": {"toolCallId": native.dispatch_id},
+                }),
+                ("root-b", {
+                    "type": "tool.execution_complete", "timestamp": "2026-01-01T00:00:03Z",
+                    "agentId": "coordinator",
+                    "data": {"toolCallId": native.dispatch_id, "success": True},
+                }),
+                late_a, late_b,
+            )
+            check(rejects(lambda: second.finish(native)),
+                  "late reviewer activity was admitted")
+            check(rejects(lambda: first.review_state(
+                (), (), pre_review_required=True)),
+                "failed terminal read lost another closed reviewer's late activity")
+            second.abort(native)
+            check(second.lease.outcome == "aborted" and second.report is None,
+                  "observed completion could not abort invalid review")
     elif probe == "lifecycle:resets":
         state.observe(decision(1))
         state.observe(decision(2, "clean"))
@@ -2402,6 +2453,20 @@ def _session_probe(probe: str) -> dict:
             session.advance(a)
             check(rejects(lambda: module.assess_handoff(
                 raw, members, observations, session, **arguments)), "stale session head admitted")
+            for operation in ("finish", "abort"):
+                first, first_runtime = completed_session(
+                    module.ReviewOwnership(), 1, "reviewer", "dispatch", "root-a", finish=False)
+                second, second_runtime = completed_session(
+                    module.ReviewOwnership(), 2, "reviewer", "dispatch", "root-b", finish=False)
+                check(rejects(lambda: getattr(first, operation)(second_runtime)),
+                      "other root runtime was accepted for " + operation)
+                check(not first.lease.finished and first.report is None,
+                      "wrong root changed the assigned review")
+                first.finish(first_runtime)
+                second.finish(second_runtime)
+                check(first.review_state((), (), pre_review_required=True)[0]
+                      and second.review_state((), (), pre_review_required=True)[0],
+                      "matching root reviews did not remain valid")
         else:
             raise review.ReviewError("unknown review-session probe")
     return {"kind": "host", "checks": 2, "detail": "registered production reducer executed"}

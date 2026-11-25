@@ -1267,6 +1267,15 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    reviewer commentary event. The first readiness assessment that detects
    the altered event must reject, as must every subsequent assessment; the
    pre-fix negative control incorrectly grants readiness once.
+   Start two independent root-bound tasks with the same dispatch, reviewer,
+   candidate and scope. Finishing or aborting the first using the second
+   runtime must reject without releasing it; each matching runtime must still
+   finish. For shared ownership, include late activity for an already closed
+   reviewer A and active reviewer B in B's aggregate snapshot. B's failed
+   finish must invalidate A immediately, and B's observed completed turn must
+   permit abort without publishing a report. A missing B completion must keep
+   its lease and overlapping-review exclusion active. The pre-fix negative
+   controls accept the other runtime and lose A's invalidation while B is stuck.
    Before closure, include a reviewer message with a contradictory interaction
    and a second `subagent.started` event for another dispatch in the original
    snapshot. Each must reject admission and leave the report unpublished;

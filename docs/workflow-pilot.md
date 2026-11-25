@@ -813,7 +813,12 @@ acquisition remains possible.
 lease after observing a completed turn and rejects a late result when its
 bounded duration is exceeded; it makes no task-termination claim. Subsequent
 head changes preserve the old report's origin rather than rebinding it to the
-new head.
+new head. Every finish or abort must use the root session bound at `begin`.
+Before a CLI runtime attempts either read, its observed aggregate events are
+applied to the shared ownership index, even if report validation then fails.
+An observed completed turn permits aborting an invalid review without
+admitting it; missing completion keeps the lease active. Later activity
+still rejects admission and never proves technical task termination.
 
 `ReviewSession.finish` validates every observation before publishing an
 internal frozen report and releasing ownership. Scope/actions are immutable sets,
