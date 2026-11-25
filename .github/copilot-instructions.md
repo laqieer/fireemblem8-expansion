@@ -141,30 +141,17 @@ return its report; it cannot edit, push, comment, request review, dispatch CI
 or merge. Enforce those actions at dispatch, not by accepting a claimed
 permission list from candidate JSON.
 
-The coordinator binds every accepted finding to its actual existing case,
-production predicate and finite source model. Expand actions/items/targets,
-lifecycle, wire/replay/stale bindings, generated owners/consumers/drift, and
-enabled/disabled resources completely. A missing sibling still blocks after
-the reported member is fixed. Use actual source-backed test observations,
-not arbitrary pass labels or a whole-suite result relabeled as member/ROM
-evidence. Select any new binding at an explicitly reviewed exact tool revision;
-it can land in the same feature PR and does not require base-first installation.
-
-First and second change requests produce bounded handoffs. The third creates
-a sticky architecture/decomposition hold; new heads and later clean reviews
-do not clear it without a coordinator disposition bound to the held round/head.
-Stop new narrow work, but immediately publish already-created commits on their
-assigned branch as explicitly ineligible WIP. Do not invent side branches or
-delay persistence. GitHub IDs/heads/actors are facts; complete-content triage is
-the coordinator's responsibility. COMMENTED or zero new inline comments is not
-approval. Local audits never replace exact-head Copilot/security/Build or
-exact-master completion.
-
-Follow the [executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
-The trusted coordinator and reviewed test tools are the authority. Read-only
-roles and minimal environments are operational controls, not hostile same-UID
-OS isolation. No broker, receipt/signature platform or protected installation
-is required.
+For review-family convergence, follow the complete
+[executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
+For accepted findings, the coordinator must expand the complete sibling family
+and bind actual source-backed evidence.
+The third change request creates a sticky architecture/decomposition hold;
+new heads and clean reviews cannot clear it without a bound coordinator
+disposition. Immediately publish already-created commits on their assigned
+branch as ineligible WIP. COMMENTED or zero new inline comments is not approval;
+local audits never replace exact-head Copilot/security/Build or exact-master
+completion. Read-only roles and minimal environments are operational controls,
+not hostile same-UID OS isolation.
 
 - **Reviewer:** distinct-from-coordinator, distinct-from-implementer, read-only, bounded
 - **Coordinator implementation:** same-actual-owner-permitted, no-aliases
@@ -228,74 +215,35 @@ issue's closure and remote completion, but not unrelated independent PRs.
 
 ### Bounded exact-SHA implementation handoffs
 
-Use the [version-3 handoff contract](../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
-for delegated bounded implementation cycles. The coordinator owns the assignment, real
-Git/check/process observations and one locked session-local coordination
-document; the implementation returns only the assignment ID, echoed parent,
-result SHA and named evidence references. These records are not authenticated
-data or publication capabilities.
+For delegated cycles, follow the
+[version-3 handoff contract](../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs),
+including coordinator-owned assignment, observations, locked state, owner
+retirement, exact-SHA validation, recovery and availability. Use actual CLI
+events and OS exit observations, not transport success or printed pass labels.
+Only the coordinator publishes; handoff tooling has no publication authority.
 
-Keep assignment sent, received, progressing, committed and handed-off distinct.
-Use actual CLI events and OS exit observations, never tool-transport success or
-printed pass labels. Retire an owner after its committed handoff or lifetime
-limit and use a fresh owner for review. Permit explicitly recorded normal
-upstream merges; apply task trailers/scope to task-owned changes, not imported
-upstream history. Incremental assignment budgets do not replace full-PR
-review-size preflight.
+For coordinator-authored work, follow
+[native local-check registration](../docs/workflow-pilot.md#coordinator-owned-local-validation)
+bound to the actual owner and exact head/frozen-base/ref/worktree. Complete every
+criterion; empty assignments, raw-only checks and incomplete required delegation
+are not ready. Local proof does not replace independent review, objective/manual,
+ROM/RAM/protocol/profile, security, candidate or master Build gates.
 
-Coordinator-authored work uses the existing explicit native local-check
-registration instead, bound to its actual owner and exact Git
-head/frozen-base/ref/worktree. Every registered criterion must complete;
-empty assignments, raw-only checks or an incomplete required delegation are
-not ready. Do not invent worker budgets or LLM process measurements.
-Independent review, global objective/manual/ROM/RAM/protocol/profile criteria,
-security and complete candidate/master Builds remain mandatory and separate
-from local proof.
-
-Keep one real direct watcher per exact GitHub run/attempt. Reconcile watcher
-errors through GitHub; a process timeout is not CI failure or success. On
-interruption, preserve and lock the original worktree before one bounded
-replacement reuses it. Unknown PID/RSS/OOM observations remain unknown.
-Record an always-on coordinator or an explicit availability plan before
-unattended delivery; a plan is not a guarantee of uptime.
-
-Only the existing coordinator publishes through Git/gh. Handoff tooling never
-pushes, modifies remote refs or supplies credentials to candidate execution.
-Use the existing reviewed-source/approved check route and platform role
-permissions, not an alleged Python or same-UID OS sandbox. Immediate checkpoint
-publication, metadata-event handling, final gates and completed-worktree
-cleanup remain unchanged.
+For every direct watcher, reconcile errors through GitHub: a process timeout is
+neither CI failure nor success.
 
 ### Completed-worktree cleanup
 
-After the PR is merged, all relevant exact-master CI is green, and
-`make remote-completion-check` passes, the delivery coordinator must run the
-[completed-worktree planner](../docs/workflow-pilot.md#completed-worktree-cleanup)
-and apply it to explicitly selected eligible leftovers. Do not delete the
-workspace earlier: failing master CI still needs its fix owner.
-The coordinator supplies every assigned/active path with `--preserve`,
-including agents between commands, and does not reassign a target during apply.
-Keep the source/coordinator workspace outside the removal set.
-
-Planning is read-only by default. Apply freshly verifies exact Git ownership,
-local work, merged PR association, and automatic master Build plus relevant
-exact-proof-commit CI; a candidate success or a merged PR alone is insufficient.
-Historical completed work may use its verified post-merge master proof rather
-than an unrelated newer run. Retain every ambiguous, active, locked, dirty,
-untracked, unpushed, or missing/failed/pending-evidence workspace. Also retain
-nested/bare Git repositories, private reflog/pseudoref/index resolve-undo
-objects not durably reachable from shared refs, private configuration and
-unclassified recovery/index metadata, and partial/promisor repositories whose
-object lookups could fetch during a dry-run. Preserve filesystem byte paths in
-mount/backlink checks and reports. Do not erase configuration/recovery records
-or rewrite indexes to bypass these holds. Use only normal
-`git worktree remove` through the helper, never force, unlock, delete branches,
-globally prune, or recursively delete broad directories.
-Record removed paths, observed allocated sizes, and precise retained reasons
-in existing completion evidence; do not invent physical freed-byte totals or
-commit a mutable worktree ledger. Cleanup never delays immediate owner-push:
-an implementation agent returns each new commit immediately, including WIP,
-and never keeps it locally while waiting for review, CI, or cleanup.
+After merge, green relevant exact-master CI and `make remote-completion-check`,
+the delivery coordinator must follow the
+[completed-worktree cleanup procedure](../docs/workflow-pilot.md#completed-worktree-cleanup):
+run the read-only planner, preserve all active/assigned paths and the
+coordinator workspace, then explicitly select only eligible leftovers for
+freshly verified apply. Retain ambiguous, active, dirty, unpushed or
+insufficiently evidenced workspaces and all other protected recovery data
+specified by the procedure. Use only normal `git worktree remove` through the
+helper. Record removed paths, observed allocated sizes and retained reasons;
+never invent freed-byte totals. Cleanup never delays immediate owner-push.
 
 ## Development workflow skill
 
