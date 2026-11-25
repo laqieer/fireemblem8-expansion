@@ -2206,14 +2206,15 @@ def _session_probe(probe: str) -> dict:
             identity=("owner/repo", 1, a), owners=owners)
         first_runtime = types.SimpleNamespace(
             root_session_id="root-a", start=lambda **kw: "dispatch-1")
-        first.begin(first_runtime, "reviewer")
+        first_owner = "reviewer-a"
+        first.begin(first_runtime, first_owner)
         finish_parameters = inspect.signature(owners.finish).parameters
         finish_kwargs = {}
         if "dispatch_namespace" in finish_parameters:
             finish_kwargs["dispatch_namespace"] = "root-a"
         if "admitted_event_sessions" in finish_parameters:
             finish_kwargs["admitted_event_sessions"] = {"root-a", "review-a"}
-        owners.finish(first, "dispatch-1", "reviewer", "interaction-a",
+        owners.finish(first, "dispatch-1", first_owner, "interaction-a",
                       "2026-01-01T00:00:01Z", **finish_kwargs)
         same_root_calls = []
         reused = module.ReviewSession(
@@ -2222,7 +2223,7 @@ def _session_probe(probe: str) -> dict:
         same_root = types.SimpleNamespace(
             root_session_id="root-a",
             start=lambda **kw: same_root_calls.append(kw) or "dispatch-2")
-        check(rejects(lambda: reused.begin(same_root, "reviewer")),
+        check(rejects(lambda: reused.begin(same_root, first_owner)),
               "reviewer identity was reused in its root session")
         check(not same_root_calls, "closed reviewer was dispatched again")
         second = module.ReviewSession(
@@ -2230,22 +2231,27 @@ def _session_probe(probe: str) -> dict:
             identity=("owner/repo", 2, a), owners=owners)
         second_runtime = types.SimpleNamespace(
             root_session_id="root-b", start=lambda **kw: "dispatch-1")
-        check(not rejects(lambda: second.begin(second_runtime, "reviewer")),
-              "reviewer identity remained closed across distinct root sessions")
-        owners.finish(second, "dispatch-1", "reviewer", "interaction-b",
+        second_owner = "reviewer-b"
+        check(not rejects(lambda: second.begin(second_runtime, second_owner)),
+              "distinct reviewer identity was rejected in another root session")
+        owners.finish(second, "dispatch-1", second_owner, "interaction-b",
                       "2026-01-01T00:00:01Z",
                       **({"dispatch_namespace": "root-b"}
                          if "dispatch_namespace" in finish_parameters else {}),
                       **({"admitted_event_sessions": {"root-b", "review-b"}}
                          if "admitted_event_sessions" in finish_parameters else {}))
-        owners.validate_closed_events((("review-b", {
+        late_activity = ("review-a", {
             "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:02Z",
-            "agentId": "reviewer", "data": {"turnId": "late"},
-        }),))
-        check(("root-a", "dispatch-1", "reviewer") not in owners.invalidated_tasks,
-              "activity from another root invalidated the first report")
-        check(("root-b", "dispatch-1", "reviewer") in owners.invalidated_tasks,
-              "activity did not invalidate its owning report")
+            "agentId": first_owner, "data": {"turnId": "late"},
+        })
+        check(rejects(lambda: first.observe_cli_events((late_activity,))),
+              "late activity from a closed reviewer was admitted")
+        check(not rejects(lambda: second.observe_cli_events((late_activity,))),
+              "late activity invalidated an unrelated reviewer report")
+        check(second.review_state((), (), pre_review_required=False)[0],
+              "unrelated reviewer report lost readiness")
+        check(rejects(lambda: first.review_state((), (), pre_review_required=True)),
+              "late activity did not invalidate its owning report")
     else:
         raw = {"schema_version": 1, "repository": "owner/repo", "pull_request": 1,
                "base_sha": a, "candidate_sha": b,
@@ -2296,6 +2302,36 @@ def _session_probe(probe: str) -> dict:
                 valid + (additional_dispatch,), owner=owner, dispatch=dispatch,
                 interaction=interaction, started_at=started_at, completed_at=completed_at)),
                 "additional initial dispatch was admitted")
+            owners = module.ReviewOwnership()
+            session = module.ReviewSession(
+                "coordinator", "implementer", frozenset({"case"}), b,
+                identity=("owner/repo", 2, a), owners=owners)
+            runtime = types.SimpleNamespace(
+                root_session_id="root-session", start=lambda **kw: dispatch)
+            session.begin(runtime, owner)
+            finish_parameters = inspect.signature(owners.finish).parameters
+            finish_kwargs = {}
+            if "dispatch_namespace" in finish_parameters:
+                finish_kwargs["dispatch_namespace"] = "root-session"
+            if "admitted_event_sessions" in finish_parameters:
+                finish_kwargs["admitted_event_sessions"] = {
+                    "root-session", "review-session"}
+            owners.finish(
+                session, dispatch, owner, interaction, completed_at, **finish_kwargs)
+            late_prohibited_event = ("review-session", {
+                "type": "tool.execution_start", "timestamp": completed_at,
+                "agentId": owner,
+                "data": {
+                    "interactionId": interaction, "turnId": "turn-1",
+                    "toolCallId": "late-bash", "toolName": "bash",
+                    "arguments": {"command": "not permitted"},
+                },
+            })
+            check(rejects(lambda: session.observe_cli_events((late_prohibited_event,))),
+                  "late in-turn prohibited activity remained valid")
+            check(rejects(lambda: session.review_state(
+                (), (), pre_review_required=True)),
+                "late in-turn prohibited activity did not invalidate readiness")
         elif probe == "wire:stale-bindings":
             key = module.subject_key(raw["subjects"][0])
             members = tuple(module.Obligation(

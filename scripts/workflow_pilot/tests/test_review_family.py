@@ -1761,10 +1761,6 @@ class CliReviewRuntimeTests(unittest.TestCase):
             self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 second.review_state((), (), pre_review_required=True)
-            self.assertNotIn(
-                ("root-session-1", "dispatch-1", reviewer), owners.invalidated_tasks)
-            self.assertIn(
-                ("root-session-2", "dispatch-1", second_reviewer), owners.invalidated_tasks)
 
     def test_aggregate_reviewer_receipts_bind_to_root_dispatch_interval(self):
         def shifted(events, seconds):
@@ -1932,8 +1928,6 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 session.finish(runtime)
             self.assertIsNone(session.report)
             self.assertEqual(session.local_findings, {})
-            self.assertIn(
-                ("root-session", "dispatch-1", reviewer), session.owners.invalidated_tasks)
 
 
 class RemainingRoleTests(RoleTests):

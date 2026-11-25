@@ -827,6 +827,14 @@ def validate_reviewer_activity(events, *, owner, dispatch, interaction,
     return frozenset(_cli_event_key(record) for record in activity)
 
 
+@dataclass
+class _ClosedReview:
+    interaction: str
+    completed_at: str
+    admitted_event_keys: frozenset[str]
+    invalidation_reason: str | None = None
+
+
 class ReviewOwnership:
     """Small in-process index owned/shared by the existing coordinator."""
 
@@ -837,21 +845,34 @@ class ReviewOwnership:
 
     def __init__(self):
         self.records = {}
-        self.closed_tasks: dict[
-            tuple[str | None, str, str], tuple[str, str, frozenset[str]]
-        ] = {}
-        self.closed_owners: dict[tuple[str | None, str], tuple[str | None, str, str]] = {}
-        self.closed_dispatches: set[tuple[str, str]] = set()
+        self.closed_tasks: dict[tuple[str | None, str, str], _ClosedReview] = {}
         self.closed_event_owners: dict[
             tuple[str | None, str], tuple[str | None, str, str]
         ] = {}
-        self.invalidated_tasks: dict[tuple[str | None, str, str], str] = {}
+
+    def _has_closed_owner(self, owner_key):
+        return any(
+            self._same_owner_scope(owner_key, (namespace, closed_owner))
+            for namespace, _, closed_owner in self.closed_tasks)
+
+    def _has_closed_dispatch(self, dispatch_namespace, task):
+        return dispatch_namespace is not None and any(
+            namespace == dispatch_namespace and closed_task == task
+            for namespace, closed_task, _ in self.closed_tasks)
+
+    def is_closed(self, dispatch_namespace, task, owner):
+        return ((dispatch_namespace, task, owner) in self.closed_tasks
+                or self._has_closed_dispatch(dispatch_namespace, task))
+
+    def _invalidate(self, task_key, reason):
+        record = self.closed_tasks.get(task_key)
+        if record is not None and record.invalidation_reason is None:
+            record.invalidation_reason = reason
 
     def reserve(self, session):
         require(session.identity is not None, "ownership requires frozen PR identity")
         owner_key = session.dispatch_namespace, session.owner
-        require(not any(self._same_owner_scope(owner_key, closed)
-                        for closed in self.closed_owners),
+        require(not self._has_closed_owner(owner_key),
                 "reviewer task owner was already logically closed")
         for identity, head, scope, active, current_owner_key in self.records.values():
             require(not (active and
@@ -865,13 +886,10 @@ class ReviewOwnership:
                dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=()):
         key = dispatch_namespace, task, owner
         owner_key = dispatch_namespace, owner
-        dispatch = ((dispatch_namespace, task)
-                    if dispatch_namespace is not None else None)
         require(key not in self.closed_tasks, "review task was already logically closed")
-        require(dispatch is None or dispatch not in self.closed_dispatches,
+        require(not self._has_closed_dispatch(dispatch_namespace, task),
                 "review dispatch was already logically closed")
-        require(not any(self._same_owner_scope(owner_key, closed)
-                        for closed in self.closed_owners),
+        require(not self._has_closed_owner(owner_key),
                 "reviewer task owner was already logically closed")
         identifier(owner, NAME_PATTERN, "reviewer identity")
         identifier(interaction, NAME_PATTERN, "review interaction")
@@ -893,13 +911,10 @@ class ReviewOwnership:
                     for event_key in event_owner_keys),
                 "review event session was already logically closed")
         self.records[id(session)] = identity, head, scope, False, assigned_owner_key
-        admitted_events = frozenset(admitted_event_keys)
-        self.closed_tasks[key] = interaction, completed_at, admitted_events
-        self.closed_owners[owner_key] = key
+        self.closed_tasks[key] = _ClosedReview(
+            interaction, completed_at, frozenset(admitted_event_keys))
         for event_key in event_owner_keys:
             self.closed_event_owners[event_key] = key
-        if dispatch is not None:
-            self.closed_dispatches.add(dispatch)
 
     def validate_closed_events(self, events):
         require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
@@ -917,22 +932,20 @@ class ReviewOwnership:
             if not isinstance(event_session, str):
                 for event_owner_key, task_key in self.closed_event_owners.items():
                     if event_owner_key[1] == agent:
-                        self.invalidated_tasks.setdefault(
-                            task_key, "review task emitted an unrecognized event record")
+                        self._invalidate(task_key, "review task emitted an unrecognized event record")
                 continue
             task_key = self.closed_event_owners.get((event_session, agent))
             if task_key is None:
                 task_key = self.closed_event_owners.get((None, agent))
             if task_key is None:
                 continue
-            closed_interaction, completed_at, admitted_events = self.closed_tasks[task_key]
+            closed = self.closed_tasks[task_key]
             try:
                 event_key = _cli_event_key(record)
             except ReviewError:
-                self.invalidated_tasks.setdefault(
-                    task_key, "review task emitted an unrecognized event record")
+                self._invalidate(task_key, "review task emitted an unrecognized event record")
                 continue
-            if event_key in admitted_events:
+            if event_key in closed.admitted_event_keys:
                 continue
             try:
                 event_time = timestamp(event.get("timestamp"))
@@ -942,19 +955,20 @@ class ReviewOwnership:
                 data = event.get("data")
                 if not isinstance(data, dict):
                     message = "review task emitted an event with invalid data"
-                elif event_time > timestamp(completed_at):
+                elif event_time > timestamp(closed.completed_at):
                     message = "review task emitted an event after logical closure"
-                elif data.get("interactionId") not in (None, closed_interaction):
+                elif data.get("interactionId") not in (None, closed.interaction):
                     message = "review task emitted a contradictory interaction"
                 else:
                     message = "new review activity was observed after logical closure"
-            self.invalidated_tasks.setdefault(task_key, message)
+            self._invalidate(task_key, message)
 
     def validate_session(self, session):
         lease = session.lease
         if lease is not None:
             key = session.dispatch_namespace, lease.task, lease.owner
-            reason = self.invalidated_tasks.get(key)
+            record = self.closed_tasks.get(key)
+            reason = None if record is None else record.invalidation_reason
             require(reason is None, f"review task evidence was invalidated: {reason}")
 
 
@@ -1472,12 +1486,8 @@ class ReviewSession:
             )
             require(isinstance(task, str) and bool(task.strip()),
                     "runtime task identity must be a nonblank string")
-            dispatch_key = ((self.dispatch_namespace, task)
-                            if self.dispatch_namespace is not None else None)
-            require(self.owners is None or (
-                (self.dispatch_namespace, task, owner) not in self.owners.closed_tasks
-                and (dispatch_key is None
-                     or dispatch_key not in self.owners.closed_dispatches)),
+            require(self.owners is None or not self.owners.is_closed(
+                self.dispatch_namespace, task, owner),
                     "review task was already logically closed")
         except Exception:
             if self.owners is not None:
