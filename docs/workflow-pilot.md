@@ -2893,6 +2893,20 @@ unknown exits and pending or failed runs. No row automatically leaves the
 document. If the overall document bound is reached, the update fails
 atomically; do not delete history, infer exits or create a competing coordinator
 to bypass it.
+
+After an explicitly coordinated transfer to the actual successor, first
+finish every old active watcher using real exit observations, including
+unknown exits, and renew stale availability. In the existing locked state
+transaction, validate the original state, set `coordinator_id` to the successor
+identity, and validate again before the transaction commits. Ended watchers
+retain their original coordinator IDs and all other observations; an active
+watcher belonging to another coordinator rejects the transfer. Prior
+coordinator-owned local checks remain stale and must be registered and
+captured again. Older readers reject retained watchers from different
+coordinators, so select a reviewed compatible reader before this transition.
+The lock serializes state updates; ownership transfer remains an operational
+responsibility, not proof that another same-UID process cannot act.
+
 Use the established
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status` command through
 the shell runtime; no reasoning agent waits for it. `finish_watcher` consumes

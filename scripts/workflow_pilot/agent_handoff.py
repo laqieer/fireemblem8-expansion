@@ -459,7 +459,7 @@ def validate_state(value):
         text(watcher["id"], maximum=128, pattern=ID_RE)
         require(watcher["id"] not in watcher_ids, "duplicate watcher ID")
         watcher_ids.add(watcher["id"])
-        require(watcher["coordinator_id"] == value["coordinator_id"], "duplicate coordinator")
+        text(watcher["coordinator_id"], maximum=128, pattern=ID_RE)
         for name in ("run_id", "attempt"):
             integer(watcher[name], minimum=1)
         sha(watcher["head_sha"])
@@ -473,6 +473,7 @@ def validate_state(value):
         integer(watcher["exit_code"], minimum=-128, maximum=255, nullable=True)
         text(watcher["query_error"], nullable=True)
         if watcher["ended_at"] is None:
+            require(watcher["coordinator_id"] == value["coordinator_id"], "duplicate coordinator")
             require(watcher["process"]["state"] == "running" and watcher["exit_code"] is None,
                     "active watcher needs a running process and no exit code")
             identity = (watcher["run_id"], watcher["attempt"])

@@ -508,6 +508,7 @@ class WatcherObservationTests(unittest.TestCase):
         watcher["ended_at"] = observations.utc_now()
         with self.assertRaises(handoff.HandoffDataError):
             handoff.reserve_watcher(f.state, "duplicate", 91, 2, f.parent, process.pid)
+        watcher["ended_at"] = None
         watcher["coordinator_id"] = "other-coordinator"
         with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
             handoff.validate_state(f.state)

@@ -6732,6 +6732,14 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    watcher, including a nonoverlapping retry of an actually exited process;
    verify every prior record remains identical after restart. A duplicate
    live run or process still rejects, as does a 129th active watcher.
+   Attempt an explicitly coordinated successor transition with an old active
+   watcher: validation rejects and the locked file remains unchanged. Observe
+   that watcher exit, then retain both watcher records, their coordinator
+   identities and pending run observations through the successor transition.
+   Old local proof becomes non-ready; real fresh registration and captures
+   restore readiness. A new watcher belongs to the successor and duplicate run
+   or process ownership remains rejected. Invalid historical coordinator IDs
+   fail schema and runtime.
    These fixture histories are synthetic except for explicitly observed child
    processes.
    Run the capacity and recovery controls with the same interpreter:
@@ -6739,6 +6747,7 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    ```bash
    build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
      scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_locked_state_preserves_local_proof_beyond_previous_node_limit \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_successor_preserves_ended_watcher_owners_and_recaptures_local_proof \
      scripts.workflow_pilot.tests.test_coordinator_observations.RecoveryObservationTests.test_recovery_enumeration_is_independent_of_json_node_budget \
      scripts.workflow_pilot.tests.test_coordinator_observations.WatcherObservationTests.test_retained_watcher_limit_matches_schema_independently_of_json_budget -v
    ```
@@ -6831,6 +6840,7 @@ gates.
 Each adversary above fails or remains explicitly unknown/incomplete.
 Before #446, a 129th watcher is rejected even when prior watchers have ended.
 The former 32,768-node bound also rejects the preserved local-proof update.
+The former validator rejects a successor while retaining even one ended watcher.
 Runtime-check mutation must fail even if command/pass labels are preserved.
 Equivalent source/JSON wording or order does not affect semantic evidence.
 There is no disabled gameplay profile: omitting optional handoff reporting
