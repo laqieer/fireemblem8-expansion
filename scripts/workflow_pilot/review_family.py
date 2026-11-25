@@ -1046,10 +1046,13 @@ class CliReviewRuntime:
         self.prompt = None
         self.dispatch_started_at = None
         self.started_at = None
+        self.completed_at = None
         self.requested_duration = None
         self.assigned_candidate = None
         self.assigned_subjects = None
         self.reviewer_session_id = None
+        self.received_prompt = None
+        self.received_at = None
         self.result = None
         self.validated_event_keys = frozenset()
         self.validated_event_sessions = frozenset()
@@ -1083,16 +1086,33 @@ class CliReviewRuntime:
                                       NAME_PATTERN, "review interaction")
         require(started["data"].get("agentType") == "code-review",
                 "review task role is unsupported")
+        completions = [(session, event) for session, event in self.events
+                       if session == self.root_session_id
+                       and event.get("type") == "subagent.completed"
+                       and event.get("agentId") == self.reviewer
+                       and event.get("data", {}).get("toolCallId") == self.dispatch_id]
+        require(len(completions) <= 1, "review task completion is duplicated")
+        if completions:
+            self.completed_at = timestamp(completions[0][1].get("timestamp"))
+            require(timestamp(self.started_at) <= self.completed_at,
+                    "review task completion predates its assigned start")
         received = [(session, event) for session, event in self.events
                     if event.get("agentId") == self.reviewer
                     and event.get("type") == "user.message"
-                    and event.get("data", {}).get("interactionId") == self.interaction]
+                    and event.get("data", {}).get("interactionId") == self.interaction
+                    and isinstance(event.get("data", {}).get("transformedContent"), str)
+                    and prompt in event["data"]["transformedContent"]
+                    and timestamp(self.started_at) <= timestamp(event.get("timestamp"))
+                    and (self.completed_at is None
+                         or timestamp(event.get("timestamp")) <= self.completed_at)]
         require(len(received) == 1, "original reviewer instructions are missing or repeated")
         self.reviewer_session_id = identifier(
             received[0][0], NAME_PATTERN, "reviewer session")
         received_prompt = received[0][1]["data"].get("transformedContent")
         require(isinstance(received_prompt, str) and prompt in received_prompt,
                 "received review instructions differ from the dispatched prompt")
+        self.received_prompt = received_prompt
+        self.received_at = timestamp(received[0][1].get("timestamp"))
         require(timestamp(started["timestamp"]) <= timestamp(received[0][1]["timestamp"]),
                 "reviewer instructions predate the assigned task")
         require(expected.get("candidate") in prompt and
@@ -1126,6 +1146,9 @@ class CliReviewRuntime:
         require(len(completion) == 1, "reviewer completion event is missing")
         completed_at = completion[0].get("timestamp")
         timestamp(completed_at)
+        require(self.received_at is not None
+                and self.received_at <= timestamp(completed_at),
+                "reviewer instructions fall outside the assigned task interval")
         later = [(session, event) for session, event in child
                  if is_review_activity(event)
                  and timestamp(event.get("timestamp")) > timestamp(completed_at)]
@@ -1173,7 +1196,10 @@ class CliReviewRuntime:
                     and event.get("data", {}).get("turnId") in turn_ids))
         ]
         received = [event for event in turn_events if event.get("type") == "user.message"]
-        require(len(received) == 1, "original reviewer instructions are missing or repeated")
+        require(len(received) == 1
+                and received[0].get("data", {}).get("transformedContent")
+                == self.received_prompt,
+                "original reviewer instructions differ from the bound receipt")
         messages = [event for event in turn_events if event.get("type") == "assistant.message"]
         require(all(timestamp(received[0]["timestamp"]) <= timestamp(event["timestamp"])
                     for event in messages),
@@ -1301,10 +1327,8 @@ class CliReviewRuntime:
         return self.result
 
     def _scope(self):
-        message = next(event["data"]["transformedContent"] for _, event in self.events
-                       if event.get("agentId") == self.reviewer
-                       and event.get("type") == "user.message"
-                       and event.get("data", {}).get("interactionId") == self.interaction)
+        message = self.received_prompt
+        require(isinstance(message, str), "bound reviewer instructions are missing")
         marker = "Review scope: "
         require(marker in message, "review scope marker is missing")
         scope, separator, _ = message.split(marker, 1)[1].partition(

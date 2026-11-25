@@ -634,7 +634,12 @@ regardless of scope, before another task can start.
 `ReviewSession.begin` binds the exact head, scope, reviewer identity and
 instructions to the existing `task` tool dispatch. `finish` verifies the
 successful task-call completion as a dispatch receipt, and the matching
-`subagent.started` and reviewer instruction message. That receipt may arrive
+`subagent.started` and reviewer instruction message. The instruction receipt
+must match the assigned prompt and occur after the reviewer start. If the
+matching completion event is already observed, use that dispatch interval to
+select the receipt; otherwise defer its upper-bound check until `finish`.
+Retain the selected receipt and use it for scope extraction rather than
+searching unrelated event sessions again. The dispatch receipt may arrive
 before the reviewer finishes: only the reviewer's `subagent.completed` event
 proves its turn is complete. After that completed-turn notification,
 `finish` validates the reviewer's observations and report. It returns

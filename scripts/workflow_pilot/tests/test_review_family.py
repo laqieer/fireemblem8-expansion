@@ -14,6 +14,7 @@ if __package__ in (None, ""):
 import base64
 import copy
 from dataclasses import FrozenInstanceError, replace
+from datetime import datetime, timedelta
 import json
 import string
 import unittest
@@ -1764,6 +1765,65 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 ("root-session-1", "dispatch-1", reviewer), owners.invalidated_tasks)
             self.assertIn(
                 ("root-session-2", "dispatch-1", second_reviewer), owners.invalidated_tasks)
+
+    def test_aggregate_reviewer_receipts_bind_to_root_dispatch_interval(self):
+        def shifted(events, seconds):
+            result = []
+            for session_id, event in events:
+                copied = copy.deepcopy(event)
+                moment = datetime.fromisoformat(copied["timestamp"].replace("Z", "+00:00"))
+                copied["timestamp"] = (
+                    moment + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+                result.append((session_id, copied))
+            return tuple(result)
+
+        with snapshot() as root:
+            fixture1, first_runtime, first, first_events, _, reviewer, _ = self.native_runtime(
+                root, root_session_id="root-session-1",
+                reviewer_session_id="reviewer-session-1")
+            fixture2, second_runtime, second, second_events, _, second_reviewer, _ = (
+                self.native_runtime(root, root_session_id="root-session-2",
+                                    reviewer_session_id="reviewer-session-2"))
+            aggregate = tuple(first_events) + shifted(second_events, 60)
+            first_runtime.events = aggregate
+            second_runtime.events = aggregate
+            owners = model.ReviewOwnership()
+            first.owners = owners
+            second.owners = owners
+            second.identity = ("owner/repo", 2, fixture2["base"])
+            incomplete_runtime = model.CliReviewRuntime(
+                tuple((session_id, event) for session_id, event in aggregate
+                      if not (session_id == "root-session-1"
+                              and event.get("type") == "subagent.completed")),
+                dispatch_id=first_runtime.dispatch_id,
+                root_session_id="root-session-1",
+                candidate_reader=first_runtime.candidate_reader,
+                required_reads=first_runtime.required_reads)
+            self.assertEqual(incomplete_runtime.start(
+                owner=reviewer, candidate=fixture1["head"], subjects=first.scope),
+                "dispatch-1")
+
+            first.begin(first_runtime, reviewer)
+            first_report = first.finish(first_runtime)
+            second.begin(second_runtime, second_reviewer)
+            second_report = second.finish(second_runtime)
+            self.assertEqual(first_report.subjects, first.scope)
+            self.assertEqual(second_report.subjects, second.scope)
+
+            missing_own_receipt = tuple(
+                (session_id, event) for session_id, event in aggregate
+                if not (session_id == "reviewer-session-1"
+                        and event.get("type") == "user.message"))
+            missing_runtime = first_runtime
+            missing_runtime.events = missing_own_receipt
+            missing_session = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture1["head"],
+                identity=("owner/repo", 3, fixture1["base"]),
+                owners=model.ReviewOwnership(),
+                readers={"read-candidate": first_runtime.candidate_reader})
+            with self.assertRaisesRegex(model.ReviewError, "instructions"):
+                missing_session.begin(missing_runtime, reviewer)
+            self.assertIsNone(missing_session.report)
 
     def test_post_closure_invalidation_is_shared_with_existing_reports(self):
         with snapshot() as root:

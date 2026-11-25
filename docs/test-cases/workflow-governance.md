@@ -1247,9 +1247,14 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    same reviewer and dispatch in that root session must reject before another
    task starts. Repeat across two distinct root CLI sessions that deliberately
    reuse the same reviewer and dispatch identifiers: both independent tasks
-   must admit, and a late assistant turn-start in the second reviewer's event
-   session must invalidate only the second report. Include that late event in
-   the first reviewer's aggregate snapshot; the first report must remain ready.
+   must admit. Aggregate both histories with identical reviewer, interaction
+   and dispatch IDs but distinct task intervals; each report must bind only
+   the instruction receipt inside its own interval. Remove the first task's
+   receipt while retaining the second's otherwise matching receipt; the first
+   task must reject instead of borrowing it. A late assistant turn-start in
+   the second reviewer's event session must invalidate only the second report.
+   Include that late event in the first reviewer's aggregate snapshot; the
+   first report must remain ready.
    Also append a previously unseen in-turn
    `tool.execution_start` for `bash` with the original interaction and a
    timestamp equal to completion; it must invalidate the closed report even

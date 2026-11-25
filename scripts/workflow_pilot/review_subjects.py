@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, replace
+import inspect
 import io
 import json
 import os
@@ -2206,9 +2207,14 @@ def _session_probe(probe: str) -> dict:
         first_runtime = types.SimpleNamespace(
             root_session_id="root-a", start=lambda **kw: "dispatch-1")
         first.begin(first_runtime, "reviewer")
+        finish_parameters = inspect.signature(owners.finish).parameters
+        finish_kwargs = {}
+        if "dispatch_namespace" in finish_parameters:
+            finish_kwargs["dispatch_namespace"] = "root-a"
+        if "admitted_event_sessions" in finish_parameters:
+            finish_kwargs["admitted_event_sessions"] = {"root-a", "review-a"}
         owners.finish(first, "dispatch-1", "reviewer", "interaction-a",
-                      "2026-01-01T00:00:01Z", "root-a",
-                      admitted_event_sessions={"root-a", "review-a"})
+                      "2026-01-01T00:00:01Z", **finish_kwargs)
         same_root_calls = []
         reused = module.ReviewSession(
             "coordinator", "implementer", frozenset({"case"}), b,
@@ -2224,10 +2230,14 @@ def _session_probe(probe: str) -> dict:
             identity=("owner/repo", 2, a), owners=owners)
         second_runtime = types.SimpleNamespace(
             root_session_id="root-b", start=lambda **kw: "dispatch-1")
-        second.begin(second_runtime, "reviewer")
+        check(not rejects(lambda: second.begin(second_runtime, "reviewer")),
+              "reviewer identity remained closed across distinct root sessions")
         owners.finish(second, "dispatch-1", "reviewer", "interaction-b",
-                      "2026-01-01T00:00:01Z", "root-b",
-                      admitted_event_sessions={"root-b", "review-b"})
+                      "2026-01-01T00:00:01Z",
+                      **({"dispatch_namespace": "root-b"}
+                         if "dispatch_namespace" in finish_parameters else {}),
+                      **({"admitted_event_sessions": {"root-b", "review-b"}}
+                         if "admitted_event_sessions" in finish_parameters else {}))
         owners.validate_closed_events((("review-b", {
             "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:02Z",
             "agentId": "reviewer", "data": {"turnId": "late"},
