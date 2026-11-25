@@ -145,8 +145,10 @@ For review-family convergence, follow the complete
 [executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
 For accepted findings, the coordinator must bind each to its existing case,
 actual production predicate and finite source model, then expand the complete
-sibling family using actual source-backed evidence.
-The third change request creates a sticky architecture/decomposition hold;
+sibling family using actual source-backed test observations, not arbitrary pass
+labels or whole-suite results relabeled as member/ROM evidence. The first two
+change requests produce bounded handoffs. The third creates a sticky
+architecture/decomposition hold;
 new heads and clean reviews cannot clear it without a bound coordinator
 redesign, decompose or retain-with-evidence disposition. Stop new narrow work
 and eligibility during the hold, but immediately publish already-created
@@ -222,9 +224,14 @@ For delegated cycles, follow the
 including coordinator-owned assignment, observations, locked state, owner
 retirement, exact-SHA validation, recovery and availability. Use actual CLI
 events and OS exit observations, not transport success or printed pass labels.
+Keep assignment sent, received, progressing, committed and handed-off distinct;
+retire the implementation owner after handoff or its lifetime limit and use a
+fresh owner for review. Apply task scope and trailers to task-owned changes, not
+recorded upstream merges; incremental budgets do not replace full-PR preflight.
 Implementation-submitted results cannot replace coordinator Git, focused-check,
 process or GitHub observations or alter scope, budgets or permitted actions.
-Only the coordinator publishes; handoff tooling has no publication authority.
+Only the coordinator publishes; handoff tooling never pushes, modifies remote
+refs or supplies credentials to candidate execution.
 
 For coordinator-authored work, follow
 [native local-check registration](../docs/workflow-pilot.md#coordinator-owned-local-validation)
