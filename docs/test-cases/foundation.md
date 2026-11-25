@@ -84,6 +84,7 @@ and its fail-closed all-current-feature coverage assertion.
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_every_combined_worker_has_a_closed_execution_context \
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_execution_context_key_syntax_bypasses_fail_closed \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_order_regressions_accept_reordered_workflow \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence
    ```
 
@@ -97,6 +98,8 @@ runner and timeout fields, retains the same workflow contract and gate
 equivalence. The step sequence itself remains ordered. Blank lines in literal
 `run` blocks retain the full script and command sequence, including when a
 blank line has less indentation than the surrounding shell commands.
+The same order-regression tests pass when the source workflow already has
+`steps` or `env` before the other direct fields in any worker job.
 
 ### Negative control
 
@@ -106,6 +109,9 @@ paragraph, duplicate or lower-level policy heading, Markdown markup, and
 invalid syntax. These mutations preserve enough surrounding text to prove the
 semantic parser rather than a raw phrase search is enforcing the contract.
 Before the #481 fix, the worker-order regressions reject equivalent mappings.
+Before the regression-test correction, moving `host-tests.steps` first makes
+both worker-order test cases fail even though both validators accept the
+equivalent workflow.
 Changed runners or timeouts, duplicate keys, additional execution fields,
 unsupported key syntax and altered permissions remain rejected after the fix.
 Blank lines with varying whitespace must not hide an advisory step field or

@@ -1268,6 +1268,25 @@ def _contains_command(job: str, command: str) -> bool:
     )
 
 
+def _reorder_job_field(job: str, field: str) -> str:
+    matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
+    selected = [index for index, match in enumerate(matches) if match.group(1) == field]
+    if len(selected) != 1:
+        raise ValueError(f"job must contain exactly one {field} field")
+    blocks = [
+        job[
+            match.start():matches[index + 1].start() if index + 1 < len(matches) else len(job)
+        ]
+        for index, match in enumerate(matches)
+    ]
+    index = selected[0]
+    if index == 0:
+        blocks = blocks[1:] + blocks[:1]
+    else:
+        blocks = blocks[index : index + 1] + blocks[:index] + blocks[index + 1 :]
+    return job[:matches[0].start()] + "".join(blocks)
+
+
 def _step_blocks(job: str) -> list[str]:
     matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
     direct_fields = list(re.finditer(r"^    (?=[^\s#-])", job, re.MULTILINE))
@@ -5610,16 +5629,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         baseline = verify._parse_workflow_structure_text(self.text)
         for job_name in COMBINED_WORKERS:
             job = _job_blocks(self.text)[job_name]
-            fields, separator, steps = job.partition("    steps:\n")
-            self.assertTrue(separator)
-            before_env, separator, env = fields.partition("    env:\n")
-            self.assertTrue(separator)
-            for block, reordered in (
-                ("steps", "    steps:\n" + steps + fields),
-                ("env", "    env:\n" + env + before_env + "    steps:\n" + steps),
-            ):
+            for block in ("steps", "env"):
                 with self.subTest(job=job_name, block=block):
+                    reordered = _reorder_job_field(job, block)
                     changed = self.text.replace(job, reordered, 1)
+                    self.assertNotEqual(changed, self.text)
                     self.assertEqual(_errors(changed, False), [])
                     self.assertEqual(verify._parse_workflow_structure_text(changed), baseline)
 

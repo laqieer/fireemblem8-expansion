@@ -2,10 +2,12 @@ import contextlib
 import inspect
 import io
 import os
+import pathlib
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -1843,9 +1845,10 @@ class VerifyCliCwdTests(unittest.TestCase):
             for job_name in verify_mod._COMBINED_JOBS:
                 timeout = "60" if job_name == "legacy" else "90"
                 job = topology_tests._job_blocks(original)[job_name]
-                fields, separator, steps = job.partition("    steps:\n")
-                self.assertTrue(separator)
-                reordered = original.replace(job, separator + steps + fields, 1)
+                reordered = original.replace(
+                    job, topology_tests._reorder_job_field(job, "steps"), 1
+                )
+                self.assertNotEqual(reordered, original)
                 with open(workflow_path, "w", encoding="utf-8") as handle:
                     handle.write(reordered)
                 with self.subTest(job=job_name, mutation="reordered-steps-block"):
@@ -1929,40 +1932,97 @@ class VerifyCliCwdTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             verify_mod.run_gates(target_root, dry_run=True)
 
+    def test_worker_order_regressions_accept_reordered_workflow(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as handle:
+            original = handle.read()
+        baseline = verify_mod._parse_workflow_structure_text(original)
+        cases = (
+            (
+                topology_tests, "WORKFLOW",
+                topology_tests.ConsolidatedBuildTopologyTests,
+                "test_worker_blocks_can_precede_other_job_fields",
+            ),
+            (
+                sys.modules[__name__], "BUILD_WORKFLOW_PATH", VerifyCliCwdTests,
+                "test_worker_mapping_order_preserves_target_gate_equivalence",
+            ),
+        )
+        with tempfile.TemporaryDirectory(prefix="worker-order-regression-") as directory:
+            path = os.path.join(directory, "build.yml")
+            for job_name in verify_mod._COMBINED_JOBS:
+                job = topology_tests._job_blocks(original)[job_name]
+                matches = list(
+                    re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE)
+                )
+                blocks = [
+                    (
+                        match.group(1),
+                        job[
+                            match.start():matches[index + 1].start()
+                            if index + 1 < len(matches) else len(job)
+                        ],
+                    )
+                    for index, match in enumerate(matches)
+                ]
+                for field in ("steps", "env"):
+                    self.assertEqual(sum(name == field for name, _ in blocks), 1)
+                    selected = next(
+                        index for index, (name, _) in enumerate(blocks) if name == field
+                    )
+                    if selected == 0:
+                        rearranged = blocks[1:] + blocks[:1]
+                    else:
+                        rearranged = (
+                            blocks[selected : selected + 1]
+                            + blocks[:selected]
+                            + blocks[selected + 1 :]
+                        )
+                    reordered = job[:matches[0].start()] + "".join(
+                        block for _, block in rearranged
+                    )
+                    changed = original.replace(job, reordered, 1)
+                    self.assertNotEqual(changed, original)
+                    self.assertEqual(topology_tests._errors(changed, False), [])
+                    self.assertEqual(
+                        verify_mod._parse_workflow_structure_text(changed), baseline
+                    )
+                    with open(path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    for module, attribute, test_class, name in cases:
+                        with self.subTest(job=job_name, field=field, case=name):
+                            result = unittest.TestResult()
+                            value = pathlib.Path(path) if attribute == "WORKFLOW" else path
+                            with mock.patch.object(module, attribute, value):
+                                test_class(name).run(result)
+                            self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+
     def test_worker_mapping_order_preserves_target_gate_equivalence(self):
         with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as handle:
             original = handle.read()
         baseline = verify_mod._parse_workflow_structure_text(original)
         for job_name in verify_mod._COMBINED_JOBS:
             job = topology_tests._job_blocks(original)[job_name]
-            fields, separator, steps = job.partition("    steps:\n")
-            self.assertTrue(separator)
+            reordered = topology_tests._reorder_job_field(job, "steps")
             with self.subTest(job=job_name):
-                changed = original.replace(job, separator + steps + fields, 1)
+                changed = original.replace(job, reordered, 1)
+                self.assertNotEqual(changed, original)
                 self.assertEqual(
                     verify_mod._parse_workflow_structure_text(changed), baseline
                 )
-                for mutation in (
-                    changed.replace(
-                        separator + steps + fields,
-                        separator + steps + fields.replace(
-                            "    runs-on: ubuntu-24.04", "    runs-on: self-hosted", 1
-                        ),
-                        1,
-                    ),
-                    changed.replace(
-                        separator + steps + fields,
-                        separator + steps + fields + "    permissions: write-all\n",
-                        1,
-                    ),
-                    changed.replace(
-                        separator + steps + fields,
-                        separator + steps + fields + "    - run: echo stray\n",
-                        1,
-                    ),
+                for replacement in (
+                    "    runs-on: self-hosted\n",
+                    "    runs-on: ubuntu-24.04\n    permissions: write-all\n",
+                    "    runs-on: ubuntu-24.04\n    - run: echo stray\n",
                 ):
-                    with self.assertRaises(ValueError):
-                        verify_mod._parse_workflow_structure_text(mutation)
+                    with self.subTest(replacement=replacement):
+                        mutated_job = reordered.replace(
+                            "    runs-on: ubuntu-24.04\n", replacement, 1
+                        )
+                        self.assertNotEqual(mutated_job, reordered)
+                        mutation = changed.replace(reordered, mutated_job, 1)
+                        self.assertNotEqual(mutation, changed)
+                        with self.assertRaises(ValueError):
+                            verify_mod._parse_workflow_structure_text(mutation)
 
     def test_publisher_and_summary_contexts_are_closed_before_dry_run(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
