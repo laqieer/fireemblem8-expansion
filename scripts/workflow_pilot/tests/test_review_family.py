@@ -1771,6 +1771,45 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 session.review_state((), (), pre_review_required=True)
 
+    def test_initial_reviewer_activity_must_match_assigned_dispatch(self):
+        for case in ("contradictory-message", "additional-dispatch"):
+            with self.subTest(case=case), snapshot() as root:
+                _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+                final_index = next(
+                    index for index, (_, event) in enumerate(events)
+                    if event.get("type") == "assistant.message"
+                    and event.get("data", {}).get("phase") == "final_answer")
+                if case == "contradictory-message":
+                    extra = ("root-session", {
+                        "type": "assistant.message",
+                        "timestamp": times["view_end"],
+                        "agentId": reviewer,
+                        "data": {
+                            "interactionId": "another-interaction",
+                            "turnId": "another-turn",
+                            "phase": "commentary",
+                            "content": "Unbound reviewer activity",
+                        },
+                    })
+                else:
+                    extra = ("root-session", {
+                        "type": "subagent.started",
+                        "timestamp": times["view_end"],
+                        "agentId": reviewer,
+                        "data": {
+                            "toolCallId": "another-dispatch",
+                            "interactionId": "another-interaction",
+                            "agentType": "code-review",
+                        },
+                    })
+                events.insert(final_index, extra)
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                with self.assertRaisesRegex(model.ReviewError, "interaction|dispatch"):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                self.assertEqual(session.local_findings, {})
+
     def test_invalid_cli_observations_do_not_publish_a_report(self):
         with snapshot() as root:
             _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)

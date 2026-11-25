@@ -1253,6 +1253,13 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    timestamp equal to completion; it must invalidate the closed report even
    though ordinary timestamp and interaction checks would pass. Confirm that
    invalid observations never publish a report.
+   Before closure, include a reviewer message with a contradictory interaction
+   and a second `subagent.started` event for another dispatch in the original
+   snapshot. Each must reject admission and leave the report unpublished;
+   the unchanged assigned interaction and single dispatch remain a positive
+   control. Run
+   `CliReviewRuntimeTests.test_initial_reviewer_activity_must_match_assigned_dispatch`
+   as part of the focused host suite.
    A completed-turn event is not evidence that the CLI terminated the agent.
    In source-backed event tests, reject missing/mismatched dispatch or
    assignment, wrong candidate/scope, missing or late commitment, an observed

@@ -549,7 +549,7 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
             "entries": "ReviewSession.begin", "preservation": "RoundState.observe",
             "resets": "RoundState.observe", "terminals": "RoundState.dispose",
             "producers": "parse_json", "consumers": "validate_request",
-            "validators": "validate_request", "replay": "RoundState.observe",
+            "validators": "validate_reviewer_activity", "replay": "RoundState.observe",
             "stale-bindings": "assess_handoff",
         }
         for family in ("lifecycle", "wire"):
@@ -2212,8 +2212,43 @@ def _session_probe(probe: str) -> dict:
             raw["pass"] = True
             check(rejects(lambda: module.validate_request(raw)), "success label admitted")
         elif probe == "wire:validators":
-            raw["candidate_sha"] = "HEAD"
-            check(rejects(lambda: module.validate_request(raw)), "non-exact head admitted")
+            validator = getattr(module, "validate_reviewer_activity", None)
+            check(callable(validator), "initial reviewer activity validator is missing")
+            owner, dispatch, interaction = "reviewer", "dispatch-1", "interaction-1"
+            started_at, completed_at = "2026-01-01T00:00:01Z", "2026-01-01T00:00:05Z"
+            valid = (
+                ("root-session", {
+                    "type": "subagent.started", "timestamp": started_at, "agentId": owner,
+                    "data": {"toolCallId": dispatch, "interactionId": interaction},
+                }),
+                ("review-session", {
+                    "type": "assistant.message", "timestamp": "2026-01-01T00:00:03Z",
+                    "agentId": owner,
+                    "data": {"interactionId": interaction, "turnId": "turn-1"},
+                }),
+            )
+            accepted = validator(
+                valid, owner=owner, dispatch=dispatch, interaction=interaction,
+                started_at=started_at, completed_at=completed_at)
+            check(len(accepted) == 2, "valid assigned reviewer activity was rejected")
+            contradictory_message = ("review-session", {
+                "type": "assistant.message", "timestamp": "2026-01-01T00:00:04Z",
+                "agentId": owner,
+                "data": {"interactionId": "other-interaction", "turnId": "turn-2"},
+            })
+            check(rejects(lambda: validator(
+                valid + (contradictory_message,), owner=owner, dispatch=dispatch,
+                interaction=interaction, started_at=started_at, completed_at=completed_at)),
+                "contradictory initial interaction was admitted")
+            additional_dispatch = ("root-session", {
+                "type": "subagent.started", "timestamp": "2026-01-01T00:00:04Z",
+                "agentId": owner,
+                "data": {"toolCallId": "dispatch-2", "interactionId": "other-interaction"},
+            })
+            check(rejects(lambda: validator(
+                valid + (additional_dispatch,), owner=owner, dispatch=dispatch,
+                interaction=interaction, started_at=started_at, completed_at=completed_at)),
+                "additional initial dispatch was admitted")
         elif probe == "wire:stale-bindings":
             key = module.subject_key(raw["subjects"][0])
             members = tuple(module.Obligation(

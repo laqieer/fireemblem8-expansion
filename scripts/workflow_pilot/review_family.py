@@ -767,6 +767,66 @@ def _cli_event_key(record):
         raise ReviewError("CLI event record is not serializable") from error
 
 
+def validate_reviewer_activity(events, *, owner, dispatch, interaction,
+                               started_at, completed_at):
+    require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
+    start_time = timestamp(started_at)
+    completion_time = timestamp(completed_at)
+    require(start_time <= completion_time, "review task chronology is invalid")
+    activity = tuple(
+        record for record in events
+        if isinstance(record, (tuple, list)) and len(record) == 2
+        and isinstance(record[1], dict) and record[1].get("agentId") == owner
+        and is_review_activity(record[1]))
+    turn_ids = {
+        event.get("data", {}).get("turnId")
+        for _, event in activity
+        if isinstance(event.get("data"), dict)
+        and event["data"].get("interactionId") == interaction
+        and isinstance(event["data"].get("turnId"), str)
+    }
+    for record in activity:
+        _, event = record
+        kind = event.get("type")
+        data = event.get("data")
+        require(isinstance(data, dict), "reviewer event data is malformed")
+        event_time = timestamp(event.get("timestamp"))
+        require(start_time <= event_time <= completion_time,
+                "reviewer activity is outside its assigned task")
+        event_interaction = data.get("interactionId")
+        if isinstance(kind, str) and kind.startswith("subagent."):
+            require(kind in {"subagent.started", "subagent.completed"}
+                    and data.get("toolCallId") == dispatch,
+                    "reviewer activity belongs to another dispatch")
+            if kind == "subagent.started":
+                require(event_interaction == interaction,
+                        "reviewer dispatch has a contradictory interaction")
+            elif event_interaction is not None:
+                require(event_interaction == interaction,
+                        "reviewer dispatch has a contradictory interaction")
+        elif kind in {"user.message", "assistant.message"}:
+            require(event_interaction == interaction,
+                    "reviewer message has a contradictory interaction")
+        elif kind == "assistant.turn_start":
+            if event_interaction is not None:
+                require(event_interaction == interaction,
+                        "reviewer turn has a contradictory interaction")
+            else:
+                require(data.get("turnId") in turn_ids,
+                        "reviewer turn has no verifiable interaction")
+        elif isinstance(kind, str) and kind.startswith("tool."):
+            require(kind in {"tool.execution_start", "tool.execution_complete"},
+                    "reviewer tool event type is unsupported")
+            if event_interaction is not None:
+                require(event_interaction == interaction,
+                        "reviewer tool event has a contradictory interaction")
+            else:
+                require(kind == "tool.execution_start"
+                        and data.get("turnId") in turn_ids,
+                        "reviewer tool event has no verifiable interaction")
+    return frozenset(_cli_event_key(record) for record in activity)
+
+
 class ReviewOwnership:
     """Small in-process index owned/shared by the existing coordinator."""
 
@@ -790,7 +850,7 @@ class ReviewOwnership:
             session.identity, session.head, session.scope, True, session.owner)
 
     def finish(self, session, task, owner, interaction, completed_at,
-               dispatch_namespace=None, events=()):
+               dispatch_namespace=None, admitted_event_keys=()):
         key = task, owner
         dispatch = ((dispatch_namespace, task)
                     if dispatch_namespace is not None else None)
@@ -801,15 +861,13 @@ class ReviewOwnership:
         identifier(owner, NAME_PATTERN, "reviewer identity")
         identifier(interaction, NAME_PATTERN, "review interaction")
         timestamp(completed_at)
-        require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
+        require(isinstance(admitted_event_keys, (tuple, list, set, frozenset))
+                and all(isinstance(item, str) for item in admitted_event_keys),
+                "invalid admitted CLI event keys")
         identity, head, scope, _, assigned_owner = self.records[id(session)]
         require(assigned_owner == owner, "review owner changed before logical closure")
         self.records[id(session)] = identity, head, scope, False, assigned_owner
-        admitted_events = frozenset(
-            _cli_event_key(record) for record in events
-            if isinstance(record, (tuple, list)) and len(record) == 2
-            and isinstance(record[1], dict) and record[1].get("agentId") == owner
-            and is_review_activity(record[1]))
+        admitted_events = frozenset(admitted_event_keys)
         self.closed_tasks[key] = owner, interaction, completed_at, admitted_events
         self.closed_owners[owner] = key
         if dispatch is not None:
@@ -954,6 +1012,7 @@ class CliReviewRuntime:
         self.assigned_candidate = None
         self.assigned_subjects = None
         self.result = None
+        self.validated_event_keys = frozenset()
 
     def start(self, **expected):
         dispatches = [(session, event) for session, event in self.events
@@ -1044,23 +1103,10 @@ class CliReviewRuntime:
         completed_at = terminal.completed_at
         child = [(session, event) for session, event in self.events
                  if event.get("agentId") == self.reviewer]
-        turn_ids = {
-            event.get("data", {}).get("turnId")
-            for _, event in child
-            if event.get("data", {}).get("interactionId") == self.interaction
-            and isinstance(event.get("data", {}).get("turnId"), str)
-        }
-        for _, event in child:
-            if event.get("type") in {"tool.execution_start", "tool.execution_complete"}:
-                data = event.get("data", {})
-                interaction = data.get("interactionId")
-                if interaction is not None:
-                    require(interaction == self.interaction,
-                            "reviewer tool event has a contradictory interaction")
-                else:
-                    require(event.get("type") == "tool.execution_start"
-                            and data.get("turnId") in turn_ids,
-                            "reviewer tool event has no verifiable interaction")
+        self.validated_event_keys = validate_reviewer_activity(
+            child, owner=self.reviewer, dispatch=self.dispatch_id,
+            interaction=self.interaction, started_at=self.started_at,
+            completed_at=completed_at)
         turn_events = [
             event for _, event in child
             if (event.get("data", {}).get("interactionId") == self.interaction
@@ -1415,7 +1461,7 @@ class ReviewSession:
                 and type(result.completed) is bool, "wrong or stale runtime task observation")
         return result
 
-    def _retire(self, result, outcome, *, events=()):
+    def _retire(self, result, outcome, *, admitted_event_keys=()):
         require(result.completed is True, "review turn is incomplete")
         require(timestamp(getattr(result, "started_at", None))
                 <= timestamp(getattr(result, "completed_at", None)),
@@ -1426,7 +1472,7 @@ class ReviewSession:
             self.owners.finish(
                 self, self.lease.task, self.lease.owner,
                     getattr(result, "interaction_id", ""), result.completed_at,
-                    self.dispatch_namespace, events)
+                    self.dispatch_namespace, admitted_event_keys)
         self.lease.finished = True
         self.lease.outcome = outcome
         return outcome
@@ -1542,8 +1588,17 @@ class ReviewSession:
             None if binding is None else binding.base,
             tuple(external_reads[key] for key in sorted(external_reads)))
         cli_events = tuple(getattr(result, "cli_events", ()))
-        admitted_events = runtime.events if isinstance(runtime, CliReviewRuntime) else cli_events
-        require(self._retire(result, "completed", events=admitted_events) == "completed",
+        if isinstance(runtime, CliReviewRuntime):
+            admitted_event_keys = runtime.validated_event_keys
+        elif hasattr(result, "cli_events"):
+            admitted_event_keys = validate_reviewer_activity(
+                cli_events, owner=lease.owner, dispatch=lease.task,
+                interaction=result.interaction_id, started_at=result.started_at,
+                completed_at=result.completed_at)
+        else:
+            admitted_event_keys = frozenset()
+        require(self._retire(
+            result, "completed", admitted_event_keys=admitted_event_keys) == "completed",
                 "review exceeded duration bound")
         self.latest_cli_events = cli_events
         if self.owners is not None:

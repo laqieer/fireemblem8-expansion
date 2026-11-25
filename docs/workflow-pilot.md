@@ -672,10 +672,15 @@ coordinator accepts its evidence. It rejects reuse of that reviewer identity
 or dispatch for admission and checks later observed user, assistant (including
 turn-start), tool and subagent events for post-closure activity or contradictory
 interactions. A violation is retained in the shared ownership index and
-invalidates the report for every session using it; report fields are published
-only after all observations validate. The logical closure is separate from
-technical task termination. A later event invalidates admission when observed;
-the record does not claim that no unobserved event can occur. Exact reviewer
+invalidates only its owning `(task, owner)` report; report fields are published
+only after all observations validate. Before that closure snapshot is captured,
+every reviewer activity record in the initial event snapshot must match the
+assigned interaction and dispatch and fall within the task chronology. A
+contradictory message or additional dispatch in that snapshot rejects
+admission instead of being absorbed as previously admitted activity. Logical
+closure is separate from technical task termination. A later event invalidates
+admission when observed; the record does not claim that no unobserved event can
+occur. Exact reviewer
 identity, candidate binding, complete read coverage and original chronology
 remain mandatory. The reviewer must be distinct from implementation and
 coordination; those latter roles may be the same actual owner for
@@ -812,8 +817,10 @@ after a later candidate passes its probes. This is coordinator-owned triage,
 not authenticated provenance from a JSON author.
 
 At logical closure, the shared ownership index captures the exact review
-activity records admitted for that task. Later aggregate snapshots compare
-complete event records with that closure snapshot. Previously unseen review
+activity records validated for that task. The initial reviewer snapshot is
+checked against the assigned interaction, dispatch and task interval before
+any activity enters this baseline. Later aggregate snapshots compare complete
+event records with that validated closure snapshot. Previously unseen review
 activity invalidates only its owning `(task, owner)`, including an in-turn
 event with the same interaction and a timestamp equal to completion; unrelated
 sessions carrying the event do not fail. Each session checks its own task's
