@@ -1154,8 +1154,9 @@ class ReviewSession:
             self.owners.reserve(self)
         try:
             assigned_reads = json.dumps(
-                [[path, side] for path, side in sorted(
-                    runtime.required_reads)] if isinstance(runtime, CliReviewRuntime) else [],
+                [[path, side, target["tool_path"]]
+                 for (path, side), target in sorted(runtime.required_reads.items())]
+                if isinstance(runtime, CliReviewRuntime) else [],
                 ensure_ascii=True, separators=(",", ":"))
             if isinstance(runtime, CliReviewRuntime):
                 require(runtime.required_reads, "review assignment has no candidate paths")
@@ -1166,8 +1167,8 @@ class ReviewSession:
                 f"{CliReviewRuntime.COMMITMENT} Candidate SHA: {self.head}. "
                 f"Review scope: {', '.join(sorted(self.scope))}. "
                 f"Assigned candidate reads (JSON): {assigned_reads}. "
-                "Use complete direct file "
-                "reads of every assigned candidate path. Return only JSON with keys "
+                "Each entry maps a candidate path and side to its exact supplied file path. "
+                "Use complete direct file reads of every mapped file. Return only JSON with keys "
                 "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
                 "scope to the exact assigned scope array, and findings to an array of objects "
                 "with keys id, subject, family, member, source_path, detail. Use an empty "

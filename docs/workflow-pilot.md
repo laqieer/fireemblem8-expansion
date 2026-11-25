@@ -644,7 +644,9 @@ Admission binds the assigned reviewer and dispatch to the candidate SHA and
 scope, every observed full-file `view` start and successful completion, and the
 reviewer's final structured report. The observed paths and returned bytes must
 match the immutable candidate blobs from `CandidateReader`; every required
-candidate path and side must be present. Any observed operation other than a
+candidate path and side must be present. The assigned-read JSON maps each
+candidate path and side to the exact supplied file path the reviewer must read,
+including materialized base-side content. Any observed operation other than a
 direct full-file `view`, a failed or partial read, an unassigned path, missing
 completion, or malformed report rejects admission. These are checks of actual
 observations, not dispatch-level permission controls. Findings are parsed from

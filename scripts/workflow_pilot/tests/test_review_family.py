@@ -1287,8 +1287,9 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 }
         scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
         assigned_reads = json.dumps(
-            [[path, side] for path, side in sorted(targets)], ensure_ascii=True,
-            separators=(",", ":"))
+            [[path, side, target["tool_path"]]
+             for (path, side), target in sorted(targets.items())],
+            ensure_ascii=True, separators=(",", ":"))
         instructions = (
             "Review only the bound candidate and supplied evidence. Do not edit files, "
             "run commands, push, comment, request review, dispatch CI, merge, or perform "
@@ -1296,8 +1297,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
             f"{model.CliReviewRuntime.COMMITMENT} Candidate SHA: {fixture['head']}. "
             f"Review scope: {', '.join(sorted(scope))}. "
             f"Assigned candidate reads (JSON): {assigned_reads}. "
-            "Use complete direct file "
-            "reads of every assigned candidate path. Return only JSON with keys "
+            "Each entry maps a candidate path and side to its exact supplied file path. "
+            "Use complete direct file reads of every mapped file. Return only JSON with keys "
             "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
             "scope to the exact assigned scope array, and findings to an array of objects "
             "with keys id, subject, family, member, source_path, detail. Use an empty "

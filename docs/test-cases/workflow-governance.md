@@ -1229,13 +1229,13 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    any result has `kind: null`; unavailable rows always have zero checks.
 7. Launch a genuine fresh `code-review` task for the exact candidate and
    assigned scope. Its original prompt must bind the full candidate SHA, scope,
-   direct-read paths/sides, structured report format and explicit read-only
-   commitment. Verify the actual dispatch ID, assigned reviewer identity,
-   original received instructions, commitment before the first tool call,
-   complete `view` start/completion events, successful results equal to each
-   required immutable Git blob, exact final report, and completed-turn event
-   chronology before any remote review. Do not substitute coordinator rereads
-   for reviewer observations. This is the owner-approved instruction-based
+   direct-read paths/sides and each exact supplied file path, structured report
+   format and explicit read-only commitment. Verify the dispatch ID, assigned
+   reviewer identity, original received instructions, and commitment before
+   the first tool call, complete `view` start/completion events, successful
+   results equal to each required immutable Git blob, exact final report, and
+   completed-turn event chronology before any remote review. Do not substitute
+   coordinator rereads for reviewer observations. This is the owner-approved instruction-based
    trust model: it does not claim technically enforced permissions or task
    termination.
    The coordinator then logically closes the completed reviewer identity and
