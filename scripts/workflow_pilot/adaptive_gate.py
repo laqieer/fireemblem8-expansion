@@ -1338,7 +1338,8 @@ def _candidate_runs(state, record, pr, runs):
 
 
 def assess_candidate(state, record, decision, pr, session, facts, triage, checks, runs,
-                     *, family_evidence=None, accepted_security=(), criteria_ready=False):
+                     *, family_evidence=None, accepted_security=(), criteria_ready=False,
+                     cli_events=()):
     """Consume existing typed observations. Does not dispatch, merge or launch a watcher."""
     handoff.validate_state(state)
     require(type(criteria_ready) is bool, "objective/manual readiness must be an actual decision")
@@ -1371,7 +1372,9 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
     if handoff.availability_errors(state, observations.utc_now()):
         scheduling.append("coordinator-unavailable")
     try:
-        ready, clean = session.review_state(facts, triage, pre_review_required=decision.pre_review_required)
+        ready, clean = session.review_state(
+            facts, triage, pre_review_required=decision.pre_review_required,
+            cli_events=cli_events)
         if not ready or not clean:
             missing.append("exact-clean-review")
         if (rebound and clean and reporter.parse_time(triage[-1].fact.submitted_at, "review") <
@@ -1394,7 +1397,8 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         report, lease = session.report, session.lease
         ownership = session.owners.records.get(id(session)) if session.owners is not None else None
         if (report is None or lease is None or not lease.finished or lease.outcome != "completed"
-                or not report.completed or not report.read_only or report.subjects != session.scope
+                or not report.completed or not report.logical_closed
+                or not report.instruction_commitment.strip() or report.subjects != session.scope
                 or report.owner in {session.coordinator, session.implementer}
                 or (lease.task, lease.owner, lease.head) != (report.task, report.owner, report.head)
                 or ownership is None or ownership[3]
@@ -1510,7 +1514,8 @@ def evidence_comment(assessment, preserved_text=""):
 
 
 def assess_observed(client, state, record, session, triage, review_tools, *,
-                    family_evidence=None, accepted_security=(), criteria_ready=False):
+                    family_evidence=None, accepted_security=(), criteria_ready=False,
+                    cli_events=()):
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
     decision = fetch_decision(client, pr, lines)
@@ -1541,7 +1546,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     assessment = assess_candidate(
         state, record, decision, after, session, facts, triage, checks, runs,
         family_evidence=family_evidence, accepted_security=accepted_security,
-        criteria_ready=criteria_ready)
+        criteria_ready=criteria_ready, cli_events=cli_events)
     return assessment, runs
 
 

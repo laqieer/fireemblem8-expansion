@@ -626,14 +626,18 @@ a gate.
 ### Sibling-family review convergence
 
 Before the first remote review of a high-risk or large change, the coordinator
-uses one fresh bounded read-only reviewer through the existing task/tool
-interfaces. The reviewer must differ from both coordinator and implementer;
-those two may be the same actual owner for coordinator-authored work. Never
-create aliases or a pretend delegate to satisfy an inequality. Reject
-overlapping reviewer ownership. Only reading the exact candidate,
-reading supplied evidence and returning the report are permitted; deny edit,
-push, comment, request-review, CI dispatch, merge and arbitrary commands at the
-tool dispatch boundary.
+uses one fresh bounded reviewer through the existing task/tool interfaces. The
+reviewer must differ from both coordinator and implementer; those two may be
+the same actual owner for coordinator-authored work. Never create aliases or a
+pretend delegate to satisfy an inequality. Reject overlapping reviewer
+ownership. The original task instructions require an explicit read-only
+commitment before any operation, complete direct reads of the assigned
+candidate, and a structured findings report. Admission checks actual events
+and rejects observed edits, commands, unassigned/partial reads or mutations.
+The completed turn is logically closed by the coordinator, which rejects
+reviewer reuse and any later contradictory events. This is the accepted
+instruction-based trust model; it does not claim technically enforced
+permissions or task termination.
 
 Use the [review-family API](../../../docs/workflow-pilot.md#sibling-family-review-convergence)
 to bind accepted findings to existing cases, actual production predicates and
@@ -665,7 +669,7 @@ agent backend or protected installation is a prerequisite.
 The indexed case is
 [`TC-WORKFLOW-REVIEW-FAMILY-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
 
-- **Reviewer:** distinct-from-coordinator, distinct-from-implementer, read-only, bounded
+- **Reviewer:** distinct-from-coordinator, distinct-from-implementer, instruction-committed, bounded
 - **Coordinator implementation:** same-actual-owner-permitted, no-aliases
 - **Delegated local proof:** terminal-owner-handoff, descendant-and-trailers, assigned-scope-and-resources
 - **Coordinator local proof:** exact-git-and-worktree, registered-complete-native-checks,

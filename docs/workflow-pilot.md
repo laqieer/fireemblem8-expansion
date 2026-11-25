@@ -631,54 +631,46 @@ Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
 another active reviewer for the same repository/PR or the same candidate head,
 regardless of scope, before another task can start.
 
-`ReviewSession.begin` forwards the closed `code-review` role, exact head/scope,
-allowed read/report actions and duration/file/finding bounds to the
-coordinator's existing task adapter. It returns immediately. After the
-existing task-completion notification, `finish` reads that task's actual
-result. There is no polling, new agent backend or JSON-selected runtime.
-The adapter's result exposes the actual `task`, `owner`, `role`, `head`,
-`subjects`, `completed`, `read_only`, `actions`, `files`, `findings`, `started_at` and
-`completed_at`; these are runtime metadata, not fields copied from the
-reviewer's prose. Both `completed` and `read_only` must be Boolean `True`
-for report admission; truthy strings/numbers or missing fields cannot admit
-a completed review. Requested
-duration (1–3,600 seconds) and files (1–200, default 200) are strict Python
-integers. The lease retains its requested file bound; returned `files` must
-be an integer from zero through that bound, never a Boolean, float or string.
-Scope/actions must be collections of strings and findings a list/tuple of
-typed records. Malformed or over-budget reports do not grant review evidence
-or silently release ownership.
-Every admitted completed report must include actual runtime observations for
-both `read-candidate` and `emit-report`; `read-evidence` is optional.
-An empty or partial subset of the allowed actions is not sufficient.
-Bound read tools through the coordinator's `readers` map.
-`read_action` rejects mutation/arbitrary-command operations before dispatch.
-Ordinary test execution is a separate coordinator-owned test role, not a
-second overlapping reviewer.
+`ReviewSession.begin` binds the exact head, scope, reviewer identity and
+instructions to the existing `task` tool dispatch. After the completed-turn
+notification, `finish` verifies the original dispatch, the matching
+`subagent.started` and reviewer instruction message, and the task's completion
+events. It returns immediately and does not poll. This is the owner-approved
+instruction-based trust model: the reviewer must state the exact read-only
+commitment before any tool operation. This does **not** claim that the CLI has
+technically terminated the reviewer or enforced read-only permissions.
 
-Lease retirement is distinct from report admission. `finish` reads actual
-task status even after the deadline. A still-running or unknown task retains
-ownership; a verified late terminal result closes the lease with
-`outcome: timed-out`, releases ownership and rejects the report. The deadline
-is checked after reading and again before admission, so completion observed
-across the deadline cannot supply review evidence.
+Admission binds the assigned reviewer and dispatch to the candidate SHA and
+scope, every observed full-file `view` start and successful completion, and the
+reviewer's final structured report. The observed paths and returned bytes must
+match the immutable candidate blobs from `CandidateReader`; every required
+candidate path and side must be present. Any observed operation other than a
+direct full-file `view`, a failed or partial read, an unassigned path, missing
+completion, or malformed report rejects admission. These are checks of actual
+observations, not dispatch-level permission controls. Findings are parsed from
+the original report, joined to the assigned subject and sibling family, and
+bound to a source path the reviewer actually read. The final report must bind
+the exact candidate SHA and complete scope. Missing observations cannot be
+substituted with coordinator-side rereads.
 
-The explicit `session.abort(runtime)` operation uses the coordinator's
-optional existing `runtime.stop(task)` capability when the task is still
-running. It verifies the exact task/owner/role/head/scope, Boolean terminal
-`completed` state and terminal timestamp chronology. A stop request or
-acknowledgment alone never closes the lease: the operation reads the actual
-task again. Stop/read failure, missing stop capability, unknown status or
-malformed terminal metadata retains ownership until real terminal evidence
-is available. An already completed failed report can be abandoned without
-being accepted or stopping it again.
+`ReviewOwnership` logically closes the completed reviewer turn after the
+coordinator accepts its evidence. It rejects reuse of that reviewer identity
+or dispatch for admission and checks later observed events for post-closure
+activity or contradictory interactions. The logical closure is separate from
+technical task termination. A later event invalidates admission when observed;
+the record does not claim that no unobserved event can occur. Exact reviewer
+identity, candidate binding, complete read coverage and original chronology
+remain mandatory. The reviewer must be distinct from implementation and
+coordination; those latter roles may be the same actual owner for
+coordinator-authored work.
 
-Both paths use the same retirement helper. `finished` means the lease is
-closed, while `outcome` distinguishes an admitted `completed` review from
-`timed-out` or `aborted` work. Timeout/abort retains no report or local finding
-evidence and cannot satisfy independent pre-review admission. Completion
-releases the existing index for a fresh session; no polling loop, new task
-backend or cleanup service is added.
+Requested duration (1–3,600 seconds), file count (1–200, default 200) and
+finding count (at most 50) are strict bounds. The measured completed-turn
+interval and actual successful `view` count must fit those bounds. Scope,
+actions and findings are validated collections; malformed or over-budget
+evidence cannot admit a report. There is no new task-retirement service,
+permission platform, polling loop, agent backend or generic event
+infrastructure.
 
 The coordinator and reviewed validator/test tools are trusted. Candidate
 requests are data and cannot choose Python programs, imports, commands,
@@ -775,15 +767,18 @@ exclusion independently, even for disjoint scopes. A new head does not permit
 a second active reviewer on the same PR; another PR does not permit duplicate
 active review of the same candidate head. Only work with both a different
 repository/PR identity and a different head remains independent. Completion
-releases both exclusions for a subsequent bounded session.
+releases those active-review exclusions, but the coordinator permanently
+rejects reuse of the completed reviewer identity or task dispatch for review
+admission.
 `begin` requires `runtime.start` to return a nonblank string task identity,
 preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
 reservation before any lease or local report can be created; a later valid
 acquisition remains possible.
-`advance` rejects while a lease is active, including after its deadline or
-a stop acknowledgment without terminal evidence. The existing observed
-completion/timeout/abort path must release it first. Subsequent head changes
-preserve the old report's origin rather than rebinding it to the new head.
+`advance` rejects while a review lease is active. The coordinator closes the
+lease after observing a completed turn and rejects a late result when its
+bounded duration is exceeded; it makes no task-termination claim. Subsequent
+head changes preserve the old report's origin rather than rebinding it to the
+new head.
 
 `ReviewSession.finish` snapshots validated runtime fields into an internal
 frozen report before releasing ownership. Scope/actions are immutable sets,

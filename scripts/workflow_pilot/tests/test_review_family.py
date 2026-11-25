@@ -470,7 +470,8 @@ class CandidateCoverageTests(unittest.TestCase):
                 candidate_base=report.candidate_base,
                 candidate_reads=report.candidate_reads,
                 completed=report.completed,
-                read_only=report.read_only,
+                instruction_commitment=report.instruction_commitment,
+                logical_closed=report.logical_closed,
                 role=report.role,
             )
             with self.assertRaisesRegex(tools.model.ReviewError, "immutable review report"):
@@ -1008,7 +1009,8 @@ class RoleTests(unittest.TestCase):
         session.begin(self.runtime, "reviewer", duration=10)
         report = session.finish(self.runtime)
         self.assertEqual(report.owner, "reviewer")
-        self.assertTrue(report.read_only)
+        self.assertEqual(report.instruction_commitment, model.CliReviewRuntime.COMMITMENT)
+        self.assertTrue(report.logical_closed)
         self.assertTrue(report.completed)
         self.assertEqual(session.lease.outcome, "completed")
         self.assertFalse(owners.records[id(session)][3])
@@ -1023,8 +1025,7 @@ class RoleTests(unittest.TestCase):
                 self.session.read_action(action)
         self.assertEqual(self.effects, ["read"])
         self.assertEqual(self.runtime.calls[0][1]["role"], "code-review")
-        self.assertEqual(set(self.runtime.calls[0][1]["actions"]),
-                         {"read-candidate", "read-evidence", "emit-report"})
+        self.assertIn("Do not edit files", self.runtime.calls[0][1]["instructions"])
         report = self.session.finish(self.runtime)
         self.assertIs(report, self.session.report)
         self.assertIsNot(report, self.runtime.result)
@@ -1099,7 +1100,7 @@ class RoleTests(unittest.TestCase):
                     "coordinator", "next-implementer", self.scope, session.head,
                     identity=identity, owners=owners)
                 replacement = Runtime(fresh.head, fresh.scope)
-                fresh.begin(replacement, "reviewer")
+                fresh.begin(replacement, "reviewer-next")
                 fresh.finish(replacement)
 
     def owned_runtime(self, *, completed):
@@ -1125,7 +1126,7 @@ class RoleTests(unittest.TestCase):
                     "finding", next(iter(self.scope)), "wire", "validators:review-session",
                     session.head, "scripts/workflow_pilot/review_family.py", "local:task-1")
                 runtime.result.subjects = set(self.scope)
-                runtime.result.actions = ["read-candidate", "emit-report"]
+                runtime.result.actions = ["view"]
                 runtime.result.findings = [finding]
                 original = copy.deepcopy(runtime.result)
 
@@ -1138,13 +1139,13 @@ class RoleTests(unittest.TestCase):
                     runtime.result.head = "c" * 40
                     runtime.result.owner = "implementer"
                     runtime.result.completed = False
-                    runtime.result.read_only = False
+                    runtime.result.instruction_commitment = "missing commitment"
                     runtime.result.files = 999
 
                 release = session.owners.finish
 
-                def finish_owner(owner):
-                    release(owner)
+                def finish_owner(*args):
+                    release(*args)
                     if mutate_on_release:
                         mutate()
 
@@ -1157,7 +1158,7 @@ class RoleTests(unittest.TestCase):
                 self.assertEqual(report.head, original.head)
                 self.assertEqual(report.owner, original.owner)
                 self.assertIs(report.completed, True)
-                self.assertIs(report.read_only, True)
+                self.assertIs(report.logical_closed, True)
                 self.assertEqual(report.files, original.files)
                 self.assertEqual(report.subjects, frozenset(original.subjects))
                 self.assertEqual(report.actions, frozenset(original.actions))
@@ -1178,7 +1179,7 @@ class RoleTests(unittest.TestCase):
                 with self.assertRaises(FrozenInstanceError):
                     report.findings[0].id = "changed"
                 replacement = Runtime(fresh.head, fresh.scope)
-                fresh.begin(replacement, "reviewer")
+                fresh.begin(replacement, "reviewer-next")
                 fresh.finish(replacement)
 
     def test_head_advance_requires_actual_terminal_lease_release(self):
@@ -1192,7 +1193,7 @@ class RoleTests(unittest.TestCase):
                         session.advance("c" * 40)
                     self.assertEqual((session.head, session.lease.head), (old_head, old_head))
                     with self.assertRaises(model.ReviewError):
-                        fresh.begin(Runtime(fresh.head, fresh.scope), "reviewer")
+                        fresh.begin(Runtime(fresh.head, fresh.scope), "reviewer-next")
                 self.time = 11 if terminal == "timed-out" else 1
                 if terminal == "aborted":
                     stop = runtime.stop
@@ -1215,22 +1216,18 @@ class RoleTests(unittest.TestCase):
                 self.assertEqual(session.head, "c" * 40)
                 self.assertEqual(session.lease.head, old_head)
                 replacement = Runtime(fresh.head, fresh.scope)
-                fresh.begin(replacement, "reviewer")
+                fresh.begin(replacement, "reviewer-next")
                 fresh.finish(replacement)
 
     def test_completed_review_requires_candidate_read_and_report_observations(self):
         for actions, accepted in (
-            ((), False), (("read-evidence",), False),
-            (("read-candidate",), False), (("emit-report",), False),
-            (("read-candidate", "read-evidence"), False),
-            (("emit-report", "read-evidence"), False),
-            (("read-candidate", "emit-report"), True),
-            (("emit-report", "read-evidence", "read-candidate"), True),
+            ((), False), (("bash",), False), (("view",), True),
         ):
             with self.subTest(actions=actions):
                 session, runtime, fresh = self.owned_runtime(completed=True)
                 runtime.result.actions = actions
                 if accepted:
+                    runtime.result.files = 1
                     self.assertIs(session.finish(runtime), session.report)
                     self.assertEqual(session.report.actions, frozenset(actions))
                     self.assertEqual(session.lease.outcome, "completed")
@@ -1244,7 +1241,7 @@ class RoleTests(unittest.TestCase):
                     self.assertEqual(session.lease.outcome, "aborted")
                     self.assertIsNone(session.report)
                     replacement = Runtime(session.head, self.scope)
-                    fresh.begin(replacement, "reviewer")
+                    fresh.begin(replacement, "reviewer-next")
                     fresh.finish(replacement)
 
     def test_expired_lease_retires_only_after_observed_terminal_completion(self):
@@ -1255,7 +1252,7 @@ class RoleTests(unittest.TestCase):
         self.assertFalse(session.lease.finished)
         self.assertIsNone(session.report)
         with self.assertRaises(model.ReviewError):
-            fresh.begin(runtime, "reviewer")
+            fresh.begin(runtime, "reviewer-next")
         runtime.result.completed = True
         with self.assertRaisesRegex(model.ReviewError, "duration bound"):
             session.finish(runtime)
@@ -1265,10 +1262,189 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(session.local_findings, {})
         self.assertEqual([row[0] for row in runtime.calls], ["start", "read", "read"])
         replacement = Runtime(session.head, self.scope)
-        fresh.begin(replacement, "reviewer")
+        fresh.begin(replacement, "reviewer-next")
         fresh.finish(replacement)
         self.assertEqual(fresh.lease.outcome, "completed")
 
+
+class CliReviewRuntimeTests(unittest.TestCase):
+    def native_runtime(self, root, *, findings=None):
+        fixture = candidate_fixture(root)
+        tools = gate.ReviewTools(gate.GitTree(root.root, fixture["head"]), root.root)
+        reader = tools.candidate_reader(fixture["base"], fixture["head"])
+        changes = tools.candidate_changes(fixture["base"], fixture["head"])
+        targets = {}
+        for index, change in enumerate(changes.changes):
+            for side in change.required_reads():
+                summary = model.validate_candidate_read_summary(
+                    reader.describe(change.path, side),
+                    base_sha=fixture["base"], head_sha=fixture["head"])
+                blob = reader(change.path, side)["data"]
+                materialized = root.root / f"reviewer-input-{index}-{side}.txt"
+                materialized.write_bytes(blob)
+                targets[(change.path, side)] = {
+                    "tool_path": str(materialized), "content": blob, "summary": summary,
+                }
+        scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
+        assigned_reads = json.dumps(
+            [[path, side] for path, side in sorted(targets)], ensure_ascii=True,
+            separators=(",", ":"))
+        instructions = (
+            "Review only the bound candidate and supplied evidence. Do not edit files, "
+            "run commands, push, comment, request review, dispatch CI, merge, or perform "
+            "other mutations. Before reading, state exactly: "
+            f"{model.CliReviewRuntime.COMMITMENT} Candidate SHA: {fixture['head']}. "
+            f"Review scope: {', '.join(sorted(scope))}. "
+            f"Assigned candidate reads (JSON): {assigned_reads}. "
+            "Use complete direct file "
+            "reads of every assigned candidate path. Return only JSON with keys "
+            "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
+            "scope to the exact assigned scope array, and findings to an array of objects "
+            "with keys id, subject, family, member, source_path, detail. Use an empty "
+            "findings array when no findings are present."
+        )
+        report_findings = findings or []
+        report = json.dumps({
+            "candidate_sha": fixture["head"], "scope": sorted(scope),
+            "findings": report_findings,
+        })
+        dispatch_id = "dispatch-1"
+        interaction = "interaction-1"
+        reviewer = "reviewer-1"
+        root_session = "root-session"
+        def at(second):
+            return f"2026-01-01T00:00:{second:02d}Z"
+        times = {"dispatch": at(0), "started": at(1), "received": at(2),
+                 "commitment": at(3), "view_end": at(5)}
+
+        def event(kind, at, agent, data):
+            return (root_session, {"type": kind, "timestamp": at, "agentId": agent,
+                                   "data": data})
+
+        events = [
+            event("tool.execution_start", at(0), "coordinator", {
+                "toolCallId": dispatch_id, "toolName": "task",
+                "arguments": {"prompt": instructions, "agent_type": "code-review"},
+            }),
+            event("subagent.started", at(1), reviewer, {
+                "toolCallId": dispatch_id, "interactionId": interaction,
+                "agentType": "code-review",
+            }),
+            event("user.message", at(2), reviewer, {
+                "interactionId": interaction, "transformedContent": instructions,
+            }),
+            event("assistant.message", at(3), reviewer, {
+                "interactionId": interaction, "phase": "commentary",
+                "content": model.CliReviewRuntime.COMMITMENT,
+            }),
+        ]
+        second = 4
+        for index, ((path, side), target) in enumerate(sorted(targets.items())):
+            start_at, end_at = at(second), at(second + 1)
+            call_id = f"view-{index + 1}"
+            events.extend((
+                event("tool.execution_start", start_at, reviewer, {
+                    "interactionId": interaction, "toolCallId": call_id,
+                    "toolName": "view", "arguments": {"path": target["tool_path"]},
+                }),
+                event("tool.execution_complete", end_at, reviewer, {
+                    "interactionId": interaction, "toolCallId": call_id, "success": True,
+                    "result": {"content": target["content"].decode("utf-8")},
+                }),
+            ))
+            second += 2
+        times["view_end"] = at(second - 1)
+        times["report"] = at(second)
+        times["completed"] = at(second + 1)
+        times["dispatch_end"] = at(second + 2)
+        events.extend((
+            event("assistant.message", times["report"], reviewer, {
+                "interactionId": interaction, "phase": "final_answer", "content": report,
+            }),
+            event("subagent.completed", times["completed"], reviewer, {
+                "toolCallId": dispatch_id,
+            }),
+            event("tool.execution_complete", times["dispatch_end"], "coordinator", {
+                "toolCallId": dispatch_id, "success": True, "result": {"content": "done"},
+            }),
+        ))
+        runtime = model.CliReviewRuntime(
+            events, dispatch_id=dispatch_id, root_session_id=root_session,
+            candidate_reader=reader, required_reads=targets)
+        session = model.ReviewSession(
+            "coordinator", "implementer",
+            frozenset({model.subject_key(request()["subjects"][0])}),
+            fixture["head"], identity=("owner/repo", 1, fixture["base"]),
+            owners=model.ReviewOwnership(),
+            readers={"read-candidate": reader},
+        )
+        return fixture, runtime, session, events, times, reviewer, interaction
+
+    def test_completed_cli_turn_binds_instructions_reads_findings_and_logical_closure(self):
+        with snapshot() as root:
+            finding = {
+        "id": "finding-1",
+        "subject": "TC-WORKFLOW-REVIEW-FAMILY-001/review-session",
+        "family": "wire", "member": "validators:review-session",
+        "source_path": "candidate-review-paths/modify.txt",
+        "detail": "The candidate path has an observable contract gap.",
+            }
+            fixture, runtime, session, events, _, reviewer, _ = self.native_runtime(
+        root, findings=[finding])
+            session.begin(runtime, reviewer)
+            report = session.finish(runtime)
+            self.assertEqual(report.head, fixture["head"])
+            self.assertIn(finding["source_path"],
+                          {item.path for item in report.candidate_reads})
+            self.assertEqual(report.findings[0].detail, finding["detail"])
+            self.assertTrue(report.logical_closed)
+            self.assertFalse(any(event.get("type") == "subagent.selected" for _, event in events))
+
+    def test_missing_commitment_prohibited_action_wrong_blob_and_bad_chronology_fail(self):
+        mutations = (
+            ("missing-commitment", lambda events, times: events.__setitem__(
+                3, (events[3][0], {**events[3][1], "data": {
+                    **events[3][1]["data"], "content": "I will read files.",
+                }}))),
+            ("prohibited-operation", lambda events, times: events.insert(
+                4, (events[4][0], {**events[4][1], "data": {
+                    **events[4][1]["data"], "toolName": "bash",
+                }}))),
+            ("wrong-blob", lambda events, times: events.__setitem__(
+                5, (events[5][0], {**events[5][1], "data": {
+                    **events[5][1]["data"], "result": {"content": "not the Git blob"},
+                }}))),
+            ("commitment-after-read", lambda events, times: events.__setitem__(
+                3, (events[3][0], {**events[3][1], "timestamp": times["view_end"]}))),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name), snapshot() as root:
+                _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+                mutate(events, times)
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+
+    def test_logical_closure_rejects_reused_reviewer_and_later_events(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, interaction = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            second = model.ReviewSession(
+                "coordinator", "another-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners)
+            with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
+                second.begin(Runtime(session.head, session.scope), reviewer)
+            event = ("root-session", {
+                "type": "user.message", "timestamp": "2026-01-01T00:00:20Z",
+                "agentId": reviewer, "data": {"interactionId": interaction},
+            })
+            with self.assertRaisesRegex(model.ReviewError, "after logical closure"):
+                session.observe_cli_events((event,))
+
+
+class RemainingRoleTests(RoleTests):
     def test_deadline_crossing_during_runtime_read_cannot_accept_a_report(self):
         session, runtime, _ = self.owned_runtime(completed=True)
         self.time = 9
@@ -1316,14 +1492,14 @@ class RoleTests(unittest.TestCase):
                     runtime.result.completed = True
                     runtime.result.completed_at = None
                 else:
-                    runtime.result.read_only = False
+                    runtime.result.instruction_commitment = "missing commitment"
                 expected = OSError if case in {"stop-failure", "read-failure"} else model.ReviewError
                 with self.assertRaises(expected):
                     session.finish(runtime) if case == "failed-report" else session.abort(runtime)
                 self.assertFalse(session.lease.finished)
                 self.assertIsNone(session.report)
                 with self.assertRaises(model.ReviewError):
-                    fresh.begin(Runtime(session.head, self.scope), "reviewer")
+                    fresh.begin(Runtime(session.head, self.scope), "reviewer-next")
                 runtime.read, runtime.stop = read, stop
                 if case != "failed-report":
                     runtime.result = original
@@ -1341,7 +1517,7 @@ class RoleTests(unittest.TestCase):
                     session.abort(runtime)
                 with self.assertRaises(model.ReviewError):
                     session.finish(runtime)
-                fresh.begin(Runtime(session.head, self.scope), "reviewer")
+                fresh.begin(Runtime(session.head, self.scope), "reviewer-next")
 
     def test_wrong_actual_task_results_are_rejected(self):
         for field, wrong in (("head", "c" * 40), ("task", "other"), ("owner", "implementer"),
@@ -1356,8 +1532,11 @@ class RoleTests(unittest.TestCase):
 
     def test_runtime_completion_requires_actual_true_flags(self):
         missing = object()
-        for field in ("completed", "read_only"):
-            for value in (False, None, 0, 1, "", "incomplete", "true", [], {}, [True], missing):
+        for field, valid in (
+            ("instruction_commitment", model.CliReviewRuntime.COMMITMENT),
+            ("logical_closed", False),
+        ):
+            for value in (True, None, 0, 1, "", "incomplete", "true", [], {}, [True], missing):
                 with self.subTest(field=field, value=value):
                     session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
                     runtime = Runtime(session.head, self.scope)
@@ -1370,7 +1549,7 @@ class RoleTests(unittest.TestCase):
                         session.finish(runtime)
                     self.assertFalse(session.lease.finished)
                     self.assertIsNone(session.report)
-                    setattr(runtime.result, field, True)
+                    setattr(runtime.result, field, valid)
                     session.finish(runtime)
                     self.assertTrue(session.lease.finished)
 
@@ -1394,7 +1573,7 @@ class RoleTests(unittest.TestCase):
                 with self.assertRaises(model.ReviewError):
                     session.finish(runtime)
                 self.assertFalse(session.lease.finished)
-        for bound, files in ((1, 0), (1, 1), (10, 10), (200, 200)):
+        for bound, files in ((1, 1), (10, 10), (200, 200)):
             with self.subTest(bound=bound, files=files):
                 session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
                 runtime = Runtime(session.head, self.scope)
@@ -1505,6 +1684,23 @@ class RoleTests(unittest.TestCase):
         first.finish(self.runtime)
         second.begin(Runtime("b" * 40, self.scope), "second-reviewer")
 
+    def test_one_reviewer_cannot_own_two_active_independent_dispatches(self):
+        owners = model.ReviewOwnership()
+        first = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "b" * 40,
+            identity=("owner/repo", 1, "a" * 40), owners=owners)
+        second = model.ReviewSession(
+            "coordinator", "other-implementer", self.scope, "c" * 40,
+            identity=("owner/repo", 2, "a" * 40), owners=owners)
+        first.begin(self.runtime, "reviewer")
+        runtime = Runtime(second.head, second.scope)
+        with self.assertRaisesRegex(model.ReviewError, "overlapping"):
+            second.begin(runtime, "reviewer")
+        self.assertEqual(runtime.calls, [])
+        first.finish(self.runtime)
+        with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
+            second.begin(runtime, "reviewer")
+
     def test_one_active_pr_head_owner_ignores_scope_but_releases_completed_work(self):
         identity = ("owner/repo", 1, "a" * 40)
         disjoint = frozenset({"TC-CORE-004/generated-eventlists"})
@@ -1530,19 +1726,20 @@ class RoleTests(unittest.TestCase):
                 self.assertEqual(next_runtime.calls, [])
                 self.assertIsNone(second.lease)
                 first.finish(runtime)
-                second.begin(next_runtime, "reviewer")
+                second.begin(next_runtime, "reviewer-next")
                 second.finish(next_runtime)
         owners = model.ReviewOwnership()
         first = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40,
                                     identity=identity, owners=owners)
         first.begin(self.runtime, "reviewer")
-        for other_identity, head in ((("owner/repo", 2, "a" * 40), "c" * 40),
-                                     (("other/repo", 1, "a" * 40), "d" * 40)):
+        for number, (other_identity, head) in enumerate((
+                (("owner/repo", 2, "a" * 40), "c" * 40),
+                (("other/repo", 1, "a" * 40), "d" * 40))):
             independent = model.ReviewSession(
                 "coordinator", "other-implementer", self.scope, head,
                 identity=other_identity, owners=owners)
             runtime = Runtime(head, self.scope)
-            independent.begin(runtime, "reviewer")
+            independent.begin(runtime, "independent-reviewer-" + str(number))
             independent.finish(runtime)
         first.finish(self.runtime)
 

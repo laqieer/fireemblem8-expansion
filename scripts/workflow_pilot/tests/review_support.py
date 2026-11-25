@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -45,17 +46,40 @@ class Runtime:
         self.calls = []
         self.result = SimpleNamespace(
             task="task-1", owner="reviewer", role="code-review", head=head,
-            subjects=subjects, completed=True, read_only=True,
-            actions=("read-candidate", "emit-report"),
+            subjects=subjects, completed=True,
+            actions=("view",),
             files=3, findings=(), started_at="2026-01-01T00:00:00Z",
-            completed_at="2026-01-01T00:00:01Z")
+            completed_at="2026-01-01T00:00:01Z", interaction_id="interaction-1",
+            instruction_commitment="I will follow the read-only restrictions and only inspect the assigned files.",
+            logical_closed=False, candidate_reads=())
 
     def start(self, **arguments):
         self.calls.append(("start", arguments))
+        self.result.owner = arguments["owner"]
         return self.result.task
 
     def read(self, task):
         self.calls.append(("read", task))
+        if self.result is None or not all(hasattr(self.result, name) for name in
+                                          ("head", "subjects", "findings")):
+            return self.result
+        if (not isinstance(self.result.head, str)
+                or not isinstance(self.result.subjects, (tuple, list, set, frozenset))
+                or not isinstance(self.result.findings, (tuple, list))
+                or any(not all(hasattr(item, name) for name in
+                               ("id", "subject", "family", "member", "source_path", "detail"))
+                       for item in self.result.findings)):
+            self.result.report = ""
+            return self.result
+        self.result.report = json.dumps({
+            "candidate_sha": self.result.head,
+            "scope": sorted(self.result.subjects),
+            "findings": [{
+                "id": item.id, "subject": item.subject, "family": item.family,
+                "member": item.member, "source_path": item.source_path,
+                "detail": item.detail,
+            } for item in self.result.findings],
+        })
         return self.result
 
     def stop(self, task):

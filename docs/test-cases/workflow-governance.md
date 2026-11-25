@@ -1227,57 +1227,38 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    wrong and malformed records reject rather than being relabeled.
    Genuine executor failures retain their kind, while a worker exiting before
    any result has `kind: null`; unavailable rows always have zero checks.
-7. Exercise the existing task adapter's bounded read-only role and actual
-   returned task metadata. Make `runtime.start` return None, empty/whitespace
-   strings, Booleans, numbers, bytes and containers. Each must reject before
-   lease creation without retaining its reservation or admitting a local
-   finding. Retry with a valid opaque string ID: preserve it unchanged,
-   complete the review and allow subsequent acquisition.
-   Denied mutation operations never reach the bound
-   tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
-   excessive duration reject. This proves the operational interface, not
-   same-UID OS containment or that a synthetic test launched a live agent.
-   Disjoint scopes cannot create a second active reviewer for the same
-   repository/PR even at a different head, or for the same candidate head even
-   on another PR. Work with both a different repository/PR identity and a
-   different head remains independent, even with overlapping scope. Completed
-   sessions release both exclusions; denied starts never reach the runtime.
-   Attempt head advance during the lease, including after expiration or
-   a nonterminal stop acknowledgment: the session/head binding must remain
-   unchanged. Only actual completed/aborted/timed-out terminal release permits
-   normal head advance, while retaining the report's old origin.
-   Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
-   false, truthy strings/numbers, containers and missing fields. Request a
-   completed report with empty/partial allowed actions: both `read-candidate`
-   and `emit-report` must have been observed. Their pair passes with or without
-   optional `read-evidence`; any subset missing either required action rejects.
-   A rejected but truly terminal task may still be explicitly aborted without
-   admitting its report. Request a
-   ten-file lease, return ten files, then eleven; only the first completes.
-   Repeat requested/returned bounds with Boolean, fractional/integral float,
-   string, negative and over-global-cap values. Only strict integer counts
-   within the requested bound (at most 200) pass. Malformed adjacent runtime
-   fields leave ownership active; a subsequent valid result can finish it.
-   Expire a lease while the runtime still reports it running: observe the
-   status, reject completion and keep fresh-reviewer admission blocked.
-   Then supply actual terminal completion; reject the late report but close
-   the lease as `timed-out` and allow a fresh reviewer. Repeat with the
-   deadline passing during the runtime read; no late report is admitted.
-   Exercise explicit abort through the runtime's existing stop capability.
-   A stop acknowledgment without terminal status, read/stop failure, unknown
-   status, missing capability, wrong identity or malformed terminal chronology
-   must not release ownership. Once terminal evidence is observed, close as
-   `aborted` without accepting a report; an already completed failed report
-   needs no second stop. Normal completion retains `outcome: completed`.
-   Every returned typed finding needs explicit accepted/rejected local triage
-   with a reason. Omission rejects even on repaired source; acceptance enters
-   the existing sibling sweep, and rejection never silently accepts a finding.
-   Mutate the runtime's timestamps, actions, scope, findings, bounds and
-   completion flags after finish, and during the ownership-release callback.
-   The returned internal report must retain its validated immutable values,
-   including nested collections and typed findings. A timely review remains
-   timely; changing a recorded late completion to an earlier time cannot
-   admit pre-review eligibility.
+7. Launch a genuine fresh `code-review` task for the exact candidate and
+   assigned scope. Its original prompt must bind the full candidate SHA, scope,
+   direct-read paths/sides, structured report format and explicit read-only
+   commitment. Verify the actual dispatch ID, assigned reviewer identity,
+   original received instructions, commitment before the first tool call,
+   complete `view` start/completion events, successful results equal to each
+   required immutable Git blob, exact final report, and completed-turn event
+   chronology before any remote review. Do not substitute coordinator rereads
+   for reviewer observations. This is the owner-approved instruction-based
+   trust model: it does not claim technically enforced permissions or task
+   termination.
+   The coordinator then logically closes the completed reviewer identity and
+   dispatch. A second admission using that reviewer must reject before another
+   task starts. Feed a later contradictory event for that reviewer and require
+   admission to fail. A completed-turn event is not evidence that the CLI
+   terminated the agent.
+   In source-backed event tests, reject missing/mismatched dispatch or
+   assignment, wrong candidate/scope, missing or late commitment, an observed
+   non-`view` operation, failed/partial/unassigned/duplicate file reads,
+   wrong blob bytes, omitted required paths/sides, malformed report/finding,
+   duplicate task/reviewer reuse, post-closure activity, and invalid
+   chronology. Require actual parsed report findings, candidate binding,
+   immutable summaries and local finding triage; a coordinator-side read alone
+   cannot establish coverage. Bound duration, file and finding counts with
+   strict integers and exercise their negative controls. Check that overlap
+   exclusion still blocks a second active reviewer for one PR or head while
+   logically closed reviewers cannot be reused.
+   Run the focused `CliReviewRuntimeTests` and role/ownership tests. Synthetic
+   fixtures cover parser/reducer negatives only; they do not replace the
+   genuine CLI task observation above. Tool availability and event visibility
+   are not permission enforcement, same-UID OS isolation or proof of
+   unobserved task termination.
 8. Exercise exact GitHub actor/head/content collection and complete coordinator
    triage. COMMENTED, approval phrases and zero inline findings remain
    untriaged until that decision. Change content or the head and require
