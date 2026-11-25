@@ -1113,6 +1113,7 @@ class CliReviewRuntime:
         received = [(session, event) for session, event in self.events
                     if event.get("agentId") == self.reviewer
                     and event.get("type") == "user.message"
+                    and event.get("data", {}).get("source") == "agent-" + self.root_session_id
                     and event.get("data", {}).get("interactionId") == self.interaction
                     and isinstance(event.get("data", {}).get("transformedContent"), str)
                     and prompt in event["data"]["transformedContent"]

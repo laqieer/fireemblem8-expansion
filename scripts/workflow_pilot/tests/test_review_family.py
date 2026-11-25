@@ -1362,6 +1362,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
             }),
             event("user.message", at(2), reviewer, {
                 "interactionId": interaction, "turnId": "turn-0",
+                "source": "agent-" + root_session_id,
                 "transformedContent": instructions,
             }),
             event("assistant.message", at(3), reviewer, {
@@ -1820,6 +1821,65 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "instructions"):
                 missing_session.begin(missing_runtime, reviewer)
             self.assertIsNone(missing_session.report)
+
+    def test_overlapping_roots_cannot_supply_another_reviewers_receipt(self):
+        with snapshot() as root:
+            fixture, runtime, session, events, _, reviewer, _ = self.native_runtime(
+                root, root_session_id="root-session-1",
+                reviewer_session_id="reviewer-session-1")
+            other_events = []
+            for session_id, event in events:
+                copied = copy.deepcopy(event)
+                if copied.get("type") == "user.message":
+                    copied["data"]["source"] = "agent-root-session-2"
+                other_session = {
+                    "root-session-1": "root-session-2",
+                    "reviewer-session-1": "reviewer-session-2",
+                }[session_id]
+                other_events.append((other_session, copied))
+
+            runtime.events = tuple(events + other_events)
+            session.begin(runtime, reviewer)
+            self.assertEqual(runtime.reviewer_session_id, "reviewer-session-1")
+            session.finish(runtime)
+
+            other_runtime = model.CliReviewRuntime(
+                runtime.events, dispatch_id=runtime.dispatch_id, root_session_id="root-session-2",
+                candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+            other = model.ReviewSession(
+                "coordinator", "implementer", session.scope, fixture["head"],
+                identity=("owner/repo", 2, fixture["base"]), owners=session.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            other.begin(other_runtime, reviewer)
+            self.assertEqual(other_runtime.reviewer_session_id, "reviewer-session-2")
+            other.finish(other_runtime)
+
+            for source in ("missing-receipt", None, "agent-root-session-2"):
+                with self.subTest(source=source):
+                    missing = []
+                    for session_id, event in events:
+                        if event.get("type") == "user.message":
+                            if source == "missing-receipt":
+                                continue
+                            event = copy.deepcopy(event)
+                            if source is None:
+                                event["data"].pop("source")
+                            else:
+                                event["data"]["source"] = source
+                        missing.append((session_id, event))
+                    invalid_runtime = model.CliReviewRuntime(
+                        tuple(missing + other_events),
+                        dispatch_id=runtime.dispatch_id, root_session_id="root-session-1",
+                        candidate_reader=runtime.candidate_reader,
+                        required_reads=runtime.required_reads)
+                    invalid = model.ReviewSession(
+                        "coordinator", "implementer", session.scope, fixture["head"],
+                        identity=("owner/repo", 3, fixture["base"]),
+                        owners=model.ReviewOwnership(),
+                        readers={"read-candidate": runtime.candidate_reader})
+                    with self.assertRaisesRegex(model.ReviewError, "instructions"):
+                        invalid.begin(invalid_runtime, reviewer)
+                    self.assertIsNone(invalid.report)
 
     def test_post_closure_invalidation_is_shared_with_existing_reports(self):
         with snapshot() as root:

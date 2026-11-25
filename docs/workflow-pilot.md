@@ -634,7 +634,9 @@ regardless of scope, before another task can start.
 `ReviewSession.begin` binds the exact head, scope, reviewer identity and
 instructions to the existing `task` tool dispatch. `finish` verifies the
 successful task-call completion as a dispatch receipt, and the matching
-`subagent.started` and reviewer instruction message. The instruction receipt
+`subagent.started` and reviewer instruction message. The native receipt's
+`source` must equal `agent-` followed by the assigned root session ID; a
+missing or different source cannot bind the receipt. The instruction receipt
 must match the assigned prompt and occur after the reviewer start. If the
 matching completion event is already observed, use that dispatch interval to
 select the receipt; otherwise defer its upper-bound check until `finish`.

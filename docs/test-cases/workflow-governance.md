@@ -1249,9 +1249,12 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    reuse the same reviewer and dispatch identifiers: both independent tasks
    must admit. Aggregate both histories with identical reviewer, interaction
    and dispatch IDs but distinct task intervals; each report must bind only
-   the instruction receipt inside its own interval. Remove the first task's
-   receipt while retaining the second's otherwise matching receipt; the first
-   task must reject instead of borrowing it. A late assistant turn-start in
+   the instruction receipt inside its own interval. Repeat with overlapping
+   intervals and otherwise identical instructions; each must use the receipt
+   whose native source names its own root. Remove that receipt or its source,
+   or replace its source with the other root, while retaining the second's
+   matching receipt; the first task must reject instead of borrowing it.
+   A late assistant turn-start in
    the second reviewer's event session must invalidate only the second report.
    Include that late event in the first reviewer's aggregate snapshot; the
    first report must remain ready.
