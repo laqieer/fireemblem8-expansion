@@ -596,6 +596,51 @@ class NativeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping active owners"):
             handoff.validate_state(candidate)
 
+    def test_closed_logical_release_rejects_later_overlapping_worktree(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+        handoff.validate_handoff(f.state, result, worktree=validation_worktree, run_checks=False)
+        self.assertIsNotNone(f.entry["closed_at"])
+        self.assertEqual(f.entry["worktree_release"], release)
+
+        descendant = Path(f.assignment["allowed_worktree"]) / "descendant"
+        git(f.repository, "worktree", "add", "-b", "agent/descendant",
+            str(descendant), result["result_sha"])
+        self.assertTrue(Path(f.assignment["allowed_worktree"]).exists())
+        self.assertTrue(descendant.exists())
+        assignment = copy.deepcopy(f.assignment)
+        assignment.update({
+            "id": "assignment-two",
+            "issue": 179,
+            "pull_request": 192,
+            "owner_id": None,
+            "session_id": None,
+            "dispatch_id": None,
+            "assigned_parent_sha": result["result_sha"],
+            "expected_branch": "agent/descendant",
+            "allowed_worktree": str(descendant),
+            "predecessor_id": None,
+            "kind": "initial",
+        })
+        assignment["native"]["prompt"] = "[handoff:assignment-two] Implement the assigned change."
+
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value=None):
+            with self.assertRaisesRegex(
+                handoff.HandoffDataError, "released logical worktree cannot be reassigned",
+            ):
+                handoff.assign(f.state, assignment)
+        self.assertEqual(len(f.state["assignments"]), 1)
+
     def test_logical_release_rejects_another_active_validation_path(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)

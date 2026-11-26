@@ -615,7 +615,8 @@ def validate_state(value):
     for released_path, released_at, release_owner in releases:
         for entry in value["assignments"]:
             assignment = entry["assignment"]
-            if assignment["id"] != release_owner and assignment["allowed_worktree"] == released_path:
+            if (assignment["id"] != release_owner
+                    and paths_overlap(Path(assignment["allowed_worktree"]), Path(released_path))):
                 require(timestamp(entry["assigned_at"]) <= released_at,
                         "released logical worktree cannot be reassigned")
     for index, (left, left_worktrees) in enumerate(active):

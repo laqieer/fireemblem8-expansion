@@ -6783,7 +6783,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    Missing/future/negative lifecycle times and an open report clock predating
    assignment never become fabricated zero elapsed time.
 6. Reserve duplicate/overlapping owners/watchers and attempt a second state
-   writer: each rejects. Try different watcher IDs/runs with the same actual
+   writer: each rejects. After a logical owner is closed with a recorded
+   worktree release, attempt a fresh assignment whose worktree is nested
+   beneath the released owner path. It must reject even though the path string
+   differs, and leave coordinator state unchanged. Try different watcher
+   IDs/runs with the same actual
    boot/PID/start identity, both through reservation and loaded state: reject.
    Distinct live processes pass; an owned unreaped zombie cannot reserve a
    watcher. Running/ended records must agree with process state and exit data;
