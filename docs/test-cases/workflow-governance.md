@@ -6655,7 +6655,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
      scripts.workflow_pilot.tests.test_agent_handoff \
      scripts.workflow_pilot.tests.test_coordinator_observations -v
    build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
-     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_accepted_logical_handoff_uses_released_validation_worktree -v
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_accepted_logical_handoff_uses_released_validation_worktree \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_delayed_process_completion_cannot_attribute_successor_head -v
    ```
 
 2. Inspect the real-Git positive fixture: exact clean strict descendant, named
@@ -6680,8 +6681,15 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    distinct progress IDs remain valid. Missing, opaque or dispatch-equal
    progress call IDs and missing or opaque tool names reject. Once bound, an
    explicitly conflicting owner session on a tool completion, turn or delivery
-   rejects; matching or omitted optional session fields remain valid. After
-   handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
+   rejects; matching or omitted optional session fields remain valid. Append
+   an owner tool completion and a delivery with reversed producer timestamps,
+   then reverse progress and completion, and completion and receipt after
+   owner binding: all must reject without advancing the cursor. The reversed
+   delivery must also leave locked CLI state unchanged. Ordered observations
+   remain valid, and an unrelated
+   owner's completion does not set this owner's clock. The pre-fix reader
+   accepts the reversed sequences.
+   After handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. After successful closure,
    late events matching the closed owner or its bound session reject without
    advancing the cursor, while unrelated-owner events remain independent. Put
@@ -6840,20 +6848,41 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    delivery and task-completion records in the same observed batch.
    For an OS-process-backed owner, a real zero exit and complete owned RSS
    pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
-   and repeated committed-owner work do not pass. For a logical task owner,
+   and repeated committed-owner work do not pass. Close an accepted owner
+   before its task completion, then let an accepted review successor commit in
+   the same worktree. A delayed successful completion must not attribute that
+   later HEAD to the predecessor; persist and replay it without changing the
+   retirement time. A delayed failed completion must invalidate current and
+   successor readiness and appear as `owner-task-failed`, without rewriting
+   the historical verdict. Legacy terminal snapshots remain valid only when
+   their original head, worktree, identity and scope match.
+   For a logical task owner,
    record the exact dispatched `task` tool's terminal
-   completion after delivery. The terminal event by itself must leave the
-   assignment open and validation without release evidence must reject with
+   completion after delivery. A valid retained entry without the optional
+   terminal field must accept its first matching completion and reject a
+   duplicate; the pre-fix reader raises `KeyError` instead. The terminal
+   event by itself must leave the assignment open and validation without
+   release evidence must reject with
    `owner-worktree-release-unavailable`. For a successful task, publish the
    exact candidate commit first, then run `release-worktree` from a separate
    coordinator worktree. Require the exact remote branch head, a clean linked
    owner worktree with no untracked or ignored data, and an unused validation
-   path. The operation must create a fresh detached worktree at the candidate,
+   path. Repeat with newline characters in both worktree paths: exact Git
+   registrations must be recognized without splitting or quoting the paths.
+   Simulate owner-removal failure and require rollback of the validation
+   worktree while retaining the owner; retry must then succeed. The pre-fix
+   line-based inventory rejects the registered owner before removal.
+   The operation must create a fresh detached worktree at the candidate,
    use the normal `git worktree remove` command without force, and verify the
    owner path is absent and unregistered. Run final validation and required
    checks only in the fresh worktree. After acceptance, the candidate readiness
-   check must use the recorded validation worktree and reject a missing or
-   modified worktree. Append an owner or unrelated event, or remove, replace,
+   check must use the recorded validation worktree and reject a missing,
+   modified, moved-head or identity-replaced worktree, both before and after
+   registering separate coordinator-owned checks for the same candidate.
+   A review successor cannot be assigned from a changed validation worktree.
+   An independently validated successor can advance beyond its predecessor
+   without requiring the historical worktree to remain the current candidate.
+   Append an owner or unrelated event, or remove, replace,
    truncate or append a partial record to the native log: candidate readiness
    must not reuse the stale verdict. An unread event must also block a review
    successor and any later accepted review in its chain. Observe a valid
@@ -6878,8 +6907,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    printed result, or unrelated `tool.execution_complete` event alone is not
    release evidence. Confirm the terminal timestamp, rather than delayed
    coordinator validation, determines logical-task lifetime. A prefilled
-   close, unread native-log tail, or mismatched task, owner, session, head,
-   worktree, Git identity or scope remains invalid. Failed logical tasks remain
+   close, unread native-log tail, or mismatched task, owner, session, delivered
+   head, worktree, Git identity or scope remains invalid. Failed logical tasks remain
    rejected and open; they do not gain a recovery/reassignment path from this
    successful-task contract. RSS remains explicitly unavailable and does not
    block this path; a native task terminal never substitutes for process
