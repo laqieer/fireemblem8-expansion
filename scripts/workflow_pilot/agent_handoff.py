@@ -1021,6 +1021,40 @@ def observe_remote_branch(assignment, cwd):
     return branch["commit"]["sha"]
 
 
+def prune_exact_stale_worktree(coordinator_root, owner_root, identity):
+    common_dir = Path(identity["common_dir"])
+    git_dir = Path(identity["git_dir"])
+    require(git_dir.parent == common_dir / "worktrees"
+            and str(git_dir.resolve(strict=True)) == str(git_dir),
+            "stale owner registration is outside the assigned repository")
+    gitdir_file = git_dir / "gitdir"
+    require(stat.S_ISREG(gitdir_file.lstat().st_mode)
+            and gitdir_file.read_bytes() == os.fsencode(str(owner_root / ".git") + "\n"),
+            "stale owner registration does not identify the assigned worktree")
+    expected = f"Removing {git_dir.relative_to(common_dir).as_posix()}:"
+
+    def prune(dry_run):
+        arguments = ["worktree", "prune", "--verbose", "--expire=now"]
+        if dry_run:
+            arguments.append("--dry-run")
+        result = git.run_process(
+            git.git_command(coordinator_root, *arguments),
+            cwd=coordinator_root,
+            env=git.git_environment(),
+        )
+        require(result.returncode == 0,
+                "Git could not inspect stale worktree registrations")
+        lines = (result.stdout + result.stderr).decode("utf-8", errors="replace").splitlines()
+        require(len(lines) == 1 and lines[0].startswith(expected),
+                "stale-worktree prune would affect an unexpected registration")
+        return lines[0]
+
+    preview = prune(True)
+    require(prune(False) == preview,
+            "stale-worktree prune changed after its exact preview")
+    require(not git_dir.exists(), "stale owner registration remains after pruning")
+
+
 def release_logical_worktree(state, assignment_id, coordinator_worktree, validation_worktree):
     require(not availability_errors(state, now()), "coordinator unavailable before worktree release")
     entry = find_entry(state, assignment_id)
@@ -1058,10 +1092,10 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
     require(entry["git_identity"]["git_dir"] != entry["git_identity"]["common_dir"],
             "logical release requires a removable linked worktree")
     for other in state["assignments"]:
-        if other["assignment"]["id"] != assignment_id and other["closed_at"] is None:
+        if other["assignment"]["id"] != assignment_id:
             require(not paths_overlap(validation_root,
                                       Path(other["assignment"]["allowed_worktree"])),
-                    "validation worktree overlaps an active assignment")
+                    "validation worktree overlaps an assigned worktree")
     coordinator = {**assignment, "allowed_worktree": str(coordinator_root)}
     coordinator_git = observe_git(coordinator)
     require(coordinator_git["identity"]["common_dir"] == entry["git_identity"]["common_dir"],
@@ -1074,8 +1108,8 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
     worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
     owner_registered = any(line == f"worktree {owner_root}" for line in worktrees)
     validation_registered = any(line == f"worktree {validation_root}" for line in worktrees)
-    require(owner_exists == owner_registered,
-            "assigned worktree path and registration disagree")
+    require(not owner_exists or owner_registered,
+            "assigned worktree path exists without its registration")
     require(validation_exists == validation_registered,
             "validation worktree path and registration disagree")
 
@@ -1091,6 +1125,9 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
         ignored = _git(owner_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
         require(not [path for path in ignored.split(b"\0") if path],
                 "assigned worktree contains ignored data")
+        submodules = _git(owner_root, "submodule", "status", "--recursive").decode().splitlines()
+        require(all(line.startswith("-") for line in submodules),
+                "assigned worktree contains an initialized or conflicted submodule")
     else:
         require(validation_exists,
                 "removed owner worktree has no validation worktree to recover")
@@ -1106,8 +1143,65 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
             and validation_git["identity"]["common_dir"] == entry["git_identity"]["common_dir"]
             and validation_git["identity"]["git_dir"] != entry["git_identity"]["git_dir"],
             "replacement validation worktree is not isolated at the candidate")
+    ignored = _git(validation_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
+    require(not [path for path in ignored.split(b"\0") if path],
+            "replacement validation worktree contains ignored data")
+    submodules = _git(validation_root, "submodule", "status", "--recursive").decode().splitlines()
+    require(all(line.startswith("-") for line in submodules),
+            "replacement validation worktree contains an initialized or conflicted submodule")
     if owner_exists:
-        _git(coordinator_root, "worktree", "remove", str(owner_root))
+        try:
+            _git(coordinator_root, "worktree", "remove", str(owner_root))
+        except (OSError, ValueError) as removal_error:
+            worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
+            owner_registered = any(line == f"worktree {owner_root}" for line in worktrees)
+            validation_registered = any(
+                line == f"worktree {validation_root}" for line in worktrees
+            )
+            if os.path.lexists(owner_root) and owner_registered:
+                require(os.path.lexists(validation_root) and validation_registered,
+                        "failed owner removal left an unexpected validation worktree state")
+                validation_git = observe_git(validation_assignment)
+                require(validation_git["head"] == result["result_sha"]
+                        and validation_git["branch"] is None
+                        and not validation_git["dirty_paths"]
+                        and not validation_git["conflicting"]
+                        and validation_git["identity"]["common_dir"]
+                        == entry["git_identity"]["common_dir"]
+                        and validation_git["identity"]["git_dir"]
+                        != entry["git_identity"]["git_dir"],
+                        "failed owner removal left a changed validation worktree")
+                ignored = _git(
+                    validation_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
+                )
+                require(not [path for path in ignored.split(b"\0") if path],
+                        "failed owner removal left ignored validation data")
+                submodules = _git(
+                    validation_root, "submodule", "status", "--recursive",
+                ).decode().splitlines()
+                require(all(line.startswith("-") for line in submodules),
+                        "failed owner removal left an initialized validation submodule")
+                try:
+                    _git(coordinator_root, "worktree", "remove", str(validation_root))
+                except (OSError, ValueError) as cleanup_error:
+                    raise HandoffDataError(
+                        f"owner removal failed ({removal_error}); "
+                        f"validation cleanup failed ({cleanup_error})"
+                    ) from cleanup_error
+                require(not os.path.lexists(validation_root),
+                        "failed owner removal left the validation worktree behind")
+                raise
+            elif not os.path.lexists(owner_root) and owner_registered:
+                prune_exact_stale_worktree(
+                    coordinator_root, owner_root, entry["git_identity"],
+                )
+            elif os.path.lexists(owner_root) != owner_registered:
+                raise HandoffDataError(
+                    "owner removal failed with an inconsistent registration; "
+                    "validation worktree retained"
+                ) from removal_error
+    elif owner_registered:
+        prune_exact_stale_worktree(coordinator_root, owner_root, entry["git_identity"])
 
     worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
     registered = any(line == f"worktree {owner_root}" for line in worktrees)
@@ -1733,6 +1827,8 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
         reject(bool(current["dirty_paths"]), "dirty-worktree")
         reject(current["conflicting"], "conflicting-worktree")
         if release is not None:
+            ignored = _git(worktree, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
+            reject(bool([path for path in ignored.split(b"\0") if path]), "ignored-worktree")
             reject(observe_remote_branch(a, worktree) != result["result_sha"],
                    "remote-head-mismatch")
         _, total, task_commits, imported = task_changes(validation_assignment, result["result_sha"])

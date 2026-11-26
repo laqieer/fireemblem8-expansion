@@ -499,11 +499,18 @@ process exit and complete RSS. A logical task terminal observation records
 completion but is not itself write revocation. For a successful logical task,
 the coordinator's `release-worktree` operation requires the exact published
 branch head, a clean linked owner worktree with no untracked or ignored data,
-and a separate coordinator worktree. It creates a fresh detached worktree at
-the exact candidate, removes the assigned worktree using normal
+and a separate coordinator worktree. An initialized submodule in the assigned
+worktree is rejected before creating the validation worktree; the operation
+never deinitializes submodules or uses force. It creates a fresh detached
+worktree at the exact candidate, removes the assigned worktree using normal
 `git worktree remove` (never force), and verifies the old path is absent and
-unregistered. Final candidate validation runs in the fresh worktree, not the
-removed owner worktree. This prevents subsequent path-based writes from
+unregistered. If removal fails while the assigned worktree remains registered,
+the unchanged validation worktree is removed normally so retry can start clean;
+if the owner path disappears but its registration remains, the operation prunes
+that registration only when Git's dry run selects exactly that one stale entry.
+Otherwise it fails closed and retains the validation worktree. Final candidate
+validation runs in the fresh worktree, not the removed owner worktree. This
+prevents subsequent path-based writes from
 altering the validated candidate under the cooperative task/tool threat model;
 it does not prove OS process exit or RSS and is not hostile same-UID isolation.
 A terminal event, clean snapshot, or `closed_at` value alone never authorizes

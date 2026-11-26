@@ -3,6 +3,7 @@ import fcntl
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -412,6 +413,19 @@ class NativeObservationTests(unittest.TestCase):
             self.assertTrue(validation_worktree.exists())
             self.assertIsNone(f.entry["worktree_release"])
 
+            exclude_file = Path(f.entry["git_identity"]["common_dir"]) / "info" / "exclude"
+            with exclude_file.open("a", encoding="utf-8") as output:
+                output.write("\n__pycache__/\n")
+            ignored_file = validation_worktree / "__pycache__" / "release.cpython-314.pyc"
+            ignored_file.parent.mkdir()
+            ignored_file.write_bytes(b"fixture")
+            with self.assertRaisesRegex(handoff.HandoffDataError, "ignored data"):
+                handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+            ignored_file.unlink()
+            ignored_file.parent.rmdir()
+
             release = handoff.release_logical_worktree(
                 f.state, f.assignment["id"], f.repository, validation_worktree,
             )
@@ -428,6 +442,129 @@ class NativeObservationTests(unittest.TestCase):
             [f"worktree {f.repository}", f"worktree {validation_worktree}"],
         )
         self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_logical_release_rejects_initialized_submodule_before_candidate_creation(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+
+        def initialized_submodule(cwd, *arguments):
+            if arguments == ("submodule", "status", "--recursive"):
+                return b" c87e74dcd6c8878b809e013cd8ff0c52baa75332 mgfembp\n"
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=initialized_submodule):
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initialized or conflicted submodule"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+        self.assertTrue(f.worktree.exists())
+        self.assertFalse(validation_worktree.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
+    def test_logical_release_cleans_candidate_when_owner_removal_fails(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+
+        def fail_owner_removal(cwd, *arguments):
+            if arguments == ("worktree", "remove", str(f.worktree)):
+                raise ValueError("simulated owner removal failure")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+            self.assertTrue(f.worktree.exists())
+            self.assertFalse(validation_worktree.exists())
+            self.assertIsNone(f.entry["worktree_release"])
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+
+    def test_logical_release_recovers_owner_path_removed_before_git_registration(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+
+        def fail_after_path_removal(cwd, *arguments):
+            if arguments == ("worktree", "remove", str(f.worktree)):
+                shutil.rmtree(f.worktree)
+                raise ValueError("simulated failure after owner path removal")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_after_path_removal):
+                release = handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertFalse(any(
+            line == f"worktree {f.worktree}"
+            for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+        ))
+
+    def test_logical_release_refuses_pruning_other_stale_worktree_registrations(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        other_worktree = f.home / "other"
+        git(f.repository, "worktree", "add", "-b", "other/test",
+            str(other_worktree), f.parent)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        git(f.repository, "worktree", "add", "--detach",
+            str(validation_worktree), result["result_sha"])
+        shutil.rmtree(f.worktree)
+        shutil.rmtree(other_worktree)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "unexpected registration"):
+                handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+
+        self.assertTrue(validation_worktree.exists())
+        self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        self.assertEqual(
+            len([line for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+                 if line.startswith("worktree ")]),
+            4,
+        )
 
     def test_logical_release_rejects_dirty_or_unpublished_candidate(self):
         for condition in ("untracked", "remote-head", "preexisting-validation"):
