@@ -6572,8 +6572,12 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    advance; unknown owner exit/RSS still prevents a ready handoff. The
    separate-session control rejects the different-ID receipt, as the pre-fix
    reader did. Repeat an exact receipt with the same or another event ID or
-   conflicting interaction: reject; a distinct same-parent follow-up remains
-   valid and participates in chronology. Missing, opaque or dispatch-equal
+   conflicting receipt: reject. After receipt, any same-root owner follow-up
+   that changes the bound parent task rejects even if its interaction ID also
+   changes; a distinct same-parent follow-up remains valid and participates
+   in chronology. Replaying a progress tool-start with an event ID already
+   retained by the lifecycle rejects, while a distinct complete tool-start in
+   the same owner session remains valid. Missing, opaque or dispatch-equal
    progress call IDs and missing or opaque tool names reject. After handoff,
    owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. Put unread

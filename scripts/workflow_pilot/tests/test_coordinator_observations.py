@@ -227,29 +227,35 @@ class NativeObservationTests(unittest.TestCase):
                 self.assertIsNone(f.entry["assignment"]["session_id"])
 
     def test_native_followup_cannot_rebind_the_received_parent_task(self):
-        f = GitFixture(assign=False)
-        self.addCleanup(f.close)
-        log, root, prompt = reserve_task(f)
-        f.append(log,
-                 task_event("tool.execution_start", "dispatch", toolName="task",
-                            toolCallId="call-one", arguments={"prompt": prompt}),
-                 task_event("subagent.started", "started", owner="owner-one",
-                            toolCallId="call-one", interactionId="interaction-one"),
-                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
-                            source=f"agent-{root}", interactionId="interaction-one",
-                            parentAgentTaskId="receipt-task"))
-        handoff.observe_cli(f.entry, log)
-        f.append(log, task_event("user.message", "followup", owner="owner-one",
-                                 content="Additional instructions", source=f"agent-{root}",
-                                 interactionId="interaction-one", parentAgentTaskId="receipt-task"))
-        handoff.observe_cli(f.entry, log)
-        self.assertEqual([item["state"] for item in f.entry["events"]],
-                         ["assignment_sent", "assignment_received"])
-        f.append(log, task_event("user.message", "contradiction", owner="owner-one",
-                                 content="Additional instructions", source=f"agent-{root}",
-                                 interactionId="interaction-one", parentAgentTaskId="other-task"))
-        with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task changed"):
-            handoff.observe_cli(f.entry, log)
+        for variant in ("same-interaction", "changed-interaction"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                f.append(log, task_event("user.message", "followup", owner="owner-one",
+                                         content="Additional instructions", source=f"agent-{root}",
+                                         interactionId="interaction-one",
+                                         parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                self.assertEqual([item["state"] for item in f.entry["events"]],
+                                 ["assignment_sent", "assignment_received"])
+                interaction = ("interaction-one" if variant == "same-interaction"
+                               else "different-interaction")
+                parent = "other-task" if variant == "same-interaction" else "different-task"
+                f.append(log, task_event("user.message", "contradiction", owner="owner-one",
+                                         content="Additional instructions", source=f"agent-{root}",
+                                         interactionId=interaction, parentAgentTaskId=parent))
+                with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task changed"):
+                    handoff.observe_cli(f.entry, log)
 
     def test_native_receipt_replay_or_conflicting_interaction_is_rejected(self):
         for variant in ("replay", "new-id", "changed-interaction"):
@@ -296,6 +302,39 @@ class NativeObservationTests(unittest.TestCase):
         f.append(log, dispatch, started, receipt, followup, progress)
         with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
             handoff.observe_cli(f.entry, log)
+
+    def test_native_progress_rejects_replayed_event_id_and_accepts_distinct_start(self):
+        for variant in ("replay", "distinct"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                progress = task_event("tool.execution_start", "progress", owner="owner-one",
+                                      toolName="bash", toolCallId="edit-one",
+                                      ownerNativeSessionId=SESSION)
+                f.append(log, progress)
+                handoff.observe_cli(f.entry, log)
+                replay = copy.deepcopy(progress)
+                if variant == "distinct":
+                    replay["id"] = "distinct-progress"
+                    replay["data"]["toolCallId"] = "edit-two"
+                f.append(log, replay)
+                if variant == "replay":
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "native progress event reused"):
+                        handoff.observe_cli(f.entry, log)
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["events"][-1]["source_id"], "progress")
+                    self.assertEqual(f.entry["cursors"][0]["offset"], log.stat().st_size)
 
     def test_native_progress_requires_distinct_complete_tool_identity(self):
         for variant in ("missing-id", "opaque-id", "dispatch-id", "missing-name", "opaque-name"):

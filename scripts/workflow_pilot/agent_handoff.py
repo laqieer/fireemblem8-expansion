@@ -919,10 +919,9 @@ def observe_native_task(entry, log_path):
             if binding["parent_task_id"] is not None:
                 if data.get("source") == f"agent-{task['root_session_id']}":
                     require(data.get("content") != task["prompt"], "duplicate native receipt")
-                    if data.get("interactionId") == binding["interaction_id"]:
-                        require(data.get("parentAgentTaskId") == binding["parent_task_id"],
-                                "native receipt task changed")
-                        advance_time(event)
+                    require(data.get("parentAgentTaskId") == binding["parent_task_id"],
+                            "native receipt task changed")
+                    advance_time(event)
                 continue
             parent = data.get("parentAgentTaskId")
             if (data.get("source") != f"agent-{task['root_session_id']}"
@@ -940,6 +939,10 @@ def observe_native_task(entry, log_path):
                 entry["coordination_turns"] += 1
         elif kind == "tool.execution_start" and binding["parent_task_id"] is not None:
             require(len(entry["events"]) < 4, "retired owner started more work")
+            source_ids = {item["source_id"] for item in entry["events"]}
+            if binding["started_id"] is not None:
+                source_ids.add(binding["started_id"])
+            require(event["id"] not in source_ids, "native progress event reused")
             owner_session = data.get("ownerNativeSessionId")
             if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
                 continue
