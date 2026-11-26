@@ -2550,10 +2550,16 @@ def _build_topology(probe):
                     "baseline dry-run did not describe all gates")
             for field in ("steps", "env"):
                 changed = text.replace(jobs[name], build_reorder_field(jobs[name], field), 1)
+                review.require(changed != text, f"{name} {field} did not move")
                 workflow.write_text(changed)
-                result = verify.run_gates(str(root), dry_run=True)
-                observe(changed != text and len(result) == len(baseline)
-                        and all(not item.ran for item in result), f"{name} {field} rejected")
+                try:
+                    result = verify.run_gates(str(root), dry_run=True)
+                except ValueError as error:
+                    observe(False, f"{name} rejected equivalent reordered {field}: {error}")
+                else:
+                    observe(len(result) == len(baseline)
+                            and all(not item.ran for item in result),
+                            f"{name} reordered {field} changed selected gates")
             for before, after in (
                 ("    runs-on: ubuntu-24.04", "    runs-on: self-hosted"),
                 ("    steps:\n", "    container: ubuntu:latest\n    steps:\n"),

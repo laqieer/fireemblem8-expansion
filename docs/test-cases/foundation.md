@@ -105,7 +105,9 @@ The same order-regression tests pass when the source workflow already has
 `steps` or `env` before the other direct fields in any worker job.
 The review-family binding reports separate observations for the two order
 tests, each worker, every target job boundary, and the source-backed step
-and literal-script members.
+and literal-script members. Each real target consumer must accept equivalent
+`steps` and `env` reordering; rejecting either is a failing semantic
+observation, not an unavailable probe.
 Equivalent job-field reordering preserves its finite source model.
 All eight Build jobs reject misindented execution fields after the job header,
 before steps, and after steps in the target dry-run verifier.
@@ -132,8 +134,11 @@ lose exact full-game evidence and change the upstream-port workflow contract.
 Before the script-extraction fix, both parsers silently omit that command.
 The family controls also reject the original ASCII and Unicode boundary
 predicates, each broken order-test consumer, and an unsafe target accepted
-without equivalence validation. Missing helper inputs or ambiguous step
-identities block the binding rather than creating a passing observation.
+without equivalence validation. The frozen pre-fix verifier is a negative
+control: each target-consumer observation detects its rejection of equivalent
+reordering, while the candidate passes the same probes. Missing helper inputs
+or ambiguous step identities block the binding rather than creating a passing
+observation.
 
 ### Interactions and save compatibility
 

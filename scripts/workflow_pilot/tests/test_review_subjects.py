@@ -153,6 +153,25 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                          ["contract-violation", "contract-violation"])
         self.assert_satisfied(self.selected_observations(members, after, *names))
 
+    def test_target_consumers_detect_original_order_sensitive_predicate(self):
+        verifier = self.tools.subjects.BUILD_VERIFY
+        original = subprocess.run(
+            ["/usr/bin/git", "show",
+             "355dd69dbe0cad0250bfdc5589b2134577359c18:" + verifier],
+            cwd=ROOT, env=ENV, check=True, capture_output=True, text=True,
+        ).stdout
+        candidate = (self.repo.root / verifier).read_text()
+        before = self.repo.commit({verifier: original})
+        after = self.repo.commit({verifier: candidate}, parent=before)
+        names = tuple("consumers:" + name for name in (
+            "host-tests", "extended-host-tests", "build", "legacy"))
+        members = self.selected(self.tools.members(self.build_scope(after), (before,)), *names)
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual(len(prior), len(names))
+        self.assertTrue(all(item.verdict == "contract-violation" and item.checks > 0
+                            for item in prior))
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
     def test_target_boundary_binds_every_source_job(self):
         verifier = self.tools.subjects.BUILD_VERIFY
         original = (self.repo.root / verifier).read_text()
