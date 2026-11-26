@@ -7101,8 +7101,9 @@ python3 -m unittest \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
 ```
 
-The Build host job runs the complete `test_agent_handoff` and
-`test_coordinator_observations` modules.
+The Build `workflow-pilot-tests` job runs the complete `test_agent_handoff`
+and `test_coordinator_observations` modules through the isolated reporter
+suite.
 
 ### Cleanup and limitations
 
