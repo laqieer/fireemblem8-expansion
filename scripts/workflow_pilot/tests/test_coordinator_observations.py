@@ -1613,6 +1613,38 @@ class NativeObservationTests(unittest.TestCase):
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.observe_cli(f.entry, log)
 
+    def test_owner_completion_before_receipt_participates_in_chronology(self):
+        for reversed_receipt in (False, True):
+            with self.subTest(reversed_receipt=reversed_receipt):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.entry["assigned_at"] = at_offset(-30)
+                dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                                      toolCallId="call-one", arguments={"prompt": prompt})
+                started = task_event("subagent.started", "started", owner="owner-one",
+                                     toolCallId="call-one", interactionId="interaction-one")
+                dispatch["timestamp"] = started["timestamp"] = at_offset(-20)
+                completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                        toolCallId="edit", success=True)
+                receipt = task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                     source=f"agent-{root}", interactionId="interaction-one",
+                                     parentAgentTaskId="receipt-task")
+                completion["timestamp"] = at_offset(-5 if reversed_receipt else -10)
+                receipt["timestamp"] = at_offset(-10 if reversed_receipt else -5)
+                f.append(log, dispatch, started)
+                handoff.observe_cli(f.entry, log)
+                f.append(log, completion, receipt)
+                cursor = f.entry["cursors"][0]["offset"]
+                if reversed_receipt:
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["cursors"][0]["offset"], cursor)
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["events"][-1]["state"], "assignment_received")
+                    handoff.validate_state(f.state)
+
     def test_native_owner_completion_participates_in_chronology(self):
         for variant in ("ordered", "missing-session", "other-owner", "reversed-completion",
                         "reversed-delivery", "reversed-delivery-missing-session",

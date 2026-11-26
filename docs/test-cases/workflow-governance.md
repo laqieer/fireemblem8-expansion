@@ -6585,10 +6585,12 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    explicitly conflicting owner session on a tool completion, turn or delivery
    rejects; matching or omitted optional session fields remain valid. Append
    an owner tool completion and a delivery with reversed producer timestamps,
-   then reverse progress and completion: both must reject without advancing
-   the cursor or persisting a locked CLI update. Ordered owner completion and
-   delivery remain valid, and an unrelated owner's completion does not set
-   this owner's clock. The pre-fix reader accepts both reversed sequences.
+   then reverse progress and completion, and completion and receipt after
+   owner binding: all must reject without advancing the cursor. The reversed
+   delivery must also leave locked CLI state unchanged. Ordered observations
+   remain valid, and an unrelated
+   owner's completion does not set this owner's clock. The pre-fix reader
+   accepts the reversed sequences.
    After handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. After successful closure,
    late events matching the closed owner or its bound session reject without
