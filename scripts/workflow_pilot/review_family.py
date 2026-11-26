@@ -1331,8 +1331,8 @@ class CliReviewRuntime:
             if event.get("data", {}).get("interactionId") == self.interaction
             and isinstance(event.get("data", {}).get("turnId"), str)
         }
-        turn_events = [
-            event for session, event in child
+        turn_event_records = [
+            (session, event) for session, event in child
             if (event.get("data", {}).get("interactionId") == self.interaction
                 or (event.get("type") == "tool.execution_start"
                     and event.get("data", {}).get("interactionId") is None
@@ -1342,6 +1342,15 @@ class CliReviewRuntime:
                     and self.received_at <= timestamp(event.get("timestamp"))
                     <= timestamp(completed_at)))
         ]
+        if reviewer_only_session:
+            self.validated_event_keys = frozenset(
+                self.validated_event_keys
+                | {
+                    _cli_event_key(record) for record in turn_event_records
+                    if record[0] == self.reviewer_session_id
+                    and record[1].get("agentId") is None
+                })
+        turn_events = [event for _, event in turn_event_records]
         received = [event for event in turn_events if event.get("type") == "user.message"]
         require(len(received) == 1
                 and received[0].get("data", {}).get("transformedContent")

@@ -2218,6 +2218,23 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 session.review_state((), (), pre_review_required=True)
 
+    def test_mutated_unattributed_bound_event_invalidates_readiness(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(
+                root, reviewer_session_id="reviewer-session")
+            event = next(
+                event for event_session, event in events
+                if event_session == "reviewer-session"
+                and event.get("type") == "tool.execution_start")
+            event["agentId"] = None
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            event["data"]["toolName"] = "bash"
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
     def test_unattributed_activity_in_bound_reviewer_session_is_rejected(self):
         for event_interaction in ("interaction-1", "other-interaction"):
             with self.subTest(interaction=event_interaction), snapshot() as root:
