@@ -1043,6 +1043,37 @@ class NativeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "logical ownership release is unavailable"):
             handoff.validate_state(f.state)
 
+    def test_retained_native_entry_without_terminal_records_completion(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        del f.entry["terminal_task"]
+        handoff.validate_state(f.state)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["terminal_task"]["event_id"], "task-terminal")
+        restored = observations.parse_bytes(json.dumps(f.state).encode())
+        handoff.validate_state(restored)
+        self.assertEqual(restored["assignments"][0]["terminal_task"], f.entry["terminal_task"])
+        offset = f.entry["cursors"][0]["offset"]
+        f.append(log, native_event("tool.execution_complete", "duplicate-terminal",
+                                   toolCallId="call-one", success=True))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "duplicate native task completion"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], offset)
+
     def test_failed_logical_task_does_not_close_or_preserve_wip_without_release(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)

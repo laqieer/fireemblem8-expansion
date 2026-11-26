@@ -1403,7 +1403,7 @@ def observe_native_task(entry, log_path):
             continue
         if (kind == "tool.execution_complete" and a["dispatch_id"] is not None
                 and data.get("toolCallId") == a["dispatch_id"]):
-            require(entry["terminal_task"] is None, "duplicate native task completion")
+            require(entry.get("terminal_task") is None, "duplicate native task completion")
             require(a["owner_id"] is not None and binding["started_id"] is not None,
                     "native task completion lacks its owner start")
             require(session_id == task["root_session_id"] and event.get("agentId") is None,

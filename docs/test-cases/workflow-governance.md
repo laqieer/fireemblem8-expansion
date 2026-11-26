@@ -6760,8 +6760,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    their original head, worktree, identity and scope match.
    For a logical task owner,
    record the exact dispatched `task` tool's terminal
-   completion after delivery. The terminal event by itself must leave the
-   assignment open and validation without release evidence must reject with
+   completion after delivery. A valid retained entry without the optional
+   terminal field must accept its first matching completion and reject a
+   duplicate; the pre-fix reader raises `KeyError` instead. The terminal
+   event by itself must leave the assignment open and validation without
+   release evidence must reject with
    `owner-worktree-release-unavailable`. For a successful task, publish the
    exact candidate commit first, then run `release-worktree` from a separate
    coordinator worktree. Require the exact remote branch head, a clean linked
