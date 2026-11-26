@@ -995,6 +995,8 @@ def observe_native_task(entry, log_path):
             require(entry["terminal_task"] is None, "duplicate native task completion")
             require(a["owner_id"] is not None and binding["started_id"] is not None,
                     "native task completion lacks its owner start")
+            require(session_id == task["root_session_id"] and event.get("agentId") is None,
+                    "native task completion must be coordinator-owned")
             boolean(data.get("success"))
             current = observe_git(a)
             require(current["identity"] == entry["git_identity"],
@@ -1385,6 +1387,7 @@ def owner_completion_errors(entry):
     elif terminal is not None:
         if not terminal["success"]:
             codes.append("owner-task-failed")
+        codes.append("owner-worktree-release-unavailable")
     elif "native" not in entry["assignment"]:
         codes.extend(("owner-not-retired", "owner-rss-unknown", "owner-exit-unknown"))
     else:
@@ -1394,7 +1397,11 @@ def owner_completion_errors(entry):
 
 def owner_lifetime_ms(entry, at):
     start, cutoff = timestamp(entry["assigned_at"]), timestamp(at)
-    end = timestamp(entry["closed_at"]) if entry["closed_at"] is not None else cutoff
+    terminal = entry.get("terminal_task")
+    if entry["process"] is None and terminal is not None:
+        end = timestamp(terminal["observed_at"])
+    else:
+        end = timestamp(entry["closed_at"]) if entry["closed_at"] is not None else cutoff
     require(start <= end <= cutoff, "invalid owner lifetime chronology")
     return math.ceil((end - start).total_seconds() * 1000)
 
@@ -1598,6 +1605,11 @@ def summarize_handoffs(state):
             rejections.update(verdict["rejection_codes"])
             stale += "stale-result" in verdict["rejection_codes"]
         end = entry["closed_at"] or state["clock"]["at"]
+        terminal = entry.get("terminal_task")
+        if entry["process"] is None and terminal is not None:
+            end = max(
+                timestamp(end), timestamp(terminal["observed_at"])
+            ).isoformat().replace("+00:00", "Z")
         lifetimes.append(owner_lifetime_ms(entry, end))
         process = entry["process"]
         if process is None or not process["rss_complete"]:

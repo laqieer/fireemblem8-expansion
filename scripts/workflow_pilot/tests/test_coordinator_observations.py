@@ -228,7 +228,8 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIn("does not expose per-owner RSS", terminal["rss_unavailable_reason"])
         self.assertIsNone(f.entry["process"])
         self.assertIsNone(f.entry["closed_at"])
-        self.assertNotIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
+        self.assertIn("owner-worktree-release-unavailable",
+                      handoff.owner_completion_errors(f.entry))
         handoff.validate_state(f.state)
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
@@ -239,17 +240,30 @@ class NativeObservationTests(unittest.TestCase):
                 handoff.HandoffDataError, "logical ownership release requires coordinator validation"):
             handoff.validate_state(premature_release)
 
-        verdict = f.validate(result)
-        self.assertTrue(verdict["handoff_ready"], verdict)
-        self.assertEqual(verdict["local_outcome"], "accepted")
-        self.assertNotIn("owner-not-retired", verdict["rejection_codes"])
-        self.assertIsNotNone(f.entry["closed_at"])
-        self.assertGreaterEqual(
-            handoff.timestamp(f.entry["closed_at"]),
-            handoff.timestamp(terminal["observed_at"]),
+        delayed_validation = (
+            handoff.timestamp(terminal["observed_at"])
+            + timedelta(seconds=f.assignment["max_lifetime_seconds"] + 1)
+        ).isoformat().replace("+00:00", "Z")
+        self.assertEqual(
+            handoff.owner_lifetime_ms(f.entry, delayed_validation),
+            handoff.owner_lifetime_ms(f.entry, terminal["observed_at"]),
         )
+        self.assertNotIn(
+            "owner-lifetime-exceeded",
+            handoff.owner_acceptance_errors(f.entry, delayed_validation),
+        )
+
+        verdict = f.validate(result)
+        self.assertFalse(verdict["handoff_ready"], verdict)
+        self.assertEqual(verdict["local_outcome"], "rejected")
+        self.assertIn("owner-worktree-release-unavailable", verdict["rejection_codes"])
+        self.assertIsNone(f.entry["closed_at"])
         self.assertEqual(f.entry["validation"], verdict)
-        self.assertEqual(handoff.summarize_handoffs(f.state)["accepted"], 1)
+        repeated_verdict = f.validate(result)
+        self.assertFalse(repeated_verdict["handoff_ready"], repeated_verdict)
+        self.assertIn("owner-worktree-release-unavailable", repeated_verdict["rejection_codes"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertEqual(handoff.summarize_handoffs(f.state)["rejected"], 1)
         handoff.validate_state(f.state)
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
@@ -264,6 +278,30 @@ class NativeObservationTests(unittest.TestCase):
                 changed["assignments"][0]["terminal_task"][field] = value
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
+
+    def test_owner_tagged_task_completion_cannot_establish_coordinator_terminal(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        offset = f.entry["cursors"][0]["offset"]
+
+        f.append(log, task_event("tool.execution_complete", "owner-terminal", owner="owner-one",
+                                 sessionId=root, toolCallId="call-one", success=True))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], offset)
+        self.assertIsNone(f.entry["terminal_task"])
 
     def test_failed_logical_task_does_not_close_or_preserve_wip_without_release(self):
         f = GitFixture(assign=False)

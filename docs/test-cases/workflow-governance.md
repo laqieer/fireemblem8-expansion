@@ -6735,23 +6735,22 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    For an OS-process-backed owner, a real zero exit and complete owned RSS
    pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
    and repeated committed-owner work do not pass. For a logical task owner,
-   record the exact dispatched `task` tool's terminal completion after delivery.
-   The terminal event by itself must leave the assignment open. Then run the
-   coordinator validation on the exact task result and current worktree; it
-   records `closed_at` at the same time as the validation and releases the
-   logical worktree lease without claiming OS exit or RSS. A prefilled close
-   without that validation, an unread native-log tail, or mismatched task,
-   owner, session, head, worktree, Git identity or scope remains invalid.
-   Confirm that a closed owner cannot emit a later accepted event and that
-   closure is not handoff acceptance when other required evidence fails.
-   Missing task completion, failed task completion and
-   task/owner/session/head/worktree/scope mismatch reject. The
-   task terminal event records task-tool completion only: it does not itself
-   prove or enforce worktree write release. Only the coordinator's validated
-   close transition releases the logical lease. Failed logical tasks remain
-   rejected and open; they do not gain a recovery/reassignment path from this
-   successful-task contract. A task's printed result, self-reported completion,
-   or unrelated `tool.execution_complete` event does not release ownership.
+   record the exact dispatched `task` tool's terminal
+   completion after delivery. The terminal event by itself must leave the
+   assignment open. Coordinator validation on the exact result and current
+   worktree must still reject with `owner-worktree-release-unavailable` and
+   leave `closed_at` unset because the current runtime has no independent,
+   enforceable worktree-write release observation. It must not treat a clean
+   Git snapshot or a coordinator timestamp as write revocation. Confirm the
+   terminal timestamp, rather than delayed coordinator validation, determines
+   logical-task lifetime. A prefilled close, unread native-log tail, or
+   mismatched task, owner, session, head, worktree, Git identity or scope
+   remains invalid. A task's printed result, self-reported completion, or
+   unrelated `tool.execution_complete` event does not release ownership.
+   Failed logical tasks remain rejected and open; they do not gain a
+   recovery/reassignment path from this successful-task contract. A future
+   runtime with a separate enforceable release observation must add a positive
+   release case before logical handoffs can become eligible.
    A native task terminal event never substitutes for process exit/RSS when an
    owned OS process was bound. A process-backed terminal record may remain open
    until actual exit/RSS evidence is observed. Replayed

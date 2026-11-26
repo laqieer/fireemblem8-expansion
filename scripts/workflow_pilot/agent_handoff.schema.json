@@ -293,7 +293,7 @@
       }
     },
     "logicalTaskTerminal": {
-      "description": "A terminal task-tool event records task completion but does not itself release worktree ownership or prove OS exit/RSS; the coordinator records the release boundary only during validation.",
+      "description": "A terminal task-tool event records task completion but does not itself release worktree ownership or prove OS exit/RSS. The current runtime exposes no separate enforceable worktree-release observation, so logical-task handoffs remain ineligible.",
       "type": "object", "additionalProperties": false,
       "required": ["event_id", "observed_at", "root_session_id", "task_id", "owner_id", "session_id",
                    "head_sha", "worktree", "git_identity", "allowed_scope", "success",
@@ -338,7 +338,7 @@
       "else": {"properties": {"handoff_ready": {"const": false}}}
     },
     "entry": {
-      "description": "Runtime compares assignment, lifecycle and close times; interruption must match close. For a logical task, close is the coordinator-recorded ownership-release boundary and must match its validation time.",
+      "description": "Runtime compares assignment, lifecycle and close times; interruption must match close. A logical-task terminal observation does not authorize close without independently enforceable worktree-release evidence, which the current runtime does not expose.",
       "type": "object", "additionalProperties": false,
       "required": ["assignment", "assigned_at", "git_identity", "events", "process", "checks",
                    "result", "validation", "interruption", "cursors", "remote_actions", "closed_at", "coordination_turns"],

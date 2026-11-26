@@ -495,11 +495,13 @@ Do not manufacture another implementation identity to obtain independent review.
 The native task route below binds the provider's separate dispatch-tool and
 `parentAgentTaskId` namespaces without confusing the shared root log with an
 owner session. Process-backed delegated callers still require actual owner
-process exit and complete RSS. A logical task caller may instead use its
-trusted terminal task observation and the coordinator's validated worktree
-ownership-release transition; task completion alone does not release the
-worktree or imply process exit/RSS. This direct route does not substitute a
-check process for a delegated owner.
+process exit and complete RSS. A logical task terminal observation records
+task completion but does not prove that prior writers can no longer modify
+the worktree. The current runtime exposes no separate enforceable
+worktree-release observation, so logical-task handoffs remain ineligible;
+coordinator validation must not treat a Git snapshot or `closed_at` update as
+write revocation. This direct route does not substitute a check process for a
+delegated owner.
 
 ### Pilot measurement and rollback
 
@@ -2897,36 +2899,40 @@ not another `initial` assignment that bypasses retained-worktree recovery.
 Independent issue/PR roots remain separate. Only one coordinator manages the
 canonical state.
 
-Owner completion has two distinct evidence paths. An OS-process-backed owner
-still requires the runtime-owned process identity, an actually observed zero
+Owner completion has two distinct observation paths, but only the
+process-backed path can currently establish retirement. An OS-process-backed
+owner requires the runtime-owned process identity, an actually observed zero
 exit, and complete owned RSS; an exited process with unknown status or
 incomplete RSS remains ineligible. A native logical-task owner records the
 exact dispatched `task` tool's `tool.execution_complete` event only after the
 same task, owner, owner session, result head, worktree identity, and allowed
-scope have been bound. The terminal event alone leaves ownership open. During
-coordinator validation, the coordinator rechecks the exact Git/worktree
-identity and current head, consumes the native log through the terminal event,
-and records `closed_at` at the validation timestamp. That coordinator-owned
-close is the logical worktree lease-release boundary: it rejects later owner
-events and makes the worktree available only to coordinator-controlled
-follow-up. A prefilled close without the matching coordinator validation is
-invalid. Closure is distinct from acceptance; a rejected validation does not
-become a ready handoff. A failed logical task remains rejected and open rather
-than being mislabeled as a successful handoff or an interruption. Do not infer
-release from task self-report or task completion alone.
+scope have been bound. The terminal event records task completion only. It
+does not revoke write access or prove that background writers have stopped.
+The current task runtime provides no independent, enforceable worktree-release
+observation, so validation reports `owner-worktree-release-unavailable`,
+keeps the assignment open, and cannot accept the handoff. Do not set
+`closed_at` from task completion or a clean Git snapshot. A future supported
+release mechanism must be observed before coordinator closure can make the
+worktree available for reuse. A failed logical task remains rejected and
+open. Do not infer release from task self-report or task completion alone.
 
-A process-backed owner remains governed by its actual process exit and
-complete owned RSS evidence; a task terminal event does not replace those
-observations. The logical record stores per-owner RSS as unavailable because
-the runtime does not expose it; no RSS value or process-budget compliance is
-inferred. WIP publication remains separate from accepted handoff completion.
+Logical-task lifetime is measured through the trusted terminal-task timestamp,
+not the later coordinator validation time; validation delay does not consume
+the owner's execution budget. This lifetime observation does not establish
+write release. A process-backed owner remains governed by its actual process
+exit, age and complete owned RSS evidence; a task terminal event does not
+replace those observations. The logical record stores per-owner RSS as
+unavailable because the runtime does not expose it; no RSS value or
+process-budget compliance is inferred.
+WIP publication remains separate from accepted handoff completion.
 
-Both admissible ownership paths enforce the assignment-to-retirement wall-clock
-lifetime. Process owners also check process age and available RSS. Logical
-task completion currently has no admissible retirement path because the native
-runtime does not expose enforceable write-release evidence. Validation rechecks
-eligibility after focused checks and records its verdict
-at the same observation instant, so time spent checking cannot evade the limit.
+Process-backed ownership enforces the assignment-to-retirement wall-clock
+lifetime and also checks process age and available RSS. Logical-task execution
+duration is measured through its terminal observation, but the path remains
+ineligible because the native runtime does not expose enforceable write-release
+evidence. Validation rechecks eligibility after focused checks and records its
+verdict at the observation instant; this does not extend the logical task's
+execution lifetime.
 Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
 time. Closed history uses its captured interval without requiring its worktree;
 an open report whose recorded clock predates assignment is incomplete rather
