@@ -2,16 +2,19 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
-from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset
+from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, gh_stub_environment
 from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
+from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -79,6 +82,40 @@ class CoordinatorLocalTests(unittest.TestCase):
                          self.head)
         self.assertIsNone(self.record["full_run_id"])
         self.assertIsNone(self.record["dispatch_requested_at"])
+
+    def test_accepted_logical_handoff_uses_released_validation_worktree(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        pr = SimpleNamespace(
+            repository=f.state["repository"], repository_id=1, number=191,
+            head_sha=result["result_sha"], head_ref=f.assignment["expected_branch"],
+            base_sha=f.parent, base_ref="master")
+        decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
+                                    decision_oid="a" * 40, changed_lines=1)
+        record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": pr.head_ref, "commit": {"sha": pr.head_sha}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation_worktree)
+            verdict = handoff.validate_handoff(f.state, result, worktree=validation_worktree)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        tracked = validation_worktree / "docs/change.txt"
+        original = tracked.read_bytes()
+        tracked.write_bytes(b"modified after validation\n")
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        tracked.write_bytes(original)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        temporarily_missing = f.home / "validation-missing"
+        validation_worktree.rename(temporarily_missing)
+        try:
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            temporarily_missing.rename(validation_worktree)
 
     def test_raw_only_and_candidate_success_or_commands_are_not_registration(self):
         for definitions in (

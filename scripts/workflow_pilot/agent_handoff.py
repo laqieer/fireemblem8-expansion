@@ -113,6 +113,21 @@ def paths_overlap(left, right):
     return left == right or left in right.parents or right in left.parents
 
 
+def reserved_worktree_paths(entry):
+    paths = {entry["assignment"]["allowed_worktree"]}
+    release = entry.get("worktree_release")
+    if release is not None and entry["closed_at"] is None:
+        paths.add(release["validation_worktree"])
+    return paths
+
+
+def validation_assignment(entry):
+    assignment = entry["assignment"]
+    release = entry.get("worktree_release")
+    return ({**assignment, "allowed_worktree": release["validation_worktree"]}
+            if release is not None else assignment)
+
+
 def sha(value):
     text(value, maximum=40, pattern=SHA_RE)
 
@@ -277,10 +292,14 @@ def validate_terminal_task(value, assignment, entry):
 
 
 def validate_worktree_release(value, assignment, entry):
-    fields(value, "release_id observed_at assignment_id task_id owner_id session_id head_sha "
+    fields(value, ("release_id " if isinstance(value, dict) and "release_id" in value else "")
+           + "observed_at assignment_id task_id owner_id session_id head_sha "
            "worktree git_identity validation_worktree validation_identity source "
            "path_absent unregistered")
-    text(value["release_id"], maximum=128, pattern=ID_RE)
+    if "release_id" in value:
+        text(value["release_id"], maximum=128, pattern=ID_RE)
+        require(value["release_id"] == worktree_release_id(assignment["id"]),
+                "logical worktree release identity mismatch")
     timestamp(value["observed_at"])
     for name in ("assignment_id", "task_id", "owner_id", "session_id"):
         text(value[name], maximum=128, pattern=ID_RE)
@@ -310,7 +329,6 @@ def validate_worktree_release(value, assignment, entry):
             and value["head_sha"] == terminal["head_sha"]
             and value["worktree"] == terminal["worktree"] == assignment["allowed_worktree"]
             and value["git_identity"] == terminal["git_identity"] == entry["git_identity"]
-            and value["release_id"] == worktree_release_id(assignment["id"])
             and not paths_overlap(Path(value["validation_worktree"]), Path(value["worktree"]))
             and value["validation_identity"]["worktree"] == value["validation_worktree"]
             and value["validation_identity"]["common_dir"] == value["git_identity"]["common_dir"]
@@ -603,10 +621,7 @@ def validate_state(value):
         if entry["closed_at"] is not None:
             require(timestamp(entry["closed_at"]) >= last, "owner closed before lifecycle observation")
         else:
-            reserved_worktrees = {a["allowed_worktree"]}
-            if worktree_release is not None:
-                reserved_worktrees.add(worktree_release["validation_worktree"])
-            active.append((a, reserved_worktrees))
+            active.append((a, reserved_worktree_paths(entry)))
     releases = [
         (entry["assignment"]["allowed_worktree"], timestamp(entry["worktree_release"]["observed_at"]),
          entry["assignment"]["id"])
@@ -1115,12 +1130,8 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
             "logical release requires a removable linked worktree")
     for other in state["assignments"]:
         if other["assignment"]["id"] != assignment_id:
-            reserved_paths = [Path(other["assignment"]["allowed_worktree"])]
-            other_release = other.get("worktree_release")
-            if other_release is not None and other["closed_at"] is None:
-                reserved_paths.append(Path(other_release["validation_worktree"]))
-            require(not any(paths_overlap(validation_root, reserved)
-                            for reserved in reserved_paths),
+            require(not any(paths_overlap(validation_root, Path(reserved))
+                            for reserved in reserved_worktree_paths(other)),
                     "validation worktree overlaps an assigned worktree")
     coordinator = {**assignment, "allowed_worktree": str(coordinator_root)}
     coordinator_git = observe_git(coordinator)
@@ -1157,6 +1168,8 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
     else:
         require(validation_exists,
                 "removed owner worktree has no validation worktree to recover")
+        require(not os.path.lexists(entry["git_identity"]["git_dir"]),
+                "owner Git administration remains after supposed worktree removal")
 
     validation_assignment = {**assignment, "allowed_worktree": str(validation_root)}
     created_validation = not validation_exists
@@ -1168,7 +1181,6 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
             validation_assignment, result["result_sha"], entry["git_identity"],
         )
         release_record = {
-            "release_id": worktree_release_id(assignment_id),
             "observed_at": now(),
             "assignment_id": assignment_id,
             "task_id": terminal["task_id"],
@@ -1237,7 +1249,8 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
     worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
     registered = any(line == f"worktree {owner_root}" for line in worktrees)
     validation_registered = any(line == f"worktree {validation_root}" for line in worktrees)
-    require(not os.path.lexists(owner_root) and not registered and validation_registered,
+    require(not os.path.lexists(owner_root) and not registered and validation_registered
+            and not os.path.lexists(entry["git_identity"]["git_dir"]),
             "assigned worktree removal was not complete")
     final_clock = observations.clock_observation()
     release_record["observed_at"] = final_clock["at"]
@@ -1774,8 +1787,7 @@ def resource_evidence_errors(entry, result, at):
             (any(check[key] != expected for key, expected in (
                 ("contract", definition["contract"]), ("evidence_id", definition["evidence_id"]),
                 ("parent_sha", a["assigned_parent_sha"]), ("result_sha", result["result_sha"]),
-                ("worktree", (entry.get("worktree_release") or {}).get(
-                    "validation_worktree", a["allowed_worktree"])),
+                ("worktree", validation_assignment(entry)["allowed_worktree"]),
             )), "check-identity-mismatch"),
             (check["exit_code"] is None or check["completed_at"] is None, "incomplete-check"),
             (check["exit_code"] is not None and check["exit_code"] != 0, "required-check-failed"),
@@ -1814,11 +1826,8 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     entry = find_entry(state, result["assignment_id"])
     a = entry["assignment"]
     release = entry.get("worktree_release")
-    validation_assignment = (
-        {**a, "allowed_worktree": release["validation_worktree"]}
-        if release is not None else a
-    )
-    expected_worktree = validation_assignment["allowed_worktree"]
+    selected_assignment = validation_assignment(entry)
+    expected_worktree = selected_assignment["allowed_worktree"]
     codes = availability_errors(state, now())
     total, task_commits, imported = None, [], []
     def reject(condition, code):
@@ -1835,7 +1844,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     process = entry["process"]
     codes.extend(owner_acceptance_errors(entry, now()))
     try:
-        current = observe_git(validation_assignment)
+        current = observe_git(selected_assignment)
         expected_identity = (
             release["validation_identity"] if release is not None else entry["git_identity"]
         )
@@ -1850,13 +1859,13 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
             reject(bool([path for path in ignored.split(b"\0") if path]), "ignored-worktree")
             reject(observe_remote_branch(a, worktree) != result["result_sha"],
                    "remote-head-mismatch")
-        _, total, task_commits, imported = task_changes(validation_assignment, result["result_sha"])
+        _, total, task_commits, imported = task_changes(selected_assignment, result["result_sha"])
         reject(total > a["budgets"]["changed_lines"], "changed-lines-budget-exceeded")
         if run_checks and not codes:
             for check_id, definition in a["required_checks"].items():
                 if definition["contract"] != "coordinator-check":
                     capture_check(entry, check_id, result["result_sha"],
-                                  assignment=validation_assignment)
+                                  assignment=selected_assignment)
     except (OSError, ValueError, UnicodeError) as error:
         known = {"stale-result", "unrelated-branch", "wrong-parent", "unauthorized-upstream",
                  "missing-copilot-trailer", "missing-session-trailer", "scope-violation",

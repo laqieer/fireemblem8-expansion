@@ -1285,7 +1285,15 @@ def _local_ready(state, pr, record):
         if (entry["validation"]["result_sha"] == pr.head_sha
                 and entry["assignment"]["expected_branch"] == pr.head_ref):
             try:
-                bases = handoff._git(Path(entry["assignment"]["allowed_worktree"]), "merge-base", "--all",
+                selected = handoff.validation_assignment(entry)
+                release = entry.get("worktree_release")
+                if release is not None:
+                    current = handoff.observe_git(selected)
+                    if (current["identity"] != release["validation_identity"]
+                            or current["head"] != pr.head_sha or current["branch"] is not None
+                            or current["dirty_paths"] or current["conflicting"]):
+                        continue
+                bases = handoff._git(Path(selected["allowed_worktree"]), "merge-base", "--all",
                                      pr.base_sha, pr.head_sha).decode().splitlines()
                 if len(bases) == 1 and candidate_identity(record) == (
                         pr.number, pr.head_sha, bases[0], pr.base_ref):

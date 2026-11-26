@@ -347,27 +347,27 @@ def cli_reservation_cursor(path, root_session):
     with os.fdopen(fd, "rb") as source:
         info = os.fstat(source.fileno())
         require(stat.S_ISREG(info.st_mode), "CLI log must be a regular file")
-        first = source.readline(MAX_JSON_BYTES + 1)
-        require(first.endswith(b"\n") and len(first) <= MAX_JSON_BYTES,
-                "CLI root session record is incomplete")
-        event = _decode_bytes(first, MAX_JSON_BYTES)
-        require(isinstance(event, dict) and event.get("type") == "session.start"
-                and isinstance(event.get("id"), str) and event["id"]
-                and isinstance(event.get("data"), dict)
-                and event["data"].get("sessionId") == root_session,
-                "CLI root session identity mismatch")
-        require(timestamp(event.get("timestamp")) <= timestamp(utc_now()), "future CLI event")
-        start = max(0, info.st_size - MAX_JSON_BYTES - 1)
-        source.seek(start)
-        tail = source.read(info.st_size - start)
-        require(len(tail) == info.st_size - start, "CLI log changed during reservation")
-        newline = tail.rfind(b"\n")
-        require(newline >= 0, "CLI partial event exceeds 1 MiB")
-        return {"path": str(path), "device": info.st_dev, "inode": info.st_ino,
-                "offset": start + newline + 1, "session_id": root_session}
+    cursor = {"path": str(path), "device": info.st_dev, "inode": info.st_ino,
+              "offset": 0, "session_id": None}
+    first = True
+    while cursor["offset"] < info.st_size:
+        events, next_cursor = cli_event_batch(path, cursor, end_offset=info.st_size)
+        if first:
+            require(bool(events), "CLI root session record is incomplete")
+            _, event = events[0]
+            require(event.get("type") == "session.start"
+                    and event["data"].get("sessionId") == root_session,
+                    "CLI root session identity mismatch")
+            require(timestamp(event.get("timestamp")) <= timestamp(utc_now()), "future CLI event")
+            first = False
+        if next_cursor["offset"] == cursor["offset"]:
+            break
+        cursor = next_cursor
+    require(not first, "CLI root session record is incomplete")
+    return cursor
 
 
-def cli_event_batch(path, cursor=None):
+def cli_event_batch(path, cursor=None, *, end_offset=None):
     """Read bounded (session context, native event) pairs from the previous cursor."""
     path = Path(path).absolute()
     with raw_git._directory_fd(path.parent) as parent:
@@ -381,13 +381,20 @@ def cli_event_batch(path, cursor=None):
         require((cursor["path"], cursor["device"], cursor["inode"])
                 == (str(path), info.st_dev, info.st_ino), "CLI log identity changed")
         require(cursor["offset"] <= info.st_size, "CLI log was truncated")
+        if end_offset is not None:
+            require(type(end_offset) is int and cursor["offset"] <= end_offset <= info.st_size,
+                    "CLI log snapshot was truncated")
         source.seek(cursor["offset"])
         current = dict(cursor)
         events = []
         consumed = 0
         while len(events) < 128 and consumed < MAX_JSON_BYTES:
             start = source.tell()
-            line = source.readline(MAX_JSON_BYTES + 1)
+            remaining = MAX_JSON_BYTES + 1 if end_offset is None else min(
+                MAX_JSON_BYTES + 1, end_offset - start)
+            if not remaining:
+                break
+            line = source.readline(remaining)
             if not line:
                 break
             require(len(line) <= MAX_JSON_BYTES, "CLI event exceeds 1 MiB")
