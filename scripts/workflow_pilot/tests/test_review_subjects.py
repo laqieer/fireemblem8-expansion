@@ -243,6 +243,37 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                         [(name, item.verdict, item.checks, item.detail)
                          for name, item in observations.items()])
 
+    def test_source_test_skips_and_expected_failures_are_not_positive_evidence(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        test_class = topology.ConsolidatedBuildTopologyTests
+        probe = "build-topology:source-test:topology-order"
+
+        @unittest.expectedFailure
+        def expected_failure(self):
+            self.fail("controlled expected failure")
+
+        @unittest.skip("controlled skip")
+        def skipped(self):
+            self.fail("controlled skip")
+
+        @unittest.expectedFailure
+        def unexpected_success(self):
+            pass
+
+        for outcome, test_method in (
+            ("expected-failure", expected_failure),
+            ("skipped", skipped),
+            ("unexpected-success", unexpected_success),
+        ):
+            with self.subTest(outcome=outcome):
+                with patch.object(
+                    test_class, "test_worker_blocks_can_precede_other_job_fields", test_method
+                ):
+                    observed = self.tools.subjects._build_topology(probe)
+                self.assertEqual((observed["verdict"], observed["checks"]),
+                                 ("unavailable", 0))
+
     def test_target_consumers_detect_original_order_sensitive_predicate(self):
         verifier = self.tools.subjects.BUILD_VERIFY
         original = subprocess.run(

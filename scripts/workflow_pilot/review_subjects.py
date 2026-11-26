@@ -2450,6 +2450,14 @@ def _build_topology(probe):
         if result.errors:
             return {"kind": "host", "verdict": "unavailable", "checks": 0,
                     "detail": (result.errors[0][1] or "source test errored")[-review.MAX_DETAIL:]}
+        for outcome, records in (
+            ("skipped", result.skipped),
+            ("expected-failure", result.expectedFailures),
+            ("unexpected-success", result.unexpectedSuccesses),
+        ):
+            if records:
+                return {"kind": "host", "verdict": "unavailable", "checks": 0,
+                        "detail": f"source test outcome is non-evidentiary: {outcome}"}
         if result.failures:
             return {"kind": "host", "verdict": "contract-violation", "checks": 1,
                     "detail": (result.failures[0][1] or "source test failed")[-review.MAX_DETAIL:]}
