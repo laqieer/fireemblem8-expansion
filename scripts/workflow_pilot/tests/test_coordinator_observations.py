@@ -333,6 +333,26 @@ class NativeObservationTests(unittest.TestCase):
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
 
+    def test_logical_owner_cannot_close_without_terminal_or_release_evidence(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        f.entry["closed_at"] = handoff.now()
+
+        with self.assertRaisesRegex(handoff.HandoffDataError, "logical ownership release is unavailable"):
+            handoff.validate_state(f.state)
+
     def test_failed_logical_task_does_not_close_or_preserve_wip_without_release(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)

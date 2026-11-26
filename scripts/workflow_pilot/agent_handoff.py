@@ -482,12 +482,12 @@ def validate_state(value):
                     and terminal_task["event_id"] != (entry["native_binding"]["started_id"] if native else None)
                     and terminal_task["event_id"] not in native_sources | legacy_sources,
                     "logical task terminal source reused")
-            if entry["process"] is None:
-                require(entry["closed_at"] is None, "logical ownership release is unavailable")
-            elif entry["closed_at"] is not None:
+            if entry["process"] is not None and entry["closed_at"] is not None:
                 require(timestamp(entry["closed_at"]) >= terminal_at,
                         "owner closed before logical task terminal")
             native_sources.add(terminal_task["event_id"])
+        if entry["process"] is None:
+            require(entry["closed_at"] is None, "logical ownership release is unavailable")
         owner_lifetime_ms(entry, at)
         checks = set()
         for check in items(entry["checks"], maximum=32):
