@@ -492,7 +492,7 @@ def validate_state(value):
             interruption = fields(entry["interruption"], "at reason oom_evidence worktree head "
                                   "dirty_paths lock_reason retained_data_sha256")
             timestamp(interruption["at"])
-            choice(interruption["reason"], {"sigkill", "timeout", "rss", "process-exit", "task-failed"})
+            choice(interruption["reason"], {"sigkill", "timeout", "rss", "process-exit"})
             text(interruption["oom_evidence"], nullable=True)
             absolute_path(interruption["worktree"])
             sha(interruption["head"])
@@ -1300,23 +1300,18 @@ def begin_check(entry, check_id, result_sha, process):
 
 
 def preserve_interruption(entry, reason, *, observed_at=None):
-    choice(reason, {"sigkill", "timeout", "rss", "process-exit", "task-failed"})
+    choice(reason, {"sigkill", "timeout", "rss", "process-exit"})
     require(entry["closed_at"] is None and entry["interruption"] is None, "owner already closed")
     identity, a = entry["process"], entry["assignment"]
-    if reason == "task-failed":
-        terminal = entry.get("terminal_task")
-        require(identity is None and terminal is not None and not terminal["success"],
-                "failed task lacks a terminal runtime observation")
-    else:
-        require(identity is not None, "opaque owner: process termination is unknown")
-        current = observations.sample_process(identity)
-        require(current["state"] == "exited", "owner process is still live")
-        require(reason != "sigkill" or identity["exit_code"] == -9,
-                "SIGKILL lacks owned OS exit observation")
-        require(reason != "timeout" or identity["exit_code"] == 124
-                or identity["age_ms"] >= a["max_lifetime_seconds"] * 1000, "timeout not observed")
-        require(reason != "rss" or identity["peak_rss_bytes"] is not None
-                and identity["peak_rss_bytes"] > a["max_peak_rss_bytes"], "RSS overage not observed")
+    require(identity is not None, "opaque owner: process termination is unknown")
+    current = observations.sample_process(identity)
+    require(current["state"] == "exited", "owner process is still live")
+    require(reason != "sigkill" or identity["exit_code"] == -9,
+            "SIGKILL lacks owned OS exit observation")
+    require(reason != "timeout" or identity["exit_code"] == 124
+            or identity["age_ms"] >= a["max_lifetime_seconds"] * 1000, "timeout not observed")
+    require(reason != "rss" or identity["peak_rss_bytes"] is not None
+            and identity["peak_rss_bytes"] > a["max_peak_rss_bytes"], "RSS overage not observed")
     current_git = observe_git(a)
     root = Path(a["allowed_worktree"])
     require(current_git["identity"] == entry["git_identity"], "worktree identity changed")

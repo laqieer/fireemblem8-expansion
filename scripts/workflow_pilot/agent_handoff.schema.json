@@ -262,7 +262,7 @@
                    "retained_data_sha256"],
       "properties": {
         "at": {"$ref": "#/$defs/time"},
-        "reason": {"enum": ["sigkill", "timeout", "rss", "process-exit", "task-failed"]},
+        "reason": {"enum": ["sigkill", "timeout", "rss", "process-exit"]},
         "oom_evidence": {"$ref": "#/$defs/nullableText"}, "worktree": {"$ref": "#/$defs/absolute"},
         "head": {"$ref": "#/$defs/sha"},
         "dirty_paths": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},

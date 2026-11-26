@@ -277,6 +277,35 @@ class NativeObservationTests(unittest.TestCase):
         self.assertFalse((Path(f.entry["git_identity"]["git_dir"]) / "locked").exists())
         self.assertEqual(handoff.summarize_handoffs(f.state)["in_progress"], 1)
 
+    def test_failed_logical_task_cannot_be_preserved_without_release(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        f.append(log, native_event("tool.execution_complete", "task-failed",
+                                   toolCallId="call-one", success=False))
+        handoff.observe_cli(f.entry, log)
+
+        before = handoff.observe_git(f.assignment)
+        lock = Path(f.entry["git_identity"]["git_dir"]) / "locked"
+        with self.assertRaisesRegex(handoff.HandoffDataError, "invalid enum"):
+            handoff.preserve_interruption(f.entry, "task-failed")
+
+        self.assertEqual(handoff.observe_git(f.assignment), before)
+        self.assertFalse(lock.exists())
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertIsNone(f.entry["interruption"])
+
     def test_shared_native_receipt_rejects_spliced_or_missing_observations(self):
         for variant in ("missing-start", "wrong-owner", "wrong-root", "wrong-interaction",
                         "wrong-prompt", "missing-parent", "stale-receipt"):
