@@ -886,9 +886,6 @@ def observe_native_task(entry, log_path):
 
     for session_id, event in events:
         require(timestamp(event["timestamp"]) <= timestamp(now()), "future CLI event")
-        if (timestamp(event["timestamp"]) < timestamp(entry["assigned_at"])
-                or session_id != task["root_session_id"]):
-            continue
         data, kind = event["data"], event.get("type")
         is_owner_event = (
             a["owner_id"] is not None and event.get("agentId") == a["owner_id"]
@@ -896,6 +893,9 @@ def observe_native_task(entry, log_path):
         )
         require(entry["closed_at"] is None or not is_owner_event,
                 "closed native owner emitted an event")
+        if (timestamp(event["timestamp"]) < timestamp(entry["assigned_at"])
+                or session_id != task["root_session_id"]):
+            continue
         if kind == "tool.execution_start" and data.get("toolName") == "task" and event.get("agentId") is None:
             arguments = data.get("arguments")
             prompt = arguments.get("prompt") if isinstance(arguments, dict) else None

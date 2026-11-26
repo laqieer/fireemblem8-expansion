@@ -410,8 +410,10 @@ class NativeObservationTests(unittest.TestCase):
                                  parentToolCallId="other-dispatch", interactionId="other-interaction"))
         handoff.observe_cli(f.entry, log)
         previous_offset = f.entry["cursors"][0]["offset"]
-        f.append(log, task_event("assistant.turn_start", "late-owner-turn", owner="owner-one",
-                                 parentToolCallId="call-one", interactionId="interaction-one"))
+        late_event = task_event("assistant.turn_start", "late-owner-turn", owner="owner-one",
+                                parentToolCallId="call-one", interactionId="interaction-one")
+        late_event["timestamp"] = at_offset(-60)
+        f.append(log, late_event)
         with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner emitted an event"):
             handoff.observe_cli(f.entry, log)
         self.assertEqual(f.entry["cursors"][0]["offset"], previous_offset)
