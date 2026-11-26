@@ -6736,21 +6736,25 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
    and repeated committed-owner work do not pass. For a logical task owner,
    record the exact dispatched `task` tool's terminal completion after delivery.
-   The negative control binds task ID, owner ID, owner session, result HEAD,
-   worktree identity and authorized scope, but records no ownership release;
-   it remains open and fails acceptance without inventing process exit or RSS.
+   The terminal event by itself must leave the assignment open. Then run the
+   coordinator validation on the exact task result and current worktree; it
+   records `closed_at` at the same time as the validation and releases the
+   logical worktree lease without claiming OS exit or RSS. A prefilled close
+   without that validation, an unread native-log tail, or mismatched task,
+   owner, session, head, worktree, Git identity or scope remains invalid.
+   Confirm that a closed owner cannot emit a later accepted event and that
+   closure is not handoff acceptance when other required evidence fails.
    Missing task completion, failed task completion and
    task/owner/session/head/worktree/scope mismatch reject. The
-   task terminal event records task-tool completion only: it does not prove or
-   enforce worktree write release. Until the runtime exposes an authoritative
-   release observation, a process-less owner remains open and ineligible;
-   successful and failed tasks cannot close, preserve WIP for reassignment, or
-   pass acceptance. Owner activity after terminal completion rejects but is
-   not itself release enforcement. A task's printed result, self-reported
-   completion, or unrelated `tool.execution_complete` event does not release
-   ownership. A native task terminal event never substitutes for process
-   exit/RSS when an owned OS process was bound. A process-backed terminal
-   record may remain open until actual exit/RSS evidence is observed. Replayed
+   task terminal event records task-tool completion only: it does not itself
+   prove or enforce worktree write release. Only the coordinator's validated
+   close transition releases the logical lease. Failed logical tasks remain
+   rejected and open; they do not gain a recovery/reassignment path from this
+   successful-task contract. A task's printed result, self-reported completion,
+   or unrelated `tool.execution_complete` event does not release ownership.
+   A native task terminal event never substitutes for process exit/RSS when an
+   owned OS process was bound. A process-backed terminal record may remain open
+   until actual exit/RSS evidence is observed. Replayed
    lifecycle source IDs reject even when the replayed event timestamp predates
    the assignment; a matching follow-up must retain both the bound parent task
    and interaction.

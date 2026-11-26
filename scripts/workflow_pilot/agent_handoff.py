@@ -460,6 +460,9 @@ def validate_state(value):
             identity = tuple(entry["process"][key] for key in ("boot_id", "pid", "start_ticks"))
             require(identity not in owner_processes, "implementation process reused")
             owner_processes.add(identity)
+        if entry["validation"] is not None:
+            validate_verdict(entry["validation"])
+            require(entry["validation"]["assignment_id"] == a["id"], "verdict assignment mismatch")
         terminal_task = entry.get("terminal_task")
         if terminal_task is not None:
             validate_terminal_task(terminal_task, a, entry)
@@ -471,8 +474,11 @@ def validate_state(value):
                     and terminal_task["event_id"] not in native_sources | legacy_sources,
                     "logical task terminal source reused")
             if entry["process"] is None:
-                require(entry["closed_at"] is None,
-                        "logical task cannot close without ownership-release evidence")
+                if entry["closed_at"] is not None:
+                    validation = entry["validation"]
+                    require(terminal_task["success"] and validation is not None
+                            and validation["observed_at"] == entry["closed_at"],
+                            "logical ownership release requires coordinator validation")
             elif entry["closed_at"] is not None:
                 require(timestamp(entry["closed_at"]) >= terminal_at,
                         "owner closed before logical task terminal")
@@ -485,9 +491,6 @@ def validate_state(value):
         if entry["result"] is not None:
             validate_result(entry["result"])
             require(entry["result"]["assignment_id"] == a["id"], "delivered assignment mismatch")
-        if entry["validation"] is not None:
-            validate_verdict(entry["validation"])
-            require(entry["validation"]["assignment_id"] == a["id"], "verdict assignment mismatch")
         if entry["interruption"] is not None:
             interruption = fields(entry["interruption"], "at reason oom_evidence worktree head "
                                   "dirty_paths lock_reason retained_data_sha256")
@@ -1382,7 +1385,6 @@ def owner_completion_errors(entry):
     elif terminal is not None:
         if not terminal["success"]:
             codes.append("owner-task-failed")
-        codes.append("owner-not-retired")
     elif "native" not in entry["assignment"]:
         codes.extend(("owner-not-retired", "owner-rss-unknown", "owner-exit-unknown"))
     else:

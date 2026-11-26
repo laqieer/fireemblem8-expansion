@@ -228,16 +228,32 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIn("does not expose per-owner RSS", terminal["rss_unavailable_reason"])
         self.assertIsNone(f.entry["process"])
         self.assertIsNone(f.entry["closed_at"])
-        self.assertIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
+        self.assertNotIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
         handoff.validate_state(f.state)
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(f.state)
+        premature_release = copy.deepcopy(f.state)
+        premature_release["assignments"][0]["closed_at"] = terminal["observed_at"]
+        with self.assertRaisesRegex(
+                handoff.HandoffDataError, "logical ownership release requires coordinator validation"):
+            handoff.validate_state(premature_release)
 
         verdict = f.validate(result)
-        self.assertFalse(verdict["handoff_ready"], verdict)
-        self.assertIn("owner-not-retired", verdict["rejection_codes"])
-        self.assertEqual(handoff.summarize_handoffs(f.state)["rejected"], 1)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertEqual(verdict["local_outcome"], "accepted")
+        self.assertNotIn("owner-not-retired", verdict["rejection_codes"])
+        self.assertIsNotNone(f.entry["closed_at"])
+        self.assertGreaterEqual(
+            handoff.timestamp(f.entry["closed_at"]),
+            handoff.timestamp(terminal["observed_at"]),
+        )
+        self.assertEqual(f.entry["validation"], verdict)
+        self.assertEqual(handoff.summarize_handoffs(f.state)["accepted"], 1)
+        handoff.validate_state(f.state)
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(f.state)
 
         for field, value in (("task_id", "other-task"), ("owner_id", "other-owner"),
                              ("session_id", "other-session"), ("session_id", None), ("head_sha", f.parent),
@@ -273,7 +289,7 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIsNone(f.entry["interruption"])
         self.assertIsNone(f.entry["closed_at"])
         self.assertIn("owner-task-failed", handoff.owner_completion_errors(f.entry))
-        self.assertIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
+        self.assertNotIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
         self.assertFalse((Path(f.entry["git_identity"]["git_dir"]) / "locked").exists())
         self.assertEqual(handoff.summarize_handoffs(f.state)["in_progress"], 1)
 
