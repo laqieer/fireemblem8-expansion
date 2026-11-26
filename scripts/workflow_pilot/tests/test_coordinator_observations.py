@@ -190,7 +190,7 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIn("owner-rss-unknown", verdict["rejection_codes"])
         self.assertEqual([item["state"] for item in f.entry["events"]], list(handoff.STATES))
 
-    def test_terminal_task_event_releases_logical_owner_without_claiming_process_or_rss(self):
+    def test_terminal_task_event_does_not_claim_logical_ownership_release(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
         log, root, prompt = reserve_task(f)
@@ -209,12 +209,12 @@ class NativeObservationTests(unittest.TestCase):
         result = {"schema_version": 3, "assignment_id": f.assignment["id"],
                   "assigned_parent_sha": f.parent, "result_sha": revision,
                   "evidence_refs": ["raw-evidence"]}
-        f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
-                                 interactionId="interaction-one",
-                                 content=json.dumps({"handoff_result": result})))
-        handoff.observe_cli(f.entry, log)
-        f.append(log, native_event("tool.execution_complete", "task-terminal",
-                                   toolCallId="call-one", success=True))
+        f.append(log,
+                 task_event("assistant.message", "delivery", owner="owner-one",
+                            interactionId="interaction-one",
+                            content=json.dumps({"handoff_result": result})),
+                 native_event("tool.execution_complete", "task-terminal",
+                              toolCallId="call-one", success=True))
         handoff.observe_cli(f.entry, log)
 
         terminal = f.entry["terminal_task"]
@@ -224,32 +224,32 @@ class NativeObservationTests(unittest.TestCase):
         self.assertEqual(terminal["head_sha"], revision)
         self.assertEqual(terminal["worktree"], f.assignment["allowed_worktree"])
         self.assertEqual(terminal["allowed_scope"], f.assignment["allowed_scope"])
-        self.assertTrue(terminal["ownership_released"])
         self.assertIsNone(terminal["rss_peak_bytes"])
         self.assertIn("does not expose per-owner RSS", terminal["rss_unavailable_reason"])
         self.assertIsNone(f.entry["process"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
         handoff.validate_state(f.state)
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(f.state)
 
         verdict = f.validate(result)
-        self.assertTrue(verdict["handoff_ready"], verdict)
-        self.assertNotIn("owner-exit-unknown", verdict["rejection_codes"])
-        self.assertNotIn("owner-rss-unknown", verdict["rejection_codes"])
-        self.assertEqual(handoff.summarize_handoffs(f.state)["unknown_rss_records"], 1)
+        self.assertFalse(verdict["handoff_ready"], verdict)
+        self.assertIn("owner-not-retired", verdict["rejection_codes"])
+        self.assertEqual(handoff.summarize_handoffs(f.state)["rejected"], 1)
 
         for field, value in (("task_id", "other-task"), ("owner_id", "other-owner"),
                              ("session_id", "other-session"), ("session_id", None), ("head_sha", f.parent),
                              ("worktree", str(f.repository)), ("allowed_scope", ["src/"]),
-                             ("ownership_released", False)):
+                             ("ownership_released", True)):
             with self.subTest(field=field):
                 changed = copy.deepcopy(f.state)
                 changed["assignments"][0]["terminal_task"][field] = value
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
 
-    def test_failed_logical_task_releases_owner_but_preserves_wip_as_interrupted(self):
+    def test_failed_logical_task_does_not_close_or_preserve_wip_without_release(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
         log, root, prompt = reserve_task(f)
@@ -269,11 +269,13 @@ class NativeObservationTests(unittest.TestCase):
                                    toolCallId="call-one", success=False))
         handoff.observe_cli(f.entry, log)
 
-        self.assertEqual(f.entry["interruption"]["reason"], "task-failed")
-        self.assertEqual(f.entry["closed_at"], f.entry["interruption"]["at"])
-        self.assertEqual(f.entry["interruption"]["head"], git(f.worktree, "rev-parse", "HEAD"))
-        self.assertTrue((Path(f.entry["git_identity"]["git_dir"]) / "locked").exists())
-        self.assertEqual(handoff.summarize_handoffs(f.state)["interrupted"], 1)
+        self.assertFalse(f.entry["terminal_task"]["success"])
+        self.assertIsNone(f.entry["interruption"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertIn("owner-task-failed", handoff.owner_completion_errors(f.entry))
+        self.assertIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
+        self.assertFalse((Path(f.entry["git_identity"]["git_dir"]) / "locked").exists())
+        self.assertEqual(handoff.summarize_handoffs(f.state)["in_progress"], 1)
 
     def test_shared_native_receipt_rejects_spliced_or_missing_observations(self):
         for variant in ("missing-start", "wrong-owner", "wrong-root", "wrong-interaction",
@@ -514,6 +516,11 @@ class NativeObservationTests(unittest.TestCase):
                                  interactionId="interaction-one",
                                  content=json.dumps({"handoff_result": result})))
         handoff.observe_cli(f.entry, log)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+        self.assertIsNone(f.entry["closed_at"])
+        handoff.validate_state(f.state)
         handoff.capture_check(f.entry, "raw", revision)
         f.finish_owner(process)
         verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)

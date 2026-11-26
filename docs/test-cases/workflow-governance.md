@@ -6728,21 +6728,29 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    events with retained cursor context still complete normally. An old session
    start may establish context, but stale pre-assignment task events must not
    acknowledge or count the new assignment. Exercise the actual CLI and check
-   that a future-clock rejection leaves canonical state unchanged.
+   that a future-clock rejection leaves canonical state unchanged. Collect
+   multiple native events after their producer timestamps and verify lifecycle
+   ordering uses those timestamps rather than a later polling time; include
+   delivery and task-completion records in the same observed batch.
    For an OS-process-backed owner, a real zero exit and complete owned RSS
    pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
    and repeated committed-owner work do not pass. For a logical task owner,
    record the exact dispatched `task` tool's terminal completion after delivery.
-   The positive case binds task ID, owner ID, owner session, result HEAD,
-   worktree identity and authorized scope, records ownership release, and
-   records unavailable per-owner RSS with its reason; it passes without
-   inventing process exit or RSS. Missing task completion, failed task
-   completion, task/owner/session/head/worktree/scope mismatch, and owner
-   activity after terminal completion reject. A task's printed result,
-   self-reported completion, or unrelated `tool.execution_complete` event does
-   not release ownership. A native task terminal event never substitutes for
-   process exit/RSS when an owned OS process was bound. Failed logical tasks
-   preserve and lock their existing worktree as interrupted WIP. Replayed
+   The negative control binds task ID, owner ID, owner session, result HEAD,
+   worktree identity and authorized scope, but records no ownership release;
+   it remains open and fails acceptance without inventing process exit or RSS.
+   Missing task completion, failed task completion and
+   task/owner/session/head/worktree/scope mismatch reject. The
+   task terminal event records task-tool completion only: it does not prove or
+   enforce worktree write release. Until the runtime exposes an authoritative
+   release observation, a process-less owner remains open and ineligible;
+   successful and failed tasks cannot close, preserve WIP for reassignment, or
+   pass acceptance. Owner activity after terminal completion rejects but is
+   not itself release enforcement. A task's printed result, self-reported
+   completion, or unrelated `tool.execution_complete` event does not release
+   ownership. A native task terminal event never substitutes for process
+   exit/RSS when an owned OS process was bound. A process-backed terminal
+   record may remain open until actual exit/RSS evidence is observed. Replayed
    lifecycle source IDs reject even when the replayed event timestamp predates
    the assignment; a matching follow-up must retain both the bound parent task
    and interaction.

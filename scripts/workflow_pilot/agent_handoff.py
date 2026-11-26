@@ -240,8 +240,7 @@ def validate_process(value):
 
 def validate_terminal_task(value, assignment, entry):
     fields(value, "event_id observed_at root_session_id task_id owner_id session_id head_sha "
-           "worktree git_identity allowed_scope success ownership_released rss_peak_bytes "
-           "rss_unavailable_reason")
+           "worktree git_identity allowed_scope success rss_peak_bytes rss_unavailable_reason")
     text(value["event_id"], maximum=128, pattern=ID_RE)
     timestamp(value["observed_at"])
     for name in ("root_session_id", "task_id", "owner_id", "session_id"):
@@ -249,7 +248,6 @@ def validate_terminal_task(value, assignment, entry):
     sha(value["head_sha"])
     absolute_path(value["worktree"])
     boolean(value["success"])
-    boolean(value["ownership_released"])
     integer(value["rss_peak_bytes"], nullable=True)
     text(value["rss_unavailable_reason"], maximum=256)
     scope = items(value["allowed_scope"], maximum=256, minimum=1, unique=True)
@@ -264,7 +262,6 @@ def validate_terminal_task(value, assignment, entry):
             and value["git_identity"] == entry["git_identity"]
             and scope == assignment["allowed_scope"],
             "logical task terminal identity mismatch")
-    require(value["ownership_released"], "logical task lacks ownership release")
     require(value["rss_peak_bytes"] is None
             and value["rss_unavailable_reason"] == LOGICAL_RSS_UNAVAILABLE,
             "logical task RSS availability mismatch")
@@ -473,12 +470,12 @@ def validate_state(value):
                     and terminal_task["event_id"] != (entry["native_binding"]["started_id"] if native else None)
                     and terminal_task["event_id"] not in native_sources | legacy_sources,
                     "logical task terminal source reused")
-            require(entry["closed_at"] is not None
-                    and timestamp(entry["closed_at"]) >= terminal_at,
-                    "logical task terminal lacks owner closure")
             if entry["process"] is None:
-                require(timestamp(entry["closed_at"]) == terminal_at,
-                        "logical owner closure must match task release")
+                require(entry["closed_at"] is None,
+                        "logical task cannot close without ownership-release evidence")
+            elif entry["closed_at"] is not None:
+                require(timestamp(entry["closed_at"]) >= terminal_at,
+                        "owner closed before logical task terminal")
             native_sources.add(terminal_task["event_id"])
         checks = set()
         for check in items(entry["checks"], maximum=32):
@@ -918,13 +915,17 @@ def find_entry(state, assignment_id):
     raise HandoffDataError("unknown assignment")
 
 
-def _event(entry, state, source_id):
+def _event(entry, state, source_id, observed_at=None):
     existing = [event["state"] for event in entry["events"]]
     if state in existing:
         return
     require(entry["closed_at"] is None and len(existing) < len(STATES)
             and STATES[len(existing)] == state, "lifecycle event out of order")
-    entry["events"].append({"state": state, "at": now(), "source_id": source_id})
+    entry["events"].append({
+        "state": state,
+        "at": observed_at if observed_at is not None else now(),
+        "source_id": source_id,
+    })
 
 
 def observe_native_task(entry, log_path):
@@ -972,7 +973,7 @@ def observe_native_task(entry, log_path):
             text(data.get("toolCallId"), maximum=128, pattern=ID_RE)
             require(a["dispatch_id"] is None, "duplicate native dispatch")
             advance_time(event)
-            _event(entry, "assignment_sent", event["id"])
+            _event(entry, "assignment_sent", event["id"], event["timestamp"])
             a["dispatch_id"] = data["toolCallId"]
             continue
         if (kind == "subagent.started" and a["dispatch_id"] is not None
@@ -1001,17 +1002,12 @@ def observe_native_task(entry, log_path):
                 "owner_id": a["owner_id"], "session_id": a["session_id"],
                 "head_sha": current["head"], "worktree": a["allowed_worktree"],
                 "git_identity": current["identity"], "allowed_scope": list(a["allowed_scope"]),
-                "success": data["success"], "ownership_released": True,
+                "success": data["success"],
                 "rss_peak_bytes": None, "rss_unavailable_reason": LOGICAL_RSS_UNAVAILABLE,
             }
             validate_terminal_task(terminal, a, entry)
             advance_time(event)
             entry["terminal_task"] = terminal
-            if entry["process"] is None:
-                if data["success"]:
-                    entry["closed_at"] = event["timestamp"]
-                else:
-                    preserve_interruption(entry, "task-failed", observed_at=event["timestamp"])
             continue
         if a["owner_id"] is None or event.get("agentId") != a["owner_id"]:
             continue
@@ -1032,7 +1028,7 @@ def observe_native_task(entry, log_path):
                     or not isinstance(parent, str) or not ID_RE.fullmatch(parent)):
                 continue
             advance_time(event)
-            _event(entry, "assignment_received", event["id"])
+            _event(entry, "assignment_received", event["id"], event["timestamp"])
             binding["parent_task_id"] = parent
         elif kind == "assistant.turn_start" and binding["parent_task_id"] is not None:
             if (data.get("parentToolCallId") == a["dispatch_id"]
@@ -1049,7 +1045,7 @@ def observe_native_task(entry, log_path):
             require(data["toolCallId"] != a["dispatch_id"], "native progress reused dispatch")
             advance_time(event)
             if a["session_id"] is None:
-                _event(entry, "progressing", event["id"])
+                _event(entry, "progressing", event["id"], event["timestamp"])
                 a["session_id"] = owner_session
             else:
                 require(a["session_id"] == owner_session, "native owner session changed")
@@ -1066,8 +1062,8 @@ def observe_native_task(entry, log_path):
             current = observe_git(a)
             require(current["head"] == result["result_sha"], "delivered SHA is not Git HEAD")
             advance_time(event)
-            _event(entry, "committed", "git:" + current["head"])
-            _event(entry, "handed_off", event["id"])
+            _event(entry, "committed", "git:" + current["head"], event["timestamp"])
+            _event(entry, "handed_off", event["id"], event["timestamp"])
             entry["result"] = result
     entry["cursors"][0] = updated
 
@@ -1086,19 +1082,19 @@ def observe_cli(entry, log_path):
         kind = event.get("type")
         if (kind == "tool.execution_start" and data.get("toolCallId") == a["dispatch_id"]
                 and data.get("toolName") in {"task", "write_agent", "bash"}):
-            _event(entry, "assignment_sent", event["id"])
+            _event(entry, "assignment_sent", event["id"], event["timestamp"])
         if session_id != a["session_id"] or event.get("agentId", a["owner_id"]) != a["owner_id"]:
             continue
         # Receipt binds the actual dispatched task as well as its prompt marker.
         # Subagent-start/transport success or opaque event data cannot substitute.
         if (kind == "user.message" and data.get("parentAgentTaskId") == a["dispatch_id"]
                 and isinstance(data.get("content"), str) and f"[handoff:{a['id']}]" in data["content"]):
-            _event(entry, "assignment_received", event["id"])
+            _event(entry, "assignment_received", event["id"], event["timestamp"])
         elif kind == "assistant.turn_start":
             entry["coordination_turns"] += 1
         elif kind == "tool.execution_start" and data.get("toolCallId") != a["dispatch_id"]:
             require(len(entry["events"]) < 4, "retired owner started more work")
-            _event(entry, "progressing", event["id"])
+            _event(entry, "progressing", event["id"], event["timestamp"])
         elif kind == "assistant.message":
             content = data.get("content")
             if not isinstance(content, str) or not content.startswith('{"handoff_result":'):
@@ -1110,8 +1106,8 @@ def observe_cli(entry, log_path):
             require(result["assignment_id"] == a["id"], "handoff message names wrong assignment")
             current = observe_git(a)
             require(current["head"] == result["result_sha"], "delivered SHA is not Git HEAD")
-            _event(entry, "committed", "git:" + current["head"])
-            _event(entry, "handed_off", event["id"])
+            _event(entry, "committed", "git:" + current["head"], event["timestamp"])
+            _event(entry, "handed_off", event["id"], event["timestamp"])
             entry["result"] = result
     if cursor is None:
         entry["cursors"].append(updated)
@@ -1391,8 +1387,7 @@ def owner_completion_errors(entry):
     elif terminal is not None:
         if not terminal["success"]:
             codes.append("owner-task-failed")
-        if not terminal["ownership_released"]:
-            codes.append("owner-not-retired")
+        codes.append("owner-not-retired")
     elif "native" not in entry["assignment"]:
         codes.extend(("owner-not-retired", "owner-rss-unknown", "owner-exit-unknown"))
     else:
