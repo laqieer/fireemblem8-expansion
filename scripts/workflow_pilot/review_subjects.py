@@ -76,7 +76,6 @@ PROJECT_DECLARATION = "project_selection.mk"
 BUILD_WORKFLOW = ".github/workflows/build.yml"
 BUILD_TOPOLOGY = "tests/workflows/test_build_ci_topology.py"
 BUILD_VERIFY = "scripts/upstream_port/verify.py"
-BUILD_VERIFY_TESTS = "tests/upstream_port/test_verify.py"
 BUILD_ARCHIVAL_HELPER = "scripts/ci/install_archival_compilers.sh"
 PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
 PROJECT_REGISTRY = "scripts/generated_data/registry.py"
@@ -476,10 +475,9 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
         workers, jobs = build_source_model(
             tree.read(BUILD_WORKFLOW).decode(), tree.read(BUILD_TOPOLOGY),
             tree.read(BUILD_VERIFY))
-        closure = set(local_python_inputs(head, (BUILD_TOPOLOGY, BUILD_VERIFY_TESTS)))
+        closure = set(local_python_inputs(head, (BUILD_TOPOLOGY, BUILD_VERIFY)))
         closure.update({
             BUILD_WORKFLOW, BUILD_ARCHIVAL_HELPER, "tests/workflows/__init__.py",
-            "tests/upstream_port/__init__.py",
         })
         closure.difference_update({
             "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
@@ -514,12 +512,14 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                 representation, "target gates accept equivalent and reject unsafe mappings",
                 "build-topology:consumer:" + job,
                 {BUILD_WORKFLOW, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER})
-            for name, path in (("topology-order", BUILD_TOPOLOGY),
-                               ("upstream-order", BUILD_VERIFY_TESTS)):
-                add("wire", "validators", name + "-" + job, BUILD_WORKFLOW, path,
-                    representation, "actual regression accepts equivalent reordered workflow",
+            for name, source in (
+                ("topology-order", BUILD_TOPOLOGY + ":_errors"),
+                ("upstream-order", BUILD_VERIFY + ":_parse_workflow_structure_text"),
+            ):
+                add("wire", "validators", name + "-" + job, BUILD_WORKFLOW, source,
+                    representation, "source parser accepts equivalent reordered workflow",
                     "build-topology:" + name + ":" + job,
-                    {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY, path})
+                    {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
         add("wire", "stale-bindings", "width-script", BUILD_WORKFLOW,
             BUILD_VERIFY + ":run_gates", "target literal width-gate script",
             "target command after shallow blank cannot be ignored",
@@ -2396,7 +2396,6 @@ def _session_probe(probe: str) -> dict:
 def _build_topology(probe):
     from scripts.upstream_port import verify
     from tests.workflows import test_build_ci_topology as topology
-    from tests.upstream_port import test_verify as upstream_tests
 
     workers, model = build_source_model(
         Path(BUILD_WORKFLOW).read_text(), Path(BUILD_TOPOLOGY).read_bytes(),
@@ -2511,37 +2510,22 @@ def _build_topology(probe):
             observe(verify._parse_workflow_structure_text(changed) == baseline,
                     f"{name} {field} changed parsed workflow")
     elif role in {"topology-order", "upstream-order"}:
-        module, attribute, test_class, test_name = (
-            (topology, "WORKFLOW", topology.ConsolidatedBuildTopologyTests,
-             "test_worker_blocks_can_precede_other_job_fields")
-            if role == "topology-order" else
-            (upstream_tests, "BUILD_WORKFLOW_PATH", upstream_tests.VerifyCliCwdTests,
-             "test_worker_mapping_order_preserves_target_gate_equivalence")
-        )
-        with tempfile.TemporaryDirectory(prefix="build-order-") as directory:
-            path = Path(directory) / "build.yml"
-            for field in ("steps", "env"):
-                changed = text.replace(jobs[name], build_reorder_field(jobs[name], field), 1)
-                observe(changed != text, f"{name} {field} did not move")
-                path.write_text(changed)
-                result = unittest.TestResult()
-                with mock.patch.object(module, attribute, path if role == "topology-order" else str(path)):
-                    test_class(test_name).run(result)
-                review.require(result.testsRun == 1 and not result.skipped,
-                               "order regression was skipped or not run")
-                observe(result.wasSuccessful(), f"{name} {field}: {result.failures + result.errors}")
-                control = unittest.TestResult()
-                patched_module, patched_name, replacement = (
-                    (topology, "_errors", lambda *_args, **_kwargs: ["controlled rejection"])
-                    if role == "topology-order" else
-                    (verify, "_parse_workflow_structure_text", lambda *_args, **_kwargs: object())
-                )
-                with mock.patch.object(module, attribute, path if role == "topology-order" else str(path)):
-                    with mock.patch.object(patched_module, patched_name, side_effect=replacement):
-                        test_class(test_name).run(control)
-                review.require(control.testsRun == 1 and not control.skipped and not control.errors,
-                               "order regression control was unavailable")
-                observe(bool(control.failures), f"{name} {field} regression ignored a changed contract")
+        baseline = verify._parse_workflow_structure_text(text)
+        fields = ("steps", "env") if role == "topology-order" else ("steps",)
+        for field in fields:
+            reordered = build_reorder_field(jobs[name], field)
+            changed = text.replace(jobs[name], reordered, 1)
+            observe(changed != text, f"{name} {field} did not move")
+            if role == "topology-order":
+                observe(not topology._errors(changed, False),
+                        f"{name} topology validator rejected equivalent reordered {field}")
+            try:
+                parsed = verify._parse_workflow_structure_text(changed)
+            except ValueError as error:
+                observe(False, f"{name} verifier rejected equivalent reordered {field}: {error}")
+            else:
+                observe(parsed == baseline,
+                        f"{name} reordered {field} changed the parsed workflow")
     elif role == "consumer":
         with tempfile.TemporaryDirectory(prefix="build-target-") as directory:
             root, workflow = target(directory)

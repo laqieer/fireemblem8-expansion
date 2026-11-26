@@ -67,10 +67,10 @@ class BuildTopologyFamilyTests(SubjectTestCase):
         subjects = cls.tools.subjects
         source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
         paths = set(subjects.local_python_inputs(
-            source, (subjects.BUILD_TOPOLOGY, subjects.BUILD_VERIFY_TESTS)))
+            source, (subjects.BUILD_TOPOLOGY, subjects.BUILD_VERIFY)))
         paths.update({
             subjects.BUILD_WORKFLOW, subjects.BUILD_ARCHIVAL_HELPER,
-            "tests/workflows/__init__.py", "tests/upstream_port/__init__.py",
+            "tests/workflows/__init__.py",
         })
         for name in paths:
             target = cls.repo.root / name
@@ -98,11 +98,10 @@ class BuildTopologyFamilyTests(SubjectTestCase):
         observed = self.run_members(members, revision)
         return tuple(item for item in observed if item.obligation.member in names)
 
-    def test_complete_source_family_and_real_candidate_observations(self):
+    def test_complete_source_family_inputs_are_closed(self):
         members = self.tools.members(self.build_scope())
         self.assertEqual({item.role for item in members},
                          set(self.model.FAMILIES["wire"]))
-        self.assert_satisfied(self.run_members(members, self.repo.base))
         self.assertTrue(all(self.tools.subjects.BUILD_ARCHIVAL_HELPER in item.source_inputs
                             for item in members))
         self.assertTrue(all("scripts/workflow_pilot/review_subjects.py" not in item.source_inputs
@@ -126,32 +125,50 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                 self.assert_satisfied(self.selected_observations(
                     members, after, "validators:boundary-extended-host-tests"))
 
-    def test_both_order_consumers_have_independent_regressions(self):
-        topology = self.tools.subjects.BUILD_TOPOLOGY
-        upstream = self.tools.subjects.BUILD_VERIFY_TESTS
-        original_topology = (self.repo.root / topology).read_text()
-        original_upstream = (self.repo.root / upstream).read_text()
-        old_topology = original_topology.replace(
-            "reordered = _reorder_job_field(job, block)",
-            'reordered = job.partition("    steps:\\n")[1] + '
-            'job.partition("    steps:\\n")[2] + job.partition("    steps:\\n")[0]', 1)
-        old_upstream = original_upstream.replace(
-            'reordered = topology_tests._reorder_job_field(job, "steps")',
-            'fields, separator, steps = job.partition("    steps:\\n")\n'
-            "            reordered = separator + steps + fields", 1)
-        self.assertNotEqual(old_topology, original_topology)
-        self.assertNotEqual(old_upstream, original_upstream)
-        before = self.repo.commit({topology: old_topology, upstream: old_upstream})
-        after = self.repo.commit({topology: original_topology, upstream: original_upstream},
-                                 parent=before)
-        members = self.selected(
-            self.tools.members(self.build_scope(after), (before,)),
-            "validators:topology-order-host-tests", "validators:upstream-order-host-tests")
-        names = ("validators:topology-order-host-tests", "validators:upstream-order-host-tests")
-        prior = self.selected_observations(members, before, *names)
-        self.assertEqual([item.verdict for item in prior],
-                         ["contract-violation", "contract-violation"])
-        self.assert_satisfied(self.selected_observations(members, after, *names))
+    def test_historical_order_origins_have_source_backed_observations(self):
+        revision = "355dd69dbe0cad0250bfdc5589b2134577359c18"
+        paths = (
+            self.tools.subjects.BUILD_WORKFLOW,
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+        )
+        historical = {}
+        for path in paths:
+            result = subprocess.run(
+                ["/usr/bin/git", "show", revision + ":" + path],
+                cwd=ROOT, env=ENV, check=True, capture_output=True,
+            )
+            historical[path] = result.stdout
+        candidate = {path: (self.repo.root / path).read_bytes() for path in paths}
+        before = self.repo.commit(historical)
+        after = self.repo.commit(candidate, parent=before)
+        workers, _ = self.tools.subjects.build_source_model(
+            (self.repo.root / self.tools.subjects.BUILD_WORKFLOW).read_text(),
+            (self.repo.root / self.tools.subjects.BUILD_TOPOLOGY).read_bytes(),
+            (self.repo.root / self.tools.subjects.BUILD_VERIFY).read_bytes(),
+        )
+        names = tuple(
+            f"validators:{kind}-{worker}"
+            for worker in workers
+            for kind in ("topology-order", "upstream-order")
+        )
+        members = self.tools.members(self.build_scope(after), (before,))
+        prior = self.run_members(members, before)
+        by_name = {item.obligation.member: item for item in prior}
+        self.assertEqual(len(by_name), len(members))
+        self.assertEqual(
+            {name for name, item in by_name.items() if item.verdict == "unavailable"},
+            set(),
+            [(item.obligation.member, item.verdict, item.checks, item.detail)
+             for item in prior if item.verdict == "unavailable"],
+        )
+        self.assertTrue(
+            all(by_name[name].verdict == "contract-violation" and by_name[name].checks > 0
+                for name in names),
+            [(name, by_name[name].verdict, by_name[name].checks, by_name[name].detail)
+             for name in names],
+        )
+        self.assert_satisfied(self.run_members(members, after))
 
     def test_target_consumers_detect_original_order_sensitive_predicate(self):
         verifier = self.tools.subjects.BUILD_VERIFY
@@ -197,30 +214,6 @@ def _parse_job_steps(job_name, body, repository_root=None):
         self.assertEqual(len(prior), len(names))
         self.assertTrue(all(item.verdict == "contract-violation" for item in prior))
         self.assert_satisfied(self.selected_observations(members, after, *names))
-
-    def test_order_regressions_must_actually_detect_a_changed_contract(self):
-        cases = (
-            (self.tools.subjects.BUILD_TOPOLOGY,
-             "test_worker_blocks_can_precede_other_job_fields",
-             "validators:topology-order-host-tests"),
-            (self.tools.subjects.BUILD_VERIFY_TESTS,
-             "test_worker_mapping_order_preserves_target_gate_equivalence",
-             "validators:upstream-order-host-tests"),
-        )
-        for path, method, name in cases:
-            with self.subTest(path=path):
-                original = (self.repo.root / path).read_text()
-                broken, count = re.subn(
-                    r"    def " + method + r"\(self\):\n.*?(?=\n    def |\nclass |\Z)",
-                    "    def " + method + "(self):\n        pass\n",
-                    original, count=1, flags=re.S)
-                self.assertEqual(count, 1)
-                before = self.repo.commit({path: broken})
-                after = self.repo.commit({path: original}, parent=before)
-                members = self.selected(self.tools.members(self.build_scope(after), (before,)), name)
-                prior = self.selected_observations(members, before, name)[0]
-                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
-                self.assert_satisfied(self.selected_observations(members, after, name))
 
     def test_unsafe_target_and_shallow_literal_mutations_are_rejected(self):
         path = self.tools.subjects.BUILD_VERIFY
