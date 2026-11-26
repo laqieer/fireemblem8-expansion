@@ -251,6 +251,134 @@ class NativeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task changed"):
             handoff.observe_cli(f.entry, log)
 
+    def test_native_receipt_replay_or_conflicting_interaction_is_rejected(self):
+        for variant in ("replay", "new-id", "changed-interaction"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                                      toolCallId="call-one", arguments={"prompt": prompt})
+                started = task_event("subagent.started", "started", owner="owner-one",
+                                     toolCallId="call-one", interactionId="interaction-one")
+                receipt = task_event(
+                    "user.message", "receipt", owner="owner-one", content=prompt,
+                    source=f"agent-{root}", interactionId="interaction-one",
+                    parentAgentTaskId="receipt-task")
+                f.append(log, dispatch, started, receipt)
+                handoff.observe_cli(f.entry, log)
+                duplicate = copy.deepcopy(receipt)
+                if variant != "replay":
+                    duplicate["id"] = "another-receipt"
+                if variant == "changed-interaction":
+                    duplicate["data"]["interactionId"] = "other-interaction"
+                    duplicate["data"]["parentAgentTaskId"] = "other-task"
+                f.append(log, duplicate)
+                with self.assertRaisesRegex(handoff.HandoffDataError, "native receipt"):
+                    handoff.observe_cli(f.entry, log)
+
+    def test_native_followup_participates_in_progress_chronology(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                              toolCallId="call-one", arguments={"prompt": prompt})
+        started = task_event("subagent.started", "started", owner="owner-one",
+                             toolCallId="call-one", interactionId="interaction-one")
+        receipt = task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                             source=f"agent-{root}", interactionId="interaction-one",
+                             parentAgentTaskId="receipt-task")
+        progress = task_event("tool.execution_start", "progress", owner="owner-one",
+                              toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION)
+        followup = task_event("user.message", "followup", owner="owner-one",
+                              content="Additional instructions", source=f"agent-{root}",
+                              interactionId="interaction-one", parentAgentTaskId="receipt-task")
+        f.append(log, dispatch, started, receipt, followup, progress)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
+            handoff.observe_cli(f.entry, log)
+
+    def test_native_progress_requires_distinct_complete_tool_identity(self):
+        for variant in ("missing-id", "opaque-id", "dispatch-id", "missing-name", "opaque-name"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                progress = task_event("tool.execution_start", "progress", owner="owner-one",
+                                      toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION)
+                if variant == "missing-id":
+                    del progress["data"]["toolCallId"]
+                elif variant == "opaque-id":
+                    progress["data"]["toolCallId"] = {"id": "edit"}
+                elif variant == "dispatch-id":
+                    progress["data"]["toolCallId"] = "call-one"
+                elif variant == "missing-name":
+                    del progress["data"]["toolName"]
+                else:
+                    progress["data"]["toolName"] = {"name": "bash"}
+                f.append(log, progress)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.observe_cli(f.entry, log)
+
+    def test_native_validation_rejects_pending_and_contradictory_log_records(self):
+        for variant in ("more-than-one-batch", "partial", "contradiction"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one",
+                                    toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                process = f.owner_process()
+                revision = f.commit()
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": revision,
+                          "evidence_refs": ["raw-evidence"]}
+                delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                                      interactionId="interaction-one",
+                                      content=json.dumps({"handoff_result": result}))
+                f.append(log, delivery)
+                handoff.observe_cli(f.entry, log)
+                f.finish_owner(process)
+                if variant == "partial":
+                    with log.open("ab") as output:
+                        output.write(b'{"type":')
+                else:
+                    count = 129 if variant == "more-than-one-batch" else 128
+                    f.append(log, *(task_event("assistant.message", f"other-{index}",
+                                              owner="other-owner", content="unrelated")
+                                    for index in range(count)))
+                    if variant == "contradiction":
+                        f.append(log, task_event(
+                            "user.message", "contradiction", owner="owner-one",
+                            content="Additional instructions", source=f"agent-{root}",
+                            interactionId="interaction-one", parentAgentTaskId="other-task"))
+                verdict = f.validate(result)
+                self.assertFalse(verdict["handoff_ready"])
+                self.assertIn("native-log-unread", verdict["rejection_codes"])
+                self.assertIsNone(f.entry["closed_at"])
+                if variant == "contradiction":
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task changed"):
+                        f.validate(result)
+                elif variant == "more-than-one-batch":
+                    self.assertTrue(f.validate(result)["handoff_ready"])
+
     def test_shared_native_log_correlates_two_tasks_with_the_same_interaction(self):
         first = GitFixture(assign=False)
         second = GitFixture(assign=False)

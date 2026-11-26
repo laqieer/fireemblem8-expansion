@@ -410,6 +410,19 @@ def cli_event_batch(path, cursor=None):
         return events, current
 
 
+def cli_cursor_caught_up(cursor):
+    path = Path(cursor["path"])
+    with raw_git._directory_fd(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        require(stat.S_ISREG(info.st_mode), "CLI log must be a regular file")
+        require((cursor["device"], cursor["inode"]) == (info.st_dev, info.st_ino),
+                "CLI log identity changed")
+        require(cursor["offset"] <= info.st_size, "CLI log was truncated")
+        return cursor["offset"] == info.st_size
+
+
 def capture_raw_check(assignment, candidate_sha):
     worktree = Path(assignment["allowed_worktree"])
     require(not ROOT.is_relative_to(worktree.resolve()), "candidate overlaps reviewed checker source")

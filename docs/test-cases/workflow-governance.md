@@ -6571,7 +6571,14 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    distinct. Spliced, missing, stale, reversed or reused observations must not
    advance; unknown owner exit/RSS still prevents a ready handoff. The
    separate-session control rejects the different-ID receipt, as the pre-fix
-   reader did. The isolated CLI case also checks atomic rejection.
+   reader did. Repeat an exact receipt with the same or another event ID or
+   conflicting interaction: reject; a distinct same-parent follow-up remains
+   valid and participates in chronology. Missing, opaque or dispatch-equal
+   progress call IDs and missing or opaque tool names reject. Put unread
+   complete or partial records after delivery: validation
+   must hold readiness and closure until caught up, then reject a conflicting
+   parent or accept otherwise complete valid evidence. The isolated CLI case
+   also checks atomic rejection.
 3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
    missing trailers/evidence/checks, out-of-scope path, hidden index flags,
    whitespace/checker replacement, and incremental line-budget controls.

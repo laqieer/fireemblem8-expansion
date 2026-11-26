@@ -2801,7 +2801,13 @@ established before it, starting from the previous cursor; a later
 `session.start` cannot retroactively attach earlier receipt, progress or
 delivery. Bounded batches retain this context without another event history.
 Events predating the assignment do not acknowledge or count its work;
-future-dated or reversed native task events reject.
+future-dated or reversed native task events reject. A repeated exact receipt
+rejects; matching follow-ups preserve the received parent task and advance the
+native chronology. Progress needs a complete tool name and call ID distinct
+from the dispatch.
+Shared-root validation consumes one bounded batch and refuses readiness or
+closure with `native-log-unread` while complete or partial bytes remain.
+Observe or validate again until caught up; contradictory records still reject.
 
 | State | Actual observation |
 | --- | --- |

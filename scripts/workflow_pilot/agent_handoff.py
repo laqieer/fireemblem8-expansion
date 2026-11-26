@@ -917,10 +917,12 @@ def observe_native_task(entry, log_path):
             continue
         if kind == "user.message":
             if binding["parent_task_id"] is not None:
-                if (data.get("source") == f"agent-{task['root_session_id']}"
-                        and data.get("interactionId") == binding["interaction_id"]):
-                    require(data.get("parentAgentTaskId") == binding["parent_task_id"],
-                            "native receipt task changed")
+                if data.get("source") == f"agent-{task['root_session_id']}":
+                    require(data.get("content") != task["prompt"], "duplicate native receipt")
+                    if data.get("interactionId") == binding["interaction_id"]:
+                        require(data.get("parentAgentTaskId") == binding["parent_task_id"],
+                                "native receipt task changed")
+                        advance_time(event)
                 continue
             parent = data.get("parentAgentTaskId")
             if (data.get("source") != f"agent-{task['root_session_id']}"
@@ -940,6 +942,9 @@ def observe_native_task(entry, log_path):
             owner_session = data.get("ownerNativeSessionId")
             if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
                 continue
+            text(data.get("toolCallId"), maximum=128, pattern=ID_RE)
+            text(data.get("toolName"), maximum=128, pattern=ID_RE)
+            require(data["toolCallId"] != a["dispatch_id"], "native progress reused dispatch")
             require(len(entry["events"]) < 4, "retired owner started more work")
             advance_time(event)
             if a["session_id"] is None:
@@ -1354,6 +1359,9 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     def reject(condition, code):
         if condition:
             codes.append(code)
+    if "native_binding" in entry:
+        observe_native_task(entry, a["native"]["events_path"])
+        reject(not observations.cli_cursor_caught_up(entry["cursors"][0]), "native-log-unread")
     reject(str(Path(worktree).absolute()) != a["allowed_worktree"], "wrong-worktree")
     reject(result["assigned_parent_sha"] != a["assigned_parent_sha"], "wrong-parent")
     reject(entry["result"] != result, "missing-handoff-observation")
@@ -1386,6 +1394,8 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
         preserve_interruption(entry, reason)
     at = now()
     codes.extend(owner_acceptance_errors(entry, at))
+    if "native_binding" in entry:
+        reject(not observations.cli_cursor_caught_up(entry["cursors"][0]), "native-log-unread")
     codes = sorted(set(codes))
     outcome = "rejected" if codes else "accepted"
     if entry["interruption"] is not None:
@@ -1398,7 +1408,8 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
                "imported_paths": imported, "ci_state": ci_state(state, result["result_sha"])}
     validate_verdict(verdict)
     entry["validation"] = verdict
-    if len(entry["events"]) >= 4 and not owner_completion_errors(process):
+    if (len(entry["events"]) >= 4 and not owner_completion_errors(process)
+            and "native-log-unread" not in codes):
         entry["closed_at"] = entry["closed_at"] or at
     return verdict
 
