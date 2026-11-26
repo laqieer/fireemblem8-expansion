@@ -2964,12 +2964,9 @@ process-budget compliance is inferred.
 WIP publication remains separate from accepted handoff completion.
 
 Process-backed ownership enforces the assignment-to-retirement wall-clock
-lifetime and also checks process age and available RSS. Logical-task execution
-duration is measured through its terminal observation, but the path remains
-ineligible because the native runtime does not expose enforceable write-release
-evidence. Validation rechecks eligibility after focused checks and records its
-verdict at the observation instant; this does not extend the logical task's
-execution lifetime.
+lifetime and also checks process age and available RSS. Validation rechecks
+eligibility after focused checks and records its verdict at the observation
+instant; this does not extend the logical task's execution lifetime.
 Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
 time. Closed history uses its captured interval without requiring its worktree;
 an open report whose recorded clock predates assignment is incomplete rather
