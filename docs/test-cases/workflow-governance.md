@@ -6729,8 +6729,23 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    start may establish context, but stale pre-assignment task events must not
    acknowledge or count the new assignment. Exercise the actual CLI and check
    that a future-clock rejection leaves canonical state unchanged.
-   Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
-   lifetime/RSS overage and repeated committed-owner work do not pass.
+   For an OS-process-backed owner, a real zero exit and complete owned RSS
+   pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
+   and repeated committed-owner work do not pass. For a logical task owner,
+   record the exact dispatched `task` tool's terminal completion after delivery.
+   The positive case binds task ID, owner ID, owner session, result HEAD,
+   worktree identity and authorized scope, records ownership release, and
+   records unavailable per-owner RSS with its reason; it passes without
+   inventing process exit or RSS. Missing task completion, failed task
+   completion, task/owner/session/head/worktree/scope mismatch, and owner
+   activity after terminal completion reject. A task's printed result,
+   self-reported completion, or unrelated `tool.execution_complete` event does
+   not release ownership. A native task terminal event never substitutes for
+   process exit/RSS when an owned OS process was bound. Failed logical tasks
+   preserve and lock their existing worktree as interrupted WIP. Replayed
+   lifecycle source IDs reject even when the replayed event timestamp predates
+   the assignment; a matching follow-up must retain both the bound parent task
+   and interaction.
    Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
    local acceptance and an accepted report reject it, preservation happens
    before retirement, and Git HEAD/index/check facts remain intact. A missing

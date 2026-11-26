@@ -32,6 +32,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 MAX_OPEN_PULL_REQUESTS = 1000
 MAX_RETAINED_WATCHERS = 32768
+LOGICAL_RSS_UNAVAILABLE = "native task runtime does not expose per-owner RSS"
 HandoffDataError = observations.ObservationError
 require = observations.require
 load_json = observations.load_json
@@ -237,6 +238,41 @@ def validate_process(value):
             "running process cannot have an exit code")
 
 
+def validate_terminal_task(value, assignment, entry):
+    fields(value, "event_id observed_at root_session_id task_id owner_id session_id head_sha "
+           "worktree git_identity allowed_scope success ownership_released rss_peak_bytes "
+           "rss_unavailable_reason")
+    text(value["event_id"], maximum=128, pattern=ID_RE)
+    timestamp(value["observed_at"])
+    for name in ("root_session_id", "task_id", "owner_id", "session_id"):
+        text(value[name], nullable=True, maximum=128, pattern=ID_RE)
+    sha(value["head_sha"])
+    absolute_path(value["worktree"])
+    boolean(value["success"])
+    boolean(value["ownership_released"])
+    integer(value["rss_peak_bytes"], nullable=True)
+    text(value["rss_unavailable_reason"], maximum=256)
+    scope = items(value["allowed_scope"], maximum=256, minimum=1, unique=True)
+    for name in scope:
+        path(name, prefix=True)
+    require("native" in assignment and value["root_session_id"] == assignment["native"]["root_session_id"]
+            and value["task_id"] == assignment["dispatch_id"]
+            and value["owner_id"] == assignment["owner_id"]
+            and assignment["session_id"] is not None
+            and value["session_id"] == assignment["session_id"]
+            and value["worktree"] == assignment["allowed_worktree"]
+            and value["git_identity"] == entry["git_identity"]
+            and scope == assignment["allowed_scope"],
+            "logical task terminal identity mismatch")
+    require(value["ownership_released"], "logical task lacks ownership release")
+    require(value["rss_peak_bytes"] is None
+            and value["rss_unavailable_reason"] == LOGICAL_RSS_UNAVAILABLE,
+            "logical task RSS availability mismatch")
+    if entry["result"] is not None:
+        require(value["head_sha"] == entry["result"]["result_sha"],
+                "logical task terminal head mismatch")
+
+
 def validate_availability(value):
     fields(value, "mode observed_at valid_until autostop_enabled stop_on_disconnect plan")
     choice(value["mode"], {"always-on", "plan"})
@@ -349,6 +385,7 @@ def validate_state(value):
         native = isinstance(entry, dict) and "native_binding" in entry
         fields(entry, "assignment assigned_at git_identity events process checks result validation "
                "interruption cursors remote_actions closed_at coordination_turns"
+               + (" terminal_task" if isinstance(entry, dict) and "terminal_task" in entry else "")
                + (" native_binding" if native else ""))
         a = validate_assignment(entry["assignment"])
         require(native == ("native" in a), "native assignment/binding mismatch")
@@ -426,6 +463,23 @@ def validate_state(value):
             identity = tuple(entry["process"][key] for key in ("boot_id", "pid", "start_ticks"))
             require(identity not in owner_processes, "implementation process reused")
             owner_processes.add(identity)
+        terminal_task = entry.get("terminal_task")
+        if terminal_task is not None:
+            validate_terminal_task(terminal_task, a, entry)
+            terminal_at = timestamp(terminal_task["observed_at"])
+            require(native and terminal_at >= last and terminal_at <= timestamp(at),
+                    "logical task terminal chronology invalid")
+            require(terminal_task["event_id"] not in event_ids
+                    and terminal_task["event_id"] != (entry["native_binding"]["started_id"] if native else None)
+                    and terminal_task["event_id"] not in native_sources | legacy_sources,
+                    "logical task terminal source reused")
+            require(entry["closed_at"] is not None
+                    and timestamp(entry["closed_at"]) >= terminal_at,
+                    "logical task terminal lacks owner closure")
+            if entry["process"] is None:
+                require(timestamp(entry["closed_at"]) == terminal_at,
+                        "logical owner closure must match task release")
+            native_sources.add(terminal_task["event_id"])
         checks = set()
         for check in items(entry["checks"], maximum=32):
             validate_check(check)
@@ -441,7 +495,7 @@ def validate_state(value):
             interruption = fields(entry["interruption"], "at reason oom_evidence worktree head "
                                   "dirty_paths lock_reason retained_data_sha256")
             timestamp(interruption["at"])
-            choice(interruption["reason"], {"sigkill", "timeout", "rss", "process-exit"})
+            choice(interruption["reason"], {"sigkill", "timeout", "rss", "process-exit", "task-failed"})
             text(interruption["oom_evidence"], nullable=True)
             absolute_path(interruption["worktree"])
             sha(interruption["head"])
@@ -838,7 +892,7 @@ def assign(state, assignment):
                 "upstream input must name an existing exact commit")
     entry = {"assignment": assignment, "assigned_at": now(), "git_identity": current["identity"],
              "events": [], "process": None, "checks": [], "result": None, "validation": None,
-             "interruption": None, "cursors": [], "remote_actions": [], "closed_at": None,
+             "interruption": None, "terminal_task": None, "cursors": [], "remote_actions": [], "closed_at": None,
              "coordination_turns": 0}
     if native is not None:
         entry["cursors"] = [observations.cli_reservation_cursor(native["events_path"],
@@ -893,8 +947,19 @@ def observe_native_task(entry, log_path):
             a["owner_id"] is not None and event.get("agentId") == a["owner_id"]
             or a["session_id"] is not None and data.get("ownerNativeSessionId") == a["session_id"]
         )
+        source_ids = {item["source_id"] for item in entry["events"]}
+        if binding["started_id"] is not None:
+            source_ids.add(binding["started_id"])
+        if entry.get("terminal_task") is not None:
+            source_ids.add(entry["terminal_task"]["event_id"])
+        if is_owner_event:
+            require(event["id"] not in source_ids, "native owner event source reused")
         require(entry["closed_at"] is None or not is_owner_event,
                 "closed native owner emitted an event")
+        require(entry.get("terminal_task") is None or not is_owner_event,
+                "terminal native task emitted another owner event")
+        require(not is_owner_event or session_id == task["root_session_id"],
+                "native owner event attributed to another root session")
         if (timestamp(event["timestamp"]) < timestamp(entry["assigned_at"])
                 or session_id != task["root_session_id"]):
             continue
@@ -921,18 +986,43 @@ def observe_native_task(entry, log_path):
             binding["started_id"] = event["id"]
             binding["interaction_id"] = data["interactionId"]
             continue
+        if (kind == "tool.execution_complete" and a["dispatch_id"] is not None
+                and data.get("toolCallId") == a["dispatch_id"]):
+            require(entry["terminal_task"] is None, "duplicate native task completion")
+            require(a["owner_id"] is not None and binding["started_id"] is not None,
+                    "native task completion lacks its owner start")
+            boolean(data.get("success"))
+            current = observe_git(a)
+            require(current["identity"] == entry["git_identity"],
+                    "native task completed from a changed worktree")
+            terminal = {
+                "event_id": event["id"], "observed_at": event["timestamp"],
+                "root_session_id": task["root_session_id"], "task_id": a["dispatch_id"],
+                "owner_id": a["owner_id"], "session_id": a["session_id"],
+                "head_sha": current["head"], "worktree": a["allowed_worktree"],
+                "git_identity": current["identity"], "allowed_scope": list(a["allowed_scope"]),
+                "success": data["success"], "ownership_released": True,
+                "rss_peak_bytes": None, "rss_unavailable_reason": LOGICAL_RSS_UNAVAILABLE,
+            }
+            validate_terminal_task(terminal, a, entry)
+            advance_time(event)
+            entry["terminal_task"] = terminal
+            if entry["process"] is None:
+                if data["success"]:
+                    entry["closed_at"] = event["timestamp"]
+                else:
+                    preserve_interruption(entry, "task-failed", observed_at=event["timestamp"])
+            continue
         if a["owner_id"] is None or event.get("agentId") != a["owner_id"]:
             continue
-        source_ids = {item["source_id"] for item in entry["events"]}
-        if binding["started_id"] is not None:
-            source_ids.add(binding["started_id"])
-        require(event["id"] not in source_ids, "native owner event source reused")
         if kind == "user.message":
             if binding["parent_task_id"] is not None:
                 if data.get("source") == f"agent-{task['root_session_id']}":
                     require(data.get("content") != task["prompt"], "duplicate native receipt")
                     require(data.get("parentAgentTaskId") == binding["parent_task_id"],
                             "native receipt task changed")
+                    require(data.get("interactionId") == binding["interaction_id"],
+                            "native receipt interaction changed")
                     advance_time(event)
                 continue
             parent = data.get("parentAgentTaskId")
@@ -1213,19 +1303,24 @@ def begin_check(entry, check_id, result_sha, process):
     return check
 
 
-def preserve_interruption(entry, reason):
-    choice(reason, {"sigkill", "timeout", "rss", "process-exit"})
+def preserve_interruption(entry, reason, *, observed_at=None):
+    choice(reason, {"sigkill", "timeout", "rss", "process-exit", "task-failed"})
     require(entry["closed_at"] is None and entry["interruption"] is None, "owner already closed")
-    identity = entry["process"]
-    require(identity is not None, "opaque owner: process termination is unknown")
-    current = observations.sample_process(identity)
-    require(current["state"] == "exited", "owner process is still live")
-    require(reason != "sigkill" or identity["exit_code"] == -9, "SIGKILL lacks owned OS exit observation")
-    a = entry["assignment"]
-    require(reason != "timeout" or identity["exit_code"] == 124
-            or identity["age_ms"] >= a["max_lifetime_seconds"] * 1000, "timeout not observed")
-    require(reason != "rss" or identity["peak_rss_bytes"] is not None
-            and identity["peak_rss_bytes"] > a["max_peak_rss_bytes"], "RSS overage not observed")
+    identity, a = entry["process"], entry["assignment"]
+    if reason == "task-failed":
+        terminal = entry.get("terminal_task")
+        require(identity is None and terminal is not None and not terminal["success"],
+                "failed task lacks a terminal runtime observation")
+    else:
+        require(identity is not None, "opaque owner: process termination is unknown")
+        current = observations.sample_process(identity)
+        require(current["state"] == "exited", "owner process is still live")
+        require(reason != "sigkill" or identity["exit_code"] == -9,
+                "SIGKILL lacks owned OS exit observation")
+        require(reason != "timeout" or identity["exit_code"] == 124
+                or identity["age_ms"] >= a["max_lifetime_seconds"] * 1000, "timeout not observed")
+        require(reason != "rss" or identity["peak_rss_bytes"] is not None
+                and identity["peak_rss_bytes"] > a["max_peak_rss_bytes"], "RSS overage not observed")
     current_git = observe_git(a)
     root = Path(a["allowed_worktree"])
     require(current_git["identity"] == entry["git_identity"], "worktree identity changed")
@@ -1243,13 +1338,16 @@ def preserve_interruption(entry, reason):
         path(name)
     retained_data = observations.retained_data_sha256(current_git["identity"], current_git["dirty_paths"])
     require(observe_git(a) == current_git, "recovery worktree changed during observation")
-    at = now()
+    at = observed_at or now()
+    require(timestamp(entry["assigned_at"]) <= timestamp(at) <= timestamp(now()),
+            "interruption time is outside the owner lifetime")
     for check in entry["checks"]:
         if check["completed_at"] is None:
             check["detail"] = "interrupted before observed completion"
     entry["interruption"] = {
         "at": at, "reason": reason,
-        "oom_evidence": observations.kernel_oom_evidence(identity, entry["assigned_at"], at),
+        "oom_evidence": (observations.kernel_oom_evidence(identity, entry["assigned_at"], at)
+                         if identity is not None else None),
         "worktree": str(root), "head": current_git["head"],
         "dirty_paths": current_git["dirty_paths"], "lock_reason": lock_reason,
         "retained_data_sha256": retained_data,
@@ -1276,16 +1374,29 @@ def ci_state(state, result_sha):
     return watcher_ci_state(latest)
 
 
-def owner_completion_errors(process):
+def owner_completion_errors(entry):
     codes = []
-    if process is None or process["state"] != "exited":
-        codes.append("owner-not-retired")
-    if process is None or not process["rss_complete"]:
-        codes.append("owner-rss-unknown")
-    if process is None or process["exit_code"] is None:
-        codes.append("owner-exit-unknown")
-    elif process["exit_code"] != 0:
-        codes.append("owner-exit-failed")
+    process, terminal = entry["process"], entry.get("terminal_task")
+    if process is not None:
+        if process["state"] != "exited":
+            codes.append("owner-not-retired")
+        if not process["rss_complete"]:
+            codes.append("owner-rss-unknown")
+        if process["exit_code"] is None:
+            codes.append("owner-exit-unknown")
+        elif process["exit_code"] != 0:
+            codes.append("owner-exit-failed")
+        if terminal is not None and not terminal["success"]:
+            codes.append("owner-task-failed")
+    elif terminal is not None:
+        if not terminal["success"]:
+            codes.append("owner-task-failed")
+        if not terminal["ownership_released"]:
+            codes.append("owner-not-retired")
+    elif "native" not in entry["assignment"]:
+        codes.extend(("owner-not-retired", "owner-rss-unknown", "owner-exit-unknown"))
+    else:
+        codes.extend(("owner-not-retired", "owner-rss-unknown", "owner-exit-unknown"))
     return codes
 
 
@@ -1298,7 +1409,7 @@ def owner_lifetime_ms(entry, at):
 
 def owner_acceptance_errors(entry, at):
     a, process = entry["assignment"], entry["process"]
-    codes = owner_completion_errors(process)
+    codes = owner_completion_errors(entry)
     if owner_lifetime_ms(entry, at) > a["max_lifetime_seconds"] * 1000:
         codes.append("owner-lifetime-exceeded")
     if process is not None:
@@ -1419,7 +1530,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
                "imported_paths": imported, "ci_state": ci_state(state, result["result_sha"])}
     validate_verdict(verdict)
     entry["validation"] = verdict
-    if (len(entry["events"]) >= 4 and not owner_completion_errors(process)
+    if (len(entry["events"]) >= 4 and not owner_completion_errors(entry)
             and "native-log-unread" not in codes):
         entry["closed_at"] = entry["closed_at"] or at
     return verdict

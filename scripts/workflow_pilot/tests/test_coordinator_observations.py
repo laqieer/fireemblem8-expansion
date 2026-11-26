@@ -190,6 +190,91 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIn("owner-rss-unknown", verdict["rejection_codes"])
         self.assertEqual([item["state"] for item in f.entry["events"]], list(handoff.STATES))
 
+    def test_terminal_task_event_releases_logical_owner_without_claiming_process_or_rss(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                 interactionId="interaction-one",
+                                 content=json.dumps({"handoff_result": result})))
+        handoff.observe_cli(f.entry, log)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+
+        terminal = f.entry["terminal_task"]
+        self.assertEqual(terminal["task_id"], f.assignment["dispatch_id"])
+        self.assertEqual(terminal["owner_id"], f.assignment["owner_id"])
+        self.assertEqual(terminal["session_id"], SESSION)
+        self.assertEqual(terminal["head_sha"], revision)
+        self.assertEqual(terminal["worktree"], f.assignment["allowed_worktree"])
+        self.assertEqual(terminal["allowed_scope"], f.assignment["allowed_scope"])
+        self.assertTrue(terminal["ownership_released"])
+        self.assertIsNone(terminal["rss_peak_bytes"])
+        self.assertIn("does not expose per-owner RSS", terminal["rss_unavailable_reason"])
+        self.assertIsNone(f.entry["process"])
+        handoff.validate_state(f.state)
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(f.state)
+
+        verdict = f.validate(result)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertNotIn("owner-exit-unknown", verdict["rejection_codes"])
+        self.assertNotIn("owner-rss-unknown", verdict["rejection_codes"])
+        self.assertEqual(handoff.summarize_handoffs(f.state)["unknown_rss_records"], 1)
+
+        for field, value in (("task_id", "other-task"), ("owner_id", "other-owner"),
+                             ("session_id", "other-session"), ("session_id", None), ("head_sha", f.parent),
+                             ("worktree", str(f.repository)), ("allowed_scope", ["src/"]),
+                             ("ownership_released", False)):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(f.state)
+                changed["assignments"][0]["terminal_task"][field] = value
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(changed)
+
+    def test_failed_logical_task_releases_owner_but_preserves_wip_as_interrupted(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        f.commit()
+        f.append(log, native_event("tool.execution_complete", "task-failed",
+                                   toolCallId="call-one", success=False))
+        handoff.observe_cli(f.entry, log)
+
+        self.assertEqual(f.entry["interruption"]["reason"], "task-failed")
+        self.assertEqual(f.entry["closed_at"], f.entry["interruption"]["at"])
+        self.assertEqual(f.entry["interruption"]["head"], git(f.worktree, "rev-parse", "HEAD"))
+        self.assertTrue((Path(f.entry["git_identity"]["git_dir"]) / "locked").exists())
+        self.assertEqual(handoff.summarize_handoffs(f.state)["interrupted"], 1)
+
     def test_shared_native_receipt_rejects_spliced_or_missing_observations(self):
         for variant in ("missing-start", "wrong-owner", "wrong-root", "wrong-interaction",
                         "wrong-prompt", "missing-parent", "stale-receipt"):
@@ -227,7 +312,7 @@ class NativeObservationTests(unittest.TestCase):
                 self.assertIsNone(f.entry["assignment"]["session_id"])
 
     def test_native_followup_cannot_rebind_the_received_parent_task(self):
-        for variant in ("same-interaction", "changed-interaction"):
+        for variant in ("same-interaction", "changed-interaction", "changed-interaction-only"):
             with self.subTest(variant=variant):
                 f = GitFixture(assign=False)
                 self.addCleanup(f.close)
@@ -250,11 +335,14 @@ class NativeObservationTests(unittest.TestCase):
                                  ["assignment_sent", "assignment_received"])
                 interaction = ("interaction-one" if variant == "same-interaction"
                                else "different-interaction")
-                parent = "other-task" if variant == "same-interaction" else "different-task"
+                parent = ("receipt-task" if variant == "changed-interaction-only"
+                          else "other-task" if variant == "same-interaction" else "different-task")
                 f.append(log, task_event("user.message", "contradiction", owner="owner-one",
                                          content="Additional instructions", source=f"agent-{root}",
                                          interactionId=interaction, parentAgentTaskId=parent))
-                with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task changed"):
+                message = ("receipt interaction changed" if variant == "changed-interaction-only"
+                           else "receipt task changed")
+                with self.assertRaisesRegex(handoff.HandoffDataError, message):
                     handoff.observe_cli(f.entry, log)
 
     def test_native_receipt_replay_or_conflicting_interaction_is_rejected(self):
@@ -338,6 +426,32 @@ class NativeObservationTests(unittest.TestCase):
                     handoff.observe_cli(f.entry, log)
                     self.assertEqual(f.entry["events"][-1]["source_id"], "progress")
                     self.assertEqual(f.entry["cursors"][0]["offset"], log.stat().st_size)
+
+    def test_native_stale_event_cannot_reuse_a_lifecycle_source_id(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one",
+                            toolName="bash", toolCallId="owner-call",
+                            ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        offset = f.entry["cursors"][0]["offset"]
+
+        stale = task_event("assistant.turn_start", "progress", owner="owner-one",
+                           parentToolCallId="call-one", interactionId="interaction-one")
+        stale["timestamp"] = at_offset(-3600)
+        f.append(log, stale)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "native owner event source reused"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], offset)
 
     def test_native_lifecycle_source_id_cannot_be_reused_by_owner_turn(self):
         for variant in ("replay", "distinct"):

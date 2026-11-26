@@ -2894,19 +2894,26 @@ not another `initial` assignment that bypasses retained-worktree recovery.
 Independent issue/PR roots remain separate. Only one coordinator manages the
 canonical state.
 
-Accepted completion requires a genuinely observed zero owner exit and complete
-owned RSS, not merely an exited process. Unknown exit evidence stays incomplete.
-An observed nonzero or signal exit after delivery uses the existing interruption
-preservation path before closing the owner; it is never accepted completion.
-The same eligibility check guards optional accepted reporting. Honest abnormal
-exit observations remain valid state. A committed WIP checkpoint is retained and
-may still be published immediately by the existing #207 coordinator workflow;
-WIP publication and accepted handoff completion are separate decisions.
+Owner completion has two distinct evidence paths. An OS-process-backed owner
+still requires the runtime-owned process identity, an actually observed zero
+exit, and complete owned RSS; an exited process with unknown status or
+incomplete RSS remains ineligible. A native logical-task owner may instead use
+the exact dispatched `task` tool's observed `tool.execution_complete` event,
+but only after the same task, owner, owner session, result head, worktree
+identity, and allowed scope have been bound. The task-runtime terminal event
+also marks ownership released: later events from that owner reject. This is a
+logical task termination observation, not an OS exit code, and it cannot
+replace process evidence when a process was bound. The logical record explicitly
+stores per-owner RSS as unavailable because the runtime does not expose it; no
+RSS value or process-budget compliance is inferred. An unsuccessful terminal
+task is preserved as an interruption before closure. A successful task without
+a complete result/lifecycle remains incomplete. WIP publication remains
+separate from accepted handoff completion.
 
-One pure owner-acceptance predicate covers zero completion, assignment-to-close
-wall-clock lifetime, process age and RSS in both live validation and reporting.
-A small process age cannot override an exceeded wall-clock limit. Validation
-rechecks eligibility after focused checks and records a new close and verdict
+Both paths enforce the assignment-to-retirement wall-clock lifetime. For
+process owners, process age and available RSS are also checked; for logical
+owners, the terminal task event provides the end of the bounded execution.
+Validation rechecks eligibility after focused checks and records its verdict
 at the same observation instant, so time spent checking cannot evade the limit.
 Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
 time. Closed history uses its captured interval without requiring its worktree;
