@@ -470,6 +470,45 @@ class NativeObservationTests(unittest.TestCase):
         self.assertFalse(validation_worktree.exists())
         self.assertIsNone(f.entry["worktree_release"])
 
+    def test_logical_release_rolls_back_new_candidate_after_pre_removal_failure(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+        candidate_status_calls = 0
+
+        def fail_candidate_status_once(cwd, *arguments):
+            nonlocal candidate_status_calls
+            if Path(cwd) == validation_worktree and arguments == (
+                    "submodule", "status", "--recursive"):
+                candidate_status_calls += 1
+                if candidate_status_calls == 1:
+                    return b" c87e74dcd6c8878b809e013cd8ff0c52baa75332 mgfembp\n"
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_candidate_status_once):
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initialized or conflicted"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+            self.assertTrue(f.worktree.exists())
+            self.assertFalse(validation_worktree.exists())
+            self.assertIsNone(f.entry["worktree_release"])
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+
     def test_logical_release_cleans_candidate_when_owner_removal_fails(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
@@ -504,7 +543,60 @@ class NativeObservationTests(unittest.TestCase):
         self.assertFalse(f.worktree.exists())
         self.assertTrue(validation_worktree.exists())
 
-    def test_logical_release_recovers_owner_path_removed_before_git_registration(self):
+    def test_logical_release_id_supports_maximum_assignment_id(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.assignment["id"] = "a" * 128
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        self.assertLessEqual(len(release["release_id"]), 128)
+        handoff.validate_state(f.state)
+
+    def test_logical_release_reserves_validation_worktree_until_close(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        other = GitFixture()
+        self.addCleanup(other.close)
+        second_entry = copy.deepcopy(other.entry)
+        second_assignment = second_entry["assignment"]
+        second_assignment.update({
+            "id": "assignment-two",
+            "issue": 179,
+            "pull_request": 192,
+            "owner_id": "owner-two",
+            "session_id": "session-two",
+            "dispatch_id": "dispatch-two",
+            "allowed_worktree": str(validation_worktree),
+        })
+        second_entry["git_identity"]["worktree"] = str(validation_worktree)
+        candidate = copy.deepcopy(f.state)
+        candidate["assignments"].append(second_entry)
+
+        with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping active owners"):
+            handoff.validate_state(candidate)
+
+    def test_logical_release_fails_closed_when_owner_path_is_removed_before_registration(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
         result = complete_logical_task(f)
@@ -523,25 +615,28 @@ class NativeObservationTests(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
             with mock.patch.object(handoff, "_git", side_effect=fail_after_path_removal):
-                release = handoff.release_logical_worktree(
-                    f.state, f.assignment["id"], f.repository, validation_worktree,
-                )
+                with self.assertRaisesRegex(handoff.HandoffDataError, "registration remains"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
 
-        self.assertEqual(release["head_sha"], result["result_sha"])
         self.assertFalse(f.worktree.exists())
         self.assertTrue(validation_worktree.exists())
-        self.assertFalse(any(
+        self.assertIsNone(f.entry["worktree_release"])
+        self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        self.assertTrue(any(
             line == f"worktree {f.worktree}"
             for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
         ))
 
-    def test_logical_release_refuses_pruning_other_stale_worktree_registrations(self):
+    def test_logical_release_does_not_prune_stale_worktree_registrations(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
         result = complete_logical_task(f)
         other_worktree = f.home / "other"
         git(f.repository, "worktree", "add", "-b", "other/test",
             str(other_worktree), f.parent)
+        other_git_dir = Path(git(other_worktree, "rev-parse", "--absolute-git-dir"))
         validation_worktree = f.home / "validation"
         fake_bin = Path(gh_stub_environment(
             f.home, {"name": f.assignment["expected_branch"],
@@ -553,13 +648,14 @@ class NativeObservationTests(unittest.TestCase):
         shutil.rmtree(other_worktree)
 
         with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
-            with self.assertRaisesRegex(handoff.HandoffDataError, "unexpected registration"):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "path and registration disagree"):
                 handoff.release_logical_worktree(
                     f.state, f.assignment["id"], f.repository, validation_worktree,
                 )
 
         self.assertTrue(validation_worktree.exists())
         self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        self.assertTrue(other_git_dir.exists())
         self.assertEqual(
             len([line for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
                  if line.startswith("worktree ")]),

@@ -505,14 +505,16 @@ never deinitializes submodules or uses force. It creates a fresh detached
 worktree at the exact candidate, removes the assigned worktree using normal
 `git worktree remove` (never force), and verifies the old path is absent and
 unregistered. If removal fails while the assigned worktree remains registered,
-the unchanged validation worktree is removed normally so retry can start clean;
-if the owner path disappears but its registration remains, the operation prunes
-that registration only when Git's dry run selects exactly that one stale entry.
-Otherwise it fails closed and retains the validation worktree. Final candidate
-validation runs in the fresh worktree, not the removed owner worktree. This
-prevents subsequent path-based writes from
-altering the validated candidate under the cooperative task/tool threat model;
-it does not prove OS process exit or RSS and is not hostile same-UID isolation.
+the unchanged validation worktree is removed normally so retry can start clean.
+If Git removes the owner path but leaves its registration, the operation fails
+closed and retains the validation worktree; it never globally prunes Git
+registrations. Errors during candidate setup roll back only the new, reverified
+candidate worktree. The released candidate path remains reserved to that
+assignment until it closes. Final candidate validation runs in the fresh
+worktree, not the removed owner worktree. This prevents subsequent path-based
+writes from altering the validated candidate under the cooperative task/tool
+threat model; it does not prove OS process exit or RSS and is not hostile
+same-UID isolation.
 A terminal event, clean snapshot, or `closed_at` value alone never authorizes
 release. If removal succeeds but the final observation or state persistence
 fails, a retry may finalize only after observing the owner path absent and
