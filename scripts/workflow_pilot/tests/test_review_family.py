@@ -2203,6 +2203,47 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 session.review_state((), (), pre_review_required=True)
 
+    def test_mutated_closed_event_owner_rejects_the_same_readiness_assessment(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            event = next(
+                event for _, event in session.latest_cli_events
+                if event.get("agentId") == reviewer
+                and event.get("type") == "assistant.message"
+                and event.get("data", {}).get("phase") == "commentary")
+            event["agentId"] = "another-reviewer"
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
+    def test_unattributed_activity_in_bound_reviewer_session_is_rejected(self):
+        with snapshot() as root:
+            _, runtime, session, events, times, reviewer, interaction = self.native_runtime(
+                root, reviewer_session_id="reviewer-session")
+            final_index = next(
+                index for index, (_, event) in enumerate(events)
+                if event.get("type") == "assistant.message"
+                and event.get("data", {}).get("phase") == "final_answer")
+            events.insert(final_index, ("reviewer-session", {
+                "type": "tool.execution_start",
+                "timestamp": times["view_end"],
+                "data": {
+                    "interactionId": interaction,
+                    "turnId": "turn-1",
+                    "toolCallId": "unattributed-bash",
+                    "toolName": "bash",
+                    "arguments": {"command": "not permitted"},
+                },
+            }))
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            with self.assertRaisesRegex(
+                model.ReviewError, "prohibited or unverified operation"):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+
     def test_initial_reviewer_activity_must_match_assigned_dispatch(self):
         for case in ("contradictory-message", "additional-dispatch"):
             with self.subTest(case=case), snapshot() as root:

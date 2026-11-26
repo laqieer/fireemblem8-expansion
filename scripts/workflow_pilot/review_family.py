@@ -939,8 +939,33 @@ class ReviewOwnership:
         record.event_sources.append(event_source)
         record.report = report
 
-    def validate_closed_events(self, events):
+    def validate_closed_events(self, events, *, snapshot_namespace=None):
         require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
+        require(snapshot_namespace is None
+                or isinstance(snapshot_namespace, str) and bool(snapshot_namespace.strip()),
+                "invalid CLI event snapshot namespace")
+        if snapshot_namespace is not None:
+            snapshot_keys = {}
+            for record in events:
+                if (not isinstance(record, (tuple, list)) or len(record) != 2
+                        or not isinstance(record[0], str) or not isinstance(record[1], dict)):
+                    continue
+                try:
+                    event_key = _cli_event_key(record)
+                except ReviewError:
+                    continue
+                snapshot_keys.setdefault(record[0], set()).add(event_key)
+            for closed in self.records.values():
+                if (closed.state != "terminal" or closed.namespace != snapshot_namespace
+                        or not closed.admitted_event_keys
+                        or closed.invalidation_reason is not None):
+                    continue
+                present = set()
+                for session in closed.event_sessions:
+                    present.update(snapshot_keys.get(session, set()))
+                if not closed.admitted_event_keys <= present:
+                    closed.invalidation_reason = (
+                        "an admitted review event was changed or removed after logical closure")
         for record in events:
             if not isinstance(record, (tuple, list)) or len(record) != 2:
                 continue
@@ -1222,10 +1247,14 @@ class CliReviewRuntime:
 
     def _review_activity_records(self):
         sessions = {self.root_session_id}
-        if self.reviewer_session_id is not None:
+        if (self.reviewer_session_id is not None
+                and self.reviewer_session_id != self.root_session_id):
             sessions.add(self.reviewer_session_id)
         return [(session, event) for session, event in self.events
-                if session in sessions and event.get("agentId") == self.reviewer]
+                if ((session in sessions and event.get("agentId") == self.reviewer)
+                    or (self.reviewer_session_id != self.root_session_id
+                        and session == self.reviewer_session_id
+                        and is_review_activity(event)))]
 
     def read_terminal(self, task):
         require(task == self.dispatch_id, "review task identity differs from its dispatch")
@@ -1627,11 +1656,13 @@ class ReviewSession:
         require(getattr(runtime, "root_session_id", None) == self.dispatch_namespace,
                 "review runtime root session differs from the assigned task")
         if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
-            self.owners.validate_closed_events(runtime.events)
+            self.owners.validate_closed_events(
+                runtime.events, snapshot_namespace=runtime.root_session_id)
         reader = getattr(runtime, "read_terminal", None) if terminal else None
         result = reader(lease.task) if callable(reader) else runtime.read(lease.task)
         if self.owners is not None and hasattr(result, "cli_events"):
-            self.owners.validate_closed_events(result.cli_events)
+            self.owners.validate_closed_events(
+                result.cli_events, snapshot_namespace=self.dispatch_namespace)
         require(all(hasattr(result, field) for field in (
             "task", "owner", "role", "head", "subjects", "completed")),
             "incomplete runtime review record")
@@ -1796,7 +1827,8 @@ class ReviewSession:
                 "review exceeded duration bound")
         self.latest_cli_events = cli_events
         if self.owners is not None:
-            self.owners.validate_closed_events(self.latest_cli_events)
+            self.owners.validate_closed_events(
+                self.latest_cli_events, snapshot_namespace=self.dispatch_namespace)
             self.owners.validate_session(self)
         self.local_findings = {finding.id: finding for finding in report.findings}
         self.report = report
@@ -1809,7 +1841,8 @@ class ReviewSession:
             record = self.owners.records.get(self)
             if record is not None and record.state == "terminal":
                 record.event_sources.append(events)
-            self.owners.validate_closed_events(self.latest_cli_events)
+            self.owners.validate_closed_events(
+                self.latest_cli_events, snapshot_namespace=self.dispatch_namespace)
             self.owners.validate_session(self)
 
     def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
@@ -1888,7 +1921,9 @@ class ReviewSession:
                     and bool(self.report.instruction_commitment.strip()),
                     "review turn lacks instruction commitment or logical closure")
             require(self.owners is not None, "coordinator review ownership index required")
-            self.owners.validate_closed_events(getattr(self, "latest_cli_events", ()))
+            self.owners.validate_closed_events(
+                getattr(self, "latest_cli_events", ()),
+                snapshot_namespace=self.dispatch_namespace)
             require(self.owners.owns_completed_report(self, self.report),
                     "review report differs from the coordinator ownership record")
             if facts:
