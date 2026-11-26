@@ -15,6 +15,7 @@ import base64
 import copy
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta
+import gc
 import json
 import string
 import unittest
@@ -1016,7 +1017,7 @@ class RoleTests(unittest.TestCase):
         self.assertTrue(report.logical_closed)
         self.assertTrue(report.completed)
         self.assertEqual(session.lease.outcome, "completed")
-        self.assertFalse(owners.records[id(session)][3])
+        self.assertTrue(owners.owns_completed_report(session, report))
         self.assertEqual([call[0] for call in self.runtime.calls], ["start", "read"])
 
     def test_existing_runtime_task_and_read_tool_boundary(self):
@@ -1038,6 +1039,21 @@ class RoleTests(unittest.TestCase):
         self.assertEqual([row[0] for row in self.runtime.calls], ["start", "read"])
         with self.assertRaises(model.ReviewError):
             self.session.read_action("read-candidate")
+
+    def test_closed_reviewer_remains_unavailable_after_session_is_discarded(self):
+        owners = model.ReviewOwnership()
+        session = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "b" * 40,
+            identity=("owner/repo", 1, "a" * 40), owners=owners)
+        session.begin(self.runtime, "reviewer")
+        session.finish(self.runtime)
+        del session
+        gc.collect()
+        fresh = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "c" * 40,
+            identity=("owner/repo", 2, "a" * 40), owners=owners)
+        with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
+            fresh.begin(Runtime(fresh.head, fresh.scope), "reviewer")
 
     def test_overlap_bounds_and_no_waiting(self):
         for coordinator, implementer, scope in (
@@ -1063,7 +1079,7 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(self.session.lease.outcome, "timed-out")
         self.assertIsNone(self.session.report)
 
-    def test_invalid_started_task_identity_unwinds_without_admitting_a_local_report(self):
+    def test_invalid_started_task_identity_retains_unknown_reservation(self):
         for task in (None, "", " \t\n", False, True, 0, 1, 1.0,
                      b"task", [], ["task"], {}, {"task": "id"}, ("task",)):
             with self.subTest(task=task):
@@ -1090,21 +1106,16 @@ class RoleTests(unittest.TestCase):
                 self.assertIsNone(session.lease)
                 self.assertIsNone(session.report)
                 self.assertEqual(session.accepted, {})
-                self.assertEqual(owners.records, {})
+                self.assertEqual(owners.records[session].state, "reserved")
                 actual_task = "actual-runtime-task:42 "
                 runtime.result.task = actual_task
                 runtime.result.findings = (replace(finding, review_id="local:" + actual_task),)
-                self.assertEqual(session.begin(runtime, "reviewer"), actual_task)
-                self.assertEqual(session.lease.task, actual_task)
-                self.assertEqual(session.finish(runtime).task, actual_task)
-                session.triage_local(finding.id, accepted=True, reason="Actual task finding")
-                session.validate_local_triage()
                 fresh = model.ReviewSession(
                     "coordinator", "next-implementer", self.scope, session.head,
                     identity=identity, owners=owners)
                 replacement = Runtime(fresh.head, fresh.scope)
-                fresh.begin(replacement, "reviewer-next")
-                fresh.finish(replacement)
+                with self.assertRaisesRegex(model.ReviewError, "overlapping"):
+                    fresh.begin(replacement, "reviewer-next")
 
     def owned_runtime(self, *, completed):
         self.time = 0
@@ -1438,6 +1449,166 @@ class CliReviewRuntimeTests(unittest.TestCase):
             self.assertEqual(report.findings[0].detail, finding["detail"])
             self.assertTrue(report.logical_closed)
             self.assertFalse(any(event.get("type") == "subagent.selected" for _, event in events))
+
+    def test_historical_and_current_prompts_bind_the_actual_candidate_mapping(self):
+        with snapshot() as root:
+            fixture, original, _, events, _, reviewer, _ = self.native_runtime(root)
+            dispatch = next(event for _, event in events
+                            if event.get("type") == "tool.execution_start"
+                            and event.get("data", {}).get("toolName") == "task")
+            prompt = dispatch["data"]["arguments"]["prompt"]
+            marker = "Assigned candidate reads (JSON): "
+            tail = prompt.split(marker, 1)[1]
+            entries, end = json.JSONDecoder().raw_decode(tail)
+            raw = tail[:end]
+
+            def attempt(width, mutation=None):
+                mapped = [item[:width] for item in copy.deepcopy(entries)]
+                if mutation is not None:
+                    mutation(mapped)
+                replacement = json.dumps(mapped, ensure_ascii=True, separators=(",", ":"))
+                dispatched = prompt.replace(raw, replacement, 1)
+                if width == 3:
+                    dispatched = dispatched.replace(
+                        " and encoding. Base64 materializations must be decoded before review.",
+                        ".")
+                changed = copy.deepcopy(events)
+                for _, event in changed:
+                    data = event.get("data", {})
+                    if event.get("type") == "tool.execution_start" and data.get("toolName") == "task":
+                        data["arguments"]["prompt"] = dispatched
+                    if event.get("type") == "user.message":
+                        data["transformedContent"] = dispatched
+                runtime = model.CliReviewRuntime(
+                    changed, dispatch_id=original.dispatch_id,
+                    root_session_id=original.root_session_id,
+                    candidate_reader=original.candidate_reader,
+                    required_reads=original.required_reads)
+                session = model.ReviewSession(
+                    "coordinator", "implementer",
+                    frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"}),
+                    fixture["head"], identity=("owner/repo", 1, fixture["base"]),
+                    owners=model.ReviewOwnership(),
+                    readers={"read-candidate": original.candidate_reader})
+                return runtime, session
+
+            for width in (3, 4):
+                with self.subTest(width=width):
+                    runtime, session = attempt(width)
+                    session.begin(runtime, reviewer)
+                    report = session.finish(runtime)
+                    self.assertEqual(len(report.candidate_reads), len(entries))
+                    self.assertEqual(report.head, fixture["head"])
+                for name, mutation in (
+                    ("missing", lambda mapped: mapped.pop()),
+                    ("duplicate", lambda mapped: mapped.append(mapped[0])),
+                    ("wrong-side", lambda mapped: mapped[0].__setitem__(1, "wrong")),
+                    ("wrong-path", lambda mapped: mapped[0].__setitem__(2, "/wrong")),
+                    ("mixed-shape", lambda mapped: mapped[0].append("utf-8")
+                     if width == 3 else mapped[0].pop()),
+                ):
+                    with self.subTest(width=width, mutation=name):
+                        runtime, session = attempt(width, mutation)
+                        with self.assertRaises(model.ReviewError):
+                            session.begin(runtime, reviewer)
+                        self.assertIsNone(session.report)
+
+    def test_native_reviewer_configuration_events_preserve_dispatch_binding(self):
+        for selected_role in ("code-review", "other"):
+            with self.subTest(role=selected_role), snapshot() as root:
+                _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+                events[2:2] = [
+                    ("root-session", {
+                        "type": "subagent.configured", "timestamp": times["received"],
+                        "agentId": reviewer, "data": {"multiTurn": True},
+                    }),
+                    ("root-session", {
+                        "type": "subagent.selected", "timestamp": times["received"],
+                        "agentId": reviewer, "data": {"agentName": selected_role},
+                    }),
+                ]
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                if selected_role == "code-review":
+                    self.assertTrue(session.finish(runtime).logical_closed)
+                else:
+                    with self.assertRaisesRegex(model.ReviewError, "configuration"):
+                        session.finish(runtime)
+
+    def test_historical_format_cannot_describe_binary_materializations(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(
+                root, binary_content=b"\x00\xff")
+            dispatch = next(event for _, event in events
+                            if event.get("type") == "tool.execution_start"
+                            and event.get("data", {}).get("toolName") == "task")
+            prompt = dispatch["data"]["arguments"]["prompt"]
+            tail = prompt.split("Assigned candidate reads (JSON): ", 1)[1]
+            entries, end = json.JSONDecoder().raw_decode(tail)
+            historical = prompt.replace(
+                tail[:end], json.dumps([item[:3] for item in entries],
+                                       ensure_ascii=True, separators=(",", ":")), 1)
+            historical = historical.replace(
+                " and encoding. Base64 materializations must be decoded before review.", ".")
+            dispatch["data"]["arguments"]["prompt"] = historical
+            receipt = next(event for _, event in events if event.get("type") == "user.message")
+            receipt["data"]["transformedContent"] = historical
+            runtime.events = tuple(events)
+            with self.assertRaisesRegex(model.ReviewError, "exact assignment"):
+                session.begin(runtime, reviewer)
+            self.assertIsNone(session.report)
+
+    def test_aggregate_root_does_not_attribute_other_tasks_by_turn_id(self):
+        with snapshot() as root:
+            _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+            for other in (None, "another-agent"):
+                events.insert(4, ("root-session", {
+                    "type": "tool.execution_start", "timestamp": times["commitment"],
+                    "agentId": other,
+                    "data": {"turnId": "turn-0", "toolCallId": "other-" + str(other),
+                             "toolName": "bash", "arguments": {"command": "other task"}},
+                }))
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            self.assertTrue(session.finish(runtime).logical_closed)
+
+    def test_missing_receipt_retains_reservation_until_exact_terminal_is_observed(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            incomplete = [
+                (event_session, event) for event_session, event in events
+                if event.get("type") not in {"user.message", "subagent.completed"}
+            ]
+            runtime.events = tuple(incomplete)
+            with self.assertRaisesRegex(model.ReviewError, "instructions"):
+                session.begin(runtime, reviewer)
+            replacement = model.ReviewSession(
+                "coordinator", "another-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners)
+            with self.assertRaisesRegex(model.ReviewError, "overlapping"):
+                replacement.begin(Runtime(session.head, session.scope), "reviewer-next")
+            with self.assertRaisesRegex(model.ReviewError, "completion event is missing"):
+                session.abort(runtime)
+            self.assertIsNone(session.report)
+            terminal = next((event_session, event) for event_session, event in events
+                            if event.get("type") == "subagent.completed")
+            runtime.events = tuple(incomplete + [("other-root", terminal[1])])
+            with self.assertRaisesRegex(model.ReviewError, "completion event is missing"):
+                session.abort(runtime)
+            wrong_terminal = copy.deepcopy(terminal[1])
+            wrong_terminal["agentId"] = "other-reviewer"
+            runtime.events = tuple(incomplete + [("root-session", wrong_terminal)])
+            with self.assertRaisesRegex(model.ReviewError, "completion event is missing"):
+                session.abort(runtime)
+            started = next(item for item in incomplete if item[1].get("type") == "subagent.started")
+            runtime.events = tuple(incomplete + [started, terminal])
+            with self.assertRaisesRegex(model.ReviewError, "reviewer start"):
+                session.abort(runtime)
+            runtime.events = tuple(incomplete + [terminal])
+            session.abort(runtime)
+            self.assertEqual(session.lease.outcome, "aborted")
+            self.assertIsNone(session.report)
+            replacement.begin(Runtime(session.head, session.scope), "reviewer-next")
 
     def test_instruction_commitment_must_be_standalone(self):
         with snapshot() as root:

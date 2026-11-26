@@ -1235,13 +1235,21 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    received instructions, and exact commitment message before the first tool
    call, complete `view` start/completion events, successful results equal to
    each required immutable Git blob, exact final report, and
-   completed-turn event chronology before any remote review. A successful
+   completed-turn event chronology before the first submitted remote review. A successful
    task-call completion is only a dispatch receipt and may precede the
    reviewer's `subagent.completed` event; require both, and use the latter as
    the turn-completion boundary. Do not substitute
    coordinator rereads for reviewer observations. This is the owner-approved instruction-based
    trust model: it does not claim technically enforced permissions or task
    termination.
+   Replay both the original three-field UTF-8 assignment and the current
+   four-field assignment using their actual dispatched prompts and receipts.
+   Reject missing, duplicated, mixed, unsupported or contradictory path/side
+   mappings and wrong read bytes. Remove a receipt and completion after a
+   possible dispatch: another reviewer for the PR/head must remain blocked.
+   A completion from another root cannot retire the reservation; the matching
+   dispatch, reviewer start and terminal event can retire it without admitting
+   a report. The pre-fix negative control incorrectly releases the reservation.
    The coordinator then logically closes the completed reviewer identity and
    dispatch, scoped to the root CLI session. A second admission reusing the
    same reviewer and dispatch in that root session must reject before another

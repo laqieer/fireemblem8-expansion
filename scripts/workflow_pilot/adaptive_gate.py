@@ -1395,15 +1395,17 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         scheduling.append("architecture-hold")
     if decision.pre_review_required:
         report, lease = session.report, session.lease
-        ownership = session.owners.records.get(id(session)) if session.owners is not None else None
+        try:
+            ownership = (session.owners is not None and report is not None
+                         and session.owners.owns_completed_report(session, report))
+        except ValueError:
+            ownership = False
         if (report is None or lease is None or not lease.finished or lease.outcome != "completed"
                 or not report.completed or not report.logical_closed
                 or not report.instruction_commitment.strip() or report.subjects != session.scope
                 or report.owner in {session.coordinator, session.implementer}
                 or (lease.task, lease.owner, lease.head) != (report.task, report.owner, report.head)
-                or ownership is None or ownership[3]
-                or (ownership[0][:2], ownership[1], ownership[2]) != (
-                    session.identity[:2], report.head, report.subjects)
+                or not ownership
                 or (facts and reporter.parse_time(report.completed_at, "pre-review completion") >=
                     min(reporter.parse_time(fact.submitted_at, "remote review") for fact in facts))):
             scheduling.append("unbound-original-review-context")

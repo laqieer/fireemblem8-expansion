@@ -2292,12 +2292,18 @@ def _session_probe(probe: str) -> dict:
             native.received_at = module.timestamp("2026-01-01T00:00:02Z")
             native.assigned_candidate = b
             native.assigned_subjects = tuple(sorted(second.scope))
+            native.assigned_owner = "reviewer-b"
             native.events = first.latest_cli_events + (
+                ("root-b", {
+                    "type": "tool.execution_start", "timestamp": native.dispatch_started_at,
+                    "agentId": "coordinator",
+                    "data": {"toolCallId": native.dispatch_id, "toolName": "task"},
+                }),
                 ("root-b", {
                     "type": "subagent.started", "timestamp": native.started_at,
                     "agentId": native.reviewer,
                     "data": {"toolCallId": native.dispatch_id,
-                             "interactionId": native.interaction},
+                             "interactionId": native.interaction, "agentType": "code-review"},
                 }),
                 ("root-b", {
                     "type": "subagent.completed", "timestamp": "2026-01-01T00:00:05Z",

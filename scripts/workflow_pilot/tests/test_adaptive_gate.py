@@ -544,6 +544,16 @@ class GateTests(unittest.TestCase):
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
 
+    def test_review_report_must_match_the_closed_ownership_record(self):
+        original = self.session.report
+        self.assertTrue(self.assess()["dispatchable"])
+        self.session.report = replace(original, owner="different-reviewer")
+        report = self.assess()
+        self.assertFalse(report["dispatchable"])
+        self.assertFalse(report["merge_eligible"])
+        self.session.report = original
+        self.assertTrue(self.assess()["dispatchable"])
+
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
         self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {

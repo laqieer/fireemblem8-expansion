@@ -620,7 +620,7 @@ remains the acceptance contract.
 
 The coordinator freezes repository/PR/base/head, accepted cases, findings and
 risk classification. A high-risk or large candidate gets one fresh bounded
-read-only review before its first remote review. The existing task runtime
+read-only review completed before its first submitted remote review. The existing task runtime
 owns task identity, owner, role, completion and observed tool actions. The
 reviewer's response is findings data, not an authentication token. Keep its
 owner distinct from implementation and coordination. Those latter roles may
@@ -660,7 +660,11 @@ permitted only for changed paths when each side is an available regular blob.
 The assigned-read JSON maps each candidate path and side to the exact supplied
 file path and its `utf-8` or `base64` encoding. Invalid UTF-8 blobs use
 canonical base64 materializations; the observed base64 is decoded and compared
-byte-for-byte with the immutable Git object. Candidate read summaries are
+byte-for-byte with the immutable Git object. The original three-field
+instruction format is also accepted for UTF-8 materializations: its dispatched
+prompt and receipt must contain the complete exact path/side mapping, and its
+observed bytes are validated in the same way. Unsupported, mixed or
+contradictory formats reject. Candidate read summaries are
 normalized typed values after validation. Any observed operation other than a
 direct full-file `view`, a failed or partial read, an unassigned path, missing
 dispatch receipt or reviewer completion, or malformed report rejects
@@ -675,7 +679,12 @@ the exact candidate SHA and complete scope. Missing observations cannot be
 substituted with coordinator-side rereads.
 
 `ReviewOwnership` logically closes the completed reviewer turn after the
-coordinator accepts its evidence. Reviewer identity is scoped by the
+coordinator accepts its evidence. Each assigned task has one shared record for
+its frozen assignment, dispatch, terminal state, event baseline, report and
+invalidation. A failed start after possible dispatch retains an unknown
+reservation; a missing receipt cannot release it or admit a report. A
+terminal-only abort may retire it without admission only when the exact root,
+dispatch, reviewer start and completion are independently observed. Reviewer identity is scoped by the
 coordinator's root CLI session and reviewer agent ID; dispatch is scoped by
 root session and tool-call ID. It rejects reuse of either identity within that
 session. Admitted activity records retain their event-session association, so

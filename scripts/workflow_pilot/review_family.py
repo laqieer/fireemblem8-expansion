@@ -794,7 +794,13 @@ def validate_reviewer_activity(events, *, owner, dispatch, interaction,
         require(start_time <= event_time <= completion_time,
                 "reviewer activity is outside its assigned task")
         event_interaction = data.get("interactionId")
-        if isinstance(kind, str) and kind.startswith("subagent."):
+        if kind in {"subagent.configured", "subagent.selected"}:
+            require(data.get("toolCallId") in (None, dispatch)
+                    and event_interaction in (None, interaction)
+                    and (kind != "subagent.selected"
+                         or data.get("agentName") == "code-review"),
+                    "reviewer configuration contradicts its assignment")
+        elif isinstance(kind, str) and kind.startswith("subagent."):
             require(kind in {"subagent.started", "subagent.completed"}
                     and data.get("toolCallId") == dispatch,
                     "reviewer activity belongs to another dispatch")
@@ -828,10 +834,20 @@ def validate_reviewer_activity(events, *, owner, dispatch, interaction,
 
 
 @dataclass
-class _ClosedReview:
-    interaction: str
-    completed_at: str
-    admitted_event_keys: frozenset[str]
+class _OwnedReview:
+    identity: tuple
+    head: str
+    scope: frozenset[str]
+    owner: str
+    namespace: str | None
+    dispatch: str | None = None
+    state: str = "reserved"
+    interaction: str | None = None
+    completed_at: str | None = None
+    admitted_event_keys: frozenset[str] = frozenset()
+    event_sessions: frozenset[str] = frozenset()
+    event_sources: list = field(default_factory=list)
+    report: _ReviewReport | None = None
     invalidation_reason: str | None = None
 
 
@@ -844,53 +860,58 @@ class ReviewOwnership:
             left[0] is None or right[0] is None or left[0] == right[0])
 
     def __init__(self):
-        self.records = {}
-        self.closed_tasks: dict[tuple[str | None, str, str], _ClosedReview] = {}
-        self.closed_event_owners: dict[
-            tuple[str | None, str], tuple[str | None, str, str]
-        ] = {}
+        self.records: dict[ReviewSession, _OwnedReview] = {}
 
     def _has_closed_owner(self, owner_key):
         return any(
-            self._same_owner_scope(owner_key, (namespace, closed_owner))
-            for namespace, _, closed_owner in self.closed_tasks)
+            record.state == "terminal"
+            and self._same_owner_scope(owner_key, (record.namespace, record.owner))
+            for record in self.records.values())
 
     def _has_closed_dispatch(self, dispatch_namespace, task):
         return dispatch_namespace is not None and any(
-            namespace == dispatch_namespace and closed_task == task
-            for namespace, closed_task, _ in self.closed_tasks)
+            record.state == "terminal" and record.namespace == dispatch_namespace
+            and record.dispatch == task for record in self.records.values())
 
     def is_closed(self, dispatch_namespace, task, owner):
-        return ((dispatch_namespace, task, owner) in self.closed_tasks
-                or self._has_closed_dispatch(dispatch_namespace, task))
-
-    def _invalidate(self, task_key, reason):
-        record = self.closed_tasks.get(task_key)
-        if record is not None and record.invalidation_reason is None:
-            record.invalidation_reason = reason
+        return (self._has_closed_dispatch(dispatch_namespace, task)
+                or self._has_closed_owner((dispatch_namespace, owner)))
 
     def reserve(self, session):
         require(session.identity is not None, "ownership requires frozen PR identity")
         owner_key = session.dispatch_namespace, session.owner
         require(not self._has_closed_owner(owner_key),
                 "reviewer task owner was already logically closed")
-        for identity, head, scope, active, current_owner_key in self.records.values():
-            require(not (active and
-                         (identity[:2] == session.identity[:2] or head == session.head
-                          or self._same_owner_scope(current_owner_key, owner_key))),
+        for record in self.records.values():
+            require(not (record.state != "terminal" and
+                         (record.identity[:2] == session.identity[:2] or record.head == session.head
+                          or self._same_owner_scope((record.namespace, record.owner), owner_key))),
                     "duplicate/overlapping review ownership")
-        self.records[id(session)] = (
-            session.identity, session.head, session.scope, True, owner_key)
+        self.records[session] = _OwnedReview(
+            session.identity, session.head, session.scope, session.owner,
+            session.dispatch_namespace)
+
+    def bind_dispatch(self, session, task):
+        record = self.records[session]
+        require(not self.is_closed(record.namespace, task, record.owner),
+                "review task was already logically closed")
+        require(record.namespace is None or not any(
+            other is not record and other.namespace == record.namespace
+            and other.dispatch == task for other in self.records.values()),
+                "review dispatch already has an owner")
+        record.dispatch = task
+
+    def release_before_dispatch(self, session):
+        self.records.pop(session, None)
 
     def finish(self, session, task, owner, interaction, completed_at,
-               dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=()):
-        key = dispatch_namespace, task, owner
+               dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=(),
+               event_source=(), report=None):
         owner_key = dispatch_namespace, owner
-        require(key not in self.closed_tasks, "review task was already logically closed")
-        require(not self._has_closed_dispatch(dispatch_namespace, task),
-                "review dispatch was already logically closed")
-        require(not self._has_closed_owner(owner_key),
-                "reviewer task owner was already logically closed")
+        record = self.records[session]
+        require(record.state != "terminal" and record.dispatch == task
+                and (record.namespace, record.owner) == owner_key,
+                "review owner or dispatch changed before logical closure")
         identifier(owner, NAME_PATTERN, "reviewer identity")
         identifier(interaction, NAME_PATTERN, "review interaction")
         timestamp(completed_at)
@@ -903,18 +924,20 @@ class ReviewOwnership:
                 "invalid admitted CLI event sessions")
         for event_session in admitted_event_sessions:
             identifier(event_session, NAME_PATTERN, "review event session")
-        identity, head, scope, _, assigned_owner_key = self.records[id(session)]
-        require(assigned_owner_key == owner_key, "review owner changed before logical closure")
-        event_owner_keys = ({(None, owner)} if dispatch_namespace is None else
-                            {(event_session, owner) for event_session in admitted_event_sessions})
-        require(all(self.closed_event_owners.get(event_key) in (None, key)
-                    for event_key in event_owner_keys),
-                "review event session was already logically closed")
-        self.records[id(session)] = identity, head, scope, False, assigned_owner_key
-        self.closed_tasks[key] = _ClosedReview(
-            interaction, completed_at, frozenset(admitted_event_keys))
-        for event_key in event_owner_keys:
-            self.closed_event_owners[event_key] = key
+        sessions = frozenset(admitted_event_sessions)
+        require(not any(
+            other is not record and other.state == "terminal" and other.owner == owner
+            and (dispatch_namespace is None or other.namespace is None
+                 or bool(sessions & other.event_sessions))
+            for other in self.records.values()),
+            "review event session was already logically closed")
+        record.state = "terminal"
+        record.interaction = interaction
+        record.completed_at = completed_at
+        record.admitted_event_keys = frozenset(admitted_event_keys)
+        record.event_sessions = sessions
+        record.event_sources.append(event_source)
+        record.report = report
 
     def validate_closed_events(self, events):
         require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
@@ -929,47 +952,74 @@ class ReviewOwnership:
             agent = event.get("agentId")
             if not isinstance(agent, str):
                 continue
-            if not isinstance(event_session, str):
-                for event_owner_key, task_key in self.closed_event_owners.items():
-                    if event_owner_key[1] == agent:
-                        self._invalidate(task_key, "review task emitted an unrecognized event record")
-                continue
-            task_key = self.closed_event_owners.get((event_session, agent))
-            if task_key is None:
-                task_key = self.closed_event_owners.get((None, agent))
-            if task_key is None:
-                continue
-            closed = self.closed_tasks[task_key]
-            try:
-                event_key = _cli_event_key(record)
-            except ReviewError:
-                self._invalidate(task_key, "review task emitted an unrecognized event record")
-                continue
-            if event_key in closed.admitted_event_keys:
-                continue
-            try:
-                event_time = timestamp(event.get("timestamp"))
-            except ReviewError:
-                message = "review task emitted an event with invalid chronology"
-            else:
-                data = event.get("data")
-                if not isinstance(data, dict):
-                    message = "review task emitted an event with invalid data"
-                elif event_time > timestamp(closed.completed_at):
-                    message = "review task emitted an event after logical closure"
-                elif data.get("interactionId") not in (None, closed.interaction):
-                    message = "review task emitted a contradictory interaction"
+            for closed in self.records.values():
+                if (closed.state != "terminal" or closed.owner != agent
+                        or (isinstance(event_session, str) and closed.namespace is not None
+                            and event_session not in closed.event_sessions)):
+                    continue
+                try:
+                    event_key = _cli_event_key(record)
+                except ReviewError:
+                    message = "review task emitted an unrecognized event record"
                 else:
-                    message = "new review activity was observed after logical closure"
-            self._invalidate(task_key, message)
+                    if event_key in closed.admitted_event_keys:
+                        continue
+                    try:
+                        event_time = timestamp(event.get("timestamp"))
+                    except ReviewError:
+                        message = "review task emitted an event with invalid chronology"
+                    else:
+                        message = None
+                    data = event.get("data")
+                    if message is not None:
+                        pass
+                    elif not isinstance(data, dict):
+                        message = "review task emitted an event with invalid data"
+                    elif event_time > timestamp(closed.completed_at):
+                        message = "review task emitted an event after logical closure"
+                    elif data.get("interactionId") not in (None, closed.interaction):
+                        message = "review task emitted a contradictory interaction"
+                    else:
+                        message = "new review activity was observed after logical closure"
+                if closed.invalidation_reason is None:
+                    closed.invalidation_reason = message
 
     def validate_session(self, session):
-        lease = session.lease
-        if lease is not None:
-            key = session.dispatch_namespace, lease.task, lease.owner
-            record = self.closed_tasks.get(key)
-            reason = None if record is None else record.invalidation_reason
-            require(reason is None, f"review task evidence was invalidated: {reason}")
+        record = self.records.get(session)
+        if record is not None:
+            for source in record.event_sources:
+                self.validate_closed_events(source)
+            require(record.invalidation_reason is None,
+                    f"review task evidence was invalidated: {record.invalidation_reason}")
+
+    def owns_completed_report(self, session, report):
+        self.validate_session(session)
+        record = self.records.get(session)
+        return bool(record is not None and record.state == "terminal"
+                    and record.report is report and record.identity == session.identity
+                    and record.head == report.head and record.scope == report.subjects
+                    and record.owner == report.owner and record.dispatch == report.task)
+
+
+def _review_instructions(candidate, subjects, assigned_reads, *, historical=False):
+    encoding = ("" if historical else
+                " and encoding. Base64 materializations must be decoded before review")
+    return (
+        "Review only the bound candidate and supplied evidence. Do not edit files, "
+        "run commands, push, comment, request review, dispatch CI, merge, or perform "
+        "other mutations. Before reading, state exactly: "
+        f"{CliReviewRuntime.COMMITMENT} Candidate SHA: {candidate}. "
+        f"Review scope: {', '.join(sorted(subjects))}. "
+        f"Assigned candidate reads (JSON): {assigned_reads}. "
+        "Each entry maps a candidate path and side to its exact supplied file path"
+        f"{encoding}. Use complete direct file reads of every mapped file; for a file too large for "
+        "the default view limit, request a full read with forceReadLargeFiles and do not "
+        "use ranges. Return only JSON with keys "
+        "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
+        "scope to the exact assigned scope array, and findings to an array of objects "
+        "with keys id, subject, family, member, source_path, detail. Use an empty "
+        "findings array when no findings are present."
+    )
 
 
 class CliReviewRuntime:
@@ -1072,6 +1122,10 @@ class CliReviewRuntime:
         self.validated_event_sessions = frozenset()
 
     def start(self, **expected):
+        self.assigned_candidate = expected.get("candidate")
+        self.assigned_subjects = tuple(sorted(expected.get("subjects", ())))
+        self.requested_duration = expected.get("duration")
+        self.assigned_owner = expected.get("owner")
         dispatches = [(session, event) for session, event in self.events
                       if session == self.root_session_id
                       and event.get("type") == "tool.execution_start"
@@ -1130,17 +1184,41 @@ class CliReviewRuntime:
         self.received_at = timestamp(received[0][1].get("timestamp"))
         require(timestamp(started["timestamp"]) <= timestamp(received[0][1]["timestamp"]),
                 "reviewer instructions predate the assigned task")
-        require(expected.get("candidate") in prompt and
-                all(subject in prompt for subject in expected.get("subjects", ())),
-                "dispatched prompt is not bound to the exact candidate and scope")
-        require(expected.get("instructions", "") in prompt,
-                "dispatched prompt omits the accepted reviewer instructions")
+        self._validate_prompt(prompt)
         require(expected.get("owner") == self.reviewer,
                 "observed reviewer identity differs from the coordinator assignment")
-        self.assigned_candidate = expected.get("candidate")
-        self.assigned_subjects = tuple(sorted(expected.get("subjects", ())))
-        self.requested_duration = expected.get("duration")
         return self.dispatch_id
+
+    def _validate_prompt(self, prompt):
+        marker = "Assigned candidate reads (JSON): "
+        require(prompt.count(marker) == 1, "assigned candidate reads are missing or ambiguous")
+        tail = prompt.split(marker, 1)[1]
+        try:
+            entries, end = json.JSONDecoder().raw_decode(tail)
+        except (ValueError, TypeError) as error:
+            raise ReviewError("assigned candidate reads are malformed") from error
+        raw = tail[:end]
+        require(isinstance(entries, list) and bool(entries)
+                and all(isinstance(item, list) and len(item) in (3, 4)
+                        and all(isinstance(value, str) for value in item)
+                        for item in entries),
+                "assigned candidate reads have an unsupported format")
+        widths = {len(item) for item in entries}
+        require(len(widths) == 1, "assigned candidate reads mix instruction formats")
+        historical = widths == {3}
+        require(prompt == _review_instructions(
+            self.assigned_candidate, self.assigned_subjects, raw, historical=historical),
+            "dispatched prompt omits or contradicts accepted reviewer instructions")
+        assigned = {}
+        for item in entries:
+            path, side, tool_path = item[:3]
+            key = repo_path(path, "candidate read path"), review_side(side)
+            require(key not in assigned, "duplicate assigned candidate read")
+            assigned[key] = (tool_path, "utf-8" if historical else item[3])
+        require(assigned == {
+            key: (target["tool_path"], target["encoding"])
+            for key, target in self.required_reads.items()
+        }, "dispatched candidate reads differ from the exact assignment")
 
     def _review_activity_records(self):
         sessions = {self.root_session_id}
@@ -1150,24 +1228,38 @@ class CliReviewRuntime:
                 if session in sessions and event.get("agentId") == self.reviewer]
 
     def read_terminal(self, task):
-        require(task == self.dispatch_id and self.reviewer is not None,
-                "review task identity differs from its dispatch")
+        require(task == self.dispatch_id, "review task identity differs from its dispatch")
+        dispatch = [event for session, event in self.events
+                    if session == self.root_session_id
+                    and event.get("type") == "tool.execution_start"
+                    and event.get("data", {}).get("toolCallId") == task]
+        starts = [event for session, event in self.events
+                  if session == self.root_session_id
+                  and event.get("type") == "subagent.started"
+                  and event.get("data", {}).get("toolCallId") == task]
+        require(len(dispatch) == len(starts) == 1
+                and dispatch[0].get("data", {}).get("toolName") == "task"
+                and starts[0].get("data", {}).get("agentType") == "code-review"
+                and starts[0].get("agentId") == self.assigned_owner,
+                "review dispatch and reviewer start are missing or contradictory")
+        reviewer = identifier(starts[0].get("agentId"), NAME_PATTERN, "reviewer identity")
+        interaction = identifier(starts[0]["data"].get("interactionId"),
+                                 NAME_PATTERN, "review interaction")
+        started_at = starts[0].get("timestamp")
         completion = [event for session, event in self.events
                       if session == self.root_session_id
-                      and event.get("agentId") == self.reviewer
+                      and event.get("agentId") == reviewer
                       and event.get("type") == "subagent.completed"
                       and event.get("data", {}).get("toolCallId") == self.dispatch_id]
         require(len(completion) == 1, "reviewer completion event is missing")
         completed_at = completion[0].get("timestamp")
-        timestamp(completed_at)
-        require(self.received_at is not None
-                and self.received_at <= timestamp(completed_at),
-                "reviewer instructions fall outside the assigned task interval")
+        require(timestamp(dispatch[0].get("timestamp")) <= timestamp(started_at)
+                <= timestamp(completed_at), "review task chronology is invalid")
         return SimpleNamespace(
-            task=self.dispatch_id, owner=self.reviewer, role="code-review",
+            task=self.dispatch_id, owner=reviewer, role="code-review",
             head=self.assigned_candidate, subjects=self.assigned_subjects,
-            completed=True, started_at=self.started_at, completed_at=completed_at,
-            interaction_id=self.interaction, cli_events=self.events,
+            completed=True, started_at=started_at, completed_at=completed_at,
+            interaction_id=interaction, cli_events=self.events,
         )
 
     def _validate_dispatch_receipt(self):
@@ -1337,14 +1429,8 @@ class CliReviewRuntime:
         return self.result
 
     def _scope(self):
-        message = self.received_prompt
-        require(isinstance(message, str), "bound reviewer instructions are missing")
-        marker = "Review scope: "
-        require(marker in message, "review scope marker is missing")
-        scope, separator, _ = message.split(marker, 1)[1].partition(
-            ". Assigned candidate reads (JSON): ")
-        require(separator, "assigned candidate reads are missing from review instructions")
-        return tuple(item.strip() for item in scope.split(",") if item.strip())
+        require(isinstance(self.received_prompt, str), "bound reviewer instructions are missing")
+        return self.assigned_subjects
 
 
 class ReviewSession:
@@ -1397,6 +1483,7 @@ class ReviewSession:
         self.task: str | None = None
         self.dispatch_namespace: str | None = None
         self.latest_cli_events = ()
+        self.begin_failed = False
 
     def _candidate_reader(self):
         reader = self.readers.get("read-candidate")
@@ -1447,9 +1534,12 @@ class ReviewSession:
                 require(binding.base == self.identity[2],
                         "trusted candidate reader base differs from the frozen review identity")
             self.candidate_binding = binding
+        reserved = False
+        dispatched = False
         try:
             if self.owners is not None:
                 self.owners.reserve(self)
+                reserved = True
             assigned_reads = json.dumps(
                 [[path, side, target["tool_path"], target["encoding"]]
                  for (path, side), target in sorted(runtime.required_reads.items())]
@@ -1457,23 +1547,10 @@ class ReviewSession:
                 ensure_ascii=True, separators=(",", ":"))
             if isinstance(runtime, CliReviewRuntime):
                 require(runtime.required_reads, "review assignment has no candidate paths")
-            instructions = (
-                "Review only the bound candidate and supplied evidence. Do not edit files, "
-                "run commands, push, comment, request review, dispatch CI, merge, or perform "
-                "other mutations. Before reading, state exactly: "
-                f"{CliReviewRuntime.COMMITMENT} Candidate SHA: {self.head}. "
-                f"Review scope: {', '.join(sorted(self.scope))}. "
-                f"Assigned candidate reads (JSON): {assigned_reads}. "
-                "Each entry maps a candidate path and side to its exact supplied file path "
-                "and encoding. Base64 materializations must be decoded before review. "
-                "Use complete direct file reads of every mapped file; for a file too large for "
-                "the default view limit, request a full read with forceReadLargeFiles and do not "
-                "use ranges. Return only JSON with keys "
-                "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
-                "scope to the exact assigned scope array, and findings to an array of objects "
-                "with keys id, subject, family, member, source_path, detail. Use an empty "
-                "findings array when no findings are present."
-            )
+                if self.owners is not None:
+                    self.owners.bind_dispatch(self, runtime.dispatch_id)
+            instructions = _review_instructions(self.head, self.scope, assigned_reads)
+            dispatched = True
             task = runtime.start(
                 role="code-review", owner=owner, candidate=self.head,
                 subjects=tuple(sorted(self.scope)),
@@ -1482,14 +1559,21 @@ class ReviewSession:
             )
             require(isinstance(task, str) and bool(task.strip()),
                     "runtime task identity must be a nonblank string")
-            require(self.owners is None or not self.owners.is_closed(
-                self.dispatch_namespace, task, owner),
-                    "review task was already logically closed")
-        except Exception:
             if self.owners is not None:
-                self.owners.records.pop(id(self), None)
-            self.dispatch_namespace = None
-            self.owner = None
+                self.owners.bind_dispatch(self, task)
+        except Exception:
+            if reserved and not dispatched:
+                self.owners.release_before_dispatch(self)
+            if dispatched:
+                self.begin_failed = True
+                if isinstance(runtime, CliReviewRuntime):
+                    started = self.clock()
+                    self.task = runtime.dispatch_id
+                    self.lease = ReviewLease(runtime.dispatch_id, owner, self.head, self.scope,
+                                             started, started + duration, max_files)
+            else:
+                self.dispatch_namespace = None
+                self.owner = None
             raise
         started = self.clock()
         self.lease = ReviewLease(task, owner, self.head, self.scope,
@@ -1538,12 +1622,16 @@ class ReviewSession:
     def _read_task(self, runtime, *, terminal=False):
         lease = self.lease
         require(lease is not None and not lease.finished, "no active review task")
+        require(terminal or not self.begin_failed,
+                "failed review start may only be retired without admission")
         require(getattr(runtime, "root_session_id", None) == self.dispatch_namespace,
                 "review runtime root session differs from the assigned task")
         if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
             self.owners.validate_closed_events(runtime.events)
         reader = getattr(runtime, "read_terminal", None) if terminal else None
         result = reader(lease.task) if callable(reader) else runtime.read(lease.task)
+        if self.owners is not None and hasattr(result, "cli_events"):
+            self.owners.validate_closed_events(result.cli_events)
         require(all(hasattr(result, field) for field in (
             "task", "owner", "role", "head", "subjects", "completed")),
             "incomplete runtime review record")
@@ -1558,7 +1646,7 @@ class ReviewSession:
         return result
 
     def _retire(self, result, outcome, *, admitted_event_keys=(),
-                admitted_event_sessions=()):
+                admitted_event_sessions=(), report=None):
         require(result.completed is True, "review turn is incomplete")
         require(timestamp(getattr(result, "started_at", None))
                 <= timestamp(getattr(result, "completed_at", None)),
@@ -1569,7 +1657,9 @@ class ReviewSession:
             self.owners.finish(
                 self, self.lease.task, self.lease.owner,
                     getattr(result, "interaction_id", ""), result.completed_at,
-                    self.dispatch_namespace, admitted_event_keys, admitted_event_sessions)
+                    self.dispatch_namespace, admitted_event_keys, admitted_event_sessions,
+                    getattr(result, "cli_events", ()),
+                    report if outcome == "completed" else None)
         self.lease.finished = True
         self.lease.outcome = outcome
         return outcome
@@ -1702,7 +1792,7 @@ class ReviewSession:
             admitted_event_sessions = frozenset()
         require(self._retire(
             result, "completed", admitted_event_keys=admitted_event_keys,
-            admitted_event_sessions=admitted_event_sessions) == "completed",
+            admitted_event_sessions=admitted_event_sessions, report=report) == "completed",
                 "review exceeded duration bound")
         self.latest_cli_events = cli_events
         if self.owners is not None:
@@ -1716,6 +1806,9 @@ class ReviewSession:
         require(isinstance(events, (tuple, list)), "CLI event observations must be a collection")
         self.latest_cli_events = self.latest_cli_events + tuple(events)
         if self.owners is not None:
+            record = self.owners.records.get(self)
+            if record is not None and record.state == "terminal":
+                record.event_sources.append(events)
             self.owners.validate_closed_events(self.latest_cli_events)
             self.owners.validate_session(self)
 
@@ -1796,7 +1889,8 @@ class ReviewSession:
                     "review turn lacks instruction commitment or logical closure")
             require(self.owners is not None, "coordinator review ownership index required")
             self.owners.validate_closed_events(getattr(self, "latest_cli_events", ()))
-            self.owners.validate_session(self)
+            require(self.owners.owns_completed_report(self, self.report),
+                    "review report differs from the coordinator ownership record")
             if facts:
                 require(timestamp(self.report.completed_at) < min(
                     timestamp(item.submitted_at) for item in facts),
