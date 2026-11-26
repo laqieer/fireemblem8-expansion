@@ -1313,6 +1313,18 @@ class CliReviewRuntime:
             completed_at=completed_at)
         self.validated_event_sessions = frozenset(
             session for session, event in child if is_review_activity(event))
+        reviewer_only_session = self.reviewer_session_id != self.root_session_id
+        if reviewer_only_session:
+            for session, event in child:
+                data = event.get("data")
+                if (session != self.reviewer_session_id or not is_review_activity(event)
+                        or not isinstance(data, dict)):
+                    continue
+                event_at = timestamp(event.get("timestamp"))
+                if (self.received_at <= event_at <= timestamp(completed_at)
+                        and data.get("interactionId") not in (None, self.interaction)):
+                    raise ReviewError(
+                        "bound reviewer session contains contradictory interaction activity")
         turn_ids = {
             event.get("data", {}).get("turnId")
             for _, event in child
@@ -1320,11 +1332,15 @@ class CliReviewRuntime:
             and isinstance(event.get("data", {}).get("turnId"), str)
         }
         turn_events = [
-            event for _, event in child
+            event for session, event in child
             if (event.get("data", {}).get("interactionId") == self.interaction
                 or (event.get("type") == "tool.execution_start"
                     and event.get("data", {}).get("interactionId") is None
-                    and event.get("data", {}).get("turnId") in turn_ids))
+                    and event.get("data", {}).get("turnId") in turn_ids)
+                or (reviewer_only_session and session == self.reviewer_session_id
+                    and event.get("type") == "tool.execution_start"
+                    and self.received_at <= timestamp(event.get("timestamp"))
+                    <= timestamp(completed_at)))
         ]
         received = [event for event in turn_events if event.get("type") == "user.message"]
         require(len(received) == 1
