@@ -1574,6 +1574,26 @@ class HandoffSchemaTests(unittest.TestCase):
         self.validator.validate(state)
         handoff.validate_state(state)
 
+        def promote_to_active(watcher):
+            watcher["coordinator_id"] = state["coordinator_id"]
+            watcher["process"]["state"] = "running"
+            watcher["process"]["exit_code"] = None
+            watcher["ended_at"] = None
+            watcher["exit_code"] = None
+
+        at_active_limit = copy.deepcopy(state)
+        for watcher in at_active_limit["watchers"][:127]:
+            promote_to_active(watcher)
+        self.validator.validate(at_active_limit)
+        handoff.validate_state(at_active_limit)
+
+        over_active_limit = copy.deepcopy(at_active_limit)
+        promote_to_active(over_active_limit["watchers"][127])
+        with self.assertRaises(ValidationError):
+            self.validator.validate(over_active_limit)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "active watcher limit"):
+            handoff.validate_state(over_active_limit)
+
         wrong_coordinator = copy.deepcopy(state)
         wrong_coordinator["watchers"][-1]["coordinator_id"] = "previous-coordinator"
         with self.assertRaisesRegex(handoff.HandoffDataError, "duplicate coordinator"):

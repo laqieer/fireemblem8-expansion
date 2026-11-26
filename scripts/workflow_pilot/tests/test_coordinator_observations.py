@@ -240,6 +240,14 @@ class NativeObservationTests(unittest.TestCase):
                 handoff.HandoffDataError, "logical ownership release is unavailable"):
             handoff.validate_state(premature_release)
 
+        later_native_event = copy.deepcopy(f.state)
+        later_at = handoff.now()
+        later_native_event["clock"]["at"] = later_at
+        later_native_event["assignments"][0]["native_binding"]["last_event_at"] = later_at
+        with self.assertRaisesRegex(
+                handoff.HandoffDataError, "logical task terminal chronology invalid"):
+            handoff.validate_state(later_native_event)
+
         delayed_validation = (
             handoff.timestamp(terminal["observed_at"])
             + timedelta(seconds=f.assignment["max_lifetime_seconds"] + 1)
@@ -852,7 +860,8 @@ class NativeObservationTests(unittest.TestCase):
 
     def test_native_progress_requires_one_owner_session_and_stops_after_handoff(self):
         for variant in ("changed-session", "retired-owner", "retired-missing",
-                        "retired-opaque", "retired-invalid", "other-owner"):
+                        "retired-opaque", "retired-invalid", "retired-other-agent",
+                        "retired-no-agent", "other-owner"):
             with self.subTest(variant=variant):
                 f = GitFixture(assign=False)
                 self.addCleanup(f.close)
@@ -896,10 +905,17 @@ class NativeObservationTests(unittest.TestCase):
                         late["data"]["ownerNativeSessionId"] = {"id": SESSION}
                     elif variant == "retired-invalid":
                         late["data"]["ownerNativeSessionId"] = "invalid session!"
+                    elif variant == "retired-other-agent":
+                        late["agentId"] = "other-owner"
+                    elif variant == "retired-no-agent":
+                        del late["agentId"]
                     elif variant == "other-owner":
                         late["agentId"] = "other-owner"
+                        late["data"]["ownerNativeSessionId"] = "different-session"
                     f.append(log, late)
-                    expected = "retired owner"
+                    expected = ("native owner/session identity mismatch"
+                                if variant in ("retired-other-agent", "retired-no-agent")
+                                else "retired owner")
                 if variant == "other-owner":
                     handoff.observe_cli(f.entry, log)
                     self.assertEqual(f.entry["events"][-1]["state"], "handed_off")

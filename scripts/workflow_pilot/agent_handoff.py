@@ -32,6 +32,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 MAX_OPEN_PULL_REQUESTS = 1000
 MAX_RETAINED_WATCHERS = 32768
+MAX_ACTIVE_WATCHERS = 128
 LOGICAL_RSS_UNAVAILABLE = "native task runtime does not expose per-owner RSS"
 HandoffDataError = observations.ObservationError
 require = observations.require
@@ -476,7 +477,9 @@ def validate_state(value):
         if terminal_task is not None:
             validate_terminal_task(terminal_task, a, entry)
             terminal_at = timestamp(terminal_task["observed_at"])
-            require(native and terminal_at >= last and terminal_at <= timestamp(at),
+            require(native and terminal_at >= last
+                    and timestamp(entry["native_binding"]["last_event_at"]) <= terminal_at
+                    and terminal_at <= timestamp(at),
                     "logical task terminal chronology invalid")
             require(terminal_task["event_id"] not in event_ids
                     and terminal_task["event_id"] != (entry["native_binding"]["started_id"] if native else None)
@@ -597,6 +600,7 @@ def validate_state(value):
                     "active watcher needs a running process and no exit code")
             identity = (watcher["run_id"], watcher["attempt"])
             require(identity not in active_runs, "duplicate active watcher")
+            require(len(active_runs) < MAX_ACTIVE_WATCHERS, "active watcher limit exceeded")
             active_runs.add(identity)
         else:
             require(timestamp(watcher["ended_at"]) >= timestamp(watcher["started_at"]),
@@ -955,6 +959,9 @@ def observe_native_task(entry, log_path):
             a["owner_id"] is not None and event.get("agentId") == a["owner_id"]
             or a["session_id"] is not None and data.get("ownerNativeSessionId") == a["session_id"]
         )
+        if is_owner_event:
+            require(event.get("agentId") == a["owner_id"],
+                    "native owner/session identity mismatch")
         source_ids = {item["source_id"] for item in entry["events"]}
         if binding["started_id"] is not None:
             source_ids.add(binding["started_id"])

@@ -562,8 +562,12 @@
           "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}
         },
         "watchers": {
-          "description": "Runtime also enforces unique boot/PID/start identities across owners and all watchers.",
-          "type": "array", "maxItems": 32768, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}
+          "description": "Runtime also enforces at most 128 active watchers and unique boot/PID/start identities across owners and all watchers.",
+          "type": "array", "maxItems": 32768, "uniqueItems": true,
+          "contains": {"type": "object", "properties": {"ended_at": {"type": "null"}},
+                       "required": ["ended_at"]},
+          "minContains": 0, "maxContains": 128,
+          "items": {"$ref": "#/$defs/watcher"}
         }
       }
     }
