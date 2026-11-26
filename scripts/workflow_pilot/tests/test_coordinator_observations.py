@@ -1463,6 +1463,53 @@ class NativeObservationTests(unittest.TestCase):
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.observe_cli(f.entry, log)
 
+    def test_native_owner_events_reject_explicit_conflicting_session(self):
+        for variant in ("matching-completion", "missing-completion",
+                        "conflicting-completion", "conflicting-delivery", "conflicting-turn"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one",
+                                    toolName="bash", toolCallId="edit",
+                                    ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                          "evidence_refs": ["raw-evidence"]}
+                turn = task_event("assistant.turn_start", "turn", owner="owner-one",
+                                  parentToolCallId="call-one", interactionId="interaction-one",
+                                  ownerNativeSessionId="different-session")
+                completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                        toolCallId="edit", ownerNativeSessionId=SESSION, success=True)
+                delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                                      interactionId="interaction-one",
+                                      content=json.dumps({"handoff_result": result}))
+                if variant == "missing-completion":
+                    del completion["data"]["ownerNativeSessionId"]
+                elif variant == "conflicting-completion":
+                    completion["data"]["ownerNativeSessionId"] = "different-session"
+                elif variant == "conflicting-delivery":
+                    delivery["data"]["ownerNativeSessionId"] = "different-session"
+                elif variant == "conflicting-turn":
+                    f.append(log, turn)
+                f.append(log, completion, delivery)
+                if variant.startswith("conflicting-"):
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "session changed"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertIsNone(f.entry["result"])
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["result"], result)
+
     def test_native_progress_requires_one_owner_session_and_stops_after_handoff(self):
         for variant in ("changed-session", "retired-owner", "retired-missing",
                         "retired-opaque", "retired-invalid", "retired-other-agent",

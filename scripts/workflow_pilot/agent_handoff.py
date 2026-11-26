@@ -1313,6 +1313,11 @@ def observe_native_task(entry, log_path):
         if (timestamp(event["timestamp"]) < timestamp(entry["assigned_at"])
                 or session_id != task["root_session_id"]):
             continue
+        if is_owner_event and kind == "tool.execution_start" and binding["parent_task_id"] is not None:
+            require(len(entry["events"]) < 4, "retired owner started more work")
+        if is_owner_event and a["session_id"] is not None and "ownerNativeSessionId" in data:
+            require(data["ownerNativeSessionId"] == a["session_id"],
+                    "native owner session changed")
         if kind == "tool.execution_start" and data.get("toolName") == "task" and event.get("agentId") is None:
             arguments = data.get("arguments")
             prompt = arguments.get("prompt") if isinstance(arguments, dict) else None
@@ -1388,7 +1393,6 @@ def observe_native_task(entry, log_path):
                 advance_time(event)
                 entry["coordination_turns"] += 1
         elif kind == "tool.execution_start" and binding["parent_task_id"] is not None:
-            require(len(entry["events"]) < 4, "retired owner started more work")
             owner_session = data.get("ownerNativeSessionId")
             if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
                 continue

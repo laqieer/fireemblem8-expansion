@@ -6580,8 +6580,10 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    in chronology. Reusing a retained lifecycle event ID on any bound-owner
    event, including an assistant turn, rejects without advancing the cursor;
    distinct progress IDs remain valid. Missing, opaque or dispatch-equal
-   progress call IDs and missing or opaque tool names reject. After handoff,
-   owner tool starts reject even if the owner-session ID is missing or opaque;
+   progress call IDs and missing or opaque tool names reject. Once bound, an
+   explicitly conflicting owner session on a tool completion, turn or delivery
+   rejects; matching or omitted optional session fields remain valid. After
+   handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. After successful closure,
    late events matching the closed owner or its bound session reject without
    advancing the cursor, while unrelated-owner events remain independent. Put

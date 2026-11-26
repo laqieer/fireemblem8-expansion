@@ -2833,6 +2833,8 @@ root log session, is the `Copilot-Session` trailer identity. Two owners may
 share a root log and interaction, but cannot reuse owner, owner session,
 dispatch, receipt-task or lifecycle source identities. Missing, opaque,
 contradictory, duplicate or wrong observations remain incomplete or reject.
+Once bound, an explicitly present owner session on any correlated owner event
+must match; event types that omit the field remain supported.
 
 Existing separate-session v3 records keep their original dispatch/receipt
 correlation; their session and dispatch IDs must be known at reservation.
