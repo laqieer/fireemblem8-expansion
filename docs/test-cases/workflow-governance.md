@@ -6745,7 +6745,10 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    terminal timestamp, rather than delayed coordinator validation, determines
    logical-task lifetime. A prefilled close, unread native-log tail, or
    mismatched task, owner, session, head, worktree, Git identity or scope
-   remains invalid. A task's printed result, self-reported completion, or
+   remains invalid. A close timestamp matching a rejected logical-task verdict
+   is also invalid; state validation must reject it so the prior owner cannot
+   be removed from active-worktree checks and permit a second assignment. A
+   task's printed result, self-reported completion, or
    unrelated `tool.execution_complete` event does not release ownership.
    Failed logical tasks remain rejected and open; they do not gain a
    recovery/reassignment path from this successful-task contract. A future
