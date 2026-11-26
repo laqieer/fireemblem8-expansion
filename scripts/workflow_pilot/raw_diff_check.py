@@ -544,7 +544,9 @@ def exact_repository_root(value: str) -> Path:
         ("objects/info/alternates", "alternate object store"),
         ("objects/info/http-alternates", "HTTP alternate object store"),
     ))
-    top = Path(run_git(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()).resolve()
+    top = Path(
+        run_git(root, "rev-parse", "--show-toplevel").decode("utf-8").removesuffix("\n")
+    ).resolve()
     if root != top:
         raise ValueError(f"repository root must be exact Git top level {top}")
     return root
