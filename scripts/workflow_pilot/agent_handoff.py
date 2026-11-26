@@ -939,13 +939,13 @@ def observe_native_task(entry, log_path):
                 advance_time(event)
                 entry["coordination_turns"] += 1
         elif kind == "tool.execution_start" and binding["parent_task_id"] is not None:
+            require(len(entry["events"]) < 4, "retired owner started more work")
             owner_session = data.get("ownerNativeSessionId")
             if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
                 continue
             text(data.get("toolCallId"), maximum=128, pattern=ID_RE)
             text(data.get("toolName"), maximum=128, pattern=ID_RE)
             require(data["toolCallId"] != a["dispatch_id"], "native progress reused dispatch")
-            require(len(entry["events"]) < 4, "retired owner started more work")
             advance_time(event)
             if a["session_id"] is None:
                 _event(entry, "progressing", event["id"])

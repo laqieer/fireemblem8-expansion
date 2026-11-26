@@ -6574,7 +6574,9 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    reader did. Repeat an exact receipt with the same or another event ID or
    conflicting interaction: reject; a distinct same-parent follow-up remains
    valid and participates in chronology. Missing, opaque or dispatch-equal
-   progress call IDs and missing or opaque tool names reject. Put unread
+   progress call IDs and missing or opaque tool names reject. After handoff,
+   owner tool starts reject even if the owner-session ID is missing or opaque;
+   before progress such a start remains incomplete. Put unread
    complete or partial records after delivery: validation
    must hold readiness and closure until caught up, then reject a conflicting
    parent or accept otherwise complete valid evidence. The isolated CLI case

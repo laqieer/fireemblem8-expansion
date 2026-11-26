@@ -475,7 +475,8 @@ class NativeObservationTests(unittest.TestCase):
                     handoff.observe_cli(f.entry, log)
 
     def test_native_progress_requires_one_owner_session_and_stops_after_handoff(self):
-        for variant in ("changed-session", "retired-owner"):
+        for variant in ("changed-session", "retired-owner", "retired-missing",
+                        "retired-opaque", "retired-invalid", "other-owner"):
             with self.subTest(variant=variant):
                 f = GitFixture(assign=False)
                 self.addCleanup(f.close)
@@ -510,12 +511,25 @@ class NativeObservationTests(unittest.TestCase):
                                              interactionId="interaction-one",
                                              content=json.dumps({"handoff_result": result})))
                     handoff.observe_cli(f.entry, log)
-                    f.append(log, task_event("tool.execution_start", "after-delivery", owner="owner-one",
-                                             toolName="bash", toolCallId="late-call",
-                                             ownerNativeSessionId=SESSION))
+                    late = task_event("tool.execution_start", "after-delivery", owner="owner-one",
+                                      toolName="bash", toolCallId="late-call",
+                                      ownerNativeSessionId=SESSION)
+                    if variant == "retired-missing":
+                        del late["data"]["ownerNativeSessionId"]
+                    elif variant == "retired-opaque":
+                        late["data"]["ownerNativeSessionId"] = {"id": SESSION}
+                    elif variant == "retired-invalid":
+                        late["data"]["ownerNativeSessionId"] = "invalid session!"
+                    elif variant == "other-owner":
+                        late["agentId"] = "other-owner"
+                    f.append(log, late)
                     expected = "retired owner"
-                with self.assertRaisesRegex(handoff.HandoffDataError, expected):
+                if variant == "other-owner":
                     handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["events"][-1]["state"], "handed_off")
+                else:
+                    with self.assertRaisesRegex(handoff.HandoffDataError, expected):
+                        handoff.observe_cli(f.entry, log)
 
     def test_each_event_uses_prior_session_context_within_and_across_batches(self):
         for mode in ("same-batch", "split", "bounded"):
