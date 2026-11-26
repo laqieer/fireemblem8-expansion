@@ -6654,6 +6654,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
      scripts.workflow_pilot.tests.test_agent_handoff \
      scripts.workflow_pilot.tests.test_coordinator_observations -v
+   build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_accepted_logical_handoff_uses_released_validation_worktree -v
    ```
 
 2. Inspect the real-Git positive fixture: exact clean strict descendant, named
@@ -6667,7 +6669,7 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    different dispatch and parent-task IDs, the real owner, exact prompt and
    owner-native session. Two owners sharing a root and interaction remain
    distinct. Spliced, missing, stale, reversed or reused observations must not
-   advance; unknown owner exit/RSS still prevents a ready handoff. The
+   advance; unknown process-backed owner exit/RSS still prevents a ready handoff. The
    separate-session control rejects the different-ID receipt, as the pre-fix
    reader did. Repeat an exact receipt with the same or another event ID or
    conflicting receipt: reject. After receipt, any same-root owner follow-up
@@ -6825,7 +6827,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    across incremental calls and at the 128-event boundary; valid subsequent
    events with retained cursor context still complete normally. An old session
    start may establish context, but stale pre-assignment task events must not
-   acknowledge or count the new assignment. Exercise the actual CLI and check
+   acknowledge or count the new assignment. Before reservation, put a
+   different root session after more than one batch of complete records: it must
+   reject instead of skipping the contradiction. A partial record or an event
+   appended during the captured prefix remains for later observation. Exercise
+   the actual CLI and check
    that a future-clock rejection leaves canonical state unchanged. Collect
    multiple native events after their producer timestamps and verify lifecycle
    ordering uses those timestamps rather than a later polling time; include
@@ -6843,7 +6849,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    path. The operation must create a fresh detached worktree at the candidate,
    use the normal `git worktree remove` command without force, and verify the
    owner path is absent and unregistered. Run final validation and required
-   checks only in the fresh worktree. Hold a writer with its current directory
+   checks only in the fresh worktree. After acceptance, the candidate readiness
+   check must use the recorded validation worktree and reject a missing or
+   modified worktree. A new release record is bound to the assignment without
+   a second identifier; an older record's derived identifier must still
+   validate exactly. Hold a writer with its current directory
    open across removal, attempt a relative file write afterward, and verify it cannot
    create a path-visible file or dirty the fresh candidate. This tests
    path-based write isolation, not hostile same-UID process isolation.
@@ -6851,8 +6861,10 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    identity, a preexisting validation path while the owner still exists, or a
    failed task must not release or close the assignment. If removal succeeds
    but final observation or state persistence fails, retry only when the owner
-   path is absent and unregistered; require the retained validation worktree to
-   match the exact candidate before recording release. A clean snapshot,
+   path is absent and unregistered and its recorded Git administrative
+   directory is absent; require the retained validation worktree to match the
+   exact candidate before recording release. Move the owner worktree instead of
+   removing it: recovery must reject and retain both worktrees. A clean snapshot,
    `closed_at`, task self-report,
    printed result, or unrelated `tool.execution_complete` event alone is not
    release evidence. Confirm the terminal timestamp, rather than delayed

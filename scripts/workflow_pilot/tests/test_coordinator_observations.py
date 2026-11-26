@@ -1,5 +1,6 @@
 import copy
 import fcntl
+import hashlib
 import json
 import os
 import shlex
@@ -443,6 +444,29 @@ class NativeObservationTests(unittest.TestCase):
         )
         self.assertTrue(verdict["handoff_ready"], verdict)
 
+    def test_logical_release_recovery_rejects_moved_owner_worktree(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        moved_worktree = f.home / "moved-owner"
+        validation_worktree = f.home / "validation"
+        git(f.repository, "worktree", "move", str(f.worktree), str(moved_worktree))
+        git(f.repository, "worktree", "add", "--detach", str(validation_worktree), result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "owner Git administration"):
+                handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+        self.assertTrue(moved_worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
     def test_logical_release_rejects_initialized_submodule_before_candidate_creation(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
@@ -559,8 +583,21 @@ class NativeObservationTests(unittest.TestCase):
                 f.state, f.assignment["id"], f.repository, validation_worktree,
             )
 
-        self.assertLessEqual(len(release["release_id"]), 128)
+        self.assertNotIn("release_id", release)
         handoff.validate_state(f.state)
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        ))
+        validator.validate(f.state)
+        legacy = copy.deepcopy(f.state)
+        legacy["assignments"][0]["worktree_release"]["release_id"] = (
+            "worktree-release:" + hashlib.sha256(f.assignment["id"].encode()).hexdigest()
+        )
+        handoff.validate_state(legacy)
+        validator.validate(legacy)
+        legacy["assignments"][0]["worktree_release"]["release_id"] = "worktree-release:wrong"
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.validate_state(legacy)
 
     def test_logical_release_reserves_validation_worktree_until_close(self):
         f = GitFixture(assign=False)
@@ -1362,6 +1399,43 @@ class NativeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "wrong native root log"):
             handoff.observe_cli(f.entry, f.owner_log)
 
+    def test_native_reservation_rejects_changed_root_in_skipped_prefix(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.append(f.parent_log,
+                 native_event("session.start", "first", sessionId="coordinator-session"),
+                 *(native_event("assistant.turn_start", f"turn-{i}") for i in range(130)),
+                 native_event("session.start", "second", sessionId="different-session"))
+        with self.assertRaisesRegex(observations.ObservationError, "CLI session changed"):
+            reserve_task(f)
+        self.assertEqual(f.state["assignments"], [])
+
+    def test_native_reservation_does_not_skip_events_appended_during_prefix_read(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.append(f.parent_log,
+                 native_event("session.start", "first", sessionId="coordinator-session"),
+                 *(native_event("assistant.turn_start", f"turn-{i}") for i in range(130)))
+        original_size = f.parent_log.stat().st_size
+        read_batch = observations.cli_event_batch
+        appended = False
+
+        def append_then_read(*args, **kwargs):
+            nonlocal appended
+            if not appended:
+                f.append(f.parent_log, native_event("assistant.turn_start", "concurrent"))
+                appended = True
+            return read_batch(*args, **kwargs)
+
+        with mock.patch.object(observations, "cli_event_batch", side_effect=append_then_read):
+            cursor = observations.cli_reservation_cursor(f.parent_log, "coordinator-session")
+        self.assertEqual(cursor["offset"], original_size)
+        events, cursor = observations.cli_event_batch(f.parent_log, cursor)
+        self.assertEqual([event["id"] for _, event in events], ["concurrent"])
+        f.append(f.parent_log, native_event("session.start", "later", sessionId="different-session"))
+        with self.assertRaisesRegex(observations.ObservationError, "CLI session changed"):
+            observations.cli_event_batch(f.parent_log, cursor)
+
     def test_native_reservation_rejects_duplicate_dispatch_and_reversed_chronology(self):
         for variant in ("duplicate", "reversed"):
             with self.subTest(variant=variant):
@@ -1863,6 +1937,9 @@ class WatcherObservationTests(unittest.TestCase):
         watcher["ended_at"] = observations.utc_now()
         with self.assertRaises(handoff.HandoffDataError):
             handoff.reserve_watcher(f.state, "duplicate", 91, 2, f.parent, process.pid)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "ended watcher lacks matching OS observation"):
+            handoff.validate_state(f.state)
+        watcher["ended_at"] = None
         watcher["coordinator_id"] = "other-coordinator"
         with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
             handoff.validate_state(f.state)

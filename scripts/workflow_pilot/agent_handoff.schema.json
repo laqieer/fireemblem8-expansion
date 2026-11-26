@@ -318,7 +318,7 @@
     "worktreeRelease": {
       "description": "Coordinator-observed removal of the clean, published owner worktree, followed by validation in a distinct fresh worktree.",
       "type": "object", "additionalProperties": false,
-      "required": ["release_id", "observed_at", "assignment_id", "task_id", "owner_id", "session_id",
+      "required": ["observed_at", "assignment_id", "task_id", "owner_id", "session_id",
                    "head_sha", "worktree", "git_identity", "validation_worktree", "validation_identity",
                    "source", "path_absent", "unregistered"],
       "properties": {

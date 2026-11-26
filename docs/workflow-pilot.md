@@ -495,7 +495,10 @@ Do not manufacture another implementation identity to obtain independent review.
 
 The native task route below binds the provider's separate dispatch-tool and
 `parentAgentTaskId` namespaces without confusing the shared root log with an
-owner session. Process-backed delegated callers still require actual owner
+owner session. Reservation validates every complete record in a captured
+pre-dispatch log snapshot, rejecting a changed root session; a partial record
+and records appended after the snapshot remain for later observation.
+Process-backed delegated callers still require actual owner
 process exit and complete RSS. A logical task terminal observation records
 completion but is not itself write revocation. For a successful logical task,
 the coordinator's `release-worktree` operation requires the exact published
@@ -505,7 +508,8 @@ worktree is rejected before creating the validation worktree; the operation
 never deinitializes submodules or uses force. It creates a fresh detached
 worktree at the exact candidate, removes the assigned worktree using normal
 `git worktree remove` (never force), and verifies the old path is absent and
-unregistered. If removal fails while the assigned worktree remains registered,
+unregistered and the recorded owner Git administrative directory is absent.
+If removal fails while the assigned worktree remains registered,
 the unchanged validation worktree is removed normally so retry can start clean.
 If Git removes the owner path but leaves its registration, the operation fails
 closed and retains the validation worktree; it never globally prunes Git
@@ -514,14 +518,20 @@ candidate worktree. The removed owner worktree path remains reserved to that
 assignment: later assignments cannot reuse it or any ancestor/descendant path.
 The fresh validation worktree remains reserved until that assignment closes.
 Final candidate validation runs in the fresh worktree, not the removed owner
-worktree. This prevents subsequent path-based
+worktree. Candidate readiness rechecks that worktree's recorded Git identity,
+clean detached head and merge base. New release records are bound by their
+assignment ID; existing records with a release ID are accepted only when that
+ID matches the previously derived value. Removing the owner worktree prevents
+subsequent path-based
 writes from altering the validated candidate under the cooperative task/tool
 threat model; it does not prove OS process exit or RSS and is not hostile
 same-UID isolation.
 A terminal event, clean snapshot, or `closed_at` value alone never authorizes
 release. If removal succeeds but the final observation or state persistence
 fails, a retry may finalize only after observing the owner path absent and
-unregistered and validating the already-created candidate worktree again.
+unregistered, the recorded owner Git administrative directory absent, and the
+already-created candidate worktree valid again. A moved owner worktree does not
+count as removal.
 This direct route does not substitute a check process for a delegated owner.
 
 ### Pilot measurement and rollback
