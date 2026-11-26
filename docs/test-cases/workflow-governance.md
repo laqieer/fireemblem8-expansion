@@ -6557,7 +6557,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
      scripts.workflow_pilot.tests.test_agent_handoff \
      scripts.workflow_pilot.tests.test_coordinator_observations -v
    build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
-     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_accepted_logical_handoff_uses_released_validation_worktree -v
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_accepted_logical_handoff_uses_released_validation_worktree \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_delayed_process_completion_cannot_attribute_successor_head -v
    ```
 
 2. Inspect the real-Git positive fixture: exact clean strict descendant, named
@@ -6742,7 +6743,15 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    delivery and task-completion records in the same observed batch.
    For an OS-process-backed owner, a real zero exit and complete owned RSS
    pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
-   and repeated committed-owner work do not pass. For a logical task owner,
+   and repeated committed-owner work do not pass. Close an accepted owner
+   before its task completion, then let an accepted review successor commit in
+   the same worktree. A delayed successful completion must not attribute that
+   later HEAD to the predecessor; persist and replay it without changing the
+   retirement time. A delayed failed completion must invalidate current and
+   successor readiness and appear as `owner-task-failed`, without rewriting
+   the historical verdict. Legacy terminal snapshots remain valid only when
+   their original head, worktree, identity and scope match.
+   For a logical task owner,
    record the exact dispatched `task` tool's terminal
    completion after delivery. The terminal event by itself must leave the
    assignment open and validation without release evidence must reject with
@@ -6780,8 +6789,8 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    printed result, or unrelated `tool.execution_complete` event alone is not
    release evidence. Confirm the terminal timestamp, rather than delayed
    coordinator validation, determines logical-task lifetime. A prefilled
-   close, unread native-log tail, or mismatched task, owner, session, head,
-   worktree, Git identity or scope remains invalid. Failed logical tasks remain
+   close, unread native-log tail, or mismatched task, owner, session, delivered
+   head, worktree, Git identity or scope remains invalid. Failed logical tasks remain
    rejected and open; they do not gain a recovery/reassignment path from this
    successful-task contract. RSS remains explicitly unavailable and does not
    block this path; a native task terminal never substitutes for process

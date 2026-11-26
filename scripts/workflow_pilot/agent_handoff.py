@@ -131,7 +131,7 @@ def validation_assignment(entry):
 def accepted_handoff_current(state, entry):
     while True:
         if (entry["closed_at"] is None or entry["validation"] is None
-                or not entry["validation"]["handoff_ready"]):
+                or not entry["validation"]["handoff_ready"] or owner_completion_errors(entry)):
             return False
         if "native_binding" in entry:
             try:
@@ -280,29 +280,36 @@ def validate_process(value):
 
 
 def validate_terminal_task(value, assignment, entry):
-    fields(value, "event_id observed_at root_session_id task_id owner_id session_id head_sha "
-           "worktree git_identity allowed_scope success rss_peak_bytes rss_unavailable_reason")
+    legacy = isinstance(value, dict) and "head_sha" in value
+    fields(value, "event_id observed_at root_session_id task_id owner_id session_id success "
+           "rss_peak_bytes rss_unavailable_reason"
+           + (" head_sha worktree git_identity allowed_scope" if legacy else " recorded_at"))
     text(value["event_id"], maximum=128, pattern=ID_RE)
     timestamp(value["observed_at"])
     for name in ("root_session_id", "task_id", "owner_id", "session_id"):
         text(value[name], nullable=True, maximum=128, pattern=ID_RE)
-    sha(value["head_sha"])
-    absolute_path(value["worktree"])
     boolean(value["success"])
     integer(value["rss_peak_bytes"], nullable=True)
     text(value["rss_unavailable_reason"], maximum=256)
-    scope = items(value["allowed_scope"], maximum=256, minimum=1, unique=True)
-    for name in scope:
-        path(name, prefix=True)
     require("native" in assignment and value["root_session_id"] == assignment["native"]["root_session_id"]
             and value["task_id"] == assignment["dispatch_id"]
             and value["owner_id"] == assignment["owner_id"]
             and assignment["session_id"] is not None
-            and value["session_id"] == assignment["session_id"]
-            and value["worktree"] == assignment["allowed_worktree"]
-            and value["git_identity"] == entry["git_identity"]
-            and scope == assignment["allowed_scope"],
+            and value["session_id"] == assignment["session_id"],
             "logical task terminal identity mismatch")
+    if legacy:
+        sha(value["head_sha"])
+        absolute_path(value["worktree"])
+        scope = items(value["allowed_scope"], maximum=256, minimum=1, unique=True)
+        for name in scope:
+            path(name, prefix=True)
+        require(value["worktree"] == assignment["allowed_worktree"]
+                and value["git_identity"] == entry["git_identity"]
+                and scope == assignment["allowed_scope"],
+                "logical task terminal identity mismatch")
+    else:
+        require(timestamp(value["observed_at"]) <= timestamp(value["recorded_at"]) <= timestamp(now()),
+                "logical task terminal recording chronology invalid")
     require(value["rss_peak_bytes"] is None
             and value["rss_unavailable_reason"] == LOGICAL_RSS_UNAVAILABLE,
             "logical task RSS availability mismatch")
@@ -343,16 +350,20 @@ def validate_worktree_release(value, assignment, entry):
             and value["task_id"] == terminal["task_id"]
             and value["owner_id"] == terminal["owner_id"] == assignment["owner_id"]
             and value["session_id"] == terminal["session_id"] == assignment["session_id"]
-            and value["head_sha"] == terminal["head_sha"]
-            and value["worktree"] == terminal["worktree"] == assignment["allowed_worktree"]
-            and value["git_identity"] == terminal["git_identity"] == entry["git_identity"]
+            and value["worktree"] == assignment["allowed_worktree"]
+            and value["git_identity"] == entry["git_identity"]
             and not paths_overlap(Path(value["validation_worktree"]), Path(value["worktree"]))
             and value["validation_identity"]["worktree"] == value["validation_worktree"]
             and value["validation_identity"]["common_dir"] == value["git_identity"]["common_dir"]
             and value["validation_identity"]["git_dir"] != value["git_identity"]["git_dir"]
             and value["head_sha"] == entry["result"]["result_sha"],
             "logical worktree release identity mismatch")
-    require(timestamp(value["observed_at"]) >= timestamp(terminal["observed_at"]),
+    if "head_sha" in terminal:
+        require(value["head_sha"] == terminal["head_sha"]
+                and value["worktree"] == terminal["worktree"]
+                and value["git_identity"] == terminal["git_identity"],
+                "logical worktree release legacy terminal mismatch")
+    require(timestamp(value["observed_at"]) >= timestamp(terminal.get("recorded_at", terminal["observed_at"])),
             "logical worktree release predates task terminal")
     if entry["result"] is not None:
         require(value["head_sha"] == entry["result"]["result_sha"],
@@ -568,7 +579,7 @@ def validate_state(value):
         terminal_task = entry.get("terminal_task")
         if terminal_task is not None:
             validate_terminal_task(terminal_task, a, entry)
-            if entry["result"] is not None:
+            if entry["result"] is not None and "head_sha" in terminal_task:
                 require(terminal_task["head_sha"] == entry["result"]["result_sha"],
                         "logical task terminal head does not match delivery")
             terminal_at = timestamp(terminal_task["observed_at"])
@@ -1125,7 +1136,7 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
     require(entry["events"] and entry["events"][-1]["state"] == "handed_off"
             and result["assignment_id"] == assignment_id
             and result["assigned_parent_sha"] == assignment["assigned_parent_sha"]
-            and result["result_sha"] == terminal["head_sha"]
+            and ("head_sha" not in terminal or result["result_sha"] == terminal["head_sha"])
             and not entry["remote_actions"],
             "logical task delivery does not match its terminal candidate")
     require(observations.cli_cursor_caught_up(entry["cursors"][0]),
@@ -1370,15 +1381,11 @@ def observe_native_task(entry, log_path):
             require(session_id == task["root_session_id"] and event.get("agentId") is None,
                     "native task completion must be coordinator-owned")
             boolean(data.get("success"))
-            current = observe_git(a)
-            require(current["identity"] == entry["git_identity"],
-                    "native task completed from a changed worktree")
             terminal = {
                 "event_id": event["id"], "observed_at": event["timestamp"],
+                "recorded_at": now(),
                 "root_session_id": task["root_session_id"], "task_id": a["dispatch_id"],
                 "owner_id": a["owner_id"], "session_id": a["session_id"],
-                "head_sha": current["head"], "worktree": a["allowed_worktree"],
-                "git_identity": current["identity"], "allowed_scope": list(a["allowed_scope"]),
                 "success": data["success"],
                 "rss_peak_bytes": None, "rss_unavailable_reason": LOGICAL_RSS_UNAVAILABLE,
             }
@@ -1978,7 +1985,12 @@ def summarize_handoffs(state):
                     and entry["closed_at"] is not None and len(entry["events"]) == 5
                     and not entry["remote_actions"] and entry["interruption"] is None,
                     "accepted report lacks its complete handoff observations")
-            require(not owner_acceptance_errors(entry, entry["closed_at"]),
+            terminal = entry.get("terminal_task")
+            historical_entry = entry
+            if (process is not None and terminal is not None and "recorded_at" in terminal
+                    and timestamp(terminal["recorded_at"]) > timestamp(verdict["observed_at"])):
+                historical_entry = {**entry, "terminal_task": None}
+            require(not owner_acceptance_errors(historical_entry, entry["closed_at"]),
                     "accepted report lacks budget-compliant zero owner completion")
             require(verdict["changed_lines"] is not None
                     and verdict["changed_lines"] <= a["budgets"]["changed_lines"],
@@ -1987,6 +1999,9 @@ def summarize_handoffs(state):
                     "accepted report lacks complete, budget-compliant focused-check observations")
         outcome = ("interrupted" if entry["interruption"] else
                    verdict["local_outcome"] if verdict else "in_progress")
+        if outcome == "accepted" and owner_completion_errors(entry):
+            outcome = "rejected"
+            rejections.update(owner_completion_errors(entry))
         counts[outcome] += 1
         if verdict:
             rejections.update(verdict["rejection_codes"])

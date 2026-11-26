@@ -298,10 +298,18 @@
       "description": "A terminal task-tool event records task completion but does not itself release worktree ownership or prove OS exit/RSS.",
       "type": "object", "additionalProperties": false,
       "required": ["event_id", "observed_at", "root_session_id", "task_id", "owner_id", "session_id",
-                   "head_sha", "worktree", "git_identity", "allowed_scope", "success",
-                   "rss_peak_bytes", "rss_unavailable_reason"],
+                   "success", "rss_peak_bytes", "rss_unavailable_reason"],
+      "oneOf": [
+        {"required": ["recorded_at"], "not": {"anyOf": [
+          {"required": ["head_sha"]}, {"required": ["worktree"]},
+          {"required": ["git_identity"]}, {"required": ["allowed_scope"]}
+        ]}},
+        {"required": ["head_sha", "worktree", "git_identity", "allowed_scope"],
+         "not": {"required": ["recorded_at"]}}
+      ],
       "properties": {
         "event_id": {"$ref": "#/$defs/id"}, "observed_at": {"$ref": "#/$defs/time"},
+        "recorded_at": {"$ref": "#/$defs/time"},
         "root_session_id": {"$ref": "#/$defs/id"}, "task_id": {"$ref": "#/$defs/id"},
         "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
         "head_sha": {"$ref": "#/$defs/sha"}, "worktree": {"$ref": "#/$defs/absolute"},

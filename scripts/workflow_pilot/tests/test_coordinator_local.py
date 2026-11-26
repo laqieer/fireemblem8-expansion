@@ -12,9 +12,11 @@ from jsonschema import Draft202012Validator
 
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
-from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, gh_stub_environment, git
+from scripts.workflow_pilot.tests.test_agent_handoff import (
+    GitFixture, SESSION, at_offset, gh_stub_environment, git, native_event,
+)
 from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
-from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task, task_event
+from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task, reserve_task, task_event
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -213,6 +215,90 @@ class CoordinatorLocalTests(unittest.TestCase):
         self.assertFalse(gate._local_ready(f.state, pr, record))
         with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner"):
             handoff.observe_cli(first_entry, log)
+
+    def test_delayed_process_completion_cannot_attribute_successor_head(self):
+        for success in (True, False):
+            with self.subTest(success=success):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task", toolCallId="call-one",
+                                    arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one", toolCallId="call-one",
+                                    interactionId="interaction-one"))
+                handoff.observe_cli(f.entry, log)
+                process = f.waiting_process()
+                handoff.bind_process(f.entry, process.pid)
+                f.append(log,
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                                    toolCallId="edit", ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                revision = f.commit()
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": revision,
+                          "evidence_refs": ["raw-evidence"]}
+                f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                         interactionId="interaction-one",
+                                         content=json.dumps({"handoff_result": result})))
+                handoff.observe_cli(f.entry, log)
+                handoff.capture_check(f.entry, "raw", revision)
+                f.finish_owner(process)
+                late_completion = native_event("tool.execution_complete", "task-terminal",
+                                               toolCallId="call-one", success=success)
+                verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)
+                self.assertTrue(verdict["handoff_ready"], verdict)
+                self.assertLess(handoff.timestamp(late_completion["timestamp"]),
+                                handoff.timestamp(verdict["observed_at"]))
+                first_entry, first_parent, closed_at = f.entry, f.parent, f.entry["closed_at"]
+
+                successor = copy.deepcopy(f.assignment)
+                del successor["native"]
+                successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                                 dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                                 assigned_parent_sha=revision)
+                f.entry = handoff.assign(f.state, successor)
+                f.assignment, f.parent = successor, revision
+                f.parent_log, f.owner_log = f.home / "successor-parent.jsonl", f.home / "successor-owner.jsonl"
+                with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", successor["session_id"]):
+                    successor_result = f.complete(content="successor change\n")
+                verdict = f.validate(successor_result)
+                self.assertTrue(verdict["handoff_ready"], verdict)
+                pr = SimpleNamespace(
+                    repository=f.state["repository"], repository_id=1, number=191,
+                    head_sha=successor_result["result_sha"], head_ref=successor["expected_branch"],
+                    base_sha=first_parent, base_ref="master")
+                decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
+                                            decision_oid="a" * 40, changed_lines=1)
+                record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+                self.assertTrue(gate._local_ready(f.state, pr, record))
+                f.append(log, late_completion)
+                self.assertFalse(gate._local_ready(f.state, pr, record))
+                state_path = f.home / "coordinator.json"
+                state_path.write_bytes(observations.json_bytes(f.state))
+                with observations.locked_state(state_path) as persisted:
+                    handoff.observe_cli(handoff.find_entry(persisted, first_entry["assignment"]["id"]), log)
+                    handoff.validate_state(persisted)
+                persisted = observations.load_json(state_path)
+                first_entry = handoff.find_entry(persisted, first_entry["assignment"]["id"])
+                record = persisted["candidates"][0]
+                handoff.validate_state(persisted)
+                validator = Draft202012Validator(json.loads(
+                    (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+                self.assertTrue(validator.is_valid(persisted))
+                self.assertEqual(first_entry["closed_at"], closed_at)
+                self.assertEqual(first_entry["terminal_task"]["success"], success)
+                self.assertNotIn("head_sha", first_entry["terminal_task"])
+                self.assertEqual(gate._local_ready(persisted, pr, record), success)
+                if not success:
+                    summary = handoff.summarize_handoffs(persisted)
+                    self.assertEqual(summary["rejected"], 1)
+                    self.assertIn("owner-task-failed", summary["rejection_codes"])
+                handoff.observe_cli(first_entry, log)
+                self.assertEqual(gate._local_ready(persisted, pr, record), success)
 
     def test_raw_only_and_candidate_success_or_commands_are_not_registration(self):
         for definitions in (

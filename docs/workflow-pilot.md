@@ -2935,22 +2935,23 @@ not another `initial` assignment that bypasses retained-worktree recovery.
 Independent issue/PR roots remain separate. Only one coordinator manages the
 canonical state.
 
-Owner completion has two distinct observation paths, but only the
-process-backed path can currently establish retirement. An OS-process-backed
-owner requires the runtime-owned process identity, an actually observed zero
-exit, and complete owned RSS; an exited process with unknown status or
-incomplete RSS remains ineligible. A native logical-task owner records the
-exact dispatched `task` tool's `tool.execution_complete` event only after the
-same task, owner, owner session, result head, worktree identity, and allowed
-scope have been bound. The terminal event records task completion only. It
-does not revoke write access or prove that background writers have stopped.
-The current task runtime provides no independent, enforceable worktree-release
-observation, so validation reports `owner-worktree-release-unavailable`,
-keeps the assignment open, and cannot accept the handoff. Do not set
-`closed_at` from task completion or a clean Git snapshot. A future supported
-release mechanism must be observed before coordinator closure can make the
-worktree available for reuse. A failed logical task remains rejected and
-open. Do not infer release from task self-report or task completion alone.
+An OS-process-backed owner requires the runtime-owned process identity, an
+actually observed zero exit, and complete owned RSS; an exited process with
+unknown status or incomplete RSS remains ineligible. A native task's
+`tool.execution_complete` records its correlated task, owner, session,
+producer timestamp, recording time and actual success, not a Git snapshot.
+The delivered head is observed at delivery; logical release independently
+verifies the clean published candidate and worktree before removal. A legacy
+terminal record with its Git snapshot remains strictly validated.
+
+The terminal event alone does not revoke write access or prove background
+writers have stopped. A successful logical owner remains ineligible until the
+coordinator performs and verifies the worktree release described above.
+Do not set `closed_at` from task completion or a clean Git snapshot. A failed
+logical task remains rejected and open. Do not infer release from self-report.
+Process-backed completion does not wait for a task-terminal event, but a
+subsequently observed failed event invalidates current readiness, including
+review successors; the historical accepted verdict is not rewritten.
 
 Logical-task lifetime is measured through the trusted terminal-task timestamp,
 not the later coordinator validation time; validation delay does not consume

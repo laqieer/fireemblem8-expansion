@@ -305,9 +305,9 @@ class NativeObservationTests(unittest.TestCase):
         self.assertEqual(terminal["task_id"], f.assignment["dispatch_id"])
         self.assertEqual(terminal["owner_id"], f.assignment["owner_id"])
         self.assertEqual(terminal["session_id"], SESSION)
-        self.assertEqual(terminal["head_sha"], revision)
-        self.assertEqual(terminal["worktree"], f.assignment["allowed_worktree"])
-        self.assertEqual(terminal["allowed_scope"], f.assignment["allowed_scope"])
+        self.assertNotIn("head_sha", terminal)
+        self.assertGreaterEqual(handoff.timestamp(terminal["recorded_at"]),
+                                handoff.timestamp(terminal["observed_at"]))
         self.assertIsNone(terminal["rss_peak_bytes"])
         self.assertIn("does not expose per-owner RSS", terminal["rss_unavailable_reason"])
         self.assertIsNone(f.entry["process"])
@@ -367,15 +367,30 @@ class NativeObservationTests(unittest.TestCase):
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(f.state)
 
+        legacy = copy.deepcopy(f.state)
+        legacy_terminal = legacy["assignments"][0]["terminal_task"]
+        del legacy_terminal["recorded_at"]
+        legacy_terminal.update(head_sha=revision, worktree=f.assignment["allowed_worktree"],
+                               git_identity=f.entry["git_identity"], allowed_scope=f.assignment["allowed_scope"])
+        handoff.validate_state(legacy)
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(validator.is_valid(legacy))
         for field, value in (("task_id", "other-task"), ("owner_id", "other-owner"),
                              ("session_id", "other-session"), ("session_id", None), ("head_sha", f.parent),
                              ("worktree", str(f.repository)), ("allowed_scope", ["src/"]),
+                             ("recorded_at", at_offset(-60)), ("recorded_at", at_offset(60)),
                              ("ownership_released", True)):
             with self.subTest(field=field):
-                changed = copy.deepcopy(f.state)
+                changed = copy.deepcopy(legacy if field in ("head_sha", "worktree", "allowed_scope") else f.state)
                 changed["assignments"][0]["terminal_task"][field] = value
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
+        partial = copy.deepcopy(f.state)
+        partial["assignments"][0]["terminal_task"]["head_sha"] = revision
+        self.assertFalse(validator.is_valid(partial))
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.validate_state(partial)
 
     def test_logical_release_removes_owner_path_before_fresh_candidate_validation(self):
         f = GitFixture(assign=False)
@@ -437,6 +452,15 @@ class NativeObservationTests(unittest.TestCase):
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(f.state)
+        legacy = copy.deepcopy(f.state)
+        terminal = legacy["assignments"][0]["terminal_task"]
+        del terminal["recorded_at"]
+        terminal.update(head_sha=result["result_sha"], worktree=str(old_worktree),
+                        git_identity=f.entry["git_identity"], allowed_scope=f.assignment["allowed_scope"])
+        handoff.validate_state(legacy)
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(legacy)
 
     def test_logical_release_recovers_after_owner_removal_before_state_persistence(self):
         f = GitFixture(assign=False)
