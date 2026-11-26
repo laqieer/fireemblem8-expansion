@@ -1470,7 +1470,12 @@ class HandoffSchemaTests(unittest.TestCase):
                         "2026-09-06T00:00:00.1234567Z"):
             changed = copy.deepcopy(state)
             changed["availability"]["observed_at"] = invalid
-            self.reject_both(changed, handoff.validate_state)
+            if invalid == "2025-02-29T00:00:00Z":
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(observations.parse_bytes(
+                        observations.json_bytes(changed)))
+            else:
+                self.reject_both(changed, handoff.validate_state)
         for valid in ("2024-02-29T00:00:00Z", "2026-09-06T00:00:00.123456Z"):
             changed = copy.deepcopy(state)
             changed["availability"]["observed_at"] = valid

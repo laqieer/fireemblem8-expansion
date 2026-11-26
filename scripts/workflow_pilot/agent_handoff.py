@@ -1063,6 +1063,19 @@ def remove_validation_worktree(coordinator_root, assignment, expected_sha, ident
             "validation worktree removal was not complete")
 
 
+def validate_proposed_worktree_release(state, entry, release_record, clock):
+    proposed_entry = {**entry, "worktree_release": release_record}
+    proposed_state = {
+        **state,
+        "clock": clock,
+        "assignments": [
+            proposed_entry if candidate is entry else candidate
+            for candidate in state["assignments"]
+        ],
+    }
+    validate_state(proposed_state)
+
+
 def release_logical_worktree(state, assignment_id, coordinator_worktree, validation_worktree):
     require(not availability_errors(state, now()), "coordinator unavailable before worktree release")
     entry = find_entry(state, assignment_id)
@@ -1101,8 +1114,12 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
             "logical release requires a removable linked worktree")
     for other in state["assignments"]:
         if other["assignment"]["id"] != assignment_id:
-            require(not paths_overlap(validation_root,
-                                      Path(other["assignment"]["allowed_worktree"])),
+            reserved_paths = [Path(other["assignment"]["allowed_worktree"])]
+            other_release = other.get("worktree_release")
+            if other_release is not None and other["closed_at"] is None:
+                reserved_paths.append(Path(other_release["validation_worktree"]))
+            require(not any(paths_overlap(validation_root, reserved)
+                            for reserved in reserved_paths),
                     "validation worktree overlaps an assigned worktree")
     coordinator = {**assignment, "allowed_worktree": str(coordinator_root)}
     coordinator_git = observe_git(coordinator)
@@ -1165,7 +1182,10 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
             "path_absent": True,
             "unregistered": True,
         }
+        prepared_clock = observations.clock_observation()
+        release_record["observed_at"] = prepared_clock["at"]
         validate_worktree_release(release_record, assignment, entry)
+        validate_proposed_worktree_release(state, entry, release_record, prepared_clock)
     except (OSError, ValueError) as prepare_error:
         if created_validation and os.path.lexists(validation_root):
             try:
@@ -1218,10 +1238,12 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
     validation_registered = any(line == f"worktree {validation_root}" for line in worktrees)
     require(not os.path.lexists(owner_root) and not registered and validation_registered,
             "assigned worktree removal was not complete")
-    release_record["observed_at"] = now()
+    final_clock = observations.clock_observation()
+    release_record["observed_at"] = final_clock["at"]
     validate_worktree_release(release_record, assignment, entry)
+    validate_proposed_worktree_release(state, entry, release_record, final_clock)
     entry["worktree_release"] = release_record
-    state["clock"]["at"] = release_record["observed_at"]
+    state["clock"] = final_clock
     return release_record
 
 

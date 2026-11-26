@@ -596,6 +596,52 @@ class NativeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping active owners"):
             handoff.validate_state(candidate)
 
+    def test_logical_release_rejects_another_active_validation_path(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        other = GitFixture(assign=False)
+        self.addCleanup(other.close)
+        other.assignment.update({
+            "id": "assignment-two",
+            "issue": 179,
+            "pull_request": 192,
+            "owner_id": None,
+            "session_id": None,
+            "dispatch_id": None,
+        })
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value=None):
+            other_result = complete_logical_task(other)
+        f.state["assignments"].append(other.entry)
+        other_fake_bin = Path(gh_stub_environment(
+            other.home, {"name": other.assignment["expected_branch"],
+                         "commit": {"sha": other_result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+
+        with mock.patch.dict(os.environ, {
+            "PATH": str(other_fake_bin) + os.pathsep + os.environ["PATH"],
+        }):
+            with self.assertRaisesRegex(
+                handoff.HandoffDataError, "validation worktree overlaps an assigned worktree",
+            ):
+                handoff.release_logical_worktree(
+                    f.state, other.assignment["id"], other.repository, validation_worktree,
+                )
+
+        self.assertTrue(other.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertIsNone(other.entry["worktree_release"])
+
     def test_logical_release_fails_closed_when_owner_path_is_removed_before_registration(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
