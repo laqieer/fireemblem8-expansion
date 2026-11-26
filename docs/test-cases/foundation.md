@@ -85,7 +85,8 @@ and its fail-closed all-current-feature coverage assertion.
      tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_execution_context_key_syntax_bypasses_fail_closed \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_order_regressions_accept_reordered_workflow \
-     tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_rejects_misindented_job_fields_at_each_boundary
    ```
 6. Exercise the source-backed review-family binding with
    `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.BuildTopologyFamilyTests -v`.
@@ -103,8 +104,11 @@ blank line has less indentation than the surrounding shell commands.
 The same order-regression tests pass when the source workflow already has
 `steps` or `env` before the other direct fields in any worker job.
 The review-family binding reports separate observations for the two order
-tests, each worker and the source-backed step and literal-script members.
+tests, each worker, every target job boundary, and the source-backed step
+and literal-script members.
 Equivalent job-field reordering preserves its finite source model.
+All eight Build jobs reject misindented execution fields after the job header,
+before steps, and after steps in the target dry-run verifier.
 
 ### Negative control
 
@@ -119,6 +123,8 @@ both worker-order test cases fail even though both validators accept the
 equivalent workflow.
 Changed runners or timeouts, duplicate keys, additional execution fields,
 unsupported key syntax and altered permissions remain rejected after the fix.
+The prior candidate accepted 1- and 3-space fields after steps in all eight
+jobs; the older baseline also accepted those fields directly after headers.
 Blank lines with varying whitespace must not hide an advisory step field or
 turn the full-game localization gate into a success.
 Adding `exit 73` after a shallow blank in the real full-game width script must

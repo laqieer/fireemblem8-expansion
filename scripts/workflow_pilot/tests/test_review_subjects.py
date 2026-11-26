@@ -153,6 +153,32 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                          ["contract-violation", "contract-violation"])
         self.assert_satisfied(self.selected_observations(members, after, *names))
 
+    def test_target_boundary_binds_every_source_job(self):
+        verifier = self.tools.subjects.BUILD_VERIFY
+        original = (self.repo.root / verifier).read_text()
+        bypass = '''
+_original_job_context = _parse_job_context
+_original_job_steps = _parse_job_steps
+def _without_shallow_lines(body):
+    return "".join(line for line in body.splitlines(keepends=True)
+                   if not line.strip() or line.lstrip().startswith("#")
+                   or len(line) - len(line.lstrip(" ")) >= 4)
+def _parse_job_context(job_name, body):
+    return _original_job_context(job_name, _without_shallow_lines(body))
+def _parse_job_steps(job_name, body, repository_root=None):
+    return _original_job_steps(job_name, _without_shallow_lines(body), repository_root)
+'''
+        before = self.repo.commit({verifier: original + bypass})
+        after = self.repo.commit({verifier: original}, parent=before)
+        workflow = (self.repo.root / self.tools.subjects.BUILD_WORKFLOW).read_text()
+        names = tuple("validators:target-boundary-" + name
+                      for name in self.tools.subjects.build_job_blocks(workflow))
+        members = self.selected(self.tools.members(self.build_scope(after), (before,)), *names)
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual(len(prior), len(names))
+        self.assertTrue(all(item.verdict == "contract-violation" for item in prior))
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
     def test_order_regressions_must_actually_detect_a_changed_contract(self):
         cases = (
             (self.tools.subjects.BUILD_TOPOLOGY,

@@ -2024,6 +2024,39 @@ class VerifyCliCwdTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             verify_mod._parse_workflow_structure_text(mutation)
 
+    def test_target_rejects_misindented_job_fields_at_each_boundary(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-job-boundaries-", dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(target_root, ".github", "workflows", "build.yml")
+            with open(workflow_path, encoding="utf-8") as handle:
+                original = handle.read()
+            self.assertEqual(len(verify_mod.run_gates(target_root, dry_run=True)),
+                             len(verify_mod.gates()))
+            for job_name in verify_mod._EXPECTED_JOBS:
+                start, end = self.job_bounds(original, job_name)
+                job = original[start:end]
+                header = f"  {job_name}:\n"
+                self.assertTrue(job.startswith(header))
+                self.assertEqual(job.count("    steps:\n"), 1)
+                for position in ("after-header", "before-steps", "after-steps"):
+                    for indent in (1, 2, 3, 4):
+                        field = " " * indent + "permissions: write-all\n"
+                        if position == "after-header":
+                            changed_job = job.replace(header, header + field, 1)
+                        elif position == "before-steps":
+                            changed_job = job.replace("    steps:\n", field + "    steps:\n", 1)
+                        else:
+                            changed_job = job + field
+                        with self.subTest(job=job_name, position=position, indent=indent):
+                            with open(workflow_path, "w", encoding="utf-8") as handle:
+                                handle.write(original[:start] + changed_job + original[end:])
+                            with self.assertRaises(ValueError):
+                                verify_mod.run_gates(target_root, dry_run=True)
+
     def test_publisher_and_summary_contexts_are_closed_before_dry_run(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
         os.makedirs(artifact_root, exist_ok=True)

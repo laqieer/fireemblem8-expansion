@@ -1435,6 +1435,8 @@ def _parse_job_context(job_name, body):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
+        if indent < 4:
+            raise ValueError(f"job {job_name!r} uses unsupported indentation")
         if indent != 4 or line.startswith("    -"):
             continue
         match = re.fullmatch(

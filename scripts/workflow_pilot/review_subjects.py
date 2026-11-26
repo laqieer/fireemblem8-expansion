@@ -492,6 +492,12 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                 "shallow and Unicode blanks cannot hide step fields",
                 "build-topology:boundary:" + job, {BUILD_WORKFLOW, BUILD_TOPOLOGY},
                 evidence=("positive", "adversarial"))
+            add("wire", "validators", "target-boundary-" + job, BUILD_WORKFLOW,
+                BUILD_VERIFY + ":run_gates", representation,
+                "misindented job fields reject at each target boundary",
+                "build-topology:target-boundary:" + job,
+                {BUILD_WORKFLOW, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER},
+                evidence=("positive", "adversarial"))
             if any(literal for _, _, literal in selectors):
                 add("wire", "replay", job, BUILD_WORKFLOW,
                     BUILD_TOPOLOGY + ":_literal_run_script and " + BUILD_VERIFY,
@@ -2400,7 +2406,7 @@ def _build_topology(probe):
                    "unknown Build topology probe")
     role, name = parts[1:]
     review.require(
-        (role in {"boundary", "literal"} and name in model)
+        (role in {"boundary", "target-boundary", "literal"} and name in model)
         or (role in {"producer", "consumer", "topology-order", "upstream-order"}
             and name in workers)
         or (role == "stale" and name == "width-script"),
@@ -2457,6 +2463,27 @@ def _build_topology(probe):
             for blank in ("    ", "    \u0085", "    \u2028", "    \u2029"):
                 changed = text.replace(width, width + blank + "\n      continue-on-error: true\n", 1)
                 observe(bool(topology._errors(changed, False)), "width gate admitted hidden failure")
+    elif role == "target-boundary":
+        job = jobs[name]
+        review.require(text.count(job) == 1 and job.count("    steps:\n") == 1,
+                       "ambiguous target job or steps")
+        with tempfile.TemporaryDirectory(prefix="build-target-boundary-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()) and all(not item.ran for item in baseline),
+                    f"{name} baseline dry-run failed")
+            for position in ("after-header", "before-steps", "after-steps"):
+                for indent in (1, 2, 3, 4):
+                    field = " " * indent + "permissions: write-all\n"
+                    if position == "after-header":
+                        changed_job = field + job
+                    elif position == "before-steps":
+                        changed_job = job.replace("    steps:\n", field + "    steps:\n", 1)
+                    else:
+                        changed_job = job + field
+                    changed = text.replace(job, changed_job, 1)
+                    observe(rejected(root, workflow, changed),
+                            f"{name} accepted {indent}-space field {position}")
     elif role == "literal":
         steps = [step for step in build_step_blocks(jobs[name]) if "\n      run: |\n" in step]
         review.require(steps, "literal member has no source scripts")
