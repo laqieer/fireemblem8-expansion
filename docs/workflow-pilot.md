@@ -512,7 +512,11 @@ worktree at the exact candidate, removes the assigned worktree using normal
 `git worktree remove` (never force), and verifies the old path is absent and
 unregistered and the recorded owner Git administrative directory is absent.
 Registration checks use Git's NUL-delimited inventory so embedded newlines
-and other path bytes cannot be mistaken for record boundaries.
+and other path bytes cannot be mistaken for record boundaries. Git path
+outputs retain trailing whitespace. For a worktree path ending in a newline,
+the submodule check invokes Git's native status helper because the public
+shell wrapper strips that newline; an unavailable helper fails the release
+closed. Existing Git metadata safety restrictions still apply.
 If removal fails while the assigned worktree remains registered,
 the unchanged validation worktree is removed normally so retry can start clean.
 If Git removes the owner path but leaves its registration, the operation fails

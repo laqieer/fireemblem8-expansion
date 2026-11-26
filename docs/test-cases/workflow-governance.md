@@ -6867,8 +6867,14 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    exact candidate commit first, then run `release-worktree` from a separate
    coordinator worktree. Require the exact remote branch head, a clean linked
    owner worktree with no untracked or ignored data, and an unused validation
-   path. Repeat with newline characters in both worktree paths: exact Git
-   registrations must be recognized without splitting or quoting the paths.
+   path. Repeat with embedded newlines and with a trailing newline or space in
+   both worktree paths: exact Git registrations must be recognized without
+   splitting or trimming the paths. With a trailing-newline worktree, check a
+   real uninitialized gitlink and then initialize it; release must reject the
+   initialized gitlink before creating the validation worktree. An unavailable
+   Git status helper must also reject without removing the owner worktree.
+   The pre-fix top-level parser strips trailing path whitespace, and Git's
+   public submodule shell wrapper also fails on a trailing newline.
    Simulate owner-removal failure and require rollback of the validation
    worktree while retaining the owner; retry must then succeed. The pre-fix
    line-based inventory rejects the registered owner before removal.

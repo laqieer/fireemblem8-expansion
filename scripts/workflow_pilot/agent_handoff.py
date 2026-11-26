@@ -971,8 +971,10 @@ def observe_git(assignment):
     root = Path(assignment["allowed_worktree"])
     require(str(root.resolve(strict=True)) == str(root), "worktree path is symlinked")
     git.exact_repository_root(str(root))
-    common = Path(os.fsdecode(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip())
-    private = Path(os.fsdecode(_git(root, "rev-parse", "--absolute-git-dir")).strip())
+    common = Path(os.fsdecode(
+        _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    ).removesuffix("\n"))
+    private = Path(os.fsdecode(_git(root, "rev-parse", "--absolute-git-dir")).removesuffix("\n"))
     info = common.stat()
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").decode().strip()
     branch = None if branch == "HEAD" else branch
@@ -1109,6 +1111,12 @@ def observe_remote_branch(assignment, cwd):
     return branch["commit"]["sha"]
 
 
+def submodule_status(root):
+    # Git's shell wrapper strips trailing newlines while changing to the worktree.
+    command = ("submodule--helper", "status") if str(root).endswith("\n") else ("submodule", "status")
+    return _git(root, *command, "--recursive").decode().splitlines()
+
+
 def verify_validation_worktree(assignment, expected_sha, identity):
     root = Path(assignment["allowed_worktree"])
     current = observe_git(assignment)
@@ -1121,7 +1129,7 @@ def verify_validation_worktree(assignment, expected_sha, identity):
     ignored = _git(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
     require(not [path for path in ignored.split(b"\0") if path],
             "replacement validation worktree contains ignored data")
-    submodules = _git(root, "submodule", "status", "--recursive").decode().splitlines()
+    submodules = submodule_status(root)
     require(all(line.startswith("-") for line in submodules),
             "replacement validation worktree contains an initialized or conflicted submodule")
     return current
@@ -1223,7 +1231,7 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
         ignored = _git(owner_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
         require(not [path for path in ignored.split(b"\0") if path],
                 "assigned worktree contains ignored data")
-        submodules = _git(owner_root, "submodule", "status", "--recursive").decode().splitlines()
+        submodules = submodule_status(owner_root)
         require(all(line.startswith("-") for line in submodules),
                 "assigned worktree contains an initialized or conflicted submodule")
     else:

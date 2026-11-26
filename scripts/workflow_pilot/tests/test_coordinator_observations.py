@@ -512,6 +512,105 @@ class NativeObservationTests(unittest.TestCase):
                 self.assertFalse(owner.exists())
                 self.assertTrue(verdict["handoff_ready"], verdict)
 
+    def test_logical_release_preserves_trailing_path_whitespace(self):
+        for suffix in ("\n", " "):
+            for fail_removal in (False, True):
+                with self.subTest(suffix=repr(suffix), fail_removal=fail_removal):
+                    f = GitFixture(assign=False)
+                    self.addCleanup(f.close)
+                    owner = f.home / ("owner" + suffix)
+                    validation = f.home / ("validation" + suffix)
+                    git(f.repository, "worktree", "move", str(f.worktree), str(owner))
+                    f.worktree = owner
+                    f.assignment["allowed_worktree"] = str(owner)
+                    result = complete_logical_task(f)
+                    environment = gh_stub_environment(
+                        f.home, {"name": f.assignment["expected_branch"],
+                                 "commit": {"sha": result["result_sha"]}},
+                    )
+                    original_git = handoff._git
+
+                    def fail_owner_removal(cwd, *arguments):
+                        if arguments == ("worktree", "remove", str(owner)):
+                            raise ValueError("simulated owner removal failure")
+                        return original_git(cwd, *arguments)
+
+                    with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                        if fail_removal:
+                            with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                                with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                                    handoff.release_logical_worktree(
+                                        f.state, f.assignment["id"], f.repository, validation,
+                                    )
+                            self.assertTrue(owner.exists())
+                            self.assertFalse(validation.exists())
+                            self.assertIsNone(f.entry["worktree_release"])
+                        release = handoff.release_logical_worktree(
+                            f.state, f.assignment["id"], f.repository, validation,
+                        )
+                        verdict = handoff.validate_handoff(f.state, result, worktree=validation)
+
+                    self.assertEqual(release["worktree"], str(owner))
+                    self.assertEqual(release["validation_worktree"], str(validation))
+                    self.assertFalse(owner.exists())
+                    self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_newline_worktree_submodule_observation_rejects_initialized_gitlink(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        nested = f.home / "nested-source"
+        nested.mkdir()
+        git(nested, "init", "-b", "master")
+        git(nested, "config", "user.name", "Handoff Test")
+        git(nested, "config", "user.email", "handoff@example.invalid")
+        (nested / "data").write_text("submodule\n")
+        git(nested, "add", "data")
+        git(nested, "commit", "-m", "nested")
+        git(f.worktree, "-c", "protocol.file.allow=always", "submodule", "add",
+            str(nested), "nested")
+        git(f.worktree, "commit", "-am", "add nested")
+        f.parent = git(f.worktree, "rev-parse", "HEAD")
+        owner = f.home / "owner\n"
+        git(f.repository, "worktree", "add", "-b", "agent/newline", str(owner), f.parent)
+        f.worktree = owner
+        f.assignment.update(allowed_worktree=str(owner), assigned_parent_sha=f.parent,
+                            expected_branch="agent/newline")
+        with mock.patch.object(handoff, "preflight_issue_pr"):
+            result = complete_logical_task(f)
+        status = handoff.submodule_status(owner)
+        self.assertEqual(len(status), 1)
+        self.assertTrue(status[0].startswith("-"))
+        validation = f.home / "validation\n"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )
+        original_git = handoff._git
+
+        def missing_helper(cwd, *arguments):
+            if arguments == ("submodule--helper", "status", "--recursive"):
+                raise ValueError("Git helper unavailable")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=missing_helper):
+                with self.assertRaisesRegex(ValueError, "Git helper unavailable"):
+                    handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+        self.assertTrue(owner.exists())
+        self.assertFalse(validation.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+        handoff._git(owner, "-c", "protocol.file.allow=always",
+                     "submodule--helper", "update", "--init", "--recursive")
+        status = handoff.submodule_status(owner)
+        self.assertEqual(len(status), 1)
+        self.assertFalse(status[0].startswith("-"))
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "initialized or conflicted submodule"):
+                handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+        self.assertTrue(owner.exists())
+        self.assertFalse(validation.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
     def test_logical_release_rejects_incomplete_worktree_inventory(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
