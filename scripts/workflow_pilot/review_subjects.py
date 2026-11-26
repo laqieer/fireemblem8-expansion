@@ -76,6 +76,7 @@ PROJECT_DECLARATION = "project_selection.mk"
 BUILD_WORKFLOW = ".github/workflows/build.yml"
 BUILD_TOPOLOGY = "tests/workflows/test_build_ci_topology.py"
 BUILD_VERIFY = "scripts/upstream_port/verify.py"
+BUILD_UPSTREAM_TEST = "tests/upstream_port/test_verify.py"
 BUILD_ARCHIVAL_HELPER = "scripts/ci/install_archival_compilers.sh"
 PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
 PROJECT_REGISTRY = "scripts/generated_data/registry.py"
@@ -475,7 +476,8 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
         workers, jobs = build_source_model(
             tree.read(BUILD_WORKFLOW).decode(), tree.read(BUILD_TOPOLOGY),
             tree.read(BUILD_VERIFY))
-        closure = set(local_python_inputs(head, (BUILD_TOPOLOGY, BUILD_VERIFY)))
+        closure = set(local_python_inputs(
+            head, (BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_UPSTREAM_TEST)))
         closure.update({
             BUILD_WORKFLOW, BUILD_ARCHIVAL_HELPER, "tests/workflows/__init__.py",
         })
@@ -520,6 +522,17 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                     representation, "source parser accepts equivalent reordered workflow",
                     "build-topology:" + name + ":" + job,
                     {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+        for name, test_path, test_class, test_method in (
+            ("topology-order", BUILD_TOPOLOGY, "ConsolidatedBuildTopologyTests",
+             "test_worker_blocks_can_precede_other_job_fields"),
+            ("upstream-order", BUILD_UPSTREAM_TEST, "VerifyCliCwdTests",
+             "test_worker_mapping_order_preserves_target_gate_equivalence"),
+        ):
+            add("wire", "validators", "source-test-" + name, BUILD_WORKFLOW,
+                f"{test_path}:{test_class}.{test_method}", json.dumps(sorted(workers)),
+                "actual source-revision regression test covers worker field permutations",
+                "build-topology:source-test:" + name,
+                {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_UPSTREAM_TEST})
         add("wire", "stale-bindings", "width-script", BUILD_WORKFLOW,
             BUILD_VERIFY + ":run_gates", "target literal width-gate script",
             "target command after shallow blank cannot be ignored",
@@ -2396,6 +2409,7 @@ def _session_probe(probe: str) -> dict:
 def _build_topology(probe):
     from scripts.upstream_port import verify
     from tests.workflows import test_build_ci_topology as topology
+    from tests.upstream_port import test_verify as upstream_tests
 
     workers, model = build_source_model(
         Path(BUILD_WORKFLOW).read_text(), Path(BUILD_TOPOLOGY).read_bytes(),
@@ -2408,8 +2422,52 @@ def _build_topology(probe):
         (role in {"boundary", "target-boundary", "literal"} and name in model)
         or (role in {"producer", "consumer", "topology-order", "upstream-order"}
             and name in workers)
+        or (role == "source-test" and name in {"topology-order", "upstream-order"})
         or (role == "stale" and name == "width-script"),
         "unregistered Build topology member")
+    if role == "source-test":
+        if name == "topology-order":
+            test_class = topology.ConsolidatedBuildTopologyTests
+            test_name = "test_worker_blocks_can_precede_other_job_fields"
+            module = topology
+            attribute = "WORKFLOW"
+        else:
+            test_class = upstream_tests.VerifyCliCwdTests
+            test_name = "test_worker_mapping_order_preserves_target_gate_equivalence"
+            module = upstream_tests
+            attribute = "BUILD_WORKFLOW_PATH"
+        original = Path(BUILD_WORKFLOW).read_text()
+        job = topology._job_blocks(original)["host-tests"]
+        matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
+        blocks = [
+            (match.group(1), job[
+                match.start():matches[index + 1].start()
+                if index + 1 < len(matches) else len(job)
+            ])
+            for index, match in enumerate(matches)
+        ]
+        steps = [block for field, block in blocks if field == "steps"]
+        review.require(len(steps) == 1, "host-tests must contain one direct steps field")
+        reordered = job[:matches[0].start()] + "".join(
+            steps + [block for field, block in blocks if field != "steps"])
+        changed = original.replace(job, reordered, 1)
+        review.require(changed != original, "worker order control did not change the workflow")
+        with tempfile.TemporaryDirectory(prefix="build-worker-order-") as directory:
+            path = Path(directory) / "build.yml"
+            path.write_text(changed)
+            workflow = path if module is topology else str(path)
+            with mock.patch.object(module, attribute, workflow):
+                result = unittest.TextTestRunner(stream=io.StringIO()).run(
+                    unittest.TestSuite([test_class(test_name)]))
+        if result.errors:
+            return {"kind": "host", "verdict": "unavailable", "checks": 0,
+                    "detail": (result.errors[0][1] or "source test errored")[-review.MAX_DETAIL:]}
+        if result.failures:
+            return {"kind": "host", "verdict": "contract-violation", "checks": 1,
+                    "detail": (result.failures[0][1] or "source test failed")[-review.MAX_DETAIL:]}
+        review.require(result.testsRun == 1, "source test did not run exactly once")
+        return {"kind": "host", "checks": 1,
+                "detail": "actual source-revision test passed on steps-first worker mapping"}
     text = Path(BUILD_WORKFLOW).read_text()
     jobs = build_job_blocks(text)
     checks = 0

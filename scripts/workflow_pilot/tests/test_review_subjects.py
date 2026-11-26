@@ -67,10 +67,11 @@ class BuildTopologyFamilyTests(SubjectTestCase):
         subjects = cls.tools.subjects
         source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
         paths = set(subjects.local_python_inputs(
-            source, (subjects.BUILD_TOPOLOGY, subjects.BUILD_VERIFY)))
+            source, (subjects.BUILD_TOPOLOGY, subjects.BUILD_VERIFY,
+                     subjects.BUILD_UPSTREAM_TEST)))
         paths.update({
             subjects.BUILD_WORKFLOW, subjects.BUILD_ARCHIVAL_HELPER,
-            "tests/workflows/__init__.py",
+            "tests/workflows/__init__.py", "tests/upstream_port/__init__.py",
         })
         for name in paths:
             target = cls.repo.root / name
@@ -158,9 +159,7 @@ class BuildTopologyFamilyTests(SubjectTestCase):
         self.assertEqual(len(by_name), len(members))
         self.assertEqual(
             {name for name, item in by_name.items() if item.verdict == "unavailable"},
-            set(),
-            [(item.obligation.member, item.verdict, item.checks, item.detail)
-             for item in prior if item.verdict == "unavailable"],
+            {"validators:source-test-topology-order", "validators:source-test-upstream-order"},
         )
         self.assertTrue(
             all(by_name[name].verdict == "contract-violation" and by_name[name].checks > 0
@@ -169,6 +168,54 @@ class BuildTopologyFamilyTests(SubjectTestCase):
              for name in names],
         )
         self.assert_satisfied(self.run_members(members, after))
+
+    def test_worker_order_source_tests_fail_at_historical_origin_and_pass_on_candidate(self):
+        revision = "4f88c0e1a0f5569d4dd0cf37b6cd01083760d081"
+        origin = GitTree(ROOT, revision)
+        roots = (
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+            self.tools.subjects.BUILD_UPSTREAM_TEST,
+        )
+        paths = set(self.tools.subjects.local_python_inputs(origin, roots))
+        paths.update({
+            self.tools.subjects.BUILD_WORKFLOW,
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+            self.tools.subjects.BUILD_UPSTREAM_TEST,
+            self.tools.subjects.BUILD_ARCHIVAL_HELPER,
+            "tests/workflows/__init__.py",
+        })
+        historical = {path: origin.read(path) for path in paths}
+        candidate = {path: (ROOT / path).read_bytes() for path in paths}
+        before = self.repo.commit(historical)
+        after = self.repo.commit(candidate, parent=before)
+        members = self.tools.members(self.build_scope(after), (before,))
+        names = {
+            "validators:source-test-topology-order",
+            "validators:source-test-upstream-order",
+        }
+        by_name = {item.member: item for item in members}
+        self.assertTrue(names <= set(by_name))
+        self.assertTrue(all(path in by_name[next(iter(names))].source_inputs
+                            for path in (self.tools.subjects.BUILD_TOPOLOGY,
+                                         self.tools.subjects.BUILD_UPSTREAM_TEST)))
+
+        prior = {item.obligation.member: item
+                 for item in self.selected_observations(members, before, *names)}
+        self.assertEqual(set(prior), names)
+        self.assertTrue(all(item.verdict == "contract-violation" and item.checks > 0
+                            for item in prior.values()),
+                        [(name, item.verdict, item.checks, item.detail)
+                         for name, item in prior.items()])
+
+        current = {item.obligation.member: item
+                   for item in self.selected_observations(members, after, *names)}
+        self.assertEqual(set(current), names)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
+                            for item in current.values()),
+                        [(name, item.verdict, item.checks, item.detail)
+                         for name, item in current.items()])
 
     def test_target_consumers_detect_original_order_sensitive_predicate(self):
         verifier = self.tools.subjects.BUILD_VERIFY
