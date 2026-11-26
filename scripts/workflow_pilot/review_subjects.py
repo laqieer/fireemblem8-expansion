@@ -2438,19 +2438,7 @@ def _build_topology(probe):
             attribute = "BUILD_WORKFLOW_PATH"
         original = Path(BUILD_WORKFLOW).read_text()
         job = topology._job_blocks(original)["host-tests"]
-        matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
-        blocks = [
-            (match.group(1), job[
-                match.start():matches[index + 1].start()
-                if index + 1 < len(matches) else len(job)
-            ])
-            for index, match in enumerate(matches)
-        ]
-        steps = [block for field, block in blocks if field == "steps"]
-        review.require(len(steps) == 1, "host-tests must contain one direct steps field")
-        reordered = job[:matches[0].start()] + "".join(
-            steps + [block for field, block in blocks if field != "steps"])
-        changed = original.replace(job, reordered, 1)
+        changed = original.replace(job, build_reorder_field(job, "steps"), 1)
         review.require(changed != original, "worker order control did not change the workflow")
         with tempfile.TemporaryDirectory(prefix="build-worker-order-") as directory:
             path = Path(directory) / "build.yml"

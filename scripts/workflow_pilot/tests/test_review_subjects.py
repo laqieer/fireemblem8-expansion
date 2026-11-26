@@ -217,6 +217,32 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                         [(name, item.verdict, item.checks, item.detail)
                          for name, item in current.items()])
 
+        workflow_path = self.tools.subjects.BUILD_WORKFLOW
+        workflow = candidate[workflow_path].decode()
+        job = self.tools.subjects.build_job_blocks(workflow)["host-tests"]
+        fields = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
+        steps_index = next(index for index, match in enumerate(fields)
+                           if match.group(1) == "steps")
+        steps_first_job = (job if steps_index == 0
+                           else self.tools.subjects.build_reorder_field(job, "steps"))
+        first_fields = list(re.finditer(
+            r"^    ([A-Za-z_][A-Za-z0-9_-]*):", steps_first_job, re.MULTILINE))
+        self.assertEqual(first_fields[0].group(1), "steps")
+        steps_first_candidate = dict(candidate)
+        steps_first_candidate[workflow_path] = workflow.replace(
+            job, steps_first_job, 1).encode()
+        steps_first = self.repo.commit(steps_first_candidate, parent=before)
+        steps_first_members = self.tools.members(self.build_scope(steps_first), (before,))
+        observations = {
+            item.obligation.member: item
+            for item in self.selected_observations(steps_first_members, steps_first, *names)
+        }
+        self.assertEqual(set(observations), names)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
+                            for item in observations.values()),
+                        [(name, item.verdict, item.checks, item.detail)
+                         for name, item in observations.items()])
+
     def test_target_consumers_detect_original_order_sensitive_predicate(self):
         verifier = self.tools.subjects.BUILD_VERIFY
         original = subprocess.run(
