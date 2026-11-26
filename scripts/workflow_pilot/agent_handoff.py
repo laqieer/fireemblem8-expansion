@@ -181,8 +181,10 @@ def validate_assignment(value):
         integer(limit)
     integer(value["max_lifetime_seconds"], minimum=1, maximum=86400)
     integer(value["max_peak_rss_bytes"], minimum=1)
-    items(value["prohibited_remote_actions"], minimum=8, maximum=8, unique=True)
-    require(set(value["prohibited_remote_actions"]) == set(PROHIBITED_REMOTE_ACTIONS),
+    actions = items(value["prohibited_remote_actions"], minimum=8, maximum=8, unique=True)
+    for action in actions:
+        text(action, maximum=128, pattern=ID_RE)
+    require(set(actions) == set(PROHIBITED_REMOTE_ACTIONS),
             "incomplete prohibited remote actions")
     text(value["predecessor_id"], nullable=True, maximum=128, pattern=ID_RE)
     choice(value["kind"], {"initial", "review", "replacement"})
@@ -400,7 +402,6 @@ def validate_state(value):
         if a["dispatch_id"] is not None:
             dispatches.add(a["dispatch_id"])
         timestamp(entry["assigned_at"])
-        owner_lifetime_ms(entry, at)
         integer(entry["coordination_turns"])
         fields(entry["git_identity"], "worktree git_dir common_dir device inode")
         for name in ("worktree", "git_dir", "common_dir"):
@@ -421,9 +422,14 @@ def validate_state(value):
         require(tuple(event_names) == STATES[:len(event_names)], "incomplete lifecycle transition")
         require(len(set(event_ids)) == len(event_ids), "duplicate lifecycle source event")
         if native:
-            binding = fields(entry["native_binding"], "started_id interaction_id parent_task_id last_event_at")
+            binding = fields(entry["native_binding"],
+                             "started_id interaction_id parent_task_id owner_id session_id last_event_at")
             for name in ("started_id", "interaction_id", "parent_task_id"):
                 text(binding[name], nullable=True, maximum=128, pattern=ID_RE)
+            for name in ("owner_id", "session_id"):
+                text(binding[name], nullable=True, maximum=128, pattern=ID_RE)
+            require(binding["owner_id"] == a["owner_id"] and binding["session_id"] == a["session_id"],
+                    "native owner/session identity binding mismatch")
             require((a["dispatch_id"] is not None) == ("assignment_sent" in event_names),
                     "native dispatch observation mismatch")
             require((a["dispatch_id"] is not None) == (binding["last_event_at"] is not None),
@@ -463,6 +469,9 @@ def validate_state(value):
         if entry["validation"] is not None:
             validate_verdict(entry["validation"])
             require(entry["validation"]["assignment_id"] == a["id"], "verdict assignment mismatch")
+        if entry["result"] is not None:
+            validate_result(entry["result"])
+            require(entry["result"]["assignment_id"] == a["id"], "delivered assignment mismatch")
         terminal_task = entry.get("terminal_task")
         if terminal_task is not None:
             validate_terminal_task(terminal_task, a, entry)
@@ -479,14 +488,12 @@ def validate_state(value):
                 require(timestamp(entry["closed_at"]) >= terminal_at,
                         "owner closed before logical task terminal")
             native_sources.add(terminal_task["event_id"])
+        owner_lifetime_ms(entry, at)
         checks = set()
         for check in items(entry["checks"], maximum=32):
             validate_check(check)
             require(check["id"] not in checks, "duplicate check")
             checks.add(check["id"])
-        if entry["result"] is not None:
-            validate_result(entry["result"])
-            require(entry["result"]["assignment_id"] == a["id"], "delivered assignment mismatch")
         if entry["interruption"] is not None:
             interruption = fields(entry["interruption"], "at reason oom_evidence worktree head "
                                   "dirty_paths lock_reason retained_data_sha256")
@@ -894,7 +901,8 @@ def assign(state, assignment):
         entry["cursors"] = [observations.cli_reservation_cursor(native["events_path"],
                                                                native["root_session_id"])]
         entry["native_binding"] = {
-            "started_id": None, "interaction_id": None, "parent_task_id": None, "last_event_at": None,
+            "started_id": None, "interaction_id": None, "parent_task_id": None,
+            "owner_id": None, "session_id": None, "last_event_at": None,
         }
     candidate = {**state, "assignments": [*state["assignments"], entry]}
     validate_state(candidate)
@@ -985,6 +993,7 @@ def observe_native_task(entry, log_path):
             a["owner_id"] = event["agentId"]
             binding["started_id"] = event["id"]
             binding["interaction_id"] = data["interactionId"]
+            binding["owner_id"] = event["agentId"]
             continue
         if (kind == "tool.execution_complete" and a["dispatch_id"] is not None
                 and data.get("toolCallId") == a["dispatch_id"]):
@@ -1048,6 +1057,7 @@ def observe_native_task(entry, log_path):
             if a["session_id"] is None:
                 _event(entry, "progressing", event["id"], event["timestamp"])
                 a["session_id"] = owner_session
+                binding["session_id"] = owner_session
             else:
                 require(a["session_id"] == owner_session, "native owner session changed")
         elif kind == "assistant.message" and a["session_id"] is not None:

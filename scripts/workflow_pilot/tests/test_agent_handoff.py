@@ -1125,6 +1125,20 @@ class HandoffSchemaTests(unittest.TestCase):
                 changed[location][key]["unknown"] = 0
             self.reject_both(changed, handoff.validate_assignment)
 
+    def test_malformed_prohibited_action_members_are_rejected_without_raw_type_errors(self):
+        for invalid in ({}, []):
+            with self.subTest(invalid=invalid):
+                assignment = copy.deepcopy(self.fixture.assignment)
+                assignment["prohibited_remote_actions"][0] = invalid
+                self.reject_both(assignment, handoff.validate_assignment)
+
+    def test_malformed_terminal_state_is_rejected_before_lifetime_read(self):
+        for invalid in ({}, [], "invalid", 0, False):
+            with self.subTest(invalid=invalid):
+                state = copy.deepcopy(self.fixture.state)
+                state["assignments"][0]["terminal_task"] = invalid
+                self.reject_both(state, handoff.validate_state)
+
     def test_protocol_input_overlap_is_an_explicit_runtime_cross_record_constraint(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)

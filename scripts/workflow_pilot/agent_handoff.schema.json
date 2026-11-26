@@ -284,11 +284,13 @@
     },
     "nativeBinding": {
       "type": "object", "additionalProperties": false,
-      "required": ["started_id", "interaction_id", "parent_task_id", "last_event_at"],
+      "required": ["started_id", "interaction_id", "parent_task_id", "owner_id", "session_id", "last_event_at"],
       "properties": {
         "started_id": {"$ref": "#/$defs/nullableId"},
         "interaction_id": {"$ref": "#/$defs/nullableId"},
         "parent_task_id": {"$ref": "#/$defs/nullableId"},
+        "owner_id": {"$ref": "#/$defs/nullableId"},
+        "session_id": {"$ref": "#/$defs/nullableId"},
         "last_event_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]}
       }
     },
