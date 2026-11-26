@@ -519,6 +519,7 @@ def validate_state(value):
         fields(watcher, "id coordinator_id run_id attempt head_sha process started_at ended_at "
                "exit_code run query_error")
         text(watcher["id"], maximum=128, pattern=ID_RE)
+        text(watcher["coordinator_id"], maximum=128, pattern=ID_RE)
         require(watcher["id"] not in watcher_ids, "duplicate watcher ID")
         watcher_ids.add(watcher["id"])
         for name in ("run_id", "attempt"):

@@ -1565,6 +1565,13 @@ class HandoffSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "duplicate coordinator"):
             handoff.validate_state(wrong_coordinator)
 
+        for invalid_id in (None, {}, "invalid coordinator"):
+            with self.subTest(invalid_id=invalid_id):
+                invalid_retained = copy.deepcopy(state)
+                invalid_retained["watchers"][0]["coordinator_id"] = invalid_id
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(invalid_retained)
+
         overflow = copy.deepcopy(state)
         overflow["watchers"] = [None] * 32769
         state_schema = Draft202012Validator({"$defs": self.schema["$defs"], "$ref": "#/$defs/state"})
