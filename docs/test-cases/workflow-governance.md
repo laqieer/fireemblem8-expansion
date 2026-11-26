@@ -6537,8 +6537,9 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
-  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367).
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178),
+  [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367)
+  and [issue #486](https://github.com/laqieer/fireemblem8-expansion/issues/486).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6563,6 +6564,14 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    multiple task commits pass. Merge an authorized exact upstream input with
    no task trailers, plus a task commit with trailers: imported paths/history
    pass without consuming task scope/line budget. An unrecorded merge rejects.
+   For #486, run the shared-root native task cases in
+   `test_coordinator_observations.py`: reserve before dispatch, then observe
+   different dispatch and parent-task IDs, the real owner, exact prompt and
+   owner-native session. Two owners sharing a root and interaction remain
+   distinct. Spliced, missing, stale, reversed or reused observations must not
+   advance; unknown owner exit/RSS still prevents a ready handoff. The
+   separate-session control rejects the different-ID receipt, as the pre-fix
+   reader did. The isolated CLI case also checks atomic rejection.
 3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
    missing trailers/evidence/checks, out-of-scope path, hidden index flags,
    whitespace/checker replacement, and incremental line-budget controls.

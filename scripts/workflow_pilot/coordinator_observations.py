@@ -337,6 +337,34 @@ def observe_owned_exit(process: subprocess.Popen, identity):
             "rss_complete": True}
 
 
+def cli_reservation_cursor(path, root_session):
+    """Start a new reservation after existing complete records in its native root log."""
+    path = Path(path).absolute()
+    with raw_git._directory_fd(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        require(stat.S_ISREG(info.st_mode), "CLI log must be a regular file")
+        first = source.readline(MAX_JSON_BYTES + 1)
+        require(first.endswith(b"\n") and len(first) <= MAX_JSON_BYTES,
+                "CLI root session record is incomplete")
+        event = _decode_bytes(first, MAX_JSON_BYTES)
+        require(isinstance(event, dict) and event.get("type") == "session.start"
+                and isinstance(event.get("id"), str) and event["id"]
+                and isinstance(event.get("data"), dict)
+                and event["data"].get("sessionId") == root_session,
+                "CLI root session identity mismatch")
+        require(timestamp(event.get("timestamp")) <= timestamp(utc_now()), "future CLI event")
+        start = max(0, info.st_size - MAX_JSON_BYTES - 1)
+        source.seek(start)
+        tail = source.read(info.st_size - start)
+        require(len(tail) == info.st_size - start, "CLI log changed during reservation")
+        newline = tail.rfind(b"\n")
+        require(newline >= 0, "CLI partial event exceeds 1 MiB")
+        return {"path": str(path), "device": info.st_dev, "inode": info.st_ino,
+                "offset": start + newline + 1, "session_id": root_session}
+
+
 def cli_event_batch(path, cursor=None):
     """Read bounded (session context, native event) pairs from the previous cursor."""
     path = Path(path).absolute()

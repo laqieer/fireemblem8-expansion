@@ -24,6 +24,7 @@
     "exit": {"type": ["integer", "null"], "minimum": -128, "maximum": 255},
     "nullableInteger": {"anyOf": [{"$ref": "#/$defs/integer"}, {"type": "null"}]},
     "nullablePositive": {"anyOf": [{"$ref": "#/$defs/positive"}, {"type": "null"}]},
+    "nullableId": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
     "nullableText": {"anyOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]},
     "repository": {
       "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "maxLength": 256,
@@ -83,6 +84,15 @@
       "enum": ["comment", "create_remote_ref", "dispatch_ci", "merge", "open_pull_request",
                "push", "request_review", "update_pull_request"]
     },
+    "nativeTask": {
+      "type": "object", "additionalProperties": false,
+      "required": ["root_session_id", "events_path", "prompt"],
+      "properties": {
+        "root_session_id": {"$ref": "#/$defs/id"},
+        "events_path": {"$ref": "#/$defs/absolute"},
+        "prompt": {"$ref": "#/$defs/text"}
+      }
+    },
     "assignment": {
       "type": "object", "additionalProperties": false,
       "required": ["schema_version", "repository", "id", "issue", "pull_request", "owner_id", "session_id",
@@ -95,8 +105,9 @@
         "repository": {"$ref": "#/$defs/repository"},
         "id": {"$ref": "#/$defs/id"}, "issue": {"$ref": "#/$defs/positive"},
         "pull_request": {"$ref": "#/$defs/nullablePositive"},
-        "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
-        "dispatch_id": {"$ref": "#/$defs/id"}, "assigned_parent_sha": {"$ref": "#/$defs/sha"},
+        "owner_id": {"$ref": "#/$defs/nullableId"}, "session_id": {"$ref": "#/$defs/nullableId"},
+        "dispatch_id": {"$ref": "#/$defs/nullableId"}, "native": {"$ref": "#/$defs/nativeTask"},
+        "assigned_parent_sha": {"$ref": "#/$defs/sha"},
         "expected_branch": {"$ref": "#/$defs/text", "maxLength": 256},
         "allowed_worktree": {"$ref": "#/$defs/absolute"},
         "allowed_scope": {
@@ -128,7 +139,24 @@
       },
       "if": {"properties": {"kind": {"const": "initial"}}},
       "then": {"properties": {"predecessor_id": {"type": "null"}}},
-      "else": {"properties": {"predecessor_id": {"$ref": "#/$defs/id"}}}
+      "else": {"properties": {"predecessor_id": {"$ref": "#/$defs/id"}}},
+      "allOf": [
+        {
+          "if": {"not": {"required": ["native"]}},
+          "then": {"properties": {
+            "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
+            "dispatch_id": {"$ref": "#/$defs/id"}
+          }}
+        },
+        {
+          "if": {"properties": {"dispatch_id": {"type": "null"}}},
+          "then": {"properties": {"owner_id": {"type": "null"}, "session_id": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"owner_id": {"type": "null"}}},
+          "then": {"properties": {"session_id": {"type": "null"}}}
+        }
+      ]
     },
     "result": {
       "type": "object", "additionalProperties": false,
@@ -253,6 +281,16 @@
         "session_id": {"$ref": "#/$defs/nullableText", "maxLength": 128}
       }
     },
+    "nativeBinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["started_id", "interaction_id", "parent_task_id", "last_event_at"],
+      "properties": {
+        "started_id": {"$ref": "#/$defs/nullableId"},
+        "interaction_id": {"$ref": "#/$defs/nullableId"},
+        "parent_task_id": {"$ref": "#/$defs/nullableId"},
+        "last_event_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]}
+      }
+    },
     "action": {
       "type": "object", "additionalProperties": false, "required": ["id", "action", "at"],
       "properties": {"id": {"$ref": "#/$defs/id"}, "action": {"$ref": "#/$defs/remoteAction"},
@@ -292,12 +330,20 @@
         "validation": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
         "interruption": {"anyOf": [{"$ref": "#/$defs/interruption"}, {"type": "null"}]},
         "cursors": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/cursor"}},
+        "native_binding": {"$ref": "#/$defs/nativeBinding"},
         "remote_actions": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/action"}},
         "closed_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
         "coordination_turns": {"$ref": "#/$defs/integer"}
       },
       "if": {"properties": {"interruption": {"not": {"type": "null"}}}},
-      "then": {"properties": {"closed_at": {"$ref": "#/$defs/time"}}}
+      "then": {"properties": {"closed_at": {"$ref": "#/$defs/time"}}},
+      "allOf": [
+        {
+          "if": {"properties": {"assignment": {"required": ["native"]}}},
+          "then": {"required": ["native_binding"]},
+          "else": {"not": {"required": ["native_binding"]}}
+        }
+      ]
     },
     "run": {
       "type": "object", "additionalProperties": false,

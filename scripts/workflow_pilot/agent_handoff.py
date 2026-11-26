@@ -133,15 +133,29 @@ def validate_required_checks(value):
 
 
 def validate_assignment(value):
+    native = isinstance(value, dict) and "native" in value
     fields(value, "schema_version repository id issue pull_request owner_id session_id dispatch_id "
            "assigned_parent_sha expected_branch allowed_worktree allowed_scope upstream_inputs "
            "finding_ids acceptance_criteria required_checks budgets max_lifetime_seconds "
-           "max_peak_rss_bytes prohibited_remote_actions predecessor_id kind")
+           "max_peak_rss_bytes prohibited_remote_actions predecessor_id kind"
+           + (" native" if native else ""))
     require(value["schema_version"] == SCHEMA_VERSION and type(value["schema_version"]) is int,
             "handoff schema_version must be 3")
     text(value["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
-    for name in ("id", "owner_id", "session_id", "dispatch_id"):
-        text(value[name], maximum=128, pattern=ID_RE)
+    text(value["id"], maximum=128, pattern=ID_RE)
+    for name in ("owner_id", "session_id", "dispatch_id"):
+        text(value[name], nullable=native, maximum=128, pattern=ID_RE)
+    if native:
+        task = fields(value["native"], "root_session_id events_path prompt")
+        text(task["root_session_id"], maximum=128, pattern=ID_RE)
+        absolute_path(task["events_path"])
+        text(task["prompt"])
+        require(task["prompt"].count(f"[handoff:{value['id']}]") == 1,
+                "native prompt must contain the assignment marker exactly once")
+        require(value["dispatch_id"] is not None or value["owner_id"] is None,
+                "native owner cannot precede dispatch")
+        require(value["owner_id"] is not None or value["session_id"] is None,
+                "native session cannot precede owner")
     integer(value["issue"], minimum=1)
     integer(value["pull_request"], minimum=1, nullable=True)
     sha(value["assigned_parent_sha"])
@@ -328,19 +342,28 @@ def validate_state(value):
     at = now()
     require(timestamp(value["clock"]["at"]) <= timestamp(at), "future clock observation")
     names, owners, sessions, dispatches, owner_processes = set(), set(), set(), set(), set()
+    native_tasks, native_sources, legacy_sources = set(), set(), set()
     active = []
     for entry in items(value["assignments"]):
+        native = isinstance(entry, dict) and "native_binding" in entry
         fields(entry, "assignment assigned_at git_identity events process checks result validation "
-               "interruption cursors remote_actions closed_at coordination_turns")
+               "interruption cursors remote_actions closed_at coordination_turns"
+               + (" native_binding" if native else ""))
         a = validate_assignment(entry["assignment"])
+        require(native == ("native" in a), "native assignment/binding mismatch")
         require(a["repository"] == value["repository"], "assignment repository mismatch")
-        require(a["id"] not in names and a["owner_id"] not in owners
-                and a["session_id"] not in sessions and a["dispatch_id"] not in dispatches,
+        require(a["id"] not in names
+                and (a["owner_id"] is None or a["owner_id"] not in owners)
+                and (a["session_id"] is None or a["session_id"] not in sessions)
+                and (a["dispatch_id"] is None or a["dispatch_id"] not in dispatches),
                 "duplicate/reused owner, session, assignment or dispatch")
         names.add(a["id"])
-        owners.add(a["owner_id"])
-        sessions.add(a["session_id"])
-        dispatches.add(a["dispatch_id"])
+        if a["owner_id"] is not None:
+            owners.add(a["owner_id"])
+        if a["session_id"] is not None:
+            sessions.add(a["session_id"])
+        if a["dispatch_id"] is not None:
+            dispatches.add(a["dispatch_id"])
         timestamp(entry["assigned_at"])
         owner_lifetime_ms(entry, at)
         integer(entry["coordination_turns"])
@@ -362,6 +385,40 @@ def validate_state(value):
             last = current
         require(tuple(event_names) == STATES[:len(event_names)], "incomplete lifecycle transition")
         require(len(set(event_ids)) == len(event_ids), "duplicate lifecycle source event")
+        if native:
+            binding = fields(entry["native_binding"], "started_id interaction_id parent_task_id last_event_at")
+            for name in ("started_id", "interaction_id", "parent_task_id"):
+                text(binding[name], nullable=True, maximum=128, pattern=ID_RE)
+            require((a["dispatch_id"] is not None) == ("assignment_sent" in event_names),
+                    "native dispatch observation mismatch")
+            require((a["dispatch_id"] is not None) == (binding["last_event_at"] is not None),
+                    "native event clock mismatch")
+            if binding["last_event_at"] is not None:
+                require(timestamp(entry["assigned_at"]) <= timestamp(binding["last_event_at"]) <= timestamp(at),
+                        "native event chronology invalid")
+            require((a["owner_id"] is not None) == (binding["started_id"] is not None)
+                    == (binding["interaction_id"] is not None), "native owner observation mismatch")
+            require((binding["parent_task_id"] is not None) == ("assignment_received" in event_names),
+                    "native receipt observation mismatch")
+            require(binding["parent_task_id"] is None or a["owner_id"] is not None,
+                    "native receipt lacks its owner")
+            require((a["session_id"] is not None) == ("progressing" in event_names),
+                    "native session observation mismatch")
+            if binding["parent_task_id"] is not None:
+                require(binding["parent_task_id"] not in native_tasks, "native receipt task reused")
+                native_tasks.add(binding["parent_task_id"])
+            source_ids = set(event_ids)
+            if binding["started_id"] is not None:
+                require(binding["started_id"] not in source_ids, "native start source reused")
+                source_ids.add(binding["started_id"])
+            require(source_ids.isdisjoint(native_sources | legacy_sources), "native lifecycle source reused")
+            native_sources.update(source_ids)
+        else:
+            require(set(event_ids).isdisjoint(native_sources), "native lifecycle source reused")
+            legacy_sources.update(event_ids)
+            if "assignment_received" in event_names:
+                require(a["dispatch_id"] not in native_tasks, "native receipt task reused")
+                native_tasks.add(a["dispatch_id"])
         if entry["process"] is not None:
             validate_process(entry["process"])
             require(entry["process"]["runtime_handle"] == a["owner_id"], "owner process handle mismatch")
@@ -403,6 +460,11 @@ def validate_state(value):
             for name in ("device", "inode", "offset"):
                 integer(cursor[name])
             text(cursor["session_id"], nullable=True, maximum=128)
+        if native:
+            require(len(entry["cursors"]) == 1
+                    and entry["cursors"][0]["path"] == a["native"]["events_path"]
+                    and entry["cursors"][0]["session_id"] == a["native"]["root_session_id"],
+                    "native root log cursor mismatch")
         for action in items(entry["remote_actions"], unique=True):
             fields(action, "id action at")
             text(action["id"], maximum=128, pattern=ID_RE)
@@ -748,6 +810,10 @@ def assign(state, assignment):
     validate_state(state)
     validate_assignment(assignment)
     require(not availability_errors(state, now()), "coordinator unavailable before assignment")
+    native = assignment.get("native")
+    if native is not None:
+        require(all(assignment[name] is None for name in ("owner_id", "session_id", "dispatch_id")),
+                "native assignment must be reserved before dispatch")
     current = observe_git(assignment)
     require(current["head"] == assignment["assigned_parent_sha"], "assigned parent is not current HEAD")
     require(current["branch"] == assignment["expected_branch"], "wrong assignment branch")
@@ -772,6 +838,12 @@ def assign(state, assignment):
              "events": [], "process": None, "checks": [], "result": None, "validation": None,
              "interruption": None, "cursors": [], "remote_actions": [], "closed_at": None,
              "coordination_turns": 0}
+    if native is not None:
+        entry["cursors"] = [observations.cli_reservation_cursor(native["events_path"],
+                                                               native["root_session_id"])]
+        entry["native_binding"] = {
+            "started_id": None, "interaction_id": None, "parent_task_id": None, "last_event_at": None,
+        }
     candidate = {**state, "assignments": [*state["assignments"], entry]}
     validate_state(candidate)
     preflight_issue_pr(
@@ -799,7 +871,104 @@ def _event(entry, state, source_id):
     entry["events"].append({"state": state, "at": now(), "source_id": source_id})
 
 
+def observe_native_task(entry, log_path):
+    a = entry["assignment"]
+    task, binding = a["native"], entry["native_binding"]
+    require(str(Path(log_path).absolute()) == task["events_path"], "wrong native root log")
+    cursor = entry["cursors"][0]
+    events, updated = observations.cli_event_batch(log_path, cursor)
+
+    def advance_time(event):
+        previous = binding["last_event_at"]
+        require(previous is None or timestamp(previous) <= timestamp(event["timestamp"]),
+                "native event chronology reversed")
+        binding["last_event_at"] = event["timestamp"]
+
+    for session_id, event in events:
+        require(timestamp(event["timestamp"]) <= timestamp(now()), "future CLI event")
+        if (timestamp(event["timestamp"]) < timestamp(entry["assigned_at"])
+                or session_id != task["root_session_id"]):
+            continue
+        data, kind = event["data"], event.get("type")
+        if kind == "tool.execution_start" and data.get("toolName") == "task" and event.get("agentId") is None:
+            arguments = data.get("arguments")
+            prompt = arguments.get("prompt") if isinstance(arguments, dict) else None
+            if not isinstance(prompt, str) or f"[handoff:{a['id']}]" not in prompt:
+                continue
+            require(prompt == task["prompt"], "native dispatch prompt mismatch")
+            text(data.get("toolCallId"), maximum=128, pattern=ID_RE)
+            require(a["dispatch_id"] is None, "duplicate native dispatch")
+            advance_time(event)
+            _event(entry, "assignment_sent", event["id"])
+            a["dispatch_id"] = data["toolCallId"]
+            continue
+        if (kind == "subagent.started" and a["dispatch_id"] is not None
+                and data.get("toolCallId") == a["dispatch_id"]):
+            require(a["owner_id"] is None, "duplicate native owner start")
+            text(event.get("agentId"), maximum=128, pattern=ID_RE)
+            text(data.get("interactionId"), maximum=128, pattern=ID_RE)
+            text(event["id"], maximum=128, pattern=ID_RE)
+            advance_time(event)
+            a["owner_id"] = event["agentId"]
+            binding["started_id"] = event["id"]
+            binding["interaction_id"] = data["interactionId"]
+            continue
+        if a["owner_id"] is None or event.get("agentId") != a["owner_id"]:
+            continue
+        if kind == "user.message":
+            if binding["parent_task_id"] is not None:
+                if (data.get("source") == f"agent-{task['root_session_id']}"
+                        and data.get("interactionId") == binding["interaction_id"]):
+                    require(data.get("parentAgentTaskId") == binding["parent_task_id"],
+                            "native receipt task changed")
+                continue
+            parent = data.get("parentAgentTaskId")
+            if (data.get("source") != f"agent-{task['root_session_id']}"
+                    or data.get("interactionId") != binding["interaction_id"]
+                    or data.get("content") != task["prompt"]
+                    or not isinstance(parent, str) or not ID_RE.fullmatch(parent)):
+                continue
+            advance_time(event)
+            _event(entry, "assignment_received", event["id"])
+            binding["parent_task_id"] = parent
+        elif kind == "assistant.turn_start" and binding["parent_task_id"] is not None:
+            if (data.get("parentToolCallId") == a["dispatch_id"]
+                    and data.get("interactionId") == binding["interaction_id"]):
+                advance_time(event)
+                entry["coordination_turns"] += 1
+        elif kind == "tool.execution_start" and binding["parent_task_id"] is not None:
+            owner_session = data.get("ownerNativeSessionId")
+            if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
+                continue
+            require(len(entry["events"]) < 4, "retired owner started more work")
+            advance_time(event)
+            if a["session_id"] is None:
+                _event(entry, "progressing", event["id"])
+                a["session_id"] = owner_session
+            else:
+                require(a["session_id"] == owner_session, "native owner session changed")
+        elif kind == "assistant.message" and a["session_id"] is not None:
+            content = data.get("content")
+            if (data.get("interactionId") != binding["interaction_id"] or not isinstance(content, str)
+                    or not content.startswith('{"handoff_result":')):
+                continue
+            payload = observations.parse_bytes(content.encode())
+            fields(payload, "handoff_result")
+            result = validate_result(payload["handoff_result"])
+            require(entry["result"] is None, "committed owner cannot deliver a second handoff")
+            require(result["assignment_id"] == a["id"], "handoff message names wrong assignment")
+            current = observe_git(a)
+            require(current["head"] == result["result_sha"], "delivered SHA is not Git HEAD")
+            advance_time(event)
+            _event(entry, "committed", "git:" + current["head"])
+            _event(entry, "handed_off", event["id"])
+            entry["result"] = result
+    entry["cursors"][0] = updated
+
+
 def observe_cli(entry, log_path):
+    if "native_binding" in entry:
+        return observe_native_task(entry, log_path)
     a = entry["assignment"]
     cursor = next((item for item in entry["cursors"] if item["path"] == str(Path(log_path).absolute())), None)
     events, updated = observations.cli_event_batch(log_path, cursor)

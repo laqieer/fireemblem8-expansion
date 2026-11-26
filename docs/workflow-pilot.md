@@ -492,10 +492,11 @@ self-review rejects before task launch. Read-only actions, exact task/head/scope
 completion, time/file bounds and overlapping-session checks remain unchanged.
 Do not manufacture another implementation identity to obtain independent review.
 
-The provider's separate dispatch-tool and `parentAgentTaskId` namespaces, shared
-native log session, and unavailable LLM-owner OS exit/RSS remain unresolved for
-genuine delegated callers. This direct route does not manufacture their equality
-or substitute a check process for a delegated owner.
+The native task route below binds the provider's separate dispatch-tool and
+`parentAgentTaskId` namespaces without confusing the shared root log with an
+owner session. Unavailable LLM-owner OS exit/RSS remains unresolved for genuine
+delegated callers. This direct route does not substitute a check process for
+a delegated owner.
 
 ### Pilot measurement and rollback
 
@@ -2639,10 +2640,11 @@ exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
 
-Assignment, owner, session and actual dispatch IDs are each unique across the
-retained state, including closed history. A successor or independent assignment
-needs a fresh dispatch identity; changing other IDs cannot reuse an old task
-correlation.
+Assignment, observed owner, owner session, dispatch and receipt-task IDs are
+each unique across the retained state, including closed history. The native
+task route may reserve an assignment before the runtime supplies those IDs.
+A successor or independent assignment needs a fresh dispatch identity;
+changing other IDs cannot reuse an old task correlation.
 
 Reusable text and path fields accept Unicode scalar values, including
 supplementary characters and valid JSON escapes. Escaped lone UTF-16
@@ -2763,25 +2765,49 @@ before creating a replacement assignment or PR.
 
 `assign` reserves ownership before dispatch; it does not launch agents.
 `observe` reads the existing native JSONL producer incrementally with no-follow
-file identity/cursors. Pass the coordinator dispatch log, then the matching
-owner session log (repeat `observe` as actual runtime notifications arrive).
-Include `[handoff:review-178-1]` in the actual assigned prompt. `dispatch_id`
-correlates the coordinator's task/write-agent/shell tool call and must equal
-the native receipt's `data.parentAgentTaskId`; `session_id` and `owner_id`
-identify the actual assigned session/runtime. A correlation marker alone is
-not receipt evidence. Missing, opaque or wrong task identity stays incomplete.
-Each event uses the session context established before it, starting from the
-previous cursor; a later `session.start` cannot retroactively attach earlier
-receipt, progress or delivery to that session. Incremental and bounded batches
-retain this context without storing another event history. An old session
-start may establish resumed context, but events predating the assignment do
-not acknowledge or count its work. Future-dated events reject.
+file identity/cursors. Include `[handoff:review-178-1]` in the actual assigned
+prompt. For the shared-root `task` producer, set `owner_id`, `session_id` and
+`dispatch_id` to `null` in the pre-dispatch assignment and add this object,
+using the actual root session, root event file and exact prompt:
+
+```json
+{
+  "native": {
+    "root_session_id": "actual-coordinator-session",
+    "events_path": "/absolute/path/to/events.jsonl",
+    "prompt": "[handoff:review-178-1] The complete assigned prompt"
+  }
+}
+```
+
+`assign` checks the root `session.start` and reserves a cursor after existing
+complete records, retaining an incomplete trailing record. It rejects a
+pre-bound native owner, owner session or dispatch. Pass that same root log to
+`observe` as actual events arrive. A matching root task call and exact prompt bind the
+generated dispatch ID; its `subagent.started` binds the actual owner and
+interaction. Only the matching owner's explicit message, root source,
+interaction and exact prompt bind receipt and its separate
+`parentAgentTaskId`. The owner's subsequent tool start binds the distinct
+`ownerNativeSessionId` as `session_id`. That observed owner session, not the
+root log session, is the `Copilot-Session` trailer identity. Two owners may
+share a root log and interaction, but cannot reuse owner, owner session,
+dispatch, receipt-task or lifecycle source identities. Missing, opaque,
+contradictory, duplicate or wrong observations remain incomplete or reject.
+
+Existing separate-session v3 records keep their original dispatch/receipt
+correlation; their session and dispatch IDs must be known at reservation.
+A marker alone is never receipt evidence. Each event uses the session context
+established before it, starting from the previous cursor; a later
+`session.start` cannot retroactively attach earlier receipt, progress or
+delivery. Bounded batches retain this context without another event history.
+Events predating the assignment do not acknowledge or count its work;
+future-dated or reversed native task events reject.
 
 | State | Actual observation |
 | --- | --- |
-| `assignment_sent` | Matching native `tool.execution_start` dispatch |
-| `assignment_received` | Matching session's native `user.message` with the assignment marker and matching `parentAgentTaskId` |
-| `progressing` | A separate post-receipt `tool.execution_start` |
+| `assignment_sent` | Matching native `tool.execution_start` dispatch; shared-root tasks also require the exact reserved prompt |
+| `assignment_received` | Explicit owner `user.message` bound to the dispatch; shared-root tasks use the started owner, root source, interaction, exact prompt and distinct observed `parentAgentTaskId` |
+| `progressing` | A separate post-receipt owner `tool.execution_start`; shared-root tasks also bind `ownerNativeSessionId` |
 | `committed` | Git observes the delivered SHA as real worktree HEAD |
 | `handed_off` | Native `assistant.message` delivers `{"handoff_result": ...}` after the commit observation |
 
