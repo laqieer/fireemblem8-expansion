@@ -493,10 +493,36 @@ self-review rejects before task launch. Read-only actions, exact task/head/scope
 completion, time/file bounds and overlapping-session checks remain unchanged.
 Do not manufacture another implementation identity to obtain independent review.
 
-The provider's separate dispatch-tool and `parentAgentTaskId` namespaces, shared
-native log session, and unavailable LLM-owner OS exit/RSS remain unresolved for
-genuine delegated callers. This direct route does not manufacture their equality
-or substitute a check process for a delegated owner.
+The native task route below binds the provider's separate dispatch-tool and
+`parentAgentTaskId` namespaces without confusing the shared root log with an
+owner session. Process-backed delegated callers still require actual owner
+process exit and complete RSS. A logical task terminal observation records
+completion but is not itself write revocation. For a successful logical task,
+the coordinator's `release-worktree` operation requires the exact published
+branch head, a clean linked owner worktree with no untracked or ignored data,
+and a separate coordinator worktree. An initialized submodule in the assigned
+worktree is rejected before creating the validation worktree; the operation
+never deinitializes submodules or uses force. It creates a fresh detached
+worktree at the exact candidate, removes the assigned worktree using normal
+`git worktree remove` (never force), and verifies the old path is absent and
+unregistered. If removal fails while the assigned worktree remains registered,
+the unchanged validation worktree is removed normally so retry can start clean.
+If Git removes the owner path but leaves its registration, the operation fails
+closed and retains the validation worktree; it never globally prunes Git
+registrations. Errors during candidate setup roll back only the new, reverified
+candidate worktree. The removed owner worktree path remains reserved to that
+assignment: later assignments cannot reuse it or any ancestor/descendant path.
+The fresh validation worktree remains reserved until that assignment closes.
+Final candidate validation runs in the fresh worktree, not the removed owner
+worktree. This prevents subsequent path-based
+writes from altering the validated candidate under the cooperative task/tool
+threat model; it does not prove OS process exit or RSS and is not hostile
+same-UID isolation.
+A terminal event, clean snapshot, or `closed_at` value alone never authorizes
+release. If removal succeeds but the final observation or state persistence
+fails, a retry may finalize only after observing the owner path absent and
+unregistered and validating the already-created candidate worktree again.
+This direct route does not substitute a check process for a delegated owner.
 
 ### Pilot measurement and rollback
 
@@ -2644,10 +2670,16 @@ exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
 
-Assignment, owner, session and actual dispatch IDs are each unique across the
-retained state, including closed history. A successor or independent assignment
-needs a fresh dispatch identity; changing other IDs cannot reuse an old task
-correlation.
+Assignment, observed owner, owner session, dispatch and receipt-task IDs are
+each unique across the retained state, including closed history. The native
+task route may reserve an assignment before the runtime supplies those IDs.
+A successor or independent assignment needs a fresh dispatch identity;
+changing other IDs cannot reuse an old task correlation.
+For a bound native owner, every observed event is checked against retained
+lifecycle source IDs before it can advance the state or cursor. Reusing one
+rejects regardless of event type. After the owner is closed, a later event
+matching its owner or bound owner-session identity also rejects without
+advancing the cursor; unrelated owners remain independent.
 
 Reusable text and path fields accept Unicode scalar values, including
 supplementary characters and valid JSON escapes. Escaped lone UTF-16
@@ -2768,25 +2800,55 @@ before creating a replacement assignment or PR.
 
 `assign` reserves ownership before dispatch; it does not launch agents.
 `observe` reads the existing native JSONL producer incrementally with no-follow
-file identity/cursors. Pass the coordinator dispatch log, then the matching
-owner session log (repeat `observe` as actual runtime notifications arrive).
-Include `[handoff:review-178-1]` in the actual assigned prompt. `dispatch_id`
-correlates the coordinator's task/write-agent/shell tool call and must equal
-the native receipt's `data.parentAgentTaskId`; `session_id` and `owner_id`
-identify the actual assigned session/runtime. A correlation marker alone is
-not receipt evidence. Missing, opaque or wrong task identity stays incomplete.
-Each event uses the session context established before it, starting from the
-previous cursor; a later `session.start` cannot retroactively attach earlier
-receipt, progress or delivery to that session. Incremental and bounded batches
-retain this context without storing another event history. An old session
-start may establish resumed context, but events predating the assignment do
-not acknowledge or count its work. Future-dated events reject.
+file identity/cursors. Include `[handoff:review-178-1]` in the actual assigned
+prompt. For the shared-root `task` producer, set `owner_id`, `session_id` and
+`dispatch_id` to `null` in the pre-dispatch assignment and add this object,
+using the actual root session, root event file and exact prompt:
+
+```json
+{
+  "native": {
+    "root_session_id": "actual-coordinator-session",
+    "events_path": "/absolute/path/to/events.jsonl",
+    "prompt": "[handoff:review-178-1] The complete assigned prompt"
+  }
+}
+```
+
+`assign` checks the root `session.start` and reserves a cursor after existing
+complete records, retaining an incomplete trailing record. It rejects a
+pre-bound native owner, owner session or dispatch. Pass that same root log to
+`observe` as actual events arrive. A matching root task call and exact prompt bind the
+generated dispatch ID; its `subagent.started` binds the actual owner and
+interaction. Only the matching owner's explicit message, root source,
+interaction and exact prompt bind receipt and its separate
+`parentAgentTaskId`. The owner's subsequent tool start binds the distinct
+`ownerNativeSessionId` as `session_id`. That observed owner session, not the
+root log session, is the `Copilot-Session` trailer identity. Two owners may
+share a root log and interaction, but cannot reuse owner, owner session,
+dispatch, receipt-task or lifecycle source identities. Missing, opaque,
+contradictory, duplicate or wrong observations remain incomplete or reject.
+
+Existing separate-session v3 records keep their original dispatch/receipt
+correlation; their session and dispatch IDs must be known at reservation.
+A marker alone is never receipt evidence. Each event uses the session context
+established before it, starting from the previous cursor; a later
+`session.start` cannot retroactively attach earlier receipt, progress or
+delivery. Bounded batches retain this context without another event history.
+Events predating the assignment do not acknowledge or count its work;
+future-dated or reversed native task events reject. A repeated exact receipt
+rejects; matching follow-ups preserve the received parent task and advance the
+native chronology. Progress needs a complete tool name and call ID distinct
+from the dispatch.
+Shared-root validation consumes one bounded batch and refuses readiness or
+closure with `native-log-unread` while complete or partial bytes remain.
+Observe or validate again until caught up; contradictory records still reject.
 
 | State | Actual observation |
 | --- | --- |
-| `assignment_sent` | Matching native `tool.execution_start` dispatch |
-| `assignment_received` | Matching session's native `user.message` with the assignment marker and matching `parentAgentTaskId` |
-| `progressing` | A separate post-receipt `tool.execution_start` |
+| `assignment_sent` | Matching native `tool.execution_start` dispatch; shared-root tasks also require the exact reserved prompt |
+| `assignment_received` | Explicit owner `user.message` bound to the dispatch; shared-root tasks use the started owner, root source, interaction, exact prompt and distinct observed `parentAgentTaskId` |
+| `progressing` | A separate post-receipt owner `tool.execution_start`; shared-root tasks also bind `ownerNativeSessionId` |
 | `committed` | Git observes the delivered SHA as real worktree HEAD |
 | `handed_off` | Native `assistant.message` delivers `{"handoff_result": ...}` after the commit observation |
 
@@ -2862,20 +2924,40 @@ not another `initial` assignment that bypasses retained-worktree recovery.
 Independent issue/PR roots remain separate. Only one coordinator manages the
 canonical state.
 
-Accepted completion requires a genuinely observed zero owner exit and complete
-owned RSS, not merely an exited process. Unknown exit evidence stays incomplete.
-An observed nonzero or signal exit after delivery uses the existing interruption
-preservation path before closing the owner; it is never accepted completion.
-The same eligibility check guards optional accepted reporting. Honest abnormal
-exit observations remain valid state. A committed WIP checkpoint is retained and
-may still be published immediately by the existing #207 coordinator workflow;
-WIP publication and accepted handoff completion are separate decisions.
+Owner completion has two distinct observation paths, but only the
+process-backed path can currently establish retirement. An OS-process-backed
+owner requires the runtime-owned process identity, an actually observed zero
+exit, and complete owned RSS; an exited process with unknown status or
+incomplete RSS remains ineligible. A native logical-task owner records the
+exact dispatched `task` tool's `tool.execution_complete` event only after the
+same task, owner, owner session, result head, worktree identity, and allowed
+scope have been bound. The terminal event records task completion only. It
+does not revoke write access or prove that background writers have stopped.
+The current task runtime provides no independent, enforceable worktree-release
+observation, so validation reports `owner-worktree-release-unavailable`,
+keeps the assignment open, and cannot accept the handoff. Do not set
+`closed_at` from task completion or a clean Git snapshot. A future supported
+release mechanism must be observed before coordinator closure can make the
+worktree available for reuse. A failed logical task remains rejected and
+open. Do not infer release from task self-report or task completion alone.
 
-One pure owner-acceptance predicate covers zero completion, assignment-to-close
-wall-clock lifetime, process age and RSS in both live validation and reporting.
-A small process age cannot override an exceeded wall-clock limit. Validation
-rechecks eligibility after focused checks and records a new close and verdict
-at the same observation instant, so time spent checking cannot evade the limit.
+Logical-task lifetime is measured through the trusted terminal-task timestamp,
+not the later coordinator validation time; validation delay does not consume
+the owner's execution budget. This lifetime observation does not establish
+write release. A process-backed owner remains governed by its actual process
+exit, age and complete owned RSS evidence; a task terminal event does not
+replace those observations. The logical record stores per-owner RSS as
+unavailable because the runtime does not expose it; no RSS value or
+process-budget compliance is inferred.
+WIP publication remains separate from accepted handoff completion.
+
+Process-backed ownership enforces the assignment-to-retirement wall-clock
+lifetime and also checks process age and available RSS. Logical-task execution
+duration is measured through its terminal observation, but the path remains
+ineligible because the native runtime does not expose enforceable write-release
+evidence. Validation rechecks eligibility after focused checks and records its
+verdict at the observation instant; this does not extend the logical task's
+execution lifetime.
 Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
 time. Closed history uses its captured interval without requiring its worktree;
 an open report whose recorded clock predates assignment is incomplete rather

@@ -21,7 +21,8 @@ from scripts.workflow_pilot import raw_diff_check as raw_git
 
 
 MAX_JSON_BYTES = 1024 * 1024
-MAX_NODES = 32768
+MAX_NODES = 65536
+MAX_RECOVERY_ENTRIES = 32768
 MAX_DEPTH = 24
 MAX_STRING = 16384
 TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
@@ -180,7 +181,8 @@ def retained_data_sha256(identity, dirty_paths):
         with raw_git._directory_fd(directory) as descriptor, os.scandir(descriptor) as entries:
             for entry in entries:
                 count += 1
-                require(count <= MAX_NODES and time.monotonic() <= deadline, "recovery enumeration limit exceeded")
+                require(count <= MAX_RECOVERY_ENTRIES and time.monotonic() <= deadline,
+                        "recovery enumeration limit exceeded")
                 if entry.name == ".git":
                     continue
                 mode = entry.stat(follow_symlinks=False).st_mode
@@ -337,6 +339,34 @@ def observe_owned_exit(process: subprocess.Popen, identity):
             "rss_complete": True}
 
 
+def cli_reservation_cursor(path, root_session):
+    """Start a new reservation after existing complete records in its native root log."""
+    path = Path(path).absolute()
+    with raw_git._directory_fd(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        require(stat.S_ISREG(info.st_mode), "CLI log must be a regular file")
+        first = source.readline(MAX_JSON_BYTES + 1)
+        require(first.endswith(b"\n") and len(first) <= MAX_JSON_BYTES,
+                "CLI root session record is incomplete")
+        event = _decode_bytes(first, MAX_JSON_BYTES)
+        require(isinstance(event, dict) and event.get("type") == "session.start"
+                and isinstance(event.get("id"), str) and event["id"]
+                and isinstance(event.get("data"), dict)
+                and event["data"].get("sessionId") == root_session,
+                "CLI root session identity mismatch")
+        require(timestamp(event.get("timestamp")) <= timestamp(utc_now()), "future CLI event")
+        start = max(0, info.st_size - MAX_JSON_BYTES - 1)
+        source.seek(start)
+        tail = source.read(info.st_size - start)
+        require(len(tail) == info.st_size - start, "CLI log changed during reservation")
+        newline = tail.rfind(b"\n")
+        require(newline >= 0, "CLI partial event exceeds 1 MiB")
+        return {"path": str(path), "device": info.st_dev, "inode": info.st_ino,
+                "offset": start + newline + 1, "session_id": root_session}
+
+
 def cli_event_batch(path, cursor=None):
     """Read bounded (session context, native event) pairs from the previous cursor."""
     path = Path(path).absolute()
@@ -380,6 +410,19 @@ def cli_event_batch(path, cursor=None):
             consumed += len(line)
         current["offset"] = source.tell()
         return events, current
+
+
+def cli_cursor_caught_up(cursor):
+    path = Path(cursor["path"])
+    with raw_git._directory_fd(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        require(stat.S_ISREG(info.st_mode), "CLI log must be a regular file")
+        require((cursor["device"], cursor["inode"]) == (info.st_dev, info.st_ino),
+                "CLI log identity changed")
+        require(cursor["offset"] <= info.st_size, "CLI log was truncated")
+        return cursor["offset"] == info.st_size
 
 
 def capture_raw_check(assignment, candidate_sha):

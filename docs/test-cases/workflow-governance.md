@@ -6635,8 +6635,9 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
-  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367).
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178),
+  [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367)
+  and [issue #486](https://github.com/laqieer/fireemblem8-expansion/issues/486).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6661,6 +6662,29 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    multiple task commits pass. Merge an authorized exact upstream input with
    no task trailers, plus a task commit with trailers: imported paths/history
    pass without consuming task scope/line budget. An unrecorded merge rejects.
+   For #486, run the shared-root native task cases in
+   `test_coordinator_observations.py`: reserve before dispatch, then observe
+   different dispatch and parent-task IDs, the real owner, exact prompt and
+   owner-native session. Two owners sharing a root and interaction remain
+   distinct. Spliced, missing, stale, reversed or reused observations must not
+   advance; unknown owner exit/RSS still prevents a ready handoff. The
+   separate-session control rejects the different-ID receipt, as the pre-fix
+   reader did. Repeat an exact receipt with the same or another event ID or
+   conflicting receipt: reject. After receipt, any same-root owner follow-up
+   that changes the bound parent task rejects even if its interaction ID also
+   changes; a distinct same-parent follow-up remains valid and participates
+   in chronology. Reusing a retained lifecycle event ID on any bound-owner
+   event, including an assistant turn, rejects without advancing the cursor;
+   distinct progress IDs remain valid. Missing, opaque or dispatch-equal
+   progress call IDs and missing or opaque tool names reject. After handoff,
+   owner tool starts reject even if the owner-session ID is missing or opaque;
+   before progress such a start remains incomplete. After successful closure,
+   late events matching the closed owner or its bound session reject without
+   advancing the cursor, while unrelated-owner events remain independent. Put
+   unread complete or partial records after delivery: validation must hold
+   readiness and closure until caught up, then reject a conflicting parent or
+   accept otherwise complete valid evidence. The isolated CLI case also checks
+   atomic rejection.
 3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
    missing trailers/evidence/checks, out-of-scope path, hidden index flags,
    whitespace/checker replacement, and incremental line-budget controls.
@@ -6802,9 +6826,47 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    events with retained cursor context still complete normally. An old session
    start may establish context, but stale pre-assignment task events must not
    acknowledge or count the new assignment. Exercise the actual CLI and check
-   that a future-clock rejection leaves canonical state unchanged.
-   Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
-   lifetime/RSS overage and repeated committed-owner work do not pass.
+   that a future-clock rejection leaves canonical state unchanged. Collect
+   multiple native events after their producer timestamps and verify lifecycle
+   ordering uses those timestamps rather than a later polling time; include
+   delivery and task-completion records in the same observed batch.
+   For an OS-process-backed owner, a real zero exit and complete owned RSS
+   pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
+   and repeated committed-owner work do not pass. For a logical task owner,
+   record the exact dispatched `task` tool's terminal
+   completion after delivery. The terminal event by itself must leave the
+   assignment open and validation without release evidence must reject with
+   `owner-worktree-release-unavailable`. For a successful task, publish the
+   exact candidate commit first, then run `release-worktree` from a separate
+   coordinator worktree. Require the exact remote branch head, a clean linked
+   owner worktree with no untracked or ignored data, and an unused validation
+   path. The operation must create a fresh detached worktree at the candidate,
+   use the normal `git worktree remove` command without force, and verify the
+   owner path is absent and unregistered. Run final validation and required
+   checks only in the fresh worktree. Hold a writer with its current directory
+   open across removal, attempt a relative file write afterward, and verify it cannot
+   create a path-visible file or dirty the fresh candidate. This tests
+   path-based write isolation, not hostile same-UID process isolation.
+   Mismatched remote head, dirty/untracked/ignored owner data, wrong Git
+   identity, a preexisting validation path while the owner still exists, or a
+   failed task must not release or close the assignment. If removal succeeds
+   but final observation or state persistence fails, retry only when the owner
+   path is absent and unregistered; require the retained validation worktree to
+   match the exact candidate before recording release. A clean snapshot,
+   `closed_at`, task self-report,
+   printed result, or unrelated `tool.execution_complete` event alone is not
+   release evidence. Confirm the terminal timestamp, rather than delayed
+   coordinator validation, determines logical-task lifetime. A prefilled
+   close, unread native-log tail, or mismatched task, owner, session, head,
+   worktree, Git identity or scope remains invalid. Failed logical tasks remain
+   rejected and open; they do not gain a recovery/reassignment path from this
+   successful-task contract. RSS remains explicitly unavailable and does not
+   block this path; a native task terminal never substitutes for process
+   exit/RSS when an owned OS process was bound. A process-backed terminal
+   record may remain open until actual exit/RSS evidence is observed. Replayed
+   lifecycle source IDs reject even when the replayed event timestamp predates
+   the assignment; a matching follow-up must retain both the bound parent task
+   and interaction.
    Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
    local acceptance and an accepted report reject it, preservation happens
    before retirement, and Git HEAD/index/check facts remain intact. A missing
@@ -6819,7 +6881,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    Missing/future/negative lifecycle times and an open report clock predating
    assignment never become fabricated zero elapsed time.
 6. Reserve duplicate/overlapping owners/watchers and attempt a second state
-   writer: each rejects. Try different watcher IDs/runs with the same actual
+   writer: each rejects. After a logical owner is closed with a recorded
+   worktree release, attempt a fresh assignment whose worktree is nested
+   beneath the released owner path. It must reject even though the path string
+   differs, and leave coordinator state unchanged. Try different watcher
+   IDs/runs with the same actual
    boot/PID/start identity, both through reservation and loaded state: reject.
    Distinct live processes pass; an owned unreaped zombie cannot reserve a
    watcher. Running/ended records must agree with process state and exit data;

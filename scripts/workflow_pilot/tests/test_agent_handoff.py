@@ -1125,6 +1125,20 @@ class HandoffSchemaTests(unittest.TestCase):
                 changed[location][key]["unknown"] = 0
             self.reject_both(changed, handoff.validate_assignment)
 
+    def test_malformed_prohibited_action_members_are_rejected_without_raw_type_errors(self):
+        for invalid in ({}, []):
+            with self.subTest(invalid=invalid):
+                assignment = copy.deepcopy(self.fixture.assignment)
+                assignment["prohibited_remote_actions"][0] = invalid
+                self.reject_both(assignment, handoff.validate_assignment)
+
+    def test_malformed_terminal_state_is_rejected_before_lifetime_read(self):
+        for invalid in ({}, [], "invalid", 0, False):
+            with self.subTest(invalid=invalid):
+                state = copy.deepcopy(self.fixture.state)
+                state["assignments"][0]["terminal_task"] = invalid
+                self.reject_both(state, handoff.validate_state)
+
     def test_protocol_input_overlap_is_an_explicit_runtime_cross_record_constraint(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
@@ -1213,7 +1227,11 @@ class HandoffSchemaTests(unittest.TestCase):
                     changed["assignments"][0]["events"][-1]["at"] = at_offset(3600)
                 else:
                     changed["assignments"][0][field] = at_offset(3600)
-                self.validator.validate(changed)
+                if field == "closed_at":
+                    with self.assertRaises(ValidationError):
+                        self.validator.validate(changed)
+                else:
+                    self.validator.validate(changed)
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
                 with self.assertRaises(handoff.HandoffDataError):
@@ -1452,7 +1470,12 @@ class HandoffSchemaTests(unittest.TestCase):
                         "2026-09-06T00:00:00.1234567Z"):
             changed = copy.deepcopy(state)
             changed["availability"]["observed_at"] = invalid
-            self.reject_both(changed, handoff.validate_state)
+            if invalid == "2025-02-29T00:00:00Z":
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(observations.parse_bytes(
+                        observations.json_bytes(changed)))
+            else:
+                self.reject_both(changed, handoff.validate_state)
         for valid in ("2024-02-29T00:00:00Z", "2026-09-06T00:00:00.123456Z"):
             changed = copy.deepcopy(state)
             changed["availability"]["observed_at"] = valid
@@ -1502,6 +1525,103 @@ class HandoffSchemaTests(unittest.TestCase):
         owned = observations.observe_owned_exit(process, watcher["process"])
         self.assertTrue(owned["rss_complete"])
         self.assertEqual(owned["exit_code"], 0)
+
+    def test_retained_watcher_capacity_exceeds_active_watcher_limit(self):
+        state = copy.deepcopy(self.fixture.state)
+        at = observations.utc_now()
+        state["watchers"] = [
+            {
+                "id": f"retained-{index}",
+                "coordinator_id": "previous-coordinator",
+                "run_id": index + 1,
+                "attempt": 1,
+                "head_sha": self.fixture.parent,
+                "process": {
+                    "pid": 100000 + index,
+                    "start_ticks": 1,
+                    "boot_id": "test-boot",
+                    "runtime_handle": f"retained-{index}",
+                    "observed_at": at,
+                    "state": "exited",
+                    "peak_rss_bytes": 1,
+                    "rss_complete": False,
+                    "exit_code": 0,
+                    "age_ms": 0,
+                },
+                "started_at": at,
+                "ended_at": at,
+                "exit_code": 0,
+                "run": None,
+                "query_error": None,
+            }
+            for index in range(129)
+        ]
+        state["watchers"].append({
+            "id": "current-active",
+            "coordinator_id": state["coordinator_id"],
+            "run_id": 1000,
+            "attempt": 1,
+            "head_sha": self.fixture.parent,
+            "process": {
+                "pid": 200000,
+                "start_ticks": 1,
+                "boot_id": "test-boot",
+                "runtime_handle": "current-active",
+                "observed_at": at,
+                "state": "running",
+                "peak_rss_bytes": 1,
+                "rss_complete": False,
+                "exit_code": None,
+                "age_ms": 0,
+            },
+            "started_at": at,
+            "ended_at": None,
+            "exit_code": None,
+            "run": None,
+            "query_error": None,
+        })
+        self.validator.validate(state)
+        handoff.validate_state(state)
+
+        def promote_to_active(watcher):
+            watcher["coordinator_id"] = state["coordinator_id"]
+            watcher["process"]["state"] = "running"
+            watcher["process"]["exit_code"] = None
+            watcher["ended_at"] = None
+            watcher["exit_code"] = None
+
+        at_active_limit = copy.deepcopy(state)
+        for watcher in at_active_limit["watchers"][:127]:
+            promote_to_active(watcher)
+        self.validator.validate(at_active_limit)
+        handoff.validate_state(at_active_limit)
+
+        over_active_limit = copy.deepcopy(at_active_limit)
+        promote_to_active(over_active_limit["watchers"][127])
+        with self.assertRaises(ValidationError):
+            self.validator.validate(over_active_limit)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "active watcher limit"):
+            handoff.validate_state(over_active_limit)
+
+        wrong_coordinator = copy.deepcopy(state)
+        wrong_coordinator["watchers"][-1]["coordinator_id"] = "previous-coordinator"
+        with self.assertRaisesRegex(handoff.HandoffDataError, "duplicate coordinator"):
+            handoff.validate_state(wrong_coordinator)
+
+        for invalid_id in (None, {}, "invalid coordinator"):
+            with self.subTest(invalid_id=invalid_id):
+                invalid_retained = copy.deepcopy(state)
+                invalid_retained["watchers"][0]["coordinator_id"] = invalid_id
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(invalid_retained)
+
+        overflow = copy.deepcopy(state)
+        overflow["watchers"] = [None] * 32769
+        state_schema = Draft202012Validator({"$defs": self.schema["$defs"], "$ref": "#/$defs/state"})
+        self.assertTrue(any(error.validator == "maxItems" and list(error.path) == ["watchers"]
+                            for error in state_schema.iter_errors(overflow)))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "bounded list"):
+            handoff.validate_state(overflow)
 
 
 class RawDiffBoundaryTests(unittest.TestCase):
