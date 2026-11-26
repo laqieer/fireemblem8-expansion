@@ -756,6 +756,21 @@ def _git(root, *arguments):
     return git.run_git(root, *arguments)
 
 
+def registered_worktree_paths(root):
+    output = _git(root, "worktree", "list", "--porcelain", "-z")
+    require(output.endswith(b"\0\0"), "incomplete Git worktree inventory")
+    paths = set()
+    for record in output[:-2].split(b"\0\0"):
+        fields = record.split(b"\0")
+        require(fields[0].startswith(b"worktree ") and len(fields[0]) > len(b"worktree ")
+                and all(not field.startswith(b"worktree ") for field in fields[1:]),
+                "malformed Git worktree inventory")
+        path = fields[0][len(b"worktree "):]
+        require(path not in paths, "duplicate Git worktree registration")
+        paths.add(path)
+    return paths
+
+
 def _ancestor(root, parent, child):
     result = git.run_process(git.git_command(root, "merge-base", "--is-ancestor", parent, child),
                              cwd=root, env=git.git_environment())
@@ -1099,14 +1114,14 @@ def verify_validation_worktree(assignment, expected_sha, identity):
 
 def remove_validation_worktree(coordinator_root, assignment, expected_sha, identity):
     root = Path(assignment["allowed_worktree"])
-    worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
-    require(os.path.lexists(root) and any(line == f"worktree {root}" for line in worktrees),
+    worktrees = registered_worktree_paths(coordinator_root)
+    require(os.path.lexists(root) and os.fsencode(root) in worktrees,
             "validation worktree is not registered at its assigned path")
     verify_validation_worktree(assignment, expected_sha, identity)
     _git(coordinator_root, "worktree", "remove", str(root))
-    worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
+    worktrees = registered_worktree_paths(coordinator_root)
     require(not os.path.lexists(root)
-            and not any(line == f"worktree {root}" for line in worktrees),
+            and os.fsencode(root) not in worktrees,
             "validation worktree removal was not complete")
 
 
@@ -1173,9 +1188,9 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
 
     owner_exists = os.path.lexists(owner_root)
     validation_exists = os.path.lexists(validation_root)
-    worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
-    owner_registered = any(line == f"worktree {owner_root}" for line in worktrees)
-    validation_registered = any(line == f"worktree {validation_root}" for line in worktrees)
+    worktrees = registered_worktree_paths(coordinator_root)
+    owner_registered = os.fsencode(owner_root) in worktrees
+    validation_registered = os.fsencode(validation_root) in worktrees
     require(owner_exists == owner_registered,
             "assigned worktree path and registration disagree")
     require(validation_exists == validation_registered,
@@ -1247,11 +1262,9 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
         try:
             _git(coordinator_root, "worktree", "remove", str(owner_root))
         except (OSError, ValueError) as removal_error:
-            worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
-            owner_registered = any(line == f"worktree {owner_root}" for line in worktrees)
-            validation_registered = any(
-                line == f"worktree {validation_root}" for line in worktrees
-            )
+            worktrees = registered_worktree_paths(coordinator_root)
+            owner_registered = os.fsencode(owner_root) in worktrees
+            validation_registered = os.fsencode(validation_root) in worktrees
             if os.path.lexists(owner_root) and owner_registered:
                 require(os.path.lexists(validation_root) and validation_registered,
                         "failed owner removal left an unexpected validation worktree state")
@@ -1277,9 +1290,9 @@ def release_logical_worktree(state, assignment_id, coordinator_worktree, validat
                     "validation worktree retained"
                 ) from removal_error
 
-    worktrees = _git(coordinator_root, "worktree", "list", "--porcelain").decode().splitlines()
-    registered = any(line == f"worktree {owner_root}" for line in worktrees)
-    validation_registered = any(line == f"worktree {validation_root}" for line in worktrees)
+    worktrees = registered_worktree_paths(coordinator_root)
+    registered = os.fsencode(owner_root) in worktrees
+    validation_registered = os.fsencode(validation_root) in worktrees
     require(not os.path.lexists(owner_root) and not registered and validation_registered
             and not os.path.lexists(entry["git_identity"]["git_dir"]),
             "assigned worktree removal was not complete")

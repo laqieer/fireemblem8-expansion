@@ -462,6 +462,77 @@ class NativeObservationTests(unittest.TestCase):
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(legacy)
 
+    def test_logical_release_preserves_worktree_path_boundaries(self):
+        for fail_removal in (False, True):
+            with self.subTest(fail_removal=fail_removal):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                owner = f.home / "owner\nworktree"
+                validation = f.home / "validation\nworktree"
+                git(f.repository, "worktree", "move", str(f.worktree), str(owner))
+                f.worktree = owner
+                f.assignment["allowed_worktree"] = str(owner)
+                result = complete_logical_task(f)
+                environment = gh_stub_environment(
+                    f.home, {"name": f.assignment["expected_branch"],
+                             "commit": {"sha": result["result_sha"]}},
+                )
+                original_git = handoff._git
+
+                def fail_owner_removal(cwd, *arguments):
+                    if arguments == ("worktree", "remove", str(owner)):
+                        raise ValueError("simulated owner removal failure")
+                    return original_git(cwd, *arguments)
+
+                with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                    if fail_removal:
+                        with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                            with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                                handoff.release_logical_worktree(
+                                    f.state, f.assignment["id"], f.repository, validation,
+                                )
+                        self.assertTrue(owner.exists())
+                        self.assertFalse(validation.exists())
+                        self.assertIsNone(f.entry["worktree_release"])
+                    release = handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation,
+                    )
+                    verdict = handoff.validate_handoff(f.state, result, worktree=validation)
+
+                registrations = git(f.repository, "worktree", "list", "--porcelain", "-z").split("\0")
+                self.assertNotIn(f"worktree {owner}", registrations)
+                self.assertIn(f"worktree {validation}", registrations)
+                self.assertEqual(release["head_sha"], result["result_sha"])
+                self.assertFalse(owner.exists())
+                self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_logical_release_rejects_incomplete_worktree_inventory(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )
+        original_git = handoff._git
+
+        def truncated_inventory(cwd, *arguments):
+            output = original_git(cwd, *arguments)
+            if arguments == ("worktree", "list", "--porcelain", "-z"):
+                return output[:-1]
+            return output
+
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=truncated_inventory):
+                with self.assertRaisesRegex(ValueError, "incomplete Git worktree inventory"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation,
+                    )
+        self.assertTrue(f.worktree.exists())
+        self.assertFalse(validation.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
     def test_logical_release_recovers_after_owner_removal_before_state_persistence(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
@@ -476,7 +547,7 @@ class NativeObservationTests(unittest.TestCase):
 
         def fail_after_removal(cwd, *arguments):
             nonlocal list_calls
-            if arguments == ("worktree", "list", "--porcelain"):
+            if arguments == ("worktree", "list", "--porcelain", "-z"):
                 list_calls += 1
                 if list_calls == 2:
                     raise OSError("simulated failure before release state persistence")

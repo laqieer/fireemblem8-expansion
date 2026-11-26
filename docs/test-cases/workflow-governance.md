@@ -6759,7 +6759,12 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    exact candidate commit first, then run `release-worktree` from a separate
    coordinator worktree. Require the exact remote branch head, a clean linked
    owner worktree with no untracked or ignored data, and an unused validation
-   path. The operation must create a fresh detached worktree at the candidate,
+   path. Repeat with newline characters in both worktree paths: exact Git
+   registrations must be recognized without splitting or quoting the paths.
+   Simulate owner-removal failure and require rollback of the validation
+   worktree while retaining the owner; retry must then succeed. The pre-fix
+   line-based inventory rejects the registered owner before removal.
+   The operation must create a fresh detached worktree at the candidate,
    use the normal `git worktree remove` command without force, and verify the
    owner path is absent and unregistered. Run final validation and required
    checks only in the fresh worktree. After acceptance, the candidate readiness

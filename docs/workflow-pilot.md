@@ -508,6 +508,8 @@ never deinitializes submodules or uses force. It creates a fresh detached
 worktree at the exact candidate, removes the assigned worktree using normal
 `git worktree remove` (never force), and verifies the old path is absent and
 unregistered and the recorded owner Git administrative directory is absent.
+Registration checks use Git's NUL-delimited inventory so embedded newlines
+and other path bytes cannot be mistaken for record boundaries.
 If removal fails while the assigned worktree remains registered,
 the unchanged validation worktree is removed normally so retry can start clean.
 If Git removes the owner path but leaves its registration, the operation fails
