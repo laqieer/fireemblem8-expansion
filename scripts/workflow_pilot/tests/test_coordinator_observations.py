@@ -819,6 +819,11 @@ class StateStoreTests(unittest.TestCase):
         self.fixture = GitFixture()
         self.addCleanup(self.fixture.close)
 
+    def test_json_decoder_accepts_state_above_previous_node_limit(self):
+        raw = b'{"records":[' + b'{"id":0},' * 11999 + b'{"id":0}]}'
+        parsed = observations.parse_bytes(raw)
+        self.assertEqual(len(parsed["records"]), 12000)
+
     def test_real_sigkill_leftovers_never_replace_or_block_canonical_state(self):
         program = r"""
 import os, sys

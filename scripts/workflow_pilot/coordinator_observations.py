@@ -21,7 +21,8 @@ from scripts.workflow_pilot import raw_diff_check as raw_git
 
 
 MAX_JSON_BYTES = 1024 * 1024
-MAX_NODES = 32768
+MAX_NODES = 65536
+MAX_RECOVERY_ENTRIES = 32768
 MAX_DEPTH = 24
 MAX_STRING = 16384
 TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
@@ -180,7 +181,8 @@ def retained_data_sha256(identity, dirty_paths):
         with raw_git._directory_fd(directory) as descriptor, os.scandir(descriptor) as entries:
             for entry in entries:
                 count += 1
-                require(count <= MAX_NODES and time.monotonic() <= deadline, "recovery enumeration limit exceeded")
+                require(count <= MAX_RECOVERY_ENTRIES and time.monotonic() <= deadline,
+                        "recovery enumeration limit exceeded")
                 if entry.name == ".git":
                     continue
                 mode = entry.stat(follow_symlinks=False).st_mode

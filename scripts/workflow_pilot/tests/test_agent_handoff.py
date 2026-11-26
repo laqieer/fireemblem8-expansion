@@ -1503,6 +1503,76 @@ class HandoffSchemaTests(unittest.TestCase):
         self.assertTrue(owned["rss_complete"])
         self.assertEqual(owned["exit_code"], 0)
 
+    def test_retained_watcher_capacity_exceeds_active_watcher_limit(self):
+        state = copy.deepcopy(self.fixture.state)
+        at = observations.utc_now()
+        state["watchers"] = [
+            {
+                "id": f"retained-{index}",
+                "coordinator_id": "previous-coordinator",
+                "run_id": index + 1,
+                "attempt": 1,
+                "head_sha": self.fixture.parent,
+                "process": {
+                    "pid": 100000 + index,
+                    "start_ticks": 1,
+                    "boot_id": "test-boot",
+                    "runtime_handle": f"retained-{index}",
+                    "observed_at": at,
+                    "state": "exited",
+                    "peak_rss_bytes": 1,
+                    "rss_complete": False,
+                    "exit_code": 0,
+                    "age_ms": 0,
+                },
+                "started_at": at,
+                "ended_at": at,
+                "exit_code": 0,
+                "run": None,
+                "query_error": None,
+            }
+            for index in range(129)
+        ]
+        state["watchers"].append({
+            "id": "current-active",
+            "coordinator_id": state["coordinator_id"],
+            "run_id": 1000,
+            "attempt": 1,
+            "head_sha": self.fixture.parent,
+            "process": {
+                "pid": 200000,
+                "start_ticks": 1,
+                "boot_id": "test-boot",
+                "runtime_handle": "current-active",
+                "observed_at": at,
+                "state": "running",
+                "peak_rss_bytes": 1,
+                "rss_complete": False,
+                "exit_code": None,
+                "age_ms": 0,
+            },
+            "started_at": at,
+            "ended_at": None,
+            "exit_code": None,
+            "run": None,
+            "query_error": None,
+        })
+        self.validator.validate(state)
+        handoff.validate_state(state)
+
+        wrong_coordinator = copy.deepcopy(state)
+        wrong_coordinator["watchers"][-1]["coordinator_id"] = "previous-coordinator"
+        with self.assertRaisesRegex(handoff.HandoffDataError, "duplicate coordinator"):
+            handoff.validate_state(wrong_coordinator)
+
+        overflow = copy.deepcopy(state)
+        overflow["watchers"] = [None] * 32769
+        state_schema = Draft202012Validator({"$defs": self.schema["$defs"], "$ref": "#/$defs/state"})
+        self.assertTrue(any(error.validator == "maxItems" and list(error.path) == ["watchers"]
+                            for error in state_schema.iter_errors(overflow)))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "bounded list"):
+            handoff.validate_state(overflow)
+
 
 class RawDiffBoundaryTests(unittest.TestCase):
     def setUp(self):

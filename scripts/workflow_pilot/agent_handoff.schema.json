@@ -538,7 +538,7 @@
         },
         "watchers": {
           "description": "Runtime also enforces unique boot/PID/start identities across owners and all watchers.",
-          "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}
+          "type": "array", "maxItems": 32768, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}
         }
       }
     }
