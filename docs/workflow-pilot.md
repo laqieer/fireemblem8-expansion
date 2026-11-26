@@ -497,6 +497,8 @@ The native task route below binds the provider's separate dispatch-tool and
 owner session. Reservation validates every complete record in a captured
 pre-dispatch log snapshot, rejecting a changed root session; a partial record
 and records appended after the snapshot remain for later observation.
+Bound owner tool completions participate in producer chronology but do not
+establish task termination or OS-process exit.
 Process-backed delegated callers still require actual owner
 process exit and complete RSS. A logical task terminal observation records
 completion but is not itself write revocation. For a successful logical task,

@@ -6583,8 +6583,13 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    distinct progress IDs remain valid. Missing, opaque or dispatch-equal
    progress call IDs and missing or opaque tool names reject. Once bound, an
    explicitly conflicting owner session on a tool completion, turn or delivery
-   rejects; matching or omitted optional session fields remain valid. After
-   handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
+   rejects; matching or omitted optional session fields remain valid. Append
+   an owner tool completion and a delivery with reversed producer timestamps,
+   then reverse progress and completion: both must reject without advancing
+   the cursor or persisting a locked CLI update. Ordered owner completion and
+   delivery remain valid, and an unrelated owner's completion does not set
+   this owner's clock. The pre-fix reader accepts both reversed sequences.
+   After handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. After successful closure,
    late events matching the closed owner or its bound session reject without
    advancing the cursor, while unrelated-owner events remain independent. Put

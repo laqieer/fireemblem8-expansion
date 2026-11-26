@@ -1446,6 +1446,8 @@ def observe_native_task(entry, log_path):
                 binding["session_id"] = owner_session
             else:
                 require(a["session_id"] == owner_session, "native owner session changed")
+        elif kind == "tool.execution_complete" and binding["parent_task_id"] is not None:
+            advance_time(event)
         elif kind == "assistant.message" and a["session_id"] is not None:
             content = data.get("content")
             if (data.get("interactionId") != binding["interaction_id"] or not isinstance(content, str)

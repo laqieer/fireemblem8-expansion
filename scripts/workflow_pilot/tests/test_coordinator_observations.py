@@ -1613,6 +1613,71 @@ class NativeObservationTests(unittest.TestCase):
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.observe_cli(f.entry, log)
 
+    def test_native_owner_completion_participates_in_chronology(self):
+        for variant in ("ordered", "missing-session", "other-owner", "reversed-completion",
+                        "reversed-delivery", "reversed-delivery-missing-session",
+                        "reversed-delivery-next-batch"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.entry["assigned_at"] = at_offset(-30)
+                events = [
+                    task_event("tool.execution_start", "dispatch", toolName="task",
+                               toolCallId="call-one", arguments={"prompt": prompt}),
+                    task_event("subagent.started", "started", owner="owner-one",
+                               toolCallId="call-one", interactionId="interaction-one"),
+                    task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                               source=f"agent-{root}", interactionId="interaction-one",
+                               parentAgentTaskId="receipt-task"),
+                    task_event("tool.execution_start", "progress", owner="owner-one",
+                               toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION),
+                ]
+                for event in events:
+                    event["timestamp"] = at_offset(-15)
+                f.append(log, *events)
+                handoff.observe_cli(f.entry, log)
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                          "evidence_refs": ["raw-evidence"]}
+                completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                        toolCallId="edit", ownerNativeSessionId=SESSION, success=True)
+                delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                                      interactionId="interaction-one",
+                                      content=json.dumps({"handoff_result": result}))
+                completion["timestamp"] = at_offset(-10)
+                delivery["timestamp"] = at_offset(-5)
+                if variant == "missing-session":
+                    del completion["data"]["ownerNativeSessionId"]
+                elif variant == "other-owner":
+                    completion["agentId"] = "other-owner"
+                    del completion["data"]["ownerNativeSessionId"]
+                    completion["timestamp"] = at_offset(-1)
+                elif variant == "reversed-completion":
+                    completion["timestamp"] = at_offset(-20)
+                elif variant.startswith("reversed-delivery"):
+                    completion["timestamp"] = at_offset(-5)
+                    delivery["timestamp"] = at_offset(-10)
+                    if variant == "reversed-delivery-missing-session":
+                        del completion["data"]["ownerNativeSessionId"]
+                if variant == "reversed-delivery-next-batch":
+                    f.append(log, completion)
+                    handoff.observe_cli(f.entry, log)
+                    handoff.validate_state(f.state)
+                    f.append(log, delivery)
+                else:
+                    f.append(log, completion, delivery)
+                cursor = f.entry["cursors"][0]["offset"]
+                if variant.startswith("reversed-"):
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["cursors"][0]["offset"], cursor)
+                    self.assertIsNone(f.entry["result"])
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["result"], result)
+                    handoff.validate_state(f.state)
+
     def test_native_owner_events_reject_explicit_conflicting_session(self):
         for variant in ("matching-completion", "missing-completion",
                         "conflicting-completion", "conflicting-delivery", "conflicting-turn"):
@@ -2498,6 +2563,49 @@ class RecoveryObservationTests(unittest.TestCase):
 
 
 class HandoffCliTests(unittest.TestCase):
+    def test_reversed_owner_completion_preserves_locked_state(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.entry["assigned_at"] = at_offset(-30)
+        events = [
+            task_event("tool.execution_start", "dispatch", toolName="task",
+                       toolCallId="call-one", arguments={"prompt": prompt}),
+            task_event("subagent.started", "started", owner="owner-one",
+                       toolCallId="call-one", interactionId="interaction-one"),
+            task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                       source=f"agent-{root}", interactionId="interaction-one",
+                       parentAgentTaskId="receipt-task"),
+            task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                       toolCallId="edit", ownerNativeSessionId=SESSION),
+        ]
+        for event in events:
+            event["timestamp"] = at_offset(-15)
+        f.append(log, *events)
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                toolCallId="edit", ownerNativeSessionId=SESSION, success=True)
+        completion["timestamp"] = at_offset(-5)
+        delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                              interactionId="interaction-one",
+                              content=json.dumps({"handoff_result": result}))
+        delivery["timestamp"] = at_offset(-10)
+        f.append(log, completion, delivery)
+        state_path = f.home / "state.json"
+        write_json(state_path, f.state)
+        before = state_path.read_bytes()
+        command = [sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"),
+                   "agent-handoff", "observe", "--state", str(state_path),
+                   "--assignment-id", f.assignment["id"], "--runtime-events", str(log)]
+        rejected = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(rejected.returncode, 2, rejected.stderr.decode())
+        self.assertIn(b"chronology reversed", rejected.stderr)
+        self.assertEqual(state_path.read_bytes(), before)
+
     def test_native_task_reservation_and_observation_through_isolated_cli(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
