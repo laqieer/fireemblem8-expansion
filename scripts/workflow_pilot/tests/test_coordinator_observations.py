@@ -1125,6 +1125,48 @@ class NativeObservationTests(unittest.TestCase):
         self.assertEqual(f.entry["cursors"][0]["offset"], previous_offset)
         self.assertEqual(f.entry["coordination_turns"], 0)
 
+    def test_coordinator_terminal_after_process_close_preserves_retirement_time(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task", toolCallId="call-one",
+                            arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one", toolCallId="call-one",
+                            interactionId="interaction-one"))
+        handoff.observe_cli(f.entry, log)
+        process = f.waiting_process()
+        handoff.bind_process(f.entry, process.pid)
+        f.append(log,
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="edit", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                 interactionId="interaction-one",
+                                 content=json.dumps({"handoff_result": result})))
+        handoff.observe_cli(f.entry, log)
+        handoff.capture_check(f.entry, "raw", revision)
+        f.finish_owner(process)
+
+        verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        closed_at = f.entry["closed_at"]
+        time.sleep(0.01)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+
+        self.assertEqual(f.entry["closed_at"], closed_at)
+        self.assertEqual(f.entry["terminal_task"]["event_id"], "task-terminal")
+        handoff.validate_state(f.state)
+
     def test_native_progress_requires_distinct_complete_tool_identity(self):
         for variant in ("missing-id", "opaque-id", "dispatch-id", "missing-name", "opaque-name"):
             with self.subTest(variant=variant):
