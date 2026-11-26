@@ -53,6 +53,33 @@ def reserve_task(fixture, *, state=None, log=None):
     return log, root, prompt
 
 
+def complete_logical_task(fixture):
+    log, root, prompt = reserve_task(fixture)
+    fixture.append(log,
+                   task_event("tool.execution_start", "dispatch", toolName="task",
+                              toolCallId="call-one", arguments={"prompt": prompt}),
+                   task_event("subagent.started", "started", owner="owner-one",
+                              toolCallId="call-one", interactionId="interaction-one"),
+                   task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                              source=f"agent-{root}", interactionId="interaction-one",
+                              parentAgentTaskId="receipt-task"),
+                   task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                              toolCallId="owner-call", ownerNativeSessionId=SESSION))
+    handoff.observe_cli(fixture.entry, log)
+    revision = fixture.commit()
+    result = {"schema_version": 3, "assignment_id": fixture.assignment["id"],
+              "assigned_parent_sha": fixture.parent, "result_sha": revision,
+              "evidence_refs": ["raw-evidence"]}
+    fixture.append(log,
+                   task_event("assistant.message", "delivery", owner="owner-one",
+                              interactionId="interaction-one",
+                              content=json.dumps({"handoff_result": result})),
+                   native_event("tool.execution_complete", "task-terminal",
+                                toolCallId="call-one", success=True))
+    handoff.observe_cli(fixture.entry, log)
+    return result
+
+
 class NativeObservationTests(unittest.TestCase):
     def setUp(self):
         self.fixture = GitFixture()
@@ -292,6 +319,144 @@ class NativeObservationTests(unittest.TestCase):
                 changed["assignments"][0]["terminal_task"][field] = value
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
+
+    def test_logical_release_removes_owner_path_before_fresh_candidate_validation(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        old_worktree = f.worktree
+        validation_worktree = f.home / "validation"
+        writer = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys; sys.stdin.readline(); open('late-write.txt', 'w').write('late\\n')"],
+            cwd=old_worktree, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        f.processes.append(writer)
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            state_path = f.home / "state.json"
+            write_json(state_path, f.state)
+            command = subprocess.run(
+                [sys.executable, "-m", "scripts.workflow_pilot.agent_handoff", "release-worktree",
+                 "--state", str(state_path), "--assignment-id", f.assignment["id"],
+                 "--coordinator-worktree", str(f.repository),
+                 "--validation-worktree", str(validation_worktree)],
+                cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(command.returncode, 0, command.stderr.decode())
+            f.state = observations.load_json(state_path)
+            f.entry = f.state["assignments"][0]
+            release = json.loads(command.stdout)
+            self.assertFalse(old_worktree.exists())
+            self.assertEqual(release["head_sha"], result["result_sha"])
+            self.assertEqual(release["worktree"], str(old_worktree))
+            self.assertEqual(release["validation_worktree"], str(validation_worktree))
+            self.assertFalse(any(
+                line == f"worktree {old_worktree}"
+                for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+            ))
+            writer.stdin.write(b"write\n")
+            writer.stdin.close()
+            self.assertEqual(writer.wait(timeout=10), 1)
+            self.assertIn("FileNotFoundError", writer.stderr.read().decode())
+            self.assertFalse(old_worktree.exists())
+            self.assertFalse((validation_worktree / "late-write.txt").exists())
+
+            verdict = handoff.validate_handoff(
+                f.state, result, worktree=validation_worktree,
+            )
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertNotIn("owner-worktree-release-unavailable", verdict["rejection_codes"])
+        self.assertIsNotNone(f.entry["closed_at"])
+        self.assertGreaterEqual(
+            handoff.timestamp(f.entry["closed_at"]),
+            handoff.timestamp(release["observed_at"]),
+        )
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(f.state)
+
+    def test_logical_release_recovers_after_owner_removal_before_state_persistence(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+        list_calls = 0
+
+        def fail_after_removal(cwd, *arguments):
+            nonlocal list_calls
+            if arguments == ("worktree", "list", "--porcelain"):
+                list_calls += 1
+                if list_calls == 2:
+                    raise OSError("simulated failure before release state persistence")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_after_removal):
+                with self.assertRaisesRegex(OSError, "simulated failure"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+            self.assertFalse(f.worktree.exists())
+            self.assertTrue(validation_worktree.exists())
+            self.assertIsNone(f.entry["worktree_release"])
+
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+            verdict = handoff.validate_handoff(
+                f.state, result, worktree=validation_worktree,
+            )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertEqual(
+            [line for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+             if line.startswith("worktree ")],
+            [f"worktree {f.repository}", f"worktree {validation_worktree}"],
+        )
+        self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_logical_release_rejects_dirty_or_unpublished_candidate(self):
+        for condition in ("untracked", "remote-head", "preexisting-validation"):
+            with self.subTest(condition=condition):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                result = complete_logical_task(f)
+                validation_worktree = f.home / "validation"
+                if condition == "untracked":
+                    (f.worktree / "untracked.txt").write_text("uncommitted\n")
+                    response = {"name": f.assignment["expected_branch"],
+                                "commit": {"sha": result["result_sha"]}}
+                elif condition == "preexisting-validation":
+                    validation_worktree.mkdir()
+                    response = {"name": f.assignment["expected_branch"],
+                                "commit": {"sha": result["result_sha"]}}
+                else:
+                    response = {"name": f.assignment["expected_branch"],
+                                "commit": {"sha": f.parent}}
+                fake_bin = Path(gh_stub_environment(f.home, response)["PATH"].split(os.pathsep)[0])
+                with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+                    with self.assertRaises(handoff.HandoffDataError):
+                        handoff.release_logical_worktree(
+                            f.state, f.assignment["id"], f.repository, validation_worktree,
+                        )
+                self.assertTrue(f.worktree.exists())
+                self.assertIsNone(f.entry["worktree_release"])
+                self.assertEqual(validation_worktree.exists(),
+                                 condition == "preexisting-validation")
 
     def test_owner_tagged_task_completion_cannot_establish_coordinator_terminal(self):
         f = GitFixture(assign=False)

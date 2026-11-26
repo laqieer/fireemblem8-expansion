@@ -295,7 +295,7 @@
       }
     },
     "logicalTaskTerminal": {
-      "description": "A terminal task-tool event records task completion but does not itself release worktree ownership or prove OS exit/RSS. The current runtime exposes no separate enforceable worktree-release observation, so logical-task handoffs remain ineligible.",
+      "description": "A terminal task-tool event records task completion but does not itself release worktree ownership or prove OS exit/RSS.",
       "type": "object", "additionalProperties": false,
       "required": ["event_id", "observed_at", "root_session_id", "task_id", "owner_id", "session_id",
                    "head_sha", "worktree", "git_identity", "allowed_scope", "success",
@@ -313,6 +313,24 @@
         "success": {"type": "boolean"},
         "rss_peak_bytes": {"type": "null"},
         "rss_unavailable_reason": {"const": "native task runtime does not expose per-owner RSS"}
+      }
+    },
+    "worktreeRelease": {
+      "description": "Coordinator-observed removal of the clean, published owner worktree, followed by validation in a distinct fresh worktree.",
+      "type": "object", "additionalProperties": false,
+      "required": ["release_id", "observed_at", "assignment_id", "task_id", "owner_id", "session_id",
+                   "head_sha", "worktree", "git_identity", "validation_worktree", "validation_identity",
+                   "source", "path_absent", "unregistered"],
+      "properties": {
+        "release_id": {"$ref": "#/$defs/id"}, "observed_at": {"$ref": "#/$defs/time"},
+        "assignment_id": {"$ref": "#/$defs/id"}, "task_id": {"$ref": "#/$defs/id"},
+        "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
+        "head_sha": {"$ref": "#/$defs/sha"}, "worktree": {"$ref": "#/$defs/absolute"},
+        "git_identity": {"$ref": "#/$defs/gitIdentity"},
+        "validation_worktree": {"$ref": "#/$defs/absolute"},
+        "validation_identity": {"$ref": "#/$defs/gitIdentity"},
+        "source": {"const": "git-worktree-remove"},
+        "path_absent": {"const": true}, "unregistered": {"const": true}
       }
     },
     "action": {
@@ -340,7 +358,7 @@
       "else": {"properties": {"handoff_ready": {"const": false}}}
     },
     "entry": {
-      "description": "Runtime compares assignment, lifecycle and close times; interruption must match close. A logical-task terminal observation does not authorize close without independently enforceable worktree-release evidence, which the current runtime does not expose.",
+      "description": "Runtime compares assignment, lifecycle, worktree release and close times; interruption must match close.",
       "type": "object", "additionalProperties": false,
       "required": ["assignment", "assigned_at", "git_identity", "events", "process", "checks",
                    "result", "validation", "interruption", "cursors", "remote_actions", "closed_at", "coordination_turns"],
@@ -354,6 +372,7 @@
         "validation": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
         "interruption": {"anyOf": [{"$ref": "#/$defs/interruption"}, {"type": "null"}]},
         "terminal_task": {"anyOf": [{"$ref": "#/$defs/logicalTaskTerminal"}, {"type": "null"}]},
+        "worktree_release": {"anyOf": [{"$ref": "#/$defs/worktreeRelease"}, {"type": "null"}]},
         "cursors": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/cursor"}},
         "native_binding": {"$ref": "#/$defs/nativeBinding"},
         "remote_actions": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/action"}},
@@ -367,6 +386,13 @@
           "if": {"properties": {"assignment": {"required": ["native"]}}},
           "then": {"required": ["native_binding"]},
           "else": {"not": {"required": ["native_binding"]}}
+        },
+        {
+          "if": {"properties": {"process": {"type": "null"}, "closed_at": {"type": "string"}}},
+          "then": {
+            "required": ["worktree_release"],
+            "properties": {"worktree_release": {"$ref": "#/$defs/worktreeRelease"}}
+          }
         }
       ]
     },

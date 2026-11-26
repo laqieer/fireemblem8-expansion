@@ -496,12 +496,21 @@ The native task route below binds the provider's separate dispatch-tool and
 `parentAgentTaskId` namespaces without confusing the shared root log with an
 owner session. Process-backed delegated callers still require actual owner
 process exit and complete RSS. A logical task terminal observation records
-task completion but does not prove that prior writers can no longer modify
-the worktree. The current runtime exposes no separate enforceable
-worktree-release observation, so logical-task handoffs remain ineligible;
-coordinator validation must not treat a Git snapshot or `closed_at` update as
-write revocation. This direct route does not substitute a check process for a
-delegated owner.
+completion but is not itself write revocation. For a successful logical task,
+the coordinator's `release-worktree` operation requires the exact published
+branch head, a clean linked owner worktree with no untracked or ignored data,
+and a separate coordinator worktree. It creates a fresh detached worktree at
+the exact candidate, removes the assigned worktree using normal
+`git worktree remove` (never force), and verifies the old path is absent and
+unregistered. Final candidate validation runs in the fresh worktree, not the
+removed owner worktree. This prevents subsequent path-based writes from
+altering the validated candidate under the cooperative task/tool threat model;
+it does not prove OS process exit or RSS and is not hostile same-UID isolation.
+A terminal event, clean snapshot, or `closed_at` value alone never authorizes
+release. If removal succeeds but the final observation or state persistence
+fails, a retry may finalize only after observing the owner path absent and
+unregistered and validating the already-created candidate worktree again.
+This direct route does not substitute a check process for a delegated owner.
 
 ### Pilot measurement and rollback
 

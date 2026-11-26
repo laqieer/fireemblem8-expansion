@@ -1227,7 +1227,11 @@ class HandoffSchemaTests(unittest.TestCase):
                     changed["assignments"][0]["events"][-1]["at"] = at_offset(3600)
                 else:
                     changed["assignments"][0][field] = at_offset(3600)
-                self.validator.validate(changed)
+                if field == "closed_at":
+                    with self.assertRaises(ValidationError):
+                        self.validator.validate(changed)
+                else:
+                    self.validator.validate(changed)
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_state(changed)
                 with self.assertRaises(handoff.HandoffDataError):

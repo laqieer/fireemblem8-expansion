@@ -6737,26 +6737,35 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    and repeated committed-owner work do not pass. For a logical task owner,
    record the exact dispatched `task` tool's terminal
    completion after delivery. The terminal event by itself must leave the
-   assignment open. Coordinator validation on the exact result and current
-   worktree must still reject with `owner-worktree-release-unavailable` and
-   leave `closed_at` unset because the current runtime has no independent,
-   enforceable worktree-write release observation. It must not treat a clean
-   Git snapshot or a coordinator timestamp as write revocation. Confirm the
-   terminal timestamp, rather than delayed coordinator validation, determines
-   logical-task lifetime. A prefilled close, unread native-log tail, or
-   mismatched task, owner, session, head, worktree, Git identity or scope
-   remains invalid. A close timestamp matching a rejected logical-task verdict
-   is also invalid; state validation must reject it so the prior owner cannot
-   be removed from active-worktree checks and permit a second assignment. A
-   task's printed result, self-reported completion, or
-   unrelated `tool.execution_complete` event does not release ownership.
-   Failed logical tasks remain rejected and open; they do not gain a
-   recovery/reassignment path from this successful-task contract. A future
-   runtime with a separate enforceable release observation must add a positive
-   release case before logical handoffs can become eligible.
-   A native task terminal event never substitutes for process exit/RSS when an
-   owned OS process was bound. A process-backed terminal record may remain open
-   until actual exit/RSS evidence is observed. Replayed
+   assignment open and validation without release evidence must reject with
+   `owner-worktree-release-unavailable`. For a successful task, publish the
+   exact candidate commit first, then run `release-worktree` from a separate
+   coordinator worktree. Require the exact remote branch head, a clean linked
+   owner worktree with no untracked or ignored data, and an unused validation
+   path. The operation must create a fresh detached worktree at the candidate,
+   use the normal `git worktree remove` command without force, and verify the
+   owner path is absent and unregistered. Run final validation and required
+   checks only in the fresh worktree. Hold a writer with its current directory
+   open across removal, attempt a relative file write afterward, and verify it cannot
+   create a path-visible file or dirty the fresh candidate. This tests
+   path-based write isolation, not hostile same-UID process isolation.
+   Mismatched remote head, dirty/untracked/ignored owner data, wrong Git
+   identity, a preexisting validation path while the owner still exists, or a
+   failed task must not release or close the assignment. If removal succeeds
+   but final observation or state persistence fails, retry only when the owner
+   path is absent and unregistered; require the retained validation worktree to
+   match the exact candidate before recording release. A clean snapshot,
+   `closed_at`, task self-report,
+   printed result, or unrelated `tool.execution_complete` event alone is not
+   release evidence. Confirm the terminal timestamp, rather than delayed
+   coordinator validation, determines logical-task lifetime. A prefilled
+   close, unread native-log tail, or mismatched task, owner, session, head,
+   worktree, Git identity or scope remains invalid. Failed logical tasks remain
+   rejected and open; they do not gain a recovery/reassignment path from this
+   successful-task contract. RSS remains explicitly unavailable and does not
+   block this path; a native task terminal never substitutes for process
+   exit/RSS when an owned OS process was bound. A process-backed terminal
+   record may remain open until actual exit/RSS evidence is observed. Replayed
    lifecycle source IDs reject even when the replayed event timestamp predates
    the assignment; a matching follow-up must retain both the bound parent task
    and interaction.
