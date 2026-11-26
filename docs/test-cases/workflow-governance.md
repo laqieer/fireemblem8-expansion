@@ -6882,6 +6882,12 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    A review successor cannot be assigned from a changed validation worktree.
    An independently validated successor can advance beyond its predecessor
    without requiring the historical worktree to remain the current candidate.
+   Attempt to revalidate the predecessor after successor assignment, including
+   after the successor advances and the old worktree is dirty or missing:
+   require an explicit rejection and unchanged locked state and accepted
+   predecessor verdict. Validate the clean current successor normally and
+   reject its dirty worktree. Before the fix a retry could overwrite the
+   predecessor verdict and leave its successor's state invalid.
    Append an owner or unrelated event, or remove, replace,
    truncate or append a partial record to the native log: candidate readiness
    must not reuse the stale verdict. An unread event must also block a review
