@@ -509,9 +509,11 @@ the unchanged validation worktree is removed normally so retry can start clean.
 If Git removes the owner path but leaves its registration, the operation fails
 closed and retains the validation worktree; it never globally prunes Git
 registrations. Errors during candidate setup roll back only the new, reverified
-candidate worktree. The released candidate path remains reserved to that
-assignment until it closes. Final candidate validation runs in the fresh
-worktree, not the removed owner worktree. This prevents subsequent path-based
+candidate worktree. The removed owner worktree path remains reserved to that
+assignment: later assignments cannot reuse it or any ancestor/descendant path.
+The fresh validation worktree remains reserved until that assignment closes.
+Final candidate validation runs in the fresh worktree, not the removed owner
+worktree. This prevents subsequent path-based
 writes from altering the validated candidate under the cooperative task/tool
 threat model; it does not prove OS process exit or RSS and is not hostile
 same-UID isolation.
