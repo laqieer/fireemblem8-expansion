@@ -6575,16 +6575,18 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    conflicting receipt: reject. After receipt, any same-root owner follow-up
    that changes the bound parent task rejects even if its interaction ID also
    changes; a distinct same-parent follow-up remains valid and participates
-   in chronology. Replaying a progress tool-start with an event ID already
-   retained by the lifecycle rejects, while a distinct complete tool-start in
-   the same owner session remains valid. Missing, opaque or dispatch-equal
+   in chronology. Reusing a retained lifecycle event ID on any bound-owner
+   event, including an assistant turn, rejects without advancing the cursor;
+   distinct progress IDs remain valid. Missing, opaque or dispatch-equal
    progress call IDs and missing or opaque tool names reject. After handoff,
    owner tool starts reject even if the owner-session ID is missing or opaque;
-   before progress such a start remains incomplete. Put unread
-   complete or partial records after delivery: validation
-   must hold readiness and closure until caught up, then reject a conflicting
-   parent or accept otherwise complete valid evidence. The isolated CLI case
-   also checks atomic rejection.
+   before progress such a start remains incomplete. After successful closure,
+   late events matching the closed owner or its bound session reject without
+   advancing the cursor, while unrelated-owner events remain independent. Put
+   unread complete or partial records after delivery: validation must hold
+   readiness and closure until caught up, then reject a conflicting parent or
+   accept otherwise complete valid evidence. The isolated CLI case also checks
+   atomic rejection.
 3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
    missing trailers/evidence/checks, out-of-scope path, hidden index flags,
    whitespace/checker replacement, and incremental line-budget controls.

@@ -280,7 +280,9 @@ class NativeObservationTests(unittest.TestCase):
                     duplicate["data"]["interactionId"] = "other-interaction"
                     duplicate["data"]["parentAgentTaskId"] = "other-task"
                 f.append(log, duplicate)
-                with self.assertRaisesRegex(handoff.HandoffDataError, "native receipt"):
+                expected = ("native owner event source reused" if variant == "replay"
+                            else "native receipt")
+                with self.assertRaisesRegex(handoff.HandoffDataError, expected):
                     handoff.observe_cli(f.entry, log)
 
     def test_native_followup_participates_in_progress_chronology(self):
@@ -329,12 +331,91 @@ class NativeObservationTests(unittest.TestCase):
                     replay["data"]["toolCallId"] = "edit-two"
                 f.append(log, replay)
                 if variant == "replay":
-                    with self.assertRaisesRegex(handoff.HandoffDataError, "native progress event reused"):
+                    with self.assertRaisesRegex(handoff.HandoffDataError,
+                                                "native owner event source reused"):
                         handoff.observe_cli(f.entry, log)
                 else:
                     handoff.observe_cli(f.entry, log)
                     self.assertEqual(f.entry["events"][-1]["source_id"], "progress")
                     self.assertEqual(f.entry["cursors"][0]["offset"], log.stat().st_size)
+
+    def test_native_lifecycle_source_id_cannot_be_reused_by_owner_turn(self):
+        for variant in ("replay", "distinct"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                f.append(log, task_event("tool.execution_start", "progress", owner="owner-one",
+                                         toolName="bash", toolCallId="edit",
+                                         ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                previous_offset = f.entry["cursors"][0]["offset"]
+                event_id = "progress" if variant == "replay" else "distinct-turn"
+                f.append(log, task_event("assistant.turn_start", event_id, owner="owner-one",
+                                         parentToolCallId="call-one",
+                                         interactionId="interaction-one"))
+                if variant == "replay":
+                    with self.assertRaisesRegex(handoff.HandoffDataError,
+                                                "native owner event source reused"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["cursors"][0]["offset"], previous_offset)
+                    self.assertEqual(f.entry["coordination_turns"], 0)
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["coordination_turns"], 1)
+
+    def test_closed_native_owner_cannot_advance_cursor_with_late_event(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task", toolCallId="call-one",
+                            arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one", toolCallId="call-one",
+                            interactionId="interaction-one"))
+        handoff.observe_cli(f.entry, log)
+        process = f.waiting_process()
+        handoff.bind_process(f.entry, process.pid)
+        f.append(log,
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="edit", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                 interactionId="interaction-one",
+                                 content=json.dumps({"handoff_result": result})))
+        handoff.observe_cli(f.entry, log)
+        handoff.capture_check(f.entry, "raw", revision)
+        f.finish_owner(process)
+        verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertIsNotNone(f.entry["closed_at"])
+
+        f.append(log, task_event("assistant.turn_start", "other-owner-turn", owner="other-owner",
+                                 parentToolCallId="other-dispatch", interactionId="other-interaction"))
+        handoff.observe_cli(f.entry, log)
+        previous_offset = f.entry["cursors"][0]["offset"]
+        f.append(log, task_event("assistant.turn_start", "late-owner-turn", owner="owner-one",
+                                 parentToolCallId="call-one", interactionId="interaction-one"))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner emitted an event"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], previous_offset)
+        self.assertEqual(f.entry["coordination_turns"], 0)
 
     def test_native_progress_requires_distinct_complete_tool_identity(self):
         for variant in ("missing-id", "opaque-id", "dispatch-id", "missing-name", "opaque-name"):

@@ -2645,6 +2645,11 @@ each unique across the retained state, including closed history. The native
 task route may reserve an assignment before the runtime supplies those IDs.
 A successor or independent assignment needs a fresh dispatch identity;
 changing other IDs cannot reuse an old task correlation.
+For a bound native owner, every observed event is checked against retained
+lifecycle source IDs before it can advance the state or cursor. Reusing one
+rejects regardless of event type. After the owner is closed, a later event
+matching its owner or bound owner-session identity also rejects without
+advancing the cursor; unrelated owners remain independent.
 
 Reusable text and path fields accept Unicode scalar values, including
 supplementary characters and valid JSON escapes. Escaped lone UTF-16

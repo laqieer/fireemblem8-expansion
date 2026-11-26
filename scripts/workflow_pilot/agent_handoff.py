@@ -890,6 +890,12 @@ def observe_native_task(entry, log_path):
                 or session_id != task["root_session_id"]):
             continue
         data, kind = event["data"], event.get("type")
+        is_owner_event = (
+            a["owner_id"] is not None and event.get("agentId") == a["owner_id"]
+            or a["session_id"] is not None and data.get("ownerNativeSessionId") == a["session_id"]
+        )
+        require(entry["closed_at"] is None or not is_owner_event,
+                "closed native owner emitted an event")
         if kind == "tool.execution_start" and data.get("toolName") == "task" and event.get("agentId") is None:
             arguments = data.get("arguments")
             prompt = arguments.get("prompt") if isinstance(arguments, dict) else None
@@ -915,6 +921,10 @@ def observe_native_task(entry, log_path):
             continue
         if a["owner_id"] is None or event.get("agentId") != a["owner_id"]:
             continue
+        source_ids = {item["source_id"] for item in entry["events"]}
+        if binding["started_id"] is not None:
+            source_ids.add(binding["started_id"])
+        require(event["id"] not in source_ids, "native owner event source reused")
         if kind == "user.message":
             if binding["parent_task_id"] is not None:
                 if data.get("source") == f"agent-{task['root_session_id']}":
@@ -939,10 +949,6 @@ def observe_native_task(entry, log_path):
                 entry["coordination_turns"] += 1
         elif kind == "tool.execution_start" and binding["parent_task_id"] is not None:
             require(len(entry["events"]) < 4, "retired owner started more work")
-            source_ids = {item["source_id"] for item in entry["events"]}
-            if binding["started_id"] is not None:
-                source_ids.add(binding["started_id"])
-            require(event["id"] not in source_ids, "native progress event reused")
             owner_session = data.get("ownerNativeSessionId")
             if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
                 continue
