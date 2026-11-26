@@ -6678,8 +6678,10 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    in chronology. Reusing a retained lifecycle event ID on any bound-owner
    event, including an assistant turn, rejects without advancing the cursor;
    distinct progress IDs remain valid. Missing, opaque or dispatch-equal
-   progress call IDs and missing or opaque tool names reject. After handoff,
-   owner tool starts reject even if the owner-session ID is missing or opaque;
+   progress call IDs and missing or opaque tool names reject. Once bound, an
+   explicitly conflicting owner session on a tool completion, turn or delivery
+   rejects; matching or omitted optional session fields remain valid. After
+   handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. After successful closure,
    late events matching the closed owner or its bound session reject without
    advancing the cursor, while unrelated-owner events remain independent. Put
@@ -6851,9 +6853,16 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    owner path is absent and unregistered. Run final validation and required
    checks only in the fresh worktree. After acceptance, the candidate readiness
    check must use the recorded validation worktree and reject a missing or
-   modified worktree. A new release record is bound to the assignment without
-   a second identifier; an older record's derived identifier must still
-   validate exactly. Hold a writer with its current directory
+   modified worktree. Append an owner or unrelated event, or remove, replace,
+   truncate or append a partial record to the native log: candidate readiness
+   must not reuse the stale verdict. An unread event must also block a review
+   successor and any later accepted review in its chain. Observe a valid
+   unrelated event and confirm readiness returns; a late owner event rejects.
+   Capture direct and asynchronous checks after
+   release and require their worktree to be the recorded validation worktree.
+   A new release record is bound to the assignment without a second
+   identifier; an older record's derived identifier must still validate exactly.
+   Hold a writer with its current directory
    open across removal, attempt a relative file write afterward, and verify it cannot
    create a path-visible file or dirty the fresh candidate. This tests
    path-based write isolation, not hostile same-UID process isolation.

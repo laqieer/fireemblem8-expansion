@@ -2838,6 +2838,8 @@ root log session, is the `Copilot-Session` trailer identity. Two owners may
 share a root log and interaction, but cannot reuse owner, owner session,
 dispatch, receipt-task or lifecycle source identities. Missing, opaque,
 contradictory, duplicate or wrong observations remain incomplete or reject.
+Once bound, an explicitly present owner session on any correlated owner event
+must match; event types that omit the field remain supported.
 
 Existing separate-session v3 records keep their original dispatch/receipt
 correlation; their session and dispatch IDs must be known at reservation.
@@ -2853,6 +2855,10 @@ from the dispatch.
 Shared-root validation consumes one bounded batch and refuses readiness or
 closure with `native-log-unread` while complete or partial bytes remain.
 Observe or validate again until caught up; contradictory records still reject.
+Candidate readiness and review-successor assignment recheck the native cursors
+through the accepted review-predecessor chain, even after a later handoff.
+Unread, missing, replaced or truncated logs block admission; observe unrelated
+events before retrying. An interrupted replacement starts a new accepted chain.
 
 | State | Actual observation |
 | --- | --- |

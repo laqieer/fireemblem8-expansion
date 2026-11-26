@@ -12,9 +12,9 @@ from jsonschema import Draft202012Validator
 
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
-from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, gh_stub_environment
+from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, gh_stub_environment, git
 from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
-from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task
+from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task, task_event
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -116,6 +116,103 @@ class CoordinatorLocalTests(unittest.TestCase):
             self.assertFalse(gate._local_ready(f.state, pr, record))
         finally:
             temporarily_missing.rename(validation_worktree)
+
+        log = Path(f.entry["cursors"][0]["path"])
+        f.append(log, task_event("assistant.turn_start", "unrelated-turn", owner="other-owner",
+                                 parentToolCallId="other-call", interactionId="other-interaction"))
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        handoff.observe_cli(f.entry, log)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        log.rename(f.home / "missing-log")
+        try:
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            (f.home / "missing-log").rename(log)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        original_log = log.read_bytes()
+        log.write_bytes(original_log[:-1])
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        log.write_bytes(original_log)
+        log.rename(f.home / "original-log")
+        try:
+            log.write_bytes(original_log)
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            log.unlink()
+            (f.home / "original-log").rename(log)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        with log.open("ab") as output:
+            output.write(b'{"id":')
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        with log.open("r+b") as output:
+            output.truncate(f.entry["cursors"][0]["offset"])
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+
+        coordinator = f.home / "coordinator"
+        git(f.repository, "worktree", "add", str(coordinator), f.assignment["expected_branch"])
+        gate.register_local_validation(f.state, record, pr, coordinator, CHECKS)
+        gate.capture_local_check(f.state, record, pr, "raw")
+
+        def executor(context, head):
+            check = raw.run_process(
+                ["/usr/bin/python3", "-I", "-c",
+                 "from pathlib import Path; assert Path('docs/change.txt').read_text() == 'change\\n'"],
+                cwd=Path(context["allowed_worktree"]), env=raw.git_environment())
+            measurements = dict.fromkeys(handoff.METRICS, 0)
+            return check, measurements
+
+        gate.capture_local_check(f.state, record, pr, "config", executor)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        f.append(log, task_event("assistant.turn_start", "late-owner", owner=f.assignment["owner_id"],
+                                 parentToolCallId=f.assignment["dispatch_id"],
+                                 interactionId="interaction-one"))
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner"):
+            handoff.observe_cli(f.entry, log)
+
+    def test_review_successor_cannot_hide_unread_predecessor_activity(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        first_result = complete_logical_task(f)
+        first_entry = f.entry
+        log = Path(first_entry["cursors"][0]["path"])
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": first_result["result_sha"]}},
+        )
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+            self.assertTrue(handoff.validate_handoff(
+                f.state, first_result, worktree=validation)["handoff_ready"])
+
+        successor_worktree = f.home / "successor"
+        git(f.repository, "worktree", "add", str(successor_worktree), f.assignment["expected_branch"])
+        successor = copy.deepcopy(f.assignment)
+        del successor["native"]
+        successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                         dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                         assigned_parent_sha=first_result["result_sha"], allowed_worktree=str(successor_worktree))
+        f.entry = handoff.assign(f.state, successor)
+        f.assignment, f.worktree, f.parent = successor, successor_worktree, first_result["result_sha"]
+        f.parent_log, f.owner_log = f.home / "successor-parent.jsonl", f.home / "successor-owner.jsonl"
+        with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", successor["session_id"]):
+            result = f.complete(content="successor change\n")
+        verdict = f.validate(result)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        pr = SimpleNamespace(
+            repository=f.state["repository"], repository_id=1, number=191,
+            head_sha=result["result_sha"], head_ref=successor["expected_branch"],
+            base_sha=first_result["assigned_parent_sha"], base_ref="master")
+        decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
+                                    decision_oid="a" * 40, changed_lines=1)
+        record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        f.append(log, task_event("assistant.turn_start", "late-predecessor", owner="owner-one",
+                                 parentToolCallId="call-one", interactionId="interaction-one"))
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner"):
+            handoff.observe_cli(first_entry, log)
 
     def test_raw_only_and_candidate_success_or_commands_are_not_registration(self):
         for definitions in (

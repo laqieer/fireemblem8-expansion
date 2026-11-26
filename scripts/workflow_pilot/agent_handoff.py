@@ -128,6 +128,23 @@ def validation_assignment(entry):
             if release is not None else assignment)
 
 
+def accepted_handoff_current(state, entry):
+    while True:
+        if (entry["closed_at"] is None or entry["validation"] is None
+                or not entry["validation"]["handoff_ready"]):
+            return False
+        if "native_binding" in entry:
+            try:
+                if not observations.cli_cursor_caught_up(entry["cursors"][0]):
+                    return False
+            except (OSError, ValueError):
+                return False
+        assignment = entry["assignment"]
+        if assignment["kind"] != "review":
+            return True
+        entry = find_entry(state, assignment["predecessor_id"])
+
+
 def sha(value):
     text(value, maximum=40, pattern=SHA_RE)
 
@@ -979,6 +996,9 @@ def assign(state, assignment):
     if native is not None:
         require(all(assignment[name] is None for name in ("owner_id", "session_id", "dispatch_id")),
                 "native assignment must be reserved before dispatch")
+    if assignment["kind"] == "review":
+        previous = find_entry(state, assignment["predecessor_id"])
+        require(accepted_handoff_current(state, previous), "predecessor handoff is not current")
     current = observe_git(assignment)
     require(current["head"] == assignment["assigned_parent_sha"], "assigned parent is not current HEAD")
     require(current["branch"] == assignment["expected_branch"], "wrong assignment branch")
@@ -1313,6 +1333,11 @@ def observe_native_task(entry, log_path):
         if (timestamp(event["timestamp"]) < timestamp(entry["assigned_at"])
                 or session_id != task["root_session_id"]):
             continue
+        if is_owner_event and kind == "tool.execution_start" and binding["parent_task_id"] is not None:
+            require(len(entry["events"]) < 4, "retired owner started more work")
+        if is_owner_event and a["session_id"] is not None and "ownerNativeSessionId" in data:
+            require(data["ownerNativeSessionId"] == a["session_id"],
+                    "native owner session changed")
         if kind == "tool.execution_start" and data.get("toolName") == "task" and event.get("agentId") is None:
             arguments = data.get("arguments")
             prompt = arguments.get("prompt") if isinstance(arguments, dict) else None
@@ -1388,7 +1413,6 @@ def observe_native_task(entry, log_path):
                 advance_time(event)
                 entry["coordination_turns"] += 1
         elif kind == "tool.execution_start" and binding["parent_task_id"] is not None:
-            require(len(entry["events"]) < 4, "retired owner started more work")
             owner_session = data.get("ownerNativeSessionId")
             if not isinstance(owner_session, str) or not ID_RE.fullmatch(owner_session):
                 continue
@@ -1588,7 +1612,7 @@ def _same_json_value(left, right):
 def capture_check(entry, check_id, result_sha, trusted_executor=None, *, task_owned=True,
                   assignment=None):
     """Trusted executors only; direct checks do not claim task-owned resource deltas."""
-    a = assignment or entry["assignment"]
+    a = assignment or validation_assignment(entry)
     definition = a["required_checks"].get(check_id)
     require(definition is not None, "unknown required check")
     before = observe_git(a)
@@ -1641,7 +1665,7 @@ def begin_check(entry, check_id, result_sha, process):
     require(definition is not None and process.returncode is None, "unknown or completed check")
     require(observations.process_identity(process.pid, "check")["state"] == "running",
             "check child is not running")
-    a = entry["assignment"]
+    a = validation_assignment(entry)
     check = {"id": check_id, "evidence_id": definition["evidence_id"], "contract": definition["contract"],
              "parent_sha": a["assigned_parent_sha"], "result_sha": result_sha,
              "worktree": a["allowed_worktree"], "started_at": now(), "completed_at": None,
