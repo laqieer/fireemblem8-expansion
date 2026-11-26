@@ -6775,8 +6775,13 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    use the normal `git worktree remove` command without force, and verify the
    owner path is absent and unregistered. Run final validation and required
    checks only in the fresh worktree. After acceptance, the candidate readiness
-   check must use the recorded validation worktree and reject a missing or
-   modified worktree. Append an owner or unrelated event, or remove, replace,
+   check must use the recorded validation worktree and reject a missing,
+   modified, moved-head or identity-replaced worktree, both before and after
+   registering separate coordinator-owned checks for the same candidate.
+   A review successor cannot be assigned from a changed validation worktree.
+   An independently validated successor can advance beyond its predecessor
+   without requiring the historical worktree to remain the current candidate.
+   Append an owner or unrelated event, or remove, replace,
    truncate or append a partial record to the native log: candidate readiness
    must not reuse the stale verdict. An unread event must also block a review
    successor and any later accepted review in its chain. Observe a valid

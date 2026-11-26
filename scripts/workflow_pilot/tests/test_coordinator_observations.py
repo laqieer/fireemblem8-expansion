@@ -134,6 +134,12 @@ class NativeObservationTests(unittest.TestCase):
         successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
                          dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
                          assigned_parent_sha=result["result_sha"], allowed_worktree=str(successor_worktree))
+        tracked = validation / "docs/change.txt"
+        original = tracked.read_bytes()
+        tracked.write_bytes(b"modified after validation\n")
+        with self.assertRaisesRegex(handoff.HandoffDataError, "predecessor.*current"):
+            handoff.assign(f.state, successor)
+        tracked.write_bytes(original)
         log = Path(f.entry["cursors"][0]["path"])
         f.append(log, task_event("assistant.turn_start", "unrelated-turn", owner="other-owner",
                                  parentToolCallId="other-call", interactionId="other-interaction"))

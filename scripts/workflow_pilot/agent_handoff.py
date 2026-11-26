@@ -128,6 +128,20 @@ def validation_assignment(entry):
             if release is not None else assignment)
 
 
+def released_candidate_current(entry):
+    release = entry.get("worktree_release")
+    if release is None:
+        return True
+    try:
+        current = observe_git(validation_assignment(entry))
+        return (current["identity"] == release["validation_identity"]
+                and current["head"] == entry["validation"]["result_sha"]
+                and current["branch"] is None
+                and not current["dirty_paths"] and not current["conflicting"])
+    except (OSError, ValueError):
+        return False
+
+
 def accepted_handoff_current(state, entry):
     while True:
         if (entry["closed_at"] is None or entry["validation"] is None
@@ -1024,7 +1038,8 @@ def assign(state, assignment):
                 "native assignment must be reserved before dispatch")
     if assignment["kind"] == "review":
         previous = find_entry(state, assignment["predecessor_id"])
-        require(accepted_handoff_current(state, previous), "predecessor handoff is not current")
+        require(accepted_handoff_current(state, previous) and released_candidate_current(previous),
+                "predecessor handoff is not current")
     current = observe_git(assignment)
     require(current["head"] == assignment["assigned_parent_sha"], "assigned parent is not current HEAD")
     require(current["branch"] == assignment["expected_branch"], "wrong assignment branch")

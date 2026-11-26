@@ -522,7 +522,11 @@ assignment: later assignments cannot reuse it or any ancestor/descendant path.
 The fresh validation worktree remains reserved until that assignment closes.
 Final candidate validation runs in the fresh worktree, not the removed owner
 worktree. Candidate readiness rechecks that worktree's recorded Git identity,
-clean detached head and merge base. New release records are bound by their
+clean detached head and merge base, including when coordinator-owned checks
+are registered for the same candidate. A review successor rechecks the released
+predecessor before assignment; after an independently validated successor
+advances the candidate, its own exact-head evidence applies and the native
+predecessor cursor chain remains current. New release records are bound by their
 assignment ID; existing records with a release ID are accepted only when that
 ID matches the previously derived value. Removing the owner worktree prevents
 subsequent path-based

@@ -165,6 +165,35 @@ class CoordinatorLocalTests(unittest.TestCase):
 
         gate.capture_local_check(f.state, record, pr, "config", executor)
         self.assertTrue(gate._local_ready(f.state, pr, record))
+        tracked.write_bytes(b"modified after coordinator validation\n")
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        self.assertFalse(gate.coordinator_local_ready(f.state, record, pr))
+        tracked.write_bytes(original)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        git(validation_worktree, "checkout", "--detach", f.parent)
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        git(validation_worktree, "checkout", "--detach", result["result_sha"])
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        validation_worktree.rename(temporarily_missing)
+        try:
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            temporarily_missing.rename(validation_worktree)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        replacement = f.home / "replacement-validation"
+        git(f.repository, "worktree", "add", "--detach", str(replacement), result["result_sha"])
+        validation_worktree.rename(temporarily_missing)
+        replacement.rename(validation_worktree)
+        try:
+            current = handoff.observe_git({"allowed_worktree": str(validation_worktree)})
+            self.assertEqual(current["head"], result["result_sha"])
+            self.assertFalse(current["dirty_paths"])
+            self.assertNotEqual(current["identity"], f.entry["worktree_release"]["validation_identity"])
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            validation_worktree.rename(replacement)
+            temporarily_missing.rename(validation_worktree)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
         f.append(log, task_event("assistant.turn_start", "late-owner", owner=f.assignment["owner_id"],
                                  parentToolCallId=f.assignment["dispatch_id"],
                                  interactionId="interaction-one"))
@@ -209,6 +238,8 @@ class CoordinatorLocalTests(unittest.TestCase):
         decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
                                     decision_oid="a" * 40, changed_lines=1)
         record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        (validation / "docs/change.txt").write_text("modified predecessor after successor\n")
         self.assertTrue(gate._local_ready(f.state, pr, record))
         f.append(log, task_event("assistant.turn_start", "late-predecessor", owner="owner-one",
                                  parentToolCallId="call-one", interactionId="interaction-one"))
