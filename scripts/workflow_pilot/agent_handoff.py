@@ -1886,6 +1886,9 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     validate_result(result)
     entry = find_entry(state, result["assignment_id"])
     a = entry["assignment"]
+    require(not any(item["assignment"]["predecessor_id"] == a["id"]
+                    for item in state["assignments"]),
+            "cannot revalidate a handoff with a successor")
     release = entry.get("worktree_release")
     selected_assignment = validation_assignment(entry)
     expected_worktree = selected_assignment["allowed_worktree"]

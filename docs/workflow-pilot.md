@@ -526,9 +526,14 @@ clean detached head and merge base, including when coordinator-owned checks
 are registered for the same candidate. A review successor rechecks the released
 predecessor before assignment; after an independently validated successor
 advances the candidate, its own exact-head evidence applies and the native
-predecessor cursor chain remains current. New release records are bound by their
-assignment ID; existing records with a release ID are accepted only when that
-ID matches the previously derived value. Removing the owner worktree prevents
+predecessor cursor chain remains current. Once a successor is assigned,
+`validate` rejects attempts to revalidate its predecessor before changing
+observations or checks; a review predecessor's accepted verdict remains
+historical. Validate the current leaf instead; observing predecessor events
+remains separate and late activity or failure still blocks current readiness.
+New release records are bound by their assignment ID; existing records with a
+release ID are accepted only when that ID matches the previously derived value.
+Removing the owner worktree prevents
 subsequent path-based
 writes from altering the validated candidate under the cooperative task/tool
 threat model; it does not prove OS process exit or RSS and is not hostile

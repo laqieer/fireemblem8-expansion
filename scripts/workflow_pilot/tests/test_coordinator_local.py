@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -13,7 +14,7 @@ from jsonschema import Draft202012Validator
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
 from scripts.workflow_pilot.tests.test_agent_handoff import (
-    GitFixture, SESSION, at_offset, gh_stub_environment, git, native_event,
+    GitFixture, SESSION, at_offset, gh_stub_environment, git, native_event, write_json,
 )
 from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
 from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task, reserve_task, task_event
@@ -246,6 +247,86 @@ class CoordinatorLocalTests(unittest.TestCase):
         self.assertFalse(gate._local_ready(f.state, pr, record))
         with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner"):
             handoff.observe_cli(first_entry, log)
+
+    def test_successor_preserves_predecessor_verdict_on_revalidation(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        first_result = complete_logical_task(f)
+        first_entry = f.entry
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": first_result["result_sha"]}},
+        )
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+            self.assertTrue(handoff.validate_handoff(
+                f.state, first_result, worktree=validation)["handoff_ready"])
+        accepted = copy.deepcopy(first_entry["validation"])
+        successor_worktree = f.home / "successor"
+        git(f.repository, "worktree", "add", str(successor_worktree), f.assignment["expected_branch"])
+        successor = copy.deepcopy(f.assignment)
+        del successor["native"]
+        successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                         dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                         assigned_parent_sha=first_result["result_sha"], allowed_worktree=str(successor_worktree))
+        f.entry = handoff.assign(f.state, successor)
+        f.assignment, f.worktree, f.parent = successor, successor_worktree, first_result["result_sha"]
+        f.parent_log, f.owner_log = f.home / "successor-parent.jsonl", f.home / "successor-owner.jsonl"
+
+        def reject_predecessor():
+            before = copy.deepcopy(f.state)
+            with self.assertRaisesRegex(handoff.HandoffDataError, "successor"):
+                handoff.validate_handoff(f.state, first_result, worktree=validation)
+            self.assertEqual(f.state, before)
+            self.assertEqual(first_entry["validation"], accepted)
+            handoff.validate_state(f.state)
+
+        reject_predecessor()
+        with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", successor["session_id"]):
+            result = f.complete(content="successor change\n")
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        missing = f.home / "missing-validation"
+        validation.rename(missing)
+        try:
+            reject_predecessor()
+        finally:
+            missing.rename(validation)
+        (validation / "docs/change.txt").write_text("modified retired predecessor\n")
+        reject_predecessor()
+
+        state_path, result_path = f.home / "state.json", f.home / "result.json"
+        write_json(state_path, f.state)
+        write_json(result_path, first_result)
+        before = state_path.read_bytes()
+        cli = raw.run_process(
+            [sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"),
+             "agent-handoff", "validate", "--state", str(state_path),
+             "--result", str(result_path), "--worktree", str(validation)],
+            cwd=ROOT, env=environment,
+        )
+        self.assertEqual(cli.returncode, 2, cli.stderr.decode())
+        self.assertIn(b"successor", cli.stderr)
+        self.assertEqual(state_path.read_bytes(), before)
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        (successor_worktree / "docs/change.txt").write_text("dirty current candidate\n")
+        self.assertFalse(f.validate(result, run_checks=False)["handoff_ready"])
+
+        other_worktree = f.home / "other"
+        git(f.repository, "worktree", "add", "-b", "agent/other", str(other_worktree),
+            first_result["assigned_parent_sha"])
+        other = copy.deepcopy(successor)
+        other.update(id="other-one", issue=179, pull_request=None, owner_id="other-owner",
+                     session_id="other-session", dispatch_id="other-dispatch", kind="initial",
+                     predecessor_id=None, assigned_parent_sha=first_result["assigned_parent_sha"],
+                     expected_branch="agent/other", allowed_worktree=str(other_worktree))
+        f.entry = handoff.assign(f.state, other)
+        f.assignment, f.worktree, f.parent = other, other_worktree, other["assigned_parent_sha"]
+        f.parent_log, f.owner_log = f.home / "other-parent.jsonl", f.home / "other-owner.jsonl"
+        with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", other["session_id"]):
+            other_result = f.complete(content="independent change\n")
+        self.assertTrue(f.validate(other_result)["handoff_ready"])
+        self.assertEqual(first_entry["validation"], accepted)
 
     def test_delayed_process_completion_cannot_attribute_successor_head(self):
         for success in (True, False):
