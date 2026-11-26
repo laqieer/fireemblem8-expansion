@@ -237,7 +237,7 @@ class NativeObservationTests(unittest.TestCase):
         premature_release = copy.deepcopy(f.state)
         premature_release["assignments"][0]["closed_at"] = terminal["observed_at"]
         with self.assertRaisesRegex(
-                handoff.HandoffDataError, "logical ownership release requires coordinator validation"):
+                handoff.HandoffDataError, "logical ownership release is unavailable"):
             handoff.validate_state(premature_release)
 
         delayed_validation = (
@@ -265,6 +265,12 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIsNone(f.entry["closed_at"])
         self.assertEqual(handoff.summarize_handoffs(f.state)["rejected"], 1)
         handoff.validate_state(f.state)
+        rejected_close = copy.deepcopy(f.state)
+        rejected_close["assignments"][0]["validation"] = copy.deepcopy(verdict)
+        rejected_close["assignments"][0]["closed_at"] = verdict["observed_at"]
+        with self.assertRaisesRegex(
+                handoff.HandoffDataError, "logical ownership release is unavailable"):
+            handoff.validate_state(rejected_close)
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(f.state)
