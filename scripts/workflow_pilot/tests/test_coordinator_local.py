@@ -167,7 +167,8 @@ class CoordinatorLocalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
         entry["closed_at"] = observations.utc_now()
-        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "logical ownership release is unavailable"):
+            gate._local_ready(self.state, self.pr, self.record)
         with self.assertRaises(ValueError):
             gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
 
