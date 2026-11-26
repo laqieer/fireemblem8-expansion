@@ -87,6 +87,8 @@ and its fail-closed all-current-feature coverage assertion.
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_order_regressions_accept_reordered_workflow \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence
    ```
+6. Exercise the source-backed review-family binding with
+   `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.BuildTopologyFamilyTests -v`.
 
 ### Expected result
 
@@ -100,6 +102,9 @@ equivalence. The step sequence itself remains ordered. Blank lines in literal
 blank line has less indentation than the surrounding shell commands.
 The same order-regression tests pass when the source workflow already has
 `steps` or `env` before the other direct fields in any worker job.
+The review-family binding reports separate observations for the two order
+tests, each worker and the source-backed step and literal-script members.
+Equivalent job-field reordering preserves its finite source model.
 
 ### Negative control
 
@@ -119,6 +124,10 @@ turn the full-game localization gate into a success.
 Adding `exit 73` after a shallow blank in the real full-game width script must
 lose exact full-game evidence and change the upstream-port workflow contract.
 Before the script-extraction fix, both parsers silently omit that command.
+The family controls also reject the original ASCII and Unicode boundary
+predicates, each broken order-test consumer, and an unsafe target accepted
+without equivalence validation. Missing helper inputs or ambiguous step
+identities block the binding rather than creating a passing observation.
 
 ### Interactions and save compatibility
 
@@ -136,7 +145,9 @@ scripts.docs_check_tests.test_check_docs -v` validates the registry and anchor.
 `python3 scripts/check_docs.py --check --check-examples` validates the
 repository documentation and named examples. No manual-only criterion applies.
 The #481 commands exercise the topology validator and upstream-port verifier
-against in-memory permutations and temporary target checkouts.
+against in-memory permutations and temporary target checkouts. The
+`BuildTopologyFamilyTests` command executes the actual staged family probes
+against temporary Git snapshots, including separate negative controls.
 
 ### Cleanup and limitations
 

@@ -60,6 +60,182 @@ class SubjectTestCase(unittest.TestCase):
         self.assertTrue(all(item.checks > 0 for item in observations))
 
 
+class BuildTopologyFamilyTests(SubjectTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        subjects = cls.tools.subjects
+        source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
+        paths = set(subjects.local_python_inputs(
+            source, (subjects.BUILD_TOPOLOGY, subjects.BUILD_VERIFY_TESTS)))
+        paths.update({
+            subjects.BUILD_WORKFLOW, subjects.BUILD_ARCHIVAL_HELPER,
+            "tests/workflows/__init__.py", "tests/upstream_port/__init__.py",
+        })
+        for name in paths:
+            target = cls.repo.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, target)
+        git(cls.repo.root, "add", ".")
+        git(cls.repo.root, "commit", "-qm", "source-backed Build topology")
+        cls.repo.base = git(cls.repo.root, "rev-parse", "HEAD")
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+
+    def build_scope(self, head=None):
+        return request("TC-TEST-QUALITY-001", "build-workflow-topology",
+                       self.repo.base, head or self.repo.base)
+
+    def selected(self, members, *names):
+        self.assertEqual({item.member for item in members if item.member in names}, set(names))
+        chosen = {item.identity: item for item in members if item.member in names}
+        for role in self.model.FAMILIES["wire"]:
+            item = next(item for item in members if item.role == role)
+            chosen[item.identity] = item
+        return tuple(chosen.values())
+
+    def selected_observations(self, members, revision, *names):
+        observed = self.run_members(members, revision)
+        return tuple(item for item in observed if item.obligation.member in names)
+
+    def test_complete_source_family_and_real_candidate_observations(self):
+        members = self.tools.members(self.build_scope())
+        self.assertEqual({item.role for item in members},
+                         set(self.model.FAMILIES["wire"]))
+        self.assert_satisfied(self.run_members(members, self.repo.base))
+        self.assertTrue(all(self.tools.subjects.BUILD_ARCHIVAL_HELPER in item.source_inputs
+                            for item in members))
+        self.assertTrue(all("scripts/workflow_pilot/review_subjects.py" not in item.source_inputs
+                            for item in members))
+
+    def test_original_ascii_and_unicode_boundaries_are_independent_controls(self):
+        path = self.tools.subjects.BUILD_TOPOLOGY
+        original = (self.repo.root / path).read_text()
+        fixed = r'(?=[^\s#-])'
+        self.assertIn(fixed, original)
+        for predicate in (r'(?=[^ \t#-])', r'(?=[^ \t#\r\n-])'):
+            with self.subTest(predicate=predicate):
+                before = self.repo.commit({path: original.replace(fixed, predicate, 1)})
+                after = self.repo.commit({path: original}, parent=before)
+                members = self.selected(
+                    self.tools.members(self.build_scope(after), (before,)),
+                    "validators:boundary-extended-host-tests")
+                prior = self.selected_observations(
+                    members, before, "validators:boundary-extended-host-tests")[0]
+                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
+                self.assert_satisfied(self.selected_observations(
+                    members, after, "validators:boundary-extended-host-tests"))
+
+    def test_both_order_consumers_have_independent_regressions(self):
+        topology = self.tools.subjects.BUILD_TOPOLOGY
+        upstream = self.tools.subjects.BUILD_VERIFY_TESTS
+        original_topology = (self.repo.root / topology).read_text()
+        original_upstream = (self.repo.root / upstream).read_text()
+        old_topology = original_topology.replace(
+            "reordered = _reorder_job_field(job, block)",
+            'reordered = job.partition("    steps:\\n")[1] + '
+            'job.partition("    steps:\\n")[2] + job.partition("    steps:\\n")[0]', 1)
+        old_upstream = original_upstream.replace(
+            'reordered = topology_tests._reorder_job_field(job, "steps")',
+            'fields, separator, steps = job.partition("    steps:\\n")\n'
+            "            reordered = separator + steps + fields", 1)
+        self.assertNotEqual(old_topology, original_topology)
+        self.assertNotEqual(old_upstream, original_upstream)
+        before = self.repo.commit({topology: old_topology, upstream: old_upstream})
+        after = self.repo.commit({topology: original_topology, upstream: original_upstream},
+                                 parent=before)
+        members = self.selected(
+            self.tools.members(self.build_scope(after), (before,)),
+            "validators:topology-order-host-tests", "validators:upstream-order-host-tests")
+        names = ("validators:topology-order-host-tests", "validators:upstream-order-host-tests")
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual([item.verdict for item in prior],
+                         ["contract-violation", "contract-violation"])
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
+    def test_order_regressions_must_actually_detect_a_changed_contract(self):
+        cases = (
+            (self.tools.subjects.BUILD_TOPOLOGY,
+             "test_worker_blocks_can_precede_other_job_fields",
+             "validators:topology-order-host-tests"),
+            (self.tools.subjects.BUILD_VERIFY_TESTS,
+             "test_worker_mapping_order_preserves_target_gate_equivalence",
+             "validators:upstream-order-host-tests"),
+        )
+        for path, method, name in cases:
+            with self.subTest(path=path):
+                original = (self.repo.root / path).read_text()
+                broken, count = re.subn(
+                    r"    def " + method + r"\(self\):\n.*?(?=\n    def |\nclass |\Z)",
+                    "    def " + method + "(self):\n        pass\n",
+                    original, count=1, flags=re.S)
+                self.assertEqual(count, 1)
+                before = self.repo.commit({path: broken})
+                after = self.repo.commit({path: original}, parent=before)
+                members = self.selected(self.tools.members(self.build_scope(after), (before,)), name)
+                prior = self.selected_observations(members, before, name)[0]
+                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
+                self.assert_satisfied(self.selected_observations(members, after, name))
+
+    def test_unsafe_target_and_shallow_literal_mutations_are_rejected(self):
+        path = self.tools.subjects.BUILD_VERIFY
+        original = (self.repo.root / path).read_text()
+        broken = original.replace(
+            "def _require_target_gate_equivalence(repository_root):\n",
+            "def _require_target_gate_equivalence(repository_root):\n    return\n", 1)
+        self.assertNotEqual(original, broken)
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: original}, parent=before)
+        members = self.selected(
+            self.tools.members(self.build_scope(after), (before,)),
+            "consumers:host-tests", "stale-bindings:width-script")
+        names = ("consumers:host-tests", "stale-bindings:width-script")
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual([item.verdict for item in prior],
+                         ["contract-violation", "contract-violation"])
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
+    def test_literal_extractors_each_retain_commands_after_shallow_blank(self):
+        for path in (self.tools.subjects.BUILD_TOPOLOGY, self.tools.subjects.BUILD_VERIFY):
+            with self.subTest(path=path):
+                original = (self.repo.root / path).read_text()
+                broken = original.replace(
+                    'if line.strip() and not line.startswith("        "):',
+                    'if line and not line.startswith("        "):', 1)
+                self.assertNotEqual(original, broken)
+                before = self.repo.commit({path: broken})
+                after = self.repo.commit({path: original}, parent=before)
+                name = "replay:extended-host-tests"
+                members = self.selected(self.tools.members(self.build_scope(after), (before,)), name)
+                prior = self.selected_observations(members, before, name)[0]
+                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
+                self.assert_satisfied(self.selected_observations(members, after, name))
+
+    def test_model_preserves_step_sequence_and_rejects_ambiguous_source(self):
+        subjects = self.tools.subjects
+        path = subjects.BUILD_WORKFLOW
+        original = (self.repo.root / path).read_text()
+        jobs = subjects.build_job_blocks(original)
+        job = jobs["host-tests"]
+        reordered = original.replace(job, subjects.build_reorder_field(job, "steps"), 1)
+        topology = (self.repo.root / subjects.BUILD_TOPOLOGY).read_bytes()
+        verifier = (self.repo.root / subjects.BUILD_VERIFY).read_bytes()
+        self.assertEqual(subjects.build_source_model(original, topology, verifier),
+                         subjects.build_source_model(reordered, topology, verifier))
+        step, next_step, *_ = subjects.build_step_blocks(job)
+        changed_job = job.replace(step + next_step, next_step + step, 1)
+        self.assertNotEqual(job, changed_job)
+        swapped = self.repo.commit({path: original.replace(job, changed_job, 1)})
+        with self.assertRaisesRegex(ValueError, "production mapping changed"):
+            self.tools.members(self.build_scope(swapped), (self.repo.base,))
+        ambiguous = original.replace(step, step + step, 1)
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            subjects.build_source_model(ambiguous, topology, verifier)
+        missing = self.repo.commit({subjects.BUILD_ARCHIVAL_HELPER: None})
+        with self.assertRaises(ValueError):
+            self.tools.members(self.build_scope(missing))
+
+
 class AuthoredCaseFamilyTests(SubjectTestCase):
     @classmethod
     def setUpClass(cls):
