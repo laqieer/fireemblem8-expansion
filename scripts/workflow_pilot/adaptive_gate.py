@@ -1172,9 +1172,8 @@ def _local_delegations(state, pr):
                      and entry["assignment"]["expected_branch"] == pr.head_ref))]
 
 
-def _delegation_incomplete(entries):
-    return any(entry["closed_at"] is None or entry["validation"] is None
-               or not entry["validation"]["handoff_ready"] for entry in entries)
+def _delegation_incomplete(state, entries):
+    return any(not handoff.accepted_handoff_current(state, entry) for entry in entries)
 
 
 def _coordinator_git(state, record, pr, worktree):
@@ -1182,7 +1181,7 @@ def _coordinator_git(state, record, pr, worktree):
     require(not handoff.availability_errors(state, observations.utc_now()), "coordinator availability unavailable")
     require(find_candidate(state, candidate_identity(record)) == record and state["repository"] == pr.repository,
             "local candidate identity changed")
-    require(not _delegation_incomplete(_local_delegations(state, pr)),
+    require(not _delegation_incomplete(state, _local_delegations(state, pr)),
             "applicable delegated handoff is incomplete or invalid")
     require(record["abandoned_reason"] is None, "candidate is abandoned")
     current = handoff.observe_git({"allowed_worktree": str(worktree)})
@@ -1277,7 +1276,7 @@ def _local_ready(state, pr, record):
     handoff.summarize_handoffs(state)
     require(find_candidate(state, candidate_identity(record)) == record, "unrecorded local candidate")
     delegated = _local_delegations(state, pr)
-    if _delegation_incomplete(delegated) or record["abandoned_reason"] is not None:
+    if _delegation_incomplete(state, delegated) or record["abandoned_reason"] is not None:
         return False
     if "local_validation" in record:
         return coordinator_local_ready(state, record, pr)

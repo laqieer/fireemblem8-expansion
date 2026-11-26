@@ -6755,9 +6755,16 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    owner path is absent and unregistered. Run final validation and required
    checks only in the fresh worktree. After acceptance, the candidate readiness
    check must use the recorded validation worktree and reject a missing or
-   modified worktree. A new release record is bound to the assignment without
-   a second identifier; an older record's derived identifier must still
-   validate exactly. Hold a writer with its current directory
+   modified worktree. Append an owner or unrelated event, or remove, replace,
+   truncate or append a partial record to the native log: candidate readiness
+   must not reuse the stale verdict. An unread event must also block a review
+   successor and any later accepted review in its chain. Observe a valid
+   unrelated event and confirm readiness returns; a late owner event rejects.
+   Capture direct and asynchronous checks after
+   release and require their worktree to be the recorded validation worktree.
+   A new release record is bound to the assignment without a second
+   identifier; an older record's derived identifier must still validate exactly.
+   Hold a writer with its current directory
    open across removal, attempt a relative file write afterward, and verify it cannot
    create a path-visible file or dirty the fresh candidate. This tests
    path-based write isolation, not hostile same-UID process isolation.

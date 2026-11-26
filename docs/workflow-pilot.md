@@ -2850,6 +2850,10 @@ from the dispatch.
 Shared-root validation consumes one bounded batch and refuses readiness or
 closure with `native-log-unread` while complete or partial bytes remain.
 Observe or validate again until caught up; contradictory records still reject.
+Candidate readiness and review-successor assignment recheck the native cursors
+through the accepted review-predecessor chain, even after a later handoff.
+Unread, missing, replaced or truncated logs block admission; observe unrelated
+events before retrying. An interrupted replacement starts a new accepted chain.
 
 | State | Actual observation |
 | --- | --- |

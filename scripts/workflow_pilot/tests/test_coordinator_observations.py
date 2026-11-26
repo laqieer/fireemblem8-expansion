@@ -87,6 +87,61 @@ class NativeObservationTests(unittest.TestCase):
         self.fixture = GitFixture()
         self.addCleanup(self.fixture.close)
 
+    def test_released_handoff_checks_use_validation_worktree(self):
+        for mode in ("direct", "async"):
+            with self.subTest(mode=mode):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                result = complete_logical_task(f)
+                validation = f.home / "validation"
+                environment = gh_stub_environment(
+                    f.home, {"name": f.assignment["expected_branch"], "commit": {"sha": result["result_sha"]}},
+                )
+                with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                    handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+                    if mode == "direct":
+                        check = handoff.capture_check(f.entry, "raw", result["result_sha"])
+                        self.assertEqual((check["exit_code"], check["worktree"]), (0, str(validation)))
+                        self.assertTrue(handoff.validate_handoff(
+                            f.state, result, worktree=validation, run_checks=False)["handoff_ready"])
+                    else:
+                        process = subprocess.Popen(
+                            ["/usr/bin/python3", "-I", "-c",
+                             "import sys; print('ready', flush=True); sys.stdin.readline()"],
+                            cwd=validation, env=raw.git_environment(), stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                        )
+                        f.processes.append(process)
+                        f.assert_ready(process)
+                        pending = handoff.begin_check(f.entry, "raw", result["result_sha"], process)
+                        self.assertEqual(pending["worktree"], str(validation))
+
+    def test_review_successor_rechecks_predecessor_native_cursor(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"], "commit": {"sha": result["result_sha"]}},
+        )
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+            self.assertTrue(handoff.validate_handoff(f.state, result, worktree=validation)["handoff_ready"])
+        successor_worktree = f.home / "successor"
+        git(f.repository, "worktree", "add", str(successor_worktree), f.assignment["expected_branch"])
+        successor = copy.deepcopy(f.assignment)
+        del successor["native"]
+        successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                         dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                         assigned_parent_sha=result["result_sha"], allowed_worktree=str(successor_worktree))
+        log = Path(f.entry["cursors"][0]["path"])
+        f.append(log, task_event("assistant.turn_start", "unrelated-turn", owner="other-owner",
+                                 parentToolCallId="other-call", interactionId="other-interaction"))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "predecessor.*current"):
+            handoff.assign(f.state, successor)
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(handoff.assign(f.state, successor)["assignment"]["id"], "review-two")
+
     def test_dispatch_receipt_progress_and_handoff_are_distinct_native_inputs(self):
         f = self.fixture
         f.receive(progressing=False)
