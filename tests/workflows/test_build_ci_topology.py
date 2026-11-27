@@ -56,7 +56,10 @@ MASTER_PUBLISHER_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
-COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
+COMBINED_WORKERS = (
+    "host-tests", "workflow-pilot-tests", "build", "extended-host-tests",
+    "ownership-probe-tests", "game-localization-tests", "legacy",
+)
 METADATA_ADAPTER_JOBS = candidate_evidence.METADATA_ADAPTER_JOB_IDS
 METADATA_SKIPPED_JOBS = candidate_evidence.METADATA_SKIPPED_JOB_IDS
 CLASSIFIER_JOB = "event-classifier"
@@ -80,8 +83,8 @@ METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
 }
 REQUIRED_BUILD_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
 SUMMARY_NEEDS = (
-    "needs: [event-identity, event-classifier, host-tests, build, "
-    "extended-host-tests, legacy]"
+    "needs: [event-identity, event-classifier, host-tests, workflow-pilot-tests, build, "
+    "extended-host-tests, ownership-probe-tests, game-localization-tests, legacy]"
 )
 WORKER_NEEDS = "needs: [event-identity, event-classifier]"
 FULL_WORKER_STEP_CONDITION = (
@@ -223,8 +226,11 @@ PULL_REQUEST_ACTIONS = ("opened", "synchronize", "reopened", "edited")
 PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
 SUMMARY_RESULTS = (
     '"$HOST_TESTS_RESULT"',
+    '"$WORKFLOW_PILOT_TESTS_RESULT"',
     '"$BUILD_RESULT"',
     '"$EXTENDED_HOST_TESTS_RESULT"',
+    '"$OWNERSHIP_PROBE_TESTS_RESULT"',
+    '"$GAME_LOCALIZATION_TESTS_RESULT"',
     '"$LEGACY_RESULT"',
 )
 MAP_MENU_PRESENTATION_GATE = (
@@ -274,8 +280,11 @@ METADATA_ADAPTER_ENV = (
 )
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
+    "workflow-pilot-tests": (HOST_ENV_LINE,),
     "build": (HOST_ENV_LINE,),
     "extended-host-tests": (HOST_ENV_LINE,),
+    "ownership-probe-tests": (HOST_ENV_LINE,),
+    "game-localization-tests": (HOST_ENV_LINE,),
     "legacy": (
         HOST_ENV_LINE,
         "      AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9",
@@ -707,7 +716,9 @@ def _run_block_commands(job: str) -> list[str]:
         ):
             index += 1
             block = []
-            while index < len(lines) and lines[index].startswith("        "):
+            while index < len(lines) and (
+                not lines[index].strip() or lines[index].startswith("        ")
+            ):
                 line = lines[index].strip()
                 if line and not line.startswith("#"):
                     block.append(line)
@@ -729,7 +740,7 @@ def _literal_run_script(step: str) -> str:
         raise AssertionError("step lacks a literal run block") from error
     script = []
     for line in lines[run_index + 1 :]:
-        if line and not line.startswith("        "):
+        if line.strip() and not line.startswith("        "):
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
@@ -1057,8 +1068,11 @@ def _summary_full_jobs(
         _summary_job("event-router", "success"),
         _summary_job("event-classifier", "success"),
         _summary_job("host-tests", "success"),
+        _summary_job("workflow-pilot-tests", "success"),
         _summary_job("build", "success"),
         _summary_job("extended-host-tests", "success"),
+        _summary_job("ownership-probe-tests", "success"),
+        _summary_job("game-localization-tests", "success"),
         _summary_job("legacy", "success"),
         _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
         _summary_job("summary", "success"),
@@ -1081,8 +1095,11 @@ def _summary_metadata_jobs() -> list[dict]:
         _summary_job("event-router", "success"),
         _summary_job(candidate_evidence.METADATA_CLASSIFIER, "success"),
         _summary_job("host-tests", "success"),
+        _summary_job("workflow-pilot-tests", "skipped", runner_name=None, started_at=None),
         _summary_job("build", "success"),
         _summary_job("extended-host-tests", "skipped", runner_name=None, started_at=None),
+        _summary_job("ownership-probe-tests", "skipped", runner_name=None, started_at=None),
+        _summary_job("game-localization-tests", "skipped", runner_name=None, started_at=None),
         _summary_job("legacy", "skipped", runner_name=None, started_at=None),
         _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
         _summary_job("summary", "success"),
@@ -1117,6 +1134,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "CLASSIFIED_BUILD_SHA": SUMMARY_TEST_HEAD_SHA,
         "CLASSIFIER_RESULT": "success",
         "EXTENDED_HOST_TESTS_RESULT": "skipped",
+        "GAME_LOCALIZATION_TESTS_RESULT": "skipped",
         "FALLBACK_IDENTITY_RESULT": "success",
         "FALLBACK_KIND": "pull_request",
         "FALLBACK_SHA": SUMMARY_TEST_HEAD_SHA,
@@ -1129,6 +1147,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "HOST_TESTS_RESULT": "success",
         "IDENTITY_VALID": "true",
         "LEGACY_RESULT": "skipped",
+        "OWNERSHIP_PROBE_TESTS_RESULT": "skipped",
         "PATCH_RELEASE_RESULT": "skipped",
         "PR_BASE_SHA": SUMMARY_TEST_BASE_SHA,
         "PR_BASE_REF": "master",
@@ -1140,6 +1159,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "RUN_EXPENSIVE": "false",
         "RUN_ID": str(SUMMARY_TEST_RUN_ID),
         "RUN_NUMBER": str(SUMMARY_TEST_RUN_NUMBER),
+        "WORKFLOW_PILOT_TESTS_RESULT": "skipped",
     }
     env.update(overrides)
     return env
@@ -1276,12 +1296,35 @@ def _contains_command(job: str, command: str) -> bool:
     )
 
 
+def _reorder_job_field(job: str, field: str) -> str:
+    matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
+    selected = [index for index, match in enumerate(matches) if match.group(1) == field]
+    if len(selected) != 1:
+        raise ValueError(f"job must contain exactly one {field} field")
+    blocks = [
+        job[
+            match.start():matches[index + 1].start() if index + 1 < len(matches) else len(job)
+        ]
+        for index, match in enumerate(matches)
+    ]
+    index = selected[0]
+    if index == 0:
+        blocks = blocks[1:] + blocks[:1]
+    else:
+        blocks = blocks[index : index + 1] + blocks[:index] + blocks[index + 1 :]
+    return job[:matches[0].start()] + "".join(blocks)
+
+
 def _step_blocks(job: str) -> list[str]:
     matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
+    direct_fields = list(re.finditer(r"^    (?=[^\s#-])", job, re.MULTILINE))
     return [
         job[
             match.start():
-            matches[index + 1].start() if index + 1 < len(matches) else len(job)
+            min(
+                [matches[index + 1].start() if index + 1 < len(matches) else len(job)]
+                + [field.start() for field in direct_fields if field.start() > match.start()]
+            )
         ]
         for index, match in enumerate(matches)
     ]
@@ -1490,7 +1533,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
     if not steps or not _preflight_step_is_reviewed(steps[0], "host-tests"):
         return ["host-tests review-first preflight differs"]
     steps = steps[1:]
-    if len(steps) < 10:
+    if len(steps) < 9:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
         _metadata_adapter_step_is_reviewed(steps[0]),
@@ -1551,13 +1594,6 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[8],
-            "Run workflow-pilot reporter regression suite (issue #176)",
-            (WORKFLOW_PILOT_DISCOVERY_GUARD, WORKFLOW_PILOT_GATE),
-            if_expression=FULL_WORKER_STEP_CONDITION,
-            env_lines=SCRUBBED_STEP_ENV,
-        ),
-        _run_step_is_exact(
-            steps[9],
             "Validate workflow-pilot baseline against checked-out Git history",
             (WORKFLOW_PILOT_BASELINE_GATE,),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -1654,7 +1690,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         "    steps:",
     ]
     errors = []
-    if direct_lines != expected_direct:
+    if sorted(direct_lines) != sorted(expected_direct):
         errors.append(
             f"{job_name} direct job mapping differs from the reviewed "
             "runs-on, timeout, env, and steps contract"
@@ -2200,8 +2236,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "event-router": 5,
         "event-classifier": 5,
         "host-tests": 90,
+        "workflow-pilot-tests": 90,
         "build": 90,
         "extended-host-tests": 90,
+        "ownership-probe-tests": 90,
+        "game-localization-tests": 90,
         "legacy": 60,
         "summary": 5,
     }
@@ -2222,8 +2261,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "event-router",
         "event-classifier",
         "host-tests",
+        "workflow-pilot-tests",
         "build",
         "extended-host-tests",
+        "ownership-probe-tests",
+        "game-localization-tests",
         "legacy",
         "summary",
     }
@@ -2397,29 +2439,43 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         if _contains_command(extended_host, duplicate):
             errors.append(f"extended host repeats Build-owned evidence: {duplicate}")
 
-    for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+    for job_name, command, condition in (
+        ("workflow-pilot-tests", WORKFLOW_PILOT_GATE, None),
+        ("host-tests", WORKFLOW_PILOT_BASELINE_GATE, FULL_WORKER_STEP_CONDITION),
+    ):
         if not _contains_exact_command(
-            jobs["host-tests"],
+            jobs[job_name],
             command,
-            if_expression=FULL_WORKER_STEP_CONDITION,
+            if_expression=condition,
             env_lines=SCRUBBED_STEP_ENV,
         ):
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
-    if not _contains_exact_command(
-        jobs["host-tests"],
-        WORKFLOW_PILOT_AUTHORITY_HYDRATION,
-        if_expression=FULL_WORKER_STEP_CONDITION,
-        env_lines=HYDRATION_STEP_ENV,
+    for job_name, condition in (
+        ("host-tests", FULL_WORKER_STEP_CONDITION),
+        ("workflow-pilot-tests", None),
     ):
+        if not _contains_exact_command(
+            jobs[job_name],
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+            if_expression=condition,
+            env_lines=HYDRATION_STEP_ENV,
+        ):
+            errors.append(
+                f"{job_name} lost exact workflow-pilot Git authority hydration"
+            )
+    reporter_worker = jobs["workflow-pilot-tests"]
+    try:
+        verify._parse_job_steps("workflow-pilot-tests", reporter_worker)
+    except ValueError as error:
         errors.append(
-            "candidate host lost exact workflow-pilot Git authority hydration"
+            f"workflow-pilot-tests protected step sequence differs: {error}"
         )
-    hydration_index = jobs["host-tests"].find(
+    hydration_index = reporter_worker.find(
         "Hydrate workflow-pilot Git authority"
     )
-    reporter_index = jobs["host-tests"].find(
+    reporter_index = reporter_worker.find(
         "Run workflow-pilot reporter regression suite (issue #176)"
     )
     if (
@@ -2433,9 +2489,38 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
         errors.append("candidate host execution defaults must not alter pilot gates")
 
-    extended = jobs["extended-host-tests"]
+    reporter_setup = [
+        step for step in _step_blocks(reporter_worker)
+        if _step_name(step) == "Install reporter dependencies"
+    ]
+    if len(reporter_setup) != 1 or not _run_step_is_exact(
+        reporter_setup[0],
+        "Install reporter dependencies",
+        (
+            "sudo apt-get update && sudo apt-get install -y build-essential python3-venv",
+            "/usr/bin/python3 -I scripts/host_python.py create",
+        ),
+    ):
+        errors.append("reporter worker lost its isolated Python or native prerequisites")
+
+    localization = jobs["game-localization-tests"]
+    localization_setup = [
+        step for step in _step_blocks(localization)
+        if _step_name(step) == "Install localization host dependencies"
+    ]
+    if len(localization_setup) != 1 or not _run_step_is_exact(
+        localization_setup[0],
+        "Install localization host dependencies",
+        (
+            "sudo apt-get update && sudo apt-get install -y "
+            "build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-venv",
+            "make -C tools/gbagfx",
+            "make -C tools/bin2c",
+        ),
+    ):
+        errors.append("localization worker lost its native prerequisites")
     width_steps = [
-        step for step in _step_blocks(extended)
+        step for step in _step_blocks(localization)
         if _step_name(step) == "Run full-game localization width contract (issue #18)"
     ]
     if len(width_steps) != 1 or not _run_step_is_exact(
@@ -2447,9 +2532,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             "python3 -m scripts.localization.game_locales check-crosswalk",
             "python3 -m scripts.localization.game_locales check-raw-closure",
         ),
-        if_expression=FULL_WORKER_STEP_CONDITION,
     ):
-        errors.append("independent extended host worker lost exact full-game evidence")
+        errors.append("independent localization worker lost exact full-game evidence")
     legacy = jobs["legacy"]
     if any(
         _step_name(step) in {
@@ -2519,7 +2603,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "broad-discovery": self.text.replace(command, "python3 -m unittest discover -s scripts/texttools/tests -v", 1),
             "codec-disguise": self.text.replace("scripts.texttools.tests.test_textprocess_publication", "scripts.texttools.tests.test_multilang_codec_publication", 1),
         }
-        for target in ("host-tests", "build", "legacy"):
+        for target in (
+            "host-tests", "workflow-pilot-tests", "build",
+            "ownership-probe-tests", "game-localization-tests", "legacy",
+        ):
             changed = self.text.replace(step, "", 1)
             destination = _job_blocks(changed)[target]
             mutations["wrong-owner-" + target] = changed.replace(destination, destination + step, 1)
@@ -2532,7 +2619,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         quoted = self.text.replace(command, 'python3 -m unittest "scripts.texttools.tests.test_textprocess_publication" -v', 1)
         self.assertEqual(_text_publication_owner_errors(quoted), [])
         self.assertEqual(verify._parse_workflow_structure_text(quoted), verify._parse_workflow_structure_text(self.text))
-        self.assertEqual(len(_job_blocks(self.text)), 8)
+        self.assertEqual(len(_job_blocks(self.text)), len(COMBINED_WORKERS) + 4)
 
     def test_archival_arm_setup_avoids_unneeded_target_cpp_recommendations(self):
         _, _, jobs = verify._parse_workflow_structure_text(self.text)
@@ -2743,18 +2830,20 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         "protected pre-pilot step sequence differs" in error
+                        or "workflow-pilot-tests protected step sequence differs" in error
                         or "event-router lacks required closed contract" in error
                         for error in _errors(changed, False)
                     )
                 )
 
     def test_protected_pilot_steps_require_exact_scrubbed_environment(self):
-        names = (
-            "Hydrate workflow-pilot Git authority",
-            "Run workflow-pilot reporter regression suite (issue #176)",
-            "Validate workflow-pilot baseline against checked-out Git history",
+        protected = (
+            ("host-tests", "Hydrate workflow-pilot Git authority"),
+            ("workflow-pilot-tests", "Hydrate workflow-pilot Git authority"),
+            ("workflow-pilot-tests", "Run workflow-pilot reporter regression suite (issue #176)"),
+            ("host-tests", "Validate workflow-pilot baseline against checked-out Git history"),
         )
-        for name in names:
+        for job_name, name in protected:
             entries = (HYDRATION_STEP_ENV if name == "Hydrate workflow-pilot Git authority"
                        else SCRUBBED_STEP_ENV)
             env_block = "      env:\n" + "\n".join(entries) + "\n"
@@ -2769,19 +2858,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
             )
             for variant in variants:
-                with self.subTest(name=name, variant=variant):
-                    step_start = self.text.index(f"    - name: {name}\n")
-                    env_start = self.text.index("      env:\n", step_start)
-                    run_start = self.text.index("      run:", env_start)
-                    changed = (
-                        self.text[:env_start]
+                with self.subTest(job=job_name, name=name, variant=variant):
+                    job = _job_blocks(self.text)[job_name]
+                    step_start = job.index(f"    - name: {name}\n")
+                    env_start = job.index("      env:\n", step_start)
+                    run_start = job.index("      run:", env_start)
+                    changed_job = (
+                        job[:env_start]
                         + variant
-                        + self.text[run_start:]
+                        + job[run_start:]
                     )
+                    changed = self.text.replace(job, changed_job, 1)
+                    self.assertNotEqual(changed, self.text)
                     self.assertTrue(
                         any(
                             "protected pre-pilot step sequence differs" in error
+                            or "workflow-pilot-tests protected step sequence differs" in error
                             or "lost exact workflow-pilot" in error
+                            or "lost exact fail-closed Build evidence" in error
                             for error in _errors(changed, False)
                         )
                     )
@@ -2818,23 +2912,39 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "--no-write-fetch-head",
             ),
         )
-        host = _job_blocks(self.text)["host-tests"]
-        self.assertTrue(
-            _contains_exact_command(
-                host,
-                WORKFLOW_PILOT_AUTHORITY_HYDRATION,
-                if_expression=FULL_WORKER_STEP_CONDITION,
-                env_lines=HYDRATION_STEP_ENV,
-            )
-        )
-        self.assertLess(
-            host.index("Hydrate workflow-pilot Git authority"),
-            host.index("Run workflow-pilot reporter regression suite"),
-        )
-        hydration = next(step for step in _step_blocks(host)
-                         if _step_name(step) == "Hydrate workflow-pilot Git authority")
-        without_token = hydration.replace("        GH_TOKEN: ${{ github.token }}\n", "", 1)
-        self.assertTrue(_protected_host_prefix_errors(host.replace(hydration, without_token, 1)))
+        jobs = _job_blocks(self.text)
+        for job_name, condition, following in (
+            ("host-tests", FULL_WORKER_STEP_CONDITION,
+             "Validate workflow-pilot baseline against checked-out Git history"),
+            ("workflow-pilot-tests", None,
+             "Run workflow-pilot reporter regression suite"),
+        ):
+            with self.subTest(job=job_name):
+                job = jobs[job_name]
+                self.assertTrue(
+                    _contains_exact_command(
+                        job,
+                        WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+                        if_expression=condition,
+                        env_lines=HYDRATION_STEP_ENV,
+                    )
+                )
+                self.assertLess(
+                    job.index("Hydrate workflow-pilot Git authority"),
+                    job.index(following),
+                )
+                hydration = next(
+                    step for step in _step_blocks(job)
+                    if _step_name(step) == "Hydrate workflow-pilot Git authority"
+                )
+                without_token = hydration.replace(
+                    "        GH_TOKEN: ${{ github.token }}\n", "", 1
+                )
+                changed = self.text.replace(
+                    job, job.replace(hydration, without_token, 1), 1
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(_errors(changed, False))
         replacements = (
             "true",
             WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(" -I ", " "),
@@ -2859,20 +2969,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "--remote untrusted",
             ),
         )
-        for replacement in replacements:
-            with self.subTest(replacement=replacement):
-                changed = self.text.replace(
-                    f"      run: {WORKFLOW_PILOT_AUTHORITY_HYDRATION}\n",
-                    f"      run: {replacement}\n",
-                    1,
-                )
-                self.assertTrue(
-                    any(
-                        "lost exact workflow-pilot Git authority hydration"
-                        in error
-                        for error in _errors(changed, False)
+        for job_name in ("host-tests", "workflow-pilot-tests"):
+            for replacement in replacements:
+                with self.subTest(job=job_name, replacement=replacement):
+                    job = jobs[job_name]
+                    changed_job = job.replace(
+                        f"      run: {WORKFLOW_PILOT_AUTHORITY_HYDRATION}\n",
+                        f"      run: {replacement}\n",
+                        1,
                     )
-                )
+                    changed = self.text.replace(job, changed_job, 1)
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "lost exact workflow-pilot Git authority hydration"
+                            in error
+                            for error in _errors(changed, False)
+                        )
+                    )
 
     def test_hydration_authentication_is_ephemeral_and_origin_scoped(self):
         token = "fixture-token"
@@ -3688,7 +3802,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertIn(body_only["payload"]["action"], _pull_request_actions(header))
         pre_fix_text = PRE_FIX_WORKFLOW.read_text(encoding="utf-8")
         pre_fix_jobs = _pre_fix_triggered_jobs(pre_fix_text, body_only)
-        self.assertEqual(pre_fix_jobs - {"summary"}, set(COMBINED_WORKERS))
+        self.assertEqual(
+            pre_fix_jobs - {"summary"}, set(candidate_evidence.HISTORICAL_WORKER_JOB_IDS)
+        )
         self.assertIn("summary", pre_fix_jobs)
         self.assertNotIn("event-classifier", pre_fix_jobs)
         self.assertEqual(
@@ -5366,8 +5482,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "event-router": 5,
             "event-classifier": 5,
             "host-tests": 90,
+            "workflow-pilot-tests": 90,
             "build": 90,
             "extended-host-tests": 90,
+            "ownership-probe-tests": 90,
+            "game-localization-tests": 90,
             "legacy": 60,
             "summary": 5,
         }
@@ -5584,11 +5703,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
             with self.subTest(job=job_name, reordered=True):
                 changed = self.text.replace(job, reordered, 1)
-                self.assertTrue(
-                    any(
-                        f"{job_name} direct job mapping differs" in error
-                        for error in _errors(changed, False)
-                    )
+                self.assertEqual(_errors(changed, False), [])
+                self.assertEqual(
+                    verify._parse_workflow_structure_text(changed),
+                    verify._parse_workflow_structure_text(self.text),
                 )
 
             for original, replacement in (
@@ -5611,6 +5729,109 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             for error in _errors(changed, False)
                         )
                     )
+
+    def test_worker_blocks_can_precede_other_job_fields(self):
+        baseline = verify._parse_workflow_structure_text(self.text)
+        for job_name in COMBINED_WORKERS:
+            job = _job_blocks(self.text)[job_name]
+            for block in ("steps", "env"):
+                with self.subTest(job=job_name, block=block):
+                    reordered = _reorder_job_field(job, block)
+                    changed = self.text.replace(job, reordered, 1)
+                    self.assertNotEqual(changed, self.text)
+                    self.assertEqual(_errors(changed, False), [])
+                    self.assertEqual(verify._parse_workflow_structure_text(changed), baseline)
+
+    def test_blank_lines_cannot_hide_step_fields(self):
+        blanks = ("", "    ", "    \r", "    \t", "        ",
+                  "    \u0085", "    \u2028", "    \u2029")
+        for job_name, job in _job_blocks(self.text).items():
+            for index, step in enumerate(_step_blocks(job)):
+                for blank in blanks:
+                    with self.subTest(job=job_name, step=index, blank=repr(blank)):
+                        changed_step = step.replace(
+                            "\n", f"\n{blank}\n      continue-on-error: true\n", 1
+                        )
+                        changed_job = job.replace(step, changed_step, 1)
+                        self.assertIn(
+                            "      continue-on-error: true",
+                            _step_blocks(changed_job)[index],
+                        )
+
+        width_steps = [
+            step for job in _job_blocks(self.text).values()
+            for step in _step_blocks(job)
+            if _step_name(step) == "Run full-game localization width contract (issue #18)"
+        ]
+        self.assertEqual(len(width_steps), 1)
+        width = width_steps[0]
+        for blank in blanks:
+            with self.subTest(blank=repr(blank)):
+                changed = self.text.replace(
+                    width, width + f"{blank}\n      continue-on-error: true\n", 1
+                )
+                self.assertTrue(
+                    any("lost exact full-game evidence" in error for error in _errors(changed, False))
+                )
+
+    def test_literal_run_scripts_preserve_blank_lines(self):
+        header = "      run: |\n"
+        blanks = ("    ", "", " ", "      ", "        ", "        \t", "    \r")
+        for job_name, job in _job_blocks(self.text).items():
+            for index, step in enumerate(_step_blocks(job)):
+                if header not in step:
+                    continue
+                script = _literal_run_script(step)
+                commands = _run_block_commands(step)
+                for blank in blanks:
+                    with self.subTest(job=job_name, step=index, blank=repr(blank)):
+                        changed = step.replace(header, header + blank + "\n", 1)
+                        expected = blank[8:] + "\n" + script
+                        self.assertEqual(_literal_run_script(changed), expected)
+                        self.assertEqual(_run_block_commands(changed), commands)
+                        lines = changed.split("\n")
+                        start = lines.index("      run: |") + 1
+                        self.assertEqual(
+                            verify._literal_run_script(
+                                lines, start, len(lines), "|", f"{job_name} step {index}"
+                            ),
+                            expected,
+                        )
+
+    def test_blank_lines_cannot_hide_run_commands(self):
+        width = next(
+            step for job in _job_blocks(self.text).values()
+            for step in _step_blocks(job)
+            if _step_name(step) == "Run full-game localization width contract (issue #18)"
+        )
+        commands = _run_block_commands(width)
+        first = f"        {commands[0]}\n"
+        last = f"        {commands[-1]}\n"
+        baseline = verify._parse_workflow_structure_text(self.text)
+        for blank in ("    ", "", " ", "      ", "        ", "        \t", "    \r"):
+            with self.subTest(blank=repr(blank), mutation="whitespace-only"):
+                equivalent = self.text.replace(
+                    width, width.replace(first, first + blank + "\n", 1), 1
+                )
+                self.assertEqual(_errors(equivalent, False), [])
+                self.assertEqual(
+                    verify._parse_workflow_structure_text(equivalent), baseline
+                )
+            with self.subTest(blank=repr(blank), mutation="extra-command"):
+                changed = self.text.replace(
+                    width,
+                    width.replace(last, last + blank + "\n        exit 73\n", 1),
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "lost exact full-game evidence" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+                self.assertNotEqual(
+                    verify._parse_workflow_structure_text(changed), baseline
+                )
 
     def test_execution_context_key_syntax_bypasses_fail_closed(self):
         execution_fields = {
@@ -5808,62 +6029,26 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
 
     def test_summary_requires_each_worker_dependency_and_result_check(self):
-        for worker, changed_needs in (
-            (
-                "host-tests",
-                "needs: [event-identity, event-classifier, build, "
-                "extended-host-tests, legacy]",
-            ),
-            (
-                "build",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "extended-host-tests, legacy]",
-            ),
-            (
-                "extended-host-tests",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "build, legacy]",
-            ),
-            (
-                "legacy",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "build, extended-host-tests]",
-            ),
-        ):
+        for worker in COMBINED_WORKERS:
             with self.subTest(need=worker):
+                changed_needs = SUMMARY_NEEDS.replace(f", {worker}", "", 1)
+                self.assertNotEqual(changed_needs, SUMMARY_NEEDS)
                 changed = self.text.replace(SUMMARY_NEEDS, changed_needs, 1)
                 self.assertTrue(
                     any("summary must depend" in error for error in _errors(changed, False))
                 )
         final_loop = (
-            'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
-            '"$EXTENDED_HOST_TESTS_RESULT" \\\n'
-            '          "$LEGACY_RESULT"'
+            'for result in "$HOST_TESTS_RESULT" "$WORKFLOW_PILOT_TESTS_RESULT" '
+            '"$BUILD_RESULT" \\\n'
+            '          "$EXTENDED_HOST_TESTS_RESULT" "$OWNERSHIP_PROBE_TESTS_RESULT" \\\n'
+            '          "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"'
         )
-        for missing, replacement in (
-            (
-                '"$HOST_TESTS_RESULT"',
-                'for result in "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
-                '          "$LEGACY_RESULT"',
-            ),
-            (
-                '"$BUILD_RESULT"',
-                'for result in "$HOST_TESTS_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
-                '          "$LEGACY_RESULT"',
-            ),
-            (
-                '"$EXTENDED_HOST_TESTS_RESULT"',
-                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \\\n'
-                '          "$LEGACY_RESULT"',
-            ),
-            (
-                '"$LEGACY_RESULT"',
-                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
-                '"$EXTENDED_HOST_TESTS_RESULT"',
-            ),
-        ):
+        for missing in SUMMARY_RESULTS:
             with self.subTest(result_check=missing):
-                changed = self.text.replace(final_loop, replacement, 1)
+                replacement = final_loop.replace(missing, "", 1)
+                self.assertNotEqual(replacement, final_loop)
+                changed = self.text.replace(final_loop, replacement)
+                self.assertNotEqual(changed, self.text)
                 self.assertTrue(
                     any("summary loop omits" in error for error in _errors(changed, False))
                 )
@@ -5886,9 +6071,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
             ),
         )
+        reporter_steps = next(
+            steps for job_name, _, steps in jobs if job_name == "workflow-pilot-tests"
+        )
         reporter = next(
-            dict(fields) for _, name, fields in host
+            dict(fields) for _, name, fields in reporter_steps
             if name == verify._WORKFLOW_PILOT_TEST_STEP_NAME
+        )
+        reporter_setup = next(
+            dict(fields) for _, name, fields in reporter_steps
+            if name == "Install reporter dependencies"
+        )
+        self.assertEqual(
+            reporter_setup["run"],
+            (
+                ("sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
+                 "-y", "build-essential", "python3-venv"),
+                ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
+            ),
         )
         interpreter = host_python.DEFAULT_ENVIRONMENT / "bin" / "python3"
         self.assertEqual(
@@ -5898,13 +6098,27 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "-I", "scripts/workflow_pilot/isolated_launcher.py", "reporter-tests",
             ),
         )
-        self.assertEqual(setup["if"], reporter["if"])
-        extended = next(
-            steps for job_name, _, steps in jobs if job_name == "extended-host-tests"
+        self.assertNotIn("if", reporter)
+        localization = next(
+            steps for job_name, _, steps in jobs if job_name == "game-localization-tests"
+        )
+        localization_setup = next(
+            dict(fields) for _, name, fields in localization
+            if name == "Install localization host dependencies"
+        )
+        self.assertEqual(
+            localization_setup["run"],
+            (
+                ("sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
+                 "-y", "build-essential", "binutils-arm-none-eabi", "libpng-dev",
+                 "pkg-config", "python3-venv"),
+                ("make", "-C", "tools/gbagfx"),
+                ("make", "-C", "tools/bin2c"),
+            ),
         )
         full_game_name = "Run full-game localization width contract (issue #18)"
         full_game = next(
-            dict(fields) for _, name, fields in extended if name == full_game_name
+            dict(fields) for _, name, fields in localization if name == full_game_name
         )
         self.assertEqual(
             full_game["run"],
@@ -5915,11 +6129,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ("python3", "-m", "scripts.localization.game_locales", "check-raw-closure"),
             ),
         )
-        self.assertEqual(full_game["if"], setup["if"])
-        extended_names = [name for _, name, _ in extended]
+        self.assertNotIn("if", full_game)
+        localization_names = [name for _, name, _ in localization]
         self.assertLess(
-            extended_names.index("Run configuration and linker-budget gates"),
-            extended_names.index(full_game_name),
+            localization_names.index("Install localization host dependencies"),
+            localization_names.index(full_game_name),
         )
         legacy = next(steps for job_name, _, steps in jobs if job_name == "legacy")
         legacy_names = [name for _, name, _ in legacy]
@@ -5931,7 +6145,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             if _step_name(step) == setup_name
         )
         full_game_step = next(
-            step for step in _step_blocks(_job_blocks(self.text)["extended-host-tests"])
+            step for step in _step_blocks(_job_blocks(self.text)["game-localization-tests"])
             if _step_name(step) == full_game_name
         )
         for step in (host_setup_step, full_game_step):
@@ -5958,29 +6172,35 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         ):
             self.assertNotEqual(changed, self.text)
             self.assertTrue(_errors(changed, False))
-        prefix, extended_body = self.text.split("  extended-host-tests:\n", 1)
+        prefix, localization_body = self.text.split("  game-localization-tests:\n", 1)
         for changed_body in (
-            extended_body.replace(
+            localization_body.replace(
                 "make game-localization-test", "make game-localization-test || true", 1,
             ),
-            extended_body.replace(
+            localization_body.replace(
                 "        python3 -m scripts.localization.game_locales check-raw-closure\n",
                 "", 1,
             ),
+            localization_body.replace(" libpng-dev", "", 1),
+            localization_body.replace("        make -C tools/gbagfx\n", "", 1),
+            localization_body.replace("        make -C tools/bin2c\n", "", 1),
         ):
-            changed = prefix + "  extended-host-tests:\n" + changed_body
+            changed = prefix + "  game-localization-tests:\n" + changed_body
             self.assertNotEqual(changed, self.text)
             self.assertTrue(_errors(changed, False))
 
-    def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
-        host_tests = _job_blocks(self.text)["host-tests"]
-        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+    def test_workflow_pilot_suite_has_its_own_required_worker(self):
+        jobs = _job_blocks(self.text)
+        for job_name, command, condition in (
+            ("workflow-pilot-tests", WORKFLOW_PILOT_GATE, None),
+            ("host-tests", WORKFLOW_PILOT_BASELINE_GATE, FULL_WORKER_STEP_CONDITION),
+        ):
             with self.subTest(command=command):
                 self.assertTrue(
                     _contains_exact_command(
-                        host_tests,
+                        jobs[job_name],
                         command,
-                        if_expression=FULL_WORKER_STEP_CONDITION,
+                        if_expression=condition,
                         env_lines=SCRUBBED_STEP_ENV,
                     )
                 )
@@ -6062,6 +6282,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         "protected pre-pilot step sequence differs" in error
+                        or "lost exact fail-closed Build evidence" in error
                         for error in _errors(changed, False)
                     )
                 )
@@ -6497,6 +6718,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "CLASSIFIED_BUILD_SHA": "1" * 40,
             "CLASSIFIER_RESULT": "success",
             "EXTENDED_HOST_TESTS_RESULT": "success",
+            "GAME_LOCALIZATION_TESTS_RESULT": "success",
             "FALLBACK_IDENTITY_RESULT": "success",
             "FALLBACK_KIND": "pull_request",
             "FALLBACK_SHA": "1" * 40,
@@ -6507,11 +6729,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "HOST_TESTS_RESULT": "success",
             "IDENTITY_VALID": "true",
             "LEGACY_RESULT": "success",
+            "OWNERSHIP_PROBE_TESTS_RESULT": "success",
             "PR_BASE_SHA": "2" * 40,
             "PR_HEAD_SHA": "1" * 40,
             "PUSH_SHA": "",
             "RAW_PUSH_SHA": "a" * 40,
             "RUN_EXPENSIVE": "true",
+            "WORKFLOW_PILOT_TESTS_RESULT": "success",
             "PATCH_RELEASE_RESULT": "skipped",
         }
         push = {
@@ -6532,8 +6756,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             **full,
             "BUILD_RESULT": "skipped",
             "EXTENDED_HOST_TESTS_RESULT": "skipped",
+            "GAME_LOCALIZATION_TESTS_RESULT": "skipped",
             "HOST_TESTS_RESULT": "skipped",
             "LEGACY_RESULT": "skipped",
+            "OWNERSHIP_PROBE_TESTS_RESULT": "skipped",
+            "WORKFLOW_PILOT_TESTS_RESULT": "skipped",
         }
         missing_base = {
             **full,
@@ -6729,6 +6956,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
                 None,
             ),
+        ) + tuple(
+            (f"{result}-{value}", {**full, result: value}, 1,
+             "required combined Build CI job did not succeed")
+            for result in (
+                "WORKFLOW_PILOT_TESTS_RESULT",
+                "OWNERSHIP_PROBE_TESTS_RESULT",
+                "GAME_LOCALIZATION_TESTS_RESULT",
+            )
+            for value in ("failure", "cancelled", "skipped", "")
         )
         with tempfile.TemporaryDirectory(
             prefix="workflow-summary-runtime-",
@@ -6855,7 +7091,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_summary_accepts_current_jobs_and_only_skipped_legacy_publisher(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
         current_jobs = [job for job in _summary_full_jobs() if job["name"] != "patch-release"]
-        variants = [("current", current_jobs, 0), ("historical", _summary_full_jobs(), 0)]
+        variants = [("current", current_jobs, 0), ("skipped-publisher", _summary_full_jobs(), 0)]
         for name in candidate_evidence.KNOWN_JOB_IDS:
             variants.append(("missing-" + name, [job for job in current_jobs if job["name"] != name], 1))
         for conclusion in ("success", "failure"):
@@ -6877,6 +7113,83 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     script, environment=_summary_metadata_env(), routes=routes,
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
+
+    def test_summary_history_requires_newest_full_run_to_have_all_current_workers(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        current = _summary_full_jobs()
+        historical = [
+            job for job in current
+            if job["name"] not in candidate_evidence.NEW_WORKER_JOB_IDS
+        ]
+        partial = [
+            job for job in current
+            if job["name"] != "game-localization-tests"
+        ]
+        historical_metadata = [
+            job for job in _summary_metadata_jobs()
+            if job["name"] not in candidate_evidence.NEW_WORKER_JOB_IDS
+        ]
+        cases = (
+            ("old-only", [(8100, historical)], 1),
+            ("old-then-current", [(8101, current), (8100, historical)], 0),
+            ("current-then-old", [(8101, historical), (8100, current)], 1),
+            ("partial-newest", [(8101, partial), (8100, current)], 1),
+            ("old-metadata-after-current", [(8101, historical_metadata), (8100, current)], 0),
+        )
+        for label, prior, expected in cases:
+            with self.subTest(history=label):
+                runs = [_summary_workflow_run(SUMMARY_TEST_RUN_ID)] + [
+                    _summary_workflow_run(run_id) for run_id, _ in prior
+                ]
+                routes = {
+                    _summary_runs_path(): _summary_response(
+                        _summary_api_payload("workflow_runs", runs)
+                    ),
+                    **{
+                        _summary_jobs_path(run_id): _summary_response(
+                            _summary_api_payload("jobs", jobs)
+                        )
+                        for run_id, jobs in prior
+                    },
+                }
+                completed, _ = _run_summary_with_api(
+                    script, environment=_summary_metadata_env(), routes=routes,
+                )
+                self.assertEqual(completed.returncode, expected, completed.stderr)
+                if label in {"old-only", "current-then-old"}:
+                    self.assertIn("requires a fresh full Build", completed.stderr)
+                elif label == "partial-newest":
+                    self.assertIn("unexpected mode shape", completed.stderr)
+
+    def test_summary_rejects_each_unskipped_new_worker_in_lightweight_modes(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        with tempfile.TemporaryDirectory(prefix="workflow-lightweight-summary-") as temporary:
+            for mode in ("metadata-only", "review-first"):
+                for result in (
+                    "WORKFLOW_PILOT_TESTS_RESULT",
+                    "OWNERSHIP_PROBE_TESTS_RESULT",
+                    "GAME_LOCALIZATION_TESTS_RESULT",
+                ):
+                    for value in ("success", "failure", "cancelled", ""):
+                        with self.subTest(mode=mode, result=result, value=value):
+                            environment = _summary_metadata_env(
+                                CLASSIFICATION=mode, **{result: value},
+                            )
+                            completed = subprocess.run(
+                                ["/bin/bash", "-e", "-c", script],
+                                cwd=ROOT,
+                                env={
+                                    **os.environ,
+                                    **environment,
+                                    "GITHUB_STEP_SUMMARY": str(Path(temporary) / "summary.md"),
+                                },
+                                check=False, capture_output=True, text=True,
+                            )
+                            self.assertNotEqual(completed.returncode, 0)
+                            if mode == "metadata-only":
+                                self.assertIn("expensive Build worker was not skipped", completed.stderr)
+                            else:
+                                self.assertNotIn("Review-first preflight complete", completed.stderr)
 
     def test_summary_runtime_metadata_only_requires_current_run_observation(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
@@ -7309,9 +7622,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         unknown_shape = full_success + [_summary_job("attacker-job", "success")]
         mixed_shape = _replace_summary_job(
-            full_success,
-            "event-classifier",
-            name="metadata-classifier",
+            _summary_metadata_jobs(),
+            "extended-host-tests",
+            conclusion="success",
+            runner_name="GitHub Actions 1",
         )
         cases = (
             (
@@ -9149,6 +9463,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "CLASSIFIED_BUILD_SHA": push_sha,
                     "CLASSIFIER_RESULT": "failure",
                     "EXTENDED_HOST_TESTS_RESULT": "success",
+                    "GAME_LOCALIZATION_TESTS_RESULT": "success",
                     "FALLBACK_IDENTITY_RESULT": "success",
                     "FALLBACK_KIND": "push",
                     "FALLBACK_SHA": push_sha,
@@ -9160,12 +9475,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "HOST_TESTS_RESULT": "success",
                     "IDENTITY_VALID": "true",
                     "LEGACY_RESULT": "success",
+                    "OWNERSHIP_PROBE_TESTS_RESULT": "success",
                     "PATCH_RELEASE_RESULT": "success",
                     "PR_BASE_SHA": "",
                     "PR_HEAD_SHA": "",
                     "PUSH_SHA": push_sha,
                     "RAW_PUSH_SHA": push_sha,
                     "RUN_EXPENSIVE": "false",
+                    "WORKFLOW_PILOT_TESTS_RESULT": "success",
                 },
                 check=False,
                 capture_output=True,
