@@ -219,6 +219,8 @@ For a root PR with no decision entry, #492 permits coordinator intake only
 when the exact candidate's complete decision collection is valid and its
 regular Git-tree blob proves that the entry is absent. The actual default
 control and live root PR identity must remain stable during observation.
+Parent-child records present in the collection must have consistent depths;
+an absent parent record is not a fresh observation of that parent's state.
 This is a conservative concurrent decision with mandatory independent
 pre-review, not a fabricated risk classification. Missing or malformed
 sources, invalid existing entries, moving control or unknown stacked

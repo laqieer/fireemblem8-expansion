@@ -779,6 +779,9 @@ audio or human-approval criterion is added.
    an invalid or duplicate collection, an existing invalid entry, and a
    non-default base do not become verified absence. Empty initial run history
    permits only provisional registration, not scheduling or merge.
+   Present parent-child records must have consistent depths in either order;
+   cycles and conflicting depths reject. An absent sibling parent is not
+   treated as a fresh live-parent observation.
    If host stop settings are unknown, retain explicit nulls in a bounded
    `plan` with concrete recovery steps; never fabricate Boolean settings or
    use unknowns for `always-on`. Expired coverage and native interruption

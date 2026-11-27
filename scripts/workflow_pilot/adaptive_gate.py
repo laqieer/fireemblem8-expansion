@@ -207,6 +207,13 @@ def validate_control_collection(raw, revision, repository):
                     "frozen baseline record cannot become a current safety latch")
         else:
             paused |= record["pilot"]["disposition"] == "paused"
+    records_by_number = {item["pull_request"]: item for item in records}
+    for item in records:
+        stack = item["stack"]
+        parent = records_by_number.get(stack["parent_pr"])
+        if parent is not None:
+            require(stack["depth"] == parent["stack"]["depth"] + 1,
+                    "current stack parent and child depths contradict")
     artifacts = reporter.expect_list(raw["artifacts"], "current artifact records")
     ids, unique = [], []
     for record in artifacts:

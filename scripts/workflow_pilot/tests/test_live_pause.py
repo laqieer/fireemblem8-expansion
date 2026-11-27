@@ -305,6 +305,41 @@ class CurrentControlTests(unittest.TestCase):
         selected = gate.fetch_decision(client, candidate, 1)
         self.assertFalse(selected.known)
 
+    def test_collection_parent_edges_are_consistent_without_inventing_live_parents(self):
+        f = self.fixture
+        root = copy.deepcopy(f.raw["pull_requests"][0])
+        root["pull_request"] += 1
+        child = copy.deepcopy(root)
+        child["pull_request"] += 1
+        child["stack"].update(depth=1, parent_pr=root["pull_request"])
+        grandchild = copy.deepcopy(child)
+        grandchild["pull_request"] += 1
+        grandchild["stack"].update(depth=2, parent_pr=child["pull_request"])
+        for change in ("valid", "reverse", "missing-parent", "cycle", "child-depth", "grandchild-depth"):
+            with self.subTest(change=change):
+                a, b, c = copy.deepcopy((root, child, grandchild))
+                if change == "reverse":
+                    records = [c, b, a]
+                elif change == "missing-parent":
+                    records = [b]
+                elif change == "cycle":
+                    b["stack"].update(depth=1, parent_pr=c["pull_request"])
+                    c["stack"].update(depth=1, parent_pr=b["pull_request"])
+                    records = [b, c]
+                else:
+                    if change == "child-depth":
+                        b["stack"]["depth"] = 2
+                    elif change == "grandchild-depth":
+                        c["stack"]["depth"] = 1
+                    records = [a, b, c]
+                raw = copy.deepcopy(f.raw)
+                raw["pull_requests"] = records
+                f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+                client, pr = f.client()
+                routed, selected, _ = f.route(client, pr)
+                self.assertEqual(routed.classification, "full")
+                self.assertEqual(selected.known, change in {"valid", "reverse", "missing-parent"})
+
     def test_observed_intake_rejects_identity_changes_after_decision(self):
         f = self.fixture
         raw = copy.deepcopy(f.raw)
