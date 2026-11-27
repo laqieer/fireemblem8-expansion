@@ -15,7 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from budget import parse_map
+if __package__:
+    from .budget import parse_map
+else:
+    from budget import parse_map
 
 
 SCHEMA_VERSION = 1

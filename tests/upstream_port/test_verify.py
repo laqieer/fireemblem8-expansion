@@ -558,6 +558,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "default-lane-check",
                 "archival-dependencies-check",
                 "quickstart-legacy-check",
+                "grado-native-state",
                 "generated-data-test",
                 "generated-data-check",
                 "modern-linker-check-debug",
