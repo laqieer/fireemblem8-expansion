@@ -4922,8 +4922,7 @@ ifeq ($(MODERN_CONFIG),debug)
 		MODERN_NEWLIB_INCLUDE="$(MODERN_NEWLIB_INCLUDE)" \
 		MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
 		"$(PYTHON)" -m unittest \
-		scripts.modernize.tests.test_expansion_config.BluePhaseDelegateFlagTests.test_c_macro_defaults_and_validates_profiles \
-		scripts.modernize.tests.test_expansion_config.BluePhaseDelegateFlagTests.test_make_choice_reaches_compiler_metadata_and_stamp \
+		scripts.modernize.tests.test_expansion_config.BluePhaseDelegateFlagTests \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_text_context_records_actual_recipes_without_catalog \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_context_keeps_implicit_makefile_with_preloaded_input \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_native_context_captures_target_specific_native_tools \

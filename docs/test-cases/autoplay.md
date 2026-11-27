@@ -102,7 +102,7 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
    `python3 -m unittest scripts.modernize.tests.test_expansion_config.BluePhaseDelegateFlagTests -v`.
    Set `MODERN_CC` to use a selected ARM GCC; an explicitly unavailable
    compiler fails rather than silently skipping. The debug linker-check runs
-   the two ARM-dependent configuration checks in the ARM-equipped Build job.
+   the complete configuration test class in the ARM-equipped Build job.
 2. Run
    `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
    and
