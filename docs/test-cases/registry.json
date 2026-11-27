@@ -2628,18 +2628,30 @@
         "Modern AAPCS debug and release runtime gates"
       ],
       "purpose": "Prove semantic scenario verification, provenance, and no baseline auto-refresh.",
-      "prerequisites": "Clean boot with no committed save, savestate, or external baseline.",
-      "actions": "Run host-only tests, including the registered ROM/ELF ownership and temporary-path controls, a behavior capture/verify route, and a deliberate mismatch fixture.",
-      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference. Host-only live classes skip before artifact probes; normal-mode debug ELF layout checking runs.",
-      "negative_control": "Verify cannot rewrite an expected fingerprint. Missing debug ELF registration or guard is rejected, and an unguarded class reaches a poisoned probe; root-alias renaming and owned temporary paths remain valid.",
+      "prerequisites": "Clean boot with no committed save, savestate, or external baseline; host C compiler and libmGBA development headers and library for backend checks.",
+      "actions": "Run host-only tests, including registered ROM/ELF ownership and temporary-path controls, compiled backend and generated-homebrew probe checks, a behavior capture/verify route, and a deliberate mismatch fixture.",
+      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference. Region/pixel captures match the compiled RGB/FNV and homebrew color controls. Host-only live classes skip before artifact probes; normal-mode debug ELF layout checking runs.",
+      "negative_control": "Verify cannot rewrite an expected fingerprint; host-only mode is explicit; out-of-bounds inputs are rejected and outside pixels cannot change a region hash. Missing debug ELF registration or guard is rejected, and an unguarded class reaches a poisoned probe; root-alias renaming and owned temporary paths remain valid.",
       "interactions": "The shared harness observes scenarios without changing their feature contracts.",
       "save_compatibility": "Scenarios start clean and do not alter save layout or epoch.",
       "cleanup": "Remove ignored captures with make clean_fast.",
-      "limitations": "Screenshots are supplementary; semantic probes are the oracle.",
+      "limitations": "Screenshots are supplementary; semantic probes are the oracle. Generated-homebrew captures are not production game ROM evidence.",
       "automation": [
         {
           "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_baseline_no_autorefresh.py\" -v && python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_host_only_mode.py\" -v",
           "evidence": "tools/gba-playtest/tests/test_baseline_no_autorefresh.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_region_pixel_schema.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_region_pixel_schema.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s tools/gba-playtest/tests -p \"test_backend_probes.py\" -v",
+          "evidence": "tools/gba-playtest/tests/test_backend_probes.py"
+        },
+        {
+          "command": "PYTHONPATH=tools/gba-playtest/tests python3 -m unittest -v test_backend_integration.BackendIntegrationTests.test_generated_homebrew_full_lifecycle_and_policies",
+          "evidence": "tools/gba-playtest/tests/test_backend_integration.py"
         },
         {
           "command": "make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
