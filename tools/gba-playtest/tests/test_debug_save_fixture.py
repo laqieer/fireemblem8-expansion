@@ -405,14 +405,7 @@ class DebugSaveFixtureLayoutParserTests(unittest.TestCase):
 @host_mode.live_artifact_testcase("debug save-fixture layout coverage")
 class DebugSaveFixtureLayoutEmissionTests(unittest.TestCase):
     def test_retained_anchor_and_fixture_budget_layout(self):
-        elf = (
-            ROOT
-            / "build"
-            / "expansion-modern"
-            / "debug"
-            / "aapcs"
-            / "fireemblem8.elf"
-        )
+        elf = host_mode.modern_elf("debug")
         self.assertTrue(elf.is_file(), f"focused debug ELF is missing: {elf}")
         run_debug_save_fixture_checks.check_layout_anchor(elf)
 
