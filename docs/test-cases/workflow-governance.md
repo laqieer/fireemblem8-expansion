@@ -590,7 +590,8 @@ the consumers' independent protected-principal/deployment requirements.
    host-only bootstrap before any archival package/toolchain setup. Reporter
    and baseline keep their original required host worker and scrubbed
    environment. All eight jobs, full-mode conditions, exact checkout and
-   summary dependencies remain; worker bounds are still90/90/60minutes.
+   summary dependencies remain; `host-tests` and `build` are bounded at
+   90 minutes, `extended-host-tests` at 120, and `legacy` at 60.
    The local upstream verifier mirrors the same complete31commands in their
    current workflow order. Parsed ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
@@ -2456,7 +2457,7 @@ No manual game judgment applies.
 2. Confirm the four full-game localization commands remain together in
    `extended-host-tests`, which is independent of the workflow-pilot reporter.
 3. Inspect the exact full Build run: confirm `extended-host-tests` succeeds
-   within 90 minutes and `legacy` succeeds within 60 minutes through native
+   within 120 minutes and `legacy` succeeds within 60 minutes through native
    ARM review, archival build, and pinned-payload validation.
 
 ### Expected result
@@ -4494,8 +4495,8 @@ outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
 five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
-allowlisted env, and steps, including master-only packaging; both comprehensive
-host jobs also retain 90-minute ceilings and legacy remains 60 minutes,
+allowlisted env, and steps, including master-only packaging; `host-tests` is
+bounded at 90 minutes, `extended-host-tests` at 120, and legacy at 60,
 while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
