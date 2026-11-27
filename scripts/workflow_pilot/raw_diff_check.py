@@ -509,7 +509,7 @@ def _metadata_directory(raw: bytes | None, prefix: bytes, base: Path) -> Path:
     if raw is None or not raw.startswith(prefix):
         raise ValueError("repository Git directory file is malformed")
     value = raw[len(prefix):].rstrip(b"\r\n")
-    if not value or any(byte in value for byte in (b"\0", b"\r", b"\n")):
+    if not value or b"\0" in value:
         raise ValueError("repository Git directory file is malformed")
     path = base / os.fsdecode(value)
     with _directory_fd(path):

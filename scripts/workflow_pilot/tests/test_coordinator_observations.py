@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from datetime import timedelta
@@ -467,6 +468,48 @@ class NativeObservationTests(unittest.TestCase):
         Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
         )).validate(legacy)
+
+    def test_logical_release_with_embedded_metadata_path_controls(self):
+        for label, separator in (("lf", "\n"), ("cr", "\r"), ("mixed", "\r\n")):
+            with self.subTest(separator=label), tempfile.TemporaryDirectory(
+                prefix="agent-handoff-admin-"
+            ) as directory:
+                artifacts = Path(directory) / ("common" + separator + "parent")
+                artifacts.mkdir()
+                with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.ARTIFACTS", artifacts):
+                    f = GitFixture(assign=False)
+                    try:
+                        result = complete_logical_task(f)
+                        environment = gh_stub_environment(
+                            f.home, {"name": f.assignment["expected_branch"],
+                                     "commit": {"sha": result["result_sha"]}},
+                        )
+                        owner = f.worktree
+                        validation = f.home / "validation\n"
+                        original_git = handoff._git
+
+                        def fail_owner_removal(cwd, *arguments):
+                            if arguments == ("worktree", "remove", str(owner)):
+                                raise ValueError("simulated owner removal failure")
+                            return original_git(cwd, *arguments)
+
+                        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                            with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                                with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                                    handoff.release_logical_worktree(
+                                        f.state, f.assignment["id"], f.repository, validation,
+                                    )
+                            self.assertTrue(owner.exists())
+                            self.assertFalse(validation.exists())
+                            self.assertIsNone(f.entry["worktree_release"])
+                            handoff.release_logical_worktree(
+                                f.state, f.assignment["id"], f.repository, validation,
+                            )
+                            verdict = handoff.validate_handoff(f.state, result, worktree=validation)
+                        self.assertFalse(owner.exists())
+                        self.assertTrue(verdict["handoff_ready"], verdict)
+                    finally:
+                        f.close()
 
     def test_logical_release_preserves_worktree_path_boundaries(self):
         for fail_removal in (False, True):

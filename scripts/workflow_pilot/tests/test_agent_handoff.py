@@ -1629,6 +1629,88 @@ class RawDiffBoundaryTests(unittest.TestCase):
         self.fixture = GitFixture()
         self.addCleanup(self.fixture.close)
 
+    def test_metadata_paths_with_embedded_controls_match_git(self):
+        root = self.fixture.home
+        repository = root / "common\r\nrepo"
+        repository.mkdir()
+        (root / "common").mkdir()
+        git(repository, "init", "-b", "master")
+        git(repository, "config", "user.name", "Handoff Test")
+        git(repository, "config", "user.email", "handoff@example.invalid")
+        (repository / "tracked").write_text("fixture\n")
+        git(repository, "add", "tracked")
+        git(repository, "commit", "-m", "fixture")
+        worktree = root / "metadata-worktree"
+        git(repository, "worktree", "add", "--detach", str(worktree), "HEAD")
+        private = Path(git(worktree, "rev-parse", "--absolute-git-dir"))
+        common = repository / ".git"
+        entry = worktree / ".git"
+        commondir = private / "commondir"
+
+        for gitdir_kind in ("absolute", "relative"):
+            for common_kind in ("absolute", "relative"):
+                with self.subTest(gitdir=gitdir_kind, commondir=common_kind):
+                    gitdir_value = (str(private) if gitdir_kind == "absolute"
+                                    else os.path.relpath(private, worktree))
+                    common_value = (str(common) if common_kind == "absolute" else os.path.join(
+                        os.path.relpath(root, private), repository.name, ".git",
+                    ))
+                    self.assertIn("\r\n", gitdir_value)
+                    self.assertIn("\r\n", common_value)
+                    entry.write_bytes(b"gitdir: " + os.fsencode(gitdir_value) + b"\r\n\n")
+                    commondir.write_bytes(os.fsencode(common_value) + b"\r\n\n")
+                    git_private = Path(git(worktree, "rev-parse", "--absolute-git-dir"))
+                    git_common = Path(git(
+                        worktree, "rev-parse", "--path-format=absolute", "--git-common-dir",
+                    ))
+                    parsed_private = raw._metadata_directory(entry.read_bytes(), b"gitdir: ", worktree)
+                    parsed_common = raw._metadata_directory(
+                        commondir.read_bytes(), b"", parsed_private,
+                    )
+                    self.assertEqual(parsed_private.resolve(), git_private.resolve())
+                    self.assertEqual(parsed_common.resolve(), git_common.resolve())
+                    self.assertEqual(raw.exact_repository_root(str(worktree)), worktree.resolve())
+
+        original = entry.read_bytes()
+        try:
+            for bad in (b"bad-prefix " + os.fsencode(private), b"gitdir: \r\n",
+                        b"gitdir: " + os.fsencode(private) + b"\0suffix\n",
+                        b"gitdir: " + os.fsencode(private) + b"x" * raw.MAX_METADATA_BYTES):
+                with self.subTest(metadata=bad[:20]):
+                    entry.write_bytes(bad)
+                    with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
+                        with self.assertRaises(ValueError):
+                            raw.exact_repository_root(str(worktree))
+        finally:
+            entry.write_bytes(original)
+
+        for metadata, target, prefix in ((entry, private, b"gitdir: "),
+                                         (commondir, common, b"")):
+            with self.subTest(symlink=str(metadata)):
+                original = metadata.read_bytes()
+                link = root / ("link\r\n" + metadata.name)
+                link.symlink_to(target, target_is_directory=True)
+                try:
+                    metadata.write_bytes(prefix + os.fsencode(link) + b"\n")
+                    with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
+                        with self.assertRaises(OSError):
+                            raw.exact_repository_root(str(worktree))
+                finally:
+                    metadata.write_bytes(original)
+
+        for git_root in (private, common):
+            with self.subTest(git_root=str(git_root)):
+                info = git_root / "info"
+                info.mkdir(exist_ok=True)
+                grafts = info / "grafts"
+                grafts.write_text("forbidden\n")
+                try:
+                    with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
+                        with self.assertRaisesRegex(ValueError, "graft file"):
+                            raw.exact_repository_root(str(worktree))
+                finally:
+                    grafts.unlink()
+
     def test_whitespace_and_local_attributes_cannot_forge_success(self):
         f = self.fixture
         revision = f.commit("bad \n")
