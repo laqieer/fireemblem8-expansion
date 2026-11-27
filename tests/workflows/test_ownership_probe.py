@@ -53,7 +53,7 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
                         continue
                     if tuple(shlex.split(command, comments=True)) == PROBE_COMMAND:
                         owners.append((name, step))
-        self.assertEqual([name for name, _ in owners], ["extended-host-tests"])
+        self.assertEqual([name for name, _ in owners], ["ownership-probe-tests"])
         step = owners[0][1]
         fields = topology._direct_step_mapping_fields(step)
         self.assertIsNotNone(fields)
@@ -87,7 +87,7 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.assertEqual(len(expected), len(set(expected)))
         self.assertEqual(sorted(collector.selected), sorted(expected))
         self.assertEqual(len(collector.selected), len(set(collector.selected)))
-        condition = topology._direct_job_if(topology._job_blocks(text)["extended-host-tests"])
+        condition = topology._direct_job_if(topology._job_blocks(text)["ownership-probe-tests"])
         contexts = WorkflowTests()
         for event, mode in (
             ("pull_request", "full"), ("push", "full"), ("workflow_dispatch", "full"),
@@ -112,7 +112,7 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.assertEqual(native & workflow, set())
 
     def native_dependencies(self, text):
-        steps = topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
+        steps = topology._step_blocks(topology._job_blocks(text)["ownership-probe-tests"])
         owner = self.owner_step(text)
         installers = []
         prefix = ["sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install", "-y"]
@@ -136,21 +136,25 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.native_dependencies(text)
         line = next(
             command for command in topology._run_block_commands(
-                topology._job_blocks(text)["extended-host-tests"],
+                topology._job_blocks(text)["ownership-probe-tests"],
             ) if "apt-get install" in command
+        )
+        installer = next(
+            step for step in topology._step_blocks(topology._job_blocks(text)["ownership-probe-tests"])
+            if line in topology._run_block_commands(step)
         )
         for package in sorted(NATIVE_PACKAGES):
             with self.subTest(missing_package=package):
+                changed = text.replace(
+                    installer, installer.replace(line, line.replace(" " + package, "", 1), 1), 1
+                )
+                self.assertNotEqual(changed, text)
                 with self.assertRaises(AssertionError):
-                    self.native_dependencies(text.replace(line, line.replace(" " + package, "", 1), 1))
+                    self.native_dependencies(changed)
         changed = line[:line.index("build-essential")] + " ".join(
             shlex.quote(package) for package in sorted(NATIVE_PACKAGES, reverse=True)
         )
-        self.native_dependencies(text.replace(line, changed, 1))
-        installer = next(
-            step for step in topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
-            if line in topology._run_block_commands(step)
-        )
+        self.native_dependencies(text.replace(installer, installer.replace(line, changed, 1), 1))
         for replacement in (
             installer.replace("      run:", "      if: false\n      run:", 1),
             installer.replace("      run:", "      continue-on-error: true\n      run:", 1),

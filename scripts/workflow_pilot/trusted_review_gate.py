@@ -409,11 +409,7 @@ class ReviewTools:
             paths.update(fixtures(tree, probes))
         tree.materialize(root, sorted(paths))
         (root / "build").mkdir(exist_ok=True)
-        tool_paths = ("scripts/workflow_pilot/__init__.py",
-                      "scripts/workflow_pilot/raw_diff_check.py",
-                      self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
-                      self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
-        self.tool_tree.materialize(root, tool_paths)
+        self.tool_tree.materialize(root, self.subjects.STAGED_TOOL_PATHS)
         if any(probe.startswith("authored-case:") for probe in probes):
             self.tool_tree.materialize(root, ("scripts/check_docs.py",))
             (root / self.subjects.LOCALE_CASE_PROGRAM).write_bytes(
