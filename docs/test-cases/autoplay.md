@@ -100,6 +100,8 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
 1. Run
    `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
    and
+   `python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation.MapMenuLocalizationTests.test_stable_ids_and_all_production_text_bounds -v`
+   and
    `python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation.MapMenuCompositionTests.test_nine_row_non_story_is_shifted_while_shorter_menus_stay_vanilla -v`.
 2. Run
    `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
@@ -153,9 +155,12 @@ epoch; reset/suspend-resume returns through issue #85's `PLAYER` reset.
 
 - `tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py` and its
   real C driver cover configuration identity, dependency failures, exact menu
-  capacity, every localized label/help entry, shared AI eligibility, valid and
-  invalid map states, current-phase routing, success/failure restoration, no
-  static RAM, and disabled symbol absence.
+  capacity, shared AI eligibility, valid and invalid map states,
+  current-phase routing, success/failure restoration, no static RAM, and
+  disabled symbol absence.
+- `MapMenuLocalizationTests.test_stable_ids_and_all_production_text_bounds`
+  in `tools/gba-playtest/tests/test_map_menu_presentation.py` checks the stable
+  Charge label/help IDs, every authored locale and rendered text bounds.
 - `MapMenuCompositionTests.test_nine_row_non_story_is_shifted_while_shorter_menus_stay_vanilla`
   in `tools/gba-playtest/tests/test_map_menu_presentation.py` checks live menu
   capacity, Status/Records exclusion and bounded geometry.
