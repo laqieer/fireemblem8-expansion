@@ -121,7 +121,7 @@ class CandidateIdentityFixture:
                    if event == "pull_request" else [])
         jobs = []
         for index, key in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS), 1):
-            skipped = preflight and key in {"extended-host-tests", "legacy"}
+            skipped = preflight and key in candidate_evidence.METADATA_SKIPPED_JOB_IDS
             name = gate.PREFLIGHT_CLASSIFIER if preflight and key == "event-classifier" else key
             job = api._job(
                 name, job_id=number * 100 + index, run_id=number,

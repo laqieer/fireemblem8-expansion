@@ -72,12 +72,46 @@ and its fail-closed all-current-feature coverage assertion.
 2. Run `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 3. Run `python3 -m unittest scripts.docs_check_tests.test_check_docs -v`.
 4. Run `python3 scripts/check_docs.py --check --check-examples`.
+5. For [issue #481](https://github.com/laqieer/fireemblem8-expansion/issues/481),
+   run the following host-side workflow regression cases:
+
+   ```sh
+   python3 -m unittest \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_worker_blocks_can_precede_other_job_fields \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_blank_lines_cannot_hide_step_fields \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_literal_run_scripts_preserve_blank_lines \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_blank_lines_cannot_hide_run_commands \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_every_combined_worker_has_a_closed_execution_context \
+     tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_execution_context_key_syntax_bypasses_fail_closed \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_order_regressions_accept_reordered_workflow \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_rejects_misindented_job_fields_at_each_boundary
+   ```
+6. Exercise the source-backed review-family binding with
+   `python3 -m unittest scripts.workflow_pilot.tests.test_review_subjects.BuildTopologyFamilyTests -v`.
 
 ### Expected result
 
 The three policy surfaces parse to the same canonical AST. Explicit
 whitespace, line-wrap, `behavior`/`behaviour`, ordering, and level-1
 terminator variations remain valid; the commands report no findings.
+For each Build worker, moving `env` or `steps` as a whole, or swapping the
+runner and timeout fields, retains the same workflow contract and gate
+equivalence. The step sequence itself remains ordered. Blank lines in literal
+`run` blocks retain the full script and command sequence, including when a
+blank line has less indentation than the surrounding shell commands.
+The same order-regression tests pass when the source workflow already has
+`steps` or `env` before the other direct fields in any worker job.
+The review-family binding reports separate source-parser observations for both
+order consumers and each worker, every target job boundary, and the
+source-backed step and literal-script members. Historical origins are tested
+directly, so they need not contain candidate-added regression methods. Each
+real target consumer must accept equivalent `steps` and `env` reordering;
+rejecting either is a failing semantic observation, not an unavailable probe.
+Equivalent job-field reordering preserves its finite source model.
+All eight Build jobs reject misindented execution fields after the job header,
+before steps, and after steps in the target dry-run verifier.
 
 ### Negative control
 
@@ -86,6 +120,26 @@ permission and polarity inversion, contradictory rationale detail, unexpected
 paragraph, duplicate or lower-level policy heading, Markdown markup, and
 invalid syntax. These mutations preserve enough surrounding text to prove the
 semantic parser rather than a raw phrase search is enforcing the contract.
+Before the #481 fix, the worker-order regressions reject equivalent mappings.
+Before the regression-test correction, moving `host-tests.steps` first makes
+both worker-order test cases fail even though both validators accept the
+equivalent workflow.
+Changed runners or timeouts, duplicate keys, additional execution fields,
+unsupported key syntax and altered permissions remain rejected after the fix.
+The prior candidate accepted 1- and 3-space fields after steps in all eight
+jobs; the older baseline also accepted those fields directly after headers.
+Blank lines with varying whitespace must not hide an advisory step field or
+turn the full-game localization gate into a success.
+Adding `exit 73` after a shallow blank in the real full-game width script must
+lose exact full-game evidence and change the upstream-port workflow contract.
+Before the script-extraction fix, both parsers silently omit that command.
+The family controls also reject the original ASCII and Unicode boundary
+predicates, each original order-sensitive parser, and an unsafe target
+accepted without equivalence validation. The frozen pre-fix verifier is a
+negative control: each target-consumer observation detects its rejection of
+equivalent reordering, while the candidate passes the same probes. Missing
+helper inputs or ambiguous step identities block the binding rather than
+creating a passing observation.
 
 ### Interactions and save compatibility
 
@@ -102,6 +156,10 @@ cleanup.
 scripts.docs_check_tests.test_check_docs -v` validates the registry and anchor.
 `python3 scripts/check_docs.py --check --check-examples` validates the
 repository documentation and named examples. No manual-only criterion applies.
+The #481 commands exercise the topology validator and upstream-port verifier
+against in-memory permutations and temporary target checkouts. The
+`BuildTopologyFamilyTests` command executes the actual staged family probes
+against temporary Git snapshots, including separate negative controls.
 
 ### Cleanup and limitations
 
