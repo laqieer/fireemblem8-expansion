@@ -1039,7 +1039,9 @@ def _history_lane(pr, base, runs):
         if run.candidate_base_ref not in (None, pr.base_ref):
             continue
         observed = True
-        if run.mode in {"metadata-only", "active-metadata-only"}:
+        if run.mode in {
+            "metadata-only", "historical-metadata-only", "active-metadata-only",
+        }:
             continue
         require(run.candidate_binding is not None and run.candidate_base_ref is not None
                 and run.mode != "active-unknown", "candidate intake history is unproven")
@@ -1049,12 +1051,32 @@ def _history_lane(pr, base, runs):
         return None
     require(len({run.workflow_id for run in relevant}) == 1, "candidate intake workflow is ambiguous")
     lanes = set()
+    failed_preflight = False
     for run in relevant:
-        if run.mode == "review-first" and candidate_evidence.preflight_success(
-                {job.name: (job.status, job.conclusion) for job in run.jobs}):
-            lanes.add("review-first")
-        elif run.mode in {"full", "active-full"} and run.event == "pull_request":
+        if run.mode in {"review-first", "historical-review-first"}:
+            jobs = {job.name: (job.status, job.conclusion) for job in run.jobs}
+            require(len(jobs) == len(run.jobs) and run.event == "pull_request"
+                    and run.status == "completed" and run.conclusion == "failure",
+                    "candidate preflight history is incomplete")
+            historical = run.mode == "historical-review-first"
+            if candidate_evidence.preflight_success(jobs, historical=historical):
+                lanes.add("review-first")
+                continue
+            normalized = dict(jobs)
+            for name in candidate_evidence.METADATA_ADAPTER_JOB_IDS:
+                if normalized.get(name) in {
+                    ("completed", "failure"), ("completed", "cancelled"),
+                    ("completed", "timed_out"),
+                }:
+                    normalized[name] = ("completed", "success")
+            require(normalized != jobs and candidate_evidence.preflight_success(
+                normalized, historical=historical), "candidate preflight history is incomplete")
+            failed_preflight = True
+        elif run.mode == "active-review-first":
+            raise ValueError("candidate preflight history is incomplete")
+        elif run.mode in {"full", "historical-full", "active-full"} and run.event == "pull_request":
             lanes.add("concurrent")
+    require(not failed_preflight or "review-first" in lanes, "candidate preflight history is incomplete")
     require(len(lanes) == 1, "candidate initial execution lane is unknown or ambiguous")
     return next(iter(lanes))
 
@@ -1239,9 +1261,11 @@ def _local_delegations(state, pr):
                      and entry["assignment"]["expected_branch"] == pr.head_ref))]
 
 
-def _delegation_incomplete(entries):
-    return any(entry["closed_at"] is None or entry["validation"] is None
-               or not entry["validation"]["handoff_ready"] for entry in entries)
+def _delegation_incomplete(state, entries, candidate_head):
+    return any(not handoff.accepted_handoff_current(state, entry)
+               or (entry["validation"]["result_sha"] == candidate_head
+                   and not handoff.released_candidate_current(entry))
+               for entry in entries)
 
 
 def _coordinator_git(state, record, pr, worktree):
@@ -1249,7 +1273,7 @@ def _coordinator_git(state, record, pr, worktree):
     require(not handoff.availability_errors(state, observations.utc_now()), "coordinator availability unavailable")
     require(find_candidate(state, candidate_identity(record)) == record and state["repository"] == pr.repository,
             "local candidate identity changed")
-    require(not _delegation_incomplete(_local_delegations(state, pr)),
+    require(not _delegation_incomplete(state, _local_delegations(state, pr), pr.head_sha),
             "applicable delegated handoff is incomplete or invalid")
     require(record["abandoned_reason"] is None, "candidate is abandoned")
     current = handoff.observe_git({"allowed_worktree": str(worktree)})
@@ -1354,7 +1378,7 @@ def _local_ready(state, pr, record):
     handoff.summarize_handoffs(state)
     require(find_candidate(state, candidate_identity(record)) == record, "unrecorded local candidate")
     delegated = _local_delegations(state, pr)
-    if _delegation_incomplete(delegated) or record["abandoned_reason"] is not None:
+    if _delegation_incomplete(state, delegated, pr.head_sha) or record["abandoned_reason"] is not None:
         return False
     if "local_validation" in record:
         return coordinator_local_ready(state, record, pr)
@@ -1362,7 +1386,8 @@ def _local_ready(state, pr, record):
         if (entry["validation"]["result_sha"] == pr.head_sha
                 and entry["assignment"]["expected_branch"] == pr.head_ref):
             try:
-                bases = handoff._git(Path(entry["assignment"]["allowed_worktree"]), "merge-base", "--all",
+                selected = handoff.validation_assignment(entry)
+                bases = handoff._git(Path(selected["allowed_worktree"]), "merge-base", "--all",
                                      pr.base_sha, pr.head_sha).decode().splitlines()
                 if len(bases) == 1 and candidate_identity(record) == (
                         pr.number, pr.head_sha, bases[0], pr.base_ref):
@@ -1510,6 +1535,12 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         scheduling.append("stale-run")
     if len({run.run_id for run in full}) != len(full) or len(full) > 1:
         scheduling.append("duplicate-full-run")
+    if full and any(
+        run.mode == "historical-full" and
+        run.run_number >= max(current.run_number for current in full)
+        for run in current_runs
+    ):
+        scheduling.append("newer-historical-full")
     preflight = any(run.mode == "review-first" and candidate_evidence.preflight_success(
         {job.name: (job.status, job.conclusion) for job in run.jobs}) for run in matching)
     try:
