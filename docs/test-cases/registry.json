@@ -492,7 +492,8 @@
       "title": "Semantic runtime playtest harness",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/13",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/401"
       ],
       "reference": "tools/gba-playtest/README.md",
       "status": "current",
@@ -2615,7 +2616,8 @@
       "feature_id": "runtime-playtest-harness",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/13",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/401"
       ],
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-007-runtime-harness-detects-mismatch",
@@ -2625,9 +2627,9 @@
       ],
       "purpose": "Prove semantic scenario verification, provenance, and no baseline auto-refresh.",
       "prerequisites": "Clean boot with no committed save, savestate, or external baseline.",
-      "actions": "Run host-only tests, a behavior capture/verify route, and a deliberate mismatch fixture.",
-      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference.",
-      "negative_control": "Verify cannot rewrite an expected fingerprint and host-only mode is explicit.",
+      "actions": "Run host-only tests, including the registered ROM/ELF ownership and temporary-path controls, a behavior capture/verify route, and a deliberate mismatch fixture.",
+      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference. Host-only live classes skip before artifact probes; normal-mode debug ELF layout checking runs.",
+      "negative_control": "Verify cannot rewrite an expected fingerprint. Missing debug ELF registration or guard is rejected, and an unguarded class reaches a poisoned probe; root-alias renaming and owned temporary paths remain valid.",
       "interactions": "The shared harness observes scenarios without changing their feature contracts.",
       "save_compatibility": "Scenarios start clean and do not alter save layout or epoch.",
       "cleanup": "Remove ignored captures with make clean_fast.",

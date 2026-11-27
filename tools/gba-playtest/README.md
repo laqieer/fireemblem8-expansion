@@ -307,17 +307,20 @@ fingerprint failures that say nothing about the commit under test (worst
 under `python3 -m scripts.upstream_port verify --jobs 2`, whose later gates
 rewrite exactly those artifacts). Live/runtime coverage is owned by the ROM
 gates -- `make expansion-modern-linker-check` and
-`make expansion-modern-itemexpansion-check` (build.yml `build` job; the last
-four of the ten `verify` gates) -- which build the ROM they then boot, so
+`make expansion-modern-itemexpansion-check` (build.yml `build` job and the
+corresponding `verify` gates) -- which build the ROM they then boot, so
 nothing is lost by removing the opportunistic host-lane runs. No fingerprint
 refresh and no `clean` is involved either way.
 
 The classification of every test module, the registry of live TestCase
 classes and the enforcement tests live in
 `tools/gba-playtest/tests/host_mode.py` and
-`tools/gba-playtest/tests/test_host_only_mode.py`: a new live test must build
-its ROM path through `host_mode` and register its class, or the host-only
-regression fails.
+`tools/gba-playtest/tests/test_host_only_mode.py`: a new live test must obtain
+its repository ROM or ELF path through `host_mode`, register its class, and
+use the live-artifact guard. The ownership check recognizes the existing
+file-relative repository-root expression and direct aliases alongside its
+existing helper and temporary/homebrew checks. It is not a general Python
+analyzer; broader helper-origin forms are tracked separately in #405.
 
 ## Scenario format
 
