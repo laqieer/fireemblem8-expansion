@@ -1652,8 +1652,11 @@ class RawDiffBoundaryTests(unittest.TestCase):
                 with self.subTest(gitdir=gitdir_kind, commondir=common_kind):
                     gitdir_value = (str(private) if gitdir_kind == "absolute"
                                     else os.path.relpath(private, worktree))
-                    common_value = (str(common) if common_kind == "absolute"
-                                    else os.path.relpath(common, private))
+                    common_value = (str(common) if common_kind == "absolute" else os.path.join(
+                        os.path.relpath(root, private), repository.name, ".git",
+                    ))
+                    self.assertIn("\r\n", gitdir_value)
+                    self.assertIn("\r\n", common_value)
                     entry.write_bytes(b"gitdir: " + os.fsencode(gitdir_value) + b"\r\n\n")
                     commondir.write_bytes(os.fsencode(common_value) + b"\r\n\n")
                     git_private = Path(git(worktree, "rev-parse", "--absolute-git-dir"))
@@ -1668,29 +1671,45 @@ class RawDiffBoundaryTests(unittest.TestCase):
                     self.assertEqual(parsed_common.resolve(), git_common.resolve())
                     self.assertEqual(raw.exact_repository_root(str(worktree)), worktree.resolve())
 
-    def test_malformed_and_private_metadata_reject_before_git_dispatch(self):
-        f = self.fixture
-        entry = f.worktree / ".git"
         original = entry.read_bytes()
         try:
-            for bad in (b"bad-prefix", b"gitdir: \r\n", b"gitdir: /tmp/a\0b\n",
-                        b"gitdir: " + b"x" * raw.MAX_METADATA_BYTES):
+            for bad in (b"bad-prefix " + os.fsencode(private), b"gitdir: \r\n",
+                        b"gitdir: " + os.fsencode(private) + b"\0suffix\n",
+                        b"gitdir: " + os.fsencode(private) + b"x" * raw.MAX_METADATA_BYTES):
                 with self.subTest(metadata=bad[:20]):
                     entry.write_bytes(bad)
                     with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
                         with self.assertRaises(ValueError):
-                            raw.exact_repository_root(str(f.worktree))
+                            raw.exact_repository_root(str(worktree))
         finally:
             entry.write_bytes(original)
 
-        private = Path(f.entry["git_identity"]["git_dir"])
-        info = private / "info"
-        info.mkdir(exist_ok=True)
-        grafts = info / "grafts"
-        grafts.write_text("forbidden\n")
-        with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
-            with self.assertRaisesRegex(ValueError, "graft file"):
-                raw.exact_repository_root(str(f.worktree))
+        for metadata, target, prefix in ((entry, private, b"gitdir: "),
+                                         (commondir, common, b"")):
+            with self.subTest(symlink=str(metadata)):
+                original = metadata.read_bytes()
+                link = root / ("link\r\n" + metadata.name)
+                link.symlink_to(target, target_is_directory=True)
+                try:
+                    metadata.write_bytes(prefix + os.fsencode(link) + b"\n")
+                    with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
+                        with self.assertRaises(OSError):
+                            raw.exact_repository_root(str(worktree))
+                finally:
+                    metadata.write_bytes(original)
+
+        for git_root in (private, common):
+            with self.subTest(git_root=str(git_root)):
+                info = git_root / "info"
+                info.mkdir(exist_ok=True)
+                grafts = info / "grafts"
+                grafts.write_text("forbidden\n")
+                try:
+                    with mock.patch.object(raw, "run_git", side_effect=AssertionError("Git dispatched")):
+                        with self.assertRaisesRegex(ValueError, "graft file"):
+                            raw.exact_repository_root(str(worktree))
+                finally:
+                    grafts.unlink()
 
     def test_whitespace_and_local_attributes_cannot_forge_success(self):
         f = self.fixture
