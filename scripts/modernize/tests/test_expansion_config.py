@@ -86,6 +86,14 @@ def macro_value_assertion(macro, value):
     )
 
 
+def compile_settings_fields(text):
+    return dict(
+        line.split("=", 1)
+        for line in text.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    )
+
+
 def assert_rejects_wrong_length(test_case, validator, values):
     for value in values:
         with test_case.subTest(value=value):
@@ -4868,6 +4876,15 @@ class FeatureFlagCliTests(unittest.TestCase):
 
 
 class BluePhaseDelegateFlagTests(unittest.TestCase):
+    def test_compile_settings_fields_ignore_non_record_lines(self):
+        fields = compile_settings_fields(
+            "Build settings\n\n# blue_phase_delegate=wrong\n"
+            "blue_phase_delegate=1\nconfig_fingerprint=actual\n"
+        )
+        self.assertEqual(fields["blue_phase_delegate"], "1")
+        self.assertEqual(fields["config_fingerprint"], "actual")
+        self.assertNotIn("save_compat_epoch", fields)
+
     def _identity(self, **kwargs):
         params = dict(
             config_mk_path=ROOT / "config.mk",
@@ -4930,6 +4947,25 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
 
+    def test_make_choice_supports_environment_dependent_compiler_wrapper(self):
+        compiler = shutil.which("arm-none-eabi-gcc")
+        if compiler is None:
+            self.skipTest("arm-none-eabi-gcc is not available")
+        with tempfile.TemporaryDirectory() as temporary:
+            wrapper = Path(temporary) / "gcc-wrapper"
+            wrapper.write_text(
+                '#!/bin/sh\n'
+                '[ "$BLUE_CONFIG_WRAPPER_TOKEN" = yes ] || exit 29\n'
+                f'exec "{compiler}" "$@"\n',
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            with mock.patch.dict(os.environ, {
+                "MODERN_CC": str(wrapper),
+                "BLUE_CONFIG_WRAPPER_TOKEN": "yes",
+            }):
+                self.test_make_choice_reaches_compiler_metadata_and_stamp()
+
     def test_make_choice_reaches_compiler_metadata_and_stamp(self):
         compiler = find_modern_compiler()
         if compiler is None:
@@ -4942,9 +4978,9 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
             make_root = build_root.relative_to(ROOT)
             make_generated = make_root / "debug" / "aapcs" / "generated"
             environment = {
+                **os.environ,
                 "HOME": temporary,
                 "LC_ALL": "C",
-                "PATH": os.environ.get("PATH", os.defpath),
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TMPDIR": temporary,
             }
@@ -5008,10 +5044,8 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     timeout=60,
                 )
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
-                settings = dict(
-                    line.split("=", 1)
-                    for line in (generated / "compile_settings.txt")
-                    .read_text(encoding="utf-8").splitlines()
+                settings = compile_settings_fields(
+                    (generated / "compile_settings.txt").read_text(encoding="utf-8")
                 )
                 metadata = json.loads(
                     (generated / "expansion_build_metadata.json")
