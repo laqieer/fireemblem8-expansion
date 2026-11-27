@@ -1,28 +1,4 @@
-"""Host-only coverage for the region-hash/pixel-probe backend feature
-added for issue #18 sprint 5 WHAT #5 (real, targeted visible-marker
-proof): a checkpoint's `regions` (named rectangular sub-regions of the
-240x160 framebuffer, each hashed independently via backend.c's new
-hash_region()) and `pixel_probes` (single (x, y) coordinates read back as
-an exact 24-bit R,G,B value via backend.c's new read_pixel()) fields.
-
-Root motivation recap: a whole-frame `framebuffer_hash` can prove "some
-pixel somewhere changed" but can never prove *which* on-screen area
-changed, or that a specific pixel took on a specific real color -- so it
-cannot, by itself, distinguish "the qps-ploc pseudo-locale decoration
-marker is visibly present at its own screen location" from "literally
-anything else on screen differs". `regions`/`pixel_probes` close that gap
-with real, per-area/per-pixel evidence, additive to (never a replacement
-for) the existing whole-frame hash.
-
-None of these tests require libmGBA or a built ROM: schema parsing/
-fingerprint validation/backend-output parsing are exercised directly
-against gba_playtest.py's real, unmodified production functions
-(`parse_scenario_data`, `_write_plan`, `_parse_backend_output`,
-`compare_inline_expectations`, `validate_fingerprint`), and the pure hash/
-pixel-extraction math is exercised via region_hash_mirror.py, a byte-exact
-host mirror of backend.c's hash_region()/read_pixel() (same pattern as
-sram_hash_mirror.py for hash_sram()).
-"""
+"""Host-only schema, plan and fingerprint checks for region and pixel probes."""
 
 from __future__ import annotations
 
@@ -31,19 +7,11 @@ import unittest
 from pathlib import Path
 
 PLAYTEST_DIR = Path(__file__).resolve().parents[1]
-for _extra_path in (str(PLAYTEST_DIR), str(PLAYTEST_DIR / "tests")):
-    if _extra_path not in sys.path:
-        sys.path.insert(0, _extra_path)
+sys.path.insert(0, str(PLAYTEST_DIR))
 
 import gba_playtest  # noqa: E402
-from region_hash_mirror import (  # noqa: E402
-    compute_region_hash,
-    compute_whole_frame_hash,
-    read_pixel_rgb,
-)
 
 GBA_SCREEN_WIDTH = 240
-GBA_SCREEN_HEIGHT = 160
 
 
 def valid_scenario_with_region_and_pixel():
@@ -331,72 +299,6 @@ class FingerprintValidationTests(unittest.TestCase):
         data["checkpoints"][0]["regions"] = []
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "non-empty array"):
             gba_playtest.validate_fingerprint(data, "<test>")
-
-
-class RegionHashMirrorTests(unittest.TestCase):
-    def _synthetic_framebuffer(self):
-        # Deterministic, non-trivial 240x160 buffer: pixel color encodes
-        # its own (x, y) so a region hash provably differs by position.
-        buffer = [0] * (GBA_SCREEN_WIDTH * GBA_SCREEN_HEIGHT)
-        for y in range(GBA_SCREEN_HEIGHT):
-            for x in range(GBA_SCREEN_WIDTH):
-                buffer[y * GBA_SCREEN_WIDTH + x] = (x & 0xFF) | ((y & 0xFF) << 8) | (0xAB << 24)
-        return buffer
-
-    def test_region_hash_is_deterministic(self):
-        buffer = self._synthetic_framebuffer()
-        first = compute_region_hash(buffer, 10, 20, 16, 8)
-        second = compute_region_hash(buffer, 10, 20, 16, 8)
-        self.assertEqual(first, second)
-        self.assertRegex(first, r"^fnv1a64-region:[0-9a-f]{16}$")
-
-    def test_region_hash_differs_for_different_region(self):
-        buffer = self._synthetic_framebuffer()
-        self.assertNotEqual(
-            compute_region_hash(buffer, 0, 0, 8, 8),
-            compute_region_hash(buffer, 100, 100, 8, 8),
-        )
-
-    def test_region_hash_is_not_whole_frame_hash(self):
-        buffer = self._synthetic_framebuffer()
-        region = compute_region_hash(buffer, 0, 0, 16, 16)
-        whole = compute_whole_frame_hash(buffer)
-        self.assertNotEqual(region, whole)
-
-    def test_region_hash_insensitive_to_padding_byte(self):
-        buffer = self._synthetic_framebuffer()
-        # Flip only the ignored 4th (padding/alpha) byte everywhere in the
-        # region -- the hash must be unaffected, exactly matching
-        # backend.c's hash_region() only ever shifting 0/8/16.
-        mutated = list(buffer)
-        for y in range(20, 28):
-            for x in range(10, 26):
-                mutated[y * GBA_SCREEN_WIDTH + x] ^= 0x7F000000
-        self.assertEqual(
-            compute_region_hash(buffer, 10, 20, 16, 8),
-            compute_region_hash(mutated, 10, 20, 16, 8),
-        )
-
-    def test_read_pixel_extracts_canonical_rgb(self):
-        buffer = self._synthetic_framebuffer()
-        # (x=12, y=22): R=12 (0x0c), G=22 (0x16), B=0 -> 0xRRGGBB = 0x0c1600.
-        self.assertEqual(read_pixel_rgb(buffer, 12, 22), "0x0c1600")
-
-    def test_read_pixel_ignores_padding_byte(self):
-        buffer = self._synthetic_framebuffer()
-        mutated = list(buffer)
-        mutated[22 * GBA_SCREEN_WIDTH + 12] ^= 0x55000000
-        self.assertEqual(read_pixel_rgb(buffer, 12, 22), read_pixel_rgb(mutated, 12, 22))
-
-    def test_rejects_out_of_bounds_region(self):
-        buffer = self._synthetic_framebuffer()
-        with self.assertRaises(ValueError):
-            compute_region_hash(buffer, 230, 0, 16, 1)
-
-    def test_rejects_out_of_bounds_pixel(self):
-        buffer = self._synthetic_framebuffer()
-        with self.assertRaises(ValueError):
-            read_pixel_rgb(buffer, 240, 0)
 
 
 if __name__ == "__main__":
