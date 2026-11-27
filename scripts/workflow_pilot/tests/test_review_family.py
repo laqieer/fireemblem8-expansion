@@ -22,6 +22,11 @@ from scripts.workflow_pilot import trusted_review_gate as gate
 from scripts.workflow_pilot.tests import review_support as support
 from scripts.workflow_pilot.tests.review_support import ROOT, Runtime, git, request, snapshot
 
+FAILED_REVIEW_BODY = (
+    "Copilot encountered an error and was unable to review this pull request. "
+    "You can try again by re-requesting a review."
+)
+
 
 class RequestTests(unittest.TestCase):
     def test_public_request_positive_and_closed_negative_controls(self):
@@ -984,6 +989,120 @@ class RoundTests(unittest.TestCase):
             model.Triage(replace(fact(1), state="CHANGES_REQUESTED"), "clean").validate()
         with self.assertRaises(model.ReviewError):
             model.Triage(replace(fact(1), unresolved_threads=("thread",)), "clean").validate()
+
+    def test_failed_review_requires_exact_error_without_findings(self):
+        failed = replace(fact(1), actor=gate.COPILOT[1], body=FAILED_REVIEW_BODY)
+        model.Triage(failed, "failed").validate()
+        for state in ("COMMENTED", "APPROVED"):
+            with self.subTest(state=state), self.assertRaises(model.ReviewError):
+                model.Triage(replace(failed, state=state), "clean").validate()
+            for body in (FAILED_REVIEW_BODY + " Additional content.",
+                         "Additional content. " + FAILED_REVIEW_BODY):
+                with self.subTest(state=state, body=body), self.assertRaises(model.ReviewError):
+                    model.Triage(replace(failed, state=state, body=body), "clean").validate()
+        finding = model.Finding(
+            "finding", "case/subject", "wire", "validators:member",
+            failed.head, "source.py", failed.id)
+        invalid = (
+            replace(failed, actor="another-bot"),
+            replace(failed, body=FAILED_REVIEW_BODY + " Additional content."),
+            replace(failed, state="APPROVED"),
+            replace(failed, state="CHANGES_REQUESTED"),
+            replace(failed, comments=(("comment", "source.py", "finding"),)),
+            replace(failed, unresolved_threads=("thread",)),
+        )
+        for observed in invalid:
+            with self.subTest(observed=observed), self.assertRaises(model.ReviewError):
+                model.Triage(observed, "failed").validate()
+        with self.assertRaises(model.ReviewError):
+            model.Triage(failed, "failed", (finding,)).validate()
+
+    def test_failed_review_requires_later_clean_current_head(self):
+        failed = replace(fact(1), actor=gate.COPILOT[1], body=FAILED_REVIEW_BODY)
+        for later, expected in (
+            ((), (False, False)),
+            ((model.Triage(fact(2, "c" * 40), "clean"),), (False, False)),
+            ((model.Triage(fact(2), "untriaged"),), (False, False)),
+            ((model.Triage(fact(2), "clean"),), (True, True)),
+        ):
+            with self.subTest(later=later):
+                session = model.ReviewSession(
+                    "coordinator", "implementer", frozenset({"case/subject"}), failed.head)
+                decisions = (model.Triage(failed, "failed"), *later)
+                for decision in decisions:
+                    session.triage(decision)
+                self.assertEqual(
+                    session.review_state(
+                        tuple(item.fact for item in decisions), decisions,
+                        pre_review_required=False),
+                    expected)
+
+        session = model.ReviewSession(
+            "coordinator", "implementer", frozenset({"case/subject"}), failed.head)
+        decisions = (model.Triage(fact(1), "clean"),
+                     model.Triage(replace(failed, id="2",
+                                          submitted_at=fact(2).submitted_at), "failed"))
+        for decision in decisions:
+            session.triage(decision)
+        self.assertEqual(
+            session.review_state(tuple(item.fact for item in decisions), decisions,
+                                 pre_review_required=False),
+            (False, False))
+
+    def test_failed_review_requires_proven_later_timestamp(self):
+        for failed_id, clean_id in (("review-1", "review-2"),
+                                    ("review-2", "review-1")):
+            with self.subTest(failed_id=failed_id):
+                failed = replace(fact(1), id=failed_id, actor=gate.COPILOT[1],
+                                 body=FAILED_REVIEW_BODY)
+                clean = replace(fact(1), id=clean_id)
+                decisions = tuple(sorted(
+                    (model.Triage(failed, "failed"), model.Triage(clean, "clean")),
+                    key=lambda item: item.fact.id))
+                session = model.ReviewSession(
+                    "coordinator", "implementer", frozenset({"case/subject"}), failed.head)
+                for decision in decisions:
+                    session.triage(decision)
+                self.assertEqual(
+                    session.review_state(tuple(item.fact for item in decisions), decisions,
+                                         pre_review_required=False),
+                    (False, False))
+                later = model.Triage(
+                    replace(clean, id="review-3", submitted_at=fact(2).submitted_at), "clean")
+                session.triage(later)
+                decisions += (later,)
+                self.assertEqual(
+                    session.review_state(tuple(item.fact for item in decisions), decisions,
+                                         pre_review_required=False),
+                    (True, True))
+
+    def test_failed_review_preserves_findings_and_request_rounds(self):
+        failed = replace(fact(3), actor=gate.COPILOT[1], body=FAILED_REVIEW_BODY)
+        session = model.ReviewSession(
+            "coordinator", "implementer", frozenset({"case/subject"}), failed.head)
+        finding = model.Finding(
+            "finding", "case/subject", "wire", "validators:member",
+            failed.head, "source.py", failed.id)
+        session.accept(finding)
+        with self.assertRaises(model.ReviewError):
+            session.triage(model.Triage(failed, "failed"))
+        self.assertEqual(session.accepted[finding.id], finding)
+
+        session = model.ReviewSession(
+            "coordinator", "implementer", frozenset({"case/subject"}), failed.head)
+        session.triage(model.Triage(failed, "failed"))
+        with self.assertRaises(model.ReviewError):
+            session.accept(finding)
+        self.assertNotIn(finding.id, session.accepted)
+
+        state = model.RoundState()
+        for number in (1, 2):
+            state.observe(model.Triage(fact(number), "changes-requested"))
+        state.observe(model.Triage(failed, "failed"))
+        state.observe(model.Triage(fact(4), "changes-requested"))
+        self.assertEqual(state.hold, ("4", failed.head))
+        state.observe(model.Triage(fact(5), "clean"))
+        self.assertEqual(state.hold, ("4", failed.head))
 
 
 class RoleTests(unittest.TestCase):

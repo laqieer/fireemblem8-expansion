@@ -2,10 +2,12 @@ import contextlib
 import inspect
 import io
 import os
+import pathlib
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -90,13 +92,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         gates = verify_mod.gates(jobs=2)
         reporter = next(gate for gate in gates if gate.name == "workflow-pilot-reporter-tests")
         reporter_owners = [job for job, _, argv in contract if list(argv) == reporter.command]
-        self.assertEqual(len(reporter_owners), 1)
+        self.assertEqual(reporter_owners, ["workflow-pilot-tests"])
         for gate in gates:
             if not gate.name.startswith("game-localization-"):
                 continue
             with self.subTest(gate=gate.name):
                 owners = [job for job, _, argv in contract if list(argv) == gate.command]
-                self.assertEqual(owners, ["extended-host-tests"])
+                self.assertEqual(owners, ["game-localization-tests"])
                 self.assertNotEqual(owners[0], reporter_owners[0])
 
     def test_setup_cannot_duplicate_mirrored_gate_commands(self):
@@ -354,14 +356,6 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             pilot_commands,
             [
                 (
-                    _WORKFLOW_PILOT_TEST_STEP_NAME,
-                    [
-                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
-                        "scripts/workflow_pilot/isolated_launcher.py",
-                        "reporter-tests",
-                    ],
-                ),
-                (
                     _AGENT_HANDOFF_TEST_STEP_NAME,
                     [
                         "$GITHUB_WORKSPACE/build/host-python/bin/python3",
@@ -388,14 +382,22 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                         ">", "/dev/null",
                     ],
                 ),
+                (
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    [
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "reporter-tests",
+                    ],
+                ),
             ],
         )
         by_name = {gate.name: gate.command for gate in verify_mod.gates()}
         self.assertEqual(
             [
-                by_name["workflow-pilot-reporter-tests"],
                 by_name["agent-handoff-tests"],
                 by_name["workflow-pilot-baseline"],
+                by_name["workflow-pilot-reporter-tests"],
             ],
             [argv for _, argv in pilot_commands],
         )
@@ -434,18 +436,15 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertTrue(_parse_workflow_gate_commands_text(workflow))
         adversarial = workflow.replace(
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
-            "      if: ${{ needs.event-classifier.result == 'failure' || "
-            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             "        BASH_ENV: ''\n",
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
-            "      if: ${{ needs.event-classifier.result == 'failure' || "
-            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             + ("        a\n" * 50000)
             + "        BASH_ENV: ''\n",
             1,
         )
+        self.assertNotEqual(adversarial, workflow)
         with self.assertRaisesRegex(
             ValueError,
             "unsupported mapping-key syntax|reviewed scrubbed environment",
@@ -549,10 +548,10 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "gba-playtest-host-suite",
                 "upstream-port-tests",
                 "workflow-contract-tests",
-                "workflow-pilot-reporter-tests",
                 "agent-handoff-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
+                "workflow-pilot-reporter-tests",
                 "artifact-guard-tests",
                 "artifact-guard",
                 "codeql-alerts-test",
@@ -566,12 +565,12 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "modern-itemexpansion-check-debug",
                 "modern-itemexpansion-check-release",
                 "modern-all-locales-all-features-profile",
-                "ownership-probe-process-suite",
                 "cjk-font-gates",
                 "multilang-codec-gates",
                 "textprocess-publication-tests",
                 "expansion-config-gates",
                 "linker-budget-gates",
+                "ownership-probe-process-suite",
                 "game-localization-width-contract",
                 "game-localization-catalog-check",
                 "game-localization-crosswalk-check",
@@ -584,8 +583,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         # The merged CI runs the fast `host-tests` lane textually before the
         # ROM `build` job, so the host-only gates are first. The first six
-        # remain pure Python/native checks. Full-game host checks use the
-        # independent worker before its archival toolchain setup.
+        # remain pure Python/native checks. Full-game host checks use their
+        # independent worker, separate from archival toolchain setup.
         for g in verify_mod.gates()[:6]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
@@ -595,9 +594,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             text = " ".join(f.read().split())
 
         for clause in (
-            "four combined workers run in parallel",
+            "seven combined workers run in parallel",
             "event identity validator, event router, and mode-specific "
-            "classifier check precede the four",
+            "classifier check precede the seven",
             "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
@@ -1346,8 +1345,11 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "event-router",
                 "event-classifier",
                 "host-tests",
+                "workflow-pilot-tests",
                 "build",
                 "extended-host-tests",
+                "ownership-probe-tests",
+                "game-localization-tests",
                 "legacy",
                 "summary",
             ),
@@ -1861,6 +1863,18 @@ class VerifyCliCwdTests(unittest.TestCase):
 
             for job_name in verify_mod._COMBINED_JOBS:
                 timeout = "60" if job_name == "legacy" else "90"
+                job = topology_tests._job_blocks(original)[job_name]
+                reordered = original.replace(
+                    job, topology_tests._reorder_job_field(job, "steps"), 1
+                )
+                self.assertNotEqual(reordered, original)
+                with open(workflow_path, "w", encoding="utf-8") as handle:
+                    handle.write(reordered)
+                with self.subTest(job=job_name, mutation="reordered-steps-block"):
+                    self.assertEqual(
+                        len(verify_mod.run_gates(target_root, dry_run=True)),
+                        len(verify_mod.gates()),
+                    )
                 job_mutations = {
                     "self-hosted": self.replace_in_job(
                         original,
@@ -1925,21 +1939,6 @@ class VerifyCliCwdTests(unittest.TestCase):
                         f"    timeout-minutes: {timeout}\n"
                         f"    timeout-minutes: {timeout}",
                     ),
-                    "reordered-keys": self.replace_in_job(
-                        self.replace_in_job(
-                            original,
-                            job_name,
-                            "    runs-on: ubuntu-24.04",
-                            "    __RUNS_ON__",
-                        ),
-                        job_name,
-                        f"    timeout-minutes: {timeout}",
-                        "    runs-on: ubuntu-24.04",
-                    ).replace(
-                        "    __RUNS_ON__",
-                        f"    timeout-minutes: {timeout}",
-                        1,
-                    ),
                 }
                 for mutation, changed in job_mutations.items():
                     with self.subTest(job=job_name, mutation=mutation):
@@ -1951,6 +1950,131 @@ class VerifyCliCwdTests(unittest.TestCase):
                             handle.write(changed)
                         with self.assertRaises(ValueError):
                             verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_worker_order_regressions_accept_reordered_workflow(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as handle:
+            original = handle.read()
+        baseline = verify_mod._parse_workflow_structure_text(original)
+        cases = (
+            (
+                topology_tests, "WORKFLOW",
+                topology_tests.ConsolidatedBuildTopologyTests,
+                "test_worker_blocks_can_precede_other_job_fields",
+            ),
+            (
+                sys.modules[__name__], "BUILD_WORKFLOW_PATH", VerifyCliCwdTests,
+                "test_worker_mapping_order_preserves_target_gate_equivalence",
+            ),
+        )
+        with tempfile.TemporaryDirectory(prefix="worker-order-regression-") as directory:
+            path = os.path.join(directory, "build.yml")
+            for job_name in verify_mod._COMBINED_JOBS:
+                job = topology_tests._job_blocks(original)[job_name]
+                matches = list(
+                    re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE)
+                )
+                blocks = [
+                    (
+                        match.group(1),
+                        job[
+                            match.start():matches[index + 1].start()
+                            if index + 1 < len(matches) else len(job)
+                        ],
+                    )
+                    for index, match in enumerate(matches)
+                ]
+                for field in ("steps", "env"):
+                    self.assertEqual(sum(name == field for name, _ in blocks), 1)
+                    selected = next(
+                        index for index, (name, _) in enumerate(blocks) if name == field
+                    )
+                    if selected == 0:
+                        rearranged = blocks[1:] + blocks[:1]
+                    else:
+                        rearranged = (
+                            blocks[selected : selected + 1]
+                            + blocks[:selected]
+                            + blocks[selected + 1 :]
+                        )
+                    reordered = job[:matches[0].start()] + "".join(
+                        block for _, block in rearranged
+                    )
+                    changed = original.replace(job, reordered, 1)
+                    self.assertNotEqual(changed, original)
+                    self.assertEqual(topology_tests._errors(changed, False), [])
+                    self.assertEqual(
+                        verify_mod._parse_workflow_structure_text(changed), baseline
+                    )
+                    with open(path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    for module, attribute, test_class, name in cases:
+                        with self.subTest(job=job_name, field=field, case=name):
+                            result = unittest.TestResult()
+                            value = pathlib.Path(path) if attribute == "WORKFLOW" else path
+                            with mock.patch.object(module, attribute, value):
+                                test_class(name).run(result)
+                            self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+
+    def test_worker_mapping_order_preserves_target_gate_equivalence(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as handle:
+            original = handle.read()
+        baseline = verify_mod._parse_workflow_structure_text(original)
+        for job_name in verify_mod._COMBINED_JOBS:
+            job = topology_tests._job_blocks(original)[job_name]
+            reordered = topology_tests._reorder_job_field(job, "steps")
+            with self.subTest(job=job_name):
+                changed = original.replace(job, reordered, 1)
+                self.assertNotEqual(changed, original)
+                self.assertEqual(
+                    verify_mod._parse_workflow_structure_text(changed), baseline
+                )
+                for replacement in (
+                    "    runs-on: self-hosted\n",
+                    "    runs-on: ubuntu-24.04\n    permissions: write-all\n",
+                    "    runs-on: ubuntu-24.04\n    - run: echo stray\n",
+                ):
+                    with self.subTest(replacement=replacement):
+                        mutated_job = reordered.replace(
+                            "    runs-on: ubuntu-24.04\n", replacement, 1
+                        )
+                        self.assertNotEqual(mutated_job, reordered)
+                        mutation = changed.replace(reordered, mutated_job, 1)
+                        self.assertNotEqual(mutation, changed)
+                        with self.assertRaises(ValueError):
+                            verify_mod._parse_workflow_structure_text(mutation)
+
+    def test_target_rejects_misindented_job_fields_at_each_boundary(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-job-boundaries-", dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(target_root, ".github", "workflows", "build.yml")
+            with open(workflow_path, encoding="utf-8") as handle:
+                original = handle.read()
+            self.assertEqual(len(verify_mod.run_gates(target_root, dry_run=True)),
+                             len(verify_mod.gates()))
+            for job_name in verify_mod._EXPECTED_JOBS:
+                start, end = self.job_bounds(original, job_name)
+                job = original[start:end]
+                header = f"  {job_name}:\n"
+                self.assertTrue(job.startswith(header))
+                self.assertEqual(job.count("    steps:\n"), 1)
+                for position in ("after-header", "before-steps", "after-steps"):
+                    for indent in (1, 2, 3, 4):
+                        field = " " * indent + "permissions: write-all\n"
+                        if position == "after-header":
+                            changed_job = job.replace(header, header + field, 1)
+                        elif position == "before-steps":
+                            changed_job = job.replace("    steps:\n", field + "    steps:\n", 1)
+                        else:
+                            changed_job = job + field
+                        with self.subTest(job=job_name, position=position, indent=indent):
+                            with open(workflow_path, "w", encoding="utf-8") as handle:
+                                handle.write(original[:start] + changed_job + original[end:])
+                            with self.assertRaises(ValueError):
+                                verify_mod.run_gates(target_root, dry_run=True)
 
     def test_publisher_and_summary_contexts_are_closed_before_dry_run(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
@@ -2024,8 +2148,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "summary",
                         "needs",
                         "    needs: [event-identity, event-classifier, "
-                        "host-tests, build, "
-                        "extended-host-tests, legacy]",
+                        "host-tests, workflow-pilot-tests, build, "
+                        "extended-host-tests, ownership-probe-tests, "
+                        "game-localization-tests, legacy]",
                         "    needs: [build, host-tests, legacy]",
                 ),
                 (

@@ -988,6 +988,10 @@ debugger, or release feature.
 ### Actions
 
 1. Run `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`.
+   The host-only regression exercises registered ROM and debug ELF users,
+   file-relative repository-root aliases, and owned temporary paths. For a
+   focused check, run the `test_host_only_mode.py` command under Automation
+   instead of the full host suite.
 2. Build and capture a fresh debug ROM, then verify the capture under the
    behavior policy:
 
@@ -1029,13 +1033,18 @@ debugger, or release feature.
 
 The harness records provenance and semantic probes deterministically. Valid
 behavior-policy verification succeeds while a changed checkpoint reports the
-JSON path, expected value, and observed value.
+JSON path, expected value, and observed value. Registered live classes skip
+before a host-only artifact probe; the debug ELF test reaches its layout check
+in normal mode.
 
 ### Negative control
 
 `verify` cannot write or refresh a baseline. Host-only mode skips live tests
 by its explicit switch, not artifact timing; malformed scenarios and mismatch
-are failures, never retries or success-shaped fallbacks.
+are failures, never retries or success-shaped fallbacks. Removing the debug
+ELF owner's registration or guard is rejected; bypassing its guard reaches
+the poisoned file probe. Renaming a supported root alias and using an owned
+temporary path do not change their classifications.
 
 ### Interactions and save compatibility
 
