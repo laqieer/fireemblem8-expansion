@@ -162,7 +162,7 @@ pairs as of sprint 5, real libmGBA captures):
 | `locale-prefs-corrupt-no-wipe` | debug | Corrupt prefs -> re-prompt; SRAM hash unchanged (see exclusions below): no wipe. |
 | `locale-prefs-unknown-locale-no-wipe` | debug | Unknown-locale-id prefs -> re-prompt; SRAM hash unchanged: no wipe. |
 | `locale-prefs-disabled-locale-no-wipe` | debug | Prefs naming a locale not compiled into this build -> re-prompt; SRAM hash unchanged: no wipe. |
-| `locale-settings-real-navigation-multi` (sprint 5) | debug | Real Prep Map -> Options -> Configuration -> Language -> `RIGHT` navigation opens the real settings submenu; real qps-ploc selection; real Back-cancel-never-mutates-prefs proof; visible pseudo-marker region/pixel checkpoints. |
+| `locale-settings-real-navigation-multi` (sprint 5) | debug | Real Prep Map -> Options -> Configuration -> Language -> `RIGHT` navigation opens the real settings submenu; real qps-ploc selection and Back-cancel-never-mutates-prefs proof. The sprint-5 pseudo-marker region/pixel checkpoints described below are historical. |
 | `locale-softreset-persistence-multi` (sprint 5) | debug | Real first-run selector chooses qps-ploc; real `A+B+SELECT+START` soft-reset combo reboots via libmGBA's own HLE BIOS; continuous SRAM proves persistence (no selector re-prompt, locale retained). |
 
 Every scenario asserts real `gExpansionLanguageMenuProbe` field values
@@ -175,25 +175,19 @@ intro-mash sequence was found to accidentally auto-dismiss the selector
 before its checkpoint frame, and was abandoned in favor of this
 minimal-input, semantically-targeted sequence.
 
-**English/pseudo render + explicit pseudo marker (implemented, sprint 5)**:
-a prior sprint's `locale-selector-multi-switch-qps` framebuffer-hash-only
-evidence has been superseded -- `locale-settings-real-navigation-multi-
-modern-debug` now carries a per-checkpoint `back_row_label` framebuffer
-**region** hash (never the whole-screen hash alone) plus two individual
-**pixel probes** at the settings submenu's `Back` row, the one row in this
-menu resolved in the *current* locale (`ExpansionLocale_ResolveCurrent
-(EXP_MSG_FRAMEWORK_BACK)`; every locale-name row is always resolved in
-English regardless of current locale). Real capture proves this region's
-hash, and concrete pixel byte values, differ between the English
-(`currentLocale=0`) and qps-ploc checkpoints -- e.g. a dark-ink byte in
-English becomes a light-background/white byte in qps-ploc at the same
-screen coordinate -- real, screen-region/pixel-level proof the qps-ploc
-decoration marker (`scripts/localization/pseudo.py`'s deterministic
-`"Back"` -> `"[[BaaCk]]"` transform) is visible and differs from English.
-See `tools/gba-playtest/backend.c`/`gba_playtest.py`'s new plan-format-v3
-`regions`/`pixel_probes` checkpoint fields and their mandatory host schema
-tests, `tools/gba-playtest/tests/test_region_pixel_schema.py` (32 tests)
-and `tools/gba-playtest/tests/region_hash_mirror.py`.
+**English/pseudo render + explicit pseudo marker (sprint-5 historical evidence)**:
+The sprint-5 capture recorded a `back_row_label` region hash and two pixel
+probes at the settings submenu's `Back` row, with differences between English
+and qps-ploc. The current checked-in
+`locale-settings-real-navigation-multi-modern-debug` scenario and fingerprint
+no longer contain those region or pixel probes, so this historical observation
+is not a current production-ROM pixel or region gate.
+
+The harness still supports plan-format-v3 `regions` and `pixel_probes` fields.
+Their schema is checked by `tools/gba-playtest/tests/test_region_pixel_schema.py`;
+`tools/gba-playtest/tests/test_backend_probes.py` exercises the compiled backend,
+and `tools/gba-playtest/tests/test_backend_integration.py` captures a generated
+homebrew fixture. The latter is harness evidence, not production-ROM evidence.
 
 **Soft-reboot persistence (implemented, sprint 5)**: a prior sprint's
 fresh-cold-boot-from-fixture proof (semantically related but not a
