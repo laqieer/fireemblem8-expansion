@@ -53,9 +53,8 @@ python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
 
 It is not hidden in the `test_multilang_codec*.py` pattern and does not
 rediscover unrelated text suites. The upstream mirror retains every prior
-gate and this gate, with **the same eight jobs**. Job
-conditions, timeouts, required contexts, approvals and master-only build-once
-patch publication remain unchanged.
+gate and this gate. Issue #390 later splits three other host groups into
+independent workers; this gate remains in `extended-host-tests`.
 
 ## TC-TEXT-ATOMIC-PUBLICATION-001: Publish complete shared text outputs
 

@@ -100,7 +100,7 @@ proves private fetch access. No subjective manual criterion.
    python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v
    ```
 
-   The same eight jobs and 31 validation commands remain. Harmless helper
+   The current eleven jobs retain the 31 validation commands. Harmless helper
    comments preserve equivalence; replacing its body with a no-op fails.
    Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
    refuse. Replay the line-boundary controls:
@@ -399,7 +399,7 @@ modern/debug/release or archival payload change.
 
 The workflow topology and upstream verifier suites assert the parsed runner
 mapping and reject runner mutations. Live exact-head and exact-master Build
-runs prove the supported Ubuntu 24.04 environment and all four broad workers.
+runs prove the supported Ubuntu 24.04 environment and all seven workers.
 Actionlint remains the workflow syntax check.
 
 ### Cleanup and limitations
@@ -577,20 +577,21 @@ the consumers' independent protected-principal/deployment requirements.
    Preserve the real unittest results, wall time and exact revision. A focused
    rendezvous or selected workload is not complete-suite or full-CI evidence.
    Required candidate and automatic exact-master Build still contain all
-   eight jobs and retain both 90-minute host bounds.
+   eleven jobs and retain the 90-minute host bounds.
 6. Check the complete scheduling contract:
 
    ```bash
-   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_bootstrap_and_reporter_interpreter_agree -v
+   python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_and_full_game_checks_keep_worker_ownership -v
    ```
 
    The unchanged four full-game width/catalog/crosswalk/raw-closure commands
-   execute exactly once on an existing independent worker, with the original
-   host-only bootstrap before any archival package/toolchain setup. Reporter
-   and baseline keep their original required host worker and scrubbed
-   environment. All eight jobs, full-mode conditions, exact checkout and
-   summary dependencies remain; worker bounds are still90/90/60minutes.
-   The local upstream verifier mirrors the same complete31commands in their
+   execute exactly once on the localization worker, with the original
+   host-only prerequisites and clean-checkout tool builds, independent of
+   the archival toolchain setup. The reporter and baseline retain separate
+   required workers and scrubbed environments. All eleven jobs, full-mode
+   conditions, exact checkout and
+   summary dependencies remain; host/build bounds are 90 minutes and legacy
+   remains 60 minutes. The local upstream verifier mirrors all 31 commands in their
    current workflow order. Parsed ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
    complete native successes before claiming the end-to-end fix.
@@ -741,8 +742,8 @@ audio or human-approval criterion is added.
    by a matching live-tip change. Compare bookkeeping at the actual merge base.
 4. Execute the actual parsed Build job guards and preflight shell steps.
    Initial review-first runs only the fast path, while concurrent, dispatched
-   full and master events retain all four comprehensive worker jobs and all
-   eight total jobs. Wrong head/base/decision identity fails preflight.
+   full and master events retain all seven worker jobs and all
+   eleven total jobs. Wrong head/base/decision identity fails preflight.
    Execute the no-checkout dispatch bootstrap with a pre-feature default tree,
    a genuine feature-containing integration base and a child whose launcher
    would fail if executed. Require exact base checkout and a parsed
@@ -832,7 +833,7 @@ audio or human-approval criterion is added.
    feature-parent bootstrap when the default tree predates adaptive gating.
 9. Execute the existing metadata summary against disposable local HTTP
    responses for a full dispatch and its current merge base. It retains
-   complete eight-job success; missing/wrong/foreign marker or stale base
+   complete eleven-job success; missing/wrong/foreign marker or stale base
    cannot stand in for full candidate evidence.
 10. In owned Git repositories, publish an unpaused default decision and create
     H, then normally publish a pause to the current default branch without
@@ -909,7 +910,7 @@ these PRs as merged pilot samples.
    head superseded in the existing coordinator state; only then may its full
    run be cancelled.
 5. Confirm the new exact-head Build has `review-first-classifier`, successful
-   fast `host-tests`/`build`, skipped extended/legacy, and the explicit pending
+   fast `host-tests`/`build`, five skipped workers, and the explicit pending
    full `summary` failure. Register this candidate before requesting reviews.
    Complete its actual applicable local proof: a delegated terminal handoff,
    or explicit registered native checks for coordinator-authored work. Never
@@ -955,7 +956,7 @@ these PRs as merged pilot samples.
    Record one existing #178 watcher and run exactly
    `timeout 90m gh run watch "$RUN_ID" --interval 30 --exit-status` as an
    attached asynchronous shell. No reasoning agent waits. Verify exactly one
-   input-free full dispatch and all eight completed jobs, with no publisher
+   input-free full dispatch and all eleven completed jobs, with no publisher
    on the PR/dispatch. Reassess fresh review/security/criteria before eligibility.
 8. Owner-push a real second change. Observe supersession and prove that the
    earlier full success and earlier review/security cannot authorize the new
@@ -1037,7 +1038,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179);
   ordinary subprocess cleanup regression
-  [#223](https://github.com/laqieer/fireemblem8-expansion/issues/223).
+  [#223](https://github.com/laqieer/fireemblem8-expansion/issues/223);
+  failed-review triage regression
+  [#445](https://github.com/laqieer/fireemblem8-expansion/issues/445).
 - **Supported configuration:** Linux source checkout, the existing #216 locked
   CPython 3.12 host environment, Git and native GCC for host coverage; the
   existing modern Build lane's ARM GCC/binutils for mandatory object positives.
@@ -1294,6 +1297,20 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    Resolve the conversation in the observed GitHub facts and reject stale
    triage. While the earlier record remains untriaged, both flags must still
    be false. Complete normal retriage and require both positive flags.
+   Collect an error-only Copilot review and triage it as failed; neither
+   readiness nor clean status passes until a later complete clean review of
+   the current head. A stale-head clean review does not satisfy that
+   requirement. A changed or ambiguous error, inline comment, unresolved
+   thread or accepted finding cannot establish the failed disposition,
+   including a finding accepted afterward. A body containing the exact error
+   response cannot be triaged clean even with additional content or if marked
+   approved. A clean review with the same submission timestamp as a failed
+   review cannot establish later chronology, regardless of review ID order;
+   a strictly later clean current-head review can. Verify a failed review does
+   not reset prior
+   change-request rounds or clear a sticky architecture hold. The
+   `RoundTests` and `GitHubReviewTests` failed-review controls exercise the
+   reducer and authenticated adapter against the observed error response.
    Unrelated live-base fast-forwards preserve the actual candidate merge base;
    substituting an older ancestor or a base outside that lineage rejects.
 9. Exercise the real isolated launcher from a separately trusted checkout or
@@ -2398,22 +2415,22 @@ and does not grant push credentials.
 
 1. Run the workflow-topology and upstream-port mirror tests listed below.
 2. Confirm the four full-game localization commands remain together in
-   `extended-host-tests`, which is independent of the workflow-pilot reporter.
-3. Inspect the exact full Build run: confirm `extended-host-tests` succeeds
+   `game-localization-tests`, independent of the workflow-pilot reporter.
+3. Inspect the exact full Build run: confirm `game-localization-tests` succeeds
    within 90 minutes and `legacy` succeeds within 60 minutes through native
    ARM review, archival build, and pinned-payload validation.
 
 ### Expected result
 
-The independent extended-host worker passes all full-game localization
-checks; `host-tests` retains its reporter ownership; and the legacy worker
+The independent localization worker passes all full-game localization
+checks; `workflow-pilot-tests` owns the reporter; and the legacy worker
 contains no host-only bootstrap or localization work while completing every
 native ARM, archival, and payload gate within its unchanged 60-minute limit.
 
 ### Negative control
 
 The topology tests fail if a localization command is removed or moved back to
-`legacy` or into the reporter-owned `host-tests` job, or if the required job
+`legacy` or into the reporter worker, or if the required job
 limits change. Historical runs [#44486937093](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44486937093)
 and [#44492436378](https://github.com/laqieer/fireemblem8-expansion/actions/runs/44492436378)
 were canceled at the 60-minute boundary during native ARM review, skipping the
@@ -2421,8 +2438,8 @@ archival and payload checks.
 
 ### Interactions and save compatibility
 
-The existing `extended-host-tests`, `host-tests`, and `legacy` workers remain
-separate owners for their existing gates. This is a Build-workflow correction
+The localization, reporter, and legacy workers remain separate owners for
+their gates. This is a Build-workflow correction
 with no game-feature, profile, save/configuration, generated-data, localization
 content, ROM/RAM, debug/release, or archival behavior change.
 
@@ -2432,8 +2449,8 @@ content, ROM/RAM, debug/release, or archival behavior change.
   workflow and enforces job placement, exact full-game commands, and worker
   limits.
 - `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners -v`
-  verifies that the full-game checks remain owned by the independent extended
-  host worker.
+  verifies that the full-game checks remain owned by the independent
+  localization worker.
 - The exact candidate Build run verifies successful execution and duration of
   both affected workers.
 
@@ -2443,6 +2460,82 @@ No persistent data is created by the topology tests. Build-local generated
 outputs are ephemeral on GitHub runners. Local structure tests cannot predict
 shared-runner timing; exact candidate and post-merge Build results remain
 required.
+
+## TC-WORKFLOW-BUILD-CI-SPLIT-001: Run long host suites as independent Build workers
+
+- **Issue / configuration:** #390; full candidate and master Builds on
+  `ubuntu-24.04`, plus metadata-only and review-first pull-request events.
+- **Prerequisites and starting state:** use a clean checkout at the exact
+  candidate SHA with Python 3, GNU Make, host C and ARM binutils available.
+  The source checks require no ROM, emulator, or GitHub credentials. For
+  end-to-end evidence, inspect that candidate and resulting master Build.
+
+### Actions
+
+1. Run the topology, exact-checkout, ownership-selection, upstream mirror,
+   candidate-evidence, adaptive-gate and metadata-continuity checks below.
+2. Inspect the exact candidate and resulting master full Builds. Verify the
+   reporter, ownership and full-game localization groups each run once in
+   their own verified exact-SHA, 90-minute job, and all seven workers and
+   `summary` succeed. The reporter creates its isolated Python environment and
+   hydrates Git authority. The localization worker builds `gbagfx` and
+   `bin2c` before its checks rather than inheriting archival-job artifacts;
+   the ownership worker installs its own native prerequisites.
+3. Compare a comparable pre-split full run with each post-split run: record
+   workflow wall time, queue time, per-job durations and summed runner-minutes,
+   identifying the actual critical path and any extra setup.
+
+### Expected result
+
+Every original command group runs once without hidden cross-job artifacts.
+Metadata-only and review-first runs skip the three new workers. Metadata
+continuity requires a successful full run with all current jobs: a historical
+full followed by a newer successful current full is acceptable, but an old
+full alone or a newer old-shaped full is not, including in adaptive
+candidate assessment. A valid historical preflight preserves the initial
+review-first lane but cannot authorize a current dispatch. A completed
+preflight with a failed adapter does not block a successful same-head retry;
+the failed attempt alone grants no lane or dispatch authority. Historical
+lightweight runs do not prevent metadata preparation backed by a current
+preflight and cannot establish full-Build authority.
+
+### Negative control
+
+The focused checks reject a missing or duplicated group, missing checkout,
+prerequisite, summary dependency or result, and failed, cancelled or skipped
+new workers. Partial new job shapes fail; removing all three new jobs cannot
+make a historical full run authoritative. Malformed, active, unbound or
+contradictory preflight history still blocks a retry. The unchanged pre-split
+topology lacks the three independent jobs.
+
+### Interactions and save compatibility
+
+The change preserves classifier fallback, exact-head authority, branch
+protection, suite selections and the existing candidate/master gates. There
+are no game, save, configuration, localization-content, ROM/RAM or profile
+changes. Workflow edits and upstream gate ownership are shared conflict
+surfaces; #387–#389 remain independent follow-ups.
+
+### Automation
+
+- `python3 -m unittest tests.workflows.test_build_ci_topology tests.workflows.test_build_ci_checkout tests.workflows.test_ownership_probe tests.upstream_port.test_verify -v`
+  verifies parsed scheduling, command ownership, checkout and summary.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence scripts.workflow_pilot.tests.test_pr_metadata scripts.workflow_pilot.tests.test_summary_continuity_contract -v`
+  checks current and historical run authority and the summary boundary.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_latest_full_requires_the_current_shape -v`
+  checks the same authority boundary during adaptive candidate assessment.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_historical_preflight_preserves_lane_without_current_authority scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests.test_historical_lightweight_history_allows_current_pre_full_preparation -v`
+  checks historical lane provenance and current preflight preparation.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_history_does_not_block_a_successful_retry scripts.workflow_pilot.tests.test_adaptive_gate.GateTests.test_failed_preflight_retry_still_rejects_unproven_history -v`
+  checks failed-adapter retries and rejects unproven history.
+
+### Cleanup and limitations
+
+The tests use temporary fixtures; remove only their own leftover artifacts if
+an interrupted test leaves any. Shared-runner availability can distort timing,
+so report sample size and queue/setup costs rather than promising a speedup.
+No subjective manual judgment is required. Revert normally if delivery cost or
+coverage materially regresses.
 
 ## TC-WORKFLOW-MANUAL-HANDOFF-001: Surface actionable manual testing and resume automatically
 
@@ -2560,13 +2653,15 @@ issue rather than this repository.
 ### Expected result
 
 The synthetic non-master-base pull request selects the mandatory
-`event-identity` setup before `event-router`, `event-classifier`, the existing
-`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
+`event-identity` setup before `event-router`, `event-classifier`,
+`host-tests`, `workflow-pilot-tests`, `build`, `extended-host-tests`,
+`ownership-probe-tests`, `game-localization-tests`, `legacy`, and fail-closed
 `summary` jobs.
 
 - **Parsed full-PR job set:** {`event-identity`, `event-router`,
-  `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
-  `summary`}.
+  `event-classifier`, `host-tests`, `workflow-pilot-tests`, `build`,
+  `extended-host-tests`, `ownership-probe-tests`, `game-localization-tests`,
+  `legacy`, `summary`}.
 
 Every candidate worker still checks out and verifies
 `pull_request.head.sha`. The publisher is absent from pull-request execution,
@@ -2685,13 +2780,14 @@ availability or grant credentials.
    - **Parsed preserved pre-fix body-only job set:** {`host-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
    - **Parsed current metadata-only job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `summary`}.
+     `event-router`, `metadata-classifier`, `host-tests`,
+     `workflow-pilot-tests`, `build`, `extended-host-tests`,
+     `ownership-probe-tests`, `game-localization-tests`, `legacy`, `summary`}.
    The pre-fix graph therefore starts all four expensive workers and summary;
    the current graph retains both mandatory setup contexts, preserves the live
    canonical `host-tests`/`build`/`summary` required contexts through trusted
    branch-protection continuity adapters plus the summary continuity proof,
-   keeps canonical skipped `extended-host-tests`/`legacy` plus canonical
+   keeps the other five canonical workers skipped plus canonical
    skipped patch publication, and uses only the running metadata classifier
    attestation beyond those existing required names.
 
@@ -2699,8 +2795,9 @@ availability or grant credentials.
 
 Body-only, title-only, and combined body/title edits emit
 `event-identity`, `event-router`, `metadata-classifier`, the canonical
-worker checks `host-tests`, `build`, `extended-host-tests`, and `legacy`,
-plus canonical `summary`. The trusted metadata-only path
+worker checks `host-tests`, `workflow-pilot-tests`, `build`,
+`extended-host-tests`, `ownership-probe-tests`, `game-localization-tests`,
+and `legacy`, plus canonical `summary`. The trusted metadata-only path
 starts runners for `host-tests` and `build`, but those two jobs execute only a
 fixed no-checkout continuity attestation that validates exact event identity,
 classifier, head, base, and the raw edited pull-request body/title-only
@@ -2711,15 +2808,17 @@ JSON. Missing, malformed, duplicate, base-retarget,
 unknown, empty, or unchanged body/title changes reject both adapters. Every
 existing
 checkout/install/test/build step in those jobs is full/fallback-only and
-remains skipped. `extended-host-tests` and `legacy` stay platform-skipped with
-no runner. Live branch protection remains unchanged and therefore still
+remains skipped. The other five workers stay platform-skipped with no runner.
+Live branch protection remains unchanged and therefore still
 requires canonical `host-tests`, `build`, `summary`, and the independent
 GitGuardian context. Metadata `summary` succeeds only after a trusted
 no-checkout Actions API proof classifies exact prior runs newest-first, skips
 only conclusively metadata runs, and confirms the newest conclusively full
 Build CI run for the same repository, PR number, authoritative base SHA, and
 immutable head SHA completed successfully; a newer failed, cancelled,
-in-progress, or malformed full run blocks older successes. That proof first
+in-progress, or malformed full run blocks older successes. Historical pre-split
+full runs do not authorize the current contract; a fresh complete full run is
+required. That proof first
 requires complete paginated results with stable `total_count`, single-page
 `Link` omission, exact non-final `next`/`last` relations, no final `next`,
 exact per-page cardinality, stable `workflow_id`, ordered positive
@@ -2742,7 +2841,7 @@ The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
 `host-tests`/`build` succeed through the trusted continuity adapters, and
-`extended-host-tests`/`legacy` are exactly `skipped`, and the
+the other five workers are exactly `skipped`, and the
 trusted Actions API proof classifies exact prior runs newest-first so only the
 newest conclusively full run with the same repository, PR number,
 authoritative base SHA, and immutable head SHA can authorize continuity.
@@ -2756,17 +2855,17 @@ successes never override a newer failed, cancelled, in-progress, or malformed
 full run.
 
 Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
-`synchronize`, and `reopened` select the classifier, all four expensive
+`synchronize`, and `reopened` select the classifier, all seven expensive
 workers, and summary at the exact PR head. A `master` push additionally selects
 the existing patch publisher and runs the complete graph from its separate
 push SHA. Malformed/duplicate/non-finite JSON or another classifier failure with a
-validated authoritative PR head runs all four workers at that exact head under
+validated authoritative PR head runs all seven workers at that exact head under
 their canonical worker names, then summary still fails to expose the classifier
 defect. A classifier failure on a
-master push with validated `github.sha` runs all four workers and the publisher
+master push with validated `github.sha` runs all seven workers and the publisher
 at that exact push SHA, then summary still fails. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
-PR head runs all four workers at that head and fails normal summary; a
+PR head runs all seven workers at that head and fails normal summary; a
 syntactically valid direct base SHA may remain diagnostic output but is never
 checkout authority. Missing, malformed, stale, or spoofed PR head or missing
 push SHA starts no combined worker/publisher and fails summary.
@@ -2779,11 +2878,11 @@ Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
 is not used, and lone `@` is rejected. Python applies the equivalent grammar
 without a subprocess; the trusted bootstrap quotes the full ref to system Git
 and never checks it out. Invalid base refs are incomplete identity: a valid
-exact head runs all four workers and fails summary; an invalid head runs none.
+exact head runs all seven workers and fails summary; an invalid head runs none.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
 without the new classifier uses the explicit strict bootstrap. The original
-#177 workflow had no final-dispatch route; #181 now preserves all eight jobs
+#177 workflow had no final-dispatch route; #181 now preserves all eleven jobs
 through its input-free dispatch and integration-base bootstrap, covered by
 `TC-WORKFLOW-REVIEW-FIRST-001`.
 The classifier bootstrap may use the trusted default branch when PR base
@@ -2891,10 +2990,9 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 29 local
-gates while requiring complete eight-job source/target equivalence: the retained
-issue #176 jobs remain closed and the identity/router/classifier are closed
-setup-only jobs, never 29th/30th/31st local gates.
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 31 local
+gates while requiring complete eleven-job source/target equivalence: the
+identity/router/classifier remain closed setup-only jobs, not local gates.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the frozen PR template/body and comment collection, requiring exactly
@@ -3295,8 +3393,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
-     `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
-     `summary`}.
+     `event-classifier`, `host-tests`, `workflow-pilot-tests`, `build`,
+     `extended-host-tests`, `ownership-probe-tests`, `game-localization-tests`,
+     `legacy`, `summary`}.
 3. Snapshot prior IDs, apply the title-only mutation through the owner REST
    endpoint, then discover, watch, and save its distinct metadata run:
 
@@ -3321,13 +3420,14 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `summary`}.
+     `event-router`, `metadata-classifier`, `host-tests`,
+     `workflow-pilot-tests`, `build`, `extended-host-tests`,
+     `ownership-probe-tests`, `game-localization-tests`, `legacy`, `summary`}.
 
    Every raw REST job record is scanned before normalization. Duplicate API
    IDs, duplicate names/stable IDs, unknown jobs, a metadata `host-tests` or
    `build` record without a runner-backed `success` conclusion, or a metadata
-   `extended-host-tests`/`legacy` record with a runner or non-`skipped`
+   non-adapter worker record with a runner or non-`skipped`
    conclusion fail. GitHub may stamp `started_at` on a platform-skipped record;
    that timestamp is admissible only when `runner_name` is null and the
    conclusion is exactly `skipped`. Every metadata worker record is included
@@ -3367,8 +3467,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `summary`}.
+     `event-router`, `metadata-classifier`, `host-tests`,
+     `workflow-pilot-tests`, `build`, `extended-host-tests`,
+     `ownership-probe-tests`, `game-localization-tests`, `legacy`, `summary`}.
 5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
@@ -3410,28 +3511,37 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
            "event-classifier": "event-classifier",
            "metadata-classifier": "event-classifier",
            "host-tests": "host-tests",
+           "workflow-pilot-tests": "workflow-pilot-tests",
            "build": "build",
            "extended-host-tests": "extended-host-tests",
+           "ownership-probe-tests": "ownership-probe-tests",
+           "game-localization-tests": "game-localization-tests",
            "legacy": "legacy",
            "patch-release": "patch-release",
            "summary": "summary",
        }
        workers = {
            "host-tests",
+           "workflow-pilot-tests",
            "build",
            "extended-host-tests",
+           "ownership-probe-tests",
+           "game-localization-tests",
            "legacy",
        }
        metadata_adapter_ids = {"host-tests", "build"}
-       metadata_skipped_ids = {"extended-host-tests", "legacy"}
+       metadata_skipped_ids = workers - metadata_adapter_ids
        required_names = (
            {
                "event-identity",
                "event-router",
                "event-classifier",
                "host-tests",
+               "workflow-pilot-tests",
                "build",
                "extended-host-tests",
+               "ownership-probe-tests",
+               "game-localization-tests",
                "legacy",
                "summary",
            }
@@ -3441,8 +3551,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "event-router",
                "metadata-classifier",
                "host-tests",
+               "workflow-pilot-tests",
                "build",
                "extended-host-tests",
+               "ownership-probe-tests",
+               "game-localization-tests",
                "legacy",
                "summary",
            }
@@ -3723,7 +3836,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    full Build succeeds; an active rerun appearing in either later snapshot
    defers the edit. A second-snapshot refusal stops before creating an intent
    or taking the third snapshot.
-   Exercise queued zero-job, one-job, current eight-job-without-summary,
+   Exercise queued zero-job, one-job, current eleven-job-without-summary,
    unknown partial, provable active metadata-only, empty/missing-binding active
    queued/in-progress, terminal unbound, explicit-other, and
    multiple/contradictory binding shapes.
@@ -4412,9 +4525,9 @@ none; there is no feature flag and no ROM/RAM or save-format impact.
 `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
 parses the decision and fixture schemas, reproduces every frozen calculation,
 compares canonical bytes, and exercises all positive/adversarial controls
-above. Build CI runs the same command plus the baseline reporter with
-`--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
-job. Before those reporter commands, CI hydrates the fixture's exact commit
+above. Build CI runs the reporter suite in `workflow-pilot-tests` and the
+baseline reporter with `--repository-root "$GITHUB_WORKSPACE"` in
+`host-tests`. Before those commands, each worker hydrates the fixture's exact commit
 authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
 topology suite fails if classification, hydration, pre-pilot step
 order/content, scrubbed protected-step environments, ownership, or
@@ -4439,7 +4552,7 @@ five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
 allowlisted env, and steps, including master-only packaging; both comprehensive
-host jobs also retain 90-minute ceilings and legacy remains 60 minutes,
+host workers also retain 90-minute ceilings and legacy remains 60 minutes,
 while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
@@ -4447,9 +4560,10 @@ Patch packaging and summary remain parsed structures: successful authenticated
 master-push-only steps, existing checked release output, expected commit/profile,
 the existing producer/verifier, private-input cleanup and pinned patch-only
 upload. No duplicate profile build or local gate is introduced. Summary retains
-`always()`, identity/classifier plus all four ordered worker dependencies,
+`always()`, identity/classifier plus all seven worker dependencies,
 canonical name, five-minute context and fail-closed results. Historical prior PR
-runs may carry an extra canonical skipped publisher job, never a missing worker.
+runs may carry an extra canonical skipped publisher job; pre-split full shapes
+remain non-authoritative.
 Neither is locally executed, but any
 runner/condition/needs/permission/env/step/command/action/alternate-context
 drift rejects before dry-run.
@@ -4505,7 +4619,7 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    patterns, target variables and order-only prerequisites. Their typed
    observations must describe actual targets, not candidate stdout.
    Build CI runs the same complete native suite in its existing required
-   `extended-host-tests` worker. The lightweight workflow contract compares
+   `ownership-probe-tests` worker. The lightweight workflow contract compares
    the public target's actual unittest selection with every native case and
    rejects missing, duplicate, conditional or advisory ownership. The host
    workflow discovery must not execute the native suite a second time.
@@ -5374,12 +5488,12 @@ content, modern/archival profile or ROM/RAM behavior changes.
 `python3 -m unittest scripts.validation_ownership.tests.test_producer -v`
 executes the real producer/control/resource cases through the existing host
 runner. The existing `ownership-probe-test` target selects foundation, producer
-and dependency modules exactly once in `extended-host-tests`. Lightweight
+and dependency modules exactly once in `ownership-probe-tests`. Lightweight
 workflow discovery checks that selection with `PlanCollector`; it does not
 import native test classes for execution in another job. The actual adaptive
 job condition selects all three modules only in full mode and skips them for
-metadata-only and review-first preflight runs. No new job or standalone gate
-is added.
+metadata-only and review-first preflight runs. The split adds no duplicate
+standalone gate.
 Its dependency step supplies libpng, pkg-config and ARM binutils before native
 execution. Parsed owner/dependency controls reject missing, disabled, masked or
 late installation without duplicating the process suite.
@@ -6150,7 +6264,7 @@ workflow job is involved.
 1. Run the existing native owner:
    `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
    This selects the same foundation, producer and dependency modules as the
-   `extended-host-tests` Build worker; no standalone job or runner is added.
+   `ownership-probe-tests` Build worker without duplicate execution.
 2. Exercise the shared `python_command(...)` closure in small owned fixtures.
    Import one helper through another Python module and require only the actual
    imported code paths in the closure and execution receipt; unrelated modules
@@ -6537,9 +6651,10 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
-  and [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367);
-  capacity regression [issue #446](https://github.com/laqieer/fireemblem8-expansion/issues/446).
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178),
+  [issue #367](https://github.com/laqieer/fireemblem8-expansion/issues/367),
+  [issue #446](https://github.com/laqieer/fireemblem8-expansion/issues/446)
+  and [issue #486](https://github.com/laqieer/fireemblem8-expansion/issues/486).
 - **Supported configuration or artifact:** source-only Linux checkout with the
   [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
   Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
@@ -6556,6 +6671,9 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
      scripts.workflow_pilot.tests.test_agent_handoff \
      scripts.workflow_pilot.tests.test_coordinator_observations -v
+   build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_accepted_logical_handoff_uses_released_validation_worktree \
+     scripts.workflow_pilot.tests.test_coordinator_local.CoordinatorLocalTests.test_delayed_process_completion_cannot_attribute_successor_head -v
    ```
 
 2. Inspect the real-Git positive fixture: exact clean strict descendant, named
@@ -6564,6 +6682,48 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    multiple task commits pass. Merge an authorized exact upstream input with
    no task trailers, plus a task commit with trailers: imported paths/history
    pass without consuming task scope/line budget. An unrecorded merge rejects.
+   For #486, run the shared-root native task cases in
+   `test_coordinator_observations.py`: reserve before dispatch, then observe
+   different dispatch and parent-task IDs, the real owner, exact prompt and
+   owner-native session. Two owners sharing a root and interaction remain
+   distinct. Spliced, missing, stale, reversed or reused observations must not
+   advance; unknown process-backed owner exit/RSS still prevents a ready handoff. The
+   separate-session control rejects the different-ID receipt, as the pre-fix
+   reader did. A second start for a bound owner with a different, missing or
+   opaque dispatch rejects without advancing the cursor, while an unrelated
+   owner/task start is ignored and the original owner can complete. The
+   pre-fix reader silently consumes the contradictory start. Repeat an exact
+   receipt with the same or another event ID or
+   conflicting receipt: reject. After receipt, any same-root owner follow-up
+   that changes the bound parent task rejects even if its interaction ID also
+   changes; a distinct same-parent follow-up remains valid and participates
+   in chronology. Reusing a retained lifecycle event ID on any bound-owner
+   event, including an assistant turn, rejects without advancing the cursor;
+   distinct progress IDs remain valid. Missing, opaque or dispatch-equal
+   progress call IDs and missing or opaque tool names reject. Once bound, an
+   explicitly conflicting owner session on a tool completion, turn or delivery
+   rejects; matching or omitted optional session fields remain valid. Append
+   an owner tool completion and a delivery with reversed producer timestamps,
+   then reverse progress and completion, and completion and receipt after
+   owner binding: all must reject without advancing the cursor. The reversed
+   delivery must also leave locked CLI state unchanged. Ordered observations
+   remain valid, and an unrelated
+   owner's completion does not set this owner's clock. The pre-fix reader
+   accepts the reversed sequences.
+   An incomplete `tool.execution_start` from the bound owner still participates
+   in chronology before receipt, and after receipt when its owner-session ID is
+   missing or opaque. Ordered incomplete starts remain non-progressing and
+   valid; reversed starts reject without advancing the cursor, both in one
+   observation batch and across incremental observations. Unrelated owners
+   remain independent.
+   After handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
+   before progress such a start remains incomplete. After successful closure,
+   late events matching the closed owner or its bound session reject without
+   advancing the cursor, while unrelated-owner events remain independent. Put
+   unread complete or partial records after delivery: validation must hold
+   readiness and closure until caught up, then reject a conflicting parent or
+   accept otherwise complete valid evidence. The isolated CLI case also checks
+   atomic rejection.
 3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
    missing trailers/evidence/checks, out-of-scope path, hidden index flags,
    whitespace/checker replacement, and incremental line-budget controls.
@@ -6704,10 +6864,104 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    across incremental calls and at the 128-event boundary; valid subsequent
    events with retained cursor context still complete normally. An old session
    start may establish context, but stale pre-assignment task events must not
-   acknowledge or count the new assignment. Exercise the actual CLI and check
-   that a future-clock rejection leaves canonical state unchanged.
-   Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
-   lifetime/RSS overage and repeated committed-owner work do not pass.
+   acknowledge or count the new assignment. Before reservation, put a
+   different root session after more than one batch of complete records: it must
+   reject instead of skipping the contradiction. A partial record or an event
+   appended during the captured prefix remains for later observation. Exercise
+   the actual CLI and check
+   that a future-clock rejection leaves canonical state unchanged. Collect
+   multiple native events after their producer timestamps and verify lifecycle
+   ordering uses those timestamps rather than a later polling time; include
+   delivery and task-completion records in the same observed batch.
+   For an OS-process-backed owner, a real zero exit and complete owned RSS
+   pass; opaque/reused identities, missing complete RSS, lifetime/RSS overage
+   and repeated committed-owner work do not pass. Close an accepted owner
+   before its task completion, then let an accepted review successor commit in
+   the same worktree. A delayed successful completion must not attribute that
+   later HEAD to the predecessor; persist and replay it without changing the
+   retirement time. A delayed failed completion must invalidate current and
+   successor readiness and appear as `owner-task-failed`, without rewriting
+   the historical verdict. Legacy terminal snapshots remain valid only when
+   their original head, worktree, identity and scope match.
+   For a logical task owner,
+   record the exact dispatched `task` tool's terminal
+   completion after delivery. A valid retained entry without the optional
+   terminal field must accept its first matching completion and reject a
+   duplicate; the pre-fix reader raises `KeyError` instead. The terminal
+   event by itself must leave the assignment open and validation without
+   release evidence must reject with
+   `owner-worktree-release-unavailable`. For a successful task, publish the
+   exact candidate commit first, then run `release-worktree` from a separate
+   coordinator worktree. Require the exact remote branch head, a clean linked
+   owner worktree with no untracked or ignored data, and an unused validation
+   path. Repeat with embedded newlines and with a trailing newline or space in
+   both worktree paths: exact Git registrations must be recognized without
+   splitting or trimming the paths. With a trailing-newline worktree, check a
+   real uninitialized gitlink and then initialize it; release must reject the
+   initialized gitlink before creating the validation worktree. An unavailable
+   Git status helper must also reject without removing the owner worktree.
+   The pre-fix top-level parser strips trailing path whitespace, and Git's
+   public submodule shell wrapper also fails on a trailing newline.
+   Repeat release, rollback and retry with LF, CR and mixed CR/LF embedded in
+   the common Git administrative path. Compare absolute and relative metadata
+   paths with Git; malformed, NUL, oversized, symlinked and forbidden private or
+   shared metadata must still reject before Git dispatch. The pre-fix reader
+   rejects the valid embedded controls. This does not claim support for every
+   possible filesystem path or replace the remaining review and admission gates.
+   Simulate owner-removal failure and require rollback of the validation
+   worktree while retaining the owner; retry must then succeed. The pre-fix
+   line-based inventory rejects the registered owner before removal.
+   The operation must create a fresh detached worktree at the candidate,
+   use the normal `git worktree remove` command without force, and verify the
+   owner path is absent and unregistered. Run final validation and required
+   checks only in the fresh worktree. After acceptance, the candidate readiness
+   check must use the recorded validation worktree and reject a missing,
+   modified, moved-head or identity-replaced worktree, both before and after
+   registering separate coordinator-owned checks for the same candidate.
+   A review successor cannot be assigned from a changed validation worktree.
+   An independently validated successor can advance beyond its predecessor
+   without requiring the historical worktree to remain the current candidate.
+   Attempt to revalidate the predecessor after successor assignment, including
+   after the successor advances and the old worktree is dirty or missing:
+   require an explicit rejection and unchanged locked state and accepted
+   predecessor verdict. Validate the clean current successor normally and
+   reject its dirty worktree. Before the fix a retry could overwrite the
+   predecessor verdict and leave its successor's state invalid.
+   Append an owner or unrelated event, or remove, replace,
+   truncate or append a partial record to the native log: candidate readiness
+   must not reuse the stale verdict. An unread event must also block a review
+   successor and any later accepted review in its chain. Observe a valid
+   unrelated event and confirm readiness returns; a late owner event rejects.
+   Capture direct and asynchronous checks after
+   release and require their worktree to be the recorded validation worktree.
+   A new release record is bound to the assignment without a second
+   identifier; an older record's derived identifier must still validate exactly.
+   Hold a writer with its current directory
+   open across removal, attempt a relative file write afterward, and verify it cannot
+   create a path-visible file or dirty the fresh candidate. This tests
+   path-based write isolation, not hostile same-UID process isolation.
+   Mismatched remote head, dirty/untracked/ignored owner data, wrong Git
+   identity, a preexisting validation path while the owner still exists, or a
+   failed task must not release or close the assignment. If removal succeeds
+   but final observation or state persistence fails, retry only when the owner
+   path is absent and unregistered and its recorded Git administrative
+   directory is absent; require the retained validation worktree to match the
+   exact candidate before recording release. Move the owner worktree instead of
+   removing it: recovery must reject and retain both worktrees. A clean snapshot,
+   `closed_at`, task self-report,
+   printed result, or unrelated `tool.execution_complete` event alone is not
+   release evidence. Confirm the terminal timestamp, rather than delayed
+   coordinator validation, determines logical-task lifetime. A prefilled
+   close, unread native-log tail, or mismatched task, owner, session, delivered
+   head, worktree, Git identity or scope remains invalid. Failed logical tasks remain
+   rejected and open; they do not gain a recovery/reassignment path from this
+   successful-task contract. RSS remains explicitly unavailable and does not
+   block this path; a native task terminal never substitutes for process
+   exit/RSS when an owned OS process was bound. A process-backed terminal
+   record may remain open until actual exit/RSS evidence is observed. Replayed
+   lifecycle source IDs reject even when the replayed event timestamp predates
+   the assignment; a matching follow-up must retain both the bound parent task
+   and interaction.
    Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
    local acceptance and an accepted report reject it, preservation happens
    before retirement, and Git HEAD/index/check facts remain intact. A missing
@@ -6722,7 +6976,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    Missing/future/negative lifecycle times and an open report clock predating
    assignment never become fabricated zero elapsed time.
 6. Reserve duplicate/overlapping owners/watchers and attempt a second state
-   writer: each rejects. Try different watcher IDs/runs with the same actual
+   writer: each rejects. After a logical owner is closed with a recorded
+   worktree release, attempt a fresh assignment whose worktree is nested
+   beneath the released owner path. It must reject even though the path string
+   differs, and leave coordinator state unchanged. Try different watcher
+   IDs/runs with the same actual
    boot/PID/start identity, both through reservation and loaded state: reject.
    Distinct live processes pass; an owned unreaped zombie cannot reserve a
    watcher. Running/ended records must agree with process state and exit data;
@@ -6975,8 +7233,9 @@ python3 -m unittest \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
 ```
 
-The Build host job runs the complete `test_agent_handoff` and
-`test_coordinator_observations` modules.
+The Build `workflow-pilot-tests` job runs the complete `test_agent_handoff`
+and `test_coordinator_observations` modules through the isolated reporter
+suite.
 
 ### Cleanup and limitations
 

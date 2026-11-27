@@ -42,6 +42,7 @@ class SubjectTestCase(unittest.TestCase):
             "aoe": ("TC-GAMEPLAY-006", "aoe-item-dispatch"),
             "generated": ("TC-CORE-004", "generated-eventlists"),
             "session": ("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session"),
+            "ci": ("TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history"),
         }
         case, subject = cases[kind]
         return request(case, subject, self.repo.base, head or self.repo.base)
@@ -83,9 +84,24 @@ class BuildTopologyFamilyTests(SubjectTestCase):
         cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
         cls.model = cls.tools.model
 
-    def build_scope(self, head=None):
+    def build_scope(self, head=None, base=None):
         return request("TC-TEST-QUALITY-001", "build-workflow-topology",
-                       self.repo.base, head or self.repo.base)
+                       base or self.repo.base, head or self.repo.base)
+
+    def historical_sources(self, revision):
+        origin = GitTree(ROOT, revision)
+        roots = (
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+            self.tools.subjects.BUILD_UPSTREAM_TEST,
+        )
+        paths = set(self.tools.subjects.local_python_inputs(origin, roots))
+        paths.update({
+            self.tools.subjects.BUILD_WORKFLOW,
+            self.tools.subjects.BUILD_ARCHIVAL_HELPER,
+            "tests/workflows/__init__.py",
+        })
+        return {path: origin.read(path) for path in paths}
 
     def selected(self, members, *names):
         self.assertEqual({item.member for item in members if item.member in names}, set(names))
@@ -128,32 +144,21 @@ class BuildTopologyFamilyTests(SubjectTestCase):
 
     def test_historical_order_origins_have_source_backed_observations(self):
         revision = "355dd69dbe0cad0250bfdc5589b2134577359c18"
-        paths = (
-            self.tools.subjects.BUILD_WORKFLOW,
-            self.tools.subjects.BUILD_TOPOLOGY,
-            self.tools.subjects.BUILD_VERIFY,
-        )
-        historical = {}
-        for path in paths:
-            result = subprocess.run(
-                ["/usr/bin/git", "show", revision + ":" + path],
-                cwd=ROOT, env=ENV, check=True, capture_output=True,
-            )
-            historical[path] = result.stdout
-        candidate = {path: (self.repo.root / path).read_bytes() for path in paths}
+        historical = self.historical_sources(revision)
+        candidate = {path: (ROOT / path).read_bytes() for path in historical}
         before = self.repo.commit(historical)
         after = self.repo.commit(candidate, parent=before)
         workers, _ = self.tools.subjects.build_source_model(
-            (self.repo.root / self.tools.subjects.BUILD_WORKFLOW).read_text(),
-            (self.repo.root / self.tools.subjects.BUILD_TOPOLOGY).read_bytes(),
-            (self.repo.root / self.tools.subjects.BUILD_VERIFY).read_bytes(),
+            historical[self.tools.subjects.BUILD_WORKFLOW].decode(),
+            historical[self.tools.subjects.BUILD_TOPOLOGY],
+            historical[self.tools.subjects.BUILD_VERIFY],
         )
         names = tuple(
             f"validators:{kind}-{worker}"
             for worker in workers
             for kind in ("topology-order", "upstream-order")
         )
-        members = self.tools.members(self.build_scope(after), (before,))
+        members = self.tools.members(self.build_scope(before, before))
         prior = self.run_members(members, before)
         by_name = {item.obligation.member: item for item in prior}
         self.assertEqual(len(by_name), len(members))
@@ -167,30 +172,16 @@ class BuildTopologyFamilyTests(SubjectTestCase):
             [(name, by_name[name].verdict, by_name[name].checks, by_name[name].detail)
              for name in names],
         )
-        self.assert_satisfied(self.run_members(members, after))
+        current = self.tools.members(self.build_scope(after))
+        self.assert_satisfied(self.run_members(current, after))
 
     def test_worker_order_source_tests_fail_at_historical_origin_and_pass_on_candidate(self):
         revision = "4f88c0e1a0f5569d4dd0cf37b6cd01083760d081"
-        origin = GitTree(ROOT, revision)
-        roots = (
-            self.tools.subjects.BUILD_TOPOLOGY,
-            self.tools.subjects.BUILD_VERIFY,
-            self.tools.subjects.BUILD_UPSTREAM_TEST,
-        )
-        paths = set(self.tools.subjects.local_python_inputs(origin, roots))
-        paths.update({
-            self.tools.subjects.BUILD_WORKFLOW,
-            self.tools.subjects.BUILD_TOPOLOGY,
-            self.tools.subjects.BUILD_VERIFY,
-            self.tools.subjects.BUILD_UPSTREAM_TEST,
-            self.tools.subjects.BUILD_ARCHIVAL_HELPER,
-            "tests/workflows/__init__.py",
-        })
-        historical = {path: origin.read(path) for path in paths}
-        candidate = {path: (ROOT / path).read_bytes() for path in paths}
+        historical = self.historical_sources(revision)
+        candidate = {path: (ROOT / path).read_bytes() for path in historical}
         before = self.repo.commit(historical)
         after = self.repo.commit(candidate, parent=before)
-        members = self.tools.members(self.build_scope(after), (before,))
+        members = self.tools.members(self.build_scope(before, before))
         names = {
             "validators:source-test-topology-order",
             "validators:source-test-upstream-order",
@@ -209,8 +200,9 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                         [(name, item.verdict, item.checks, item.detail)
                          for name, item in prior.items()])
 
+        current_members = self.tools.members(self.build_scope(after))
         current = {item.obligation.member: item
-                   for item in self.selected_observations(members, after, *names)}
+                   for item in self.selected_observations(current_members, after, *names)}
         self.assertEqual(set(current), names)
         self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
                             for item in current.values()),
@@ -232,7 +224,7 @@ class BuildTopologyFamilyTests(SubjectTestCase):
         steps_first_candidate[workflow_path] = workflow.replace(
             job, steps_first_job, 1).encode()
         steps_first = self.repo.commit(steps_first_candidate, parent=before)
-        steps_first_members = self.tools.members(self.build_scope(steps_first), (before,))
+        steps_first_members = self.tools.members(self.build_scope(steps_first, steps_first))
         observations = {
             item.obligation.member: item
             for item in self.selected_observations(steps_first_members, steps_first, *names)
@@ -275,23 +267,19 @@ class BuildTopologyFamilyTests(SubjectTestCase):
                                  ("unavailable", 0))
 
     def test_target_consumers_detect_original_order_sensitive_predicate(self):
-        verifier = self.tools.subjects.BUILD_VERIFY
-        original = subprocess.run(
-            ["/usr/bin/git", "show",
-             "355dd69dbe0cad0250bfdc5589b2134577359c18:" + verifier],
-            cwd=ROOT, env=ENV, check=True, capture_output=True, text=True,
-        ).stdout
-        candidate = (self.repo.root / verifier).read_text()
-        before = self.repo.commit({verifier: original})
-        after = self.repo.commit({verifier: candidate}, parent=before)
+        historical = self.historical_sources("355dd69dbe0cad0250bfdc5589b2134577359c18")
+        candidate = {path: (ROOT / path).read_bytes() for path in historical}
+        before = self.repo.commit(historical)
+        after = self.repo.commit(candidate, parent=before)
         names = tuple("consumers:" + name for name in (
             "host-tests", "extended-host-tests", "build", "legacy"))
-        members = self.selected(self.tools.members(self.build_scope(after), (before,)), *names)
+        members = self.selected(self.tools.members(self.build_scope(before, before)), *names)
         prior = self.selected_observations(members, before, *names)
         self.assertEqual(len(prior), len(names))
         self.assertTrue(all(item.verdict == "contract-violation" and item.checks > 0
                             for item in prior))
-        self.assert_satisfied(self.selected_observations(members, after, *names))
+        current = self.selected(self.tools.members(self.build_scope(after)), *names)
+        self.assert_satisfied(self.selected_observations(current, after, *names))
 
     def test_target_boundary_binds_every_source_job(self):
         verifier = self.tools.subjects.BUILD_VERIFY
@@ -1132,6 +1120,8 @@ class SubjectTests(SubjectTestCase):
                 for member in members:
                     self.assertEqual(set(member.source_inputs), copied, member.member)
                     self.assertTrue(set(member.inputs) <= copied)
+                for path in copied:
+                    self.assertEqual((root / path).read_bytes(), tree.read(path), path)
                 observations = self.run_members(members, self.repo.base)
                 self.assert_satisfied(observations)
                 for item in observations:
@@ -1140,7 +1130,6 @@ class SubjectTests(SubjectTestCase):
                 narrowed = replace(members[0], execution_inputs=members[0].execution_inputs[1:])
                 with self.assertRaisesRegex(ValueError, "candidate inputs"):
                     self.tools.run_obligations((narrowed, *members[1:]), self.repo.base)
-
     def test_optional_owner_semantic_invalid_data_is_rejected(self):
         for path, owner in (
             ("src/data/autoplay_strategies.json", "autoplaystrategies"),
@@ -1515,6 +1504,96 @@ class SubjectTests(SubjectTestCase):
         self.assertEqual({(item.verdict, item.kind, item.checks) for item in observations},
                          {("unavailable", None, 0)})
         self.assertTrue(all("process failed" in item.detail for item in observations))
+
+
+class CIHistoryFamilyTests(SubjectTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
+        for name in cls.tools.subjects.local_python_inputs(
+                source, cls.tools.subjects.CI_HISTORY_SOURCES):
+            target = cls.repo.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, target)
+        git(cls.repo.root, "add", "scripts")
+        git(cls.repo.root, "commit", "-qm", "source-backed CI history predicates")
+        cls.repo.base = git(cls.repo.root, "rev-parse", "HEAD")
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+
+    def history_scope(self, head=None):
+        return request("TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history",
+                       self.repo.base, head or self.repo.base)
+
+    def test_complete_source_backed_lifecycle_and_wire_family(self):
+        members = self.tools.members(self.history_scope())
+        self.assertEqual({(item.family, item.role) for item in members}, {
+            (family, role) for family in ("lifecycle", "wire")
+            for role in self.model.FAMILIES[family]
+        })
+        self.assertEqual(len(members), 9)
+        self.assertTrue(all(
+            set(item.source_inputs).isdisjoint(self.tools.subjects.STAGED_TOOL_PATHS)
+            for item in members))
+        tree = self.tools.tree(self.repo.base)
+        self.assertEqual(self.tools.subjects.fixture_inputs(
+            tree, {item.probe for item in members}), set())
+        build = self.repo.root / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as directory:
+            root = Path(directory)
+            self.tools._stage(tree, root, members)
+            for input_path in members[0].source_inputs:
+                self.assertEqual((root / input_path).read_bytes(), tree.read(input_path))
+        observations = self.run_members(members, self.repo.base)
+        self.assert_satisfied(observations)
+        self.assertTrue(all(item.checks > 1 for item in observations))
+        for observation in observations:
+            self.assertEqual(
+                dict(observation.source_objects),
+                {input_path: tree.oid(input_path)
+                 for input_path in observation.obligation.source_inputs})
+
+    def test_origin_and_candidate_bind_their_staged_python_closure(self):
+        path = "scripts/workflow_pilot/adaptive_gate.py"
+        source = (self.repo.root / path).read_text()
+        signature = "def _history_lane(pr, base, runs):"
+        self.assertIn(signature, source)
+        mutated = source.replace(
+            signature, signature + "\n    raise ValueError('invalid history')", 1)
+        origin = self.repo.commit({path: mutated})
+        candidate = self.repo.commit({path: source}, parent=origin)
+        members = self.tools.members(self.history_scope(candidate), (origin,))
+        self.assertEqual(len(members), 9)
+        self.assertTrue(all(set(item.inputs) <= set(item.source_inputs) for item in members))
+        self.assertTrue(all(
+            set(item.source_inputs).isdisjoint(self.tools.subjects.STAGED_TOOL_PATHS)
+            for item in members))
+
+        origin_tree = self.tools.tree(origin)
+        build = self.repo.root / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as directory:
+            root = Path(directory)
+            self.tools._stage(origin_tree, root, members)
+            for input_path in members[0].source_inputs:
+                self.assertEqual((root / input_path).read_bytes(), origin_tree.read(input_path))
+
+        observed = {
+            revision: self.run_members(members, revision)
+            for revision in (origin, candidate)
+        }
+        for revision, observations in observed.items():
+            tree = self.tools.tree(revision)
+            for observation in observations:
+                self.assertEqual(
+                    dict(observation.source_objects),
+                    {input_path: tree.oid(input_path)
+                     for input_path in observation.obligation.source_inputs})
+        entry = next(item for item in observed[origin] if item.obligation.role == "entries")
+        self.assertEqual(entry.verdict, "contract-violation", entry.detail)
+        self.assert_satisfied(observed[candidate])
 
 
 if __name__ == "__main__":

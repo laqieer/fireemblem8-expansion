@@ -82,7 +82,62 @@ def _classifier_failure_metadata_run(run_id):
     return run
 
 
+def _historical(run):
+    run["contexts"] = [
+        context for context in run["contexts"]
+        if context["job_id"] not in candidate_evidence.NEW_WORKER_JOB_IDS
+    ]
+    return run
+
+
 class CandidateEvidenceTests(unittest.TestCase):
+    def test_historical_full_never_substitutes_for_the_new_worker_contract(self):
+        old = _historical(_full_run(20))
+        current = _full_run(21)
+        newer_old_shape = _historical(_full_run(22))
+
+        self.assertEqual(candidate_evidence.run_mode(old), "historical-full")
+        for records, expected, run_id in (
+            ([old], False, 20),
+            ([old, current], True, 21),
+            ([old, current, newer_old_shape], False, 22),
+        ):
+            with self.subTest(run_ids=[run["run_id"] for run in records]):
+                result = candidate_evidence.evaluate_candidate_runs(
+                    records, head_sha=HEAD, base_sha=BASE,
+                )
+                self.assertEqual(result.eligible, expected)
+                self.assertEqual(result.run_id, run_id)
+                if not expected:
+                    self.assertEqual(result.reason, "current-full-run-required")
+
+        metadata = _historical(_metadata_run(23))
+        self.assertEqual(candidate_evidence.run_mode(metadata), "historical-metadata-only")
+        self.assertFalse(candidate_evidence.evaluate_candidate_runs(
+            [metadata], head_sha=HEAD, base_sha=BASE,
+        ).eligible)
+
+    def test_each_new_worker_must_complete_and_partial_shapes_are_rejected(self):
+        for worker in candidate_evidence.NEW_WORKER_JOB_IDS:
+            for conclusion in ("failure", "skipped"):
+                with self.subTest(worker=worker, conclusion=conclusion):
+                    run = _full_run(1)
+                    next(context for context in run["contexts"]
+                         if context["job_id"] == worker)["conclusion"] = conclusion
+                    result = candidate_evidence.evaluate_candidate_runs(
+                        [run], head_sha=HEAD, base_sha=BASE,
+                    )
+                    self.assertFalse(result.eligible)
+            for factory in (_full_run, _metadata_run):
+                with self.subTest(worker=worker, mode=factory.__name__):
+                    run = factory(1)
+                    run["contexts"] = [
+                        context for context in run["contexts"]
+                        if context["job_id"] != worker
+                    ]
+                    with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                        candidate_evidence.run_mode(run)
+
     def test_full_success_is_eligible_and_metadata_only_is_not(self):
         full = _full_run(1)
         metadata = _metadata_run(2)
