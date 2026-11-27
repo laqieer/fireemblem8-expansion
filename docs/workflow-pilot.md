@@ -986,6 +986,18 @@ The shipped unrelated subject uses are:
   request code executed as a registered subject with finite lifecycle/wire
   controls. This explicit binding never redirects unrelated findings to
   workflow-governance code.
+- **`TC-TEST-QUALITY-001 / build-workflow-topology`:** the Build job and
+  ordered step declarations, the test-local topology validator and upstream
+  verifier through source-backed parser probes. Historical origins are tested
+  directly, so they need not contain candidate-added regression methods; the
+  candidate regression tests remain part of the normal Build suite. The wire
+  family exercises step boundaries and literal scripts per job, both order
+  parsers per mirrored worker, worker mapping permutations,
+  unsafe target contexts and the shallow-blank target script. The source
+  model checks the two declared worker lists and expected jobs, and rejects
+  ambiguous step identities or changed membership rather than guessing.
+  Staged Python dependencies and the archival helper are candidate inputs;
+  the fixed review-tool overlays are bound by `tool_revision`.
 
 `affected-fixed` requires the same reviewed semantic probe to find a contract
 violation at the actual finding origin and to pass the candidate. Unaffected
