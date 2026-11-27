@@ -687,6 +687,21 @@ audio or human-approval criterion is added.
 
    An existing equivalent locked interpreter may be supplied instead; do not
    create another dependency bootstrap.
+   During the temporary [#490](https://github.com/laqieer/fireemblem8-expansion/issues/490)
+   operational rollback, run the focused deployed-control case:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_live_pause.CurrentControlTests.test_repository_operational_pause_routes_risky_pr_to_full_build -v
+   ```
+
+   It loads the actual decision collection into an isolated Git/provider
+   fixture and requires the real classifier to route a high-risk PR event to
+   the full graph without waiving pre-review. The unpaused collection is the
+   negative control. This local result does not prove a live GitHub required
+   check; verify that separately after deployment. Remove the temporary case
+   when the operational rollback is reverted.
    The focused Git-timezone regression is:
 
    ```bash

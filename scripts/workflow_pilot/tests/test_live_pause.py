@@ -155,6 +155,32 @@ class CurrentControlTests(unittest.TestCase):
         self.fixture = ControlFixture()
         self.addCleanup(self.fixture.close)
 
+    def test_repository_operational_pause_routes_risky_pr_to_full_build(self):
+        f = self.fixture
+        root = Path(__file__).resolve().parents[3]
+        control = reporter.load_json(root / reporter.DECISION_RECORD_PATH)
+        self.assertTrue(gate.validate_control_collection(
+            control, f.base, "laqieer/fireemblem8-expansion"))
+        unpaused = copy.deepcopy(control)
+        for item in unpaused["pull_requests"]:
+            if item["pilot"]["disposition"] == "paused":
+                item["pilot"]["disposition"] = "excluded"
+        f.publish_control(unpaused)
+        client, pr = f.client()
+        original, original_selection, original_binding = f.route(client, pr)
+        self.assertTrue(original_selection.known)
+        self.assertEqual(original.classification, "review-first")
+        f.publish_control(control)
+        client, pr = f.client()
+        routed, selected, binding = f.route(client, pr)
+        self.assertEqual(routed.classification, "full")
+        self.assertTrue(routed.run_expensive)
+        self.assertTrue(selected.known)
+        self.assertTrue(selected.paused)
+        self.assertTrue(selected.pre_review_required)
+        self.assertEqual(gate.parse_binding(binding), (metadata.PR_NUMBER, f.head, f.base))
+        self.assertEqual(binding, original_binding)
+
     def test_unchanged_head_observes_current_pause_without_rebinding_candidate(self):
         f = self.fixture
         client, pr = f.client()
