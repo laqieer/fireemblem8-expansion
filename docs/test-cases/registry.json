@@ -3580,7 +3580,7 @@
       ],
       "purpose": "Prove current-phase eligible-only blue delegation, bounded legal AI actions, exact one-phase completion, localized menu/help, and PLAYER restoration.",
       "prerequisites": "Repository root with libmGBA; clean Chapter 2 positive plus the host fixture with one already-moved and two eligible blue units.",
-      "actions": "Run the Charge host suite and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
+      "actions": "Run the Charge host suite, map-menu geometry case, and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
       "expected_result": "Only remaining eligible units act through the existing AI, the current blue phase completes once, failure evidence is retained, and the next blue phase is interactive PLAYER.",
       "negative_control": "Feature-disabled debug/release builds add no row or symbol, preserve the 8-definition base table with at most seven live rows and idle PLAYER behavior, and record zero blue AI actions.",
       "interactions": "Depends only on issue #85; composing with Danger produces 10 static definitions but at most nine simultaneously visible rows because Status is hidden whenever dungeon-only Records can appear, even when Guide and Retreat coexist; downstream extra rows require an explicit capacity/order/geometry choice.",
@@ -3591,6 +3591,10 @@
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation.MapMenuCompositionTests.test_nine_row_non_story_is_shifted_while_shorter_menus_stay_vanilla -v",
+          "evidence": "tools/gba-playtest/tests/test_map_menu_presentation.py"
         },
         {
           "command": "make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
