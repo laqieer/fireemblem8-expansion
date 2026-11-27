@@ -787,7 +787,8 @@ audio or human-approval criterion is added.
    same unique candidate merge base against both the snapshot and current
    default tip. The crisscross control has two bases at the current tip even
    when GitHub reports the same single base for both comparisons; it, missing
-   local history, and unavailable reviewed tools remain unknown/full.
+   local history, shallow repositories, and unavailable reviewed tools remain
+   unknown/full.
    If host stop settings are unknown, retain explicit nulls in a bounded
    `plan` with concrete recovery steps; never fabricate Boolean settings or
    use unknowns for `always-on`. Expired coverage and native interruption

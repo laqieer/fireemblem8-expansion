@@ -771,9 +771,14 @@ def fetch_decision(client, pr, changed_lines, *, review_tools=None):
                 require(base == frozen_base(client, replace(pr, base_sha=control.commit_sha)),
                     "unrecorded candidate merge base changed")
                 require(review_tools is not None, "unique merge-base validation is unavailable")
+                tree = review_tools.tree(pr.head_sha)
+                require(tree.git("rev-parse", "--is-shallow-repository").strip() == b"false",
+                        "unique merge-base history is shallow")
                 request = {"candidate_sha": pr.head_sha, "base_sha": base}
                 review_tools.validate_base(request, pr.base_sha)
                 review_tools.validate_base(request, control.commit_sha)
+                require(tree.git("rev-parse", "--is-shallow-repository").strip() == b"false",
+                        "unique merge-base history became shallow")
             after, after_lines = fetch_candidate(client, pr.repository, pr.number)
             require(_candidate_authority_identity(after) == _candidate_authority_identity(pr)
                     and (after.base_sha, after_lines) == (pr.base_sha, changed_lines),

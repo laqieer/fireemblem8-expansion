@@ -322,7 +322,7 @@ class CurrentControlTests(unittest.TestCase):
         paused["pull_requests"][0]["pilot"]["disposition"] = "paused"
         current = f.publish_control(paused)
         for change in ("none", "different-merge-base", "diverged-snapshot", "missing-comparison",
-                       "missing-history", "missing-validator"):
+                       "missing-history", "missing-validator", "shallow-history"):
             with self.subTest(change=change):
                 client, pr = f.client()
                 pr["base"]["sha"] = f.base
@@ -344,7 +344,14 @@ class CurrentControlTests(unittest.TestCase):
                     tools.tree = lambda revision: GitTree(f.git.home, revision)
                 elif change == "missing-validator":
                     tools = None
-                selected = gate.fetch_decision(client, candidate, 1, review_tools=tools)
+                shallow = f.root / ".git" / "shallow"
+                if change == "shallow-history":
+                    shallow.write_text(f.git.parent + "\n")
+                try:
+                    selected = gate.fetch_decision(client, candidate, 1, review_tools=tools)
+                finally:
+                    if change == "shallow-history":
+                        shallow.unlink()
                 self.assertEqual(selected.known, change == "none", selected.reason)
                 if selected.known:
                     self.assertEqual(selected.reason, "verified-absent-root")

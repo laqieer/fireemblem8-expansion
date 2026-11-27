@@ -224,8 +224,8 @@ If the PR's base snapshot predates the current default tip, both must yield
 the same unique candidate merge base and the snapshot must be an ancestor of
 that tip. The trusted review tools validate both bases with Git's complete
 `merge-base --all`; GitHub's single comparison result alone cannot prove
-uniqueness. Missing history, tools or contradictory comparisons remain unknown
-and route the broader full workflow.
+uniqueness. Shallow repositories, missing history or tools, and contradictory
+comparisons remain unknown and route the broader full workflow.
 Parent-child records present in the collection must have consistent depths;
 an absent parent record is not a fresh observation of that parent's state.
 This is a conservative concurrent decision with mandatory independent
