@@ -1564,6 +1564,7 @@ jobs:
       run: |
         make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2 -o expansion-modern-review-arm-check
         make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2 -o expansion-modern-review-arm-check
+        python3 -m unittest tools.gba-playtest.tests.test_portrait_generated_mouth_runtime
 
     # Issue #10 acceptance ("Boundary, serialization, and migration tests
     # gate CI"): runs the real, booted expansion ROM's item-ID-expansion

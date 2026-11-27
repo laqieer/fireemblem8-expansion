@@ -1912,21 +1912,26 @@
       "document": "docs/test-cases/asset-authoring.md",
       "anchor": "tc-portrait-generated-mouth-001-exercise-generated-mouth-slots",
       "profiles": [
-        "Modern source checkout with Python 3 and a host C compiler"
+        "Modern source checkout with Python 3 and a host C compiler",
+        "Disposable ARM fixture with the supported cross-toolchain and libmGBA"
       ],
       "purpose": "Exercise generated closed/open frames through every native mouth transfer state.",
       "prerequisites": "Run in an isolated checkout without another user of build/generated/assets/test-work; no ROM or saved state is needed.",
-      "actions": "Run the named unittest, which generates distinct frames and exercises stopped/talking, smile/non-smile and animation phases using the real host-linked face consumer.",
-      "expected_result": "Every transfer reads the expected authored frame in bounds, and the existing Eirika alias emits no generated replacements.",
-      "negative_control": "The pre-fix 512-byte component fails the stopped non-smile transfer at bytes 1280 through 1535.",
+      "actions": "Run the host and ARM unittests, which generate distinct frames and exercise stopped/talking, smile/non-smile and animation phases using the real face consumer.",
+      "expected_result": "Every transfer reads the expected authored frame in bounds; generated registration and ARM VRAM copies agree, and the existing Eirika alias emits no generated replacements.",
+      "negative_control": "The pre-fix 512-byte component fails the stopped non-smile host transfer at bytes 1280 through 1535; the ARM fixture detects its out-of-bounds transfers.",
       "interactions": "Depends on the existing manifest and face renderer; no known profile conflicts, and legacy aliases remain unchanged.",
       "save_compatibility": "No save, configuration identity, or localization change; generated portrait ROM data grows by 1024 bytes each.",
-      "cleanup": "Unittest teardown removes its disposable test-work directory.",
-      "limitations": "Host transfer stubs do not prove target VRAM, on-screen presentation, or subjective artwork quality.",
+      "cleanup": "Unittest teardown removes its disposable test-work directory and temporary ARM fixture.",
+      "limitations": "The ARM fixture uses an immediate transfer-queue stub; neither fixture proves full-game scheduling, on-screen presentation, or subjective artwork quality.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.assets.tests.test_manifest.AssetManifestTests.test_generated_portrait_mouth_frames_follow_native_consumer",
           "evidence": "scripts/assets/tests/test_manifest.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_portrait_generated_mouth_runtime",
+          "evidence": "tools/gba-playtest/tests/test_portrait_generated_mouth_runtime.py"
         }
       ]
     },

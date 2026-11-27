@@ -87,7 +87,8 @@ runtime switching, or opaque editor binaries.
 - **Feature / originating issue:** `formatted-portrait-package` /
   [issue #499](https://github.com/laqieer/fireemblem8-expansion/issues/499).
 - **Supported configuration or artifact:** modern source checkout with Python 3
-  and a host C compiler; no ROM or saved state is needed for the host fixture.
+  and a host C compiler; the ARM fixture additionally needs the supported
+  ARM toolchain and libmGBA. No saved state is needed.
 - **Prerequisites and clean starting state:** run from an isolated checkout
   with no other test using `build/generated/assets/test-work`.
 
@@ -97,17 +98,24 @@ runtime switching, or opaque editor binaries.
 2. Observe the generated synthetic mouth and the real face consumer invoked by
    the host driver for stopped and talking states, both smile modes and all
    animation phases.
+3. Run `python3 -m unittest tools.gba-playtest.tests.test_portrait_generated_mouth_runtime`
+   to build and boot the disposable ARM fixture in libmGBA.
 
 ### Expected result
 
 Each 4x2 tile transfer is within the generated component and contains the
 authored closed frame when stopped or closed, and the authored open frame
 otherwise. The existing Eirika component alias generates no replacement data.
+On ARM, the generated `FaceData` table selects the generated component via
+`GetPortraitData`; the real face consumer and `Register2dChrMove` copy both
+tile rows to VRAM in every state without bounds or content errors.
 
 ### Negative control
 
 At the pre-fix generator, the stopped non-smiling transfer attempts bytes
 1280 through 1535 of a 512-byte component and the host driver fails.
+The ARM fixture also runs that exact 512-byte frame layout and observes
+out-of-bounds transfers rather than accepting stale VRAM.
 
 ### Interactions and save compatibility
 
@@ -120,12 +128,15 @@ bytes per generated portrait; no persistent RAM is allocated.
 
 The named unittest generates distinct synthetic frames and links the actual
 `FaceMouth_Loop` into a host driver that checks each transfer's bounds and
-bytes. It does not replace target-ROM execution or visual acceptance of a
-project's artwork.
+bytes. The ARM unittest links the generated table and component with the real
+consumer and tile-move function, boots a disposable libmGBA ROM and checks
+the VRAM bytes and both positive and negative controls. Its transfer-queue
+stub copies immediately, so it does not replace a full-game dialogue scenario
+or visual acceptance of a project's artwork.
 
 ### Cleanup and limitations
 
-The unittest removes its disposable test-work directory. The host driver
-stubs graphics transfers and does not prove target VRAM, on-screen rendering,
-or the quality of either authored expression. Archival byte identity is not
-claimed.
+The host unittest removes its disposable test-work directory; the ARM unittest
+removes its temporary ROM and build files. Neither fixture proves full-game
+dialogue scheduling, on-screen rendering, or expression quality. Archival
+byte identity is not claimed.
