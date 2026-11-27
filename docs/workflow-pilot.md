@@ -561,6 +561,31 @@ coordinator transition is `pause_pilot`, described below; an arbitrary event
 name or an ordinary failed check is not an attributable incident.
 Pause and ordinary revert change timing only, never final gates.
 
+#### Temporary operational rollback
+
+The review-first pilot is temporarily paused because GitHub does not accept a
+`workflow_dispatch` job as a pull-request required check: a successful
+dispatched Build cannot replace the failed PR-event preflight summary. See
+[#489](https://github.com/laqieer/fireemblem8-expansion/issues/489) and the
+mitigation in [#490](https://github.com/laqieer/fireemblem8-expansion/issues/490).
+The excluded #482 decision carries the existing global pause latch; it is not
+an attribution of the incident to #482 or a safety-event record. This
+operational rollback uses the ordinary owner PR path, not the safety-incident
+transition. New full-classified PR events whose integration-base router
+supports this control use the complete concurrent Build graph, at the cost of
+earlier CI work. Review, security, local proof, full Build, master Build and
+remote completion remain required.
+
+Existing runs retain their original event and workflow. Reconcile their actual
+candidate state: a full PR run on the same candidate can conflict with its
+recorded review-first lane or dispatched full run. Affected candidates need a
+genuinely new head or frozen-base identity through a real shared-contract
+change, or must remain blocked pending a compatible fix. Do not make an empty
+commit or metadata edit merely to trigger CI. A full dispatch alone still does
+not satisfy the required PR check. Keep this pause until #489 has a separately
+validated compatible fix; revert the operational rollback to resume
+review-first scheduling.
+
 #### Current safety control and unchanged heads
 
 The sole global control is the existing decision collection at the repository's
