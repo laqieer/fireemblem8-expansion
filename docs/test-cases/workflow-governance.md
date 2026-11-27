@@ -100,7 +100,7 @@ proves private fetch access. No subjective manual criterion.
    python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests tests.upstream_port.test_verify.VerifyCliCwdTests.test_archival_helper_is_part_of_the_target_gate_contract tests.upstream_port.test_verify.VerifyCliCwdTests.test_missing_symlinked_or_oversized_archival_helper_refuses -v
    ```
 
-   The current eleven jobs retain the 31 validation commands. Harmless helper
+   The current eleven jobs retain the 34 validation commands. Harmless helper
    comments preserve equivalence; replacing its body with a no-op fails.
    Missing, final/parent-symlinked and over-16-KiB helper bodies explicitly
    refuse. Replay the line-boundary controls:
@@ -582,6 +582,7 @@ the consumers' independent protected-principal/deployment requirements.
 
    ```bash
    python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_reporter_and_full_game_checks_have_independent_worker_owners tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_host_python_and_full_game_checks_keep_worker_ownership -v
+   python3 -m unittest tests.upstream_port.test_verify.HostOnlyEnvGateMirrorTests.test_pilot_gates_receive_the_workflow_scrubbed_environment tests.upstream_port.test_verify.HostOnlyEnvGateMirrorTests.test_scrubbed_gate_command_assignments_override_step_environment -v
    ```
 
    The unchanged four full-game width/catalog/crosswalk/raw-closure commands
@@ -589,10 +590,13 @@ the consumers' independent protected-principal/deployment requirements.
    host-only prerequisites and clean-checkout tool builds, independent of
    the archival toolchain setup. The reporter and baseline retain separate
    required workers and scrubbed environments. All eleven jobs, full-mode
-   conditions, exact checkout and
-   summary dependencies remain; host/build bounds are 90 minutes and legacy
-   remains 60 minutes. The local upstream verifier mirrors all 31 commands in their
-   current workflow order. Parsed ownership/order is scheduling evidence;
+   conditions, exact checkout and summary dependencies remain; host/build
+   bounds are 90 minutes and legacy remains 60 minutes. The local upstream
+   verifier mirrors all 34 commands in their current workflow order. Real child
+   probes check that all three pilot gates
+   receive their parsed CI step environment despite hostile inherited values,
+   while inline command assignments retain shell precedence. Parsed
+   ownership/order is scheduling evidence;
    collect actual candidate and automatic exact-master job durations and
    complete native successes before claiming the end-to-end fix.
    Count exact gate argv across every parsed executable step, including
@@ -622,6 +626,8 @@ second reporter process exists. The original host traces reach their native
 usage candidate. dropping cases, losing a configured discovered instance, ignoring a child
 completion result, or accepting empty
 discovery fails the focused controls; increasing deadlines is not the fix.
+Without the verifier environment fix, reporter and baseline children inherit
+hostile values, and the scrubbed defaults override inline assignments.
 After the reporter improvement, exact7b automatic master and exact41d
 candidate both still reached90minutes twice during the final full-game
 step. Preserve those actual failures. The old parsed graph puts all four
@@ -2990,7 +2996,7 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 31 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 34 local
 gates while requiring complete eleven-job source/target equivalence: the
 identity/router/classifier remain closed setup-only jobs, not local gates.
 
@@ -7195,9 +7201,12 @@ python3 -m unittest \
   scripts.workflow_pilot.tests.test_agent_handoff.ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v
 ```
 
-The Build `workflow-pilot-tests` job runs the complete `test_agent_handoff`
-and `test_coordinator_observations` modules through the isolated reporter
-suite.
+The Build `workflow-pilot-tests` job runs the complete `test_agent_handoff` and
+`test_coordinator_observations` modules through the isolated reporter suite.
+Before that suite, an independently invoked discovery check compares its
+selected case IDs with both directly loaded modules; omitting either module
+or an individual case fails the Build even if reporter discovery also omits
+the check itself.
 
 ### Cleanup and limitations
 

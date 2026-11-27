@@ -223,7 +223,7 @@ environment, metadata-only/nonempty conditions, and reviewed command sequences.
 The producer's missing-base and failure branches leave no proof; the verifier
 does not replace those holds with a local invocation or fabricated fingerprint.
 Missing, duplicate, relinked, or unreviewed producer/marker steps fail before
-gate execution. The local gate count and argv remain exactly 31.
+gate execution. The local gate count and argv remain exactly 34.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
@@ -318,7 +318,7 @@ env, metadata-skip and full-run validation, and missing/stale identity
 failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
 drift in these jobs or packaging steps fails before local dry-run even though neither job becomes
-one of the 31 locally executed gates.
+one of the 34 locally executed gates.
 Candidate-evidence normalization independently requires one canonical
 successful `event-identity` job context in both full and metadata runs;
 missing, failed, skipped, renamed, duplicate, or unknown setup contexts reject
@@ -336,7 +336,7 @@ those blob object IDs are fetched without the commit-level blob filter; other
 blobs remain omitted. The helper rechecks exact `EXPECTED_BUILD_SHA`, the
 complete ref set, and FETCH_HEAD after both phases. This covers force-pushed
 candidates that an all-head fetch cannot recover. It is CI setup, not one of
-the 31 local gates; normal local clones are never hydrated by `verify`, which
+the local gates; normal local clones are never hydrated by `verify`, which
 remains deliberately network-independent and fails if authority is incomplete.
 The read-only `isolated_launcher.py anchor-refs` command documented in
 [`workflow-pilot.md`](workflow-pilot.md) prints the mappings for the owner
@@ -354,8 +354,12 @@ local prerequisites.
 Also create the [locked host Python environment](workflow-pilot.md#isolated-host-python-dependencies)
 with `/usr/bin/python3 -I scripts/host_python.py create` in the target checkout
 before non-dry-run verification. The reporter suite uses that owned interpreter
-with `-I`; installing `jsonschema` into system or user site-packages is not a
-substitute. Setup is not another gate and `verify` remains network-independent.
+with `-I`, as does the independent handoff-discovery check; installing
+`jsonschema` into system or user site-packages is not a substitute. Setup is
+not another gate and `verify` remains network-independent. The discovery,
+reporter and baseline children receive their CI step's scrubbed environment;
+an inline command assignment takes precedence over that step environment, as
+it does in the workflow shell.
 
 1. `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`
    (issue #13 host-only suite; the inline environment assignment applies only
@@ -365,29 +369,29 @@ substitute. Setup is not another gate and `verify` remains network-independent.
    rerun it for the current test count rather than trusting a written count)
 3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
    (pure-stdlib consolidated Build CI topology and checkout contracts)
-4. `"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests`
-5. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
-6. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
+4. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
+5. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)
-7. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
-8. `python3 scripts/artifact_guard.py --revision HEAD`
-9. `make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1`
-10. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
-11. `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
-12. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
-13. `make generated-data-test`
-14. `make generated-data-check`
-15. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -o expansion-modern-review-arm-check`
-16. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -o expansion-modern-review-arm-check`
-17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-19. `make expansion-modern-map-menu-presentation-check -j1`
+6. `"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests.test_real_discovery_includes_complete_handoff_modules -v`
+   (independently rejects missing handoff and observation cases in reporter
+   discovery, even if its own module would not be selected)
+7. `"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests`
+8. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
+9. `python3 scripts/artifact_guard.py --revision HEAD`
+10. `make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1`
+11. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
+12. `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
+13. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
+14. `make generated-data-test`
+15. `make generated-data-check`
+16. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2 -o expansion-modern-review-arm-check`
+17. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2 -o expansion-modern-review-arm-check`
+18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1 -j2`
+19. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1 -j2`
+20. `make expansion-modern-map-menu-presentation-check -j1`
     (builds the all-locales/all-features profile once, then verifies the
     localized Danger map-menu/help framebuffer and semantic overlay lifecycle)
-20. `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`
-    (the complete native probe suite, owned once by the parallel extended
-    host worker rather than duplicated in serial workflow discovery)
 21. `make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test`
 22. `python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v`
 23. `python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v`
@@ -395,24 +399,27 @@ substitute. Setup is not another gate and `verify` remains network-independent.
     compiler readers, forced same-input overlap and failure cleanup)
 24. `python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v`
 25. `python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v`
-26. `make game-localization-test`
-27. `python3 -m scripts.localization.game_locales check`
-28. `python3 -m scripts.localization.game_locales check-crosswalk`
-29. `python3 -m scripts.localization.game_locales check-raw-closure`
-30. `make expansion-modern-review-arm-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-31. `make expansion-modern-review-arm-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-32. `make legacy -j2`
-33. `make -C mgfembp compare`
+26. `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`
+    (the complete native probe suite, owned once by the independent ownership
+    worker rather than duplicated in serial workflow discovery)
+27. `make game-localization-test`
+28. `python3 -m scripts.localization.game_locales check`
+29. `python3 -m scripts.localization.game_locales check-crosswalk`
+30. `python3 -m scripts.localization.game_locales check-raw-closure`
+31. `make expansion-modern-review-arm-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+32. `make expansion-modern-review-arm-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+33. `make legacy -j2`
+34. `make -C mgfembp compare`
 
-Gates 15-16 aggregate the complete modern debug/release ROM, linker, budget,
+Gates 16-17 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 17-18 reuse the item-expansion runtime
+`expansion-modern-linker-check`. Gates 18-19 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No additional
 item-expansion ROM build or gate is added.
 
-Gates30-31 retain the existing native ARM review contract on the required,
-already ARM-equipped archival worker. Gates15-16 mark only that shared
+Gates 31-32 retain the existing native ARM review contract on the required,
+already ARM-equipped archival worker. Gates 16-17 mark only that shared
 prerequisite already made; standalone public linker checks still require it.
 The mirror preserves both profiles and the same complete combined join.
 The archival worker preserves the original host-package installation and
@@ -421,10 +428,10 @@ APT recommendations disabled. Target C++ newlib is not used by these C/assembly
 contracts and must not consume their existing deadline through an implicit
 recommended download. No explicit prerequisite, check or deadline is removed.
 
-Gates26-29 run on the existing `legacy` CI worker before installing archival
-tools, with the original host-only dependencies and fresh owned environment.
+Gates 27-30 run on the independent `game-localization-tests` CI worker with the
+original host-only dependencies and fresh owned environment.
 They remain independent of the reporter's worker and do not require agbcc.
-Both groups keep their original commands and the existing90/90/60-minute
+Both groups keep their original commands and the existing 90/90/60-minute
 worker bounds; no job or correctness gate is added or omitted.
 
 ### Standalone workflow check

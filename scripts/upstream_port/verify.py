@@ -1047,7 +1047,6 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
-_AGENT_HANDOFF_TEST_STEP_NAME = "Run agent-handoff regression suite (issue #381)"
 _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Verify checked-out revision"),
     ("host-tests", "Hydrate workflow-pilot Git authority"),
@@ -1055,7 +1054,6 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Run gba-playtest host test suite"),
     ("host-tests", "Run upstream-port tooling test suite"),
     ("host-tests", "Run workflow contract test suite"),
-    ("host-tests", _AGENT_HANDOFF_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
     ("build", "Verify checked-out revision"),
@@ -1121,7 +1119,6 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run gba-playtest host test suite"),
         ("gate", "Run upstream-port tooling test suite"),
         ("gate", "Run workflow contract test suite"),
-        ("gate", _AGENT_HANDOFF_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
     ),
@@ -2338,6 +2335,7 @@ class Gate:
     name: str
     command: List[str]
     applicable_note: str
+    scrubbed_pilot_environment: bool = False
 
 
 def gates(jobs: int = 2) -> List[Gate]:
@@ -2419,22 +2417,6 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
-            name="agent-handoff-tests",
-            command=[
-                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
-                "-I",
-                "-c",
-                'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
-                "scripts.workflow_pilot.tests.test_agent_handoff",
-                "scripts.workflow_pilot.tests.test_coordinator_observations",
-                "-v",
-            ],
-            applicable_note=(
-                "issue #381 host lane: validates exact open-PR matching, "
-                "continuation binding and duplicate-root rejection"
-            ),
-        ),
-        Gate(
             name="workflow-pilot-baseline",
             command=[
                 "/usr/bin/python3",
@@ -2456,6 +2438,7 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "issue #176 host lane: validates the frozen workflow-pilot "
                 "baseline against checked-out Git history"
             ),
+            scrubbed_pilot_environment=True,
         ),
         Gate(
             name="localization-host-suite",
@@ -2482,6 +2465,23 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="workflow-pilot-discovery-coverage",
+            command=[
+                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                "-I",
+                "-c",
+                'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
+                "scripts.workflow_pilot.tests.test_host_python."
+                "ReporterExecutionTests.test_real_discovery_includes_complete_handoff_modules",
+                "-v",
+            ],
+            applicable_note=(
+                "checks reporter discovery independently of its selector, "
+                "including every directly loaded handoff and observation test"
+            ),
+            scrubbed_pilot_environment=True,
+        ),
+        Gate(
             name="workflow-pilot-reporter-tests",
             command=[
                 "$GITHUB_WORKSPACE/build/host-python/bin/python3",
@@ -2496,6 +2496,7 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "-I scripts/host_python.py create; verification never installs "
                 "packages or relies on system/user-site jsonschema"
             ),
+            scrubbed_pilot_environment=True,
         ),
         Gate(
             name="artifact-guard-tests",
@@ -2873,6 +2874,10 @@ def run_gates(
         env_overrides, argv = _split_env_prefix(gate.command)
         argv, stdout = _split_stdout_redirect(argv)
         argv = _expand_workspace(argv, repository_root)
+        if gate.scrubbed_pilot_environment:
+            for entry in _SCRUBBED_PILOT_ENV:
+                name, value = entry.split(": ", 1)
+                env_overrides.setdefault(name, shlex.split(value)[0])
         child_env = None
         if env_overrides:
             child_env = dict(os.environ)

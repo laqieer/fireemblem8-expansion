@@ -66,6 +66,18 @@ def reporter_test_cases(suite: unittest.TestSuite):
             yield test
 
 
+def discover_reporter_cases():
+    loader = unittest.TestLoader()
+    suite = loader.discover(
+        str(ROOT / "scripts" / "workflow_pilot" / "tests"),
+        pattern="test_*.py",
+        top_level_dir=str(ROOT),
+    )
+    if loader.errors:
+        raise ValueError("\n".join(loader.errors))
+    return list(reporter_test_cases(suite))
+
+
 class ReporterOutput:
     def __init__(self, connection: Connection):
         self.connection = connection
@@ -140,15 +152,7 @@ def run_reporter_shard(
     clear_ambient_git_environment()
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT))
-    loader = unittest.TestLoader()
-    discovered = loader.discover(
-        str(ROOT / "scripts" / "workflow_pilot" / "tests"),
-        pattern="test_*.py",
-        top_level_dir=str(ROOT),
-    )
-    if loader.errors:
-        raise ValueError("\n".join(loader.errors))
-    cases = list(reporter_test_cases(discovered))
+    cases = discover_reporter_cases()
     actual_ids = [case.id() for case in cases]
     if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != set(discovered_ids):
         raise ValueError("reporter child discovery differs from the assigned complete test set")
@@ -181,15 +185,7 @@ def run_reporter_shard(
 def run_reporter_tests(arguments: list[str]) -> int:
     if arguments:
         raise ValueError("reporter-tests mode accepts no arguments")
-    loader = unittest.TestLoader()
-    suite = loader.discover(
-        str(ROOT / "scripts" / "workflow_pilot" / "tests"),
-        pattern="test_*.py",
-        top_level_dir=str(ROOT),
-    )
-    if loader.errors:
-        raise ValueError("\n".join(loader.errors))
-    test_ids = [test.id() for test in reporter_test_cases(suite)]
+    test_ids = [test.id() for test in discover_reporter_cases()]
     if not test_ids or len(test_ids) != len(set(test_ids)):
         raise ValueError("reporter discovery must contain nonempty unique test IDs")
     print(

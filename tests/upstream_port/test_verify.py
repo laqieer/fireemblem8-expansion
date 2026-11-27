@@ -1,6 +1,7 @@
 import contextlib
 import inspect
 import io
+import json
 import os
 import pathlib
 import re
@@ -33,7 +34,6 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
 )
-_AGENT_HANDOFF_TEST_STEP_NAME = verify_mod._AGENT_HANDOFF_TEST_STEP_NAME
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
@@ -331,14 +331,16 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         ]
         self.assertEqual(
             commands,
-            [[
-                "python3", "-m", "unittest", "discover", "-s",
-                "tests/workflows", "-p", "test_*.py", "-v",
-            ]],
+            [
+                [
+                    "python3", "-m", "unittest", "discover", "-s",
+                    "tests/workflows", "-p", "test_*.py", "-v",
+                ],
+            ],
         )
-        gate = {g.name: g for g in verify_mod.gates()}["workflow-contract-tests"]
-        self.assertEqual(gate.command, commands[0])
-        self.assertNotIn("make", gate.command)
+        gates = {g.name: g for g in verify_mod.gates()}
+        self.assertEqual(gates["workflow-contract-tests"].command, commands[0])
+        self.assertNotIn("make", commands[0])
 
     def test_workflow_pilot_commands_are_mirrored_exactly_in_order(self):
         workflow_commands = _parse_workflow_gate_commands()
@@ -348,25 +350,12 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             if step_name
             in {
                 _WORKFLOW_PILOT_TEST_STEP_NAME,
-                _AGENT_HANDOFF_TEST_STEP_NAME,
                 _WORKFLOW_PILOT_BASELINE_STEP_NAME,
             }
         ]
         self.assertEqual(
             pilot_commands,
             [
-                (
-                    _AGENT_HANDOFF_TEST_STEP_NAME,
-                    [
-                        "$GITHUB_WORKSPACE/build/host-python/bin/python3",
-                        "-I",
-                        "-c",
-                        'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
-                        "scripts.workflow_pilot.tests.test_agent_handoff",
-                        "scripts.workflow_pilot.tests.test_coordinator_observations",
-                        "-v",
-                    ],
-                ),
                 (
                     _WORKFLOW_PILOT_BASELINE_STEP_NAME,
                     [
@@ -385,6 +374,17 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 (
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     [
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                        "-I", "-c",
+                        'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)',
+                        "scripts.workflow_pilot.tests.test_host_python.ReporterExecutionTests."
+                        "test_real_discovery_includes_complete_handoff_modules",
+                        "-v",
+                    ],
+                ),
+                (
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    [
                         "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
                         "scripts/workflow_pilot/isolated_launcher.py",
                         "reporter-tests",
@@ -395,8 +395,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         by_name = {gate.name: gate.command for gate in verify_mod.gates()}
         self.assertEqual(
             [
-                by_name["agent-handoff-tests"],
                 by_name["workflow-pilot-baseline"],
+                by_name["workflow-pilot-discovery-coverage"],
                 by_name["workflow-pilot-reporter-tests"],
             ],
             [argv for _, argv in pilot_commands],
@@ -548,9 +548,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "gba-playtest-host-suite",
                 "upstream-port-tests",
                 "workflow-contract-tests",
-                "agent-handoff-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
+                "workflow-pilot-discovery-coverage",
                 "workflow-pilot-reporter-tests",
                 "artifact-guard-tests",
                 "artifact-guard",
@@ -832,6 +832,135 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     {} if env is None else env,
                     f"host-only mode leaked into {gate.name}",
                 )
+
+    def test_pilot_gates_receive_the_workflow_scrubbed_environment(self):
+        with open(BUILD_WORKFLOW_PATH, encoding="utf-8") as stream:
+            _, _, jobs = verify_mod._parse_workflow_structure_text(stream.read())
+        workflow_envs = {
+            name: dict(dict(fields)["env"])
+            for _, _, steps in jobs
+            for _, name, fields in steps
+            if name in {_WORKFLOW_PILOT_TEST_STEP_NAME, _WORKFLOW_PILOT_BASELINE_STEP_NAME}
+        }
+        expected = {}
+        for gate_name, step_name in (
+            ("workflow-pilot-discovery-coverage", _WORKFLOW_PILOT_TEST_STEP_NAME),
+            ("workflow-pilot-reporter-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
+            ("workflow-pilot-baseline", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ):
+            expected[gate_name] = {
+                name: value[1:-1] if value.startswith("'") and value.endswith("'") else value
+                for name, value in workflow_envs[step_name].items()
+            }
+        targets = {}
+        for gate in verify_mod.gates():
+            if gate.name in expected:
+                _, argv = verify_mod._split_env_prefix(gate.command)
+                argv, _ = verify_mod._split_stdout_redirect(argv)
+                targets[tuple(verify_mod._expand_workspace(argv, REPO_ROOT))] = gate.name
+        actual_run = subprocess.run
+        observed = {}
+        keys = sorted({key for values in expected.values() for key in values})
+        keys.append("VERIFIER_TEST_SENTINEL")
+        probe = (
+            "import json, os; "
+            f"print(json.dumps({{key: os.environ.get(key) for key in {keys!r}}}))"
+        )
+
+        def run_with_environment_probe(argv, **kwargs):
+            gate_name = targets.get(tuple(argv))
+            if gate_name:
+                child = actual_run(
+                    [sys.executable, "-I", "-c", probe],
+                    cwd=kwargs["cwd"],
+                    env=kwargs["env"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                self.assertEqual(child.returncode, 0, child.stderr)
+                observed[gate_name] = json.loads(child.stdout)
+                return child
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        hostile = {
+            "PATH": "/not-the-runner-path",
+            "GIT_DIR": "/not-the-repository",
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_GLOBAL": "/not-the-global-config",
+            "PYTHONPATH": "/not-the-python-path",
+            "BASH_ENV": "/not-the-shell-startup",
+            "VERIFIER_TEST_SENTINEL": "preserved",
+        }
+        with (
+            mock.patch.dict(os.environ, hostile, clear=False),
+            mock.patch.object(verify_mod.subprocess, "run", side_effect=run_with_environment_probe),
+            mock.patch.object(verify_mod, "_resolve_repository_root", return_value=REPO_ROOT),
+        ):
+            results = verify_mod.run_gates(REPO_ROOT)
+            self.assertEqual({name: os.environ[name] for name in hostile}, hostile)
+
+        self.assertTrue(all(result.passed for result in results))
+        self.assertEqual(
+            observed,
+            {
+                name: {**values, "VERIFIER_TEST_SENTINEL": "preserved"}
+                for name, values in expected.items()
+            },
+        )
+
+    def test_scrubbed_gate_command_assignments_override_step_environment(self):
+        probe = (
+            "import json, os; "
+            "print(json.dumps({key: os.environ.get(key) for key in "
+            "('PATH', 'GIT_DIR', 'PYTHONPATH', 'VERIFIER_TEST_SENTINEL')}))"
+        )
+        gate = verify_mod.Gate(
+            name="inline-environment-probe",
+            command=[
+                "PATH=/command/bin",
+                "GIT_DIR=/command/repository",
+                sys.executable,
+                "-I",
+                "-c",
+                probe,
+            ],
+            applicable_note="test inline environment precedence",
+            scrubbed_pilot_environment=True,
+        )
+        actual_run = subprocess.run
+
+        def capture_child(argv, **kwargs):
+            kwargs["stdout"] = subprocess.PIPE
+            return actual_run(argv, **kwargs)
+
+        hostile = {
+            "PATH": "/ambient/bin",
+            "GIT_DIR": "/ambient/repository",
+            "PYTHONPATH": "/ambient/python",
+            "VERIFIER_TEST_SENTINEL": "preserved",
+        }
+        with (
+            mock.patch.dict(os.environ, hostile, clear=False),
+            mock.patch.object(verify_mod, "gates", return_value=[gate]),
+            mock.patch.object(verify_mod, "_require_target_gate_equivalence"),
+            mock.patch.object(verify_mod, "_resolve_repository_root", return_value=REPO_ROOT),
+            mock.patch.object(verify_mod.subprocess, "run", side_effect=capture_child),
+        ):
+            results = verify_mod.run_gates(REPO_ROOT)
+            self.assertEqual({name: os.environ[name] for name in hostile}, hostile)
+
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].passed)
+        self.assertEqual(
+            json.loads(results[0].stdout),
+            {
+                "PATH": "/command/bin",
+                "GIT_DIR": "/command/repository",
+                "PYTHONPATH": "",
+                "VERIFIER_TEST_SENTINEL": "preserved",
+            },
+        )
 
     def test_run_gates_preserves_argv_order_at_target_repository_root(self):
         seen = []
@@ -1241,6 +1370,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                 '      run: python3 -m unittest discover -s tests/workflows '
                 '-p "test_*.py" -v\n'
             )
+            self.assertEqual(original.count(upstream_step), 1)
+            self.assertEqual(original.count(workflow_step), 1)
             mutations = {
                 "newer-added": original.replace(
                     upstream_step,
@@ -1294,6 +1425,12 @@ class VerifyCliCwdTests(unittest.TestCase):
                 + "    steps:\n"
                 + "    - run: exit 1\n",
             }
+            self.assertEqual(mutations["reordered"].count(upstream_step), 1)
+            self.assertEqual(mutations["reordered"].count(workflow_step), 1)
+            self.assertLess(
+                mutations["reordered"].index(workflow_step),
+                mutations["reordered"].index(upstream_step),
+            )
             for name, changed in mutations.items():
                 with self.subTest(name=name):
                     with open(workflow_path, "w", encoding="utf-8") as handle:
