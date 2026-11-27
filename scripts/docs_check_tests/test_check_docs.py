@@ -1087,6 +1087,24 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-BUILD-CI-SPLIT-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_build_ci_topology "
+                            "tests.workflows.test_build_ci_checkout "
+                            "tests.workflows.test_ownership_probe "
+                            "tests.upstream_port.test_verify -v",
+                            "python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence "
+                            "scripts.workflow_pilot.tests.test_pr_metadata "
+                            "scripts.workflow_pilot.tests.test_summary_continuity_contract -v",
+                            "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate."
+                            "GateTests.test_latest_full_requires_the_current_shape -v",
+                            "python3 -m unittest scripts.workflow_pilot.tests.test_adaptive_gate."
+                            "GateTests.test_historical_preflight_preserves_lane_without_current_authority "
+                            "scripts.workflow_pilot.tests.test_pr_metadata.PullRequestMetadataTests."
+                            "test_historical_lightweight_history_allows_current_pre_full_preparation -v",
+                        },
+                    },
                     "TC-WORKFLOW-PRIVATE-CI-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1212,11 +1230,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "ExactHandoffTests.test_successor_binds_published_pr_to_new_root_lineage "
                             "scripts.workflow_pilot.tests.test_agent_handoff."
                             "ExactHandoffTests.test_preflight_cli_queries_live_inventory_and_fails_closed -v",
-                            "build/host-python/bin/python3 -I -c "
-                            "'import sys, unittest; sys.path.insert(0, \".\"); "
-                            "unittest.main(module=None)' "
-                            "scripts.workflow_pilot.tests.test_agent_handoff "
-                            "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+                            "build/host-python/bin/python3 -I "
+                            "scripts/workflow_pilot/isolated_launcher.py reporter-tests",
                         },
                     },
                     "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001": {

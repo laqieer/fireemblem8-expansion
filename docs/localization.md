@@ -623,19 +623,21 @@ exactly once; no separate manual workflow exists.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 
-The byte-consumer closure adds three focused host gates:
+The byte-consumer closure uses two focused host gates:
 
 ```sh
 python3 scripts/texttools/tests/test_text_renderer_native.py
 python3 scripts/texttools/tests/test_text_consumers_native.py
-python3 scripts/texttools/tests/test_text_consumer_audit.py
 ```
 
 They execute the real `msg.c` bounded substitutions and the real
-scene/CG/help measurement/name-copy functions on the host, including a UTF-8
-continuation byte equal to `0x80`, `[Tact]`/`[Item]`/FID/`[SetName]`,
+scene/CG/help measurement/name-copy and popup composition functions on the
+host, including a UTF-8 continuation byte equal to `0x80`,
+`[Tact]`/`[Item]`/FID/`[SetName]`,
 U+3000, pauses/newlines, exact-capacity output, guard bytes, malformed and
 truncated tokens, English/qps behavior, and the no-unknown-size-caller audit.
+The [popup evidence case](test-cases/localization.md#tc-ci-popup-evidence-001-verify-localized-popup-composition)
+also exercises the actual drop/send wrappers and message IDs.
 The production CJK debug scenarios remain
 `expansion-modern-localization-runtime-cjk-check`; they prove the linked
 32 MiB ROM boots and switches/persists Japanese and Chinese. No committed
