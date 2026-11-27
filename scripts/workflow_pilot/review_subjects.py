@@ -12,8 +12,12 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import sys
+import tempfile
 import types
+import unittest
+from unittest import mock
 
 from scripts.workflow_pilot import review_family as review
 from scripts.workflow_pilot.raw_diff_check import ProcessCleanupError, run_process
@@ -37,6 +41,7 @@ BINDINGS = (
     SubjectSpec("TC-CJK-RESOURCE-STORAGE-001", "cjk-resource-index", "cjk-resource"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
     SubjectSpec("TC-PROJECT-SELECTION-001", "project-selection", "project-selection"),
+    SubjectSpec("TC-TEST-QUALITY-001", "build-workflow-topology", "build-topology"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -69,6 +74,11 @@ CASE_SECTIONS = frozenset({
     "Interactions and save compatibility", "Automation", "Cleanup and limitations",
 })
 PROJECT_DECLARATION = "project_selection.mk"
+BUILD_WORKFLOW = ".github/workflows/build.yml"
+BUILD_TOPOLOGY = "tests/workflows/test_build_ci_topology.py"
+BUILD_VERIFY = "scripts/upstream_port/verify.py"
+BUILD_UPSTREAM_TEST = "tests/upstream_port/test_verify.py"
+BUILD_ARCHIVAL_HELPER = "scripts/ci/install_archival_compilers.sh"
 PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
 PROJECT_REGISTRY = "scripts/generated_data/registry.py"
 PROJECT_SCHEMA_INPUTS = "scripts/generated_data/schema.py"
@@ -209,6 +219,97 @@ def local_python_inputs(tree, roots):
                 for alias in node.names:
                     module(base + "." + alias.name)
     return tuple(sorted(captured))
+
+
+def build_job_blocks(text):
+    review.require(text.count("\njobs:\n") == 1, "missing or ambiguous Build jobs")
+    jobs = text.split("\njobs:\n", 1)[1]
+    starts = list(re.finditer(r"^  ([A-Za-z][A-Za-z0-9_-]*):\n", jobs, re.M))
+    review.require(starts, "missing Build job declarations")
+    review.unique([match.group(1) for match in starts], "Build jobs")
+    return {
+        match.group(1): jobs[
+            match.end():starts[index + 1].start() if index + 1 < len(starts) else len(jobs)
+        ]
+        for index, match in enumerate(starts)
+    }
+
+
+def build_step_blocks(job):
+    fields = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.M))
+    steps = [index for index, item in enumerate(fields) if item.group(1) == "steps"]
+    review.require(len(steps) == 1, "missing or ambiguous Build steps")
+    start = steps[0]
+    section = job[fields[start].end():fields[start + 1].start()
+                  if start + 1 < len(fields) else len(job)]
+    starts = list(re.finditer(r"^    -(?:[ \t]|\Z)", section, re.M))
+    review.require(starts, "empty or unsupported Build step sequence")
+    return tuple(section[
+        match.start():starts[index + 1].start() if index + 1 < len(starts) else len(section)
+    ] for index, match in enumerate(starts))
+
+
+def build_source_model(workflow, topology, verifier):
+    def values(source, names):
+        declarations = {}
+        for item in ast.parse(source).body:
+            if isinstance(item, ast.Assign) and len(item.targets) == 1:
+                target = item.targets[0]
+                if isinstance(target, ast.Name):
+                    declarations.setdefault(target.id, []).append(item.value)
+
+        def evaluate(node, seen):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return node.value
+            if isinstance(node, ast.Tuple):
+                return tuple(evaluate(value, seen) for value in node.elts)
+            if isinstance(node, ast.Name):
+                review.require(len(declarations.get(node.id, ())) == 1 and node.id not in seen,
+                               "unknown Build source declaration")
+                return evaluate(declarations[node.id][0], seen | {node.id})
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                return evaluate(node.left, seen) + evaluate(node.right, seen)
+            raise review.ReviewError("unsupported Build source declaration")
+
+        review.require(all(len(declarations.get(name, ())) == 1 for name in names),
+                       "missing or ambiguous Build source declaration")
+        return tuple(evaluate(declarations[name][0], {name}) for name in names)
+
+    workers, = values(topology, ("COMBINED_WORKERS",))
+    mirrored, expected = values(verifier, ("_COMBINED_JOBS", "_EXPECTED_JOBS"))
+    review.require(isinstance(workers, tuple) and workers == mirrored and workers,
+                   "Build worker declarations disagree")
+    jobs = build_job_blocks(workflow)
+    review.require(isinstance(expected, tuple) and set(jobs) == set(expected)
+                   and len(jobs) == len(expected) and set(workers) <= set(jobs),
+                   "Build job declarations disagree")
+    model = {}
+    for name, job in jobs.items():
+        selectors = []
+        for step in build_step_blocks(job):
+            match = re.match(r"^    -[ \t]+(name|uses):[ \t]*(.+)$", step.split("\n", 1)[0])
+            review.require(match is not None, "unsupported Build step identity")
+            value = re.sub(r"[ \t]+#.*$", "", match.group(2)).strip()
+            review.require(value and not value.startswith(("'", '"', "|", ">")),
+                           "unsupported Build step scalar")
+            selectors.append((match.group(1), value, "\n      run: |\n" in step))
+        review.unique([(kind, value) for kind, value, _ in selectors],
+                      "Build step identities within job")
+        model[name] = selectors
+    return workers, model
+
+
+def build_reorder_field(job, field):
+    matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.M))
+    selected = [index for index, item in enumerate(matches) if item.group(1) == field]
+    review.require(len(selected) == 1, "missing or ambiguous Build job field")
+    blocks = [job[item.start():matches[index + 1].start()
+                  if index + 1 < len(matches) else len(job)]
+              for index, item in enumerate(matches)]
+    index = selected[0]
+    ordered = blocks[1:] + blocks[:1] if index == 0 else (
+        blocks[index:index + 1] + blocks[:index] + blocks[index + 1:])
+    return job[:matches[0].start()] + "".join(ordered)
 
 
 def authored_case_declaration(raw):
@@ -372,6 +473,74 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                 "ELF symbols/sections", "disabled callback/probe omission",
                 "aoe-arm:" + role, resources, kind="arm-object", profile="aapcs-" + role,
                 evidence=("compile", "default") if role == "disabled" else ("compile",))
+    elif spec.model == "build-topology":
+        workers, jobs = build_source_model(
+            tree.read(BUILD_WORKFLOW).decode(), tree.read(BUILD_TOPOLOGY),
+            tree.read(BUILD_VERIFY))
+        closure = set(local_python_inputs(
+            head, (BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_UPSTREAM_TEST)))
+        closure.update({
+            BUILD_WORKFLOW, BUILD_ARCHIVAL_HELPER, "tests/workflows/__init__.py",
+        })
+        closure.difference_update({
+            "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
+            REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
+        })
+        for job, selectors in jobs.items():
+            representation = json.dumps(selectors, separators=(",", ":"))
+            add("wire", "validators", "boundary-" + job, BUILD_WORKFLOW,
+                BUILD_TOPOLOGY + ":_step_blocks", representation,
+                "shallow and Unicode blanks cannot hide step fields",
+                "build-topology:boundary:" + job, {BUILD_WORKFLOW, BUILD_TOPOLOGY},
+                evidence=("positive", "adversarial"))
+            add("wire", "validators", "target-boundary-" + job, BUILD_WORKFLOW,
+                BUILD_VERIFY + ":run_gates", representation,
+                "misindented job fields reject at each target boundary",
+                "build-topology:target-boundary:" + job,
+                {BUILD_WORKFLOW, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER},
+                evidence=("positive", "adversarial"))
+            if any(literal for _, _, literal in selectors):
+                add("wire", "replay", job, BUILD_WORKFLOW,
+                    BUILD_TOPOLOGY + ":_literal_run_script and " + BUILD_VERIFY,
+                    representation, "literal scripts retain commands across shallow blanks",
+                    "build-topology:literal:" + job,
+                    {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+        for job in workers:
+            representation = json.dumps(jobs[job], separators=(",", ":"))
+            add("wire", "producers", job, BUILD_WORKFLOW, BUILD_TOPOLOGY + ":_errors",
+                representation, "equivalent worker mappings preserve topology and sequence",
+                "build-topology:producer:" + job,
+                {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+            add("wire", "consumers", job, BUILD_WORKFLOW, BUILD_VERIFY + ":run_gates",
+                representation, "target gates accept equivalent and reject unsafe mappings",
+                "build-topology:consumer:" + job,
+                {BUILD_WORKFLOW, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER})
+            for name, source in (
+                ("topology-order", BUILD_TOPOLOGY + ":_errors"),
+                ("upstream-order", BUILD_VERIFY + ":_parse_workflow_structure_text"),
+            ):
+                add("wire", "validators", name + "-" + job, BUILD_WORKFLOW, source,
+                    representation, "source parser accepts equivalent reordered workflow",
+                    "build-topology:" + name + ":" + job,
+                    {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+        for name, test_path, test_class, test_method in (
+            ("topology-order", BUILD_TOPOLOGY, "ConsolidatedBuildTopologyTests",
+             "test_worker_blocks_can_precede_other_job_fields"),
+            ("upstream-order", BUILD_UPSTREAM_TEST, "VerifyCliCwdTests",
+             "test_worker_mapping_order_preserves_target_gate_equivalence"),
+        ):
+            add("wire", "validators", "source-test-" + name, BUILD_WORKFLOW,
+                f"{test_path}:{test_class}.{test_method}", json.dumps(sorted(workers)),
+                "actual source-revision regression test covers worker field permutations",
+                "build-topology:source-test:" + name,
+                {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_UPSTREAM_TEST})
+        add("wire", "stale-bindings", "width-script", BUILD_WORKFLOW,
+            BUILD_VERIFY + ":run_gates", "target literal width-gate script",
+            "target command after shallow blank cannot be ignored",
+            "build-topology:stale:width-script",
+            {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER})
+        result = [replace(item, execution_inputs=tuple(sorted(set(item.inputs) | closure)))
+                  for item in result]
     elif spec.model == "eventlists":
         defaults, dependencies = schema_declaration(tree.read(EVENT_SCHEMA))
         review.require(defaults.get("default_source") == EVENT_SOURCE,
@@ -2478,6 +2647,222 @@ def _session_probe(probe: str) -> dict:
     return {"kind": "host", "checks": 2, "detail": "registered production reducer executed"}
 
 
+@probe_result("host")
+def _build_topology(probe):
+    from scripts.upstream_port import verify
+    from tests.workflows import test_build_ci_topology as topology
+    from tests.upstream_port import test_verify as upstream_tests
+
+    workers, model = build_source_model(
+        Path(BUILD_WORKFLOW).read_text(), Path(BUILD_TOPOLOGY).read_bytes(),
+        Path(BUILD_VERIFY).read_bytes())
+    parts = probe.split(":")
+    review.require(len(parts) == 3 and parts[0] == "build-topology",
+                   "unknown Build topology probe")
+    role, name = parts[1:]
+    review.require(
+        (role in {"boundary", "target-boundary", "literal"} and name in model)
+        or (role in {"producer", "consumer", "topology-order", "upstream-order"}
+            and name in workers)
+        or (role == "source-test" and name in {"topology-order", "upstream-order"})
+        or (role == "stale" and name == "width-script"),
+        "unregistered Build topology member")
+    if role == "source-test":
+        if name == "topology-order":
+            test_class = topology.ConsolidatedBuildTopologyTests
+            test_name = "test_worker_blocks_can_precede_other_job_fields"
+            module = topology
+            attribute = "WORKFLOW"
+        else:
+            test_class = upstream_tests.VerifyCliCwdTests
+            test_name = "test_worker_mapping_order_preserves_target_gate_equivalence"
+            module = upstream_tests
+            attribute = "BUILD_WORKFLOW_PATH"
+        original = Path(BUILD_WORKFLOW).read_text()
+        job = topology._job_blocks(original)["host-tests"]
+        changed = original.replace(job, build_reorder_field(job, "steps"), 1)
+        review.require(changed != original, "worker order control did not change the workflow")
+        with tempfile.TemporaryDirectory(prefix="build-worker-order-") as directory:
+            path = Path(directory) / "build.yml"
+            path.write_text(changed)
+            workflow = path if module is topology else str(path)
+            with mock.patch.object(module, attribute, workflow):
+                result = unittest.TextTestRunner(stream=io.StringIO()).run(
+                    unittest.TestSuite([test_class(test_name)]))
+        if result.errors:
+            return {"kind": "host", "verdict": "unavailable", "checks": 0,
+                    "detail": (result.errors[0][1] or "source test errored")[-review.MAX_DETAIL:]}
+        for outcome, records in (
+            ("skipped", result.skipped),
+            ("expected-failure", result.expectedFailures),
+            ("unexpected-success", result.unexpectedSuccesses),
+        ):
+            if records:
+                return {"kind": "host", "verdict": "unavailable", "checks": 0,
+                        "detail": f"source test outcome is non-evidentiary: {outcome}"}
+        if result.failures:
+            return {"kind": "host", "verdict": "contract-violation", "checks": 1,
+                    "detail": (result.failures[0][1] or "source test failed")[-review.MAX_DETAIL:]}
+        review.require(result.testsRun == 1, "source test did not run exactly once")
+        return {"kind": "host", "checks": 1,
+                "detail": "actual source-revision test passed on steps-first worker mapping"}
+    text = Path(BUILD_WORKFLOW).read_text()
+    jobs = build_job_blocks(text)
+    checks = 0
+
+    def observe(condition, message):
+        nonlocal checks
+        checks += 1
+        check(condition, message)
+
+    def target(directory):
+        root = Path(directory) / "target"
+        root.mkdir()
+        command(["/usr/bin/git", "init", "-q", str(root)])
+        workflow = root / BUILD_WORKFLOW
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(text)
+        helper = root / BUILD_ARCHIVAL_HELPER
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(BUILD_ARCHIVAL_HELPER, helper)
+        return root, workflow
+
+    def rejected(root, workflow, changed):
+        workflow.write_text(changed)
+        try:
+            verify.run_gates(str(root), dry_run=True)
+        except ValueError:
+            return True
+        return False
+
+    def width_step():
+        found = [step for job in jobs.values() for step in build_step_blocks(job)
+                 if step.startswith(
+                     "    - name: Run full-game localization width contract (issue #18)\n")]
+        review.require(len(found) == 1, "missing or ambiguous width gate")
+        return found[0]
+
+    if role == "boundary":
+        job = jobs[name]
+        steps = build_step_blocks(job)
+        for index, step in enumerate(steps):
+            for blank in ("", "    ", "    \r", "    \t", "        ",
+                          "    \u0085", "    \u2028", "    \u2029"):
+                changed = step.replace(
+                    "\n", "\n" + blank + "\n      continue-on-error: true\n", 1)
+                parsed = topology._step_blocks(job.replace(step, changed, 1))
+                observe(index < len(parsed) and "      continue-on-error: true" in parsed[index],
+                        f"{name} step {index} lost a field after {blank!r}")
+        width = width_step()
+        if width in steps:
+            for blank in ("    ", "    \u0085", "    \u2028", "    \u2029"):
+                changed = text.replace(width, width + blank + "\n      continue-on-error: true\n", 1)
+                observe(bool(topology._errors(changed, False)), "width gate admitted hidden failure")
+    elif role == "target-boundary":
+        job = jobs[name]
+        review.require(text.count(job) == 1 and job.count("    steps:\n") == 1,
+                       "ambiguous target job or steps")
+        with tempfile.TemporaryDirectory(prefix="build-target-boundary-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()) and all(not item.ran for item in baseline),
+                    f"{name} baseline dry-run failed")
+            for position in ("after-header", "before-steps", "after-steps"):
+                for indent in (1, 2, 3, 4):
+                    field = " " * indent + "permissions: write-all\n"
+                    if position == "after-header":
+                        changed_job = field + job
+                    elif position == "before-steps":
+                        changed_job = job.replace("    steps:\n", field + "    steps:\n", 1)
+                    else:
+                        changed_job = job + field
+                    changed = text.replace(job, changed_job, 1)
+                    observe(rejected(root, workflow, changed),
+                            f"{name} accepted {indent}-space field {position}")
+    elif role == "literal":
+        steps = [step for step in build_step_blocks(jobs[name]) if "\n      run: |\n" in step]
+        review.require(steps, "literal member has no source scripts")
+        for index, step in enumerate(steps):
+            script = topology._literal_run_script(step)
+            commands = topology._run_block_commands(step)
+            for blank in ("    ", "", " ", "      ", "        ", "        \t", "    \r"):
+                changed = step.replace("      run: |\n", "      run: |\n" + blank + "\n", 1)
+                expected = blank[8:] + "\n" + script
+                observe(topology._literal_run_script(changed) == expected,
+                        f"{name} literal {index} lost script after {blank!r}")
+                observe(topology._run_block_commands(changed) == commands,
+                        f"{name} literal {index} changed commands after {blank!r}")
+                lines = changed.split("\n")
+                start = lines.index("      run: |") + 1
+                observe(verify._literal_run_script(lines, start, len(lines), "|", name) == expected,
+                        f"{name} target literal {index} lost script after {blank!r}")
+    elif role == "producer":
+        baseline = verify._parse_workflow_structure_text(text)
+        observe(not topology._errors(text, False), "baseline topology rejected")
+        for field in ("steps", "env"):
+            changed = text.replace(jobs[name], build_reorder_field(jobs[name], field), 1)
+            observe(changed != text, f"{name} {field} did not move")
+            observe(not topology._errors(changed, False), f"{name} {field} rejected")
+            observe(verify._parse_workflow_structure_text(changed) == baseline,
+                    f"{name} {field} changed parsed workflow")
+    elif role in {"topology-order", "upstream-order"}:
+        baseline = verify._parse_workflow_structure_text(text)
+        fields = ("steps", "env") if role == "topology-order" else ("steps",)
+        for field in fields:
+            reordered = build_reorder_field(jobs[name], field)
+            changed = text.replace(jobs[name], reordered, 1)
+            observe(changed != text, f"{name} {field} did not move")
+            if role == "topology-order":
+                observe(not topology._errors(changed, False),
+                        f"{name} topology validator rejected equivalent reordered {field}")
+            try:
+                parsed = verify._parse_workflow_structure_text(changed)
+            except ValueError as error:
+                observe(False, f"{name} verifier rejected equivalent reordered {field}: {error}")
+            else:
+                observe(parsed == baseline,
+                        f"{name} reordered {field} changed the parsed workflow")
+    elif role == "consumer":
+        with tempfile.TemporaryDirectory(prefix="build-target-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()) and all(not item.ran for item in baseline),
+                    "baseline dry-run did not describe all gates")
+            for field in ("steps", "env"):
+                changed = text.replace(jobs[name], build_reorder_field(jobs[name], field), 1)
+                review.require(changed != text, f"{name} {field} did not move")
+                workflow.write_text(changed)
+                try:
+                    result = verify.run_gates(str(root), dry_run=True)
+                except ValueError as error:
+                    observe(False, f"{name} rejected equivalent reordered {field}: {error}")
+                else:
+                    observe(len(result) == len(baseline)
+                            and all(not item.ran for item in result),
+                            f"{name} reordered {field} changed selected gates")
+            for before, after in (
+                ("    runs-on: ubuntu-24.04", "    runs-on: self-hosted"),
+                ("    steps:\n", "    container: ubuntu:latest\n    steps:\n"),
+            ):
+                changed_job = jobs[name].replace(before, after, 1)
+                review.require(changed_job != jobs[name], "missing unsafe mutation location")
+                changed = text.replace(jobs[name], changed_job, 1)
+                observe(rejected(root, workflow, changed), f"{name} unsafe target admitted")
+    else:
+        width = width_step()
+        commands = topology._run_block_commands(width)
+        review.require(commands, "width gate has no commands")
+        last = "        " + commands[-1] + "\n"
+        review.require(width.count(last) == 1, "ambiguous width command")
+        changed = text.replace(width, width.replace(last, last + "    \n        exit 73\n", 1), 1)
+        with tempfile.TemporaryDirectory(prefix="build-stale-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()), "baseline target rejected")
+            observe(rejected(root, workflow, changed), "target ignored command after shallow blank")
+    return {"kind": "host", "checks": checks, "detail": "selected Build source behavior exercised"}
+
+
 def run_probe(probe: str) -> dict:
     allowed = {
         *(f"aoe-phase:{phase}" for phase in PHASES),
@@ -2495,6 +2880,8 @@ def run_probe(probe: str) -> dict:
         *("project-resource:" + role for role in review.FAMILIES["resource"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
+    if probe.startswith("build-topology:"):
+        return _build_topology(probe)
     if probe.startswith("generated-owner:"):
         from scripts.generated_data import registry
         review.require(probe.partition(":")[2] in registry.REGISTRY.all_names(),
