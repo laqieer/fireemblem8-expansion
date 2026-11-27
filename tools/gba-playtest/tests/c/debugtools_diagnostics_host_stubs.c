@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <string.h>
 
 #include "global.h"
@@ -39,10 +40,15 @@ static struct Font sFont = {0};
 struct Font* gActiveFont = &sFont;
 
 static struct Proc sContextProc;
+static struct Proc sTitleProc;
+static struct Proc sMapProc;
+static struct Proc sPlayerPhaseProc;
+static struct Proc sPrepProc;
 static struct Proc sOwnerProc;
 static struct Proc sScratchProc;
 static ProcFunc sOwnerEndCb;
 static int sHubActive;
+static int sTitleActive;
 static int sBattleActive;
 static int sBattleEventDaemonActive;
 static int sMapActive;
@@ -52,6 +58,7 @@ static int sEventActive;
 static int sFadeActive;
 static int sGameLock;
 static int sRestoredCount;
+static int sTransitionEndCount;
 
 struct ProcCmd CONST_DATA gProc_BMapMain[] = {{0}};
 struct ProcCmd gProcScr_PlayerPhase[] = {{0}};
@@ -113,8 +120,14 @@ void DebugToolsDiagnosticsHost_Reset(void)
     memset(sBgMaps, 0, sizeof(sBgMaps));
     memset(sMapUnits, 0, sizeof(sMapUnits));
     memset(&sContextProc, 0, sizeof(sContextProc));
-    memset(&sOwnerProc, 0, sizeof(sOwnerProc));
-    memset(&sScratchProc, 0, sizeof(sScratchProc));
+    memset(&sTitleProc, 0, sizeof(sTitleProc));
+    memset(&sMapProc, 0, sizeof(sMapProc));
+    memset(&sPlayerPhaseProc, 0, sizeof(sPlayerPhaseProc));
+    memset(&sPrepProc, 0, sizeof(sPrepProc));
+    memset(&sOwnerProc, 0xA5, sizeof(sOwnerProc));
+    memset(&sScratchProc, 0xA5, sizeof(sScratchProc));
+    memset(&sOwnerProc, 0, offsetof(struct Proc, x));
+    memset(&sScratchProc, 0, offsetof(struct Proc, x));
     memset(&sFont, 0, sizeof(sFont));
     memset(&gDebugToolsProbe, 0, sizeof(gDebugToolsProbe));
     memset(&gDebugToolsDiagnosticsProbe, 0, sizeof(gDebugToolsDiagnosticsProbe));
@@ -136,6 +149,7 @@ void DebugToolsDiagnosticsHost_Reset(void)
     gActiveFont = &sFont;
     sOwnerEndCb = NULL;
     sHubActive = 1;
+    sTitleActive = 1;
     sBattleActive = 0;
     sBattleEventDaemonActive = 0;
     sMapActive = 0;
@@ -145,6 +159,7 @@ void DebugToolsDiagnosticsHost_Reset(void)
     sFadeActive = 0;
     sGameLock = 0;
     sRestoredCount = 0;
+    sTransitionEndCount = 0;
     gBmMapSize.x = 8;
     gBmMapSize.y = 8;
 }
@@ -229,9 +244,24 @@ int DebugToolsDiagnosticsHost_GetRestoredCount(void)
     return sRestoredCount;
 }
 
+int DebugToolsDiagnosticsHost_GetTransitionEndCount(void)
+{
+    return sTransitionEndCount;
+}
+
+void DebugToolsDiagnosticsHost_ReopenHub(void)
+{
+    sHubActive = 1;
+}
+
 void DebugToolsDiagnosticsHost_EndContext(void)
 {
-    Proc_End(&sOwnerProc);
+    if (sPrepActive)
+        Proc_End(&sPrepProc);
+    else if (sPlayerPhaseActive)
+        Proc_End(&sPlayerPhaseProc);
+    else
+        Proc_End(&sTitleProc);
 }
 
 u16* BG_GetMapBuffer(int bg)
@@ -335,16 +365,16 @@ ProcPtr Proc_Find(const struct ProcCmd* script)
             : NULL;
 
     if (script == gProc_BMapMain)
-        return sMapActive ? &sContextProc : NULL;
+        return sMapActive ? &sMapProc : NULL;
 
     if (script == gProcScr_TitleScreen)
-        return &sContextProc;
+        return sTitleActive ? &sTitleProc : NULL;
 
     if (script == gProcScr_PlayerPhase)
-        return sPlayerPhaseActive ? &sContextProc : NULL;
+        return sPlayerPhaseActive ? &sPlayerPhaseProc : NULL;
 
     if (script == gProcScr_SALLYCURSOR)
-        return sPrepActive ? &sContextProc : NULL;
+        return sPrepActive ? &sPrepProc : NULL;
 
     if (script == ProcScr_StdEventEngine)
         return sEventActive ? &sContextProc : NULL;
@@ -357,7 +387,7 @@ ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
     struct Proc* proc =
         parent == &sOwnerProc ? &sScratchProc : &sOwnerProc;
 
-    memset(proc, 0, sizeof(*proc));
+    memset(proc, 0, offsetof(struct Proc, x));
     proc->proc_script = script;
     proc->proc_parent = parent;
     return proc;
@@ -376,18 +406,39 @@ void Proc_SetEndCb(ProcPtr proc, ProcFunc func)
 
 void Proc_End(ProcPtr proc)
 {
-    if (proc == &sOwnerProc && sOwnerEndCb != NULL)
+    if (proc == &sTitleProc || proc == &sMapProc
+        || proc == &sPlayerPhaseProc || proc == &sPrepProc)
     {
-        ProcFunc end = sOwnerEndCb;
-        sOwnerEndCb = NULL;
+        if (sOwnerProc.proc_script != NULL && sOwnerProc.proc_parent == proc)
+            Proc_End(&sOwnerProc);
+        if (proc == &sTitleProc)
+            sTitleActive = 0;
+        else if (proc == &sMapProc)
+            sMapActive = 0;
+        else if (proc == &sPlayerPhaseProc)
+            sPlayerPhaseActive = 0;
+        else
+            sPrepActive = 0;
+        return;
+    }
+
+    if (proc == &sOwnerProc)
+    {
         sScratchProc.proc_script = NULL;
-        end(proc);
+        if (sOwnerEndCb != NULL)
+        {
+            ProcFunc end = sOwnerEndCb;
+            sOwnerEndCb = NULL;
+            end(proc);
+        }
+        sOwnerProc.proc_script = NULL;
     }
 }
 
 void Proc_EndEach(const struct ProcCmd* script)
 {
-    (void)script;
+    if (script == gProcScr_DebugToolsMenuTransition)
+        sTransitionEndCount++;
 }
 
 struct Proc* EndMenu(struct MenuProc* menu)

@@ -1,7 +1,10 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "global.h"
 
+#include "bm.h"
+#include "proc.h"
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
 
@@ -16,6 +19,8 @@ void DebugToolsDiagnosticsHost_OverwriteDisplay(u16 value);
 int DebugToolsDiagnosticsHost_GetFontCounter(void);
 int DebugToolsDiagnosticsHost_GetGameLock(void);
 int DebugToolsDiagnosticsHost_GetRestoredCount(void);
+int DebugToolsDiagnosticsHost_GetTransitionEndCount(void);
+void DebugToolsDiagnosticsHost_ReopenHub(void);
 void DebugToolsDiagnosticsHost_EndContext(void);
 
 #define CHECK(cond, message) \
@@ -105,6 +110,8 @@ static int TestMapAndEmptyUnit(void)
           && snapshot.maxHp == 24,
           "map capture must use the validated cursor unit");
     DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "map teardown must not release an unowned game lock");
 
     DebugToolsDiagnosticsHost_Reset();
     DebugToolsDiagnosticsHost_SetMap(1, 0);
@@ -125,6 +132,8 @@ static int TestMapAndEmptyUnit(void)
           && snapshot.classId == 0,
           "empty tile must zero unavailable unit fields");
     DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "prep teardown must not release an unowned game lock");
 
     return 0;
 }
@@ -160,22 +169,129 @@ static int TestUnavailableContexts(void)
     return 0;
 }
 
-static int TestParentTeardown(void)
+static int TestForeignLocks(void)
+{
+    int prep;
+
+    for (prep = 0; prep <= 1; ++prep)
+    {
+        DebugToolsDiagnosticsHost_Reset();
+        DebugToolsDiagnosticsHost_SetMap(prep, 1);
+        LockGame();
+        DebugToolsDiagnostics_SetSessionContext(
+            prep ? DEBUGTOOLS_DIAG_CONTEXT_PREP : DEBUGTOOLS_DIAG_CONTEXT_MAP);
+        CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
+              "session with foreign lock must start");
+        CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 1 && gBmSt.lock == 1,
+              "map or prep session must not change a foreign game lock");
+        DebugToolsDiagnostics_EndSession(0);
+        CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 1 && gBmSt.lock == 1,
+              prep ? "prep teardown must preserve a foreign game lock"
+                   : "map teardown must preserve a foreign game lock");
+        UnlockGame();
+    }
+
+    return 0;
+}
+
+static int TestContextParentTeardown(
+    enum DebugToolsDiagnosticsContext context, const char* message)
 {
     DebugToolsDiagnosticsHost_Reset();
+    if (context != DEBUGTOOLS_DIAG_CONTEXT_TITLE)
+        DebugToolsDiagnosticsHost_SetMap(context == DEBUGTOOLS_DIAG_CONTEXT_PREP, 1);
     DebugToolsDiagnosticsHost_FillDisplay(0x369C);
-    DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_TITLE);
+    DebugToolsDiagnostics_SetSessionContext(context);
     CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
           "parent-teardown session must start");
     DebugToolsDiagnosticsHost_OverwriteDisplay(0x147A);
     DebugToolsDiagnosticsHost_EndContext();
-    CHECK(DebugToolsDiagnosticsHost_DisplayEquals(0x369C),
-          "context-parent teardown must restore owned display cells");
+    CHECK(DebugToolsDiagnosticsHost_DisplayEquals(0x369C), message);
+    CHECK(DebugToolsDiagnostics_GetSnapshot() == NULL,
+          "parent teardown must retire the scratch child");
     CHECK(gDebugToolsDiagnosticsProbe.forcedTeardownCount == 0
           && gDebugToolsDiagnosticsProbe.restorationCount == 1,
           "parent teardown is restored once without counting as explicit force");
     CHECK(gDebugToolsDiagnosticsProbe.restorationMismatchMask == 0,
           "parent teardown must retain exact restoration");
+    return 0;
+}
+
+static int TestParentTeardown(void)
+{
+    CHECK(TestContextParentTeardown(
+              DEBUGTOOLS_DIAG_CONTEXT_TITLE,
+              "title parent teardown must restore owned display cells") == 0,
+          "title parent-teardown case failed");
+    CHECK(TestContextParentTeardown(
+              DEBUGTOOLS_DIAG_CONTEXT_MAP,
+              "map parent teardown must restore owned display cells") == 0,
+          "map parent-teardown case failed");
+    CHECK(TestContextParentTeardown(
+              DEBUGTOOLS_DIAG_CONTEXT_PREP,
+              "prep parent teardown must restore owned display cells") == 0,
+          "prep parent-teardown case failed");
+    return 0;
+}
+
+static int TestProcChildTeardownWithoutCallback(void)
+{
+    static const struct ProcCmd ownerScript[] = {PROC_BLOCK};
+    static const struct ProcCmd childScript[] = {PROC_BLOCK};
+    ProcPtr owner;
+    ProcPtr child;
+
+    DebugToolsDiagnosticsHost_Reset();
+    owner = Proc_Start(ownerScript, PROC_TREE_1);
+    child = Proc_Start(childScript, owner);
+    CHECK(owner != NULL && child != NULL && Proc_Find(childScript) == child,
+          "owner without callback must have an active child");
+    Proc_End(owner);
+    CHECK(Proc_Find(childScript) == NULL,
+          "owner teardown must retire a child without an end callback");
+    return 0;
+}
+
+static int TestReusedProcPayload(void)
+{
+    const unsigned char* scratch;
+    size_t i;
+
+    DebugToolsDiagnosticsHost_Reset();
+    DebugToolsDiagnosticsHost_SetMap(0, 1);
+    DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_MAP);
+    CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
+          "reused map session must start");
+    CHECK(!DebugToolsDiagnostics_IsRestoring(),
+          "a new owner must not be restoring");
+    scratch = (const unsigned char*)DebugToolsDiagnostics_GetSnapshot();
+    CHECK(scratch != NULL, "a new session must expose its scratch snapshot");
+    for (i = 0; i < sizeof(struct DebugToolsDiagnosticsSnapshot); ++i)
+        CHECK(scratch[i] == 0, "a new scratch snapshot must not retain old payload");
+
+    memset(DebugToolsDiagnostics_GetStatusBuffer(), 0xA5,
+           sizeof(struct DebugToolsDiagnosticsSnapshot));
+    DebugToolsDiagnostics_EndSession(0);
+    CHECK(DebugToolsDiagnostics_GetSnapshot() == NULL,
+          "normal teardown must retire the scratch child");
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "normal map teardown must not release an unowned game lock");
+    CHECK(DebugToolsDiagnosticsHost_GetTransitionEndCount() == 0,
+          "normal teardown must not end the deferred transition");
+
+    DebugToolsDiagnosticsHost_ReopenHub();
+    DebugToolsDiagnostics_SetSessionContext(DEBUGTOOLS_DIAG_CONTEXT_MAP);
+    CHECK(DebugToolsDiagnostics_BeginSession() == DEBUGTOOLS_OK,
+          "a subsequent session must reuse the released slots");
+    scratch = (const unsigned char*)DebugToolsDiagnostics_GetSnapshot();
+    CHECK(scratch != NULL, "the reopened session must expose its scratch snapshot");
+    for (i = 0; i < sizeof(struct DebugToolsDiagnosticsSnapshot); ++i)
+        CHECK(scratch[i] == 0, "reused scratch must not expose the prior session");
+    DebugToolsDiagnosticsHost_EndContext();
+    CHECK(DebugToolsDiagnosticsHost_GetGameLock() == 0,
+          "external map teardown must not release an unowned game lock");
+    CHECK(DebugToolsDiagnosticsHost_GetTransitionEndCount() == 1,
+          "external teardown must end the deferred transition");
     return 0;
 }
 
@@ -187,10 +303,16 @@ int main(void)
           "title/restoration case failed");
     CHECK(TestMapAndEmptyUnit() == 0,
           "map/empty-unit case failed");
+    CHECK(TestForeignLocks() == 0,
+          "foreign-lock case failed");
     CHECK(TestUnavailableContexts() == 0,
           "unavailable-context case failed");
     CHECK(TestParentTeardown() == 0,
           "parent-teardown case failed");
+    CHECK(TestProcChildTeardownWithoutCallback() == 0,
+          "callback-free child-teardown case failed");
+    CHECK(TestReusedProcPayload() == 0,
+          "reused Proc payload case failed");
     printf("DEBUGTOOLS_DIAGNOSTICS_HOST_TEST: PASS\n");
     return 0;
 }
