@@ -8588,7 +8588,7 @@
       "domain": "event",
       "key": "tools/gba-playtest/tests/test_accelerated_fidelity.py|tool-symbol|event|test_profile_covers_all_factions_events_flags_and_objective_result",
       "kind": "tool-symbol",
-      "line": 165,
+      "line": 167,
       "path": "tools/gba-playtest/tests/test_accelerated_fidelity.py",
       "reason": "a unittest method name containing 'events' for profile coverage; it neither stores nor consumes an event ID",
       "record_count": null,
@@ -21734,7 +21734,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "5afa98382559209a0e93efed29238c5d1e906ab77dbfb177fdacae1cf6b89a29",
+  "digest": "11e47b49d2c01901d9d09c3b336877fe7db5deee9d5a6650ecf692c13f672807",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,
