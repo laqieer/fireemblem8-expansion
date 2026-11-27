@@ -86,6 +86,152 @@ class CoordinatorLocalTests(unittest.TestCase):
         self.assertIsNone(self.record["full_run_id"])
         self.assertIsNone(self.record["dispatch_requested_at"])
 
+    def test_successor_preserves_ended_watcher_owners_and_recaptures_local_proof(self):
+        self.complete()
+        previous_local = copy.deepcopy(self.record["local_validation"])
+        ended = self.fixture.waiting_process()
+        old_watcher = handoff.reserve_watcher(self.state, "old-ended", 91, 1, self.head, ended.pid)
+        ended.stdin.write(b"done\n")
+        ended.stdin.flush()
+        os.waitid(os.P_PID, ended.pid, os.WEXITED | os.WNOWAIT)
+        handoff.finish_watcher(self.state, old_watcher["id"])
+        ended.wait()
+        self.assertIsNone(old_watcher["exit_code"])
+        old_watcher["run"] = {
+            "repository": self.state["repository"], "run_id": 91, "attempt": 1,
+            "head_sha": self.head, "workflow_id": 17, "status": "in_progress",
+            "conclusion": None, "observed_at": observations.utc_now(),
+        }
+        live = self.fixture.waiting_process()
+        handoff.reserve_watcher(self.state, "old-live", 92, 1, self.head, live.pid)
+        path = self.fixture.home / "restart-state.json"
+        path.write_bytes(observations.json_bytes(self.state))
+        original_bytes = path.read_bytes()
+        with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
+            with observations.locked_state(path) as current:
+                current["coordinator_id"] = "coordinator-successor"
+                handoff.validate_state(current)
+        self.assertEqual(path.read_bytes(), original_bytes)
+
+        live.stdin.write(b"done\n")
+        live.stdin.flush()
+        os.waitid(os.P_PID, live.pid, os.WEXITED | os.WNOWAIT)
+        handoff.finish_watcher(self.state, "old-live")
+        live.wait()
+        old_history = copy.deepcopy(self.state["watchers"])
+        path.write_bytes(observations.json_bytes(self.state))
+        with observations.locked_state(path) as current:
+            current["coordinator_id"] = "coordinator-successor"
+            handoff.validate_state(current)
+        current = observations.load_json(path)
+        handoff.validate_state(current)
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(validator.is_valid(current))
+        self.assertEqual(current["watchers"], old_history)
+        self.assertEqual(current["candidates"][0]["local_validation"], previous_local)
+        self.assertFalse(gate._local_ready(current, self.pr, current["candidates"][0]))
+
+        malformed = copy.deepcopy(current)
+        malformed["watchers"][0]["coordinator_id"] = ""
+        self.assertFalse(validator.is_valid(malformed))
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.validate_state(malformed)
+        successor = self.fixture.waiting_process()
+        with observations.locked_state(path) as current:
+            candidate = current["candidates"][0]
+            gate.register_local_validation(current, candidate, self.pr, self.fixture.worktree, CHECKS)
+            gate.capture_local_check(current, candidate, self.pr, "raw")
+            gate.capture_local_check(current, candidate, self.pr, "config", self.executor)
+            self.assertTrue(gate._local_ready(current, self.pr, candidate))
+            handoff.reserve_watcher(current, "new-live", 93, 1, self.head, successor.pid)
+            with self.assertRaisesRegex(handoff.HandoffDataError, "previous watcher"):
+                handoff.reserve_watcher(current, "new-duplicate", 93, 1, self.head,
+                                        self.fixture.waiting_process().pid)
+            with self.assertRaisesRegex(handoff.HandoffDataError, "process reused"):
+                handoff.reserve_watcher(current, "new-alias", 94, 1, self.head, successor.pid)
+            handoff.validate_state(current)
+        current = observations.load_json(path)
+        handoff.validate_state(current)
+        self.assertTrue(validator.is_valid(current))
+        self.assertEqual(current["watchers"][:-1], old_history)
+        self.assertEqual(current["watchers"][-1]["coordinator_id"], "coordinator-successor")
+        self.assertTrue(gate._local_ready(current, self.pr, current["candidates"][0]))
+
+    def test_locked_state_preserves_local_proof_beyond_previous_node_limit(self):
+        self.complete()
+        actual = copy.deepcopy(self.record)
+        seed = copy.deepcopy(actual)
+        local = seed["local_validation"]
+        definitions = {
+            "raw": CHECKS["raw"],
+            **{f"case-{index}": {**CHECKS["config"], "evidence_id": f"case-{index}"}
+               for index in range(12)},
+        }
+        captures = {}
+        for check_id, definition in definitions.items():
+            observation = copy.deepcopy(
+                local["checks"]["raw" if check_id == "raw" else "config"]["observation"])
+            observation.update(id=check_id, evidence_id=definition["evidence_id"])
+            captures[check_id] = {"definitions": copy.deepcopy(definitions), "observation": observation}
+        local.update(required_checks=copy.deepcopy(definitions), checks=captures)
+        state = copy.deepcopy(self.state)
+        state["candidates"] = []
+
+        def append_candidate(source, number):
+            candidate = copy.deepcopy(source)
+            candidate["pr_number"] = candidate["local_validation"]["pr_number"] = number
+            state["candidates"].append(candidate)
+            return candidate
+
+        number = 200
+        with mock.patch.object(observations, "MAX_NODES", 32768):
+            while True:
+                append_candidate(seed, number)
+                try:
+                    observations.json_bytes(state)
+                except ValueError:
+                    state["candidates"].pop()
+                    break
+                number += 1
+            while True:
+                append_candidate(actual, number)
+                try:
+                    observations.json_bytes(state)
+                except ValueError:
+                    state["candidates"].pop()
+                    break
+                number += 1
+            handoff.validate_state(state)
+            path = self.fixture.home / "capacity.json"
+            before = observations.json_bytes(state)
+            path.write_bytes(before)
+            with self.assertRaisesRegex(ValueError, "node limit"):
+                with observations.locked_state(path) as current:
+                    current["candidates"].append(actual)
+            self.assertEqual(path.read_bytes(), before)
+
+        with observations.locked_state(path) as current:
+            candidate = copy.deepcopy(actual)
+            del candidate["local_validation"]
+            current["candidates"].append(candidate)
+            gate.register_local_validation(current, candidate, self.pr, self.fixture.worktree, CHECKS)
+            gate.capture_local_check(current, candidate, self.pr, "raw")
+            gate.capture_local_check(current, candidate, self.pr, "config", self.executor)
+            handoff.validate_state(current)
+        restored = observations.load_json(path)
+        self.assertEqual(restored["candidates"][:-1], state["candidates"])
+        restored_record = gate.find_candidate(restored, gate.candidate_identity(actual))
+        self.assertTrue(gate._local_ready(restored, self.pr, restored_record))
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "node limit"):
+            with observations.locked_state(path) as current:
+                current["overflow"] = [None] * 65536
+        self.assertEqual(path.read_bytes(), before)
+        boundary = [None] * 65535
+        self.assertEqual(observations.parse_bytes(observations.json_bytes(boundary)), boundary)
+        with self.assertRaisesRegex(ValueError, "node limit"):
+            observations.parse_bytes(json.dumps(boundary + [None]).encode())
     def test_accepted_logical_handoff_uses_released_validation_worktree(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)

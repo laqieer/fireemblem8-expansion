@@ -2714,8 +2714,14 @@ Those SHAs are illustrative, not executable evidence. `load_assignment`,
 `load_result`, `parse_assignment(bytes)` and `parse_result(bytes)` reject
 over-1-MiB input **before** decoding/copying; duplicate keys, nonfinite values,
 unknown fields, invalid Unicode, excessive depth/nodes/strings and unsupported
-versions reject. Collections are bounded: 128 assignments/watchers, 256 scope
-entries, 32 checks/criteria, 16 upstream inputs and 16 inputs per protocol check.
+versions reject. Collections are bounded: 128 assignments and 128 active
+watchers, 256 scope entries, 32 checks/criteria, 16 upstream inputs and 16 inputs
+per protocol check. Retained watcher history shares the 1 MiB and
+65,536-node document bounds; it is not an unlimited archive. The separate
+retained-watcher and recovery-enumeration limits remain 32,768 each.
+Readers with the previous 32,768-node bound reject larger states: select a
+reviewed compatible reader before writing or reopening such a state. This
+finite headroom does not replace the longer-term compaction work in #462.
 There are five lifecycle states; text is at most 16 KiB. Keyed criteria/checks and unique
 arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
 exercise structural/schema agreement. Git identity, cross-record correlation,
@@ -3026,6 +3032,27 @@ Register the existing direct shell watcher with `reserve_watcher`, binding
 repository/run/attempt/head and an actually running process. Boot/PID/start
 identity is unique across all owners and watchers regardless of runtime handle,
 run or attempt; an exited or unreaped zombie cannot be reserved as active.
+Only records without `ended_at` count toward the 128-active-watcher cap, even
+when their processes have since exited; finish them only after an actual exit
+observation. All rows stay in their original order, including old attempts,
+unknown exits and pending or failed runs. No row automatically leaves the
+document. If the overall document bound is reached, the update fails
+atomically; do not delete history, infer exits or create a competing coordinator
+to bypass it.
+
+After an explicitly coordinated transfer to the actual successor, first
+finish every old active watcher using real exit observations, including
+unknown exits, and renew stale availability. In the existing locked state
+transaction, validate the original state, set `coordinator_id` to the successor
+identity, and validate again before the transaction commits. Ended watchers
+retain their original coordinator IDs and all other observations; an active
+watcher belonging to another coordinator rejects the transfer. Prior
+coordinator-owned local checks remain stale and must be registered and
+captured again. Older readers reject retained watchers from different
+coordinators, so select a reviewed compatible reader before this transition.
+The lock serializes state updates; ownership transfer remains an operational
+responsibility, not proof that another same-UID process cannot act.
+
 Use the established
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status` command through
 the shell runtime; no reasoning agent waits for it. `finish_watcher` consumes
