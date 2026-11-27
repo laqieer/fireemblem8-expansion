@@ -777,7 +777,8 @@
       "reference": "docs/localization.md",
       "status": "current",
       "required_cases": [
-        "TC-LOCALIZATION-008"
+        "TC-LOCALIZATION-008",
+        "TC-LINKER-REAL-ARTIFACT-001"
       ]
     },
     {
@@ -4286,6 +4287,34 @@
         {
           "command": "make expansion-modern-localization-profile-all MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "modern.mk"
+        }
+      ]
+    },
+    {
+      "id": "TC-LINKER-REAL-ARTIFACT-001",
+      "title": "Validate linked overlays and CJK headroom",
+      "feature_id": "localization-profile-validation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/478"
+      ],
+      "document": "docs/test-cases/linker-reports.md",
+      "anchor": "tc-linker-real-artifact-001-validate-linked-overlays-and-cjk-headroom",
+      "profiles": [
+        "Modern debug/AAPCS default and 32 MiB en,ja,zh-Hans builds"
+      ],
+      "purpose": "Validate real linked overlay bounds, IWRAM stack margin, and CJK map/ELF locale identity without toolchain-specific byte totals.",
+      "prerequisites": "Clean source checkout, initialized dependencies, Python, and supported ARM GCC/binutils.",
+      "actions": "Build the default debug ELF and the trilingual debug profile, then run both linker-report test modules and confirm real-artifact cases do not skip.",
+      "expected_result": "Required named overlays fit EWRAM; real CJK map and ELF contain a matching nonempty allocatable PROGBITS locale section and preserve the 0x1000 IWRAM stack margin.",
+      "negative_control": "Missing or overflowing overlays, absent, empty, nonallocatable, NOBITS or mismatched locale sections, insufficient IWRAM margin and mismatched linked boundary symbols reject; pre-fix valid artifacts fail stale assertions.",
+      "interactions": "Uses existing modern linker, overlay audit and ELF/map budget gates; no new feature conflict or CI gate.",
+      "save_compatibility": "No save, configuration, generated-game-data, modern runtime, or archival behavior changes.",
+      "cleanup": "Use make clean_fast only for ignored build artifacts.",
+      "limitations": "Skipped artifact cases do not establish this contract; no runtime or CI speed claim.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.linker_report.tests.test_budget scripts.linker_report.tests.test_overlay_audit -v",
+          "evidence": "scripts/linker_report/tests/test_budget.py"
         }
       ]
     },

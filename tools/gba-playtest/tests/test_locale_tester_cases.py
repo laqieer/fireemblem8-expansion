@@ -46,7 +46,10 @@ FEATURE_CASES = {
         "TC-LOCALIZATION-007",
         "TC-CI-POPUP-EVIDENCE-001",
     },
-    "localization-profile-validation": {"TC-LOCALIZATION-008"},
+    "localization-profile-validation": {
+        "TC-LOCALIZATION-008",
+        "TC-LINKER-REAL-ARTIFACT-001",
+    },
 }
 
 

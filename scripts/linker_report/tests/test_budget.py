@@ -1,14 +1,25 @@
 """Unit tests for linker_report.budget."""
 
+import copy
 import json
+import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import budget
+from real_artifact_contract import (
+    REQUIRED_OVERLAYS,
+    assert_iwram_margin,
+    assert_iwram_symbols,
+    assert_locale_identity,
+    assert_modern_overlays,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BUDGET_PY = Path(__file__).parent.parent / "budget.py"
@@ -53,6 +64,22 @@ def run_budget(*args: str) -> subprocess.CompletedProcess:
         [sys.executable, str(BUDGET_PY), *args],
         capture_output=True, text=True,
     )
+
+
+def linked_iwram_symbols(elf: Path) -> dict[str, int]:
+    result = subprocess.run(
+        [os.environ.get("NM", "arm-none-eabi-nm"), "--defined-only", str(elf)],
+        check=True, capture_output=True, text=True,
+    )
+    expected = {"__iwram_static_end", "__iwram_static_limit", "__sp_usr"}
+    symbols = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and fields[2] in expected:
+            if fields[2] in symbols:
+                raise ValueError(f"duplicate linked symbol: {fields[2]}")
+            symbols[fields[2]] = int(fields[0], 16)
+    return symbols
 
 
 class TestMapParsing(unittest.TestCase):
@@ -516,25 +543,93 @@ Linker script and memory map
             {".text", ".data", ".bss"},
         )
 
+    def test_real_artifact_contract_rejects_missing_overlay_and_overflow(self):
+        regions, sections, assignments = budget.parse_map(
+            (FIXTURES / "modern_overlays.map").read_text()
+        )
+        sections.append(budget.OutputSection("ewram_overlay_debugtools", 0x02000000, 0x100))
+        report = budget.generate_report(regions, sections, assignments, None)
+        assert_modern_overlays(self, report["overlays"])
+
+        missing = [section for section in sections if section.name != "ewram_overlay_sio"]
+        report = budget.generate_report(regions, missing, assignments, None)
+        with self.assertRaises(AssertionError):
+            assert_modern_overlays(self, report["overlays"])
+
+        oversized = [
+            budget.OutputSection(section.name, section.address, 0x40001)
+            if section.name == "ewram_overlay_banim" else section
+            for section in sections
+        ]
+        report = budget.generate_report(regions, oversized, assignments, None)
+        with self.assertRaises(AssertionError):
+            assert_modern_overlays(self, report["overlays"])
+
+    def test_real_artifact_contract_rejects_missing_empty_or_mismatched_locale(self):
+        region = budget.MemoryRegion("rom", 0x08000000, 0x02000000)
+        locale = budget.OutputSection(".locale_data", 0x09000000, 0x200)
+        elf_locale = budget.ElfSection(".locale_data", "PROGBITS", 0x09000000, 0x200, "A")
+        report = budget.generate_report([region], [locale], [], [elf_locale])
+        assert_locale_identity(self, report)
+
+        for map_sections, elf_sections in (
+            ([], []),
+            ([locale], []),
+            ([budget.OutputSection(".locale_data", 0x09000000, 0)], [elf_locale]),
+            ([locale], [budget.ElfSection(".locale_data", "PROGBITS", 0x09000000, 0x100, "A")]),
+            ([locale], [budget.ElfSection(".locale_data", "PROGBITS", 0x09000100, 0x200, "A")]),
+            ([locale], [budget.ElfSection(".locale_data", "PROGBITS", 0x09000000, 0x200, "")]),
+            ([locale], [budget.ElfSection(".locale_data", "NOBITS", 0x09000000, 0x200, "A")]),
+        ):
+            with self.subTest(map_sections=map_sections, elf_sections=elf_sections):
+                report = budget.generate_report([region], map_sections, [], elf_sections)
+                with self.assertRaises(AssertionError):
+                    assert_locale_identity(self, report)
+
+    def test_real_artifact_contract_rejects_insufficient_stack_margin(self):
+        region = budget.MemoryRegion("iwram", 0x03000000, 0x8000)
+        for static_end, expected in ((0x03006D00, True), (0x03006E01, False)):
+            report = budget.generate_report(
+                [region], [budget.OutputSection("IWRAM", 0x03000000, static_end - region.origin)],
+                iwram_assignments(static_end), None,
+            )
+            with self.subTest(static_end=static_end):
+                if expected:
+                    assert_iwram_margin(self, report)
+                else:
+                    with self.assertRaises(AssertionError):
+                        assert_iwram_margin(self, report)
+
+    def test_real_artifact_contract_rejects_mismatched_linked_stack_symbol(self):
+        region = budget.MemoryRegion("iwram", 0x03000000, 0x8000)
+        assignments = iwram_assignments(0x03006D00)
+        report = budget.generate_report(
+            [region], [budget.OutputSection("IWRAM", region.origin, 0x6D00)],
+            assignments, None,
+        )
+        symbols = {assignment.name: assignment.address for assignment in assignments}
+        assert_iwram_symbols(self, report, symbols)
+        symbols["__iwram_static_end"] += 4
+        with self.assertRaises(AssertionError):
+            assert_iwram_symbols(self, report, symbols)
+
     @unittest.skipUnless(REAL_MODERN_MAP.exists(), "modern map artifact not available")
     def test_real_modern_map_finds_all_overlays(self):
-        """Integration: real modern map has 8 overlay sections."""
+        """Integration: real modern map contains the required bounded overlays."""
         out = self.make_output_path("real-modern")
-        r = run_budget("--map", str(REAL_MODERN_MAP), "--output", str(out))
+        args = ["--map", str(REAL_MODERN_MAP), "--output", str(out)]
+        if REAL_MODERN_ELF.exists():
+            args.extend(["--elf", str(REAL_MODERN_ELF), "--validate-elf"])
+        r = run_budget(*args)
         self.assertEqual(r.returncode, 0, r.stderr)
         report = json.loads(out.read_text())
         overlays = report["overlays"]
-        self.assertEqual(len(overlays), 8)
-        self.assertTrue(all(ov["address"] == 0x02000000 for ov in overlays))
+        assert_modern_overlays(self, overlays)
         peaks = {ov["peak_bytes"] for ov in overlays}
-        self.assertEqual(peaks, {0x2018C})
-        iwram = next(reg for reg in report["regions"] if reg["name"] == "iwram")
-        self.assertTrue(iwram["static_budget_available"])
-        self.assertEqual(iwram["physical_free_bytes"], 0x1857)
-        self.assertEqual(iwram["reserved_stack_bytes"], 0x200)
-        self.assertEqual(iwram["usable_static_headroom_bytes"], 0x1657)
-        self.assertEqual(iwram["minimum_user_stack_margin_bytes"], 0x1000)
-        self.assertEqual(iwram["static_growth_headroom_bytes"], 0x657)
+        self.assertEqual(peaks, {max(ov["size_bytes"] for ov in overlays)})
+        assert_iwram_margin(self, report)
+        if REAL_MODERN_ELF.exists():
+            assert_iwram_symbols(self, report, linked_iwram_symbols(REAL_MODERN_ELF))
 
     @unittest.skipUnless(
         REAL_CJK_MAP.exists() and REAL_CJK_ELF.exists(),
@@ -551,25 +646,52 @@ Linker script and memory map
         )
         self.assertEqual(r.returncode, 0, r.stderr)
         report = json.loads(out.read_text())
-        iwram = next(reg for reg in report["regions"] if reg["name"] == "iwram")
-        self.assertEqual(iwram["physical_free_bytes"], 0x1357)
-        self.assertEqual(iwram["reserved_stack_bytes"], 0x200)
-        self.assertEqual(iwram["usable_static_headroom_bytes"], 0x1157)
-        self.assertEqual(iwram["minimum_user_stack_margin_bytes"], 0x1000)
-        self.assertEqual(iwram["static_growth_headroom_bytes"], 0x157)
+        assert_modern_overlays(self, report["overlays"])
+        assert_iwram_margin(self, report)
+        assert_iwram_symbols(self, report, linked_iwram_symbols(REAL_CJK_ELF))
         self.assertEqual(
             report["elf"]["cross_validation"]["section_mismatches"], []
         )
-        locale = next(
-            section for section in report["sections"]
-            if section["name"] == ".locale_data"
+        assert_locale_identity(self, report)
+
+    @unittest.skipUnless(
+        REAL_CJK_MAP.exists() and REAL_CJK_ELF.exists(),
+        "CJK map/ELF artifacts not available",
+    )
+    def test_real_cjk_report_rejects_each_missing_overlay(self):
+        out = self.make_output_path("real-cjk-overlay-control")
+        result = run_budget(
+            "--map", str(REAL_CJK_MAP), "--elf", str(REAL_CJK_ELF),
+            "--output", str(out), "--validate-elf",
+            "--require-positive-headroom", "iwram",
         )
-        elf_locale = next(
-            section for section in report["elf"]["sections"]
-            if section["name"] == ".locale_data"
-        )
-        self.assertEqual(locale["address"], elf_locale["address"])
-        self.assertEqual(locale["size_bytes"], elf_locale["size_bytes"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        original = json.loads(out.read_text())
+        self.assertTrue(REQUIRED_OVERLAYS <= {item["name"] for item in original["overlays"]})
+
+        for missing in sorted(REQUIRED_OVERLAYS):
+            with self.subTest(missing=missing):
+                report = copy.deepcopy(original)
+                report["overlays"] = [item for item in report["overlays"] if item["name"] != missing]
+                report["sections"] = [item for item in report["sections"] if item["name"] != missing]
+                report["elf"]["sections"] = [
+                    item for item in report["elf"]["sections"] if item["name"] != missing
+                ]
+                report["elf"]["section_count"] = len(report["elf"]["sections"])
+                cross_validation = report["elf"]["cross_validation"]
+                for field in ("in_elf_not_map", "in_map_not_elf"):
+                    cross_validation[field] = [
+                        name for name in cross_validation[field] if name != missing
+                    ]
+
+                def report_without_overlay(*args):
+                    Path(args[args.index("--output") + 1]).write_text(json.dumps(report))
+                    return subprocess.CompletedProcess(args, 0, "", "")
+
+                with mock.patch(f"{__name__}.run_budget", side_effect=report_without_overlay):
+                    with self.assertRaises(AssertionError) as error:
+                        self.test_real_cjk_map_and_elf_preserve_stack_margin_and_locale_identity()
+                self.assertIn(missing, str(error.exception))
 
 
 if __name__ == "__main__":

@@ -68,10 +68,10 @@ For IWRAM, `capacity_bytes` remains the physical 32 KiB region size while
 `__iwram_static_end`, `__iwram_static_limit`, and `__sp_usr`. `crt0` initializes
 the downward-growing system/user stack at `__sp_usr`; the historical fixed
 layout left `0x1658` bytes below it, while the current CJK scratch plus the
-presentation probe leaves `0x1157`. The linker therefore preserves a `0x1000`
-minimum user-stack margin, leaving `0x157` bytes of current static-growth
-headroom. Both the linker assertion and `--require-positive-headroom iwram`
-enforce that floor.
+presentation workspace changes the static end. Actual headroom varies by
+profile and toolchain. Both the linker assertion and
+`--require-positive-headroom iwram` enforce a `0x1000` minimum user-stack
+margin.
 
 ## Exit codes
 
@@ -86,6 +86,9 @@ enforce that floor.
 ```bash
 python3 -m unittest discover -s scripts/linker_report/tests -v
 ```
+
+For real map/ELF coverage and adverse controls, see
+[`TC-LINKER-REAL-ARTIFACT-001`](../../docs/test-cases/linker-reports.md#tc-linker-real-artifact-001-validate-linked-overlays-and-cjk-headroom).
 
 ## Overlay audit
 
