@@ -525,7 +525,8 @@ the consumers' independent protected-principal/deployment requirements.
 
 - **Feature / issue:** `workflow-governance` /
   [#359](https://github.com/laqieer/fireemblem8-expansion/issues/359) and
-  [#361](https://github.com/laqieer/fireemblem8-expansion/issues/361).
+  [#361](https://github.com/laqieer/fireemblem8-expansion/issues/361),
+  [#388](https://github.com/laqieer/fireemblem8-expansion/issues/388).
 - **Profile / prerequisites:** Linux source checkout with the existing locked
   CPython 3.12 host environment, Git and ordinary process controls. The focused
   fixtures need no ARM compiler, ROM, credentials or new package.
@@ -553,6 +554,10 @@ the consumers' independent protected-principal/deployment requirements.
    variables are absent. A singleton still runs. Workers rediscover and select
    the actual assigned instances, preserving `load_tests` configuration;
    changed child discovery fails instead of running an accepted subset.
+   The partition is deterministic and count-balanced, retaining discovery
+   order within each worker; adding one ID moves at most one existing ID.
+   In the skewed six-case fixture, the two selected expensive-case stand-ins
+   execute on different worker PIDs.
    Live unittest progress and tracebacks have worker-PID labels; the parent
    drains the existing process pipes and emits intact, attributable lines.
 4. Observe refusals: an assertion failure makes the parent fail while other
@@ -608,6 +613,8 @@ the consumers' independent protected-principal/deployment requirements.
 
 All discovered cases execute exactly once, with normal unittest fixtures in
 each owned process, isolated startup and explicit failure propagation.
+Stable-ID dispersion balances case counts without assuming that all cases
+take equal time; a new test population may still be uneven.
 Bounded concurrent execution reduces the serial reporter critical path;
 only successful complete native CI establishes the end-to-end outcome.
 The independent width worker uses existing headroom rather than appending
@@ -622,6 +629,8 @@ second reporter process exists. The original host traces reach their native
 usage candidate. dropping cases, losing a configured discovered instance, ignoring a child
 completion result, or accepting empty
 discovery fails the focused controls; increasing deadlines is not the fix.
+The former alternating partition assigns both expensive-case stand-ins to
+one worker and fails the focused distribution control.
 After the reporter improvement, exact7b automatic master and exact41d
 candidate both still reached90minutes twice during the final full-game
 step. Preserve those actual failures. The old parsed graph puts all four

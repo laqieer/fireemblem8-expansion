@@ -12,6 +12,7 @@ from unittest import mock
 import uuid
 
 from scripts import host_python
+from scripts.workflow_pilot import isolated_launcher
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -353,6 +354,59 @@ class ReporterExecutionTests(unittest.TestCase):
             {int(re.match(r"\[reporter (\d+)\]", line).group(1)) for line in progress}, pids,
         )
 
+    def test_partition_spreads_skewed_cases_preserving_discovery_order(self):
+        (self.tests / "test_balance.py").write_text(
+            'import os, unittest\nfrom pathlib import Path\n'
+            'ROOT = Path(__file__).resolve().parents[3]\n'
+            'class Cases(unittest.TestCase):\n'
+            '    def record(self, number):\n'
+            '        self.assertEqual(self.configured, number)\n'
+            '        pid = os.getpid()\n'
+            '        with (ROOT / "records" / ("case-" + str(number))).open("x") as stream:\n'
+            '            stream.write(str(pid))\n'
+            '        with (ROOT / "records" / ("sequence-" + str(pid))).open("a") as stream:\n'
+            '            stream.write(str(number) + "\\n")\n'
+            'def case(number): return lambda self: self.record(number)\n'
+            'for number in range(6):\n'
+            '    setattr(Cases, "test_" + str(number), case(number))\n'
+            'def load_tests(loader, tests, pattern):\n'
+            '    cases = [Cases("test_" + str(number)) for number in range(6)]\n'
+            '    for number, item in enumerate(cases): item.configured = number\n'
+            '    return unittest.TestSuite(cases)\n',
+            encoding="ascii",
+        )
+        completed = self.run_launcher()
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        pids = {
+            number: int((self.root / "records" / f"case-{number}").read_text())
+            for number in range(6)
+        }
+        self.assertEqual(len(set(pids.values())), 2)
+        self.assertNotEqual(pids[0], pids[4], "skewed cases share a worker")
+        for pid in set(pids.values()):
+            actual = (self.root / "records" / f"sequence-{pid}").read_text().splitlines()
+            self.assertEqual(actual, [str(number) for number in range(6) if pids[number] == pid])
+
+    def test_partition_is_deterministic_balanced_and_order_preserving(self):
+        for count in (0, 1, 2, 7, 12):
+            with self.subTest(count=count):
+                ids = [f"example.case.test_{number}" for number in range(count)]
+                if ids:
+                    ids[-1] += "\udcff"
+                shards = isolated_launcher.partition_reporter_ids(ids)
+                reversed_shards = isolated_launcher.partition_reporter_ids(list(reversed(ids)))
+                self.assertEqual(set(shards[0]) | set(shards[1]), set(ids))
+                self.assertEqual(sum(map(len, shards)), len(ids))
+                self.assertLessEqual(abs(len(shards[0]) - len(shards[1])), 1)
+                for shard, reversed_shard in zip(shards, reversed_shards):
+                    members = set(shard)
+                    self.assertEqual(shard, [item for item in ids if item in members])
+                    self.assertEqual(members, set(reversed_shard))
+                extended = isolated_launcher.partition_reporter_ids(ids + ["example.new_case"])
+                before = {item: index for index, shard in enumerate(shards) for item in shard}
+                after = {item: index for index, shard in enumerate(extended) for item in shard}
+                self.assertLessEqual(sum(before[item] != after[item] for item in ids), 1)
+
     def test_one_assertion_fails_the_parent_without_omitting_other_tests(self):
         (self.tests / "test_failure.py").write_text(
             'import os, unittest\nfrom pathlib import Path\n'
@@ -495,7 +549,8 @@ class ReporterExecutionTests(unittest.TestCase):
             'class Fillers(unittest.TestCase):\n'
             '    def test_a(self): pass\n'
             '    def test_b(self): pass\n'
-            '    def test_c(self): pass\n',
+            'for number in range(32):\n'
+            '    setattr(Fillers, "test_probe_" + str(number), lambda self: None)\n',
             encoding="ascii",
         )
         for fixture in ("class", "module"):
@@ -503,13 +558,13 @@ class ReporterExecutionTests(unittest.TestCase):
                 with self.subTest(fixture=fixture, noop=noop):
                     source = (
                         'import unittest\nfrom pathlib import Path\n'
+                        'from scripts.workflow_pilot.isolated_launcher import partition_reporter_ids\n'
                         'from .reentry_other import Fillers\n'
                         f'NOOP = {noop!r}\n'
                         'class A(unittest.TestCase):\n'
                         '    visits = 0\n'
                         '    def test_first(self):\n'
                         '        (Path(__file__).resolve().parents[3] / "records/first").touch()\n'
-                        '    def test_last(self): self.fail("later invocation must be skipped")\n'
                         '    def run(self, result):\n'
                         '        if NOOP and self._testMethodName == "test_first": return result\n'
                         '        return super().run(result)\n'
@@ -519,7 +574,9 @@ class ReporterExecutionTests(unittest.TestCase):
                             '    @classmethod\n'
                             '    def setUpClass(cls):\n'
                             '        cls.visits += 1\n'
-                            '        if cls.visits == 2: raise unittest.SkipTest("later class invocation")\n'
+                            '        if cls.visits == 2:\n'
+                            '            (Path(__file__).resolve().parents[3] / "records/second").touch()\n'
+                            '            raise unittest.SkipTest("later class invocation")\n'
                             'class B(unittest.TestCase):\n'
                             '    def test_ok(self): pass\n'
                         )
@@ -530,20 +587,38 @@ class ReporterExecutionTests(unittest.TestCase):
                             'def setUpModule():\n'
                             '    global visits\n'
                             '    visits += 1\n'
-                            '    if visits == 2: raise unittest.SkipTest("later module invocation")\n'
+                            '    if visits == 2:\n'
+                            '        (Path(__file__).resolve().parents[3] / "records/second").touch()\n'
+                            '        raise unittest.SkipTest("later module invocation")\n'
                         )
                     source += (
+                        'def second(self): self.fail("later invocation must be skipped")\n'
+                        'for number in range(32):\n'
+                        '    setattr(A, "test_second_" + str(number), second)\n'
                         'def load_tests(loader, tests, pattern):\n'
-                        '    return unittest.TestSuite([\n'
-                        '        A("test_first"), Fillers("test_a"), B("test_ok"),\n'
-                        '        Fillers("test_b"), A("test_last"), Fillers("test_c")])\n'
+                        '    for second_number in range(32):\n'
+                        '        for probe_number in range(32):\n'
+                        '            cases = [A("test_first"), Fillers("test_a"),\n'
+                        '                     B("test_ok"), Fillers("test_b"),\n'
+                        '                     A("test_second_" + str(second_number)),\n'
+                        '                     Fillers("test_probe_" + str(probe_number))]\n'
+                        '            ids = [case.id() for case in cases]\n'
+                        '            for shard in partition_reporter_ids(ids):\n'
+                        '                if ids[0] in shard and ids[4] in shard and any(\n'
+                        '                    item in shard for item in ids[1:4]\n'
+                        '                ):\n'
+                        '                    return unittest.TestSuite(cases)\n'
+                        '    raise AssertionError("no actual fixture re-entry assignment")\n'
                     )
                     (self.tests / "test_reentry.py").write_text(source, encoding="ascii")
                     marker = self.root / "records/first"
+                    second = self.root / "records/second"
                     marker.unlink(missing_ok=True)
+                    second.unlink(missing_ok=True)
                     completed = self.run_launcher()
                     self.assertEqual(completed.returncode, int(noop), completed.stderr)
                     self.assertEqual(marker.exists(), not noop)
+                    self.assertTrue(second.is_file(), completed.stderr)
 
     def test_single_discovered_case_is_not_dropped(self):
         (self.tests / "test_single.py").write_text(

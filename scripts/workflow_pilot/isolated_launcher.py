@@ -66,6 +66,19 @@ def reporter_test_cases(suite: unittest.TestSuite):
             yield test
 
 
+def partition_reporter_ids(test_ids: list[str]) -> tuple[list[str], list[str]]:
+    ranked = sorted(
+        test_ids,
+        key=lambda name: (hashlib.sha256(name.encode("utf-8", "surrogatepass")).digest(), name),
+    )
+    first = set(ranked[: (len(ranked) + 1) // 2])
+    # Rank for assignment only; preserve unittest fixture order within each worker.
+    return (
+        [name for name in test_ids if name in first],
+        [name for name in test_ids if name not in first],
+    )
+
+
 class ReporterOutput:
     def __init__(self, connection: Connection):
         self.connection = connection
@@ -200,7 +213,7 @@ def run_reporter_tests(arguments: list[str]) -> int:
     context = multiprocessing.get_context("spawn")
     workers = []
     try:
-        for shard in (test_ids[::2], test_ids[1::2]):
+        for shard in partition_reporter_ids(test_ids):
             if shard:
                 receiving, sending = context.Pipe(duplex=False)
                 worker = context.Process(
