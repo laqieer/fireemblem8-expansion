@@ -1681,7 +1681,7 @@ def _literal_run_script(lines, start, end, value, step_label):
                 if unindented.startswith("#"):
                     ended = True
                     continue
-                break
+                raise ValueError(f"{step_label} uses insufficient literal block indentation")
             if content_indent is None:
                 if leading_blank_indent > indent:
                     raise ValueError(f"{step_label} has over-indented leading blank lines")
@@ -2233,6 +2233,7 @@ def _semantic_run_commands(fields):
 
 
 def _parse_workflow_structure_text(text, repository_root=None):
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     workflow_context = _parse_workflow_context(text)
     jobs = _workflow_job_entries(text)
     names = tuple(name for name, _ in jobs)

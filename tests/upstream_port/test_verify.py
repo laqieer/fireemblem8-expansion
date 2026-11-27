@@ -2102,6 +2102,16 @@ class VerifyCliCwdTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             verify_mod.run_gates(target_root, dry_run=True)
 
+            for separator in ("    \u00a0\n", "    \r\r\n"):
+                with self.subTest(separator=repr(separator)):
+                    changed = original.replace(
+                        command, command + separator + "        exit 73\n", 1,
+                    )
+                    with open(workflow_path, "w", encoding="utf-8", newline="") as handle:
+                        handle.write(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
             inline = (
                 "      run: python3 -m unittest discover -s scripts/texttools/tests "
                 "-p 'test_multilang_codec*.py' -v\n"
