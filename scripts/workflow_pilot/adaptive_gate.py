@@ -156,6 +156,11 @@ def fetch_candidate(client, repository, number):
     return state, lines
 
 
+def _candidate_authority_identity(pr):
+    return (pr.repository, pr.repository_id, pr.repository_owner_id, pr.pull_request_id,
+            pr.pull_request_node_id, pr.number, pr.head_sha, pr.head_ref, pr.base_ref)
+
+
 def _decision_at(client, pr, revision):
     reporter.expect_sha(revision, "decision revision")
     response = client.request(
@@ -195,8 +200,8 @@ def validate_control_collection(raw, revision, repository):
         stack = record["stack"]
         require((stack["depth"] == 0) == (stack["parent_pr"] is None)
                 and stack["parent_pr"] != number, "invalid current decision stack")
-        require(stack["depth"] < 3 or stack["exception_reason"] is not None,
-                "current deep stack lacks its exception")
+        require((stack["depth"] == 3) == (stack["exception_reason"] is not None),
+                "current stack exception does not match its depth")
         if number in baseline:
             require(record["pilot"] == {"included": False, "disposition": "baseline-only"},
                     "frozen baseline record cannot become a current safety latch")
@@ -732,6 +737,36 @@ def fetch_decision(client, pr, changed_lines):
     selected = select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
                            changed_lines=changed_lines,
                            verify_override=lambda record: _verify_remote_override(client, pr, record, raw, changed_lines))
+    if not selected.known and raw is not None:
+        try:
+            reporter.expect_int(changed_lines, "changed lines", 0)
+            validate_control_collection(raw, pr.head_sha, pr.repository)
+            require(all(item["pull_request"] != pr.number for item in raw["pull_requests"]),
+                    "candidate decision record is present")
+            response = client.request("GET", github._endpoint(pr.repository, "git/commits/" + pr.head_sha),
+                                      label="candidate decision commit")
+            require(not response.headers.get("link") and response.payload["sha"] == pr.head_sha,
+                    "candidate decision commit is incomplete or changed")
+            root = reporter.expect_sha(response.payload["tree"]["sha"], "candidate decision root tree")
+            directory = _tree_entry(client, pr.repository, root, ".github")
+            require((directory["type"], directory["mode"]) == ("tree", "040000"),
+                    "candidate decision directory is not a regular tree")
+            entry = _tree_entry(client, pr.repository, directory["sha"], reporter.DECISION_RECORD_PATH.name)
+            require(entry["type"] == "blob" and entry["mode"] in {"100644", "100755"}
+                    and entry["sha"] == oid, "candidate decision is not the selected regular blob")
+            control = fetch_pilot_control(client, pr.repository, pr.repository_id)
+            require(pr.base_ref == control.default_ref and pr.base_sha == control.commit_sha,
+                    "unrecorded candidate is not rooted in the current default branch")
+            after, after_lines = fetch_candidate(client, pr.repository, pr.number)
+            require(_candidate_authority_identity(after) == _candidate_authority_identity(pr)
+                    and (after.base_sha, after_lines) == (pr.base_sha, changed_lines),
+                    "unrecorded candidate changed during observation")
+            require(fetch_pilot_control(client, pr.repository, pr.repository_id).identity == control.identity,
+                    "pilot control changed during observation")
+            return GateDecision(pr.head_sha, oid, "concurrent", "verified-absent-root",
+                                True, True, control.paused, control)
+        except (KeyError, TypeError, ValueError, OSError, reporter.PilotDataError, github.MetadataEditError) as error:
+            return replace(selected, reason="unknown-decision: " + str(error)[:512])
     if selected.known:
         try:
             stack_default = _validate_live_stack(client, pr, raw)
@@ -1121,9 +1156,13 @@ def begin_observed_candidate(client, state, number):
     require(decision.known and decision.control is not None, "live intake authority is unavailable")
     base = frozen_base(client, pr)
     runs = github.list_candidate_runs(client, pr, include_dispatch=True)
-    after, _ = fetch_candidate(client, pr.repository, number)
-    require((after.head_sha, after.head_ref, after.base_ref) == (pr.head_sha, pr.head_ref, pr.base_ref)
-            and frozen_base(client, after) == base, "candidate changed during intake")
+    after, after_lines = fetch_candidate(client, pr.repository, number)
+    require(_candidate_authority_identity(after) == _candidate_authority_identity(pr),
+            "candidate changed during intake")
+    if decision.reason == "verified-absent-root":
+        require(after.base_sha == decision.control.commit_sha and after_lines == lines,
+                "unrecorded candidate default base or size changed during intake")
+    require(frozen_base(client, after) == base, "candidate merge base changed during intake")
     require(fetch_pilot_control(client, pr.repository, pr.repository_id).identity == decision.control.identity,
             "pilot control changed during intake")
     return begin_candidate(state, after, base, decision, runs=runs)

@@ -155,6 +155,191 @@ class CurrentControlTests(unittest.TestCase):
         self.fixture = ControlFixture()
         self.addCleanup(self.fixture.close)
 
+    def test_verified_missing_root_record_permits_coordinator_checks(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        client, pr = f.client()
+        routed, selected, binding = f.route(client, pr)
+        self.assertEqual(routed.classification, "full")
+        self.assertTrue(selected.known, selected.reason)
+        self.assertEqual(selected.mode, "concurrent")
+        self.assertTrue(selected.pre_review_required)
+        self.assertEqual(gate.parse_binding(binding), (metadata.PR_NUMBER, f.head, f.base))
+
+        candidate = api._parse_pull_request_payload(pr, metadata.REPOSITORY, metadata.PR_NUMBER)
+        state = handoff.new_state(metadata.REPOSITORY, "coordinator-one", {
+            "mode": "plan", "observed_at": at_offset(-10), "valid_until": at_offset(300),
+            "autostop_enabled": None, "stop_on_disconnect": None,
+            "plan": "Bounded test-owned validation; no host settings asserted.",
+        })
+        with patch.object(api, "list_candidate_runs", return_value=()):
+            record = gate.begin_observed_candidate(client, state, metadata.PR_NUMBER)
+        checks = {
+            "raw": {"contract": "git-diff-check", "evidence_id": "raw-v1", "inputs": []},
+            "semantic": {"contract": "coordinator-check", "evidence_id": "absence-v1", "inputs": []},
+        }
+        gate.register_local_validation(state, record, candidate, f.git.worktree, checks)
+        gate.capture_local_check(state, record, candidate, "raw")
+
+        def verify_absence(context, head):
+            self.assertEqual(head, f.head)
+            program = (
+                "import json,sys; from pathlib import Path; "
+                "d=json.loads((Path(sys.argv[1])/sys.argv[2]).read_text()); "
+                "assert not d['pull_requests']; print('{\"protocol_changes\":1}')"
+            )
+            result = raw_git.run_process(
+                ["/usr/bin/python3", "-I", "-B", "-c", program, context["allowed_worktree"], str(f.path)],
+                cwd=f.git.worktree, env=raw_git.git_environment())
+            measurements = dict.fromkeys(handoff.METRICS)
+            if result.returncode == 0:
+                measurements.update(json.loads(result.stdout), rom_bytes=0, ram_bytes=0)
+            return result, measurements
+
+        check = gate.capture_local_check(state, record, candidate, "semantic", verify_absence)
+        self.assertEqual(check["exit_code"], 0)
+        self.assertTrue(gate._local_ready(state, candidate, record))
+        self.assertIn("intake_control", record)
+        self.assertIsNone(record["full_run_id"])
+        with self.assertRaisesRegex(ValueError, "initial execution lane"):
+            gate._finalize_intake(record, candidate, ())
+
+    def test_verified_missing_root_record_retains_current_pause(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        paused = copy.deepcopy(f.raw)
+        paused["pull_requests"][0]["pilot"]["disposition"] = "paused"
+        current = f.publish_control(paused)
+        client, pr = f.client()
+        routed, selected, _ = f.route(client, pr)
+        self.assertEqual(routed.classification, "full")
+        self.assertTrue(selected.known)
+        self.assertTrue(selected.paused)
+        self.assertTrue(selected.pre_review_required)
+        self.assertEqual(selected.control.commit_sha, current)
+
+    def test_missing_record_does_not_authorize_unverified_candidate_or_stack(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        for change in ("tree", "symlink", "blob", "unavailable", "control", "non-root", "lines",
+                       "moving", "pr-id", "node-id", "repo-id", "owner-id"):
+            with self.subTest(change=change):
+                client, pr = f.client()
+                candidate_tree = git(f.root, "rev-parse", f.head + ":.github")
+                if change in {"tree", "symlink"}:
+                    tree = client.routes[metadata._endpoint(f"git/trees/{candidate_tree}")]
+                    if change == "tree":
+                        tree["truncated"] = True
+                    else:
+                        next(row for row in tree["tree"] if row["path"] == f.path.name)["mode"] = "120000"
+                elif change in {"blob", "unavailable"}:
+                    endpoint = metadata._query("contents/" + f.path.as_posix(), [("ref", f.head)])
+                    if change == "blob":
+                        client.routes[endpoint]["content"] = base64.b64encode(b"{}").decode()
+                    else:
+                        client.routes[endpoint] = api.MetadataEditError("candidate unavailable")
+                elif change == "control":
+                    endpoint = metadata._query("contents/" + f.path.as_posix(), [("ref", f.base)])
+                    client.routes[endpoint] = api.MetadataEditError("control unavailable")
+                elif change == "non-root":
+                    pr["base"]["ref"] = "other"
+                    client.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")]["base"]["ref"] = "other"
+                elif change == "lines":
+                    client.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")].pop("additions")
+                else:
+                    endpoint = metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")
+                    changed = copy.deepcopy(client.routes[endpoint])
+                    if change == "moving":
+                        changed["head"]["ref"] = "agent/moved"
+                    elif change == "pr-id":
+                        changed["id"] += 1
+                    elif change == "node-id":
+                        changed["node_id"] = "different-node"
+                    elif change == "repo-id":
+                        changed["base"]["repo"]["id"] += 1
+                    else:
+                        changed["base"]["repo"]["owner"]["id"] += 1
+                    calls = [copy.deepcopy(client.routes[endpoint]), changed]
+                    client.routes[endpoint] = lambda: calls.pop(0)
+                routed, selected, _ = f.route(client, pr)
+                self.assertEqual(routed.classification, "full")
+                self.assertFalse(selected.known, change)
+
+    def test_absence_does_not_hide_invalid_collection_or_existing_record(self):
+        f = self.fixture
+        for change in ("duplicate", "malformed", "present-invalid", "root-exception"):
+            with self.subTest(change=change):
+                raw = copy.deepcopy(f.raw)
+                sibling = raw["pull_requests"][0]
+                if change == "present-invalid":
+                    sibling["risk_boundaries"] = ["invented"]
+                else:
+                    sibling["pull_request"] += 1
+                    if change == "duplicate":
+                        raw["pull_requests"].append(copy.deepcopy(sibling))
+                    elif change == "malformed":
+                        sibling["risk_boundaries"] = ["invented"]
+                    else:
+                        sibling["stack"]["exception_reason"] = "not valid for a root"
+                f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+                client, pr = f.client()
+                routed, selected, _ = f.route(client, pr)
+                self.assertEqual(routed.classification, "full")
+                self.assertFalse(selected.known, change)
+
+    def test_missing_root_record_rejects_stale_base_control(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        client, pr = f.client()
+        client.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")]["base"]["sha"] = "f" * 40
+        candidate = api._parse_pull_request_payload(pr, metadata.REPOSITORY, metadata.PR_NUMBER)
+        candidate = replace(candidate, base_sha="f" * 40)
+        selected = gate.fetch_decision(client, candidate, 1)
+        self.assertFalse(selected.known)
+
+    def test_observed_intake_rejects_identity_changes_after_decision(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        for change in ("pr-id", "node-id", "repo-id", "owner-id", "base", "lines"):
+            with self.subTest(change=change):
+                client, _ = f.client()
+                endpoint = metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")
+                original = copy.deepcopy(client.routes[endpoint])
+                changed = copy.deepcopy(original)
+                if change == "pr-id":
+                    changed["id"] += 1
+                elif change == "node-id":
+                    changed["node_id"] = "different-node"
+                elif change == "repo-id":
+                    changed["base"]["repo"]["id"] += 1
+                elif change == "owner-id":
+                    changed["base"]["repo"]["owner"]["id"] += 1
+                elif change == "base":
+                    changed["base"]["sha"] = f.head
+                else:
+                    changed["additions"] += 1
+                replies = [original, original, changed]
+                client.routes[endpoint] = lambda: replies.pop(0)
+                state = handoff.new_state(metadata.REPOSITORY, "coordinator-one", {
+                    "mode": "plan", "observed_at": at_offset(-10), "valid_until": at_offset(300),
+                    "autostop_enabled": None, "stop_on_disconnect": None,
+                    "plan": "Bounded test-owned validation; no host settings asserted.",
+                })
+                with patch.object(api, "list_candidate_runs", return_value=()):
+                    with self.assertRaises(ValueError):
+                        gate.begin_observed_candidate(client, state, metadata.PR_NUMBER)
+                self.assertEqual(state.get("candidates", []), [])
+
     def test_unchanged_head_observes_current_pause_without_rebinding_candidate(self):
         f = self.fixture
         client, pr = f.client()

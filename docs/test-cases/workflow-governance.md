@@ -660,7 +660,8 @@ audio or human-approval criterion is added.
 
 - **Feature / issue:** `workflow-governance` /
   [#181](https://github.com/laqieer/fireemblem8-expansion/issues/181);
-  Git-fixture portability [#404](https://github.com/laqieer/fireemblem8-expansion/issues/404).
+  Git-fixture portability [#404](https://github.com/laqieer/fireemblem8-expansion/issues/404);
+  missing root-PR decision intake [#492](https://github.com/laqieer/fireemblem8-expansion/issues/492).
 - **Profile / prerequisites:** source checkout with the existing locked host
   Python, Git and local process controls. Local cases own Git repositories,
   real handoff processes and disposable HTTP responses below `build`.
@@ -768,6 +769,16 @@ audio or human-approval criterion is added.
    availability. An applicable incomplete or invalid delegated owner still
    blocks this alternative. No fixture commit, owner, receipt or LLM PID is
    manufactured to obtain local proof.
+   For #492, run the focused
+   `scripts.workflow_pilot.tests.test_live_pause.CurrentControlTests` cases.
+   From a clean disposable Git root PR whose valid decision collection omits
+   that PR, the actual route remains full and the coordinator registers and
+   captures native checks with mandatory independent pre-review. Before the
+   fix, that same candidate routes full but intake rejects its unknown
+   decision. Incomplete/malformed candidate or control authority, a changed PR,
+   an invalid or duplicate collection, an existing invalid entry, and a
+   non-default base do not become verified absence. Empty initial run history
+   permits only provisional registration, not scheduling or merge.
    If host stop settings are unknown, retain explicit nulls in a bounded
    `plan` with concrete recovery steps; never fabricate Boolean settings or
    use unknowns for `always-on`. Expired coverage and native interruption

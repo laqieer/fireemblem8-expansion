@@ -215,6 +215,15 @@ current parent head are mandatory. Refresh detects parent or relationship
 movement; unavailable or inconsistent authority remains unknown/broader.
 That fallback can run the full workflow, but live admission through
 `assess_observed` remains held until decision authority is available.
+For a root PR with no decision entry, #492 permits coordinator intake only
+when the exact candidate's complete decision collection is valid and its
+regular Git-tree blob proves that the entry is absent. The actual default
+control and live root PR identity must remain stable during observation.
+This is a conservative concurrent decision with mandatory independent
+pre-review, not a fabricated risk classification. Missing or malformed
+sources, invalid existing entries, moving control or unknown stacked
+parentage remain unknown. Registered local checks and all initial-lane,
+review, security, Build and completion gates still apply.
 PR221's introducing implementation has an explicitly excluded root decision
 in the existing decision file. This is current protocol/lifecycle policy with
 no overrides, not a backdated claim about earlier reviews. Its pre-feature
