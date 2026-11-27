@@ -734,7 +734,7 @@ def _local_override_scope(root, data, number, head, raw, changed_lines):
     return _override_scope(files, raw, number, lambda: reporter.load_decisions_from_commit(root, base))
 
 
-def fetch_decision(client, pr, changed_lines):
+def fetch_decision(client, pr, changed_lines, *, review_tools=None):
     oid = None
     raw = None
     try:
@@ -767,9 +767,13 @@ def fetch_decision(client, pr, changed_lines):
             if pr.base_sha != control.commit_sha:
                 require(frozen_base(client, replace(pr, head_sha=control.commit_sha)) == pr.base_sha,
                         "unrecorded candidate base snapshot is not in the current default history")
-                require(frozen_base(client, pr) == frozen_base(
-                    client, replace(pr, base_sha=control.commit_sha)),
+                base = frozen_base(client, pr)
+                require(base == frozen_base(client, replace(pr, base_sha=control.commit_sha)),
                     "unrecorded candidate merge base changed")
+                require(review_tools is not None, "unique merge-base validation is unavailable")
+                request = {"candidate_sha": pr.head_sha, "base_sha": base}
+                review_tools.validate_base(request, pr.base_sha)
+                review_tools.validate_base(request, control.commit_sha)
             after, after_lines = fetch_candidate(client, pr.repository, pr.number)
             require(_candidate_authority_identity(after) == _candidate_authority_identity(pr)
                     and (after.base_sha, after_lines) == (pr.base_sha, changed_lines),
@@ -1183,11 +1187,11 @@ def begin_candidate(state, pr, base, decision, *, runs=None):
     return record
 
 
-def begin_observed_candidate(client, state, number):
+def begin_observed_candidate(client, state, number, *, review_tools=None):
     """Intake from one refreshed candidate/control/run observation under the caller's lock."""
     handoff.validate_state(state)
     pr, lines = fetch_candidate(client, state["repository"], number)
-    decision = fetch_decision(client, pr, lines)
+    decision = fetch_decision(client, pr, lines, review_tools=review_tools)
     require(decision.known and decision.control is not None, "live intake authority is unavailable")
     base = frozen_base(client, pr)
     runs = github.list_candidate_runs(client, pr, include_dispatch=True)
@@ -1596,7 +1600,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
                     family_evidence=None, accepted_security=(), criteria_ready=False):
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
-    decision = fetch_decision(client, pr, lines)
+    decision = fetch_decision(client, pr, lines, review_tools=review_tools)
     require(decision.known, "live decision authority is unavailable")
     request = {"candidate_sha": pr.head_sha, "base_sha": record["base_sha"]}
     review_tools.validate_base(request, pr.base_sha)

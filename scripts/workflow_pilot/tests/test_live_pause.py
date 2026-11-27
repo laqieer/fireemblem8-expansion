@@ -95,7 +95,7 @@ class ControlFixture:
                 entries.append({"mode": mode, "type": kind, "sha": sha, "path": path.decode()})
         return {"sha": oid, "truncated": False, "tree": entries}
 
-    def client(self):
+    def client(self, *, allow_ambiguous=False):
         current = git(self.root, "rev-parse", "master")
         pr = metadata._pr(head=self.head, base=current)
         pr["head"]["ref"] = "agent/test"
@@ -118,9 +118,9 @@ class ControlFixture:
             routes[metadata._query("contents/" + self.path.as_posix(), [("ref", revision)])] = self.content(revision)
         for base in {self.base, current}:
             roots = git(self.root, "merge-base", "--all", base, self.head).splitlines()
-            assert roots == [self.base], roots
+            assert (self.base in roots if allow_ambiguous else roots == [self.base]), roots
             routes[metadata._endpoint(f"compare/{base}...{self.head}")] = {
-                "base_commit": {"sha": base}, "merge_base_commit": {"sha": roots[0]}}
+                "base_commit": {"sha": base}, "merge_base_commit": {"sha": self.base}}
 
         class Client:
             def __init__(self):
@@ -148,6 +148,11 @@ class ControlFixture:
             "pull_request", payload, github_ref=f"refs/pull/{metadata.PR_NUMBER}/merge",
             github_sha="f" * 40, pr_base_sha=self.base, pr_head_sha=self.head, push_sha="")
         return gate.route_event(client, event, payload, metadata.REPOSITORY)
+
+    def review_tools(self):
+        tools = SimpleNamespace(model=review, tree=lambda revision: GitTree(self.root, revision))
+        tools.validate_base = lambda request, live: ReviewTools.validate_base(tools, request, live)
+        return tools
 
 
 class CurrentControlTests(unittest.TestCase):
@@ -316,7 +321,8 @@ class CurrentControlTests(unittest.TestCase):
         paused = copy.deepcopy(f.raw)
         paused["pull_requests"][0]["pilot"]["disposition"] = "paused"
         current = f.publish_control(paused)
-        for change in ("none", "different-merge-base", "diverged-snapshot", "missing-comparison"):
+        for change in ("none", "different-merge-base", "diverged-snapshot", "missing-comparison",
+                       "missing-history", "missing-validator"):
             with self.subTest(change=change):
                 client, pr = f.client()
                 pr["base"]["sha"] = f.base
@@ -333,7 +339,12 @@ class CurrentControlTests(unittest.TestCase):
                 elif change == "missing-comparison":
                     client.routes[endpoint] = ValueError("comparison unavailable")
                 candidate = api._parse_pull_request_payload(pr, metadata.REPOSITORY, metadata.PR_NUMBER)
-                selected = gate.fetch_decision(client, candidate, 1)
+                tools = f.review_tools()
+                if change == "missing-history":
+                    tools.tree = lambda revision: GitTree(f.git.home, revision)
+                elif change == "missing-validator":
+                    tools = None
+                selected = gate.fetch_decision(client, candidate, 1, review_tools=tools)
                 self.assertEqual(selected.known, change == "none", selected.reason)
                 if selected.known:
                     self.assertEqual(selected.reason, "verified-absent-root")
@@ -346,9 +357,36 @@ class CurrentControlTests(unittest.TestCase):
                         "stop_on_disconnect": None, "plan": "Bounded test-owned validation.",
                     })
                     with patch.object(api, "list_candidate_runs", return_value=()):
-                        record = gate.begin_observed_candidate(client, state, metadata.PR_NUMBER)
+                        record = gate.begin_observed_candidate(
+                            client, state, metadata.PR_NUMBER, review_tools=tools)
                     self.assertEqual(record["base_sha"], f.base)
                     self.assertEqual(record["mode"], "concurrent")
+
+    def test_missing_root_record_rejects_ambiguous_current_control_merge_base(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        candidate = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        tree = git(f.root, "rev-parse", f.base + "^{tree}")
+        candidate_tree = git(f.root, "rev-parse", candidate + "^{tree}")
+        other = git(f.root, "commit-tree", tree, "-p", f.git.parent, "-m", "other history")
+        current = git(f.root, "commit-tree", tree, "-p", f.base, "-p", other, "-m", "control")
+        f.head = git(f.root, "commit-tree", candidate_tree, "-p", f.base, "-p", other,
+                     "-m", "candidate")
+        git(f.root, "update-ref", "refs/heads/master", current)
+        self.assertEqual(git(f.root, "merge-base", "--all", f.base, f.head), f.base)
+        self.assertEqual(set(git(f.root, "merge-base", "--all", current, f.head).splitlines()),
+                         {f.base, other})
+        client, pr = f.client(allow_ambiguous=True)
+        pr["base"]["sha"] = f.base
+        client.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")] = pr
+        client.routes[metadata._endpoint(f"compare/{f.base}...{current}")] = {
+            "base_commit": {"sha": f.base}, "merge_base_commit": {"sha": f.base},
+        }
+        candidate = api._parse_pull_request_payload(pr, metadata.REPOSITORY, metadata.PR_NUMBER)
+        for tools in (None, f.review_tools()):
+            selected = gate.fetch_decision(client, candidate, 1, review_tools=tools)
+            self.assertFalse(selected.known, selected.reason)
 
     def test_collection_parent_edges_are_consistent_without_inventing_live_parents(self):
         f = self.fixture

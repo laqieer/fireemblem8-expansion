@@ -221,8 +221,11 @@ when the exact candidate's complete decision collection is valid and its
 regular Git-tree blob proves that the entry is absent. The actual default
 control and live root PR identity must remain stable during observation.
 If the PR's base snapshot predates the current default tip, both must yield
-the same candidate merge base and the snapshot must be an ancestor of that
-tip. Missing or contradictory comparisons remain unknown.
+the same unique candidate merge base and the snapshot must be an ancestor of
+that tip. The trusted review tools validate both bases with Git's complete
+`merge-base --all`; GitHub's single comparison result alone cannot prove
+uniqueness. Missing history, tools or contradictory comparisons remain unknown
+and route the broader full workflow.
 Parent-child records present in the collection must have consistent depths;
 an absent parent record is not a fresh observation of that parent's state.
 This is a conservative concurrent decision with mandatory independent
@@ -323,8 +326,11 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
 
 1. `fetch_candidate`, `fetch_decision` and `frozen_base` collect existing PR,
    immutable decision/current-control and merge-base observations. In a short
-   `locked_state` transaction, `begin_observed_candidate(client, state, number)`
+   `locked_state` transaction, `begin_observed_candidate(client, state, number,
+   review_tools=tools)`
    refreshes candidate/control/run identity and calls `begin_candidate`.
+   The reviewed tools and complete local Git history are required for an
+   unrecorded root with a stale base snapshot; other calls may omit them.
    The lower-level `begin_candidate(..., runs=observed_runs)` requires complete
    observed history and known control for a new intake. It records the exact
    head/base/ref/decision and supersedes

@@ -783,6 +783,11 @@ audio or human-approval criterion is added.
    Present parent-child records must have consistent depths in either order;
    cycles and conflicting depths reject. An absent sibling parent is not
    treated as a fresh live-parent observation.
+   A stale base snapshot is accepted only when trusted Git history proves the
+   same unique candidate merge base against both the snapshot and current
+   default tip. The crisscross control has two bases at the current tip even
+   when GitHub reports the same single base for both comparisons; it, missing
+   local history, and unavailable reviewed tools remain unknown/full.
    If host stop settings are unknown, retain explicit nulls in a bounded
    `plan` with concrete recovery steps; never fabricate Boolean settings or
    use unknowns for `always-on`. Expired coverage and native interruption
