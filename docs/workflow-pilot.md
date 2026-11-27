@@ -996,6 +996,18 @@ The shipped unrelated subject uses are:
   request code executed as a registered subject with finite lifecycle/wire
   controls. This explicit binding never redirects unrelated findings to
   workflow-governance code.
+- **`TC-TEST-QUALITY-001 / build-workflow-topology`:** the Build job and
+  ordered step declarations, the test-local topology validator and upstream
+  verifier through source-backed parser probes. Historical origins are tested
+  directly, so they need not contain candidate-added regression methods; the
+  candidate regression tests remain part of the normal Build suite. The wire
+  family exercises step boundaries and literal scripts per job, both order
+  parsers per mirrored worker, worker mapping permutations,
+  unsafe target contexts and the shallow-blank target script. The source
+  model checks the two declared worker lists and expected jobs, and rejects
+  ambiguous step identities or changed membership rather than guessing.
+  Staged Python dependencies and the archival helper are candidate inputs;
+  the fixed review-tool overlays are bound by `tool_revision`.
 
 `affected-fixed` requires the same reviewed semantic probe to find a contract
 violation at the actual finding origin and to pass the candidate. Unaffected
@@ -1066,6 +1078,18 @@ record instead of adding a round. Formal CHANGES_REQUESTED observations count
 before content triage, but do not emit actionable handoffs until triaged.
 The finalized `dismissed` outcome is permitted only for an actual DISMISSED
 fact; it completes historical triage without granting clean authority.
+The explicit `failed` outcome is limited to the authenticated Copilot
+COMMENTED review containing the exact observed execution-error response and
+no inline comments, unresolved threads or accepted findings. Unknown or
+mixed error content stays untriaged; a body containing the exact error response
+plus other content cannot be triaged clean. A failed review is never clean and
+does not reset change-request rounds or a sticky hold; readiness requires a
+fully triaged clean review of the current head with a strictly later submission
+timestamp. Equal timestamps do not prove review order. Changed review content
+invalidates the failed disposition normally, and a finding cannot be accepted
+against a review while its failed disposition remains current. The exact
+error text is an external response boundary: an unrecognized response fails
+closed.
 Previously accepted finding bindings remain required, including when newer
 content omits them. Retriage refreshes handoffs from that accepted set.
 
