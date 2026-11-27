@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import math
 import os
@@ -764,6 +765,24 @@ def new_state(repository, coordinator_id, availability):
     return validate_state({"schema_version": SCHEMA_VERSION, "repository": repository,
                            "coordinator_id": coordinator_id, "availability": availability,
                            "clock": observations.clock_observation(), "assignments": [], "watchers": []})
+
+
+def compact_state(state):
+    from .adaptive_gate import compact_local_validation
+
+    validate_state(state)
+    compacted = copy.deepcopy(state)
+    candidates = 0
+    for candidate in compacted.get("candidates", ()):
+        if "local_validation" in candidate:
+            candidates += int(compact_local_validation(candidate["local_validation"]))
+    validate_state(compacted)
+    observations.json_bytes(compacted)
+    for current, prepared in zip(state.get("candidates", ()), compacted.get("candidates", ())):
+        if "local_validation" in current:
+            current["local_validation"].clear()
+            current["local_validation"].update(prepared["local_validation"])
+    return {"compacted_candidates": candidates}
 
 
 def _git(root, *arguments):
@@ -2106,7 +2125,8 @@ def parse_args(argv=None):
     validate.add_argument("--worktree", type=Path, required=True)
     reconcile = commands.add_parser("reconcile-run")
     reconcile.add_argument("--run-id", type=int, required=True)
-    for command in (assign_parser, observe, release, validate, reconcile):
+    compact = commands.add_parser("compact")
+    for command in (assign_parser, observe, release, validate, reconcile, compact):
         command.add_argument("--state", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -2144,6 +2164,8 @@ def main(argv=None):
                 )
             elif args.operation == "validate":
                 output = validate_handoff(state, load_result(args.result), worktree=args.worktree)
+            elif args.operation == "compact":
+                output = compact_state(state)
             else:
                 output = reconcile_run(state, args.run_id)
             validate_state(state)
