@@ -25,6 +25,100 @@
       }
     },
     {
+      "pull_request": 437,
+      "risk_boundaries": [
+        "none"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
+      "pull_request": 433,
+      "risk_boundaries": [
+        "none"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
+      "pull_request": 412,
+      "risk_boundaries": [
+        "protocol",
+        "lifecycle"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "review-first",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
+      "pull_request": 482,
+      "risk_boundaries": [
+        "none"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
       "pull_request": 418,
       "risk_boundaries": [
         "none"
@@ -114,6 +208,29 @@
       "pilot": {
         "included": false,
         "disposition": "baseline-only"
+      }
+    },
+    {
+      "pull_request": 407,
+      "risk_boundaries": [
+        "none"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
       }
     },
     {
