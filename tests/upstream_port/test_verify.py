@@ -92,13 +92,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         gates = verify_mod.gates(jobs=2)
         reporter = next(gate for gate in gates if gate.name == "workflow-pilot-reporter-tests")
         reporter_owners = [job for job, _, argv in contract if list(argv) == reporter.command]
-        self.assertEqual(len(reporter_owners), 1)
+        self.assertEqual(reporter_owners, ["workflow-pilot-tests"])
         for gate in gates:
             if not gate.name.startswith("game-localization-"):
                 continue
             with self.subTest(gate=gate.name):
                 owners = [job for job, _, argv in contract if list(argv) == gate.command]
-                self.assertEqual(owners, ["extended-host-tests"])
+                self.assertEqual(owners, ["game-localization-tests"])
                 self.assertNotEqual(owners[0], reporter_owners[0])
 
     def test_setup_cannot_duplicate_mirrored_gate_commands(self):
@@ -356,14 +356,6 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             pilot_commands,
             [
                 (
-                    _WORKFLOW_PILOT_TEST_STEP_NAME,
-                    [
-                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
-                        "scripts/workflow_pilot/isolated_launcher.py",
-                        "reporter-tests",
-                    ],
-                ),
-                (
                     _AGENT_HANDOFF_TEST_STEP_NAME,
                     [
                         "$GITHUB_WORKSPACE/build/host-python/bin/python3",
@@ -390,14 +382,22 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                         ">", "/dev/null",
                     ],
                 ),
+                (
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    [
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "reporter-tests",
+                    ],
+                ),
             ],
         )
         by_name = {gate.name: gate.command for gate in verify_mod.gates()}
         self.assertEqual(
             [
-                by_name["workflow-pilot-reporter-tests"],
                 by_name["agent-handoff-tests"],
                 by_name["workflow-pilot-baseline"],
+                by_name["workflow-pilot-reporter-tests"],
             ],
             [argv for _, argv in pilot_commands],
         )
@@ -436,18 +436,15 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertTrue(_parse_workflow_gate_commands_text(workflow))
         adversarial = workflow.replace(
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
-            "      if: ${{ needs.event-classifier.result == 'failure' || "
-            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             "        BASH_ENV: ''\n",
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
-            "      if: ${{ needs.event-classifier.result == 'failure' || "
-            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             + ("        a\n" * 50000)
             + "        BASH_ENV: ''\n",
             1,
         )
+        self.assertNotEqual(adversarial, workflow)
         with self.assertRaisesRegex(
             ValueError,
             "unsupported mapping-key syntax|reviewed scrubbed environment",
@@ -551,10 +548,10 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "gba-playtest-host-suite",
                 "upstream-port-tests",
                 "workflow-contract-tests",
-                "workflow-pilot-reporter-tests",
                 "agent-handoff-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
+                "workflow-pilot-reporter-tests",
                 "artifact-guard-tests",
                 "artifact-guard",
                 "codeql-alerts-test",
@@ -568,12 +565,12 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "modern-itemexpansion-check-debug",
                 "modern-itemexpansion-check-release",
                 "modern-all-locales-all-features-profile",
-                "ownership-probe-process-suite",
                 "cjk-font-gates",
                 "multilang-codec-gates",
                 "textprocess-publication-tests",
                 "expansion-config-gates",
                 "linker-budget-gates",
+                "ownership-probe-process-suite",
                 "game-localization-width-contract",
                 "game-localization-catalog-check",
                 "game-localization-crosswalk-check",
@@ -586,8 +583,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         # The merged CI runs the fast `host-tests` lane textually before the
         # ROM `build` job, so the host-only gates are first. The first six
-        # remain pure Python/native checks. Full-game host checks use the
-        # independent worker before its archival toolchain setup.
+        # remain pure Python/native checks. Full-game host checks use their
+        # independent worker, separate from archival toolchain setup.
         for g in verify_mod.gates()[:6]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
@@ -597,9 +594,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             text = " ".join(f.read().split())
 
         for clause in (
-            "four combined workers run in parallel",
+            "seven combined workers run in parallel",
             "event identity validator, event router, and mode-specific "
-            "classifier check precede the four",
+            "classifier check precede the seven",
             "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
@@ -1329,8 +1326,11 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "event-router",
                 "event-classifier",
                 "host-tests",
+                "workflow-pilot-tests",
                 "build",
                 "extended-host-tests",
+                "ownership-probe-tests",
+                "game-localization-tests",
                 "legacy",
                 "summary",
             ),
@@ -2278,8 +2278,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "summary",
                         "needs",
                         "    needs: [event-identity, event-classifier, "
-                        "host-tests, build, "
-                        "extended-host-tests, legacy]",
+                        "host-tests, workflow-pilot-tests, build, "
+                        "extended-host-tests, ownership-probe-tests, "
+                        "game-localization-tests, legacy]",
                         "    needs: [build, host-tests, legacy]",
                 ),
                 (
