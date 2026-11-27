@@ -76,8 +76,9 @@ not imported or executed by that verifier; comments/formatting remain neutral.
 Raw pre-checkout identity/bootstrap and closed no-checkout metadata/security/
 summary adapters stay at their existing workflow authority boundary. Moving
 them into checkout helpers would change that contract and is outside this
-extraction. The eight Build jobs, 31 mirrored validation commands and existing
-master-only build-once patch publisher remain unchanged.
+extraction. Its eight Build jobs, 31 mirrored validation commands and
+master-only build-once patch publisher were unchanged at delivery. Issue #390
+subsequently splits three host groups into independent workers.
 
 Dependencies: delivered workflow, upstream CLI/constants, existing verifier
 and patch publisher. No ownership/SDK prerequisite, extra platform, policy
@@ -266,9 +267,9 @@ The diagnostic classifier can select this path with `--adaptive --repository
 owner/repo`; the Build workflow enables it only when its trusted base contains
 the implementation. A base predating deployment retains the full bootstrap.
 
-There is still **one Build workflow and eight jobs**. A review-first PR event
+There is still **one Build workflow and eleven jobs**. A review-first PR event
 runs identity/router/classifier plus tiny `host-tests`/`build` continuity
-checks; `extended-host-tests` and `legacy` are platform-skipped. Its classifier
+checks; the other five workers are platform-skipped. Its classifier
 is `review-first-classifier`, not full evidence. The canonical `summary`
 deliberately fails with a waiting-for-full explanation until the full run
 replaces it: green preflight is never merge permission. Concurrent candidates
@@ -277,7 +278,7 @@ requested/observed concurrently by the existing delivery coordinator, not a
 new reviewer service.
 
 After accepted clean review and security, the coordinator uses one input-free
-`workflow_dispatch` on the actual candidate branch. All eight jobs run.
+`workflow_dispatch` on the actual candidate branch. All eleven jobs run.
 Before checkout, `event-identity` uses bounded authenticated GitHub metadata
 to resolve one open same-repository PR at that exact branch/head and selects
 its integration-base SHA, even when the default branch predates this feature.
@@ -1385,7 +1386,7 @@ is required. See
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
 adds a no-checkout `event-identity` validator, parsed fail-closed
-`event-router`, and mode-specific classifier check ahead of the four expensive
+`event-router`, and mode-specific classifier check ahead of the expensive
 workers. For pull requests with complete identity,
 the router checks out
 the exact current `pull_request.base.sha` with the pinned checkout action, no
@@ -1407,18 +1408,18 @@ common setup only. Every normalized full or metadata run must contain exactly
 one successful identity context and one successful router setup context;
 missing, failed, skipped, renamed, duplicate, or
 unknown setup contexts are invalid. Full candidate runs
-expose `event-classifier`, `host-tests`, `build`,
-`extended-host-tests`, `legacy`, and `summary`. The running `summary` context
+expose `event-classifier`, `host-tests`, `workflow-pilot-tests`, `build`,
+`extended-host-tests`, `ownership-probe-tests`, `game-localization-tests`,
+`legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
-classifier and all four workers succeed. Metadata-only runs expose the running
-`metadata-classifier` plus the same canonical worker checks `host-tests`,
-`build`, `extended-host-tests`, `legacy`, and `summary`.
+classifier and all seven workers succeed. Metadata-only runs expose the running
+`metadata-classifier` plus the same canonical worker checks and `summary`.
 Metadata-only mode requires runner-backed `success` for `host-tests`/`build`
 because those jobs run only the trusted continuity adapters, which
 independently revalidate the raw edited pull-request event and exact
 body/title-only `changes` payload from the runner-owned file-backed
 `GITHUB_EVENT_PATH` before succeeding, and exact `skipped` for
-`extended-host-tests`/`legacy`. Those adapters accept only a same-owner
+the other five workers. Those adapters accept only a same-owner
 regular event file up to 1 MiB, read at most one additional EOF byte, and do
 not env-copy large body/title/changes JSON. Repository branch protection
 therefore keeps the live canonical `host-tests`, `build`, and `summary`
@@ -1435,7 +1436,9 @@ skips only conclusively metadata-shaped runs, and confirms the newest
 conclusively full Build CI run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA
 completed successfully. A newer failed, cancelled, in-progress, or malformed
-full run blocks older successes.
+full run blocks older successes. Pre-split eight-job runs are recognized as
+history, but a pre-split full run cannot authorize continuity: a fresh complete
+eleven-job full run is required. Partial current job shapes fail closed.
 `candidate_evidence.evaluate_candidate_runs()` still derives eligibility only
 from a matching full run, so a metadata-only run remains ineligible by itself
 even when the adapters and canonical `summary` succeed.
@@ -1462,8 +1465,8 @@ nonzero values that underflow to zero are rejected, including huge exponents;
 normal finite values, representable subnormals, and signed zero remain valid.
 The parsed tree receives a recursive finite-number check before
 classification, so an unused overflowing field cannot accompany an otherwise
-metadata-only event. An `edited` event suppresses `host-tests`, `build`,
-`extended-host-tests`, and `legacy` only when:
+metadata-only event. An `edited` event suppresses the seven workers' full
+commands only when:
 
 - the event has a complete pull-request base and exact head identity;
 - the event head/base equal the direct event identities used by every
@@ -1494,18 +1497,18 @@ DEL, space, `~`, `^`, `:`, `?`, `*`, `[`, backslash, `..`, `@{`,
 leading/trailing/repeated slash, leading-dot or `.lock` components, and a
 trailing dot are invalid. Git-valid slash, dash, and dot forms remain valid.
 An invalid base ref is incomplete base identity: a validated head runs all
-four workers at that exact head and summary fails; an invalid head runs none.
+seven workers at that exact head and summary fails; an invalid head runs none.
 
 Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
 parser/runtime failure (including malformed, duplicate-key, or non-finite
-JSON) on a PR with a validated authoritative PR head also runs all four
+JSON) on a PR with a validated authoritative PR head also runs all seven
 workers at that exact `pull_request.head.sha` under canonical worker names; it
 never uses merge `github.sha`. Summary verifies that every fallback worker
 succeeded, then summary still fails to
 surface the classifier defect. On a `master` push, classifier failure with a
-validated authoritative `github.sha` similarly runs all four workers and the
+validated authoritative `github.sha` similarly runs all seven workers and the
 master-only publisher at that exact push SHA, audits success, then fails
 summary. A classifier failure with no validated PR/push fallback SHA or another
 unsupported result starts no worker/publisher and fails summary. Missing
@@ -1517,7 +1520,7 @@ metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, `host-tests`/`build` succeed through the no-checkout continuity
-adapters, `extended-host-tests`/`legacy` are exactly
+adapters, the other five workers are exactly
 `skipped`, and a trusted no-checkout Actions API query classifies exact prior
 runs newest-first so only the newest conclusively full run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA can
@@ -1532,7 +1535,7 @@ evidence by itself. On a full event, normal workers check out the classifier's
 exact nonempty head output. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
 PR head sets `head_valid=true`, `identity_valid=false`, and
-`full_fallback=true`. All four workers run at that exact head, then normal
+`full_fallback=true`. All seven workers run at that exact head, then normal
 `summary` audits them and fails because full base identity is unavailable or
 incoherent. A syntactically valid direct base SHA remains in
 `expected_base` for diagnostics even when another base component is invalid;
@@ -1584,8 +1587,8 @@ claimed to have passed their tests.
 Build workflow preserves the live branch-protection contract directly: metadata
 body/title edits run the distinct `metadata-classifier` attestation plus
 canonical `host-tests`/`build` continuity adapters and a canonical continuity
-`summary` that do not checkout or execute candidate code, while
-`extended-host-tests` and `legacy` remain platform-skipped. The adapters
+`summary` that do not checkout or execute candidate code, while the other five
+workers remain platform-skipped. The adapters
 independently reject missing, base-retarget, unknown, empty, duplicate, or
 unchanged raw `changes` payloads. The canonical metadata `summary` succeeds
 only after a trusted no-checkout Actions API proof confirms one prior
@@ -1596,7 +1599,7 @@ names, while metadata-only runs still remain ineligible candidate evidence by
 themselves even when those continuity attestations succeed.
 The current Build workflow also supports the input-free full
 `workflow_dispatch` described in [adaptive candidate gating](#adaptive-review-first-candidate-gates).
-That dispatch retains all eight jobs; preflight alone or an early/unbound run
+That dispatch retains all eleven jobs; preflight alone or an early/unbound run
 is not full candidate evidence, and publication remains master-push-only.
 
 A live metadata exercise must use a disposable validation-only PR whose base
@@ -1613,7 +1616,7 @@ created/event/branch/head fields before each exact-ID watcher, and installs
 idempotent compare-and-swap cleanup before remote mutation. The evaluator
 scans all raw REST jobs before normalization: metadata workers are admissible
 only when `host-tests`/`build` report runner-backed `success` from the trusted
-continuity adapters and `extended-host-tests`/`legacy` report `skipped` with
+continuity adapters and the other five workers report `skipped` with
 no assigned runner, including the documented platform-only `started_at`
 timestamp quirk for the skipped jobs.
 
@@ -2256,9 +2259,10 @@ safety, and override references. A fixture-authored SHA, parent, timestamp, or
 message cannot replace Git authority. The fixture, decision, and expected
 paths must resolve to the committed baseline inputs, including
 `.github/workflow-pilot-decisions.json` in that tree. Build CI passes
-`"$GITHUB_WORKSPACE"` explicitly, runs both the reporter/schema suite and the
-baseline/expected invocation in its required `host-tests` job, and the parsed
-workflow topology regression requires both pilot commands exactly. Appended
+`"$GITHUB_WORKSPACE"` explicitly, runs the reporter/schema suite in
+`workflow-pilot-tests` and the baseline/expected invocation in `host-tests`,
+and the parsed workflow topology regression requires both pilot commands
+exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
 either command into advisory evidence.
 
@@ -2280,7 +2284,8 @@ The reporter remains offline and fails closed when any fixture commit object
 is absent. The development object database used to freeze the fixture already
 supplies this authority. A clean Actions
 exact-candidate checkout can omit older force-pushed commits, so the
-`host-tests` job runs one CI-only helper before reporter tests. The helper
+`host-tests` and `workflow-pilot-tests` jobs each run the CI-only helper
+before their respective baseline and reporter checks. The helper
 reads only the committed strict baseline fixture, derives its unique commit
 IDs and minimal maximal-tip set, and requires fixed `origin` to expose exactly
 the corresponding lightweight
