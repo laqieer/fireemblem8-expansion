@@ -943,35 +943,6 @@ jobs:
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
 
-    - name: Run workflow-pilot reporter regression suite (issue #176)
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      env:
-        BASH_ENV: ''
-        ENV: ''
-        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
-        GIT_CEILING_DIRECTORIES: ''
-        GIT_COMMON_DIR: ''
-        GIT_CONFIG_COUNT: '0'
-        GIT_CONFIG_GLOBAL: /dev/null
-        GIT_CONFIG_KEY_0: ''
-        GIT_CONFIG_NOSYSTEM: '1'
-        GIT_CONFIG_PARAMETERS: ''
-        GIT_CONFIG_SYSTEM: /dev/null
-        GIT_CONFIG_VALUE_0: ''
-        GIT_DIR: ''
-        GIT_EXEC_PATH: ''
-        GIT_INDEX_FILE: ''
-        GIT_NAMESPACE: ''
-        GIT_NO_LAZY_FETCH: '1'
-        GIT_NO_REPLACE_OBJECTS: '1'
-        GIT_OBJECT_DIRECTORY: ''
-        GIT_REPLACE_REF_BASE: ''
-        GIT_WORK_TREE: ''
-        PATH: /usr/bin:/bin
-        PYTHONPATH: ''
-      run: |
-        "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
-
     - name: Run agent-handoff regression suite (issue #381)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
@@ -1021,6 +992,91 @@ jobs:
     - name: Run localization host test suite (issue #18)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
+
+  # The reporter keeps its isolated interpreter and historical Git authority
+  # while running independently of the shorter host-only suites.
+  workflow-pilot-tests:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+
+    - name: Hydrate workflow-pilot Git authority
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
+
+    - name: Install reporter dependencies
+      run: |
+        sudo apt-get update && sudo apt-get install -y build-essential python3-venv
+        /usr/bin/python3 -I scripts/host_python.py create
+
+    - name: Run workflow-pilot reporter regression suite (issue #176)
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: |
+        "$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
 
   # Ubuntu libmGBA ROM/runtime gate: builds the full modern object/ELF/ROM
   # chain for both supported configs (debug, release; AAPCS only -- see
@@ -1594,9 +1650,6 @@ jobs:
     - name: Install extended host dependencies
       run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-venv
 
-    - name: Run ownership-probe process suite
-      run: make -f scripts/validation_ownership/foundation.mk ownership-probe-test
-
     - name: Run CJK font gates
       run: make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test
 
@@ -1611,8 +1664,63 @@ jobs:
         python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v
         python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v
 
+  ownership-probe-tests:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+
+    - name: Install ownership probe dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-venv
+
+    - name: Run ownership-probe process suite
+      run: make -f scripts/validation_ownership/foundation.mk ownership-probe-test
+
+  game-localization-tests:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        fetch-depth: 0
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify checked-out revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+
+    - name: Install localization host dependencies
+      run: |
+        sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-venv
+        make -C tools/gbagfx
+        make -C tools/bin2c
+
     - name: Run full-game localization width contract (issue #18)
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         make game-localization-test
         python3 -m scripts.localization.game_locales check
@@ -1621,7 +1729,7 @@ jobs:
 
   # This lane retains its 60-minute budget for native ARM review, archival
   # build, and pinned-payload validation. Independent full-game host checks
-  # run in extended-host-tests. Both gate groups remain required for candidate
+  # run in game-localization-tests. Both gate groups remain required for candidate
   # and master.
   legacy:
     needs: [event-identity, event-classifier]
@@ -1685,7 +1793,7 @@ jobs:
   summary:
     name: summary
     if: always()
-    needs: [event-identity, event-classifier, host-tests, build, extended-host-tests, legacy]
+    needs: [event-identity, event-classifier, host-tests, workflow-pilot-tests, build, extended-host-tests, ownership-probe-tests, game-localization-tests, legacy]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
@@ -1706,8 +1814,11 @@ jobs:
       PUSH_SHA: ${{ github.event.after }}
       RAW_PUSH_SHA: ${{ github.sha }}
       HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
+      WORKFLOW_PILOT_TESTS_RESULT: ${{ needs.workflow-pilot-tests.result }}
       BUILD_RESULT: ${{ needs.build.result }}
       EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
+      OWNERSHIP_PROBE_TESTS_RESULT: ${{ needs.ownership-probe-tests.result }}
+      GAME_LOCALIZATION_TESTS_RESULT: ${{ needs.game-localization-tests.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
       GITHUB_API_URL: ${{ github.api_url }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -1728,8 +1839,11 @@ jobs:
           echo "| event-identity | $FALLBACK_IDENTITY_RESULT ($FALLBACK_KIND) |"
           echo "| event-classifier | $CLASSIFIER_RESULT ($CLASSIFICATION) |"
           echo "| host-tests | $HOST_TESTS_RESULT |"
+          echo "| workflow-pilot-tests | $WORKFLOW_PILOT_TESTS_RESULT |"
           echo "| build | $BUILD_RESULT |"
           echo "| extended-host-tests | $EXTENDED_HOST_TESTS_RESULT |"
+          echo "| ownership-probe-tests | $OWNERSHIP_PROBE_TESTS_RESULT |"
+          echo "| game-localization-tests | $GAME_LOCALIZATION_TESTS_RESULT |"
           echo "| legacy | $LEGACY_RESULT |"
         } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1738,8 +1852,9 @@ jobs:
              [ "$GITHUB_EVENT_NAME" = "pull_request" ] && \
              [ "$FALLBACK_KIND" = "pull_request" ] && \
              [ "$FALLBACK_SHA" = "$PR_HEAD_SHA" ]; then
-            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
-              "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+            for result in "$HOST_TESTS_RESULT" "$WORKFLOW_PILOT_TESTS_RESULT" "$BUILD_RESULT" \
+              "$EXTENDED_HOST_TESTS_RESULT" "$OWNERSHIP_PROBE_TESTS_RESULT" \
+              "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"
             do
               if [ "$result" != "success" ]; then
                 echo "classifier-fallback Build worker did not succeed: $result" >&2
@@ -1754,8 +1869,9 @@ jobs:
              [ "$FALLBACK_KIND" = "push" ] && \
              [ "$FALLBACK_SHA" = "$PUSH_SHA" ] && \
              [ "$FALLBACK_SHA" = "$RAW_PUSH_SHA" ]; then
-            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
-              "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+            for result in "$HOST_TESTS_RESULT" "$WORKFLOW_PILOT_TESTS_RESULT" "$BUILD_RESULT" \
+              "$EXTENDED_HOST_TESTS_RESULT" "$OWNERSHIP_PROBE_TESTS_RESULT" \
+              "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"
             do
               if [ "$result" != "success" ]; then
                 echo "classifier-fallback Build worker did not succeed: $result" >&2
@@ -1765,8 +1881,9 @@ jobs:
             echo "Build event classifier failed after exact-push fallback jobs completed" >&2
             exit 1
           fi
-          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
-            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          for result in "$HOST_TESTS_RESULT" "$WORKFLOW_PILOT_TESTS_RESULT" "$BUILD_RESULT" \
+            "$EXTENDED_HOST_TESTS_RESULT" "$OWNERSHIP_PROBE_TESTS_RESULT" \
+            "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "skipped" ]; then
               echo "classifier failure without an exact fallback SHA started a worker: $result" >&2
@@ -1813,8 +1930,9 @@ jobs:
            [ "$FULL_FALLBACK" = "true" ] && [ "$HEAD_VALID" = "true" ] && \
            [ "$IDENTITY_VALID" = "false" ] && [ -n "$PR_HEAD_SHA" ] && \
            [ "$CLASSIFIED_BUILD_SHA" = "$PR_HEAD_SHA" ]; then
-          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
-            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          for result in "$HOST_TESTS_RESULT" "$WORKFLOW_PILOT_TESTS_RESULT" "$BUILD_RESULT" \
+            "$EXTENDED_HOST_TESTS_RESULT" "$OWNERSHIP_PROBE_TESTS_RESULT" \
+            "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "success" ]; then
               echo "incomplete-base Build worker did not succeed: $result" >&2
@@ -1856,7 +1974,10 @@ jobs:
           test "$RUN_EXPENSIVE" = "false"
           test "$HOST_TESTS_RESULT" = "success"
           test "$BUILD_RESULT" = "success"
+          test "$WORKFLOW_PILOT_TESTS_RESULT" = "skipped"
           test "$EXTENDED_HOST_TESTS_RESULT" = "skipped"
+          test "$OWNERSHIP_PROBE_TESTS_RESULT" = "skipped"
+          test "$GAME_LOCALIZATION_TESTS_RESULT" = "skipped"
           test "$LEGACY_RESULT" = "skipped"
           echo "Review-first preflight complete; accepted clean review/security must precede full Build." >&2
           exit 1
@@ -1873,7 +1994,8 @@ jobs:
               exit 1
             fi
           done
-          for result in "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          for result in "$WORKFLOW_PILOT_TESTS_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
+            "$OWNERSHIP_PROBE_TESTS_RESULT" "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "skipped" ]; then
               echo "metadata-only expensive Build worker was not skipped: $result" >&2
@@ -1913,31 +2035,16 @@ jobs:
           TIMESTAMP_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
           WORKFLOW_FILENAME = "build.yml"
           WORKFLOW_PATH_PREFIX = ".github/workflows/build.yml"
-          FULL_JOB_NAMES = frozenset(
-              {
-                  "event-identity",
-                  "event-router",
-                  "event-classifier",
-                  "host-tests",
-                  "build",
-                  "extended-host-tests",
-                  "legacy",
-                  "summary",
-              }
-          )
-          METADATA_JOB_NAMES = frozenset(
-              {
-                  "event-identity",
-                  "event-router",
-                  "metadata-classifier",
-                  "host-tests",
-                  "build",
-                  "extended-host-tests",
-                  "legacy",
-                  "summary",
-              }
-          )
-          FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES
+          NEW_WORKERS = frozenset({
+              "workflow-pilot-tests", "ownership-probe-tests", "game-localization-tests"
+          })
+          PRE_SPLIT_FULL = frozenset({
+              "event-identity", "event-router", "event-classifier", "host-tests",
+              "build", "extended-host-tests", "legacy", "summary"
+          })
+          FULL_JOBS = PRE_SPLIT_FULL | NEW_WORKERS
+          META_JOBS = FULL_JOBS - {"event-classifier"} | {"metadata-classifier"}
+          PRE_SPLIT_META = META_JOBS - NEW_WORKERS
 
           def fail(message):
               print(message, file=sys.stderr)
@@ -2499,10 +2606,15 @@ jobs:
                   if status != "completed" or conclusion != "skipped" or runner_name not in {None, ""}:
                       fail("metadata-only summary legacy publisher is not skipped")
               names = frozenset(by_name)
-              if names == METADATA_JOB_NAMES or names == (
-                  FULL_JOB_NAMES - {"event-classifier"} | {"review-first-classifier"}
-              ):
-                  for name in ("extended-host-tests", "legacy"):
+              if names in {
+                  META_JOBS,
+                  PRE_SPLIT_META,
+                  FULL_JOBS - {"event-classifier"} | {"review-first-classifier"},
+                  PRE_SPLIT_FULL - {"event-classifier"} | {"review-first-classifier"},
+              }:
+                  for name in NEW_WORKERS | {"extended-host-tests", "legacy"}:
+                      if name not in by_name:
+                          continue
                       status, conclusion, runner_name, _started_at = by_name[name]
                       if (
                           status != "completed"
@@ -2513,7 +2625,7 @@ jobs:
                               f"metadata-only summary prior run {run_id} metadata job {name} is malformed"
                           )
                   return "metadata-only", by_name
-              if names == FULL_JOB_NAMES:
+              if names in {FULL_JOBS, PRE_SPLIT_FULL}:
                   if len(candidate_markers) != 1:
                       fail("metadata-only summary full run lacks one candidate binding")
                   match = re.fullmatch(
@@ -2546,6 +2658,8 @@ jobs:
                                          field="metadata-only summary merge base")
                   if match[3] != merge_base:
                       return "unbound", by_name
+                  if names == PRE_SPLIT_FULL:
+                      return "historical-full", by_name
                   return "full", by_name
               fail(f"metadata-only summary prior run {run_id} jobs have unexpected mode shape")
 
@@ -2557,7 +2671,7 @@ jobs:
                   fail(
                       "metadata-only summary newest prior full Build CI run did not complete successfully"
                   )
-              for name in FULL_SUCCESS_JOB_NAMES:
+              for name in FULL_JOBS:
                   status, conclusion, runner_name, started_at = by_name[name]
                   if (
                       status != "completed"
@@ -2717,6 +2831,8 @@ jobs:
               )
               if mode in {"metadata-only", "unbound"}:
                   continue
+              if mode == "historical-full":
+                  fail("metadata-only summary requires a fresh full Build with all current jobs")
               validate_authoritative_full_run(prior_run, by_name)
               prior_full_run_id = prior_run["run_id"]
               break
@@ -2732,8 +2848,9 @@ jobs:
           echo "unknown Build event classification output" >&2
           exit 1
         fi
-        for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
-          "$LEGACY_RESULT"
+        for result in "$HOST_TESTS_RESULT" "$WORKFLOW_PILOT_TESTS_RESULT" "$BUILD_RESULT" \
+          "$EXTENDED_HOST_TESTS_RESULT" "$OWNERSHIP_PROBE_TESTS_RESULT" \
+          "$GAME_LOCALIZATION_TESTS_RESULT" "$LEGACY_RESULT"
         do
           if [ "$result" != "success" ]; then
             echo "required combined Build CI job did not succeed: $result" >&2

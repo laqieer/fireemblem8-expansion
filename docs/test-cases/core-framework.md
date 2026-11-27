@@ -988,6 +988,10 @@ debugger, or release feature.
 ### Actions
 
 1. Run `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`.
+   The host-only regression exercises registered ROM and debug ELF users,
+   file-relative repository-root aliases, and owned temporary paths. For a
+   focused check, run the `test_host_only_mode.py` command under Automation
+   instead of the full host suite.
 2. Build and capture a fresh debug ROM, then verify the capture under the
    behavior policy:
 
@@ -1029,13 +1033,18 @@ debugger, or release feature.
 
 The harness records provenance and semantic probes deterministically. Valid
 behavior-policy verification succeeds while a changed checkpoint reports the
-JSON path, expected value, and observed value.
+JSON path, expected value, and observed value. Registered live classes skip
+before a host-only artifact probe; the debug ELF test reaches its layout check
+in normal mode.
 
 ### Negative control
 
 `verify` cannot write or refresh a baseline. Host-only mode skips live tests
 by its explicit switch, not artifact timing; malformed scenarios and mismatch
-are failures, never retries or success-shaped fallbacks.
+are failures, never retries or success-shaped fallbacks. Removing the debug
+ELF owner's registration or guard is rejected; bypassing its guard reaches
+the poisoned file probe. Renaming a supported root alias and using an owned
+temporary path do not change their classifications.
 
 ### Interactions and save compatibility
 
@@ -1061,11 +1070,14 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
 ## TC-CORE-008: Upstream scan records a human decision
 
 - **Feature / originating issue:** `upstream-port-tooling` /
-  [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12).
+  [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12) and
+  [#416](https://github.com/laqieer/fireemblem8-expansion/issues/416).
 - **Supported configuration or artifact:** a local source checkout with a
-  verified canonical `decomp` remote and ignored `build/upstream-port/` output.
+  verified canonical `decomp` remote and ignored `build/upstream-port/` output;
+  the state tests also run in a disposable Linux/Python fixture without a remote.
 - **Prerequisites and clean starting state:** no unreviewed local state update;
-  use a locally available canonical ref or explicitly fetch it first.
+  use a locally available canonical ref or explicitly fetch it first. The
+  state-test fixture starts empty and needs no ROM or network.
 
 ### Actions
 
@@ -1075,7 +1087,9 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
    ignored `build/upstream-port/` directory.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
-4. From the source repository root, invoke the documented
+4. Run `python3 -m unittest tests.upstream_port.test_state -v` to exercise
+   loaded and upserted decision statuses with and without evidence.
+5. From the source repository root, invoke the documented
    `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
    source-checkout selection and explicit `--repo <target-root>` selection.
 
@@ -1095,7 +1109,17 @@ it is not an installed nested/external entrypoint.
 The tool rejects a wrong remote, stale/diverged ref, merge report request,
 unsafe/tracked/outside/symlink output path, missing decision evidence, or
 attempt to mutate upstream source. A non-root target cannot become gate
-authority or execution cwd.
+authority or execution cwd. Both loaded records and upserts reject missing
+rationale or validation evidence for every non-pending status; pending
+records may leave those fields empty.
+
+In a disposable Python process, weaken the evidence-required status set.
+The loader and upsert missing-evidence controls must fail for skipped,
+superseded, and conflict:
+
+```sh
+python3 -c 'import unittest; from scripts.upstream_port import constants; constants.STATUSES_REQUIRING_EVIDENCE = {"ported"}; unittest.main(module="tests.upstream_port.test_state", verbosity=2)'
+```
 
 ### Interactions and save compatibility
 
@@ -1107,15 +1131,17 @@ compatibility impact.
 
 - `python3 -m unittest discover -s tests/upstream_port -v`
   — `tests/upstream_port/test_cli_readonly.py`.
+- `python3 -m unittest tests.upstream_port.test_state -v`
+  — `tests/upstream_port/test_state.py`.
 - `python3 -m scripts.upstream_port verify --dry-run`
   — `scripts/upstream_port/verify.py`.
 
 ### Cleanup and limitations
 
-Remove only the named ignored report directory if it was created. Choosing
-whether an actual reviewed upstream commit belongs in this project is the
-precise human decision; automation validates the recorded decision contract
-but never infers acceptance.
+Remove only the named ignored report directory if it was created; state-test
+fixtures clean themselves. Choosing whether an actual reviewed upstream commit
+belongs in this project is the precise human decision; automation validates
+the recorded decision contract but never infers acceptance.
 
 ## TC-CORE-009: Reproduce default release from a successful Build CI run
 

@@ -658,46 +658,14 @@ def workflow_tester_topology_violations(text):
     )
     current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
     selected_full_pr_jobs = current_jobs - {"patch-release"}
+    metadata_jobs = (current_jobs - {"event-classifier"}) | {"metadata-classifier"}
     expected = {
         "stacked-full-pr": selected_full_pr_jobs,
-        "current-metadata": frozenset(
-            {
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
-                "event-identity",
-                "event-router",
-                "metadata-classifier",
-                "summary",
-            }
-        ),
+        "current-metadata": metadata_jobs,
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
         "live-opened-full": current_jobs,
-        "live-title-metadata": frozenset(
-            {
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
-                "event-identity",
-                "event-router",
-                "metadata-classifier",
-                "summary",
-            }
-        ),
-        "live-restore-metadata": frozenset(
-            {
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
-                "event-identity",
-                "event-router",
-                "metadata-classifier",
-                "summary",
-            }
-        ),
+        "live-title-metadata": metadata_jobs,
+        "live-restore-metadata": metadata_jobs,
     }
     documented = {
         "stacked-full-pr": documented_job_set(
@@ -740,6 +708,7 @@ def workflow_tester_topology_violations(text):
         "canonical skipped worker contexts",
         "each skipped with no runner",
         "all four workers are exactly `skipped`",
+        "all seven workers are exactly `skipped`",
     )
     normalized_body = normalize_policy(body_case)
     for claim in forbidden_claims:
@@ -887,7 +856,7 @@ def live_title_probe_violations(text):
             "assert isinstance(started_at, str)",
         ),
         "metadata-worker-no-start": (
-            'metadata_skipped_ids = {"extended-host-tests", "legacy"}',
+            "metadata_skipped_ids = workers - metadata_adapter_ids",
             'started_at = job["started_at"]',
             'assert job["conclusion"] == "skipped"',
             "assert started_at is None or isinstance(started_at, str)",
@@ -1104,7 +1073,7 @@ def classifier_bootstrap_contract_violations(text):
     )
     exact_head_workers = re.compile(
         incomplete_base
-        + r" .*?(?:all four workers|the four workers) .*?"
+        + r" .*?(?:all seven workers|the seven workers) .*?"
         r"(?:that exact head|that head)"
     )
     failed_summary = re.compile(
@@ -4012,7 +3981,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             workflow_tester_topology_violations(semantic_names),
         )
 
-    def test_metadata_adapter_docs_require_two_adapter_two_skipped_contract(self):
+    def test_metadata_adapter_docs_require_two_adapter_five_skipped_contract(self):
         documents = {
             "workflow-pilot": WORKFLOW_PILOT_PATH.read_text(encoding="utf-8"),
             "framework-support": FRAMEWORK_SUPPORT_PATH.read_text(encoding="utf-8"),
@@ -4024,7 +3993,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "runner-backed",
             "body/title-only",
             "GITHUB_EVENT_PATH",
+            "workflow-pilot-tests",
             "extended-host-tests",
+            "ownership-probe-tests",
+            "game-localization-tests",
             "legacy",
             "platform-skipped",
             "canonical `summary`",
@@ -4039,7 +4011,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "canonical skipped worker contexts",
             "each skipped with no runner",
             "all four workers are exactly `skipped`",
+            "all seven workers are exactly `skipped`",
             "skip the four expensive workers",
+            "skip the seven expensive workers",
         )
         for name, text in documents.items():
             normalized = normalize_policy(text)
@@ -4111,8 +4085,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "event-router",
             "event-classifier",
             "host-tests",
+            "workflow-pilot-tests",
             "build",
             "extended-host-tests",
+            "ownership-probe-tests",
+            "game-localization-tests",
             "legacy",
             "summary",
         )
@@ -4125,7 +4102,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "summary",
         )
         metadata_skipped_names = (
+            "workflow-pilot-tests",
             "extended-host-tests",
+            "ownership-probe-tests",
+            "game-localization-tests",
             "legacy",
             "patch-release",
         )
@@ -4330,6 +4310,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "metadata-worker-no-start",
                 'assert job["runner_name"] is None',
                 "assert True",
+            ),
+            (
+                "metadata-worker-no-start",
+                "metadata_skipped_ids = workers - metadata_adapter_ids",
+                "metadata_skipped_ids = set()",
             ),
             (
                 "implementation-pr-bootstrap-negative",
@@ -4620,6 +4605,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-CI-WAIT-001",
             "TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001",
             "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001",
+            "TC-WORKFLOW-BUILD-CI-SPLIT-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-BODY-EDIT-001",
@@ -4762,7 +4748,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "literal `=` and `;`",
             "every backslash",
             "`-1` or `0` seconds",
-            "eight-job-without-summary",
+            "eleven-job-without-summary",
             "active `updated_at` is not a live completion bound",
             "Completed runs refresh exact run authority",
             "deterministic fake `gh`",

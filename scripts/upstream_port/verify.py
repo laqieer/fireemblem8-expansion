@@ -4,7 +4,7 @@ after a maintainer has manually applied a port batch.
 WARNING (see docs/upstream-porting.md): this command builds and checks the
 repository's *own* current working tree/commit. It never builds, checks out,
 or executes the canonical upstream ref/tree. It is a thin, literal mirror of
-the four combined workers in `.github/workflows/build.yml`. Before execution,
+the combined workers in `.github/workflows/build.yml`. Before execution,
 it parses the selected target checkout's workflow as data and requires exact
 semantic equivalence with both the source workflow and this module's reviewed
 gate list; target Python is never imported. The event identity, router,
@@ -40,7 +40,10 @@ _SOURCE_ROOT = os.path.realpath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
-_COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_COMBINED_JOBS = (
+    "host-tests", "workflow-pilot-tests", "build", "extended-host-tests",
+    "ownership-probe-tests", "game-localization-tests", "legacy",
+)
 _METADATA_ADAPTER_JOBS = ("host-tests", "build")
 _EVENT_IDENTITY_JOB = "event-identity"
 _EVENT_ROUTER_JOB = "event-router"
@@ -942,10 +945,13 @@ _EXPECTED_JOB_ENV = {
         ),
     ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "workflow-pilot-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "extended-host-tests": (
         ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
     ),
+    "ownership-probe-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "game-localization-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "legacy": (
         ("AGBCC_COMMIT", "da598c1d918402c42c0c0d7128ba14567f3175e9"),
         ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
@@ -976,10 +982,12 @@ _EXPECTED_JOB_ENV = {
                 ("GITHUB_API_URL", "${{ github.api_url }}"),
                 ("GITHUB_REPOSITORY", "${{ github.repository }}"),
                 ("GITHUB_TOKEN", "${{ github.token }}"),
+                ("GAME_LOCALIZATION_TESTS_RESULT", "${{ needs.game-localization-tests.result }}"),
                 ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
                 ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
                 ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
                 ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+                ("OWNERSHIP_PROBE_TESTS_RESULT", "${{ needs.ownership-probe-tests.result }}"),
                 ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
                 ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
                 ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
@@ -990,6 +998,7 @@ _EXPECTED_JOB_ENV = {
                 ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
                 ("RUN_ID", "${{ github.run_id }}"),
                 ("RUN_NUMBER", "${{ github.run_number }}"),
+                ("WORKFLOW_PILOT_TESTS_RESULT", "${{ needs.workflow-pilot-tests.result }}"),
             )
         )
     ),
@@ -1021,6 +1030,9 @@ _NON_GATE_STEP_NAMES = {
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
     "Install host-only dependencies (no arm-none-eabi toolchain)",
+    "Install reporter dependencies",
+    "Install ownership probe dependencies",
+    "Install localization host dependencies",
     "Install dependencies",
     "Build tools",
     "Install extended host dependencies",
@@ -1043,11 +1055,9 @@ _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Run gba-playtest host test suite"),
     ("host-tests", "Run upstream-port tooling test suite"),
     ("host-tests", "Run workflow contract test suite"),
-    ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
     ("host-tests", _AGENT_HANDOFF_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
-    ("extended-host-tests", "Run full-game localization width contract (issue #18)"),
     ("build", "Verify checked-out revision"),
     ("build", "Check tracked artifacts"),
     ("build", _DOCS_GOVERNANCE_STEP_NAME),
@@ -1111,10 +1121,16 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run gba-playtest host test suite"),
         ("gate", "Run upstream-port tooling test suite"),
         ("gate", "Run workflow contract test suite"),
-        ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _AGENT_HANDOFF_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
+    ),
+    "workflow-pilot-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Hydrate workflow-pilot Git authority"),
+        ("setup", "Install reporter dependencies"),
+        ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
     ),
     "build": (
         ("setup", _PREFLIGHT_STEP_NAME),
@@ -1146,11 +1162,21 @@ _EXPECTED_STEP_ROLES = {
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("setup", "Install extended host dependencies"),
-        ("gate", "Run ownership-probe process suite"),
         ("gate", "Run CJK font gates"),
         ("gate", "Run multilang texttools codec gates"),
         ("gate", "Run text generator atomic publication tests (issue #268)"),
         ("gate", "Run configuration and linker-budget gates"),
+    ),
+    "ownership-probe-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Install ownership probe dependencies"),
+        ("gate", "Run ownership-probe process suite"),
+    ),
+    "game-localization-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Install localization host dependencies"),
         ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "legacy": (
@@ -1435,6 +1461,8 @@ def _parse_job_context(job_name, body):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
+        if indent < 4:
+            raise ValueError(f"job {job_name!r} uses unsupported indentation")
         if indent != 4 or line.startswith("    -"):
             continue
         match = re.fullmatch(
@@ -1499,7 +1527,11 @@ def _parse_job_context(job_name, body):
             "steps",
         ],
     }[job_name]
-    if names != expected_names:
+    if job_name in _COMBINED_JOBS:
+        names_match = set(names) == set(expected_names)
+    else:
+        names_match = names == expected_names
+    if not names_match:
         raise ValueError(
             f"job {job_name!r} direct mapping differs from reviewed keys"
         )
@@ -1552,8 +1584,8 @@ def _parse_job_context(job_name, body):
                 if job_name == "event-classifier"
                 else "[event-identity, event-classifier]"
                 if job_name in _COMBINED_JOBS
-                else "[event-identity, event-classifier, host-tests, build, "
-                "extended-host-tests, legacy]"
+                else "[event-identity, event-classifier, host-tests, workflow-pilot-tests, build, "
+                "extended-host-tests, ownership-probe-tests, game-localization-tests, legacy]"
             )
             if value != expected or nested:
                 raise ValueError(f"job {job_name!r} needs differs")
@@ -1570,7 +1602,7 @@ def _parse_job_context(job_name, body):
                 if job_name
                 in {"event-identity", "event-router", "event-classifier", "summary"}
                 else "90"
-                if job_name in {"host-tests", "build", "extended-host-tests"}
+                if job_name in set(_COMBINED_JOBS) - {"legacy"}
                 else "60"
             )
             if value != expected or nested:
@@ -1606,7 +1638,7 @@ def _parse_job_context(job_name, body):
                     f"job {job_name!r} steps must use a block sequence"
                 )
             values[name] = None
-    return tuple((name, values[name]) for name in names)
+    return tuple((name, values[name]) for name in expected_names)
 
 
 def _parse_nested_mapping(lines, start, end, field, step_label):
@@ -1658,7 +1690,7 @@ def _literal_run_script(lines, start, end, value, step_label):
         raise ValueError(f"{step_label} must use a literal run block")
     script = []
     for line in lines[start:end]:
-        if line and not line.startswith("        "):
+        if line.strip() and not line.startswith("        "):
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
@@ -2135,6 +2167,19 @@ def _parse_job_steps(job_name, body, repository_root=None):
         raise ValueError(f"job {job_name!r} must have exactly one steps sequence")
     if not step_headers or step_headers[0] <= steps_lines[0]:
         raise ValueError(f"job {job_name!r} steps sequence is empty")
+    steps_end = next(
+        (
+            index
+            for index in range(steps_lines[0] + 1, len(lines))
+            if lines[index].strip()
+            and not lines[index].lstrip().startswith("#")
+            and len(lines[index]) - len(lines[index].lstrip(" ")) <= 4
+            and not lines[index].startswith("    -")
+        ),
+        len(lines),
+    )
+    if any(index >= steps_end for index in step_headers):
+        raise ValueError(f"job {job_name!r} contains a step outside its sequence")
     for line in lines[steps_lines[0] + 1 : step_headers[0]]:
         if line.strip() and not line.lstrip().startswith("#"):
             raise ValueError(
@@ -2146,7 +2191,7 @@ def _parse_job_steps(job_name, body, repository_root=None):
                 start :
                 step_headers[index + 1]
                 if index + 1 < len(step_headers)
-                else len(lines)
+                else steps_end
             ]
         )
         for index, start in enumerate(step_headers)
@@ -2374,22 +2419,6 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
-            name="workflow-pilot-reporter-tests",
-            command=[
-                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
-                "-I",
-                "scripts/workflow_pilot/isolated_launcher.py",
-                "reporter-tests",
-            ],
-            applicable_note=(
-                "issues #176/#216 host lane: workflow-pilot reporter regression "
-                "suite, including immutable baseline validation. First create "
-                "the pinned owned environment with /usr/bin/python3 -I "
-                "scripts/host_python.py create; verification never installs "
-                "packages or relies on system/user-site jsonschema"
-            ),
-        ),
-        Gate(
             name="agent-handoff-tests",
             command=[
                 "$GITHUB_WORKSPACE/build/host-python/bin/python3",
@@ -2442,7 +2471,7 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "issue #18 host lane addition (same `host-tests` job, "
-                "textually after the workflow-pilot gates): the "
+                "after the workflow-pilot baseline): the "
                 "scripts/localization package's own pure-stdlib unit test "
                 "suite (schema/pseudo/catalog/generate/CLI/determinism plus "
                 "the host-native resolver-behavior and vanilla-isolation "
@@ -2450,6 +2479,22 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "Python/stdlib only; never builds/links the ROM, so it does "
                 "not overlap the localization-runtime-*-check scenarios "
                 "reached through the modern-linker gates below"
+            ),
+        ),
+        Gate(
+            name="workflow-pilot-reporter-tests",
+            command=[
+                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+                "-I",
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "reporter-tests",
+            ],
+            applicable_note=(
+                "issues #176/#216 reporter worker: workflow-pilot reporter "
+                "regression suite, including immutable baseline validation. "
+                "First create the pinned owned environment with /usr/bin/python3 "
+                "-I scripts/host_python.py create; verification never installs "
+                "packages or relies on system/user-site jsonschema"
             ),
         ),
         Gate(
@@ -2650,16 +2695,6 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
-            name="ownership-probe-process-suite",
-            command=[
-                "make", "-f", "scripts/validation_ownership/foundation.mk", "ownership-probe-test",
-            ],
-            applicable_note=(
-                "complete native ownership-probe process suite, owned once by "
-                "the required extended host worker rather than serial host discovery"
-            ),
-        ),
-        Gate(
             name="cjk-font-gates",
             command=["make", "-f", "cjk_fonts.mk", "cjk-fonts-check", "cjk-fonts-test"],
             applicable_note="combined-gate unique CJK font inventory and codec coverage",
@@ -2722,33 +2757,43 @@ def gates(jobs: int = 2) -> List[Gate]:
             applicable_note="combined-gate unique linker-budget coverage",
         ),
         Gate(
+            name="ownership-probe-process-suite",
+            command=[
+                "make", "-f", "scripts/validation_ownership/foundation.mk", "ownership-probe-test",
+            ],
+            applicable_note=(
+                "complete native ownership-probe process suite, owned once by "
+                "the required independent ownership worker rather than host discovery"
+            ),
+        ),
+        Gate(
             name="game-localization-width-contract",
             command=["make", "game-localization-test"],
             applicable_note=(
-                "issue #18 full-game host checks use the existing extended-host "
-                "worker, independently of the reporter critical path and the "
-                "legacy timeout; validates the JA/ZH catalog, typed widths, "
+                "issue #18 full-game host checks use the independent localization "
+                "worker, separately from the reporter and legacy jobs; validates "
+                "the JA/ZH catalog, typed widths, "
                 "generated breaks and native text consumers without an ARM toolchain"
             ),
         ),
         Gate(
             name="game-localization-catalog-check",
             command=["python3", "-m", "scripts.localization.game_locales", "check"],
-            applicable_note="full-game host closure check in the independent extended-host worker",
+            applicable_note="full-game host closure check in the localization worker",
         ),
         Gate(
             name="game-localization-crosswalk-check",
             command=[
                 "python3", "-m", "scripts.localization.game_locales", "check-crosswalk",
             ],
-            applicable_note="full-game source/catalog crosswalk coverage in the independent extended-host worker",
+            applicable_note="full-game source/catalog crosswalk coverage in the localization worker",
         ),
         Gate(
             name="game-localization-raw-closure-check",
             command=[
                 "python3", "-m", "scripts.localization.game_locales", "check-raw-closure",
             ],
-            applicable_note="unresolved raw full-game locale closure in the independent extended-host worker",
+            applicable_note="unresolved raw full-game locale closure in the localization worker",
         ),
         Gate(
             name="modern-review-arm-check-debug",
