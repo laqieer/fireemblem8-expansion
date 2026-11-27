@@ -5,9 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
+NEW_WORKER_JOB_IDS = (
+    "workflow-pilot-tests", "ownership-probe-tests", "game-localization-tests",
+)
+HISTORICAL_WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
+WORKER_JOB_IDS = (
+    "host-tests", "workflow-pilot-tests", "build", "extended-host-tests",
+    "ownership-probe-tests", "game-localization-tests", "legacy",
+)
 METADATA_ADAPTER_JOB_IDS = ("host-tests", "build")
-METADATA_SKIPPED_JOB_IDS = ("extended-host-tests", "legacy")
+METADATA_SKIPPED_JOB_IDS = tuple(
+    job_id for job_id in WORKER_JOB_IDS if job_id not in METADATA_ADAPTER_JOB_IDS
+)
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
@@ -98,12 +107,16 @@ def _mode(contexts: dict[str, tuple[str, str]]) -> str:
     if summary[0] != FULL_ATTESTATION:
         raise CandidateEvidenceError("summary attestation must stay canonical")
     if classifier[0] == FULL_CLASSIFIER:
-        return "full"
-    if classifier[0] == METADATA_CLASSIFIER:
-        return "metadata-only"
-    if classifier[0] == PREFLIGHT_CLASSIFIER:
-        return "review-first"
-    raise CandidateEvidenceError("classifier and summary attest different modes")
+        mode = "full"
+    elif classifier[0] == METADATA_CLASSIFIER:
+        mode = "metadata-only"
+    elif classifier[0] == PREFLIGHT_CLASSIFIER:
+        mode = "review-first"
+    else:
+        raise CandidateEvidenceError("classifier and summary attest different modes")
+    if set(contexts) - {"patch-release"} == KNOWN_JOB_IDS - set(NEW_WORKER_JOB_IDS):
+        return "historical-" + mode
+    return mode
 
 
 def _validate_mode_contexts(
@@ -128,7 +141,8 @@ def _validate_mode_contexts(
         raise CandidateEvidenceError(
             "legacy patch-release context must be canonical skipped"
         )
-    if mode in {"metadata-only", "review-first"}:
+    historical = mode.startswith("historical-")
+    if mode.removeprefix("historical-") in {"metadata-only", "review-first"}:
         if contexts["event-classifier"][1] != "success":
             raise CandidateEvidenceError(
                 "metadata classifier must stay successful"
@@ -148,6 +162,8 @@ def _validate_mode_contexts(
                     f"metadata worker {job_id!r} must stay successful"
                 )
         for job_id in METADATA_SKIPPED_JOB_IDS:
+            if historical and job_id in NEW_WORKER_JOB_IDS:
+                continue
             name, conclusion = require_context(job_id)
             if name != job_id:
                 raise CandidateEvidenceError(
@@ -159,7 +175,7 @@ def _validate_mode_contexts(
                 )
         return
 
-    for job_id in WORKER_JOB_IDS:
+    for job_id in HISTORICAL_WORKER_JOB_IDS if historical else WORKER_JOB_IDS:
         context = require_context(job_id)
         if context[0] != job_id:
             raise CandidateEvidenceError(
@@ -174,17 +190,25 @@ def run_mode(run: dict) -> str:
     return mode
 
 
-def preflight_success(jobs: dict[str, tuple[str, str | None]]) -> bool:
+def preflight_success(jobs: dict[str, tuple[str, str | None]], *, historical: bool = False) -> bool:
     expected = {
         "event-identity": ("completed", "success"),
         "event-router": ("completed", "success"),
         PREFLIGHT_CLASSIFIER: ("completed", "success"),
         "host-tests": ("completed", "success"),
         "build": ("completed", "success"),
+        "workflow-pilot-tests": ("completed", "skipped"),
         "extended-host-tests": ("completed", "skipped"),
+        "ownership-probe-tests": ("completed", "skipped"),
+        "game-localization-tests": ("completed", "skipped"),
         "legacy": ("completed", "skipped"),
         "summary": ("completed", "failure"),
     }
+    if historical:
+        for job_id in NEW_WORKER_JOB_IDS:
+            del expected[job_id]
+        if jobs.get("patch-release") == ("completed", "skipped"):
+            expected["patch-release"] = ("completed", "skipped")
     return jobs == expected
 
 
@@ -214,7 +238,7 @@ def evaluate_candidate_runs(
 
     if not matching:
         return CandidateEvidence(False, "missing", "no-exact-candidate-run", None)
-    full_runs = [record for record in matching if record[1] == "full"]
+    full_runs = [record for record in matching if record[1] in {"full", "historical-full"}]
     if not full_runs:
         latest = max(matching, key=lambda record: record[0])
         return CandidateEvidence(
@@ -225,6 +249,8 @@ def evaluate_candidate_runs(
         )
 
     run_id, mode, contexts = max(full_runs, key=lambda record: record[0])
+    if mode == "historical-full":
+        return CandidateEvidence(False, mode, "current-full-run-required", run_id)
     classifier = contexts["event-classifier"]
     summary = contexts["summary"]
     workers = [contexts.get(job_id) for job_id in WORKER_JOB_IDS]
