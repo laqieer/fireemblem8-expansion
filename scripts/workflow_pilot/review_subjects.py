@@ -542,6 +542,8 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
              "test_worker_blocks_can_precede_other_job_fields"),
             ("upstream-order", BUILD_UPSTREAM_TEST, "VerifyCliCwdTests",
              "test_worker_mapping_order_preserves_target_gate_equivalence"),
+            ("adapter", BUILD_UPSTREAM_TEST, "VerifyCliCwdTests",
+             "test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior"),
         ):
             add("wire", "validators", "source-test-" + name, BUILD_WORKFLOW,
                 f"{test_path}:{test_class}.{test_method}", json.dumps(sorted(workers)),
@@ -2805,31 +2807,50 @@ def _build_topology(probe):
         (role in {"boundary", "target-boundary", "literal"} and name in model)
         or (role in {"producer", "consumer", "topology-order", "upstream-order"}
             and name in workers)
-        or (role == "source-test" and name in {"topology-order", "upstream-order"})
+        or (role == "source-test" and name in {"topology-order", "upstream-order", "adapter"})
         or (role == "stale" and name == "width-script"),
         "unregistered Build topology member")
     if role == "source-test":
-        if name == "topology-order":
-            test_class = topology.ConsolidatedBuildTopologyTests
-            test_name = "test_worker_blocks_can_precede_other_job_fields"
-            module = topology
-            attribute = "WORKFLOW"
+        if name == "adapter":
+            def clone_target(_self, parent):
+                root = Path(parent) / "target"
+                root.mkdir()
+                command(["/usr/bin/git", "init", "-q", str(root)])
+                workflow = root / BUILD_WORKFLOW
+                workflow.parent.mkdir(parents=True)
+                shutil.copyfile(BUILD_WORKFLOW, workflow)
+                helper = root / BUILD_ARCHIVAL_HELPER
+                helper.parent.mkdir(parents=True)
+                shutil.copyfile(BUILD_ARCHIVAL_HELPER, helper)
+                return str(root)
+
+            with mock.patch.object(upstream_tests.VerifyCliCwdTests, "clone_target", clone_target):
+                result = unittest.TextTestRunner(stream=io.StringIO()).run(unittest.TestSuite([
+                    upstream_tests.VerifyCliCwdTests(
+                        "test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior")
+                ]))
         else:
-            test_class = upstream_tests.VerifyCliCwdTests
-            test_name = "test_worker_mapping_order_preserves_target_gate_equivalence"
-            module = upstream_tests
-            attribute = "BUILD_WORKFLOW_PATH"
-        original = Path(BUILD_WORKFLOW).read_text()
-        job = topology._job_blocks(original)["host-tests"]
-        changed = original.replace(job, build_reorder_field(job, "steps"), 1)
-        review.require(changed != original, "worker order control did not change the workflow")
-        with tempfile.TemporaryDirectory(prefix="build-worker-order-") as directory:
-            path = Path(directory) / "build.yml"
-            path.write_text(changed)
-            workflow = path if module is topology else str(path)
-            with mock.patch.object(module, attribute, workflow):
-                result = unittest.TextTestRunner(stream=io.StringIO()).run(
-                    unittest.TestSuite([test_class(test_name)]))
+            if name == "topology-order":
+                test_class = topology.ConsolidatedBuildTopologyTests
+                test_name = "test_worker_blocks_can_precede_other_job_fields"
+                module = topology
+                attribute = "WORKFLOW"
+            else:
+                test_class = upstream_tests.VerifyCliCwdTests
+                test_name = "test_worker_mapping_order_preserves_target_gate_equivalence"
+                module = upstream_tests
+                attribute = "BUILD_WORKFLOW_PATH"
+            original = Path(BUILD_WORKFLOW).read_text()
+            job = topology._job_blocks(original)["host-tests"]
+            changed = original.replace(job, build_reorder_field(job, "steps"), 1)
+            review.require(changed != original, "worker order control did not change the workflow")
+            with tempfile.TemporaryDirectory(prefix="build-worker-order-") as directory:
+                path = Path(directory) / "build.yml"
+                path.write_text(changed)
+                workflow = path if module is topology else str(path)
+                with mock.patch.object(module, attribute, workflow):
+                    result = unittest.TextTestRunner(stream=io.StringIO()).run(
+                        unittest.TestSuite([test_class(test_name)]))
         if result.errors:
             return {"kind": "host", "verdict": "unavailable", "checks": 0,
                     "detail": (result.errors[0][1] or "source test errored")[-review.MAX_DETAIL:]}
@@ -2846,7 +2867,7 @@ def _build_topology(probe):
                     "detail": (result.failures[0][1] or "source test failed")[-review.MAX_DETAIL:]}
         review.require(result.testsRun == 1, "source test did not run exactly once")
         return {"kind": "host", "checks": 1,
-                "detail": "actual source-revision test passed on steps-first worker mapping"}
+                "detail": "actual source-revision test passed"}
     text = Path(BUILD_WORKFLOW).read_text()
     jobs = build_job_blocks(text)
     checks = 0
@@ -2937,6 +2958,25 @@ def _build_topology(probe):
                 start = lines.index("      run: |") + 1
                 observe(verify._literal_run_script(lines, start, len(lines), "|", name) == expected,
                         f"{name} target literal {index} lost script after {blank!r}")
+            lines = step.split("\n")
+            start = lines.index("      run: |") + 1
+            first = next(i for i in range(start, len(lines)) if lines[i].strip())
+            review.require(lines[first].startswith("        "), "unexpected literal content indentation")
+            over_indented = lines[:first] + ["        ", lines[first][1:]] + lines[first + 1:]
+            try:
+                verify._literal_run_script(over_indented, start, len(over_indented), "|", name)
+            except ValueError:
+                pass
+            else:
+                observe(False, f"{name} literal {index} accepted an over-indented leading blank")
+            for separator in ("    \r", "    \u00a0", "    \r\r"):
+                changed = lines[:first + 1] + [separator, "        exit 73"] + lines[first + 1:]
+                try:
+                    parsed = verify._literal_run_script(changed, start, len(changed), "|", name)
+                except ValueError:
+                    continue
+                observe("exit 73\n" in parsed,
+                        f"{name} literal {index} hid a command after {separator!r}")
     elif role == "producer":
         baseline = verify._parse_workflow_structure_text(text)
         observe(not topology._errors(text, False), "baseline topology rejected")
