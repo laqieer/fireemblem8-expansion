@@ -2664,7 +2664,9 @@ def portrait_component_outputs(records, out_dir):
         main = _pack_4bpp(rows, *frames["main"])
         chibi = _pack_4bpp(rows, *frames["minimug"])
         eyes = _pack_4bpp(rows, *frames["eyeOpen"]) + _pack_4bpp(rows, *frames["eyeClosed"])
-        mouth = _pack_4bpp(rows, *frames["mouthClosed"]) + _pack_4bpp(rows, *frames["mouthOpen"])
+        mouth_closed = _pack_4bpp(rows, *frames["mouthClosed"])
+        mouth_open = _pack_4bpp(rows, *frames["mouthOpen"])
+        mouth = (mouth_open + mouth_open + mouth_closed) * 2
         files = _portrait_component_files(record)
         palette_bytes = bytearray()
         for red, green, blue in palette:

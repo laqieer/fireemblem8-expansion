@@ -724,6 +724,43 @@ class AssetManifestTests(unittest.TestCase):
         ):
             self.assert_validation_error([valid_record(), other], "ownership conflict")
 
+    def test_generated_portrait_mouth_frames_follow_native_consumer(self):
+        record = valid_portrait_record(TEST_ROOT)
+        sheet = os.path.join(REPO_ROOT, record["sources"][0])
+        rows = []
+        for y in range(112):
+            row = bytearray(64)
+            if 72 <= y < 88:
+                row[32:48] = b"\x11" * 16
+                row[48:64] = b"\x22" * 16
+            rows.append(b"\0" + row)
+        write_indexed_png_stream(sheet, idat=zlib.compress(b"".join(rows)))
+
+        generated = manifest.portrait_component_outputs(
+            [SimpleNamespace(id=record["id"], kind=record["kind"], sources=record["sources"])],
+            TEST_ROOT,
+        )
+        mouth = next(data for path, data in generated.items() if path.endswith("mouth.4bpp"))
+        mouth_path = os.path.join(TEST_ROOT, "mouth.4bpp")
+        with open(mouth_path, "wb") as handle:
+            handle.write(mouth)
+        driver = os.path.join(TEST_ROOT, "portrait-mouth-driver")
+        subprocess.run(
+            [
+                "cc", "-std=gnu99", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
+                "-ffunction-sections", "-fdata-sections", "-I", os.path.join(REPO_ROOT, "include"),
+                os.path.join(REPO_ROOT, "src", "face.c"),
+                os.path.join(REPO_ROOT, "scripts", "assets", "tests", "portrait_mouth_driver.c"),
+                "-Wl,--gc-sections", "-o", driver,
+            ],
+            check=True,
+        )
+        subprocess.run([driver, mouth_path], check=True)
+
+        records = manifest.load_manifest(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        eirika = next(record for record in records if record.id == "EIRIKA_FORMATTED_PORTRAIT")
+        self.assertEqual(manifest.portrait_component_outputs([eirika], TEST_ROOT), {})
+
     def test_formatted_portrait_package_generates_components_and_registration(self):
         record = valid_portrait_record(TEST_ROOT)
         source = self.write_manifest([record])

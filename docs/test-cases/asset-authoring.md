@@ -81,3 +81,62 @@ target recreates only its named `build/banim-package-runtime/` root. Rolling
 back a downstream package removes its manifest/package sources and disposable
 outputs together. V1 does not support custom spells, unknown commands,
 runtime switching, or opaque editor binaries.
+
+## TC-PORTRAIT-GENERATED-MOUTH-001: Exercise generated mouth slots
+
+- **Feature / originating issue:** `formatted-portrait-package` /
+  [issue #499](https://github.com/laqieer/fireemblem8-expansion/issues/499).
+- **Supported configuration or artifact:** modern source checkout with Python 3
+  and a host C compiler; the ARM fixture additionally needs the supported
+  ARM toolchain and libmGBA. No saved state is needed.
+- **Prerequisites and clean starting state:** run from an isolated checkout
+  with no other test using `build/generated/assets/test-work`.
+
+### Actions
+
+1. Run `python3 -m unittest scripts.assets.tests.test_manifest.AssetManifestTests.test_generated_portrait_mouth_frames_follow_native_consumer`.
+2. Observe the generated synthetic mouth and the real face consumer invoked by
+   the host driver for stopped and talking states, both smile modes and all
+   animation phases.
+3. Run `python3 -m unittest tools.gba-playtest.tests.test_portrait_generated_mouth_runtime`
+   to build and boot the disposable ARM fixture in libmGBA.
+
+### Expected result
+
+Each 4x2 tile transfer is within the generated component and contains the
+authored closed frame when stopped or closed, and the authored open frame
+otherwise. The existing Eirika component alias generates no replacement data.
+On ARM, the generated `FaceData` table selects the generated component via
+`GetPortraitData`; the real face consumer and `Register2dChrMove` copy both
+tile rows to VRAM in every state without bounds or content errors.
+
+### Negative control
+
+At the pre-fix generator, the stopped non-smiling transfer attempts bytes
+1280 through 1535 of a 512-byte component and the host driver fails.
+The ARM fixture also runs that exact 512-byte frame layout and observes
+out-of-bounds transfers rather than accepting stale VRAM.
+
+### Interactions and save compatibility
+
+The package depends on the existing asset manifest and native face renderer.
+It has no known profile conflicts and changes no save, configuration identity,
+localization IDs or legacy aliases. The generated component grows by 1024
+bytes per generated portrait; no persistent RAM is allocated.
+
+### Automation
+
+The named unittest generates distinct synthetic frames and links the actual
+`FaceMouth_Loop` into a host driver that checks each transfer's bounds and
+bytes. The ARM unittest links the generated table and component with the real
+consumer and tile-move function, boots a disposable libmGBA ROM and checks
+the VRAM bytes and both positive and negative controls. Its transfer-queue
+stub copies immediately, so it does not replace a full-game dialogue scenario
+or visual acceptance of a project's artwork.
+
+### Cleanup and limitations
+
+The host unittest removes its disposable test-work directory; the ARM unittest
+removes its temporary ROM and build files. Neither fixture proves full-game
+dialogue scheduling, on-screen rendering, or expression quality. Archival
+byte identity is not claimed.

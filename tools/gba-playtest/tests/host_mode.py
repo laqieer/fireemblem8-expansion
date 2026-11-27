@@ -128,6 +128,7 @@ LIVE_TEST_CLASSES = (
     ("test_combat_scenario", "CombatRuntimeTests"),
     ("test_debug_save_fixture", "DebugSaveFixtureLayoutEmissionTests"),
     ("test_new_game_scenario", "NewGameRuntimeTests"),
+    ("test_portrait_generated_mouth_runtime", "GeneratedMouthRuntimeTests"),
     ("test_portrait_package_runtime", "PortraitPackageRuntimeTests"),
     ("test_prep_positive_scenario", "PrepPositiveRuntimeTests"),
     ("test_save_compat_scenarios", "SaveCompatScenarioTests_legacy"),

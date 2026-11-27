@@ -25,6 +25,7 @@
       "hq-pcm-mixer",
       "patch-release-artifact",
       "portrait-minimug-resolver",
+      "formatted-portrait-package",
       "expanded-sound-room",
       "typed-bgm-routing",
       "battle-animation-presentation",
@@ -255,6 +256,19 @@
       "required_cases": [
         "TC-CI-PATCH-049-001",
         "TC-CI-PATCH-049-002"
+      ]
+    },
+    {
+      "id": "formatted-portrait-package",
+      "title": "Formatted portrait package",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/63",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/499"
+      ],
+      "reference": "docs/portrait_packages.md",
+      "status": "current",
+      "required_cases": [
+        "TC-PORTRAIT-GENERATED-MOUTH-001"
       ]
     },
     {
@@ -1885,6 +1899,39 @@
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_banim_policy_native scripts.modernize.tests.test_ui_registry_contract scripts.modernize.tests.test_expansion_user_prefs_native -v",
           "evidence": "scripts/modernize/tests/test_banim_policy_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PORTRAIT-GENERATED-MOUTH-001",
+      "title": "Exercise generated mouth slots",
+      "feature_id": "formatted-portrait-package",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/499"
+      ],
+      "document": "docs/test-cases/asset-authoring.md",
+      "anchor": "tc-portrait-generated-mouth-001-exercise-generated-mouth-slots",
+      "profiles": [
+        "Modern source checkout with Python 3 and a host C compiler",
+        "Disposable ARM fixture with the supported cross-toolchain and libmGBA"
+      ],
+      "purpose": "Exercise generated closed/open frames through every native mouth transfer state.",
+      "prerequisites": "Run in an isolated checkout without another user of build/generated/assets/test-work; no ROM or saved state is needed.",
+      "actions": "Run the host and ARM unittests, which generate distinct frames and exercise stopped/talking, smile/non-smile and animation phases using the real face consumer.",
+      "expected_result": "Every transfer reads the expected authored frame in bounds; generated registration and ARM VRAM copies agree, and the existing Eirika alias emits no generated replacements.",
+      "negative_control": "The pre-fix 512-byte component fails the stopped non-smile host transfer at bytes 1280 through 1535; the ARM fixture detects its out-of-bounds transfers.",
+      "interactions": "Depends on the existing manifest and face renderer; no known profile conflicts, and legacy aliases remain unchanged.",
+      "save_compatibility": "No save, configuration identity, or localization change; generated portrait ROM data grows by 1024 bytes each.",
+      "cleanup": "Unittest teardown removes its disposable test-work directory and temporary ARM fixture.",
+      "limitations": "The ARM fixture uses an immediate transfer-queue stub; neither fixture proves full-game scheduling, on-screen presentation, or subjective artwork quality.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.assets.tests.test_manifest.AssetManifestTests.test_generated_portrait_mouth_frames_follow_native_consumer",
+          "evidence": "scripts/assets/tests/test_manifest.py"
+        },
+        {
+          "command": "python3 -m unittest tools.gba-playtest.tests.test_portrait_generated_mouth_runtime",
+          "evidence": "tools/gba-playtest/tests/test_portrait_generated_mouth_runtime.py"
         }
       ]
     },
