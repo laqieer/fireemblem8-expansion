@@ -2300,9 +2300,12 @@ At job scope, router and mode-classifier have separate closed setup mappings.
 Every combined worker has a closed direct mapping: classifier dependency and
 fail-closed condition,
 `runs-on: ubuntu-latest`, its reviewed environment, and `steps`. The
-comprehensive `build`, `host-tests`, and `extended-host-tests` workers have
-`timeout-minutes: 90`; `legacy` remains 60 minutes, while all setup jobs and
-summary remain 5. Host, modern, extended-host, and legacy therefore reject
+comprehensive `build` and `host-tests` workers have `timeout-minutes: 90`;
+`extended-host-tests` has 120 minutes, `legacy` remains 60 minutes, and all
+setup jobs and summary remain 5. The extended-host increase is temporary
+headroom for shared-runner variance, not a guarantee of success or a
+replacement for the split in issue #390. A timed-out extended-host job can
+consume up to 30 additional runner-minutes. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
 other dependencies, conditions/advisory mode, deployment environments, concurrency,
 reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate

@@ -577,7 +577,8 @@ the consumers' independent protected-principal/deployment requirements.
    Preserve the real unittest results, wall time and exact revision. A focused
    rendezvous or selected workload is not complete-suite or full-CI evidence.
    Required candidate and automatic exact-master Build still contain all
-   eight jobs and retain both 90-minute host bounds.
+   eight jobs; `host-tests` has a 90-minute bound and `extended-host-tests`
+   has a 120-minute bound.
 6. Check the complete scheduling contract:
 
    ```bash
@@ -2399,6 +2400,45 @@ replacement of the retired Full Matrix.
 No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
+
+## TC-WORKFLOW-CI-DEADLINE-001: Keep extended-host CI bounded with headroom
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #494](https://github.com/laqieer/fireemblem8-expansion/issues/494).
+- **Supported configuration:** clean Linux checkout with Python 3; live
+  verification also requires candidate and master GitHub Actions runs.
+- **Prerequisites:** start at the repository root with the documented host
+  dependencies and no modified workflow fixtures.
+
+### Actions
+
+1. Run `python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_extended_host_deadline_is_enforced_by_both_consumers tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_parsed_job_timeout_map_is_exact_and_closed tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_summary_runtime_rejects_missing_stale_and_failed_identity tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run -v`.
+2. Observe the full exact-head candidate Build and the automatic Build on the
+   resulting master commit. Record their job durations, queue time and total
+   runner-minutes, including retries.
+
+### Expected result and negative control
+
+Both workflow consumers accept exactly 120 minutes for `extended-host-tests`
+and reject 90 or 121; other job deadlines and suite ownership remain
+unchanged. A missing, failed or skipped worker still fails the full summary.
+The old 90-minute workflow is the pre-fix negative control. Both live Builds
+must complete successfully; a timeout is not a pass.
+
+### Interactions and save compatibility
+
+This depends on the existing full Build and upstream-port mirror. Integrate
+with issue #390's independent worker split without dropping any required job.
+There is no game, save, configuration, generated-data, localization content,
+ROM/RAM, debug/release or archival behavior change.
+
+### Automation, cleanup and limitations
+
+The focused tests exercise the parsed workflow and actual summary evaluator;
+unittest cleans its disposable fixtures. The 120-minute allowance is a
+temporary mitigation, not a guarantee that future runs finish. A timed-out job
+may consume 30 more runner-minutes; compare actual elapsed time and total cost.
+No manual game judgment applies.
 
 ## TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001: Keep legacy Build within its 60-minute budget
 

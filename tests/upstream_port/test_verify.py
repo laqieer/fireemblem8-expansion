@@ -1843,7 +1843,11 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
-                timeout = "60" if job_name == "legacy" else "90"
+                timeout = (
+                    "60" if job_name == "legacy"
+                    else "120" if job_name == "extended-host-tests"
+                    else "90"
+                )
                 job = topology_tests._job_blocks(original)[job_name]
                 reordered = original.replace(
                     job, topology_tests._reorder_job_field(job, "steps"), 1

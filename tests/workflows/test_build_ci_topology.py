@@ -1660,7 +1660,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         if indent != 4 or line.startswith("    -"):
             continue
         direct_lines.append(line)
-    expected_timeout = 60 if job_name == "legacy" else 90
+    expected_timeout = 60 if job_name == "legacy" else 120 if job_name == "extended-host-tests" else 90
     expected_condition = HOST_BUILD_CONDITION if job_name in METADATA_ADAPTER_JOBS else WORKER_CONDITION
     expected_direct = [
         f"    {WORKER_NEEDS}",
@@ -2218,7 +2218,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "event-classifier": 5,
         "host-tests": 90,
         "build": 90,
-        "extended-host-tests": 90,
+        "extended-host-tests": 120,
         "legacy": 60,
         "summary": 5,
     }
@@ -5381,7 +5381,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "event-classifier": 5,
             "host-tests": 90,
             "build": 90,
-            "extended-host-tests": 90,
+            "extended-host-tests": 120,
             "legacy": 60,
             "summary": 5,
         }
@@ -5410,6 +5410,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 changed = self.text.replace(job, changed_job, 1)
                 self.assertTrue(_errors(changed, False))
 
+    def test_extended_host_deadline_is_enforced_by_both_consumers(self):
+        job = _job_blocks(self.text)["extended-host-tests"]
+        self.assertIn("    timeout-minutes: 120\n", job)
+        self.assertFalse(_errors(self.text, False))
+        verify._parse_workflow_structure_text(self.text)
+        for replacement in (90, 121):
+            with self.subTest(timeout=replacement):
+                changed_job = job.replace("    timeout-minutes: 120\n",
+                                          f"    timeout-minutes: {replacement}\n", 1)
+                self.assertNotEqual(changed_job, job)
+                changed = self.text.replace(job, changed_job, 1)
+                self.assertTrue(_errors(changed, False))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
     def test_combined_workers_reject_spaced_reviewed_job_keys(self):
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
@@ -5434,7 +5449,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     else WORKER_CONDITION
                 ),
                 "runs-on": "ubuntu-24.04",
-                "timeout-minutes": "60" if job_name == "legacy" else "90",
+                "timeout-minutes": (
+                    "60" if job_name == "legacy"
+                    else "120" if job_name == "extended-host-tests"
+                    else "90"
+                ),
                 "env": "",
                 "steps": "",
             }
@@ -5542,7 +5561,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "shell": "untrusted-shell {0}",
         }
         for job_name in COMBINED_WORKERS:
-            timeout = "60" if job_name == "legacy" else "90"
+            timeout = (
+                "60" if job_name == "legacy"
+                else "120" if job_name == "extended-host-tests"
+                else "90"
+            )
             for field, value in execution_fields.items():
                 with self.subTest(job=job_name, field=field):
                     changed = self.text.replace(

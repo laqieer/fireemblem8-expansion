@@ -578,7 +578,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/356",
         "https://github.com/laqieer/fireemblem8-expansion/issues/359",
         "https://github.com/laqieer/fireemblem8-expansion/issues/380",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/445"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/445",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/494"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -587,6 +588,7 @@
         "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
         "TC-WORKFLOW-CI-WAIT-001",
+        "TC-WORKFLOW-CI-DEADLINE-001",
         "TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
@@ -3261,6 +3263,34 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-CI-DEADLINE-001",
+      "title": "Keep extended-host CI bounded with headroom",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/494"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-ci-deadline-001-keep-extended-host-ci-bounded-with-headroom",
+      "profiles": [
+        "Clean source checkout with Python 3; candidate and master full Build CI"
+      ],
+      "purpose": "Provide bounded extended-host headroom without dropping required suites or summary failures.",
+      "prerequisites": "Start from a clean source checkout with the documented host Python; live candidate and master validation needs GitHub Actions access.",
+      "actions": "Run the focused topology, upstream-port and summary tests; observe the exact-head full candidate and automatic master Builds and record durations.",
+      "expected_result": "Extended-host has exactly 120 minutes, other deadlines are unchanged, full suites remain required, and the summary rejects missing, failed or skipped workers.",
+      "negative_control": "The old 90-minute extended-host timeout or an unsupported 121-minute value is rejected by both workflow consumers; missing or failed worker evidence fails the summary.",
+      "interactions": "Depends on the existing Build topology, upstream-port mirror and fail-closed summary. Conflicts with concurrent workflow edits, especially the independent issue390 job split; reconcile their deadline contracts on integration.",
+      "save_compatibility": "CI-only change; no save, configuration, generated-data, localization content, ROM/RAM, debug/release or archival behavior change.",
+      "cleanup": "Unittest cleans its disposable fixtures; retain real worktrees until delivery and completion gates pass.",
+      "limitations": "120 minutes is bounded headroom, not a success guarantee or a substitute for issue390. A timed-out worker can cost 30 additional runner-minutes.",
+      "automation": [
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_extended_host_deadline_is_enforced_by_both_consumers -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
         }
       ]
     },

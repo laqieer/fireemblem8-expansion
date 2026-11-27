@@ -230,9 +230,11 @@ absent. The identity validator, router, and mode-classifier contain only their
 reviewed names, runner, timeout, outputs, environment,
 dependencies/conditions, and steps. Each combined job contains only its
 identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
-its exact allowlisted environment, and `steps`. The comprehensive `build` job
-and both comprehensive host jobs have `timeout-minutes: 90`; `legacy`
-remains 60 minutes, while identity/router/classifier and summary remain 5.
+its exact allowlisted environment, and `steps`. The comprehensive `build` and
+`host-tests` jobs have `timeout-minutes: 90`; `extended-host-tests` has 120
+minutes, `legacy` remains 60 minutes, and identity/router/classifier and
+summary remain 5. The extended-host allowance is temporary headroom pending
+the split in issue #390; a timed-out job may use 30 additional runner-minutes.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
 or unusable;
