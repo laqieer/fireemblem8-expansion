@@ -697,7 +697,9 @@ def _run_block_commands(job: str) -> list[str]:
         ):
             index += 1
             block = []
-            while index < len(lines) and lines[index].startswith("        "):
+            while index < len(lines) and (
+                not lines[index].strip() or lines[index].startswith("        ")
+            ):
                 line = lines[index].strip()
                 if line and not line.startswith("#"):
                     block.append(line)
@@ -719,7 +721,7 @@ def _literal_run_script(step: str) -> str:
         raise AssertionError("step lacks a literal run block") from error
     script = []
     for line in lines[run_index + 1 :]:
-        if line and not line.startswith("        "):
+        if line.strip() and not line.startswith("        "):
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
@@ -1266,12 +1268,35 @@ def _contains_command(job: str, command: str) -> bool:
     )
 
 
+def _reorder_job_field(job: str, field: str) -> str:
+    matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
+    selected = [index for index, match in enumerate(matches) if match.group(1) == field]
+    if len(selected) != 1:
+        raise ValueError(f"job must contain exactly one {field} field")
+    blocks = [
+        job[
+            match.start():matches[index + 1].start() if index + 1 < len(matches) else len(job)
+        ]
+        for index, match in enumerate(matches)
+    ]
+    index = selected[0]
+    if index == 0:
+        blocks = blocks[1:] + blocks[:1]
+    else:
+        blocks = blocks[index : index + 1] + blocks[:index] + blocks[index + 1 :]
+    return job[:matches[0].start()] + "".join(blocks)
+
+
 def _step_blocks(job: str) -> list[str]:
     matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
+    direct_fields = list(re.finditer(r"^    (?=[^\s#-])", job, re.MULTILINE))
     return [
         job[
             match.start():
-            matches[index + 1].start() if index + 1 < len(matches) else len(job)
+            min(
+                [matches[index + 1].start() if index + 1 < len(matches) else len(job)]
+                + [field.start() for field in direct_fields if field.start() > match.start()]
+            )
         ]
         for index, match in enumerate(matches)
     ]
@@ -1646,7 +1671,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         "    steps:",
     ]
     errors = []
-    if direct_lines != expected_direct:
+    if sorted(direct_lines) != sorted(expected_direct):
         errors.append(
             f"{job_name} direct job mapping differs from the reviewed "
             "runs-on, timeout, env, and steps contract"
@@ -5573,11 +5598,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             )
             with self.subTest(job=job_name, reordered=True):
                 changed = self.text.replace(job, reordered, 1)
-                self.assertTrue(
-                    any(
-                        f"{job_name} direct job mapping differs" in error
-                        for error in _errors(changed, False)
-                    )
+                self.assertEqual(_errors(changed, False), [])
+                self.assertEqual(
+                    verify._parse_workflow_structure_text(changed),
+                    verify._parse_workflow_structure_text(self.text),
                 )
 
             for original, replacement in (
@@ -5600,6 +5624,109 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             for error in _errors(changed, False)
                         )
                     )
+
+    def test_worker_blocks_can_precede_other_job_fields(self):
+        baseline = verify._parse_workflow_structure_text(self.text)
+        for job_name in COMBINED_WORKERS:
+            job = _job_blocks(self.text)[job_name]
+            for block in ("steps", "env"):
+                with self.subTest(job=job_name, block=block):
+                    reordered = _reorder_job_field(job, block)
+                    changed = self.text.replace(job, reordered, 1)
+                    self.assertNotEqual(changed, self.text)
+                    self.assertEqual(_errors(changed, False), [])
+                    self.assertEqual(verify._parse_workflow_structure_text(changed), baseline)
+
+    def test_blank_lines_cannot_hide_step_fields(self):
+        blanks = ("", "    ", "    \r", "    \t", "        ",
+                  "    \u0085", "    \u2028", "    \u2029")
+        for job_name, job in _job_blocks(self.text).items():
+            for index, step in enumerate(_step_blocks(job)):
+                for blank in blanks:
+                    with self.subTest(job=job_name, step=index, blank=repr(blank)):
+                        changed_step = step.replace(
+                            "\n", f"\n{blank}\n      continue-on-error: true\n", 1
+                        )
+                        changed_job = job.replace(step, changed_step, 1)
+                        self.assertIn(
+                            "      continue-on-error: true",
+                            _step_blocks(changed_job)[index],
+                        )
+
+        width_steps = [
+            step for job in _job_blocks(self.text).values()
+            for step in _step_blocks(job)
+            if _step_name(step) == "Run full-game localization width contract (issue #18)"
+        ]
+        self.assertEqual(len(width_steps), 1)
+        width = width_steps[0]
+        for blank in blanks:
+            with self.subTest(blank=repr(blank)):
+                changed = self.text.replace(
+                    width, width + f"{blank}\n      continue-on-error: true\n", 1
+                )
+                self.assertTrue(
+                    any("lost exact full-game evidence" in error for error in _errors(changed, False))
+                )
+
+    def test_literal_run_scripts_preserve_blank_lines(self):
+        header = "      run: |\n"
+        blanks = ("    ", "", " ", "      ", "        ", "        \t", "    \r")
+        for job_name, job in _job_blocks(self.text).items():
+            for index, step in enumerate(_step_blocks(job)):
+                if header not in step:
+                    continue
+                script = _literal_run_script(step)
+                commands = _run_block_commands(step)
+                for blank in blanks:
+                    with self.subTest(job=job_name, step=index, blank=repr(blank)):
+                        changed = step.replace(header, header + blank + "\n", 1)
+                        expected = blank[8:] + "\n" + script
+                        self.assertEqual(_literal_run_script(changed), expected)
+                        self.assertEqual(_run_block_commands(changed), commands)
+                        lines = changed.split("\n")
+                        start = lines.index("      run: |") + 1
+                        self.assertEqual(
+                            verify._literal_run_script(
+                                lines, start, len(lines), "|", f"{job_name} step {index}"
+                            ),
+                            expected,
+                        )
+
+    def test_blank_lines_cannot_hide_run_commands(self):
+        width = next(
+            step for job in _job_blocks(self.text).values()
+            for step in _step_blocks(job)
+            if _step_name(step) == "Run full-game localization width contract (issue #18)"
+        )
+        commands = _run_block_commands(width)
+        first = f"        {commands[0]}\n"
+        last = f"        {commands[-1]}\n"
+        baseline = verify._parse_workflow_structure_text(self.text)
+        for blank in ("    ", "", " ", "      ", "        ", "        \t", "    \r"):
+            with self.subTest(blank=repr(blank), mutation="whitespace-only"):
+                equivalent = self.text.replace(
+                    width, width.replace(first, first + blank + "\n", 1), 1
+                )
+                self.assertEqual(_errors(equivalent, False), [])
+                self.assertEqual(
+                    verify._parse_workflow_structure_text(equivalent), baseline
+                )
+            with self.subTest(blank=repr(blank), mutation="extra-command"):
+                changed = self.text.replace(
+                    width,
+                    width.replace(last, last + blank + "\n        exit 73\n", 1),
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "lost exact full-game evidence" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+                self.assertNotEqual(
+                    verify._parse_workflow_structure_text(changed), baseline
+                )
 
     def test_execution_context_key_syntax_bypasses_fail_closed(self):
         execution_fields = {
