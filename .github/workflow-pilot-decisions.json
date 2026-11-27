@@ -307,6 +307,30 @@
         "included": false,
         "disposition": "excluded"
       }
+    },
+    {
+      "pull_request": 427,
+      "risk_boundaries": [
+        "runtime"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
     }
   ],
   "artifacts": [
