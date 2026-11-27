@@ -616,8 +616,27 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertIn("MODERN_CONFIG=debug", debug_gate.command)
         self.assertIn("MODERN_CONFIG=release", release_gate.command)
 
-    def test_dry_run_never_executes_subprocess(self):
-        results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
+    def test_dry_run_never_executes_gate_commands(self):
+        with (
+            mock.patch.object(
+                verify_mod, "_git_top_level", return_value=os.path.realpath(REPO_ROOT)
+            ),
+            mock.patch.object(
+                verify_mod.subprocess,
+                "Popen",
+                side_effect=AssertionError("dry run launched a subprocess"),
+            ),
+        ):
+            results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
+            for arguments in ([], ["--repo", REPO_ROOT]):
+                with self.subTest(arguments=arguments):
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(cli.main([*arguments, "verify", "--dry-run"]), 0)
+                    self.assertEqual(
+                        output.getvalue().count("[SKIPPED(dry-run)]"),
+                        len(verify_mod.gates()),
+                    )
         self.assertEqual(len(results), len(verify_mod.gates()))
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
@@ -2236,23 +2255,31 @@ class VerifyCliCwdTests(unittest.TestCase):
                 )
 
     def test_documented_source_root_module_dry_run_is_real(self):
-        completed = subprocess.run(
-            [
-                "python3",
-                "-m",
-                "scripts.upstream_port",
-                "verify",
-                "--dry-run",
-            ],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(
-            completed.stdout.count("[SKIPPED(dry-run)]"), len(verify_mod.gates())
-        )
+        for arguments in ([], ["--repo", REPO_ROOT]):
+            with self.subTest(arguments=arguments):
+                completed = subprocess.run(
+                    [
+                        "python3",
+                        "-m",
+                        "scripts.upstream_port",
+                        *arguments,
+                        "verify",
+                        "--dry-run",
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                skipped_names = [
+                    line.removeprefix("[SKIPPED(dry-run)] ").partition(": ")[0]
+                    for line in completed.stdout.splitlines()
+                    if line.startswith("[SKIPPED(dry-run)] ")
+                ]
+                self.assertCountEqual(
+                    skipped_names, [gate.name for gate in verify_mod.gates()]
+                )
 
     def test_invalid_explicit_repo_is_a_normal_cli_error(self):
         cases = (

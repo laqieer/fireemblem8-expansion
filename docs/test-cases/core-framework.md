@@ -1094,8 +1094,9 @@ generated-homebrew capture validates the harness, not a production game ROM.
 ## TC-CORE-008: Upstream scan records a human decision
 
 - **Feature / originating issue:** `upstream-port-tooling` /
-  [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12) and
-  [#416](https://github.com/laqieer/fireemblem8-expansion/issues/416).
+  [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12),
+  [#416](https://github.com/laqieer/fireemblem8-expansion/issues/416), and
+  [#419](https://github.com/laqieer/fireemblem8-expansion/issues/419).
 - **Supported configuration or artifact:** a local source checkout with a
   verified canonical `decomp` remote and ignored `build/upstream-port/` output;
   the state tests also run in a disposable Linux/Python fixture without a remote.
@@ -1113,20 +1114,22 @@ generated-homebrew capture validates the harness, not a production game ROM.
    decision with rationale and validation evidence, then run `verify`.
 4. Run `python3 -m unittest tests.upstream_port.test_state -v` to exercise
    loaded and upserted decision statuses with and without evidence.
-5. From the source repository root, invoke the documented
-   `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
-   source-checkout selection and explicit `--repo <target-root>` selection.
+5. From the source repository root, run
+   `python3 -m scripts.upstream_port verify --dry-run` and
+   `python3 -m scripts.upstream_port --repo "$PWD" verify --dry-run`.
 
 ### Expected result
 
 Scan and drift are read-only and deterministic. Report output contains only
 the explicitly selected local commits; an accepted human decision is recorded
 with its rationale/evidence before the port boundary can advance.
-Both public `verify` paths execute repository-relative gates at the resolved
-target Git top level. That same root supplies `$GITHUB_WORKSPACE` expansion
-and workflow-pilot repository authority, and no gate has a separate working
-directory. The source-tree module is launched from its source repository root;
-it is not an installed nested/external entrypoint.
+Both dry runs list every gate as skipped without launching any gate command;
+Git may run to discover the repository root. Normal `verify` executes
+repository-relative gates at the resolved target Git top level. That same
+root supplies `$GITHUB_WORKSPACE` expansion and workflow-pilot repository
+authority, and no gate has a separate working directory. The source-tree
+module is launched from its source repository root; it is not an installed
+nested/external entrypoint.
 
 ### Negative control
 
@@ -1155,6 +1158,10 @@ compatibility impact.
 
 - `python3 -m unittest discover -s tests/upstream_port -v`
   — `tests/upstream_port/test_cli_readonly.py`.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_dry_run_never_executes_gate_commands`
+  — observes API and both CLI paths with Git root discovery stubbed.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_documented_source_root_module_dry_run_is_real`
+  — checks both real module invocations and their skipped-gate output.
 - `python3 -m unittest tests.upstream_port.test_state -v`
   — `tests/upstream_port/test_state.py`.
 - `python3 -m scripts.upstream_port verify --dry-run`
