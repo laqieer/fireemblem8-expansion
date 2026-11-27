@@ -546,6 +546,8 @@
       "title": "Exact delivery orchestration and workflow-pilot measurement governance",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/93",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/108",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/393",
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
@@ -584,6 +586,7 @@
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
+        "TC-WORKFLOW-REMOTE-COMPLETION-001",
         "TC-WORKFLOW-PRIVATE-CI-001",
         "TC-OWNERSHIP-SEALED-PLATFORM-STORAGE-001",
         "TC-WORKFLOW-IMMEDIATE-PUSH-001",
@@ -3183,6 +3186,35 @@
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",
           "evidence": "scripts/workflow_pilot/tests/test_worktree_cleanup.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-REMOTE-COMPLETION-001",
+      "title": "Require the exact automatic master Build",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/108",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/393"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-remote-completion-001-require-the-exact-automatic-master-build",
+      "profiles": [
+        "Linux source checkout with Python 3, Git and GNU Make; no ROM or credentials"
+      ],
+      "purpose": "Exercise the actual remote completion target's exact automatic master Build selection.",
+      "prerequisites": "Run from the repository root; the test creates its own clean Git repository and inert GitHub CLI boundary.",
+      "actions": "Run the focused Make-gate and parsed workflow tests; compare successful exact-master push evidence with feature-push, pull-request, wrong-SHA, failed, pending and missing run fixtures.",
+      "expected_result": "Only the successful push Build on master at the exact upstream SHA succeeds; the query selects the repository, event, branch, commit and build.yml. Equivalent option orderings remain valid.",
+      "negative_control": "A same-SHA feature or PR run, different SHA, failed or pending run and absent run all fail. Removing the event or branch filter fails even when the previous query words remain in a comment.",
+      "interactions": "Depends on the existing Make completion gate and real fixture Git; conflicts with using feature or PR evidence as the master result. CI scheduling is unchanged.",
+      "save_compatibility": "Source-only test change; no ROM/RAM, save/config, generated-data, localization, modern or archival impact.",
+      "cleanup": "Tests remove only their own temporary Git repository, fake CLI and generated fixtures.",
+      "limitations": "The controlled CLI models filtering and results; it does not validate live GitHub or the real CLI's JSON/--jq evaluation. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_build_default_lane.RemoteCompletionGateTests.test_remote_completion_requires_successful_exact_master_push tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_pull_request_remote_completion_dependency_fails tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_remote_completion_query_option_order_is_semantic -v",
+          "evidence": "scripts/modernize/tests/test_build_default_lane.py"
         }
       ]
     },

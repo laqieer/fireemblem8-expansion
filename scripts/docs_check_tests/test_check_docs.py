@@ -1087,6 +1087,18 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-REMOTE-COMPLETION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.modernize.tests.test_build_default_lane.RemoteCompletionGateTests."
+                            "test_remote_completion_requires_successful_exact_master_push "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_pull_request_remote_completion_dependency_fails "
+                            "tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests."
+                            "test_remote_completion_query_option_order_is_semantic -v",
+                        },
+                    },
                     "TC-WORKFLOW-BUILD-CI-SPLIT-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

@@ -42,12 +42,18 @@ because a full modern build/link/boot-check takes several minutes and this
 suite must stay fast and deterministic.
 """
 
+import argparse
+import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
@@ -96,16 +102,6 @@ def parse_print_variables(output):
         if match:
             values[match.group(1)] = match.group(2)
     return values
-
-
-def has_successful_workflow(runs, commit, branch):
-    return any(
-        run["commit"] == commit
-        and run["branch"] == branch
-        and run["status"] == "completed"
-        and run["conclusion"] == "success"
-        for run in runs
-    )
 
 
 class DefaultGoalDatabaseProbeTests(unittest.TestCase):
@@ -558,52 +554,160 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("HEAD is detached", text)
         self.assertIn('remote completion requires master, not', text)
         self.assertIn("git rev-parse '@{u}'", text)
-        self.assertIn(
-            "--event push --branch master --commit \"$$head_sha\" --workflow build.yml",
-            text,
-        )
         self.assertIn("gh issue list", text)
         self.assertIn("--state open", text)
 
-    def test_same_sha_feature_build_cannot_replace_missing_master_build(self):
-        exact_master_sha = "a" * 40
-        runs = [
-            {
-                "commit": exact_master_sha,
-                "branch": "feature/build",
-                "status": "completed",
-                "conclusion": "success",
-            }
-        ]
-
-        self.assertFalse(has_successful_workflow(runs, exact_master_sha, "master"))
-        self.assertTrue(
-            has_successful_workflow(
-                runs,
-                exact_master_sha,
-                "feature/build",
-            )
+    def test_remote_completion_requires_successful_exact_master_push(self):
+        environments = (
+            ("inherited", {}),
+            ("conflicting", {
+                "AUTOTOOLS_CONFIG_MK": "/nonexistent/config.autotools.mk",
+                "FE8_PROJECT": "invalid",
+                "FE8_PROJECT_PROFILE": "invalid",
+                "EXPANSION_ENABLED_LOCALES": "invalid",
+                "EXPANSION_DEFAULT_LOCALE": "invalid",
+                "EXPANSION_PSEUDO_LOCALE": "invalid",
+                "MODERN_BUILD_ROOT": "/nonexistent/modern",
+                "ASSET_DISCOVERY_MK": "/nonexistent/asset-discovery.mk",
+                "MAKEFILES": "/nonexistent/other.mk",
+                "MAKEFLAGS": "--invalid-fixture-option",
+            }),
         )
+        for name, ambient in environments:
+            with self.subTest(environment=name), mock.patch.dict(os.environ, ambient):
+                self._check_remote_completion_fixture()
 
-    def test_same_sha_pr_build_cannot_replace_missing_master_build(self):
-        exact_master_sha = "b" * 40
-        runs = [
-            {
-                "commit": exact_master_sha,
-                "branch": "agent/issue-93-review",
-                "status": "completed",
-                "conclusion": "success",
+    def _check_remote_completion_fixture(self):
+        git = shutil.which("git")
+        make = shutil.which("make")
+        self.assertIsNotNone(git)
+        self.assertIsNotNone(make)
+        with tempfile.TemporaryDirectory(prefix="remote-completion-") as directory:
+            root = Path(directory)
+            env = {
+                "PATH": os.defpath,
+                "HOME": str(root),
+                "TMPDIR": str(root),
+                "LC_ALL": "C",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+                "PYTHON": sys.executable,
+                "PYTHONDONTWRITEBYTECODE": "1",
             }
-        ]
+            repository = root / "repository"
+            subprocess.run([git, "init", "-q", "-b", "master", str(repository)], env=env, check=True)
+            (repository / "fixture").write_text("fixture\n", encoding="ascii")
 
-        self.assertFalse(has_successful_workflow(runs, exact_master_sha, "master"))
-        self.assertTrue(
-            has_successful_workflow(
-                runs,
-                exact_master_sha,
-                "agent/issue-93-review",
+            def git_run(*arguments):
+                return subprocess.run(
+                    [git, "-C", str(repository), *arguments],
+                    env=env, check=True, capture_output=True, text=True,
+                )
+
+            git_run("add", "fixture")
+            git_run(
+                "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-qm",
+                "Fixture\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
             )
-        )
+            sha = git_run("rev-parse", "HEAD").stdout.strip()
+            git_run("remote", "add", "origin", "https://example.invalid/repository.git")
+            git_run("update-ref", "refs/remotes/origin/master", sha)
+            git_run("config", "branch.master.remote", "origin")
+            git_run("config", "branch.master.merge", "refs/heads/master")
+
+            toolchain = root / "toolchain"
+            binaries = toolchain / "bin"
+            binaries.mkdir(parents=True)
+            git_wrapper = binaries / "git"
+            git_wrapper.write_text(
+                f"#!/bin/sh\nexec {shlex.quote(git)} -C {shlex.quote(str(repository))} \"$@\"\n",
+                encoding="utf-8",
+            )
+            git_wrapper.chmod(0o755)
+            gh = binaries / "gh"
+            gh.write_text(
+                f"#!{sys.executable}\n"
+                "import argparse, json, os, sys\n"
+                "from pathlib import Path\n"
+                "args = sys.argv[1:]\n"
+                "if args[:2] == ['repo', 'view']:\n"
+                "    print('fixture/repository')\n"
+                "    raise SystemExit(0)\n"
+                "if args[:2] != ['run', 'list']:\n"
+                "    raise SystemExit('unexpected gh command')\n"
+                "Path(os.environ['FIXTURE_GH_LOG']).write_text(json.dumps(args))\n"
+                "parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)\n"
+                "for flag in ('repo', 'event', 'branch', 'commit', 'workflow'):\n"
+                "    parser.add_argument('--' + flag)\n"
+                "options, _ = parser.parse_known_args(args[2:])\n"
+                "runs = json.loads(os.environ['FIXTURE_GH_RUNS'])\n"
+                "for field in ('event', 'branch', 'commit', 'workflow'):\n"
+                "    value = getattr(options, field)\n"
+                "    if value is not None:\n"
+                "        runs = [run for run in runs if run[field] == value]\n"
+                "if not runs:\n"
+                "    print('missing,,')\n"
+                "else:\n"
+                "    run = runs[0]\n"
+                "    print(','.join((run['status'], run['conclusion'], run['url'])))\n",
+                encoding="utf-8",
+            )
+            gh.chmod(0o755)
+            log = root / "gh-arguments.json"
+            env.update({
+                "PATH": str(binaries) + os.pathsep + os.defpath,
+                "TOOLCHAIN": str(toolchain),
+                "FIXTURE_GH_LOG": str(log),
+            })
+            discovery = root / "asset-discovery.mk"
+            assets = root / "asset-manifest.mk"
+            discovery.touch()
+            assets.touch()
+            success = {
+                "event": "push", "branch": "master", "commit": sha,
+                "workflow": "build.yml", "status": "completed", "conclusion": "success",
+                "url": "https://example.invalid/run/1",
+            }
+            cases = (
+                ("master-push", [success], True),
+                ("feature-push", [{**success, "branch": "feature/build"}], False),
+                ("pull-request", [{**success, "event": "pull_request"}], False),
+                ("wrong-commit", [{**success, "commit": "a" * 40}], False),
+                ("failed", [{**success, "conclusion": "failure"}], False),
+                ("pending", [{**success, "status": "in_progress", "conclusion": ""}], False),
+                ("missing", [], False),
+            )
+            for name, runs, expected in cases:
+                with self.subTest(case=name):
+                    log.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [make, "--no-print-directory", "-f", str(MAKEFILE),
+                         "-o", str(discovery), "-o", str(assets), "NODEP=1",
+                         "AUTOTOOLS_CONFIG_MK=", "FE8_PROJECT=default",
+                         "FE8_PROJECT_PROFILE=default", "EXPANSION_ENABLED_LOCALES=en",
+                         "EXPANSION_DEFAULT_LOCALE=en", "EXPANSION_PSEUDO_LOCALE=0",
+                         f"ASSET_DISCOVERY_MK={discovery}", f"ASSET_OUTPUT_MK={assets}",
+                         f"MODERN_BUILD_ROOT={root / 'build'}",
+                         f"GENERATED_DATA_OUT_DIR={root / 'generated-data'}",
+                         "remote-completion-check"],
+                        cwd=ROOT, env={**env, "FIXTURE_GH_RUNS": json.dumps(runs)},
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertEqual(result.returncode == 0, expected, result.stdout + result.stderr)
+                    args = json.loads(log.read_text(encoding="utf-8"))
+                    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+                    for flag in ("repo", "event", "branch", "commit", "workflow"):
+                        parser.add_argument("--" + flag)
+                    options, _ = parser.parse_known_args(args[2:])
+                    self.assertEqual(
+                        vars(options),
+                        {
+                            "repo": "fixture/repository", "event": "push", "branch": "master",
+                            "commit": sha, "workflow": "build.yml",
+                        },
+                    )
 
     def test_agent_instructions_make_remote_gate_mandatory(self):
         for path in (COPILOT_INSTRUCTIONS,):
