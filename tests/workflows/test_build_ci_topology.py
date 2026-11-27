@@ -6852,6 +6852,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 None,
             ),
         )
+        cases += tuple(
+            (f"{worker}-{result or 'missing'}", {**full, worker: result}, 1, None)
+            for worker in (
+                "BUILD_RESULT", "HOST_TESTS_RESULT", "EXTENDED_HOST_TESTS_RESULT",
+                "LEGACY_RESULT",
+            )
+            for result in ("", "failure", "cancelled", "skipped")
+        )
         with tempfile.TemporaryDirectory(
             prefix="workflow-summary-runtime-",
             dir=artifact_root,

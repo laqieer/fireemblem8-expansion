@@ -2435,7 +2435,8 @@ ROM/RAM, debug/release or archival behavior change.
 
 ### Automation, cleanup and limitations
 
-The focused tests exercise the parsed workflow and actual summary evaluator;
+The focused tests exercise the parsed workflow and actual summary evaluator,
+including empty, failed, cancelled and skipped results for each full worker;
 unittest cleans its disposable fixtures. The 120-minute allowance is a
 temporary mitigation, not a guarantee that future runs finish. A timed-out job
 may consume 30 more runner-minutes; compare actual elapsed time and total cost.
