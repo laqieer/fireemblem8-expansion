@@ -6777,6 +6777,12 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    Git status helper must also reject without removing the owner worktree.
    The pre-fix top-level parser strips trailing path whitespace, and Git's
    public submodule shell wrapper also fails on a trailing newline.
+   Repeat release, rollback and retry with LF, CR and mixed CR/LF embedded in
+   the common Git administrative path. Compare absolute and relative metadata
+   paths with Git; malformed, NUL, oversized, symlinked and forbidden private or
+   shared metadata must still reject before Git dispatch. The pre-fix reader
+   rejects the valid embedded controls. This does not claim support for every
+   possible filesystem path or replace the remaining review and admission gates.
    Simulate owner-removal failure and require rollback of the validation
    worktree while retaining the owner; retry must then succeed. The pre-fix
    line-based inventory rejects the registered owner before removal.
