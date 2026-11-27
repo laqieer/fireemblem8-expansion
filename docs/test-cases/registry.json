@@ -492,7 +492,8 @@
       "title": "Semantic runtime playtest harness",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/13",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/401"
       ],
       "reference": "tools/gba-playtest/README.md",
       "status": "current",
@@ -577,7 +578,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/356",
         "https://github.com/laqieer/fireemblem8-expansion/issues/359",
         "https://github.com/laqieer/fireemblem8-expansion/issues/380",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/390"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/390",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/445"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -761,7 +763,8 @@
       "required_cases": [
         "TC-LOCALIZATION-005",
         "TC-LOCALIZATION-006",
-        "TC-LOCALIZATION-007"
+        "TC-LOCALIZATION-007",
+        "TC-CI-POPUP-EVIDENCE-001"
       ]
     },
     {
@@ -2615,7 +2618,8 @@
       "feature_id": "runtime-playtest-harness",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/13",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/57"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/401"
       ],
       "document": "docs/test-cases/core-framework.md",
       "anchor": "tc-core-007-runtime-harness-detects-mismatch",
@@ -2625,9 +2629,9 @@
       ],
       "purpose": "Prove semantic scenario verification, provenance, and no baseline auto-refresh.",
       "prerequisites": "Clean boot with no committed save, savestate, or external baseline.",
-      "actions": "Run host-only tests, a behavior capture/verify route, and a deliberate mismatch fixture.",
-      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference.",
-      "negative_control": "Verify cannot rewrite an expected fingerprint and host-only mode is explicit.",
+      "actions": "Run host-only tests, including the registered ROM/ELF ownership and temporary-path controls, a behavior capture/verify route, and a deliberate mismatch fixture.",
+      "expected_result": "Valid scenarios verify and mismatches report the precise observed difference. Host-only live classes skip before artifact probes; normal-mode debug ELF layout checking runs.",
+      "negative_control": "Verify cannot rewrite an expected fingerprint. Missing debug ELF registration or guard is rejected, and an unguarded class reaches a poisoned probe; root-alias renaming and owned temporary paths remain valid.",
       "interactions": "The shared harness observes scenarios without changing their feature contracts.",
       "save_compatibility": "Scenarios start clean and do not alter save layout or epoch.",
       "cleanup": "Remove ignored captures with make clean_fast.",
@@ -2828,15 +2832,15 @@
       "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
       "title": "Expand valid findings across complete sibling families",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179", "https://github.com/laqieer/fireemblem8-expansion/issues/223"],
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179", "https://github.com/laqieer/fireemblem8-expansion/issues/223", "https://github.com/laqieer/fireemblem8-expansion/issues/445"],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
       "profiles": ["Host-only Linux source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
       "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
-      "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions. For #223, observe actual PID/exit state before staging cleanup across inner/outer timeouts, creation-boundary and running interruption, closed/inherited stdio, bounded/closed stdin, early leader exit, unrelated-process preservation and immutable helper substitution. Check caller-handler and inherited-mask preservation, plus retained live staging when real termination is unavailable.",
+      "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions. For #445, triage the observed error-only Copilot review and a later clean current-head review, and exercise ambiguous content, accepted findings, stale heads and sticky holds. For #223, observe actual PID/exit state before staging cleanup across inner/outer timeouts, creation-boundary and running interruption, closed/inherited stdio, bounded/closed stdin, early leader exit, unrelated-process preservation and immutable helper substitution. Check caller-handler and inherited-mask preservation, plus retained live staging when real termination is unavailable.",
       "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. The reviewer differs from coordinator and implementer, which may be one actual owner for coordinator-authored work. Staging removal requires positive cleanup confirmation from the exact trusted current operation, not an exception-type blacklist or candidate field. Record-only signals and protected checkpoints cover creation, body, cleanup, second signals and restoration while preserving caller semantics. Unconfirmed work retains staging and causal diagnostics; verified cleanup still removes staging on tool, timeout or ordinary release errors. Exact tool bytes, output and return classifications remain intact. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
-      "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility. The pre-fix real staged worker also removed its directory while an ordinary grandchild remained live after timeout.",
+      "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility. A failed Copilot review without a later clean current-head review, an ambiguous error, or one with a finding or unresolved thread cannot establish readiness; before #445 the honest failed/clean sequence remained blocked. The pre-fix real staged worker also removed its directory while an ordinary grandchild remained live after timeout.",
       "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
       "save_compatibility": "No gameplay, save/config, generated-game-data, locale, ROM/RAM, modern/archival or required-context changes.",
       "cleanup": "Tests remove only their owned build/review-family-* and build/review-process-tests-* fixtures after owned process exit. Unverified cleanup retains staged work. Keep task work and diagnostic logs; no remote mutation occurs.",
@@ -2845,6 +2849,14 @@
         {
           "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
           "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_review_family.RoundTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_family.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_failed_review_requires_a_later_observed_clean_review -v",
+          "evidence": "scripts/workflow_pilot/tests/test_github_review.py"
         },
         {
           "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v",
@@ -4085,6 +4097,34 @@
         {
           "command": "make expansion-modern-localization-runtime-prefs-check MODERN_CONFIG=debug MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/locale-prefs-corrupt-no-wipe-modern-debug.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-CI-POPUP-EVIDENCE-001",
+      "title": "Verify localized popup composition",
+      "feature_id": "localized-text-input-ui",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/464"
+      ],
+      "document": "docs/test-cases/localization.md",
+      "anchor": "tc-ci-popup-evidence-001-verify-localized-popup-composition",
+      "profiles": [
+        "Modern host-native text-consumer profile with Japanese and Simplified Chinese message stubs"
+      ],
+      "purpose": "Verify actual popup instruction arrays and drop/send wrappers compose localized item messages using the correct message IDs.",
+      "prerequisites": "Clean isolated source checkout with Python 3 and a host C compiler; do not run concurrent text-consumer tests in that checkout.",
+      "actions": "Run the focused native popup test on clean sources, independent prefix and punctuation mutations, and a semantics-preserving numeric-format change.",
+      "expected_result": "The clean and equivalent-format copies pass with correct Japanese and Chinese output, IDs, item and parent forwarding.",
+      "negative_control": "Each wrong prefix or punctuation ID fails, including wrong wrapper prefixes hidden by comments.",
+      "interactions": "Uses the existing native compiler, popup sources and text-consumer driver; other localization, feature and generated-data contracts are unchanged.",
+      "save_compatibility": "Host-only test changes no runtime save, migration, ROM/RAM or archival behavior.",
+      "cleanup": "The unittest removes its own build directory; remove only disposable control copies.",
+      "limitations": "Host evidence uses stubbed messages and does not prove target-ROM, glyph rendering or linguistic quality.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.texttools.tests.test_text_consumers_native.TextConsumerNativeTests.test_popup_prefixes_compose_before_actual_item_names -v",
+          "evidence": "scripts/texttools/tests/popup_composition_host_test.c"
         }
       ]
     },

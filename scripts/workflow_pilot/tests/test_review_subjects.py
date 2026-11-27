@@ -61,6 +61,324 @@ class SubjectTestCase(unittest.TestCase):
         self.assertTrue(all(item.checks > 0 for item in observations))
 
 
+class BuildTopologyFamilyTests(SubjectTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        subjects = cls.tools.subjects
+        source = GitTree(ROOT, git(ROOT, "rev-parse", "HEAD"))
+        paths = set(subjects.local_python_inputs(
+            source, (subjects.BUILD_TOPOLOGY, subjects.BUILD_VERIFY,
+                     subjects.BUILD_UPSTREAM_TEST)))
+        paths.update({
+            subjects.BUILD_WORKFLOW, subjects.BUILD_ARCHIVAL_HELPER,
+            "tests/workflows/__init__.py", "tests/upstream_port/__init__.py",
+        })
+        for name in paths:
+            target = cls.repo.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, target)
+        git(cls.repo.root, "add", ".")
+        git(cls.repo.root, "commit", "-qm", "source-backed Build topology")
+        cls.repo.base = git(cls.repo.root, "rev-parse", "HEAD")
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+
+    def build_scope(self, head=None):
+        return request("TC-TEST-QUALITY-001", "build-workflow-topology",
+                       self.repo.base, head or self.repo.base)
+
+    def selected(self, members, *names):
+        self.assertEqual({item.member for item in members if item.member in names}, set(names))
+        chosen = {item.identity: item for item in members if item.member in names}
+        for role in self.model.FAMILIES["wire"]:
+            item = next(item for item in members if item.role == role)
+            chosen[item.identity] = item
+        return tuple(chosen.values())
+
+    def selected_observations(self, members, revision, *names):
+        observed = self.run_members(members, revision)
+        return tuple(item for item in observed if item.obligation.member in names)
+
+    def test_complete_source_family_inputs_are_closed(self):
+        members = self.tools.members(self.build_scope())
+        self.assertEqual({item.role for item in members},
+                         set(self.model.FAMILIES["wire"]))
+        self.assertTrue(all(self.tools.subjects.BUILD_ARCHIVAL_HELPER in item.source_inputs
+                            for item in members))
+        self.assertTrue(all("scripts/workflow_pilot/review_subjects.py" not in item.source_inputs
+                            for item in members))
+
+    def test_original_ascii_and_unicode_boundaries_are_independent_controls(self):
+        path = self.tools.subjects.BUILD_TOPOLOGY
+        original = (self.repo.root / path).read_text()
+        fixed = r'(?=[^\s#-])'
+        self.assertIn(fixed, original)
+        for predicate in (r'(?=[^ \t#-])', r'(?=[^ \t#\r\n-])'):
+            with self.subTest(predicate=predicate):
+                before = self.repo.commit({path: original.replace(fixed, predicate, 1)})
+                after = self.repo.commit({path: original}, parent=before)
+                members = self.selected(
+                    self.tools.members(self.build_scope(after), (before,)),
+                    "validators:boundary-extended-host-tests")
+                prior = self.selected_observations(
+                    members, before, "validators:boundary-extended-host-tests")[0]
+                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
+                self.assert_satisfied(self.selected_observations(
+                    members, after, "validators:boundary-extended-host-tests"))
+
+    def test_historical_order_origins_have_source_backed_observations(self):
+        revision = "355dd69dbe0cad0250bfdc5589b2134577359c18"
+        paths = (
+            self.tools.subjects.BUILD_WORKFLOW,
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+        )
+        historical = {}
+        for path in paths:
+            result = subprocess.run(
+                ["/usr/bin/git", "show", revision + ":" + path],
+                cwd=ROOT, env=ENV, check=True, capture_output=True,
+            )
+            historical[path] = result.stdout
+        candidate = {path: (self.repo.root / path).read_bytes() for path in paths}
+        before = self.repo.commit(historical)
+        after = self.repo.commit(candidate, parent=before)
+        workers, _ = self.tools.subjects.build_source_model(
+            (self.repo.root / self.tools.subjects.BUILD_WORKFLOW).read_text(),
+            (self.repo.root / self.tools.subjects.BUILD_TOPOLOGY).read_bytes(),
+            (self.repo.root / self.tools.subjects.BUILD_VERIFY).read_bytes(),
+        )
+        names = tuple(
+            f"validators:{kind}-{worker}"
+            for worker in workers
+            for kind in ("topology-order", "upstream-order")
+        )
+        members = self.tools.members(self.build_scope(after), (before,))
+        prior = self.run_members(members, before)
+        by_name = {item.obligation.member: item for item in prior}
+        self.assertEqual(len(by_name), len(members))
+        self.assertEqual(
+            {name for name, item in by_name.items() if item.verdict == "unavailable"},
+            {"validators:source-test-topology-order", "validators:source-test-upstream-order"},
+        )
+        self.assertTrue(
+            all(by_name[name].verdict == "contract-violation" and by_name[name].checks > 0
+                for name in names),
+            [(name, by_name[name].verdict, by_name[name].checks, by_name[name].detail)
+             for name in names],
+        )
+        self.assert_satisfied(self.run_members(members, after))
+
+    def test_worker_order_source_tests_fail_at_historical_origin_and_pass_on_candidate(self):
+        revision = "4f88c0e1a0f5569d4dd0cf37b6cd01083760d081"
+        origin = GitTree(ROOT, revision)
+        roots = (
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+            self.tools.subjects.BUILD_UPSTREAM_TEST,
+        )
+        paths = set(self.tools.subjects.local_python_inputs(origin, roots))
+        paths.update({
+            self.tools.subjects.BUILD_WORKFLOW,
+            self.tools.subjects.BUILD_TOPOLOGY,
+            self.tools.subjects.BUILD_VERIFY,
+            self.tools.subjects.BUILD_UPSTREAM_TEST,
+            self.tools.subjects.BUILD_ARCHIVAL_HELPER,
+            "tests/workflows/__init__.py",
+        })
+        historical = {path: origin.read(path) for path in paths}
+        candidate = {path: (ROOT / path).read_bytes() for path in paths}
+        before = self.repo.commit(historical)
+        after = self.repo.commit(candidate, parent=before)
+        members = self.tools.members(self.build_scope(after), (before,))
+        names = {
+            "validators:source-test-topology-order",
+            "validators:source-test-upstream-order",
+        }
+        by_name = {item.member: item for item in members}
+        self.assertTrue(names <= set(by_name))
+        self.assertTrue(all(path in by_name[next(iter(names))].source_inputs
+                            for path in (self.tools.subjects.BUILD_TOPOLOGY,
+                                         self.tools.subjects.BUILD_UPSTREAM_TEST)))
+
+        prior = {item.obligation.member: item
+                 for item in self.selected_observations(members, before, *names)}
+        self.assertEqual(set(prior), names)
+        self.assertTrue(all(item.verdict == "contract-violation" and item.checks > 0
+                            for item in prior.values()),
+                        [(name, item.verdict, item.checks, item.detail)
+                         for name, item in prior.items()])
+
+        current = {item.obligation.member: item
+                   for item in self.selected_observations(members, after, *names)}
+        self.assertEqual(set(current), names)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
+                            for item in current.values()),
+                        [(name, item.verdict, item.checks, item.detail)
+                         for name, item in current.items()])
+
+        workflow_path = self.tools.subjects.BUILD_WORKFLOW
+        workflow = candidate[workflow_path].decode()
+        job = self.tools.subjects.build_job_blocks(workflow)["host-tests"]
+        fields = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.MULTILINE))
+        steps_index = next(index for index, match in enumerate(fields)
+                           if match.group(1) == "steps")
+        steps_first_job = (job if steps_index == 0
+                           else self.tools.subjects.build_reorder_field(job, "steps"))
+        first_fields = list(re.finditer(
+            r"^    ([A-Za-z_][A-Za-z0-9_-]*):", steps_first_job, re.MULTILINE))
+        self.assertEqual(first_fields[0].group(1), "steps")
+        steps_first_candidate = dict(candidate)
+        steps_first_candidate[workflow_path] = workflow.replace(
+            job, steps_first_job, 1).encode()
+        steps_first = self.repo.commit(steps_first_candidate, parent=before)
+        steps_first_members = self.tools.members(self.build_scope(steps_first), (before,))
+        observations = {
+            item.obligation.member: item
+            for item in self.selected_observations(steps_first_members, steps_first, *names)
+        }
+        self.assertEqual(set(observations), names)
+        self.assertTrue(all(item.verdict == "satisfied" and item.checks > 0
+                            for item in observations.values()),
+                        [(name, item.verdict, item.checks, item.detail)
+                         for name, item in observations.items()])
+
+    def test_source_test_skips_and_expected_failures_are_not_positive_evidence(self):
+        from tests.workflows import test_build_ci_topology as topology
+
+        test_class = topology.ConsolidatedBuildTopologyTests
+        probe = "build-topology:source-test:topology-order"
+
+        @unittest.expectedFailure
+        def expected_failure(self):
+            self.fail("controlled expected failure")
+
+        @unittest.skip("controlled skip")
+        def skipped(self):
+            self.fail("controlled skip")
+
+        @unittest.expectedFailure
+        def unexpected_success(self):
+            pass
+
+        for outcome, test_method in (
+            ("expected-failure", expected_failure),
+            ("skipped", skipped),
+            ("unexpected-success", unexpected_success),
+        ):
+            with self.subTest(outcome=outcome):
+                with patch.object(
+                    test_class, "test_worker_blocks_can_precede_other_job_fields", test_method
+                ):
+                    observed = self.tools.subjects._build_topology(probe)
+                self.assertEqual((observed["verdict"], observed["checks"]),
+                                 ("unavailable", 0))
+
+    def test_target_consumers_detect_original_order_sensitive_predicate(self):
+        verifier = self.tools.subjects.BUILD_VERIFY
+        original = subprocess.run(
+            ["/usr/bin/git", "show",
+             "355dd69dbe0cad0250bfdc5589b2134577359c18:" + verifier],
+            cwd=ROOT, env=ENV, check=True, capture_output=True, text=True,
+        ).stdout
+        candidate = (self.repo.root / verifier).read_text()
+        before = self.repo.commit({verifier: original})
+        after = self.repo.commit({verifier: candidate}, parent=before)
+        names = tuple("consumers:" + name for name in (
+            "host-tests", "extended-host-tests", "build", "legacy"))
+        members = self.selected(self.tools.members(self.build_scope(after), (before,)), *names)
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual(len(prior), len(names))
+        self.assertTrue(all(item.verdict == "contract-violation" and item.checks > 0
+                            for item in prior))
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
+    def test_target_boundary_binds_every_source_job(self):
+        verifier = self.tools.subjects.BUILD_VERIFY
+        original = (self.repo.root / verifier).read_text()
+        bypass = '''
+_original_job_context = _parse_job_context
+_original_job_steps = _parse_job_steps
+def _without_shallow_lines(body):
+    return "".join(line for line in body.splitlines(keepends=True)
+                   if not line.strip() or line.lstrip().startswith("#")
+                   or len(line) - len(line.lstrip(" ")) >= 4)
+def _parse_job_context(job_name, body):
+    return _original_job_context(job_name, _without_shallow_lines(body))
+def _parse_job_steps(job_name, body, repository_root=None):
+    return _original_job_steps(job_name, _without_shallow_lines(body), repository_root)
+'''
+        before = self.repo.commit({verifier: original + bypass})
+        after = self.repo.commit({verifier: original}, parent=before)
+        workflow = (self.repo.root / self.tools.subjects.BUILD_WORKFLOW).read_text()
+        names = tuple("validators:target-boundary-" + name
+                      for name in self.tools.subjects.build_job_blocks(workflow))
+        members = self.selected(self.tools.members(self.build_scope(after), (before,)), *names)
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual(len(prior), len(names))
+        self.assertTrue(all(item.verdict == "contract-violation" for item in prior))
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
+    def test_unsafe_target_and_shallow_literal_mutations_are_rejected(self):
+        path = self.tools.subjects.BUILD_VERIFY
+        original = (self.repo.root / path).read_text()
+        broken = original.replace(
+            "def _require_target_gate_equivalence(repository_root):\n",
+            "def _require_target_gate_equivalence(repository_root):\n    return\n", 1)
+        self.assertNotEqual(original, broken)
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: original}, parent=before)
+        members = self.selected(
+            self.tools.members(self.build_scope(after), (before,)),
+            "consumers:host-tests", "stale-bindings:width-script")
+        names = ("consumers:host-tests", "stale-bindings:width-script")
+        prior = self.selected_observations(members, before, *names)
+        self.assertEqual([item.verdict for item in prior],
+                         ["contract-violation", "contract-violation"])
+        self.assert_satisfied(self.selected_observations(members, after, *names))
+
+    def test_literal_extractors_each_retain_commands_after_shallow_blank(self):
+        for path in (self.tools.subjects.BUILD_TOPOLOGY, self.tools.subjects.BUILD_VERIFY):
+            with self.subTest(path=path):
+                original = (self.repo.root / path).read_text()
+                broken = original.replace(
+                    'if line.strip() and not line.startswith("        "):',
+                    'if line and not line.startswith("        "):', 1)
+                self.assertNotEqual(original, broken)
+                before = self.repo.commit({path: broken})
+                after = self.repo.commit({path: original}, parent=before)
+                name = "replay:extended-host-tests"
+                members = self.selected(self.tools.members(self.build_scope(after), (before,)), name)
+                prior = self.selected_observations(members, before, name)[0]
+                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
+                self.assert_satisfied(self.selected_observations(members, after, name))
+
+    def test_model_preserves_step_sequence_and_rejects_ambiguous_source(self):
+        subjects = self.tools.subjects
+        path = subjects.BUILD_WORKFLOW
+        original = (self.repo.root / path).read_text()
+        jobs = subjects.build_job_blocks(original)
+        job = jobs["host-tests"]
+        reordered = original.replace(job, subjects.build_reorder_field(job, "steps"), 1)
+        topology = (self.repo.root / subjects.BUILD_TOPOLOGY).read_bytes()
+        verifier = (self.repo.root / subjects.BUILD_VERIFY).read_bytes()
+        self.assertEqual(subjects.build_source_model(original, topology, verifier),
+                         subjects.build_source_model(reordered, topology, verifier))
+        step, next_step, *_ = subjects.build_step_blocks(job)
+        changed_job = job.replace(step + next_step, next_step + step, 1)
+        self.assertNotEqual(job, changed_job)
+        swapped = self.repo.commit({path: original.replace(job, changed_job, 1)})
+        with self.assertRaisesRegex(ValueError, "production mapping changed"):
+            self.tools.members(self.build_scope(swapped), (self.repo.base,))
+        ambiguous = original.replace(step, step + step, 1)
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            subjects.build_source_model(ambiguous, topology, verifier)
+        missing = self.repo.commit({subjects.BUILD_ARCHIVAL_HELPER: None})
+        with self.assertRaises(ValueError):
+            self.tools.members(self.build_scope(missing))
+
+
 class AuthoredCaseFamilyTests(SubjectTestCase):
     @classmethod
     def setUpClass(cls):

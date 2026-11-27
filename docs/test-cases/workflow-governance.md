@@ -1038,7 +1038,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179);
   ordinary subprocess cleanup regression
-  [#223](https://github.com/laqieer/fireemblem8-expansion/issues/223).
+  [#223](https://github.com/laqieer/fireemblem8-expansion/issues/223);
+  failed-review triage regression
+  [#445](https://github.com/laqieer/fireemblem8-expansion/issues/445).
 - **Supported configuration:** Linux source checkout, the existing #216 locked
   CPython 3.12 host environment, Git and native GCC for host coverage; the
   existing modern Build lane's ARM GCC/binutils for mandatory object positives.
@@ -1295,6 +1297,20 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    Resolve the conversation in the observed GitHub facts and reject stale
    triage. While the earlier record remains untriaged, both flags must still
    be false. Complete normal retriage and require both positive flags.
+   Collect an error-only Copilot review and triage it as failed; neither
+   readiness nor clean status passes until a later complete clean review of
+   the current head. A stale-head clean review does not satisfy that
+   requirement. A changed or ambiguous error, inline comment, unresolved
+   thread or accepted finding cannot establish the failed disposition,
+   including a finding accepted afterward. A body containing the exact error
+   response cannot be triaged clean even with additional content or if marked
+   approved. A clean review with the same submission timestamp as a failed
+   review cannot establish later chronology, regardless of review ID order;
+   a strictly later clean current-head review can. Verify a failed review does
+   not reset prior
+   change-request rounds or clear a sticky architecture hold. The
+   `RoundTests` and `GitHubReviewTests` failed-review controls exercise the
+   reducer and authenticated adapter against the observed error response.
    Unrelated live-base fast-forwards preserve the actual candidate merge base;
    substituting an older ancestor or a base outside that lineage rejects.
 9. Exercise the real isolated launcher from a separately trusted checkout or
