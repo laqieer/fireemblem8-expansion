@@ -86,6 +86,7 @@ and its fail-closed all-current-feature coverage assertion.
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_order_regressions_accept_reordered_workflow \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_literal_blocks_reject_shallow_tabs \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_rejects_misindented_job_fields_at_each_boundary
    ```
 6. Exercise the source-backed review-family binding with
@@ -112,6 +113,13 @@ rejecting either is a failing semantic observation, not an unavailable probe.
 Equivalent job-field reordering preserves its finite source model.
 All eight Build jobs reject misindented execution fields after the job header,
 before steps, and after steps in the target dry-run verifier.
+For [issue #496](https://github.com/laqieer/fireemblem8-expansion/issues/496),
+the target verifier accepts space-only blanks and properly indented tabs in
+literal blocks, but rejects tabs before the content indentation inferred from
+the first content line, including when that indentation exceeds eight spaces.
+Seven-space literal content and an initial tab at that indentation remain valid.
+Shallower trailing YAML comments remain valid; additional script content after
+such a comment is rejected.
 
 ### Negative control
 
@@ -121,6 +129,8 @@ paragraph, duplicate or lower-level policy heading, Markdown markup, and
 invalid syntax. These mutations preserve enough surrounding text to prove the
 semantic parser rather than a raw phrase search is enforcing the contract.
 Before the #481 fix, the worker-order regressions reject equivalent mappings.
+Before the #496 fix, malformed shallow tab-only lines are accepted by the
+target verifier.
 Before the regression-test correction, moving `host-tests.steps` first makes
 both worker-order test cases fail even though both validators accept the
 equivalent workflow.

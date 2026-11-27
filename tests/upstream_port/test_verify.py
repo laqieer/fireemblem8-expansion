@@ -2024,6 +2024,123 @@ class VerifyCliCwdTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             verify_mod._parse_workflow_structure_text(mutation)
 
+    def test_target_literal_blocks_reject_shallow_tabs(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-literal-indent-", dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(target_root, ".github", "workflows", "build.yml")
+            with open(workflow_path, encoding="utf-8") as handle:
+                original = handle.read()
+            command = (
+                "        python3 -m unittest discover -s scripts/linker_report/tests "
+                "-p 'test_*.py' -v\n"
+            )
+            self.assertEqual(original.count(command), 1)
+            expected = verify_mod.run_gates(target_root, dry_run=True)
+            for line, valid in (
+                ("", True), ("    ", True), ("        ", True), ("        \t", True),
+                ("\t", False), (" \t", False), ("    \t", False), ("       \t", False),
+            ):
+                with self.subTest(line=repr(line)):
+                    changed = original.replace(command, line + "\n" + command, 1)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    if valid:
+                        self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+                    else:
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+            first = (
+                "        python3 -m unittest discover -s scripts/modernize/tests "
+                "-p 'test_expansion_config.py' -v\n"
+            )
+            self.assertEqual(original.count(first), 1)
+            for spaces, valid in ((6, False), (7, True), (8, True)):
+                with self.subTest(first_content_tab_indent=spaces):
+                    changed = original.replace(first, " " * spaces + "\t\n" + first, 1)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    if valid:
+                        self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+                    else:
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+            seven_space = original.replace(first, first[1:], 1).replace(
+                command, command[1:], 1,
+            )
+            for prefix in ("", "       \t\n"):
+                with self.subTest(content_indent=7, initial_tab=bool(prefix)):
+                    changed = seven_space.replace(first[1:], prefix + first[1:], 1)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+
+            inline = (
+                "      run: python3 -m unittest discover -s scripts/texttools/tests "
+                "-p 'test_multilang_codec*.py' -v\n"
+            )
+            self.assertEqual(original.count(inline), 1)
+            changed = original.replace(inline, inline + "       echo unexpected\n", 1)
+            with open(workflow_path, "w", encoding="utf-8") as handle:
+                handle.write(changed)
+            with self.assertRaises(ValueError):
+                verify_mod.run_gates(target_root, dry_run=True)
+
+            deeper = original.replace(first, "  " + first, 1).replace(
+                command, "  " + command, 1,
+            )
+            for spaces, valid in ((8, False), (9, False), (10, True)):
+                with self.subTest(content_indent=10, tab_indent=spaces):
+                    changed = deeper.replace(
+                        "  " + command, " " * spaces + "\t\n  " + command, 1,
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    if valid:
+                        self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+                    else:
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+            for spaces in (6, 7, 8, 9):
+                with self.subTest(content_indent=10, comment_indent=spaces):
+                    changed = deeper.replace(
+                        "  " + command,
+                        "  " + command + " " * spaces + "# trailing comment\n",
+                        1,
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+
+                    changed = deeper.replace(
+                        "  " + command,
+                        " " * spaces + "# trailing comment\n  " + command,
+                        1,
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+                    for content_spaces in (7, 10):
+                        with self.subTest(resumed_indent=content_spaces):
+                            changed = deeper.replace(
+                                "  " + command,
+                                "  " + command + " " * spaces + "# trailing comment\n"
+                                + " " * content_spaces + "echo unexpected\n",
+                                1,
+                            )
+                            with open(workflow_path, "w", encoding="utf-8") as handle:
+                                handle.write(changed)
+                            with self.assertRaises(ValueError):
+                                verify_mod.run_gates(target_root, dry_run=True)
+
     def test_target_rejects_misindented_job_fields_at_each_boundary(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
         os.makedirs(artifact_root, exist_ok=True)

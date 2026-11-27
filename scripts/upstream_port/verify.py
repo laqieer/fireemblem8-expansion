@@ -1663,11 +1663,33 @@ def _literal_run_script(lines, start, end, value, step_label):
     if value != "|":
         raise ValueError(f"{step_label} must use a literal run block")
     script = []
+    content_indent = None
+    ended = False
     for line in lines[start:end]:
-        if line.strip() and not line.startswith("        "):
-            break
-        script.append(line[8:] if line else "")
-    return "\n".join(script) + "\n"
+        unindented = line.lstrip(" ")
+        if unindented:
+            indent = len(line) - len(unindented)
+            if ended:
+                if not unindented.startswith("#"):
+                    raise ValueError(f"{step_label} has content after its literal block")
+                continue
+            if indent < 7:
+                if unindented.startswith("\t"):
+                    raise ValueError(f"{step_label} uses a tab in literal block indentation")
+                if unindented.startswith("#"):
+                    ended = True
+                    continue
+                break
+            if content_indent is None:
+                content_indent = indent
+            elif indent < content_indent:
+                if unindented.startswith("#"):
+                    ended = True
+                    continue
+                raise ValueError(f"{step_label} uses insufficient literal block indentation")
+        if not ended:
+            script.append(line)
+    return "\n".join(line[content_indent or 8:] for line in script) + "\n"
 
 
 def _bash_line_state(line, state):
@@ -1781,7 +1803,9 @@ def _parse_step(block, job_name, index, repository_root=None):
                     f"{step_label} uses unsupported direct mapping-key syntax"
                 )
             direct.append((match.group(1), match.group(2), line_index))
-        elif indent < 8:
+        elif indent < 8 and not (
+            indent == 7 and direct[-1][0] == "run" and direct[-1][1].strip() == "|"
+        ):
             raise ValueError(f"{step_label} uses unsupported step indentation")
 
     direct_names = [name for name, _, _ in direct]
