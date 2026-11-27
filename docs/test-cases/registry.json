@@ -2666,6 +2666,7 @@
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/12",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/415",
         "https://github.com/laqieer/fireemblem8-expansion/issues/416"
       ],
       "document": "docs/test-cases/core-framework.md",
@@ -2676,10 +2677,10 @@
         "Disposable Linux/Python state fixture"
       ],
       "purpose": "Prove read-only scan/report safety and the explicit decision-record boundary.",
-      "prerequisites": "No pending state update; use a locally available canonical ref or explicit fetch, or a disposable Python fixture for state-evidence tests.",
-      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run the exact documented verify --dry-run module command and exercise implicit source-checkout plus explicit --repo target selection. In a disposable fixture, exercise loaded and upserted decision statuses with and without evidence.",
-      "expected_result": "Read-only commands do not alter source; all four non-pending statuses require rationale and validation evidence for both loaded records and upserts, while pending may omit them. Every verify gate executes at the resolved target Git top level, which is also the workspace-expansion and repository-authority root. The source-tree module remains a source-root invocation rather than an installed entrypoint.",
-      "negative_control": "Unsafe output, wrong refs, merges, missing evidence, and a non-root target are rejected; no nested/external module-discovery contract or per-gate working directory is introduced. Restricting the evidence-required status set to ported in a disposable process makes the missing-evidence controls fail for the other three statuses.",
+      "prerequisites": "No pending state update; use a locally available canonical ref or explicit fetch, or a disposable Python fixture for state tests.",
+      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run the exact documented verify --dry-run module command and exercise implicit source-checkout plus explicit --repo target selection. In a disposable fixture, exercise loaded and upserted decision statuses with and without evidence and transition an existing pending record to pending and ported.",
+      "expected_result": "Read-only commands do not alter source; all four non-pending statuses require rationale and validation evidence for both loaded records and upserts, while pending may omit them. An existing pending record can remain pending or become ported with its decision evidence. Every verify gate executes at the resolved target Git top level, which is also the workspace-expansion and repository-authority root. The source-tree module remains a source-root invocation rather than an installed entrypoint.",
+      "negative_control": "Unsafe output, wrong refs, merges, missing evidence, and a non-root target are rejected; no nested/external module-discovery contract or per-gate working directory is introduced. Emptying the pending transition set makes both pending-transition tests fail; restricting the evidence-required status set to ported makes the missing-evidence controls fail for the other three statuses.",
       "interactions": "The tool never executes or mutates upstream source.",
       "save_compatibility": "No runtime, generated-data, ROM, RAM, or save impact.",
       "cleanup": "Remove only the named ignored report directory.",

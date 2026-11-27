@@ -1095,6 +1095,7 @@ generated-homebrew capture validates the harness, not a production game ROM.
 
 - **Feature / originating issue:** `upstream-port-tooling` /
   [#12](https://github.com/laqieer/fireemblem8-expansion/issues/12) and
+  [#415](https://github.com/laqieer/fireemblem8-expansion/issues/415) and
   [#416](https://github.com/laqieer/fireemblem8-expansion/issues/416).
 - **Supported configuration or artifact:** a local source checkout with a
   verified canonical `decomp` remote and ignored `build/upstream-port/` output;
@@ -1112,7 +1113,8 @@ generated-homebrew capture validates the harness, not a production game ROM.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
 4. Run `python3 -m unittest tests.upstream_port.test_state -v` to exercise
-   loaded and upserted decision statuses with and without evidence.
+   loaded and upserted decision statuses with and without evidence, including
+   an existing pending record transitioning to pending and ported.
 5. From the source repository root, invoke the documented
    `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
    source-checkout selection and explicit `--repo <target-root>` selection.
@@ -1122,6 +1124,8 @@ generated-homebrew capture validates the harness, not a production game ROM.
 Scan and drift are read-only and deterministic. Report output contains only
 the explicitly selected local commits; an accepted human decision is recorded
 with its rationale/evidence before the port boundary can advance.
+An existing pending record can remain pending or become ported; the ported
+record retains the decision rationale and validation evidence.
 Both public `verify` paths execute repository-relative gates at the resolved
 target Git top level. That same root supplies `$GITHUB_WORKSPACE` expansion
 and workflow-pilot repository authority, and no gate has a separate working
@@ -1136,6 +1140,13 @@ attempt to mutate upstream source. A non-root target cannot become gate
 authority or execution cwd. Both loaded records and upserts reject missing
 rationale or validation evidence for every non-pending status; pending
 records may leave those fields empty.
+
+In a disposable Python process, replace the permitted pending transitions
+with an empty set; both existing-pending transition tests must fail:
+
+```sh
+python3 -c 'import unittest; from scripts.upstream_port import constants; constants.ALLOWED_TRANSITIONS["pending"] = set(); unittest.main(module="tests.upstream_port.test_state", defaultTest="UpsertCommitStatusTests", verbosity=2)'
+```
 
 In a disposable Python process, weaken the evidence-required status set.
 The loader and upsert missing-evidence controls must fail for skipped,

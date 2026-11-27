@@ -337,10 +337,15 @@ class UpsertCommitStatusTests(unittest.TestCase):
         )
 
     def test_pending_to_ported_allowed(self):
+        self._mark("pending", rationale="", evidence="")
         self._mark("ported")
-        self.assertEqual(self.state["commits"][self.sha]["status"], "ported")
+        record = self.state["commits"][self.sha]
+        self.assertEqual(record["status"], "ported")
+        self.assertEqual(record["rationale"], "because")
+        self.assertEqual(record["validation_evidence"], "tested")
 
-    def test_pending_to_pending_is_a_noop_default(self):
+    def test_pending_to_pending_allowed(self):
+        self._mark("pending", rationale="", evidence="")
         self._mark("pending", rationale="", evidence="")
         self.assertEqual(self.state["commits"][self.sha]["status"], "pending")
 
