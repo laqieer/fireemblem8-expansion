@@ -107,6 +107,9 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                     "native_bmdebug.c", "native_debug_save_fixture.c",
                     "native_savemenu.c", "native_sio_term.c",
                 ))
+            sources.append(
+                ROOT / "tools/gba-playtest/tests/c/grado_choice_checkpoints_native.c"
+            )
             sources.append(ROOT / "src/helpbox.c")
             assembly.extend((
                 (ROOT / "asm/arm.s", "arm.o"),
@@ -272,6 +275,7 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
                 self.assertLessEqual(rom.stat().st_size, 1024 * 1024)
                 if full_paths:
                     self._assert_native_save_paths(epoch, work, tools, elf, rom)
+                    self._assert_choice_checkpoints(epoch, work, tools, elf, rom)
                     continue
                 _, size = resolve_elf_symbol(elf, "gGradoSaveCompatProbe", tools["MODERN_NM"])
                 self.assertEqual(size, 16 + 13 * 12)
@@ -638,3 +642,248 @@ ASSERT(SIZEOF(.data) + SIZEOF(.ewram) < 0x40000, "module EWRAM overflow")
             "ewram_bytes": resources["data"] + resources["ewram"],
             "iwram_bytes": resources["iwram"],
         }))
+
+    def _assert_choice_checkpoints(self, epoch, work, tools, elf, rom):
+        _, size = resolve_elf_symbol(
+            elf, "gGradoChoiceCheckpointProbe", tools["MODERN_NM"])
+        header_words = 25
+        default_words = 9 * 6
+        outcome_words = 31 * 22
+        direction_history_words = 14 * 20
+        self.assertEqual(
+            size,
+            (header_words + default_words + outcome_words + direction_history_words) * 4,
+        )
+
+        scenario = work / "choice-checkpoints-scenario.json"
+        scenario.write_text(json.dumps({
+            "schema_version": 1, "name": "grado-choice-checkpoints",
+            "frames": [{"start": 0, "end": 1200, "keys": ["R", "SELECT"]}],
+            "checkpoints": [{
+                "name": "choice-checkpoint-records", "frame": 1200, "framebuffer": False,
+                "probes": [
+                    {"address": f"gGradoChoiceCheckpointProbe+0x{offset:x}", "size": 4}
+                    for offset in range(0, size, 4)
+                ],
+            }],
+        }), encoding="utf-8")
+        output = work / "choice-checkpoints-capture.json"
+        self.run_command([
+            sys.executable, "-B", ROOT / "tools/gba-playtest/gba_playtest.py",
+            "capture", "--rom", rom, "--elf", elf, "--nm", tools["MODERN_NM"],
+            "--scenario", scenario, "--output", output,
+        ], cwd=ROOT)
+        capture = json.loads(output.read_text())
+        values = {
+            probe["address"]: int(probe["value"], 16)
+            for probe in capture["checkpoints"][0]["probes"]
+        }
+        data = b"".join(
+            values[f"gGradoChoiceCheckpointProbe+0x{offset:x}"].to_bytes(4, "little")
+            for offset in range(0, size, 4)
+        )
+        header = struct.unpack_from("<25I", data)
+        self.assertEqual(header[:3], (2, 31 if epoch == 256 else 0, int(epoch == 256)))
+
+        if epoch == 2:
+            self.assertEqual(
+                header,
+                (2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+            )
+            self.assertEqual(data[header_words * 4:], bytes(size - header_words * 4))
+            return
+
+        self.assertEqual(header[3:11], (1, 1, 1, 1, 1, 0, 1, 1))
+        self.assertIn(header[11], (3, 4))
+        self.assertEqual(header[12:17], (0, 1, 1, 1, 1))
+        self.assertEqual(header[17:23], (1, 1, 1, 1, 1, 1))
+        self.assertEqual(header[23], 14)
+        self.assertEqual(header[24], 1)
+
+        defaults = [
+            struct.unpack_from("<6I", data, header_words * 4 + index * 24)
+            for index in range(9)
+        ]
+        expected_defaults = (2, 2, 2, 2, 3, 3, 3, 2, 2)
+        self.assertEqual(defaults, [
+            (family, value, value, 1, 1, 1)
+            for family, value in enumerate(expected_defaults)
+        ])
+
+        labels = (
+            (
+                "CENTRAL | Cost: local resistance",
+                "COUNCIL | Cost: slower enforcement",
+                "LOCAL | Cost: raid pressure",
+            ),
+            (
+                "FULL | Cost: recurring payments",
+                "LIMITED | Cost: delayed accountability",
+                "DECLINE | Cost: lost grain aid",
+            ),
+            (
+                "SUPPRESS | Cost: local alienation",
+                "CONCEDE | Cost: central revenue",
+                "AUTONOMY | Cost: weaker central authority",
+            ),
+            (
+                "FULL_PUBLIC | Cost: military morale",
+                "LIMITED | Cost: public distrust",
+                "SEALED | Cost: foreign trust",
+            ),
+            (
+                "CAPITAL | Cost: remote districts abandoned",
+                "FRONTIER | Cost: capital supply",
+                "EVEN | Cost: moderate losses everywhere",
+            ),
+            (
+                "SHIELD | Cost: weaker central deterrence",
+                "STATE_ARMY | Cost: local distrust",
+                "DISBAND_MIN | Cost: weaker air rescue",
+            ),
+            (
+                "SELF_RULE | Cost: weaker coordination",
+                "GARRISON | Cost: local backlash",
+                "MEDIATE | Cost: slower results",
+            ),
+            (
+                "FULL | Cost: lower temple autonomy",
+                "LIMITED | Cost: continued mutual distrust",
+                "REFUSE | Cost: no outside medical teams",
+            ),
+            (
+                "SURRENDER | Cost: knowledge and rewards lost",
+                "JOINT | Cost: leak risk",
+                "RETAIN | Cost: less foreign support",
+            ),
+            (
+                "CENTRAL | Cost: adverse transition",
+                "AUTONOMY | Cost: favorable transition",
+                "FOREIGN | Cost: favorable transition",
+                "RECKONING | Cost: favorable transition",
+            ),
+        )
+
+        def label_hash(text):
+            result = 2166136261
+            for byte in text.encode("ascii"):
+                result = ((result ^ byte) * 16777619) & 0xFFFFFFFF
+            return result
+
+        outcome_offset = (header_words + default_words) * 4
+        outcomes = [
+            struct.unpack_from("<22I", data, outcome_offset + index * 88)
+            for index in range(31)
+        ]
+        expected = []
+        for family, family_labels in enumerate(labels):
+            for option, label in enumerate(family_labels):
+                expected_value = option + 1
+                expected_gold = 1234 + family * 4 + option + 1
+                outcome = outcomes[len(expected)]
+                expected.append(outcome)
+                self.assertEqual(outcome[:3], (family, option, expected_value))
+                self.assertEqual(outcome[3], expected_value, (family, option, outcome))
+                self.assertEqual(outcome[4:8], (
+                    1234, expected_gold, label_hash(label), len(label),
+                ))
+                self.assertEqual(outcome[8:13], (
+                    1, 1, int(family == 0 and option == 0), 1, 1,
+                ))
+                self.assertEqual(outcome[13:17], (1, 1, 1, 1))
+                self.assertIn(outcome[17], (3, 4))
+                self.assertEqual(outcome[18], 0)
+                self.assertEqual(outcome[19], 1)
+                self.assertEqual(outcome[20:22], (1, 1))
+        self.assertEqual(len(expected), 31)
+
+        direction_labels = (
+            (
+                "CENTRAL | Cost: favorable transition",
+                "CENTRAL | Cost: moderate transition",
+                "CENTRAL | Cost: adverse transition",
+            ),
+            (
+                "AUTONOMY | Cost: favorable transition",
+                "AUTONOMY | Cost: moderate transition",
+                "AUTONOMY | Cost: adverse transition",
+            ),
+            (
+                "FOREIGN | Cost: favorable transition",
+                "FOREIGN | Cost: moderate transition",
+                "FOREIGN | Cost: adverse transition",
+            ),
+            (
+                "RECKONING | Cost: favorable transition",
+                "RECKONING | Cost: moderate transition",
+                "RECKONING | Cost: adverse transition",
+            ),
+        )
+        direction_histories = (
+            ("central favorable", 1, (1, 2, 2, 2, 2, 2, 2, 2, 2)),
+            ("central neither", 1, (2, 2, 2, 2, 2, 1, 2, 2, 1)),
+            ("central adverse", 1, (3, 2, 2, 2, 2, 1, 1, 2, 1)),
+            ("autonomy favorable", 2, (3, 2, 2, 2, 1, 1, 1, 2, 1)),
+            ("autonomy neither", 2, (2, 2, 2, 2, 1, 1, 2, 2, 1)),
+            ("autonomy both", 2, (3, 2, 1, 2, 1, 2, 1, 2, 1)),
+            ("autonomy adverse", 2, (1, 2, 2, 2, 1, 1, 2, 2, 1)),
+            ("foreign favorable", 3, (2, 1, 2, 1, 2, 1, 2, 1, 1)),
+            ("foreign neither", 3, (2, 2, 2, 1, 2, 1, 2, 2, 1)),
+            ("foreign both", 3, (2, 1, 2, 3, 2, 1, 2, 1, 3)),
+            ("foreign adverse", 3, (2, 3, 2, 1, 2, 1, 2, 3, 1)),
+            ("reckoning favorable", 4, (2, 2, 2, 1, 2, 1, 2, 1, 1)),
+            ("reckoning neither", 4, (2, 2, 2, 2, 2, 1, 2, 1, 1)),
+            ("reckoning adverse", 4, (2, 2, 2, 3, 2, 1, 2, 1, 1)),
+        )
+
+        def direction_support(values, direction):
+            legitimacy, renais, saltroad, truth, ration, wyvern, village, med, data = values
+            if direction == 1:
+                foundation = (legitimacy == 1 and wyvern == 2) or (
+                    saltroad == 1 and village == 2
+                )
+                conflict = (legitimacy == 3 and village == 1) or (
+                    saltroad == 3 and wyvern == 3
+                )
+            elif direction == 2:
+                foundation = (legitimacy == 3 and village == 1) or (
+                    saltroad == 3 and ration == 2
+                )
+                conflict = (legitimacy == 1 and village == 2) or (
+                    saltroad == 1 and wyvern == 2
+                )
+            elif direction == 3:
+                foundation = (renais == 1 and med == 1) or (
+                    renais == 2 and data == 2
+                )
+                conflict = (renais == 3 and med == 3) or (data == 3 and truth == 3)
+            else:
+                foundation = (truth == 1 and data == 2) or (
+                    truth == 1 and renais != 3
+                )
+                conflict = truth == 3 or (truth == 2 and renais == 3)
+            return foundation, conflict
+
+        direction_offset = (header_words + default_words + outcome_words) * 4
+        direction_coverage = {direction: set() for direction in range(1, 5)}
+        for index, (name, target, choice_values) in enumerate(direction_histories):
+            record = struct.unpack_from("<20I", data, direction_offset + index * 80)
+            self.assertEqual(record[:3], (index, target, 4), name)
+            self.assertEqual(record[3:12], choice_values, name)
+            for direction in range(1, 5):
+                foundation, conflict = direction_support(choice_values, direction)
+                tier = 0 if foundation and not conflict else (
+                    2 if conflict and not foundation else 1
+                )
+                direction_coverage[direction].add(tier)
+                label = direction_labels[direction - 1][tier]
+                self.assertEqual(
+                    (record[11 + direction], record[15 + direction]),
+                    (label_hash(label), len(label)),
+                    (name, direction, foundation, conflict),
+                )
+                if direction == target and name.endswith("both"):
+                    self.assertEqual((foundation, conflict), (True, True), name)
+                if direction == target and name.endswith("neither"):
+                    self.assertEqual((foundation, conflict), (False, False), name)
+        self.assertEqual(direction_coverage, {direction: {0, 1, 2} for direction in range(1, 5)})
