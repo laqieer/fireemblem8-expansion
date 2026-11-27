@@ -329,6 +329,96 @@ class NativeObservationTests(unittest.TestCase):
                 self.assertEqual(f.entry["result"], result)
                 handoff.validate_state(f.state)
 
+    def test_incomplete_bound_owner_tool_starts_participate_in_chronology(self):
+        for split in (False, True):
+            for position in ("before-receipt", "missing-session"):
+                session_variants = ("missing",) if position == "before-receipt" else (
+                    "missing", "opaque")
+                for session_variant in session_variants:
+                    for reversed_time in (False, True):
+                        with self.subTest(split=split, position=position,
+                                          session=session_variant,
+                                          reversed_time=reversed_time):
+                            f = GitFixture(assign=False)
+                            self.addCleanup(f.close)
+                            log, root, prompt = reserve_task(f)
+                            f.entry["assigned_at"] = at_offset(-60)
+                            dispatch = task_event(
+                                "tool.execution_start", "dispatch", toolName="task",
+                                toolCallId="call-one", arguments={"prompt": prompt})
+                            dispatch["timestamp"] = at_offset(-50)
+                            started = task_event(
+                                "subagent.started", "started", owner="owner-one",
+                                toolCallId="call-one", interactionId="interaction-one")
+                            started["timestamp"] = at_offset(-40)
+                            receipt = task_event(
+                                "user.message", "receipt", owner="owner-one", content=prompt,
+                                source=f"agent-{root}", interactionId="interaction-one",
+                                parentAgentTaskId="receipt-task")
+                            receipt["timestamp"] = at_offset(-20)
+                            start_time = (
+                                -45 if reversed_time else -30
+                            ) if position == "before-receipt" else (
+                                -25 if reversed_time else -10
+                            )
+                            incomplete_start = task_event(
+                                "tool.execution_start", "incomplete-start", owner="owner-one",
+                                toolName="bash", toolCallId="incomplete-call")
+                            if session_variant == "opaque":
+                                incomplete_start["data"]["ownerNativeSessionId"] = "not a session ID"
+                            incomplete_start["timestamp"] = at_offset(start_time)
+                            progress = task_event(
+                                "tool.execution_start", "progress", owner="owner-one",
+                                toolName="bash", toolCallId="owner-call",
+                                ownerNativeSessionId=SESSION)
+                            progress["timestamp"] = at_offset(-5)
+
+                            prefix = [dispatch, started]
+                            if position == "missing-session":
+                                prefix.append(receipt)
+                            suffix = [incomplete_start]
+                            if position == "before-receipt":
+                                suffix.append(receipt)
+                            suffix.append(progress)
+
+                            if not split:
+                                f.append(log, *(prefix + suffix))
+                                if reversed_time:
+                                    with self.assertRaisesRegex(
+                                            handoff.HandoffDataError,
+                                            "native event chronology reversed"):
+                                        handoff.observe_cli(f.entry, log)
+                                    self.assertLess(
+                                        f.entry["cursors"][0]["offset"], log.stat().st_size)
+                                    continue
+                                handoff.observe_cli(f.entry, log)
+                            else:
+                                f.append(log, *prefix)
+                                handoff.observe_cli(f.entry, log)
+                                before = copy.deepcopy(f.entry)
+                                f.append(log, incomplete_start)
+                                if reversed_time:
+                                    with self.assertRaisesRegex(
+                                            handoff.HandoffDataError,
+                                            "native event chronology reversed"):
+                                        handoff.observe_cli(f.entry, log)
+                                    self.assertEqual(f.entry, before)
+                                    continue
+                                handoff.observe_cli(f.entry, log)
+                                self.assertEqual(
+                                    f.entry["events"][-1]["state"],
+                                    "assignment_sent" if position == "before-receipt"
+                                    else "assignment_received")
+                                remainder = (
+                                    suffix[1:] if position == "before-receipt" else [progress])
+                                f.append(log, *remainder)
+                                handoff.observe_cli(f.entry, log)
+
+                            handoff.validate_state(f.state)
+                            self.assertEqual(
+                                [item["state"] for item in f.entry["events"]],
+                                ["assignment_sent", "assignment_received", "progressing"])
+
     def test_terminal_task_event_does_not_claim_logical_ownership_release(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)

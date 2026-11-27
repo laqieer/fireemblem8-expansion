@@ -6595,6 +6595,12 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    remain valid, and an unrelated
    owner's completion does not set this owner's clock. The pre-fix reader
    accepts the reversed sequences.
+   An incomplete `tool.execution_start` from the bound owner still participates
+   in chronology before receipt, and after receipt when its owner-session ID is
+   missing or opaque. Ordered incomplete starts remain non-progressing and
+   valid; reversed starts reject without advancing the cursor, both in one
+   observation batch and across incremental observations. Unrelated owners
+   remain independent.
    After handoff, owner tool starts reject even if the owner-session ID is missing or opaque;
    before progress such a start remains incomplete. After successful closure,
    late events matching the closed owner or its bound session reject without
