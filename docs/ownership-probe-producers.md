@@ -490,12 +490,12 @@ cleanup removes owned channels, private roots and generated paths.
 
 The deterministic procedure is
 [`TC-WORKFLOW-PROBE-PRODUCER-001`](test-cases/workflow-governance.md#tc-workflow-probe-producer-001-preserve-live-producer-context-and-native-remakes).
-Foundation, producer and dependency modules belong to the one existing
-`extended-host-tests` owner in full Build mode. Metadata-only and review-first
+Foundation, producer and dependency modules belong to the
+`ownership-probe-tests` owner in full Build mode. Metadata-only and review-first
 preflight runs skip that owner; their attestations are not full native evidence.
 That owner installs the existing libpng/pkg-config and ARM-binutils prerequisites
 for its real graphics and linker controls, in addition to the host compiler and
-Python environment. No new job or duplicate native execution is introduced.
+Python environment. The split does not duplicate native execution.
 The suite covers the live producer/include/metadata-reader transition,
 authentic one/two restarts, real repository scaninc, aliases and repeated
 effects, source/output rejection, request/reply corruption, descriptor/channel

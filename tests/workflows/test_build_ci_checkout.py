@@ -39,7 +39,7 @@ def _job_block(text, name):
 
 def _contract_errors(text):
     errors = []
-    for name in ("host-tests", "build", "extended-host-tests", "legacy"):
+    for name in verify._COMBINED_JOBS:
         job = _job_block(text, name)
         if not job:
             errors.append(f"missing {name} job")
@@ -125,8 +125,7 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         self.assertIn("needs.event-identity.outputs.fallback_sha", EXPECTED_SHA)
         self.assertEqual(checkouts, {
             "event-router": "${{ needs.event-identity.outputs.classifier_ref }}",
-            **{name: EXPECTED_SHA for name in
-               ("host-tests", "build", "extended-host-tests", "legacy")},
+            **{name: EXPECTED_SHA for name in verify._COMBINED_JOBS},
         })
         for raw_ref in (
             "${{ github.sha }}",

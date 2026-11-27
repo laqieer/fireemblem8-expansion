@@ -118,6 +118,68 @@ Only the regression's owned temporary fixture/index are removed; stock files
 and the real index remain unchanged. No emulator, linguistic judgment or
 production glyph/resource acceptance is established by this host case.
 
+## TC-CI-POPUP-EVIDENCE-001: Verify localized popup composition
+
+- **Feature / originating issue:** `localized-text-input-ui` /
+  [#464](https://github.com/laqieer/fireemblem8-expansion/issues/464).
+- **Supported configuration or artifact:** the modern host-native text-consumer
+  profile with Japanese and Simplified Chinese message stubs.
+- **Prerequisites and clean starting state:** use a clean, isolated source
+  checkout with Python 3 and a host C compiler. Do not run another text-consumer
+  test in that checkout concurrently: its temporary build directory is shared.
+
+### Actions
+
+1. Run:
+
+   ```sh
+   python3 -m unittest scripts.texttools.tests.test_text_consumers_native.TextConsumerNativeTests.test_popup_prefixes_compose_before_actual_item_names -v
+   ```
+
+2. In separate disposable copies, change each got/stole prefix to the other
+   prefix in `src/popup.c`; change each drop/send wrapper prefix to the other
+   in `src/popup2.c`, retaining the original IDs in a comment; and change each
+   got/stole/drop/send punctuation ID to the other of `0x011` and `0x022`.
+   Run the same command after each single change.
+3. In a clean disposable copy, change `POPUP_MSG(0x008)` to `POPUP_MSG(0x8)`
+   and the drop wrapper's `0x00F` to `0xF`. Run the same command.
+
+### Expected result
+
+The clean and equivalent-format copies pass. In both languages, actual
+got/stole instruction arrays and drop/send wrappers compose the expected
+prefix, item and suffix, select the expected message IDs, and forward the
+item and parent to the wrapper's consumers.
+
+### Negative control
+
+Every changed prefix or punctuation ID fails the native command, including
+wrapper changes hidden by comments. The two punctuation IDs produce the same
+stubbed glyph, so the recorded message IDs distinguish them. Before this
+change, the source audit and native test both accepted the wrong drop/send
+prefixes hidden in comments.
+
+### Interactions and save compatibility
+
+The existing native compiler, popup sources and text-consumer driver are
+required. Other localization, generated-data, feature and save contracts are
+unchanged; no save migration, ROM/RAM or archival behavior change is involved.
+Concurrent changes to the popup sources or localization test recipe must
+preserve the same compiled behavior.
+
+### Automation
+
+The command above compiles the real popup sources and asserts their output,
+message lookups, item argument and wrapper parent in both stub locales.
+The mutation copies exercise the same compiled test; no source spelling is
+used as behavior evidence. There is no subjective manual criterion.
+
+### Cleanup and limitations
+
+Remove only the disposable copies created for these controls. The unittest
+removes its own build directory. This is host evidence with stubbed messages,
+not target-ROM, glyph rendering or linguistic-quality evidence.
+
 ## Issue #104 semantic evidence mapping
 
 Issue [#104](https://github.com/laqieer/fireemblem8-expansion/issues/104)
@@ -139,7 +201,7 @@ or unsafe runtime behavior fails the listed check.
 | `scripts/localization/tests/test_ja_raw_origin.py`, `test_raw_surface_closure.py`, and `test_schema.py` (eight records) | Provenance is checked through parsed Merkle/object records and catalog resolution; the native resolver exercises locale fallback and runtime selection. |
 | `scripts/localization/tests/test_localized_ui_graphics.py` (seven records) | `extract_ui_graphics.check()` regenerates and byte-compares the registry, decodes each indexed PNG/TSA asset, and validates source hashes and surfaces. The named CJK runtime fingerprint is a target-ROM behavioral oracle, including its rejected zh-Hans pre-fix value. |
 | `scripts/localization/tests/test_sio_localization.py` (one record) | The host executable compiles the real transfer path and verifies its locale-independent shared-buffer behavior. |
-| `scripts/texttools/tests/test_text_consumer_audit.py` and `test_text_consumers_native.py` (twelve records) | `test_text_consumers_native.py` compiles real dialogue, CG, help-box, popup, SIO, class, and tactician consumers and executes valid, malformed, overflow, locale, and guard-byte controls. It replaces source walking and fixed-slot spelling checks. |
+| Retired `scripts/texttools/tests/test_text_consumer_audit.py` and `test_text_consumers_native.py` (twelve records) | `test_text_consumers_native.py` compiles real dialogue, CG, help-box, popup, SIO, class, and tactician consumers and executes valid, malformed, overflow, locale, and guard-byte controls. Its popup test exercises actual wrappers and message IDs, replacing the source-order assertion as well as earlier source walking and fixed-slot spelling checks. |
 | `scripts/texttools/tests/test_legacy_text_source.py` (one record) | The `## MSG_*` records are the documented externally consumed legacy text-source grammar. Its parser result is the named static-format exception: the test proves the emitted legacy source excludes only the declared modern suffix. |
 
 ## TC-LOCALIZATION-001: Default English and single-locale auto-select
