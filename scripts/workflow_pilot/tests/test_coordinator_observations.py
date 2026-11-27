@@ -1,22 +1,27 @@
 import copy
 import fcntl
+import hashlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
+from jsonschema import Draft202012Validator
+
 from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import raw_diff_check as raw
 from scripts.workflow_pilot import reporter
 from scripts.workflow_pilot.tests.test_agent_handoff import (
-    GitFixture, ROOT, at_offset, git, native_event, write_json,
+    GitFixture, ROOT, SESSION, at_offset, gh_stub_environment, git, native_event, write_json,
 )
 
 
@@ -30,10 +35,119 @@ def owner_events(fixture, result, prefix):
     ]
 
 
+def task_event(kind, event_id, owner=None, **data):
+    event = native_event(kind, event_id, **data)
+    if owner is not None:
+        event["agentId"] = owner
+    return event
+
+
+def reserve_task(fixture, *, state=None, log=None):
+    log = log or fixture.parent_log
+    root = "coordinator-session"
+    if not log.exists():
+        fixture.append(log, native_event("session.start", "root-start", sessionId=root))
+    prompt = f"[handoff:{fixture.assignment['id']}] Implement the assigned change."
+    fixture.assignment.update({
+        "owner_id": None, "session_id": None, "dispatch_id": None,
+        "native": {"root_session_id": root, "events_path": str(log), "prompt": prompt},
+    })
+    fixture.entry = handoff.assign(state or fixture.state, fixture.assignment)
+    return log, root, prompt
+
+
+def complete_logical_task(fixture):
+    log, root, prompt = reserve_task(fixture)
+    fixture.append(log,
+                   task_event("tool.execution_start", "dispatch", toolName="task",
+                              toolCallId="call-one", arguments={"prompt": prompt}),
+                   task_event("subagent.started", "started", owner="owner-one",
+                              toolCallId="call-one", interactionId="interaction-one"),
+                   task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                              source=f"agent-{root}", interactionId="interaction-one",
+                              parentAgentTaskId="receipt-task"),
+                   task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                              toolCallId="owner-call", ownerNativeSessionId=SESSION))
+    handoff.observe_cli(fixture.entry, log)
+    revision = fixture.commit()
+    result = {"schema_version": 3, "assignment_id": fixture.assignment["id"],
+              "assigned_parent_sha": fixture.parent, "result_sha": revision,
+              "evidence_refs": ["raw-evidence"]}
+    fixture.append(log,
+                   task_event("assistant.message", "delivery", owner="owner-one",
+                              interactionId="interaction-one",
+                              content=json.dumps({"handoff_result": result})),
+                   native_event("tool.execution_complete", "task-terminal",
+                                toolCallId="call-one", success=True))
+    handoff.observe_cli(fixture.entry, log)
+    return result
+
+
 class NativeObservationTests(unittest.TestCase):
     def setUp(self):
         self.fixture = GitFixture()
         self.addCleanup(self.fixture.close)
+
+    def test_released_handoff_checks_use_validation_worktree(self):
+        for mode in ("direct", "async"):
+            with self.subTest(mode=mode):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                result = complete_logical_task(f)
+                validation = f.home / "validation"
+                environment = gh_stub_environment(
+                    f.home, {"name": f.assignment["expected_branch"], "commit": {"sha": result["result_sha"]}},
+                )
+                with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                    handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+                    if mode == "direct":
+                        check = handoff.capture_check(f.entry, "raw", result["result_sha"])
+                        self.assertEqual((check["exit_code"], check["worktree"]), (0, str(validation)))
+                        self.assertTrue(handoff.validate_handoff(
+                            f.state, result, worktree=validation, run_checks=False)["handoff_ready"])
+                    else:
+                        process = subprocess.Popen(
+                            ["/usr/bin/python3", "-I", "-c",
+                             "import sys; print('ready', flush=True); sys.stdin.readline()"],
+                            cwd=validation, env=raw.git_environment(), stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                        )
+                        f.processes.append(process)
+                        f.assert_ready(process)
+                        pending = handoff.begin_check(f.entry, "raw", result["result_sha"], process)
+                        self.assertEqual(pending["worktree"], str(validation))
+
+    def test_review_successor_rechecks_predecessor_native_cursor(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"], "commit": {"sha": result["result_sha"]}},
+        )
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+            self.assertTrue(handoff.validate_handoff(f.state, result, worktree=validation)["handoff_ready"])
+        successor_worktree = f.home / "successor"
+        git(f.repository, "worktree", "add", str(successor_worktree), f.assignment["expected_branch"])
+        successor = copy.deepcopy(f.assignment)
+        del successor["native"]
+        successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                         dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                         assigned_parent_sha=result["result_sha"], allowed_worktree=str(successor_worktree))
+        tracked = validation / "docs/change.txt"
+        original = tracked.read_bytes()
+        tracked.write_bytes(b"modified after validation\n")
+        with self.assertRaisesRegex(handoff.HandoffDataError, "predecessor.*current"):
+            handoff.assign(f.state, successor)
+        tracked.write_bytes(original)
+        log = Path(f.entry["cursors"][0]["path"])
+        f.append(log, task_event("assistant.turn_start", "unrelated-turn", owner="other-owner",
+                                 parentToolCallId="other-call", interactionId="other-interaction"))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "predecessor.*current"):
+            handoff.assign(f.state, successor)
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(handoff.assign(f.state, successor)["assignment"]["id"], "review-two")
 
     def test_dispatch_receipt_progress_and_handoff_are_distinct_native_inputs(self):
         f = self.fixture
@@ -101,6 +215,1929 @@ class NativeObservationTests(unittest.TestCase):
         self.assertEqual(f.entry["events"][-1]["source_id"], "actual-receipt")
         handoff.observe_cli(f.entry, f.owner_log)
         self.assertEqual(len(f.entry["events"]), 2)
+
+    def test_shared_native_task_binds_real_lifecycle_without_inventing_process_exit(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        assignment = f.entry["assignment"]
+        schema = json.loads((ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text())
+        validator = Draft202012Validator(schema)
+        validator.validate(assignment)
+        validator.validate(f.state)
+        invalid = copy.deepcopy(assignment)
+        invalid["owner_id"] = "unobserved-owner"
+        self.assertFalse(validator.is_valid(invalid))
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.validate_assignment(invalid)
+        self.assertIsNone(assignment["dispatch_id"])
+        self.assertIsNone(assignment["owner_id"])
+        self.assertIsNone(assignment["session_id"])
+
+        f.append(log, task_event("tool.execution_start", "task-dispatch", toolName="task",
+                                 toolCallId="call-one", arguments={"prompt": prompt}))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual([item["state"] for item in f.entry["events"]], ["assignment_sent"])
+        self.assertEqual(assignment["dispatch_id"], "call-one")
+
+        f.append(log, task_event("subagent.started", "task-started", owner="owner-one",
+                                 toolCallId="call-one", interactionId="shared-interaction"))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(assignment["owner_id"], "owner-one")
+        self.assertEqual(len(f.entry["events"]), 1)
+
+        f.append(log, task_event("user.message", "task-receipt", owner="owner-one", content=prompt,
+                                 source=f"agent-{root}", interactionId="shared-interaction",
+                                 parentAgentTaskId="separate-parent-task"))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual([item["state"] for item in f.entry["events"]],
+                         ["assignment_sent", "assignment_received"])
+        self.assertIsNone(assignment["session_id"])
+
+        f.append(log, task_event("tool.execution_start", "other-progress", owner="other-owner",
+                                 toolName="bash", toolCallId="other-call",
+                                 ownerNativeSessionId="other-session"))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(len(f.entry["events"]), 2)
+        f.append(log, task_event("tool.execution_start", "task-progress", owner="owner-one",
+                                 toolName="bash", toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(assignment["session_id"], SESSION)
+        self.assertEqual([item["state"] for item in f.entry["events"]],
+                         ["assignment_sent", "assignment_received", "progressing"])
+        validator.validate(f.state)
+
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log, task_event("assistant.message", "task-delivery", owner="owner-one",
+                                 interactionId="shared-interaction",
+                                 content=json.dumps({"handoff_result": result})))
+        handoff.observe_cli(f.entry, log)
+        verdict = f.validate(result)
+        self.assertFalse(verdict["handoff_ready"])
+        self.assertIn("owner-exit-unknown", verdict["rejection_codes"])
+        self.assertIn("owner-rss-unknown", verdict["rejection_codes"])
+        self.assertEqual([item["state"] for item in f.entry["events"]], list(handoff.STATES))
+
+    def test_bound_native_owner_cannot_start_another_task(self):
+        for owner, call, error in (
+            ("owner-one", "other-call", "native owner task changed"),
+            ("owner-one", None, "native owner task changed"),
+            ("owner-one", {"id": "other-call"}, "native owner task changed"),
+            ("owner-one", "call-one", "duplicate native owner start"),
+            ("other-owner", "other-call", None),
+        ):
+            with self.subTest(owner=owner, call=call):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one",
+                                    toolName="bash", toolCallId="owner-call",
+                                    ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                before = copy.deepcopy(f.entry)
+                f.append(log, task_event("subagent.started", "another-start", owner=owner,
+                                         toolCallId=call, interactionId="other-interaction"))
+                if error is not None:
+                    with self.assertRaisesRegex(handoff.HandoffDataError, error):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry, before)
+                    continue
+                handoff.observe_cli(f.entry, log)
+                self.assertGreater(f.entry["cursors"][0]["offset"], before["cursors"][0]["offset"])
+                revision = f.commit()
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": revision,
+                          "evidence_refs": ["raw-evidence"]}
+                f.append(log,
+                         task_event("assistant.message", "delivery", owner="owner-one",
+                                    interactionId="interaction-one",
+                                    content=json.dumps({"handoff_result": result})),
+                         native_event("tool.execution_complete", "task-terminal",
+                                      toolCallId="call-one", success=True))
+                handoff.observe_cli(f.entry, log)
+                self.assertEqual(f.entry["result"], result)
+                handoff.validate_state(f.state)
+
+    def test_incomplete_bound_owner_tool_starts_participate_in_chronology(self):
+        for split in (False, True):
+            for position in ("before-receipt", "missing-session"):
+                session_variants = ("missing",) if position == "before-receipt" else (
+                    "missing", "opaque")
+                for session_variant in session_variants:
+                    for reversed_time in (False, True):
+                        with self.subTest(split=split, position=position,
+                                          session=session_variant,
+                                          reversed_time=reversed_time):
+                            f = GitFixture(assign=False)
+                            self.addCleanup(f.close)
+                            log, root, prompt = reserve_task(f)
+                            f.entry["assigned_at"] = at_offset(-60)
+                            dispatch = task_event(
+                                "tool.execution_start", "dispatch", toolName="task",
+                                toolCallId="call-one", arguments={"prompt": prompt})
+                            dispatch["timestamp"] = at_offset(-50)
+                            started = task_event(
+                                "subagent.started", "started", owner="owner-one",
+                                toolCallId="call-one", interactionId="interaction-one")
+                            started["timestamp"] = at_offset(-40)
+                            receipt = task_event(
+                                "user.message", "receipt", owner="owner-one", content=prompt,
+                                source=f"agent-{root}", interactionId="interaction-one",
+                                parentAgentTaskId="receipt-task")
+                            receipt["timestamp"] = at_offset(-20)
+                            start_time = (
+                                -45 if reversed_time else -30
+                            ) if position == "before-receipt" else (
+                                -25 if reversed_time else -10
+                            )
+                            incomplete_start = task_event(
+                                "tool.execution_start", "incomplete-start", owner="owner-one",
+                                toolName="bash", toolCallId="incomplete-call")
+                            if session_variant == "opaque":
+                                incomplete_start["data"]["ownerNativeSessionId"] = "not a session ID"
+                            incomplete_start["timestamp"] = at_offset(start_time)
+                            progress = task_event(
+                                "tool.execution_start", "progress", owner="owner-one",
+                                toolName="bash", toolCallId="owner-call",
+                                ownerNativeSessionId=SESSION)
+                            progress["timestamp"] = at_offset(-5)
+
+                            prefix = [dispatch, started]
+                            if position == "missing-session":
+                                prefix.append(receipt)
+                            suffix = [incomplete_start]
+                            if position == "before-receipt":
+                                suffix.append(receipt)
+                            suffix.append(progress)
+
+                            if not split:
+                                f.append(log, *(prefix + suffix))
+                                if reversed_time:
+                                    with self.assertRaisesRegex(
+                                            handoff.HandoffDataError,
+                                            "native event chronology reversed"):
+                                        handoff.observe_cli(f.entry, log)
+                                    self.assertLess(
+                                        f.entry["cursors"][0]["offset"], log.stat().st_size)
+                                    continue
+                                handoff.observe_cli(f.entry, log)
+                            else:
+                                f.append(log, *prefix)
+                                handoff.observe_cli(f.entry, log)
+                                before = copy.deepcopy(f.entry)
+                                f.append(log, incomplete_start)
+                                if reversed_time:
+                                    with self.assertRaisesRegex(
+                                            handoff.HandoffDataError,
+                                            "native event chronology reversed"):
+                                        handoff.observe_cli(f.entry, log)
+                                    self.assertEqual(f.entry, before)
+                                    continue
+                                handoff.observe_cli(f.entry, log)
+                                self.assertEqual(
+                                    f.entry["events"][-1]["state"],
+                                    "assignment_sent" if position == "before-receipt"
+                                    else "assignment_received")
+                                remainder = (
+                                    suffix[1:] if position == "before-receipt" else [progress])
+                                f.append(log, *remainder)
+                                handoff.observe_cli(f.entry, log)
+
+                            handoff.validate_state(f.state)
+                            self.assertEqual(
+                                [item["state"] for item in f.entry["events"]],
+                                ["assignment_sent", "assignment_received", "progressing"])
+
+    def test_terminal_task_event_does_not_claim_logical_ownership_release(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log,
+                 task_event("assistant.message", "delivery", owner="owner-one",
+                            interactionId="interaction-one",
+                            content=json.dumps({"handoff_result": result})),
+                 native_event("tool.execution_complete", "task-terminal",
+                              toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+
+        terminal = f.entry["terminal_task"]
+        self.assertEqual(terminal["task_id"], f.assignment["dispatch_id"])
+        self.assertEqual(terminal["owner_id"], f.assignment["owner_id"])
+        self.assertEqual(terminal["session_id"], SESSION)
+        self.assertNotIn("head_sha", terminal)
+        self.assertGreaterEqual(handoff.timestamp(terminal["recorded_at"]),
+                                handoff.timestamp(terminal["observed_at"]))
+        self.assertIsNone(terminal["rss_peak_bytes"])
+        self.assertIn("does not expose per-owner RSS", terminal["rss_unavailable_reason"])
+        self.assertIsNone(f.entry["process"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertIn("owner-worktree-release-unavailable",
+                      handoff.owner_completion_errors(f.entry))
+        handoff.validate_state(f.state)
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(f.state)
+        premature_release = copy.deepcopy(f.state)
+        premature_release["assignments"][0]["closed_at"] = terminal["observed_at"]
+        with self.assertRaisesRegex(
+                handoff.HandoffDataError, "logical ownership release is unavailable"):
+            handoff.validate_state(premature_release)
+
+        later_native_event = copy.deepcopy(f.state)
+        later_at = handoff.now()
+        later_native_event["clock"]["at"] = later_at
+        later_native_event["assignments"][0]["native_binding"]["last_event_at"] = later_at
+        with self.assertRaisesRegex(
+                handoff.HandoffDataError, "logical task terminal chronology invalid"):
+            handoff.validate_state(later_native_event)
+
+        delayed_validation = (
+            handoff.timestamp(terminal["observed_at"])
+            + timedelta(seconds=f.assignment["max_lifetime_seconds"] + 1)
+        ).isoformat().replace("+00:00", "Z")
+        self.assertEqual(
+            handoff.owner_lifetime_ms(f.entry, delayed_validation),
+            handoff.owner_lifetime_ms(f.entry, terminal["observed_at"]),
+        )
+        self.assertNotIn(
+            "owner-lifetime-exceeded",
+            handoff.owner_acceptance_errors(f.entry, delayed_validation),
+        )
+
+        verdict = f.validate(result)
+        self.assertFalse(verdict["handoff_ready"], verdict)
+        self.assertEqual(verdict["local_outcome"], "rejected")
+        self.assertIn("owner-worktree-release-unavailable", verdict["rejection_codes"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertEqual(f.entry["validation"], verdict)
+        repeated_verdict = f.validate(result)
+        self.assertFalse(repeated_verdict["handoff_ready"], repeated_verdict)
+        self.assertIn("owner-worktree-release-unavailable", repeated_verdict["rejection_codes"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertEqual(handoff.summarize_handoffs(f.state)["rejected"], 1)
+        handoff.validate_state(f.state)
+        rejected_close = copy.deepcopy(f.state)
+        rejected_close["assignments"][0]["validation"] = copy.deepcopy(verdict)
+        rejected_close["assignments"][0]["closed_at"] = verdict["observed_at"]
+        with self.assertRaisesRegex(
+                handoff.HandoffDataError, "logical ownership release is unavailable"):
+            handoff.validate_state(rejected_close)
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(f.state)
+
+        legacy = copy.deepcopy(f.state)
+        legacy_terminal = legacy["assignments"][0]["terminal_task"]
+        del legacy_terminal["recorded_at"]
+        legacy_terminal.update(head_sha=revision, worktree=f.assignment["allowed_worktree"],
+                               git_identity=f.entry["git_identity"], allowed_scope=f.assignment["allowed_scope"])
+        handoff.validate_state(legacy)
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(validator.is_valid(legacy))
+        for field, value in (("task_id", "other-task"), ("owner_id", "other-owner"),
+                             ("session_id", "other-session"), ("session_id", None), ("head_sha", f.parent),
+                             ("worktree", str(f.repository)), ("allowed_scope", ["src/"]),
+                             ("recorded_at", at_offset(-60)), ("recorded_at", at_offset(60)),
+                             ("ownership_released", True)):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(legacy if field in ("head_sha", "worktree", "allowed_scope") else f.state)
+                changed["assignments"][0]["terminal_task"][field] = value
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(changed)
+        partial = copy.deepcopy(f.state)
+        partial["assignments"][0]["terminal_task"]["head_sha"] = revision
+        self.assertFalse(validator.is_valid(partial))
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.validate_state(partial)
+
+    def test_logical_release_removes_owner_path_before_fresh_candidate_validation(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        old_worktree = f.worktree
+        validation_worktree = f.home / "validation"
+        writer = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys; sys.stdin.readline(); open('late-write.txt', 'w').write('late\\n')"],
+            cwd=old_worktree, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        f.processes.append(writer)
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            state_path = f.home / "state.json"
+            write_json(state_path, f.state)
+            command = subprocess.run(
+                [sys.executable, "-m", "scripts.workflow_pilot.agent_handoff", "release-worktree",
+                 "--state", str(state_path), "--assignment-id", f.assignment["id"],
+                 "--coordinator-worktree", str(f.repository),
+                 "--validation-worktree", str(validation_worktree)],
+                cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(command.returncode, 0, command.stderr.decode())
+            f.state = observations.load_json(state_path)
+            f.entry = f.state["assignments"][0]
+            release = json.loads(command.stdout)
+            self.assertFalse(old_worktree.exists())
+            self.assertEqual(release["head_sha"], result["result_sha"])
+            self.assertEqual(release["worktree"], str(old_worktree))
+            self.assertEqual(release["validation_worktree"], str(validation_worktree))
+            self.assertFalse(any(
+                line == f"worktree {old_worktree}"
+                for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+            ))
+            writer.stdin.write(b"write\n")
+            writer.stdin.close()
+            self.assertEqual(writer.wait(timeout=10), 1)
+            self.assertIn("FileNotFoundError", writer.stderr.read().decode())
+            self.assertFalse(old_worktree.exists())
+            self.assertFalse((validation_worktree / "late-write.txt").exists())
+
+            verdict = handoff.validate_handoff(
+                f.state, result, worktree=validation_worktree,
+            )
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertNotIn("owner-worktree-release-unavailable", verdict["rejection_codes"])
+        self.assertIsNotNone(f.entry["closed_at"])
+        self.assertGreaterEqual(
+            handoff.timestamp(f.entry["closed_at"]),
+            handoff.timestamp(release["observed_at"]),
+        )
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(f.state)
+        legacy = copy.deepcopy(f.state)
+        terminal = legacy["assignments"][0]["terminal_task"]
+        del terminal["recorded_at"]
+        terminal.update(head_sha=result["result_sha"], worktree=str(old_worktree),
+                        git_identity=f.entry["git_identity"], allowed_scope=f.assignment["allowed_scope"])
+        handoff.validate_state(legacy)
+        Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        )).validate(legacy)
+
+    def test_logical_release_with_embedded_metadata_path_controls(self):
+        for label, separator in (("lf", "\n"), ("cr", "\r"), ("mixed", "\r\n")):
+            with self.subTest(separator=label), tempfile.TemporaryDirectory(
+                prefix="agent-handoff-admin-"
+            ) as directory:
+                artifacts = Path(directory) / ("common" + separator + "parent")
+                artifacts.mkdir()
+                with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.ARTIFACTS", artifacts):
+                    f = GitFixture(assign=False)
+                    try:
+                        result = complete_logical_task(f)
+                        environment = gh_stub_environment(
+                            f.home, {"name": f.assignment["expected_branch"],
+                                     "commit": {"sha": result["result_sha"]}},
+                        )
+                        owner = f.worktree
+                        validation = f.home / "validation\n"
+                        original_git = handoff._git
+
+                        def fail_owner_removal(cwd, *arguments):
+                            if arguments == ("worktree", "remove", str(owner)):
+                                raise ValueError("simulated owner removal failure")
+                            return original_git(cwd, *arguments)
+
+                        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                            with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                                with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                                    handoff.release_logical_worktree(
+                                        f.state, f.assignment["id"], f.repository, validation,
+                                    )
+                            self.assertTrue(owner.exists())
+                            self.assertFalse(validation.exists())
+                            self.assertIsNone(f.entry["worktree_release"])
+                            handoff.release_logical_worktree(
+                                f.state, f.assignment["id"], f.repository, validation,
+                            )
+                            verdict = handoff.validate_handoff(f.state, result, worktree=validation)
+                        self.assertFalse(owner.exists())
+                        self.assertTrue(verdict["handoff_ready"], verdict)
+                    finally:
+                        f.close()
+
+    def test_logical_release_preserves_worktree_path_boundaries(self):
+        for fail_removal in (False, True):
+            with self.subTest(fail_removal=fail_removal):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                owner = f.home / "owner\nworktree"
+                validation = f.home / "validation\nworktree"
+                git(f.repository, "worktree", "move", str(f.worktree), str(owner))
+                f.worktree = owner
+                f.assignment["allowed_worktree"] = str(owner)
+                result = complete_logical_task(f)
+                environment = gh_stub_environment(
+                    f.home, {"name": f.assignment["expected_branch"],
+                             "commit": {"sha": result["result_sha"]}},
+                )
+                original_git = handoff._git
+
+                def fail_owner_removal(cwd, *arguments):
+                    if arguments == ("worktree", "remove", str(owner)):
+                        raise ValueError("simulated owner removal failure")
+                    return original_git(cwd, *arguments)
+
+                with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                    if fail_removal:
+                        with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                            with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                                handoff.release_logical_worktree(
+                                    f.state, f.assignment["id"], f.repository, validation,
+                                )
+                        self.assertTrue(owner.exists())
+                        self.assertFalse(validation.exists())
+                        self.assertIsNone(f.entry["worktree_release"])
+                    release = handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation,
+                    )
+                    verdict = handoff.validate_handoff(f.state, result, worktree=validation)
+
+                registrations = git(f.repository, "worktree", "list", "--porcelain", "-z").split("\0")
+                self.assertNotIn(f"worktree {owner}", registrations)
+                self.assertIn(f"worktree {validation}", registrations)
+                self.assertEqual(release["head_sha"], result["result_sha"])
+                self.assertFalse(owner.exists())
+                self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_logical_release_preserves_trailing_path_whitespace(self):
+        for suffix in ("\n", " "):
+            for fail_removal in (False, True):
+                with self.subTest(suffix=repr(suffix), fail_removal=fail_removal):
+                    f = GitFixture(assign=False)
+                    self.addCleanup(f.close)
+                    owner = f.home / ("owner" + suffix)
+                    validation = f.home / ("validation" + suffix)
+                    git(f.repository, "worktree", "move", str(f.worktree), str(owner))
+                    f.worktree = owner
+                    f.assignment["allowed_worktree"] = str(owner)
+                    result = complete_logical_task(f)
+                    environment = gh_stub_environment(
+                        f.home, {"name": f.assignment["expected_branch"],
+                                 "commit": {"sha": result["result_sha"]}},
+                    )
+                    original_git = handoff._git
+
+                    def fail_owner_removal(cwd, *arguments):
+                        if arguments == ("worktree", "remove", str(owner)):
+                            raise ValueError("simulated owner removal failure")
+                        return original_git(cwd, *arguments)
+
+                    with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+                        if fail_removal:
+                            with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                                with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                                    handoff.release_logical_worktree(
+                                        f.state, f.assignment["id"], f.repository, validation,
+                                    )
+                            self.assertTrue(owner.exists())
+                            self.assertFalse(validation.exists())
+                            self.assertIsNone(f.entry["worktree_release"])
+                        release = handoff.release_logical_worktree(
+                            f.state, f.assignment["id"], f.repository, validation,
+                        )
+                        verdict = handoff.validate_handoff(f.state, result, worktree=validation)
+
+                    self.assertEqual(release["worktree"], str(owner))
+                    self.assertEqual(release["validation_worktree"], str(validation))
+                    self.assertFalse(owner.exists())
+                    self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_newline_worktree_submodule_observation_rejects_initialized_gitlink(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        nested = f.home / "nested-source"
+        nested.mkdir()
+        git(nested, "init", "-b", "master")
+        git(nested, "config", "user.name", "Handoff Test")
+        git(nested, "config", "user.email", "handoff@example.invalid")
+        (nested / "data").write_text("submodule\n")
+        git(nested, "add", "data")
+        git(nested, "commit", "-m", "nested")
+        git(f.worktree, "-c", "protocol.file.allow=always", "submodule", "add",
+            str(nested), "nested")
+        git(f.worktree, "commit", "-am", "add nested")
+        f.parent = git(f.worktree, "rev-parse", "HEAD")
+        owner = f.home / "owner\n"
+        git(f.repository, "worktree", "add", "-b", "agent/newline", str(owner), f.parent)
+        f.worktree = owner
+        f.assignment.update(allowed_worktree=str(owner), assigned_parent_sha=f.parent,
+                            expected_branch="agent/newline")
+        with mock.patch.object(handoff, "preflight_issue_pr"):
+            result = complete_logical_task(f)
+        status = handoff.submodule_status(owner)
+        self.assertEqual(len(status), 1)
+        self.assertTrue(status[0].startswith("-"))
+        validation = f.home / "validation\n"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )
+        original_git = handoff._git
+
+        def missing_helper(cwd, *arguments):
+            if arguments == ("submodule--helper", "status", "--recursive"):
+                raise ValueError("Git helper unavailable")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=missing_helper):
+                with self.assertRaisesRegex(ValueError, "Git helper unavailable"):
+                    handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+        self.assertTrue(owner.exists())
+        self.assertFalse(validation.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+        handoff._git(owner, "-c", "protocol.file.allow=always",
+                     "submodule--helper", "update", "--init", "--recursive")
+        status = handoff.submodule_status(owner)
+        self.assertEqual(len(status), 1)
+        self.assertFalse(status[0].startswith("-"))
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "initialized or conflicted submodule"):
+                handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+        self.assertTrue(owner.exists())
+        self.assertFalse(validation.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
+    def test_logical_release_rejects_incomplete_worktree_inventory(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )
+        original_git = handoff._git
+
+        def truncated_inventory(cwd, *arguments):
+            output = original_git(cwd, *arguments)
+            if arguments == ("worktree", "list", "--porcelain", "-z"):
+                return output[:-1]
+            return output
+
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=truncated_inventory):
+                with self.assertRaisesRegex(ValueError, "incomplete Git worktree inventory"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation,
+                    )
+        self.assertTrue(f.worktree.exists())
+        self.assertFalse(validation.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
+    def test_logical_release_recovers_after_owner_removal_before_state_persistence(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+        list_calls = 0
+
+        def fail_after_removal(cwd, *arguments):
+            nonlocal list_calls
+            if arguments == ("worktree", "list", "--porcelain", "-z"):
+                list_calls += 1
+                if list_calls == 2:
+                    raise OSError("simulated failure before release state persistence")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_after_removal):
+                with self.assertRaisesRegex(OSError, "simulated failure"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+            self.assertFalse(f.worktree.exists())
+            self.assertTrue(validation_worktree.exists())
+            self.assertIsNone(f.entry["worktree_release"])
+
+            exclude_file = Path(f.entry["git_identity"]["common_dir"]) / "info" / "exclude"
+            with exclude_file.open("a", encoding="utf-8") as output:
+                output.write("\n__pycache__/\n")
+            ignored_file = validation_worktree / "__pycache__" / "release.cpython-314.pyc"
+            ignored_file.parent.mkdir()
+            ignored_file.write_bytes(b"fixture")
+            with self.assertRaisesRegex(handoff.HandoffDataError, "ignored data"):
+                handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+            ignored_file.unlink()
+            ignored_file.parent.rmdir()
+
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+            verdict = handoff.validate_handoff(
+                f.state, result, worktree=validation_worktree,
+            )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertEqual(
+            [line for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+             if line.startswith("worktree ")],
+            [f"worktree {f.repository}", f"worktree {validation_worktree}"],
+        )
+        self.assertTrue(verdict["handoff_ready"], verdict)
+
+    def test_logical_release_recovery_rejects_moved_owner_worktree(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        moved_worktree = f.home / "moved-owner"
+        validation_worktree = f.home / "validation"
+        git(f.repository, "worktree", "move", str(f.worktree), str(moved_worktree))
+        git(f.repository, "worktree", "add", "--detach", str(validation_worktree), result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "owner Git administration"):
+                handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+        self.assertTrue(moved_worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
+    def test_logical_release_rejects_initialized_submodule_before_candidate_creation(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+
+        def initialized_submodule(cwd, *arguments):
+            if arguments == ("submodule", "status", "--recursive"):
+                return b" c87e74dcd6c8878b809e013cd8ff0c52baa75332 mgfembp\n"
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=initialized_submodule):
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initialized or conflicted submodule"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+        self.assertTrue(f.worktree.exists())
+        self.assertFalse(validation_worktree.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+
+    def test_logical_release_rolls_back_new_candidate_after_pre_removal_failure(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+        candidate_status_calls = 0
+
+        def fail_candidate_status_once(cwd, *arguments):
+            nonlocal candidate_status_calls
+            if Path(cwd) == validation_worktree and arguments == (
+                    "submodule", "status", "--recursive"):
+                candidate_status_calls += 1
+                if candidate_status_calls == 1:
+                    return b" c87e74dcd6c8878b809e013cd8ff0c52baa75332 mgfembp\n"
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_candidate_status_once):
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initialized or conflicted"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+            self.assertTrue(f.worktree.exists())
+            self.assertFalse(validation_worktree.exists())
+            self.assertIsNone(f.entry["worktree_release"])
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+
+    def test_logical_release_cleans_candidate_when_owner_removal_fails(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+
+        def fail_owner_removal(cwd, *arguments):
+            if arguments == ("worktree", "remove", str(f.worktree)):
+                raise ValueError("simulated owner removal failure")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_owner_removal):
+                with self.assertRaisesRegex(ValueError, "simulated owner removal failure"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+            self.assertTrue(f.worktree.exists())
+            self.assertFalse(validation_worktree.exists())
+            self.assertIsNone(f.entry["worktree_release"])
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        self.assertEqual(release["head_sha"], result["result_sha"])
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+
+    def test_logical_release_id_supports_maximum_assignment_id(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.assignment["id"] = "a" * 128
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        self.assertNotIn("release_id", release)
+        handoff.validate_state(f.state)
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()
+        ))
+        validator.validate(f.state)
+        legacy = copy.deepcopy(f.state)
+        legacy["assignments"][0]["worktree_release"]["release_id"] = (
+            "worktree-release:" + hashlib.sha256(f.assignment["id"].encode()).hexdigest()
+        )
+        handoff.validate_state(legacy)
+        validator.validate(legacy)
+        legacy["assignments"][0]["worktree_release"]["release_id"] = "worktree-release:wrong"
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.validate_state(legacy)
+
+    def test_logical_release_reserves_validation_worktree_until_close(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        other = GitFixture()
+        self.addCleanup(other.close)
+        second_entry = copy.deepcopy(other.entry)
+        second_assignment = second_entry["assignment"]
+        second_assignment.update({
+            "id": "assignment-two",
+            "issue": 179,
+            "pull_request": 192,
+            "owner_id": "owner-two",
+            "session_id": "session-two",
+            "dispatch_id": "dispatch-two",
+            "allowed_worktree": str(validation_worktree),
+        })
+        second_entry["git_identity"]["worktree"] = str(validation_worktree)
+        candidate = copy.deepcopy(f.state)
+        candidate["assignments"].append(second_entry)
+
+        with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping active owners"):
+            handoff.validate_state(candidate)
+
+    def test_closed_logical_release_rejects_later_overlapping_worktree(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            release = handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+        handoff.validate_handoff(f.state, result, worktree=validation_worktree, run_checks=False)
+        self.assertIsNotNone(f.entry["closed_at"])
+        self.assertEqual(f.entry["worktree_release"], release)
+
+        descendant = Path(f.assignment["allowed_worktree"]) / "descendant"
+        git(f.repository, "worktree", "add", "-b", "agent/descendant",
+            str(descendant), result["result_sha"])
+        self.assertTrue(Path(f.assignment["allowed_worktree"]).exists())
+        self.assertTrue(descendant.exists())
+        assignment = copy.deepcopy(f.assignment)
+        assignment.update({
+            "id": "assignment-two",
+            "issue": 179,
+            "pull_request": 192,
+            "owner_id": None,
+            "session_id": None,
+            "dispatch_id": None,
+            "assigned_parent_sha": result["result_sha"],
+            "expected_branch": "agent/descendant",
+            "allowed_worktree": str(descendant),
+            "predecessor_id": None,
+            "kind": "initial",
+        })
+        assignment["native"]["prompt"] = "[handoff:assignment-two] Implement the assigned change."
+
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value=None):
+            with self.assertRaisesRegex(
+                handoff.HandoffDataError, "released logical worktree cannot be reassigned",
+            ):
+                handoff.assign(f.state, assignment)
+        self.assertEqual(len(f.state["assignments"]), 1)
+
+    def test_logical_release_rejects_another_active_validation_path(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            handoff.release_logical_worktree(
+                f.state, f.assignment["id"], f.repository, validation_worktree,
+            )
+
+        other = GitFixture(assign=False)
+        self.addCleanup(other.close)
+        other.assignment.update({
+            "id": "assignment-two",
+            "issue": 179,
+            "pull_request": 192,
+            "owner_id": None,
+            "session_id": None,
+            "dispatch_id": None,
+        })
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value=None):
+            other_result = complete_logical_task(other)
+        f.state["assignments"].append(other.entry)
+        other_fake_bin = Path(gh_stub_environment(
+            other.home, {"name": other.assignment["expected_branch"],
+                         "commit": {"sha": other_result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+
+        with mock.patch.dict(os.environ, {
+            "PATH": str(other_fake_bin) + os.pathsep + os.environ["PATH"],
+        }):
+            with self.assertRaisesRegex(
+                handoff.HandoffDataError, "validation worktree overlaps an assigned worktree",
+            ):
+                handoff.release_logical_worktree(
+                    f.state, other.assignment["id"], other.repository, validation_worktree,
+                )
+
+        self.assertTrue(other.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertIsNone(other.entry["worktree_release"])
+
+    def test_logical_release_fails_closed_when_owner_path_is_removed_before_registration(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        original_git = handoff._git
+
+        def fail_after_path_removal(cwd, *arguments):
+            if arguments == ("worktree", "remove", str(f.worktree)):
+                shutil.rmtree(f.worktree)
+                raise ValueError("simulated failure after owner path removal")
+            return original_git(cwd, *arguments)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with mock.patch.object(handoff, "_git", side_effect=fail_after_path_removal):
+                with self.assertRaisesRegex(handoff.HandoffDataError, "registration remains"):
+                    handoff.release_logical_worktree(
+                        f.state, f.assignment["id"], f.repository, validation_worktree,
+                    )
+
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(validation_worktree.exists())
+        self.assertIsNone(f.entry["worktree_release"])
+        self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        self.assertTrue(any(
+            line == f"worktree {f.worktree}"
+            for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+        ))
+
+    def test_logical_release_does_not_prune_stale_worktree_registrations(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        other_worktree = f.home / "other"
+        git(f.repository, "worktree", "add", "-b", "other/test",
+            str(other_worktree), f.parent)
+        other_git_dir = Path(git(other_worktree, "rev-parse", "--absolute-git-dir"))
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": result["result_sha"]}},
+        )["PATH"].split(os.pathsep)[0])
+        git(f.repository, "worktree", "add", "--detach",
+            str(validation_worktree), result["result_sha"])
+        shutil.rmtree(f.worktree)
+        shutil.rmtree(other_worktree)
+
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "path and registration disagree"):
+                handoff.release_logical_worktree(
+                    f.state, f.assignment["id"], f.repository, validation_worktree,
+                )
+
+        self.assertTrue(validation_worktree.exists())
+        self.assertTrue(Path(f.entry["git_identity"]["git_dir"]).exists())
+        self.assertTrue(other_git_dir.exists())
+        self.assertEqual(
+            len([line for line in git(f.repository, "worktree", "list", "--porcelain").splitlines()
+                 if line.startswith("worktree ")]),
+            4,
+        )
+
+    def test_logical_release_rejects_dirty_or_unpublished_candidate(self):
+        for condition in ("untracked", "remote-head", "preexisting-validation"):
+            with self.subTest(condition=condition):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                result = complete_logical_task(f)
+                validation_worktree = f.home / "validation"
+                if condition == "untracked":
+                    (f.worktree / "untracked.txt").write_text("uncommitted\n")
+                    response = {"name": f.assignment["expected_branch"],
+                                "commit": {"sha": result["result_sha"]}}
+                elif condition == "preexisting-validation":
+                    validation_worktree.mkdir()
+                    response = {"name": f.assignment["expected_branch"],
+                                "commit": {"sha": result["result_sha"]}}
+                else:
+                    response = {"name": f.assignment["expected_branch"],
+                                "commit": {"sha": f.parent}}
+                fake_bin = Path(gh_stub_environment(f.home, response)["PATH"].split(os.pathsep)[0])
+                with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+                    with self.assertRaises(handoff.HandoffDataError):
+                        handoff.release_logical_worktree(
+                            f.state, f.assignment["id"], f.repository, validation_worktree,
+                        )
+                self.assertTrue(f.worktree.exists())
+                self.assertIsNone(f.entry["worktree_release"])
+                self.assertEqual(validation_worktree.exists(),
+                                 condition == "preexisting-validation")
+
+    def test_owner_tagged_task_completion_cannot_establish_coordinator_terminal(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        offset = f.entry["cursors"][0]["offset"]
+
+        f.append(log, task_event("tool.execution_complete", "owner-terminal", owner="owner-one",
+                                 sessionId=root, toolCallId="call-one", success=True))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], offset)
+        self.assertIsNone(f.entry["terminal_task"])
+
+    def test_native_owner_and_session_match_the_observed_lifecycle_identity(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        handoff.validate_state(f.state)
+
+        for field, value in (("owner_id", "different-owner"), ("session_id", "different-session")):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(f.state)
+                changed["assignments"][0]["assignment"][field] = value
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(changed)
+
+    def test_logical_owner_cannot_close_without_terminal_or_release_evidence(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        f.entry["closed_at"] = handoff.now()
+
+        with self.assertRaisesRegex(handoff.HandoffDataError, "logical ownership release is unavailable"):
+            handoff.validate_state(f.state)
+
+    def test_retained_native_entry_without_terminal_records_completion(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        del f.entry["terminal_task"]
+        handoff.validate_state(f.state)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["terminal_task"]["event_id"], "task-terminal")
+        restored = observations.parse_bytes(json.dumps(f.state).encode())
+        handoff.validate_state(restored)
+        self.assertEqual(restored["assignments"][0]["terminal_task"], f.entry["terminal_task"])
+        offset = f.entry["cursors"][0]["offset"]
+        f.append(log, native_event("tool.execution_complete", "duplicate-terminal",
+                                   toolCallId="call-one", success=True))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "duplicate native task completion"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], offset)
+
+    def test_failed_logical_task_does_not_close_or_preserve_wip_without_release(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        f.commit()
+        f.append(log, native_event("tool.execution_complete", "task-failed",
+                                   toolCallId="call-one", success=False))
+        handoff.observe_cli(f.entry, log)
+
+        self.assertFalse(f.entry["terminal_task"]["success"])
+        self.assertIsNone(f.entry["interruption"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertIn("owner-task-failed", handoff.owner_completion_errors(f.entry))
+        self.assertNotIn("owner-not-retired", handoff.owner_completion_errors(f.entry))
+        self.assertFalse((Path(f.entry["git_identity"]["git_dir"]) / "locked").exists())
+        self.assertEqual(handoff.summarize_handoffs(f.state)["in_progress"], 1)
+
+    def test_failed_logical_task_cannot_be_preserved_without_release(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        f.append(log, native_event("tool.execution_complete", "task-failed",
+                                   toolCallId="call-one", success=False))
+        handoff.observe_cli(f.entry, log)
+
+        before = handoff.observe_git(f.assignment)
+        lock = Path(f.entry["git_identity"]["git_dir"]) / "locked"
+        with self.assertRaisesRegex(handoff.HandoffDataError, "invalid enum"):
+            handoff.preserve_interruption(f.entry, "task-failed")
+
+        self.assertEqual(handoff.observe_git(f.assignment), before)
+        self.assertFalse(lock.exists())
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertIsNone(f.entry["interruption"])
+
+    def test_shared_native_receipt_rejects_spliced_or_missing_observations(self):
+        for variant in ("missing-start", "wrong-owner", "wrong-root", "wrong-interaction",
+                        "wrong-prompt", "missing-parent", "stale-receipt"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                events = [task_event("tool.execution_start", "dispatch", toolName="task",
+                                     toolCallId="call-one", arguments={"prompt": prompt})]
+                if variant != "missing-start":
+                    events.append(task_event("subagent.started", "started", owner="owner-one",
+                                             toolCallId="call-one", interactionId="interaction-one"))
+                receipt = task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                     source=f"agent-{root}", interactionId="interaction-one",
+                                     parentAgentTaskId="receipt-task")
+                if variant == "wrong-owner":
+                    receipt["agentId"] = "other-owner"
+                elif variant == "wrong-root":
+                    receipt["data"]["source"] = "agent-other-root"
+                elif variant == "wrong-interaction":
+                    receipt["data"]["interactionId"] = "other-interaction"
+                elif variant == "wrong-prompt":
+                    receipt["data"]["content"] += " altered"
+                elif variant == "missing-parent":
+                    del receipt["data"]["parentAgentTaskId"]
+                elif variant == "stale-receipt":
+                    receipt["timestamp"] = at_offset(-3600)
+                events.append(receipt)
+                events.append(task_event("tool.execution_start", "progress", owner="owner-one",
+                                         toolName="bash", toolCallId="owner-call",
+                                         ownerNativeSessionId=SESSION))
+                f.append(log, *events)
+                handoff.observe_cli(f.entry, log)
+                self.assertEqual([item["state"] for item in f.entry["events"]], ["assignment_sent"])
+                self.assertIsNone(f.entry["assignment"]["session_id"])
+
+    def test_native_followup_cannot_rebind_the_received_parent_task(self):
+        for variant in ("same-interaction", "changed-interaction", "changed-interaction-only"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                f.append(log, task_event("user.message", "followup", owner="owner-one",
+                                         content="Additional instructions", source=f"agent-{root}",
+                                         interactionId="interaction-one",
+                                         parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                self.assertEqual([item["state"] for item in f.entry["events"]],
+                                 ["assignment_sent", "assignment_received"])
+                interaction = ("interaction-one" if variant == "same-interaction"
+                               else "different-interaction")
+                parent = ("receipt-task" if variant == "changed-interaction-only"
+                          else "other-task" if variant == "same-interaction" else "different-task")
+                f.append(log, task_event("user.message", "contradiction", owner="owner-one",
+                                         content="Additional instructions", source=f"agent-{root}",
+                                         interactionId=interaction, parentAgentTaskId=parent))
+                message = ("receipt interaction changed" if variant == "changed-interaction-only"
+                           else "receipt task changed")
+                with self.assertRaisesRegex(handoff.HandoffDataError, message):
+                    handoff.observe_cli(f.entry, log)
+
+    def test_native_receipt_replay_or_conflicting_interaction_is_rejected(self):
+        for variant in ("replay", "new-id", "changed-interaction"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                                      toolCallId="call-one", arguments={"prompt": prompt})
+                started = task_event("subagent.started", "started", owner="owner-one",
+                                     toolCallId="call-one", interactionId="interaction-one")
+                receipt = task_event(
+                    "user.message", "receipt", owner="owner-one", content=prompt,
+                    source=f"agent-{root}", interactionId="interaction-one",
+                    parentAgentTaskId="receipt-task")
+                f.append(log, dispatch, started, receipt)
+                handoff.observe_cli(f.entry, log)
+                duplicate = copy.deepcopy(receipt)
+                if variant != "replay":
+                    duplicate["id"] = "another-receipt"
+                if variant == "changed-interaction":
+                    duplicate["data"]["interactionId"] = "other-interaction"
+                    duplicate["data"]["parentAgentTaskId"] = "other-task"
+                f.append(log, duplicate)
+                expected = ("native owner event source reused" if variant == "replay"
+                            else "native receipt")
+                with self.assertRaisesRegex(handoff.HandoffDataError, expected):
+                    handoff.observe_cli(f.entry, log)
+
+    def test_native_followup_participates_in_progress_chronology(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                              toolCallId="call-one", arguments={"prompt": prompt})
+        started = task_event("subagent.started", "started", owner="owner-one",
+                             toolCallId="call-one", interactionId="interaction-one")
+        receipt = task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                             source=f"agent-{root}", interactionId="interaction-one",
+                             parentAgentTaskId="receipt-task")
+        progress = task_event("tool.execution_start", "progress", owner="owner-one",
+                              toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION)
+        followup = task_event("user.message", "followup", owner="owner-one",
+                              content="Additional instructions", source=f"agent-{root}",
+                              interactionId="interaction-one", parentAgentTaskId="receipt-task")
+        f.append(log, dispatch, started, receipt, followup, progress)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
+            handoff.observe_cli(f.entry, log)
+
+    def test_native_progress_rejects_replayed_event_id_and_accepts_distinct_start(self):
+        for variant in ("replay", "distinct"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                progress = task_event("tool.execution_start", "progress", owner="owner-one",
+                                      toolName="bash", toolCallId="edit-one",
+                                      ownerNativeSessionId=SESSION)
+                f.append(log, progress)
+                handoff.observe_cli(f.entry, log)
+                replay = copy.deepcopy(progress)
+                if variant == "distinct":
+                    replay["id"] = "distinct-progress"
+                    replay["data"]["toolCallId"] = "edit-two"
+                f.append(log, replay)
+                if variant == "replay":
+                    with self.assertRaisesRegex(handoff.HandoffDataError,
+                                                "native owner event source reused"):
+                        handoff.observe_cli(f.entry, log)
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["events"][-1]["source_id"], "progress")
+                    self.assertEqual(f.entry["cursors"][0]["offset"], log.stat().st_size)
+
+    def test_native_stale_event_cannot_reuse_a_lifecycle_source_id(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one",
+                            toolName="bash", toolCallId="owner-call",
+                            ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        offset = f.entry["cursors"][0]["offset"]
+
+        stale = task_event("assistant.turn_start", "progress", owner="owner-one",
+                           parentToolCallId="call-one", interactionId="interaction-one")
+        stale["timestamp"] = at_offset(-3600)
+        f.append(log, stale)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "native owner event source reused"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], offset)
+
+    def test_native_lifecycle_source_id_cannot_be_reused_by_owner_turn(self):
+        for variant in ("replay", "distinct"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                f.append(log, task_event("tool.execution_start", "progress", owner="owner-one",
+                                         toolName="bash", toolCallId="edit",
+                                         ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                previous_offset = f.entry["cursors"][0]["offset"]
+                event_id = "progress" if variant == "replay" else "distinct-turn"
+                f.append(log, task_event("assistant.turn_start", event_id, owner="owner-one",
+                                         parentToolCallId="call-one",
+                                         interactionId="interaction-one"))
+                if variant == "replay":
+                    with self.assertRaisesRegex(handoff.HandoffDataError,
+                                                "native owner event source reused"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["cursors"][0]["offset"], previous_offset)
+                    self.assertEqual(f.entry["coordination_turns"], 0)
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["coordination_turns"], 1)
+
+    def test_closed_native_owner_cannot_advance_cursor_with_late_event(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task", toolCallId="call-one",
+                            arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one", toolCallId="call-one",
+                            interactionId="interaction-one"))
+        handoff.observe_cli(f.entry, log)
+        process = f.waiting_process()
+        handoff.bind_process(f.entry, process.pid)
+        f.append(log,
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="edit", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                 interactionId="interaction-one",
+                                 content=json.dumps({"handoff_result": result})))
+        handoff.observe_cli(f.entry, log)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+        self.assertIsNone(f.entry["closed_at"])
+        handoff.validate_state(f.state)
+        handoff.capture_check(f.entry, "raw", revision)
+        f.finish_owner(process)
+        verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertIsNotNone(f.entry["closed_at"])
+
+        f.append(log, task_event("assistant.turn_start", "other-owner-turn", owner="other-owner",
+                                 parentToolCallId="other-dispatch", interactionId="other-interaction"))
+        handoff.observe_cli(f.entry, log)
+        previous_offset = f.entry["cursors"][0]["offset"]
+        late_event = task_event("assistant.turn_start", "late-owner-turn", owner="owner-one",
+                                parentToolCallId="call-one", interactionId="interaction-one")
+        late_event["timestamp"] = at_offset(-60)
+        f.append(log, late_event)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner emitted an event"):
+            handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["cursors"][0]["offset"], previous_offset)
+        self.assertEqual(f.entry["coordination_turns"], 0)
+
+    def test_coordinator_terminal_after_process_close_preserves_retirement_time(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.append(log,
+                 task_event("tool.execution_start", "dispatch", toolName="task", toolCallId="call-one",
+                            arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one", toolCallId="call-one",
+                            interactionId="interaction-one"))
+        handoff.observe_cli(f.entry, log)
+        process = f.waiting_process()
+        handoff.bind_process(f.entry, process.pid)
+        f.append(log,
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                            toolCallId="edit", ownerNativeSessionId=SESSION))
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                 interactionId="interaction-one",
+                                 content=json.dumps({"handoff_result": result})))
+        handoff.observe_cli(f.entry, log)
+        handoff.capture_check(f.entry, "raw", revision)
+        f.finish_owner(process)
+
+        verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        closed_at = f.entry["closed_at"]
+        time.sleep(0.01)
+        f.append(log, native_event("tool.execution_complete", "task-terminal",
+                                   toolCallId="call-one", success=True))
+        handoff.observe_cli(f.entry, log)
+
+        self.assertEqual(f.entry["closed_at"], closed_at)
+        self.assertEqual(f.entry["terminal_task"]["event_id"], "task-terminal")
+        handoff.validate_state(f.state)
+
+    def test_native_progress_requires_distinct_complete_tool_identity(self):
+        for variant in ("missing-id", "opaque-id", "dispatch-id", "missing-name", "opaque-name"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"))
+                handoff.observe_cli(f.entry, log)
+                progress = task_event("tool.execution_start", "progress", owner="owner-one",
+                                      toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION)
+                if variant == "missing-id":
+                    del progress["data"]["toolCallId"]
+                elif variant == "opaque-id":
+                    progress["data"]["toolCallId"] = {"id": "edit"}
+                elif variant == "dispatch-id":
+                    progress["data"]["toolCallId"] = "call-one"
+                elif variant == "missing-name":
+                    del progress["data"]["toolName"]
+                else:
+                    progress["data"]["toolName"] = {"name": "bash"}
+                f.append(log, progress)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.observe_cli(f.entry, log)
+
+    def test_native_validation_rejects_pending_and_contradictory_log_records(self):
+        for variant in ("more-than-one-batch", "partial", "contradiction"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one",
+                                    toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                process = f.owner_process()
+                revision = f.commit()
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": revision,
+                          "evidence_refs": ["raw-evidence"]}
+                delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                                      interactionId="interaction-one",
+                                      content=json.dumps({"handoff_result": result}))
+                f.append(log, delivery)
+                handoff.observe_cli(f.entry, log)
+                f.finish_owner(process)
+                if variant == "partial":
+                    with log.open("ab") as output:
+                        output.write(b'{"type":')
+                else:
+                    count = 129 if variant == "more-than-one-batch" else 128
+                    f.append(log, *(task_event("assistant.message", f"other-{index}",
+                                              owner="other-owner", content="unrelated")
+                                    for index in range(count)))
+                    if variant == "contradiction":
+                        f.append(log, task_event(
+                            "user.message", "contradiction", owner="owner-one",
+                            content="Additional instructions", source=f"agent-{root}",
+                            interactionId="interaction-one", parentAgentTaskId="other-task"))
+                verdict = f.validate(result)
+                self.assertFalse(verdict["handoff_ready"])
+                self.assertIn("native-log-unread", verdict["rejection_codes"])
+                self.assertIsNone(f.entry["closed_at"])
+                if variant == "contradiction":
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task changed"):
+                        f.validate(result)
+                elif variant == "more-than-one-batch":
+                    self.assertTrue(f.validate(result)["handoff_ready"])
+
+    def test_shared_native_log_correlates_two_tasks_with_the_same_interaction(self):
+        first = GitFixture(assign=False)
+        second = GitFixture(assign=False)
+        self.addCleanup(first.close)
+        self.addCleanup(second.close)
+        log, root, first_prompt = reserve_task(first)
+        second.assignment.update({"id": "assignment-two", "issue": 179, "pull_request": 192})
+        with mock.patch.object(handoff, "preflight_issue_pr", return_value={}):
+            _, _, second_prompt = reserve_task(second, state=first.state, log=log)
+        for fixture, prompt, suffix, session in (
+            (first, first_prompt, "one", "session-one"),
+            (second, second_prompt, "two", "session-two"),
+        ):
+            f = fixture
+            f.append(log,
+                     task_event("tool.execution_start", f"dispatch-{suffix}", toolName="task",
+                                toolCallId=f"call-{suffix}", arguments={"prompt": prompt}),
+                     task_event("subagent.started", f"started-{suffix}", owner=f"owner-{suffix}",
+                                toolCallId=f"call-{suffix}", interactionId="shared-interaction"),
+                     task_event("user.message", f"receipt-{suffix}", owner=f"owner-{suffix}",
+                                content=prompt, source=f"agent-{root}", interactionId="shared-interaction",
+                                parentAgentTaskId=f"parent-{suffix}"),
+                     task_event("tool.execution_start", f"progress-{suffix}", owner=f"owner-{suffix}",
+                                toolName="bash", toolCallId=f"edit-{suffix}", ownerNativeSessionId=session))
+        handoff.observe_cli(first.entry, log)
+        handoff.observe_cli(second.entry, log)
+        handoff.validate_state(first.state)
+        for fixture, suffix in ((first, "one"), (second, "two")):
+            assignment = fixture.entry["assignment"]
+            self.assertEqual(assignment["owner_id"], f"owner-{suffix}")
+            self.assertEqual(assignment["dispatch_id"], f"call-{suffix}")
+            self.assertEqual(assignment["session_id"], f"session-{suffix}")
+            self.assertEqual([item["state"] for item in fixture.entry["events"]],
+                             ["assignment_sent", "assignment_received", "progressing"])
+        for key in ("owner_id", "session_id", "dispatch_id"):
+            duplicate = copy.deepcopy(first.state)
+            duplicate["assignments"][1]["assignment"][key] = duplicate["assignments"][0]["assignment"][key]
+            with self.subTest(reused=key), self.assertRaises(handoff.HandoffDataError):
+                handoff.validate_state(duplicate)
+        duplicate = copy.deepcopy(first.state)
+        duplicate["assignments"][1]["native_binding"]["parent_task_id"] = (
+            duplicate["assignments"][0]["native_binding"]["parent_task_id"]
+        )
+        with self.assertRaisesRegex(handoff.HandoffDataError, "receipt task reused"):
+            handoff.validate_state(duplicate)
+
+    def test_native_reservation_retains_partial_record_and_ignores_stale_dispatch(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        prompt = f"[handoff:{f.assignment['id']}] Implement the assigned change."
+        root = native_event("session.start", "root-start", sessionId="coordinator-session")
+        stale = task_event("tool.execution_start", "stale-dispatch", toolName="task",
+                           toolCallId="old-call", arguments={"prompt": prompt})
+        stale["timestamp"] = at_offset(-3600)
+        encoded = observations.json_bytes(stale)
+        split = len(encoded) // 2
+        f.parent_log.write_bytes(observations.json_bytes(root) + encoded[:split])
+        log, _, _ = reserve_task(f)
+        with log.open("ab") as output:
+            output.write(encoded[split:])
+        f.append(log, task_event("tool.execution_start", "real-dispatch", toolName="task",
+                                 toolCallId="actual-call", arguments={"prompt": prompt}))
+        handoff.observe_cli(f.entry, log)
+        self.assertEqual(f.entry["assignment"]["dispatch_id"], "actual-call")
+        self.assertEqual(f.entry["events"][0]["source_id"], "real-dispatch")
+        with self.assertRaisesRegex(handoff.HandoffDataError, "wrong native root log"):
+            handoff.observe_cli(f.entry, f.owner_log)
+
+    def test_native_reservation_rejects_changed_root_in_skipped_prefix(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.append(f.parent_log,
+                 native_event("session.start", "first", sessionId="coordinator-session"),
+                 *(native_event("assistant.turn_start", f"turn-{i}") for i in range(130)),
+                 native_event("session.start", "second", sessionId="different-session"))
+        with self.assertRaisesRegex(observations.ObservationError, "CLI session changed"):
+            reserve_task(f)
+        self.assertEqual(f.state["assignments"], [])
+
+    def test_native_reservation_does_not_skip_events_appended_during_prefix_read(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.append(f.parent_log,
+                 native_event("session.start", "first", sessionId="coordinator-session"),
+                 *(native_event("assistant.turn_start", f"turn-{i}") for i in range(130)))
+        original_size = f.parent_log.stat().st_size
+        read_batch = observations.cli_event_batch
+        appended = False
+
+        def append_then_read(*args, **kwargs):
+            nonlocal appended
+            if not appended:
+                f.append(f.parent_log, native_event("assistant.turn_start", "concurrent"))
+                appended = True
+            return read_batch(*args, **kwargs)
+
+        with mock.patch.object(observations, "cli_event_batch", side_effect=append_then_read):
+            cursor = observations.cli_reservation_cursor(f.parent_log, "coordinator-session")
+        self.assertEqual(cursor["offset"], original_size)
+        events, cursor = observations.cli_event_batch(f.parent_log, cursor)
+        self.assertEqual([event["id"] for _, event in events], ["concurrent"])
+        f.append(f.parent_log, native_event("session.start", "later", sessionId="different-session"))
+        with self.assertRaisesRegex(observations.ObservationError, "CLI session changed"):
+            observations.cli_event_batch(f.parent_log, cursor)
+
+    def test_native_reservation_rejects_duplicate_dispatch_and_reversed_chronology(self):
+        for variant in ("duplicate", "reversed"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, _, prompt = reserve_task(f)
+                dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                                      toolCallId="call-one", arguments={"prompt": prompt})
+                started = task_event("subagent.started", "started", owner="owner-one",
+                                     toolCallId="call-one", interactionId="interaction-one")
+                if variant == "duplicate":
+                    events = [dispatch, task_event("tool.execution_start", "second-dispatch",
+                                                   toolName="task", toolCallId="call-two",
+                                                   arguments={"prompt": prompt})]
+                else:
+                    assigned = observations.timestamp(f.entry["assigned_at"])
+                    dispatch["timestamp"] = (assigned + timedelta(microseconds=1)).isoformat().replace("+00:00", "Z")
+                    started["timestamp"] = (assigned + timedelta(microseconds=3)).isoformat().replace("+00:00", "Z")
+                    receipt = task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                         source="agent-coordinator-session", interactionId="interaction-one",
+                                         parentAgentTaskId="receipt-task")
+                    receipt["timestamp"] = (assigned + timedelta(microseconds=2)).isoformat().replace("+00:00", "Z")
+                    events = [dispatch, started, receipt]
+                f.append(log, *events)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.observe_cli(f.entry, log)
+
+    def test_owner_completion_before_receipt_participates_in_chronology(self):
+        for reversed_receipt in (False, True):
+            with self.subTest(reversed_receipt=reversed_receipt):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.entry["assigned_at"] = at_offset(-30)
+                dispatch = task_event("tool.execution_start", "dispatch", toolName="task",
+                                      toolCallId="call-one", arguments={"prompt": prompt})
+                started = task_event("subagent.started", "started", owner="owner-one",
+                                     toolCallId="call-one", interactionId="interaction-one")
+                dispatch["timestamp"] = started["timestamp"] = at_offset(-20)
+                completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                        toolCallId="edit", success=True)
+                receipt = task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                     source=f"agent-{root}", interactionId="interaction-one",
+                                     parentAgentTaskId="receipt-task")
+                completion["timestamp"] = at_offset(-5 if reversed_receipt else -10)
+                receipt["timestamp"] = at_offset(-10 if reversed_receipt else -5)
+                f.append(log, dispatch, started)
+                handoff.observe_cli(f.entry, log)
+                f.append(log, completion, receipt)
+                cursor = f.entry["cursors"][0]["offset"]
+                if reversed_receipt:
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["cursors"][0]["offset"], cursor)
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["events"][-1]["state"], "assignment_received")
+                    handoff.validate_state(f.state)
+
+    def test_native_owner_completion_participates_in_chronology(self):
+        for variant in ("ordered", "missing-session", "other-owner", "reversed-completion",
+                        "reversed-delivery", "reversed-delivery-missing-session",
+                        "reversed-delivery-next-batch"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.entry["assigned_at"] = at_offset(-30)
+                events = [
+                    task_event("tool.execution_start", "dispatch", toolName="task",
+                               toolCallId="call-one", arguments={"prompt": prompt}),
+                    task_event("subagent.started", "started", owner="owner-one",
+                               toolCallId="call-one", interactionId="interaction-one"),
+                    task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                               source=f"agent-{root}", interactionId="interaction-one",
+                               parentAgentTaskId="receipt-task"),
+                    task_event("tool.execution_start", "progress", owner="owner-one",
+                               toolName="bash", toolCallId="edit", ownerNativeSessionId=SESSION),
+                ]
+                for event in events:
+                    event["timestamp"] = at_offset(-15)
+                f.append(log, *events)
+                handoff.observe_cli(f.entry, log)
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                          "evidence_refs": ["raw-evidence"]}
+                completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                        toolCallId="edit", ownerNativeSessionId=SESSION, success=True)
+                delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                                      interactionId="interaction-one",
+                                      content=json.dumps({"handoff_result": result}))
+                completion["timestamp"] = at_offset(-10)
+                delivery["timestamp"] = at_offset(-5)
+                if variant == "missing-session":
+                    del completion["data"]["ownerNativeSessionId"]
+                elif variant == "other-owner":
+                    completion["agentId"] = "other-owner"
+                    del completion["data"]["ownerNativeSessionId"]
+                    completion["timestamp"] = at_offset(-1)
+                elif variant == "reversed-completion":
+                    completion["timestamp"] = at_offset(-20)
+                elif variant.startswith("reversed-delivery"):
+                    completion["timestamp"] = at_offset(-5)
+                    delivery["timestamp"] = at_offset(-10)
+                    if variant == "reversed-delivery-missing-session":
+                        del completion["data"]["ownerNativeSessionId"]
+                if variant == "reversed-delivery-next-batch":
+                    f.append(log, completion)
+                    handoff.observe_cli(f.entry, log)
+                    handoff.validate_state(f.state)
+                    f.append(log, delivery)
+                else:
+                    f.append(log, completion, delivery)
+                cursor = f.entry["cursors"][0]["offset"]
+                if variant.startswith("reversed-"):
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "chronology reversed"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["cursors"][0]["offset"], cursor)
+                    self.assertIsNone(f.entry["result"])
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["result"], result)
+                    handoff.validate_state(f.state)
+
+    def test_native_owner_events_reject_explicit_conflicting_session(self):
+        for variant in ("matching-completion", "missing-completion",
+                        "conflicting-completion", "conflicting-delivery", "conflicting-turn"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one",
+                                    toolName="bash", toolCallId="edit",
+                                    ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                          "evidence_refs": ["raw-evidence"]}
+                turn = task_event("assistant.turn_start", "turn", owner="owner-one",
+                                  parentToolCallId="call-one", interactionId="interaction-one",
+                                  ownerNativeSessionId="different-session")
+                completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                        toolCallId="edit", ownerNativeSessionId=SESSION, success=True)
+                delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                                      interactionId="interaction-one",
+                                      content=json.dumps({"handoff_result": result}))
+                if variant == "missing-completion":
+                    del completion["data"]["ownerNativeSessionId"]
+                elif variant == "conflicting-completion":
+                    completion["data"]["ownerNativeSessionId"] = "different-session"
+                elif variant == "conflicting-delivery":
+                    delivery["data"]["ownerNativeSessionId"] = "different-session"
+                elif variant == "conflicting-turn":
+                    f.append(log, turn)
+                f.append(log, completion, delivery)
+                if variant.startswith("conflicting-"):
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "session changed"):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertIsNone(f.entry["result"])
+                else:
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["result"], result)
+
+    def test_native_progress_requires_one_owner_session_and_stops_after_handoff(self):
+        for variant in ("changed-session", "retired-owner", "retired-missing",
+                        "retired-opaque", "retired-invalid", "retired-other-agent",
+                        "retired-no-agent", "other-owner"):
+            with self.subTest(variant=variant):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "no-session", owner="owner-one",
+                                    toolName="bash", toolCallId="owner-call"))
+                handoff.observe_cli(f.entry, log)
+                self.assertEqual([item["state"] for item in f.entry["events"]],
+                                 ["assignment_sent", "assignment_received"])
+                f.append(log, task_event("tool.execution_start", "progress", owner="owner-one",
+                                         toolName="bash", toolCallId="owner-call-2",
+                                         ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                if variant == "changed-session":
+                    f.append(log, task_event("tool.execution_start", "changed-session", owner="owner-one",
+                                             toolName="bash", toolCallId="owner-call-3",
+                                             ownerNativeSessionId="different-session"))
+                    expected = "session changed"
+                else:
+                    result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                              "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                              "evidence_refs": ["raw-evidence"]}
+                    f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                             interactionId="interaction-one",
+                                             content=json.dumps({"handoff_result": result})))
+                    handoff.observe_cli(f.entry, log)
+                    late = task_event("tool.execution_start", "after-delivery", owner="owner-one",
+                                      toolName="bash", toolCallId="late-call",
+                                      ownerNativeSessionId=SESSION)
+                    if variant == "retired-missing":
+                        del late["data"]["ownerNativeSessionId"]
+                    elif variant == "retired-opaque":
+                        late["data"]["ownerNativeSessionId"] = {"id": SESSION}
+                    elif variant == "retired-invalid":
+                        late["data"]["ownerNativeSessionId"] = "invalid session!"
+                    elif variant == "retired-other-agent":
+                        late["agentId"] = "other-owner"
+                    elif variant == "retired-no-agent":
+                        del late["agentId"]
+                    elif variant == "other-owner":
+                        late["agentId"] = "other-owner"
+                        late["data"]["ownerNativeSessionId"] = "different-session"
+                    f.append(log, late)
+                    expected = ("native owner/session identity mismatch"
+                                if variant in ("retired-other-agent", "retired-no-agent")
+                                else "retired owner")
+                if variant == "other-owner":
+                    handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry["events"][-1]["state"], "handed_off")
+                else:
+                    with self.assertRaisesRegex(handoff.HandoffDataError, expected):
+                        handoff.observe_cli(f.entry, log)
 
     def test_each_event_uses_prior_session_context_within_and_across_batches(self):
         for mode in ("same-batch", "split", "bounded"):
@@ -267,6 +2304,11 @@ class StateStoreTests(unittest.TestCase):
     def setUp(self):
         self.fixture = GitFixture()
         self.addCleanup(self.fixture.close)
+
+    def test_json_decoder_accepts_state_above_previous_node_limit(self):
+        raw = b'{"records":[' + b'{"id":0},' * 11999 + b'{"id":0}]}'
+        parsed = observations.parse_bytes(raw)
+        self.assertEqual(len(parsed["records"]), 12000)
 
     def test_real_sigkill_leftovers_never_replace_or_block_canonical_state(self):
         program = r"""
@@ -506,6 +2548,9 @@ class WatcherObservationTests(unittest.TestCase):
         watcher["ended_at"] = observations.utc_now()
         with self.assertRaises(handoff.HandoffDataError):
             handoff.reserve_watcher(f.state, "duplicate", 91, 2, f.parent, process.pid)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "ended watcher lacks matching OS observation"):
+            handoff.validate_state(f.state)
+        watcher["ended_at"] = None
         watcher["coordinator_id"] = "other-coordinator"
         with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
             handoff.validate_state(f.state)
@@ -867,6 +2912,99 @@ class RecoveryObservationTests(unittest.TestCase):
 
 
 class HandoffCliTests(unittest.TestCase):
+    def test_reversed_owner_completion_preserves_locked_state(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        log, root, prompt = reserve_task(f)
+        f.entry["assigned_at"] = at_offset(-30)
+        events = [
+            task_event("tool.execution_start", "dispatch", toolName="task",
+                       toolCallId="call-one", arguments={"prompt": prompt}),
+            task_event("subagent.started", "started", owner="owner-one",
+                       toolCallId="call-one", interactionId="interaction-one"),
+            task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                       source=f"agent-{root}", interactionId="interaction-one",
+                       parentAgentTaskId="receipt-task"),
+            task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                       toolCallId="edit", ownerNativeSessionId=SESSION),
+        ]
+        for event in events:
+            event["timestamp"] = at_offset(-15)
+        f.append(log, *events)
+        handoff.observe_cli(f.entry, log)
+        revision = f.commit()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": revision,
+                  "evidence_refs": ["raw-evidence"]}
+        completion = task_event("tool.execution_complete", "completion", owner="owner-one",
+                                toolCallId="edit", ownerNativeSessionId=SESSION, success=True)
+        completion["timestamp"] = at_offset(-5)
+        delivery = task_event("assistant.message", "delivery", owner="owner-one",
+                              interactionId="interaction-one",
+                              content=json.dumps({"handoff_result": result}))
+        delivery["timestamp"] = at_offset(-10)
+        f.append(log, completion, delivery)
+        state_path = f.home / "state.json"
+        write_json(state_path, f.state)
+        before = state_path.read_bytes()
+        command = [sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"),
+                   "agent-handoff", "observe", "--state", str(state_path),
+                   "--assignment-id", f.assignment["id"], "--runtime-events", str(log)]
+        rejected = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(rejected.returncode, 2, rejected.stderr.decode())
+        self.assertIn(b"chronology reversed", rejected.stderr)
+        self.assertEqual(state_path.read_bytes(), before)
+
+    def test_native_task_reservation_and_observation_through_isolated_cli(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        root = "coordinator-session"
+        prompt = f"[handoff:{f.assignment['id']}] Implement the assigned change."
+        f.append(f.parent_log, native_event("session.start", "root-start", sessionId=root))
+        f.assignment.update({
+            "owner_id": None, "session_id": None, "dispatch_id": None,
+            "native": {"root_session_id": root, "events_path": str(f.parent_log), "prompt": prompt},
+        })
+        state_path, assignment_path = f.home / "state.json", f.home / "assignment.json"
+        write_json(state_path, f.state)
+        write_json(assignment_path, f.assignment)
+        environment = gh_stub_environment(f.home, [{
+            "number": 191, "title": "Fix issue #178", "body": "Closes #178",
+            "headRefName": "agent/test", "closingIssuesReferences": [],
+        }])
+        launcher = ROOT / "scripts/workflow_pilot/isolated_launcher.py"
+        command = [sys.executable, "-I", str(launcher), "agent-handoff"]
+        assigned = raw.run_process(
+            [*command, "assign", "--state", str(state_path), "--assignment", str(assignment_path)],
+            cwd=ROOT, env=environment,
+        )
+        self.assertEqual(assigned.returncode, 0, assigned.stderr.decode())
+        f.append(f.parent_log,
+                 task_event("tool.execution_start", "dispatch", toolName="task",
+                            toolCallId="call-one", arguments={"prompt": prompt}),
+                 task_event("subagent.started", "started", owner="owner-one",
+                            toolCallId="call-one", interactionId="interaction-one"),
+                 task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                            source=f"agent-{root}", interactionId="interaction-one",
+                            parentAgentTaskId="receipt-task"),
+                 task_event("tool.execution_start", "progress", owner="owner-one",
+                            toolName="bash", toolCallId="owner-call", ownerNativeSessionId=SESSION))
+        observe = [*command, "observe", "--state", str(state_path),
+                   "--assignment-id", f.assignment["id"], "--runtime-events", str(f.parent_log)]
+        captured = raw.run_process(observe, cwd=ROOT, env=environment)
+        self.assertEqual(captured.returncode, 0, captured.stderr.decode())
+        entry = observations.load_json(state_path)["assignments"][0]
+        self.assertEqual(entry["assignment"]["session_id"], SESSION)
+        self.assertEqual([event["state"] for event in entry["events"]],
+                         ["assignment_sent", "assignment_received", "progressing"])
+
+        before = state_path.read_bytes()
+        f.append(f.parent_log, task_event("tool.execution_start", "duplicate", toolName="task",
+                                          toolCallId="call-two", arguments={"prompt": prompt}))
+        rejected = raw.run_process(observe, cwd=ROOT, env=environment)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertEqual(state_path.read_bytes(), before)
+
     def test_cli_session_context_and_clock_rejection_preserve_canonical_state(self):
         f = GitFixture()
         self.addCleanup(f.close)

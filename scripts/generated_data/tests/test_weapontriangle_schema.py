@@ -20,9 +20,6 @@ class WeaponTriangleSchemaValidTests(unittest.TestCase):
         self.assertTrue(diagnostics.ok, msg=diagnostics.render())
         self.assertEqual(len(records), 12)
 
-    def test_expected_rule_count_constant_is_12(self):
-        self.assertEqual(weapontriangle_schema.EXPECTED_RULE_COUNT, 12)
-
     def test_groups_are_two_closed_three_type_triangles(self):
         self.assertEqual(len(weapontriangle_schema.GROUPS), 2)
         for group in weapontriangle_schema.GROUPS:
