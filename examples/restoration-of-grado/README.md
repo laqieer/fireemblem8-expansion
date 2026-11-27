@@ -374,7 +374,10 @@ replacements, but does not assert rendered UI or campaign behavior.
    observes both byte-safe metadata copies and captures message IDs/helpbox
    coordinates, not rendered UI or menu navigation. Debug Continue and Link
    Arena each repeat a refusal after dismissal, requiring every attempt to
-   start exactly one blocking popup under its active caller Proc. Save-menu
+   start exactly one blocking popup under its active caller Proc. Debug
+   popups use OBJ tile base 0x180/palette 9 and preserve the two default
+   portrait tile regions and palettes through dismissal. The pre-fix
+   save-menu base 0x200 overwrites the right portrait region. Save-menu
    popups use OBJ tile base 0x200/palette 9; Link Arena popups use OBJ tile
    base 0x300/palette 6, after the selector object graphics at tiles
    0x240-0x2FF. Load the original selector image and run the production
