@@ -57,17 +57,31 @@ class CliReadOnlyDefaultsTests(unittest.TestCase):
         self.assertEqual(h.rev_parse(self.fixture.fork_dir, "decomp/master"), before_decomp_master)
 
     def test_drift_is_read_only_and_exit_code_reflects_drift(self):
-        code, _, _ = _run_cli(
-            ["--repo", self.fixture.fork_dir, "--state", self.state_path, "drift", "--ref", "decomp/master"]
-        )
-        self.assertEqual(code, 0)  # clean, nothing new yet
+        def assert_read_only_drift(expected_code):
+            with open(self.state_path, "rb") as state_file:
+                before_state = state_file.read()
+            before_status = _git_status(self.fixture.fork_dir)
+            refs = ("HEAD", "master", "decomp/master")
+            before_refs = {ref: h.rev_parse(self.fixture.fork_dir, ref) for ref in refs}
+
+            code, _, err = _run_cli(
+                ["--repo", self.fixture.fork_dir, "--state", self.state_path, "drift", "--ref", "decomp/master"]
+            )
+            self.assertEqual(code, expected_code, err)
+            with open(self.state_path, "rb") as state_file:
+                self.assertEqual(state_file.read(), before_state, "drift changed state")
+            self.assertEqual(_git_status(self.fixture.fork_dir), before_status, "drift changed worktree")
+            self.assertEqual(
+                {ref: h.rev_parse(self.fixture.fork_dir, ref) for ref in refs},
+                before_refs,
+                "drift changed refs",
+            )
+
+        assert_read_only_drift(0)
 
         h.commit(self.fixture.upstream_dir, {"a.txt": "1"}, "c1", seconds_offset=10)
         h.refetch(self.fixture)
-        code, _, _ = _run_cli(
-            ["--repo", self.fixture.fork_dir, "--state", self.state_path, "drift", "--ref", "decomp/master"]
-        )
-        self.assertEqual(code, 2)  # drift detected, but still just a read
+        assert_read_only_drift(2)
 
     def test_report_rejects_sha_outside_allowed_range(self):
         h.create_branch(self.fixture.upstream_dir, "side", self.fixture.base_sha)

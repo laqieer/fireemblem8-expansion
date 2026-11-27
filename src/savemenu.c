@@ -1158,7 +1158,7 @@ s8 SaveMenuTryMoveExtraSlotCursor(struct SaveMenuProc * proc, int direction) {
 //! FE8U = 0x080A9D84
 void SaveMenuPopupHelpBox_Init(struct SaveMenu8A20068Proc  * proc)
 {
-    LoadHelpBoxGfx(OBJ_VRAM0 + OBJCHR_SAVEMENU_SLOTSEL_HELPBOX * TILE_SIZE_4BPP, OBJPAL_SAVEMENU_SLOTSEL_HELPBOX);
+    LoadHelpBoxGfx(proc->gfxVram, proc->gfxPalette);
     StartHelpBoxExt_Unk(proc->x, proc->y, proc->msgId);
     PlaySoundEffect(SONG_70);
 }
@@ -1187,12 +1187,23 @@ struct ProcCmd CONST_DATA gProcScr_Savemenu_0[] = {
 };
 
 //! FE8U = 0x080A9DFC
-void StartSaveMenuPopupHelpBox(int x, int y, int msgId, ProcPtr parent)
+void StartPopupHelpBox(
+    int x, int y, int msgId, ProcPtr parent, void * gfxVram, int gfxPalette)
 {
     struct SaveMenu8A20068Proc  * proc = Proc_StartBlocking(gProcScr_Savemenu_0, parent);
+    proc->gfxVram = gfxVram;
+    proc->gfxPalette = gfxPalette;
     proc->msgId = msgId;
     proc->x = x;
     proc->y = y;
+}
+
+void StartSaveMenuPopupHelpBox(int x, int y, int msgId, ProcPtr parent)
+{
+    StartPopupHelpBox(
+        x, y, msgId, parent,
+        OBJ_VRAM0 + OBJCHR_SAVEMENU_SLOTSEL_HELPBOX * TILE_SIZE_4BPP,
+        OBJPAL_SAVEMENU_SLOTSEL_HELPBOX);
 }
 
 //! FE8U = 0x080A9E1C

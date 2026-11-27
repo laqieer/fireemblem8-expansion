@@ -4,6 +4,7 @@
 #include "bm.h"
 #include "bmudisp.h"
 #include "bmitem.h"
+#include "bmlib.h"
 #include "bmsave.h"
 #include "bmunit.h"
 #include "eventinfo.h"
@@ -145,6 +146,18 @@ struct GradoNativeLoadRefusalProbe
     u32 reopenTryLoadStateRestored;
     u32 reopenTryLoadNoPopup;
     u32 reopenSaveMenuContinued;
+    u32 linkArenaSelectionRefused;
+    u32 saveMenuOption7Refused;
+    u32 linkArenaOldBaseClobbers;
+    u32 linkArenaNewBasePreserves;
+    u32 linkArenaPopupDestinationCorrect;
+    u32 linkArenaPopupPreservesTiles;
+    u32 linkArenaPopupClosePreservesTiles;
+    u32 corruptBlockLoadResult;
+    u32 corruptBlockLoadPreserved;
+    u32 corruptBlockMenuRefused;
+    u32 corruptBlockMenuPreserved;
+    u32 corruptBlockMenuMessage;
 };
 
 static union
@@ -162,6 +175,8 @@ static u32 sHelpBoxCalls;
 static int sHelpBoxX;
 static int sHelpBoxY;
 static int sHelpBoxMessage;
+static void * sHelpBoxGfxDest;
+static int sHelpBoxPalette;
 static u32 sHelpBoxGfxLoads;
 static u32 sHelpBoxGfxLoadsAtStart;
 static u32 sHelpBoxCloseCalls;
@@ -170,6 +185,7 @@ static const struct ProcCmd * sPopupScript;
 static ProcPtr sPopupParent;
 static ProcPtr sBrokenProc;
 static struct SaveMenu8A20068Proc sSaveMenuPopupProc;
+static u8 sLinkArenaTacticianGfxBefore[0x1800];
 static u32 sRestartGameCalls;
 static u32 sLinkArenaInitCalls;
 static void (*sUnwrappedReadSramFast)(void const *, void *, u32);
@@ -179,6 +195,7 @@ static u32 sProcGotoCalls;
 static int sProcGotoLabel;
 
 extern struct ProcCmd gProcScr_Savemenu_0[];
+void GradoState_LoadProductionHelpBoxGfx(void * dest, int pal);
 
 static void TraceSramRead(void const * src, void * dest, u32 size)
 {
@@ -228,10 +245,21 @@ void StartHelpBoxExt_Unk(int x, int y, int mid)
 }
 
 static int CompleteManagedRefusalPopup(
-    ProcPtr parent, int expectedMessage, u32 startCallsBefore, u32 helpBoxCallsBefore)
+    ProcPtr parent,
+    int expectedMessage,
+    u32 startCallsBefore,
+    u32 helpBoxCallsBefore,
+    int linkArenaContext)
 {
+    void * expectedGfxDest = linkArenaContext
+        ? OBJ_VRAM0 + 0x300 * TILE_SIZE_4BPP
+        : OBJ_VRAM0 + OBJCHR_SAVEMENU_SLOTSEL_HELPBOX * TILE_SIZE_4BPP;
+    int expectedPalette = linkArenaContext
+        ? 6
+        : OBJPAL_SAVEMENU_SLOTSEL_HELPBOX;
     u32 helpBoxGfxLoadsBefore = sHelpBoxGfxLoads;
     u32 helpBoxCloseCallsBefore = sHelpBoxCloseCalls;
+    int linkArenaTilesPreserved = 1;
 
     if (sPopupStartCalls != startCallsBefore + 1
         || sPopupScript != gProcScr_Savemenu_0
@@ -240,18 +268,73 @@ static int CompleteManagedRefusalPopup(
         || sHelpBoxCalls != helpBoxCallsBefore)
         return 0;
 
+    if (linkArenaContext)
+    {
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+        memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+            sizeof(sLinkArenaTacticianGfxBefore));
+        GradoState_LoadProductionHelpBoxGfx(
+            OBJ_VRAM0 + 0x280 * TILE_SIZE_4BPP, 6);
+
+        gGradoNativeLoadRefusalProbe.linkArenaOldBaseClobbers =
+            memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) != 0;
+        if (!gGradoNativeLoadRefusalProbe.linkArenaOldBaseClobbers)
+            return 0;
+
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+        memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+            sizeof(sLinkArenaTacticianGfxBefore));
+        GradoState_LoadProductionHelpBoxGfx(
+            OBJ_VRAM0 + 0x300 * TILE_SIZE_4BPP, 6);
+
+        gGradoNativeLoadRefusalProbe.linkArenaNewBasePreserves =
+            memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) == 0;
+        if (!gGradoNativeLoadRefusalProbe.linkArenaNewBasePreserves)
+            return 0;
+
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+        memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+            sizeof(sLinkArenaTacticianGfxBefore));
+    }
+
     SaveMenuPopupHelpBox_Init(&sSaveMenuPopupProc);
+    if (linkArenaContext)
+        gGradoNativeLoadRefusalProbe.linkArenaPopupDestinationCorrect =
+            sHelpBoxGfxDest == expectedGfxDest;
     if (sHelpBoxCalls != helpBoxCallsBefore + 1
         || sHelpBoxGfxLoads != helpBoxGfxLoadsBefore + 1
+        || sHelpBoxGfxDest != expectedGfxDest
+        || sHelpBoxPalette != expectedPalette
         || sHelpBoxGfxLoadsAtStart != sHelpBoxGfxLoads)
         return 0;
+
+    if (linkArenaContext)
+    {
+        linkArenaTilesPreserved =
+            memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) == 0;
+        gGradoNativeLoadRefusalProbe.linkArenaPopupPreservesTiles =
+            linkArenaTilesPreserved;
+    }
 
     gKeyStatusPtr->newKeys = A_BUTTON;
     sBrokenProc = NULL;
     SaveMenuPopupHelpBox_WaitInput(&sSaveMenuPopupProc);
 
+    if (linkArenaContext)
+    {
+        linkArenaTilesPreserved = linkArenaTilesPreserved
+            && memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
+                sizeof(sLinkArenaTacticianGfxBefore)) == 0;
+        gGradoNativeLoadRefusalProbe.linkArenaPopupClosePreservesTiles =
+            linkArenaTilesPreserved;
+    }
+
     return sBrokenProc == &sSaveMenuPopupProc
-        && sHelpBoxCloseCalls == helpBoxCloseCallsBefore + 1;
+        && sHelpBoxCloseCalls == helpBoxCloseCallsBefore + 1
+        && linkArenaTilesPreserved;
 }
 
 void RestartGameAndGoto8(void)
@@ -269,6 +352,17 @@ void ApplyUnitSpritePalettes(void)
     sLinkArenaInitCalls++;
 }
 
+void DisplayUiHand(int x, int y)
+{
+    (void)x;
+    (void)y;
+}
+
+void SioPlaySoundEffect(int sound)
+{
+    (void)sound;
+}
+
 void InitPlayConfig(int isDifficult, s8 unk)
 {
     (void)isDifficult;
@@ -280,11 +374,30 @@ void CloseHelpBox(void)
     sHelpBoxCloseCalls++;
 }
 
+void InitSpriteTextFont(struct Font * font, void * vramDest, int palette)
+{
+    (void)font;
+    (void)vramDest;
+    (void)palette;
+}
+
+void InitSpriteText(struct Text * text)
+{
+    (void)text;
+}
+
+void SetTextFont(struct Font * font)
+{
+    (void)font;
+}
+
 void LoadHelpBoxGfx(void * dest, int pal)
 {
-    (void)dest;
-    (void)pal;
+    sHelpBoxGfxDest = dest;
+    sHelpBoxPalette = pal;
     sHelpBoxGfxLoads++;
+    if (pal == 6)
+        GradoState_LoadProductionHelpBoxGfx(dest, pal);
 }
 
 void StartItemHelpBox(int x, int y, int item)
@@ -1173,6 +1286,7 @@ static void ProbeNativeLoadRefusal(void)
     int popupLifecyclesCorrect;
     int debugCallerRefused;
     int linkArenaCallerPreserved;
+    int linkArenaSelectionRefused;
 
     PrepareSemanticSaves();
     PrepareLive(SAVE_ID_GAME2, permanent, chapter);
@@ -1233,7 +1347,7 @@ static void ProbeNativeLoadRefusal(void)
         GRADO_LOAD_NORMAL, SAVE_ID_GAME2, &debugMenuProc);
     popupLifecyclesCorrect = CompleteManagedRefusalPopup(
         &debugMenuProc, probe->expectedMessage,
-        popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu);
+        popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0);
     probe->result = result;
     probe->helpBoxCalls = sHelpBoxCalls;
     probe->helpBoxX = sHelpBoxX;
@@ -1261,7 +1375,7 @@ static void ProbeNativeLoadRefusal(void)
             debugCallerRefused = 0;
         if (!CompleteManagedRefusalPopup(
                 &debugMenuProc, probe->expectedMessage,
-                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu))
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0))
             popupLifecyclesCorrect = 0;
     }
     probe->suspendCallerRefused = debugCallerRefused;
@@ -1293,7 +1407,7 @@ static void ProbeNativeLoadRefusal(void)
             linkArenaCallerPreserved = 0;
         if (!CompleteManagedRefusalPopup(
                 &sioProc, probe->expectedMessage,
-                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu))
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 1))
             popupLifecyclesCorrect = 0;
     }
     probe->normalCallerPreserved = linkArenaCallerPreserved
@@ -1309,6 +1423,26 @@ static void ProbeNativeLoadRefusal(void)
     probe->linkArenaProcGotoCount = sProcGotoCalls;
     probe->linkArenaExitLabel = sProcGotoLabel;
 
+    sioProc.unk_48 = SAVE_ID_GAME2;
+    sioProc.unk_38[SAVE_ID_GAME2] = 21;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    linkArenaSelectionRefused = 1;
+    for (attempt = 0; attempt < 2; ++attempt)
+    {
+        helpBoxCallsBeforeMenu = sHelpBoxCalls;
+        popupStartCallsBeforeMenu = sPopupStartCalls;
+        procGotoCallsBeforeMenu = sProcGotoCalls;
+        sBrokenProc = NULL;
+        LinkArenaTeamBuild_Loop(&sioProc);
+        if (sBrokenProc != NULL
+            || sProcGotoCalls != procGotoCallsBeforeMenu
+            || !CompleteManagedRefusalPopup(
+                &sioProc, probe->expectedMessage,
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 1))
+            linkArenaSelectionRefused = 0;
+    }
+    probe->linkArenaSelectionRefused = linkArenaSelectionRefused;
+
     memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESUME;
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
@@ -1322,12 +1456,16 @@ static void ProbeNativeLoadRefusal(void)
         sProcGotoCalls == procGotoCallsBeforeMenu
         && CompleteManagedRefusalPopup(
             &saveMenuProc, probe->expectedMessage,
-            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu);
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0);
     memset(&saveMenuProc, 0, sizeof(saveMenuProc));
     saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
     saveMenuProc.sus_slot = SAVE_ID_GAME2;
     saveMenuProc.sus_slot_cur = 0;
     saveMenuProc.cursor_config = 1;
+    saveMenuProc.chapter_idx[0] = 0;
+    saveMenuProc.chapter_idx[1] = 1;
+    saveMenuProc.chapter_idx[2] = 2;
+    saveMenuProc.unk_44 = 0x10;
     saveMenuProc.hb_en = 1;
     gKeyStatusPtr->newKeys = A_BUTTON;
     procGotoCallsBeforeMenu = sProcGotoCalls;
@@ -1338,7 +1476,33 @@ static void ProbeNativeLoadRefusal(void)
         sProcGotoCalls == procGotoCallsBeforeMenu
         && CompleteManagedRefusalPopup(
             &saveMenuProc, probe->expectedMessage,
-            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu);
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0)
+        && saveMenuProc.unk_44 == 0x100
+        && saveMenuProc.sus_slot_cur == 0;
+
+    memset(&saveMenuProc, 0, sizeof(saveMenuProc));
+    saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_7;
+    saveMenuProc.sus_slot = SAVE_ID_GAME2;
+    saveMenuProc.sus_slot_cur = 1;
+    saveMenuProc.cursor_config = 1;
+    saveMenuProc.chapter_idx[0] = 0;
+    saveMenuProc.chapter_idx[1] = 1;
+    saveMenuProc.chapter_idx[2] = 2;
+    saveMenuProc.unk_44 = 0x10;
+    saveMenuProc.hb_en = 1;
+    gKeyStatusPtr->newKeys = A_BUTTON;
+    procGotoCallsBeforeMenu = sProcGotoCalls;
+    helpBoxCallsBeforeMenu = sHelpBoxCalls;
+    popupStartCallsBeforeMenu = sPopupStartCalls;
+    SaveMenu_SaveSlotSelectLoop(&saveMenuProc);
+    probe->saveMenuOption7Refused =
+        sProcGotoCalls == procGotoCallsBeforeMenu
+        && CompleteManagedRefusalPopup(
+            &saveMenuProc, probe->expectedMessage,
+            popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0)
+        && saveMenuProc.unk_44 == 0x100
+        && saveMenuProc.sus_slot_cur == 1;
+
     gKeyStatusPtr->newKeys = previousNewKeys;
     probe->saveMenuPreserved =
         memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
@@ -1354,11 +1518,76 @@ static void ProbeNativeLoadRefusal(void)
         popupLifecyclesCorrect
         && probe->saveMenuSuspendRefused
         && probe->saveMenuNormalRefused
-        && sHelpBoxCalls == 7
+        && probe->saveMenuOption7Refused
+        && probe->linkArenaSelectionRefused
+        && sHelpBoxCalls == 10
         && sHelpBoxX == 0x30
         && sHelpBoxY == 0x30
         && sHelpBoxMessage == probe->expectedMessage;
     ProbeNativeDirectionReopen(probe);
+#if FE8_EXPANSION_SAVE_COMPAT_EPOCH == 256
+    {
+        struct SaveBlockInfo validInfo;
+        struct GradoStateLoadDiagnostic diagnostic;
+        u32 popupStartCallsBefore;
+        u32 helpBoxCallsBefore;
+        u32 procGotoCallsBefore;
+        int popupCorrect;
+
+        PrepareSemanticSaves();
+        PrepareLive(SAVE_ID_GAME0, permanent, chapter);
+        PrepareSemanticState();
+        gPlaySt.chapterIndex = 21;
+        gPlaySt.gameSaveSlot = SAVE_ID_GAME0;
+        SetBonusContentClaimFlags(bonus);
+        validInfo = gSram->saveBlockInfo[SAVE_ID_GAME2];
+        gSram->saveBlockInfo[SAVE_ID_GAME2].offset = 0xFFFF;
+
+        memcpy(sBefore, sSaveImage.bytes, sizeof(sBefore));
+        memcpy(permanent, GetPermanentFlagBits(), sizeof(permanent));
+        memcpy(chapter, GetChapterFlagBits(), sizeof(chapter));
+        livePlay = gPlaySt;
+        liveUnit = gUnitArrayBlue[0];
+        suspendSaveIdOffset = gSuspendSaveIdOffset;
+
+        probe->corruptBlockLoadResult = GradoState_LoadNativeSave(
+            GRADO_LOAD_NORMAL, SAVE_ID_GAME2, &diagnostic);
+        probe->corruptBlockLoadPreserved =
+            memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+            && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+            && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+            && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+            && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+            && GetBonusContentClaimFlags() == bonus
+            && gSuspendSaveIdOffset == suspendSaveIdOffset;
+
+        memset(&saveMenuProc, 0, sizeof(saveMenuProc));
+        saveMenuProc.main_sel_bitfile = MAIN_MENU_OPTION_RESTART;
+        saveMenuProc.sus_slot = SAVE_ID_GAME2;
+        saveMenuProc.sus_slot_cur = 0;
+        saveMenuProc.unk_44 = 0x10;
+        popupStartCallsBefore = sPopupStartCalls;
+        helpBoxCallsBefore = sHelpBoxCalls;
+        procGotoCallsBefore = sProcGotoCalls;
+        SaveMenu_NewGame(&saveMenuProc);
+        popupCorrect = CompleteManagedRefusalPopup(
+            &saveMenuProc, MSG_SAVE_COMPAT_UNKNOWN,
+            popupStartCallsBefore, helpBoxCallsBefore, 0);
+        probe->corruptBlockMenuRefused =
+            popupCorrect && sProcGotoCalls == procGotoCallsBefore
+            && saveMenuProc.unk_44 == 0x100;
+        probe->corruptBlockMenuPreserved =
+            memcmp(sBefore, sSaveImage.bytes, sizeof(sBefore)) == 0
+            && memcmp(GetPermanentFlagBits(), permanent, sizeof(permanent)) == 0
+            && memcmp(GetChapterFlagBits(), chapter, sizeof(chapter)) == 0
+            && memcmp(&gPlaySt, &livePlay, sizeof(livePlay)) == 0
+            && memcmp(&gUnitArrayBlue[0], &liveUnit, sizeof(liveUnit)) == 0
+            && GetBonusContentClaimFlags() == bonus
+            && gSuspendSaveIdOffset == suspendSaveIdOffset;
+        probe->corruptBlockMenuMessage = sSaveMenuPopupProc.msgId;
+        gSram->saveBlockInfo[SAVE_ID_GAME2] = validInfo;
+    }
+#endif
     probe->phase = 2;
 }
 

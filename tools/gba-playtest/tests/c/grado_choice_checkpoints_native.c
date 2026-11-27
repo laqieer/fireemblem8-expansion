@@ -413,12 +413,6 @@ void DisplayFrozenUiHand(int x, int y)
     (void)y;
 }
 
-void DisplayUiHand(int x, int y)
-{
-    (void)x;
-    (void)y;
-}
-
 void EndFaceById(int faceSlot)
 {
     (void)faceSlot;

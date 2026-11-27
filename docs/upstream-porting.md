@@ -184,10 +184,11 @@ you manually applied whatever you accepted) — it never builds, checks out,
 or executes the upstream ref/tree.** It orchestrates all current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same complete commands with argv/order preserved across its combined
-host, modern, extended-host, and archival jobs, plus the deliberately
+host, reporter, modern, extended-host, ownership-probe, full-game localization,
+and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
 below. A no-checkout event identity validator, event router, and mode-specific
-classifier check precede the four combined workers in CI; the four combined
+classifier check precede the seven combined workers in CI; the seven combined
 workers run in parallel after that decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
 workers. Local `verify` runs the same complete gates in its
@@ -205,7 +206,7 @@ baseline's `--repository-root`; there is no per-step working-directory
 override. Before either a dry run or execution, the source tool parses the
 target checkout's Build workflow as bounded UTF-8 data without importing or
 executing target Python. The event identity validator, event router,
-mode-specific classifier, and four reviewed worker jobs must have
+mode-specific classifier, and seven reviewed worker jobs must have
 the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
@@ -229,9 +230,8 @@ permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
 absent. The identity validator, router, and mode-classifier contain only their
 reviewed names, runner, timeout, outputs, environment,
 dependencies/conditions, and steps. Each combined job contains only its
-identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
-its exact allowlisted environment, and `steps`. The comprehensive `build` job
-and both comprehensive host jobs have `timeout-minutes: 90`; `legacy`
+identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-24.04`,
+its exact allowlisted environment, and `steps`. The `build` job and five host workers have `timeout-minutes: 90`; `legacy`
 remains 60 minutes, while identity/router/classifier and summary remain 5.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
@@ -244,7 +244,7 @@ push classification requires the corresponding validated push kind/SHA.
 Workers accept either a complete current classifier head/base pair or the
 explicit fail-closed state for a valid exact PR head with an
 incomplete/malformed/incoherent base, and check out only that exact validated
-head during normal classification. The latter state audits all four workers
+head during normal classification. The latter state audits all seven workers
 and then fails summary; a valid base SHA may remain diagnostic data but cannot
 authorize a checkout.
 Base refs are bounded to 1024 UTF-8 bytes. Python applies grammar equivalent to
@@ -272,7 +272,7 @@ Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
-The complete eight-job structure retains all four validation workers,
+The complete eleven-job structure retains all seven validation workers,
 identity/router/classifier and summary. The normal `build` job additionally
 contains two authenticated master-push-only packaging/upload steps, not new
 local gates: the mirror still executes every required gate. Their conditions,

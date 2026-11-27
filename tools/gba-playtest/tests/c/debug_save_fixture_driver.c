@@ -7,6 +7,7 @@
 #include "bmsave.h"
 #include "save_format.h"
 #include "expansion_debug_save_fixture.h"
+#include "grado_campaign_state.h"
 
 #define CHECK(cond, message) \
     do { \
@@ -23,6 +24,12 @@ extern void DebugSaveFixtureHost_SetTitleActive(int active);
 extern int DebugSaveFixtureHost_GetGameLoadCount(void);
 extern int DebugSaveFixtureHost_GetSuspendLoadCount(void);
 extern int DebugSaveFixtureHost_GetLastLoadedSlot(void);
+extern void DebugSaveFixtureGradoHost_SetPreflightResult(
+    enum GradoStateLoadResult result);
+extern int DebugSaveFixtureGradoHost_GetPreflightCalls(void);
+extern int DebugSaveFixtureGradoHost_GetPreflightViewIsFixtureImage(void);
+extern int DebugSaveFixtureGradoHost_GetRecoveryCalls(void);
+extern int DebugSaveFixtureGradoHost_GetLoadCountAtRecovery(void);
 
 static void PopulateBlockInfo(struct SaveBlocks *image, int index)
 {
@@ -144,8 +151,9 @@ int main(void)
     CHECK(
         memcmp(&fixture->expansionSaveMeta.magic, "FSAV", 4) == 0
             && fixture->expansionSaveMeta.formatVersion == 2
-            && fixture->expansionSaveMeta.compatEpoch == 2,
-        "fixture metadata bytes must be FSAV format 2 epoch 2");
+            && fixture->expansionSaveMeta.compatEpoch
+                == FE8_EXPANSION_SAVE_COMPAT_EPOCH,
+            "fixture metadata bytes must use the current FSAV epoch");
     CHECK(
         fixture->globalSaveInfo.completed == 1
             && memcmp(
@@ -213,6 +221,12 @@ int main(void)
             && DebugSaveFixtureHost_GetLastLoadedSlot()
                 == SAVE_ID_SUSPEND_ALT,
         "consume must call the source-neutral suspend loader exactly once");
+    CHECK(
+        DebugSaveFixtureGradoHost_GetPreflightCalls() == 1
+            && DebugSaveFixtureGradoHost_GetPreflightViewIsFixtureImage()
+            && DebugSaveFixtureGradoHost_GetRecoveryCalls() == 1
+            && DebugSaveFixtureGradoHost_GetLoadCountAtRecovery() == 1,
+        "suspend Grado preflight must use the fixture image and recover after loading");
     CHECK(
         memcmp(gPlaySt.playerName, "FIXTURE\0\0\0\0", 11) == 0,
         "live tactician state must come from the volatile fixture");
@@ -310,6 +324,36 @@ int main(void)
             && DebugSaveFixtureHost_GetSuspendLoadCount() == 1
             && DebugSaveFixtureHost_GetLastLoadedSlot() == SAVE_ID_GAME0,
         "game target must call the source-neutral game loader once");
+    CHECK(
+        DebugSaveFixtureGradoHost_GetPreflightCalls() == 2
+            && DebugSaveFixtureGradoHost_GetPreflightViewIsFixtureImage()
+            && DebugSaveFixtureGradoHost_GetRecoveryCalls() == 2
+            && DebugSaveFixtureGradoHost_GetLoadCountAtRecovery() == 2,
+        "normal Grado preflight must use the fixture image and recover after loading");
+    DebugSaveFixture_NotifyTitleScreenStarting();
+
+    DebugSaveFixtureGradoHost_SetPreflightResult(GRADO_STATE_LOAD_CONFLICT);
+    CHECK(
+        DebugSaveFixture_PrepareLatestSuspend(&overrides, &preview)
+            == DEBUG_SAVE_FIXTURE_OK
+            && DebugSaveFixture_Arm(&preview.target) == DEBUG_SAVE_FIXTURE_OK
+            && DebugSaveFixture_RequestContinue(&preview.target)
+                == DEBUG_SAVE_FIXTURE_OK,
+        "conflicting Grado fixture must pass fixture preparation and queue");
+    CHECK(
+        DebugSaveFixture_ConsumePendingContinue()
+            == DEBUG_SAVE_FIXTURE_CONTINUE_FAILED,
+        "conflicting Grado history must refuse before loading");
+    CHECK(
+        DebugSaveFixtureGradoHost_GetPreflightCalls() == 3
+            && DebugSaveFixtureGradoHost_GetPreflightViewIsFixtureImage()
+            && DebugSaveFixtureGradoHost_GetRecoveryCalls() == 2
+            && DebugSaveFixtureHost_GetGameLoadCount() == 1
+            && DebugSaveFixtureHost_GetSuspendLoadCount() == 1
+            && memcmp(source, baseline, sizeof(baseline)) == 0
+            && ImageIsZero(),
+        "Grado refusal must preserve live SRAM and avoid load or recovery");
+    DebugSaveFixtureGradoHost_SetPreflightResult(GRADO_STATE_LOAD_RECOVERY);
     DebugSaveFixture_NotifyTitleScreenStarting();
 
     for (i = 0; i < (int)(sizeof(incompatibleStates) / sizeof(incompatibleStates[0])); ++i)

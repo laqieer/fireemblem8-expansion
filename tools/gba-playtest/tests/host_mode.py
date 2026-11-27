@@ -93,8 +93,7 @@ def modern_rom(config: str) -> Path:
 
 
 def modern_elf(config: str) -> Path:
-    """Built modern ELF for a config. Never read by this suite; listed so the
-    host-only regression can prove it is left untouched."""
+    """Built modern ELF for a config -- the live-integration input."""
     return MODERN_BUILD_ROOT / config / MODERN_ABI / "fireemblem8.elf"
 
 
@@ -127,6 +126,7 @@ BACKEND_UNAVAILABLE_MARKERS = (
 # Category B registry: (module name, TestCase class name).
 LIVE_TEST_CLASSES = (
     ("test_combat_scenario", "CombatRuntimeTests"),
+    ("test_debug_save_fixture", "DebugSaveFixtureLayoutEmissionTests"),
     ("test_new_game_scenario", "NewGameRuntimeTests"),
     ("test_portrait_package_runtime", "PortraitPackageRuntimeTests"),
     ("test_prep_positive_scenario", "PrepPositiveRuntimeTests"),

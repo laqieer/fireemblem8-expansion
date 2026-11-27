@@ -265,10 +265,12 @@ This `TEST-SAVELOAD` / `TEST-SUSPEND` subcase extends the same ARM/libmGBA
 module builder to the original whole writer/loader paths. It uses owned
 valid generic unit/class/item providers, not the unfinished Grado roster.
 All save, flag, unit, world-map, preference, SRAM and handwritten ARM checksum
-functions come from their original source owners. A test-owned helpbox adapter
-captures refusal messages, coordinates and graphics initialization order; the
-probe records the blocking popup script and save-menu parent. The existing
-`gbagfx` helper builds only the original data required for linking.
+functions come from their original source owners. Test-owned stubs capture
+refusal messages, coordinates, OBJ graphics destination and palette; the real
+production helpbox loader and original compressed graphics/palette are used
+against libmGBA VRAM. The probe records the blocking popup script and save-menu
+parent. The existing `gbagfx` helper builds only the original data required
+for linking.
 
 First run `make project-selection-config` without `FE8_PROJECT` and require the
 default project/profile with no Grado settings. Then run
@@ -371,11 +373,18 @@ replacements, but does not assert rendered UI or campaign behavior.
    observes both byte-safe metadata copies and captures message IDs/helpbox
    coordinates, not rendered UI or menu navigation. Debug Continue and Link
    Arena each repeat a refusal after dismissal, requiring every attempt to
-   start exactly one blocking popup under its active caller Proc. Every popup
-   must load graphics before opening, close its helpbox on dismissal, and
-   release its blocking child before the caller can retry. Save-menu refusal
-   retains the same lifecycle. These native calls model process start/dismissal
-   through the existing API stubs; they do not run the real Proc scheduler.
+   start exactly one blocking popup under its active caller Proc. Save-menu
+   popups use OBJ tile base 0x200/palette 9; Link Arena popups use OBJ tile
+   base 0x300/palette 6, after the selector object graphics at tiles
+   0x240-0x2FF. Load the original selector image and run the production
+   `LoadHelpBoxGfx` with its real compressed graphics at bases 0x280 and
+   0x300. The old base must alter the selector's full 0x1800-byte VRAM image;
+   the new base must preserve it. Then require the actual Link Arena refusal
+   popup to load at 0x300 and preserve that image through initialization and
+   dismissal. Every popup must load graphics before opening, close its helpbox
+   on dismissal, and release its blocking child before the caller can retry.
+   These native calls model process start/dismissal through the existing API
+   stubs; they do not run the real Proc scheduler or assert rendered appearance.
 9. In another reset, hold A+B+L for the saved-chapter validation capture.
    Write physically valid Suspend blocks for project chapter 14 with the CH13
    guard counter either valid or encoded as 3, above its maximum of 2. Make
@@ -384,6 +393,16 @@ replacements, but does not assert rendered UI or campaign behavior.
    of live flags. Normal and legacy preflights ignore those chapter flags.
    Preserve the full input image and live state in both directions. Substituting
    live chapter flags during validation must fail both records.
+10. From `tools/gba-playtest/tests`, run
+    `python3 -B -m unittest test_debugtools_registry.DebugSaveFixtureHostTests.test_real_fixture_state_machine_and_exact_bytes -v`.
+    This compiles the enabled Grado debug-fixture adapter around the real
+    fixture state machine. The host preflight boundary confirms that normal
+    and Suspend validation receive metadata and flag views from the volatile
+    fixture image, and that recovery runs only after the selected loader.
+    A conflicting result must refuse before either loader or recovery runs,
+    while preserving source SRAM and zeroizing the volatile image. The
+    Grado preflight result is controlled by the harness here; the native
+    save-path cases above exercise the production semantic preflight.
 
 Fixed-frame captures retain the 120-frame bound. Semantic captures stop when
 their completion phase and expected record count are observed, with 10,000

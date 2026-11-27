@@ -524,6 +524,8 @@ class RunUntilSchemaTests(unittest.TestCase):
             ),
             1,
         )
+        temporary = tempfile.TemporaryDirectory(prefix="run-until-sentinel-")
+        self.addCleanup(temporary.cleanup)
         with mock.patch.object(
             gba_playtest,
             "build_backend",
@@ -533,7 +535,7 @@ class RunUntilSchemaTests(unittest.TestCase):
             "scheduled writes require a bounded run-until scenario",
         ):
             gba_playtest.capture(
-                ROOT / "build" / "not-opened.gba",
+                Path(temporary.name) / "not-opened.gba",
                 fixed,
                 scheduled_write=scheduled_write,
             )
@@ -690,6 +692,8 @@ class RunUntilSchemaTests(unittest.TestCase):
                 "duplicate baseline probe",
             ),
         )
+        temporary = tempfile.TemporaryDirectory(prefix="run-until-sentinel-")
+        self.addCleanup(temporary.cleanup)
         for scheduled_write, expected in cases:
             with self.subTest(expected=expected, scheduled_write=scheduled_write):
                 with mock.patch.object(
@@ -700,7 +704,7 @@ class RunUntilSchemaTests(unittest.TestCase):
                     ),
                 ), self.assertRaisesRegex(gba_playtest.PlaytestError, expected):
                     gba_playtest.capture(
-                        ROOT / "build" / "not-opened.gba",
+                        Path(temporary.name) / "not-opened.gba",
                         bounded,
                         scheduled_write=scheduled_write,
                     )
