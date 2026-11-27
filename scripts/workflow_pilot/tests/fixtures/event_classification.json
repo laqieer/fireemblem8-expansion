@@ -175,9 +175,12 @@
         "build",
         "event-classifier",
         "extended-host-tests",
+        "game-localization-tests",
         "host-tests",
         "legacy",
-        "summary"
+        "ownership-probe-tests",
+        "summary",
+        "workflow-pilot-tests"
       ],
       "expected_summary_success": false,
       "expected_worker_head": "1111111111111111111111111111111111111111",
@@ -210,9 +213,12 @@
         "build",
         "event-classifier",
         "extended-host-tests",
+        "game-localization-tests",
         "host-tests",
         "legacy",
-        "summary"
+        "ownership-probe-tests",
+        "summary",
+        "workflow-pilot-tests"
       ],
       "expected_summary_success": false,
       "expected_worker_head": "1111111111111111111111111111111111111111",
@@ -245,9 +251,12 @@
         "build",
         "event-classifier",
         "extended-host-tests",
+        "game-localization-tests",
         "host-tests",
         "legacy",
-        "summary"
+        "ownership-probe-tests",
+        "summary",
+        "workflow-pilot-tests"
       ],
       "expected_summary_success": false,
       "expected_worker_head": "1111111111111111111111111111111111111111",
@@ -309,9 +318,12 @@
         "build",
         "event-classifier",
         "extended-host-tests",
+        "game-localization-tests",
         "host-tests",
         "legacy",
-        "summary"
+        "ownership-probe-tests",
+        "summary",
+        "workflow-pilot-tests"
       ],
       "expected_summary_success": false,
       "expected_worker_head": "4444444444444444444444444444444444444444",
@@ -546,9 +558,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "base-edit",
         "run_expensive": true,
@@ -598,9 +613,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "mixed-edit",
         "run_expensive": true,
@@ -653,9 +671,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "unknown-edit",
         "run_expensive": true,
@@ -700,9 +721,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "incomplete-edit",
         "run_expensive": true,
@@ -745,9 +769,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "pull-request-opened",
         "run_expensive": true,
@@ -787,9 +814,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "pull-request-synchronize",
         "run_expensive": true,
@@ -829,9 +859,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "pull-request-reopened",
         "run_expensive": true,
@@ -871,9 +904,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "missing-pull-request-base",
         "run_expensive": true,
@@ -998,9 +1034,12 @@
           "build",
           "event-classifier",
           "extended-host-tests",
+          "game-localization-tests",
           "host-tests",
           "legacy",
-          "summary"
+          "ownership-probe-tests",
+          "summary",
+          "workflow-pilot-tests"
         ],
         "reason": "master-push",
         "run_expensive": true,

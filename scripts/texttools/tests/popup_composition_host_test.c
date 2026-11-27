@@ -7,14 +7,21 @@
 #include "popup.h"
 
 void GeneratePopupText(const struct PopupInstruction *inst, struct Text th);
-void NewPopup2_PlanD(ProcPtr parent, int item, int msg0, int msg1);
 
 extern struct PopupInstruction PopupScr_GotItem[];
 extern struct PopupInstruction PopupScr_StoleItem[];
 
+enum { TEST_POPUP_ITEM = 0x123 };
+
 static int sFailures;
 static int sLocale;
 static char sComposition[128];
+static int sMessageIds[2];
+static unsigned int sMessageCount;
+static int sItemId;
+static int sItemCapital;
+static int sIconItem;
+static ProcPtr sPopupParent;
 
 u16 gBG0TilemapBuffer[32 * 32];
 
@@ -73,6 +80,11 @@ static const char *LocalizedItem(void)
 static void ResetComposition(void)
 {
     sComposition[0] = '\0';
+    sMessageCount = 0;
+    sItemId = -1;
+    sItemCapital = -1;
+    sIconItem = -1;
+    sPopupParent = NULL;
 }
 
 static void AppendComposition(const char *text)
@@ -85,25 +97,29 @@ static void AppendComposition(const char *text)
 
 char *GetStringFromIndex(int id)
 {
+    if (sMessageCount < ARRAY_COUNT(sMessageIds))
+        sMessageIds[sMessageCount] = id;
+    sMessageCount++;
     return (char *)LocalizedMessage(id);
 }
 
 char *GetItemNameWithArticle(int item, int capital)
 {
-    (void)item;
-    (void)capital;
+    sItemId = item;
+    sItemCapital = capital;
     return (char *)LocalizedItem();
 }
 
 char *GetItemName(int item)
 {
-    (void)item;
+    sItemId = item;
+    sItemCapital = -1;
     return (char *)LocalizedItem();
 }
 
 int GetItemIconId(int item)
 {
-    (void)item;
+    sIconItem = item;
     return 0;
 }
 
@@ -183,11 +199,27 @@ void BG_EnableSyncByMask(int mask)
 ProcPtr Proc_StartBlocking(const struct ProcCmd *script, ProcPtr parent)
 {
     (void)script;
+    sPopupParent = parent;
     return parent;
+}
+
+static void CheckComposition(int prefix, int suffix, const char *expected)
+{
+    CHECK(strcmp(sComposition, expected) == 0);
+    CHECK(sMessageCount == 2);
+    if (sMessageCount == 2)
+    {
+        CHECK(sMessageIds[0] == prefix);
+        CHECK(sMessageIds[1] == suffix);
+    }
+    CHECK(sItemId == TEST_POPUP_ITEM);
+    CHECK(sItemCapital == 0);
 }
 
 static void CheckPopupInstructionComposition(
     const struct PopupInstruction *script,
+    int prefix,
+    int suffix,
     const char *expected)
 {
     struct Text text;
@@ -195,14 +227,22 @@ static void CheckPopupInstructionComposition(
     ResetComposition();
     InitText(&text, 20);
     GeneratePopupText(script, text);
-    CHECK(strcmp(sComposition, expected) == 0);
+    CheckComposition(prefix, suffix, expected);
 }
 
-static void CheckPopup2Composition(int prefix, int suffix, const char *expected)
+static void CheckPopup2Composition(
+    void (*show)(ProcPtr, int),
+    int prefix,
+    int suffix,
+    const char *expected)
 {
+    int parent = 0;
+
     ResetComposition();
-    NewPopup2_PlanD(NULL, 1, prefix, suffix);
-    CHECK(strcmp(sComposition, expected) == 0);
+    show(&parent, TEST_POPUP_ITEM);
+    CheckComposition(prefix, suffix, expected);
+    CHECK(sIconItem == TEST_POPUP_ITEM);
+    CHECK(sPopupParent == &parent);
 }
 
 static void TestLocale(
@@ -213,11 +253,11 @@ static void TestLocale(
     const char *sent)
 {
     sLocale = locale;
-    SetPopupItem(1);
-    CheckPopupInstructionComposition(PopupScr_GotItem, got);
-    CheckPopupInstructionComposition(PopupScr_StoleItem, stole);
-    CheckPopup2Composition(0x00F, 0x022, dropped);
-    CheckPopup2Composition(0x010, 0x011, sent);
+    SetPopupItem(TEST_POPUP_ITEM);
+    CheckPopupInstructionComposition(PopupScr_GotItem, 0x008, 0x022, got);
+    CheckPopupInstructionComposition(PopupScr_StoleItem, 0x00A, 0x022, stole);
+    CheckPopup2Composition(NewPopup2_DropItem, 0x00F, 0x022, dropped);
+    CheckPopup2Composition(NewPopup2_SendItem, 0x010, 0x011, sent);
 }
 
 int main(void)
