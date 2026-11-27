@@ -1247,11 +1247,18 @@ class AdapterTests(unittest.TestCase):
         ):
             with self.subTest(lines=lines, expected=expected):
                 client, payload, decision = self.route_client(raw, lines=lines)
+                absent = not any(item["pull_request"] == m.PR_NUMBER
+                                 for item in raw["pull_requests"])
+                if absent:
+                    client.add("GET", m._endpoint(f"git/commits/{m.HEAD}"),
+                               OSError("candidate commit unavailable"))
                 result, selected, binding = gate.route_event(client, decision, payload, m.REPOSITORY)
                 self.assertEqual(result.classification, expected)
                 self.assertEqual(result.expected_head, m.HEAD)
                 self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE, "master"))
                 self.assertEqual(selected.decision_oid, self.content(raw)["sha"])
+                if absent:
+                    self.assertFalse(selected.known)
                 self.assertTrue(all(method == "GET" for method, _, _ in client.calls))
         raw = decisions(m.PR_NUMBER, ("protocol",))
         raw["pull_requests"][0]["program"] = "invented success"
