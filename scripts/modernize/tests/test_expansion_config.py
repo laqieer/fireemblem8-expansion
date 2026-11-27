@@ -445,6 +445,7 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         (ROOT / "build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-warm-replay-", dir=ROOT / "build") as directory:
             temporary = Path(directory)
+            deps = temporary / "deps"
             output = temporary / ("native-" + "x" * max(1, 122 - len(str(temporary))))
             entrypoint = self.project / "warm-native.mk"
             entrypoint.write_text(
@@ -455,10 +456,20 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
                 "\t@: native-asset-dependencies $(MODERN_ALL_DATA_ASSET_DEPS)\n",
                 encoding="ascii",
             )
+            warm_text = subprocess.run(
+                [
+                    "make", "--no-print-directory", f"DEPS_DIR={deps}",
+                    f"PYTHON={sys.executable}",
+                    f"MODERN_CC={temporary / 'unavailable-compiler'}", "src/msg_data.c",
+                ],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(warm_text.returncode, 0, warm_text.stdout + warm_text.stderr)
             arguments = [
                 "make", "--no-print-directory", "-f", str(entrypoint), "NODEP=1",
                 "MODERN_DRY_RUN=1", "FE8_PROJECT=default", "MODERN_ROM_SIZE=32M",
                 "EXPANSION_ENABLED_LOCALES=en,ja", f"MODERN_BUILD_ROOT={output}",
+                f"DEPS_DIR={deps}",
                 f"PYTHON={sys.executable}", f"MODERN_CC={temporary / 'unavailable-compiler'}",
                 "--old-file=expansion-modern-toolchain-check",
             ]
@@ -3043,6 +3054,66 @@ class ProjectSelectionIdentityTests(unittest.TestCase):
         self.assertEqual(
             tuple((path.read_bytes(), path.stat().st_mtime_ns) for path in paths), previous
         )
+
+    def test_missing_text_stamp_preserves_current_selected_outputs(self):
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="independent-text-output-", dir=ROOT / "build"
+        ) as directory:
+            temporary = Path(directory)
+            source = temporary / "texts.txt"
+            definitions = temporary / "textdefs.txt"
+            message = temporary / "msg_data.c"
+            header = temporary / "msg.h"
+            deps = temporary / "deps"
+            source.write_text(
+                "## MSG_SELECTED_ORIGINAL\nGenerated source.[X]\n",
+                encoding="utf-8",
+            )
+            definitions.write_text("[X] = 0\n", encoding="utf-8")
+            original_message = b"/* selected source */\n"
+            original_header = b"#define MSG_SELECTED_SOURCE 0x0000\n"
+            message.write_bytes(original_message)
+            header.write_bytes(original_header)
+
+            inputs = (
+                source,
+                definitions,
+                ROOT / "scripts/texttools/textprocess.py",
+                ROOT / "scripts/texttools/huffman.py",
+            )
+            output_mtime = max(path.stat().st_mtime_ns for path in inputs) + 1_000_000_000
+            for output in (message, header):
+                os.utime(output, ns=(output_mtime, output_mtime))
+
+            command = [
+                "make", "--no-print-directory", f"DEPS_DIR={deps}",
+                f"PYTHON={sys.executable}", f"TEXT_MAIN={source}",
+                f"TEXT_DEFS={definitions}", f"TEXT_SRC={source}",
+                f"MSG_LIST={message}", f"TEXT_HEADER={header}", str(message),
+            ]
+            result = subprocess.run(
+                command, cwd=ROOT, capture_output=True, text=True, timeout=60
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(message.read_bytes(), original_message)
+            self.assertEqual(header.read_bytes(), original_header)
+
+            source.write_text(
+                "## MSG_SELECTED_UPDATED\nUpdated selected source.[X]\n",
+                encoding="utf-8",
+            )
+            source_mtime = (deps / "textprocess.stamp").stat().st_mtime_ns + 1_000_000_000
+            os.utime(source, ns=(source_mtime, source_mtime))
+            refreshed = subprocess.run(
+                command, cwd=ROOT, capture_output=True, text=True, timeout=60
+            )
+            self.assertEqual(
+                refreshed.returncode, 0, refreshed.stdout + refreshed.stderr
+            )
+            self.assertNotEqual(message.read_bytes(), original_message)
+            self.assertNotEqual(header.read_bytes(), original_header)
+            self.assertIn(b"#define MSG_SELECTED_UPDATED", header.read_bytes())
 
     def test_standalone_data_goals_build_and_refresh_the_selected_header(self):
         text = self.project / "texts.txt"

@@ -179,6 +179,47 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "interior NUL"):
             build_catalog((b"a\x00b\x00",))
 
+    def test_bit_framed_catalog_preserves_control_zeros_and_checks_bounds(self):
+        messages = (
+            b"\x10\x00\x01A\x00",
+            b"\x10\x01\x00A\x00",
+            b"\x10\x00\x00A\x00",
+            b"\x80\x01\x00B\x00",
+        )
+        with self.assertRaisesRegex(ValueError, "interior NUL"):
+            build_catalog(messages)
+
+        catalog = build_catalog(messages, bit_framed=True)
+        for index, expected in enumerate(messages):
+            with self.subTest(message=expected):
+                self.assertEqual(catalog.decode_entry(index), expected)
+
+        entry = catalog.entries[0]
+        too_small = replace(
+            catalog,
+            entries=(
+                replace(entry, decoded_size=entry.decoded_size - 1),
+            ) + catalog.entries[1:],
+        )
+        with self.assertRaises(ValueError):
+            too_small.decode_entry(0)
+        larger_bound = replace(
+            catalog,
+            entries=(
+                replace(entry, decoded_size=entry.decoded_size + 1),
+            ) + catalog.entries[1:],
+        )
+        self.assertEqual(larger_bound.decode_entry(0), messages[0])
+
+        trailing = replace(
+            catalog,
+            entries=(
+                replace(entry, bit_length=entry.bit_length + 1),
+            ) + catalog.entries[1:],
+        )
+        with self.assertRaises(ValueError):
+            trailing.decode_entry(0)
+
 
 class BoundedHostDecoderTests(unittest.TestCase):
     def test_exact_boundary_terminator_succeeds(self):

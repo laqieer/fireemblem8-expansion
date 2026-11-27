@@ -564,20 +564,122 @@ TEXT_SRC  := $(TEXT_MAIN) $(shell find $(TEXT_DIR) -type f -name "*.txt")
 
 TEXT_HEADER := include/constants/msg.h
 MSG_LIST    := src/msg_data.c
+TEXT_STAMP := $(DEPS_DIR)/textprocess.stamp
+TEXT_STAMP_MISSING := $(shell test -e "$(TEXT_STAMP)" || printf 1)
 LEGACY_TEXT_FILTER := scripts/texttools/legacy_text_source.py
 LEGACY_TEXT_DIR := build/legacy/text
 LEGACY_TEXT_MAIN := $(LEGACY_TEXT_DIR)/texts.txt
 LEGACY_TEXT_HEADER := $(LEGACY_TEXT_DIR)/msg.h
 LEGACY_MSG_LIST := $(LEGACY_TEXT_DIR)/msg_data.c
+LEGACY_TEXT_STAMP := $(LEGACY_TEXT_DIR)/textprocess.stamp
+LEGACY_TEXT_STAMP_MISSING := $(shell test -e "$(LEGACY_TEXT_STAMP)" || printf 1)
 
-src/msg_data.c: $(TEXT_SRC) $(TEXT_DEFS)
-	@$(TEXT_PROCESS) $(TEXT_MAIN) $(TEXT_DEFS) $@ $(TEXT_HEADER) utf8
+TEXT_INPUTS := $(TEXT_SRC) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py $(TEXT_TOOLS)/huffman.py
+LEGACY_TEXT_INPUTS := $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py $(TEXT_TOOLS)/huffman.py
+TEXT_OUTPUT_INPUTS := $(if $(TEXT_STAMP_MISSING),$(TEXT_INPUTS))
+LEGACY_TEXT_OUTPUT_INPUTS := $(if $(LEGACY_TEXT_STAMP_MISSING),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))
+
+# A stamp can update an output after Make has cached its old mtime. Normal
+# builds always visit the output probe so Make rechecks it, including with -W.
+# Question mode ignores the no-op probe but still checks real input freshness.
+# A missing stamp is published only after generation or a current-output check.
+define text_refresh_needed
+$(shell \
+	if [ ! -e "$(1)" ] || [ ! -e "$(2)" ] || [ ! -e "$(3)" ]; then \
+		printf 1; \
+	else \
+		for input in $(foreach input,$(4),"$(input)"); do \
+			if [ ! -e "$$input" ] || [ "$$input" -nt "$(3)" ]; then \
+				printf 1; break; \
+			fi; \
+		done; \
+	fi)
+endef
+
+define text_outputs_current
+$(shell \
+	if [ ! -e "$(1)" ] || [ ! -e "$(2)" ]; then \
+		printf 0; \
+	else \
+		current=1; \
+		for input in $(foreach input,$(3),"$(input)"); do \
+			if [ ! -e "$$input" ] || [ "$$input" -nt "$(1)" ] || [ "$$input" -nt "$(2)" ]; then \
+				current=0; break; \
+			fi; \
+		done; \
+		printf '%s' "$$current"; \
+	fi)
+endef
+
+ifeq ($(origin MFLAGS),environment)
+TEXT_INTERNAL_FLAGS := $(firstword $(MFLAGS))
+else ifeq ($(origin MFLAGS),environment override)
+TEXT_INTERNAL_FLAGS := $(firstword $(MFLAGS))
+else
+TEXT_INTERNAL_FLAGS :=
+endif
+# A short option that takes an argument consumes the rest of its word. The
+# sentinel keeps an empty prefix empty when that option is the first letter.
+text_split_path_args = $(subst I, ,$(subst C, ,$(subst f, ,$(subst o, ,$(subst W, ,$(1))))))
+text_split_other_args = $(subst E, ,$(subst j, ,$(subst l, ,$(subst O, ,$(1)))))
+define text_query_flag
+$(if $(filter --question,$(1)),q,$(if $(or $(findstring =,$(1)),$(filter --%,$(1))),,$(findstring q,$(firstword x$(call text_split_other_args,$(call text_split_path_args,$(patsubst -%,%,$(1))))))))
+endef
+TEXT_QUERY_MODE := $(call text_query_flag,$(TEXT_INTERNAL_FLAGS))$(call text_query_flag,$(firstword $(MAKEFLAGS)))
+TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_STAMP),$(TEXT_INPUTS)),FORCE_TEXT_OUTPUTS),FORCE_TEXT_OUTPUTS)
+LEGACY_TEXT_REFRESH := $(if $(TEXT_QUERY_MODE),$(if $(call text_refresh_needed,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_STAMP),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)),FORCE_LEGACY_TEXT_OUTPUTS),FORCE_LEGACY_TEXT_OUTPUTS)
+
+.PHONY: FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS
+FORCE_TEXT_OUTPUTS FORCE_LEGACY_TEXT_OUTPUTS:
+
+$(TEXT_STAMP): $(TEXT_INPUTS)
+	@mkdir -p "$(@D)"
+	@if [ "$(TEXT_STAMP_MISSING)" != "1" ]; then \
+		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8 && \
+		touch "$@"; \
+	fi
+
+$(MSG_LIST): $(TEXT_REFRESH) $(TEXT_OUTPUT_INPUTS) | $(TEXT_STAMP)
+	@if [ ! -e "$(MSG_LIST)" ] || [ ! -e "$(TEXT_HEADER)" ] || \
+		{ [ "$(TEXT_STAMP_MISSING)" = "1" ] && \
+			{ [ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" != "1" ] || \
+				[ -n "$(filter $(TEXT_INPUTS),$?)" ]; }; }; then \
+		$(TEXT_PROCESS) "$(TEXT_MAIN)" "$(TEXT_DEFS)" "$(MSG_LIST)" "$(TEXT_HEADER)" utf8 && \
+		{ mkdir -p "$(DEPS_DIR)" && touch "$(TEXT_STAMP)"; }; \
+	elif [ "$(TEXT_STAMP_MISSING)" = "1" ] && \
+		[ "$(call text_outputs_current,$(MSG_LIST),$(TEXT_HEADER),$(TEXT_INPUTS))" = "1" ] && \
+		[ -z "$(filter $(TEXT_INPUTS),$?)" ]; then \
+		mkdir -p "$(DEPS_DIR)" && touch "$(TEXT_STAMP)"; \
+	fi
+
+$(TEXT_HEADER): $(MSG_LIST)
+	@test -e "$@"
 
 $(LEGACY_TEXT_MAIN): $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)
 	@$(PYTHON) $(LEGACY_TEXT_FILTER) $< $@
 
-$(LEGACY_MSG_LIST): $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py
-	@$(TEXT_PROCESS) $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $@ $(LEGACY_TEXT_HEADER) utf8
+$(LEGACY_MSG_LIST): $(LEGACY_TEXT_REFRESH) $(LEGACY_TEXT_OUTPUT_INPUTS) | $(LEGACY_TEXT_STAMP)
+	@if [ ! -e "$(LEGACY_MSG_LIST)" ] || [ ! -e "$(LEGACY_TEXT_HEADER)" ] || \
+		{ [ "$(LEGACY_TEXT_STAMP_MISSING)" = "1" ] && \
+			{ [ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" != "1" ] || \
+				[ -n "$(filter $(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER),$?)" ]; }; }; then \
+		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8 && \
+		{ mkdir -p "$(LEGACY_TEXT_DIR)" && touch "$(LEGACY_TEXT_STAMP)"; }; \
+	elif [ "$(LEGACY_TEXT_STAMP_MISSING)" = "1" ] && \
+		[ "$(call text_outputs_current,$(LEGACY_MSG_LIST),$(LEGACY_TEXT_HEADER),$(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER))" = "1" ] && \
+		[ -z "$(filter $(LEGACY_TEXT_INPUTS) $(TEXT_MAIN) $(LEGACY_TEXT_FILTER),$?)" ]; then \
+		mkdir -p "$(LEGACY_TEXT_DIR)" && touch "$(LEGACY_TEXT_STAMP)"; \
+	fi
+
+$(LEGACY_TEXT_HEADER): $(LEGACY_MSG_LIST)
+	@test -e "$@"
+
+$(LEGACY_TEXT_STAMP): $(LEGACY_TEXT_INPUTS)
+	@mkdir -p "$(@D)"
+	@if [ "$(LEGACY_TEXT_STAMP_MISSING)" != "1" ]; then \
+		$(TEXT_PROCESS) "$(LEGACY_TEXT_MAIN)" "$(TEXT_DEFS)" "$(LEGACY_MSG_LIST)" "$(LEGACY_TEXT_HEADER)" utf8 && \
+		touch "$@"; \
+	fi
 
 # Graphics Recipes
 

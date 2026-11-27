@@ -1,8 +1,9 @@
 # Text generation and atomic publication
 
 The shared text producer is `scripts/texttools/textprocess.py`. Modern and
-archival builds use its existing message-ID and Huffman formats; this is
-separate from authoring expansion localization catalogs.
+archival builds use its existing message-ID and Huffman formats. Localized
+English catalogs share its selected-source parser and ID/name validation, but
+retain their own UTF-8/control encoder.
 
 ```bash
 python3 scripts/texttools/textprocess.py texts/texts.txt texts/textdefs.txt \
@@ -32,8 +33,54 @@ keeps the existing inode and modification time. Existing permission bits are
 preserved; new files use ordinary `0666` creation subject to the caller's
 umask. Existing output symlinks are resolved to their targets before staging.
 Only the invocation's own staged paths are cleaned, and failures propagate.
-No parser, message ID, Huffman table, encoding or generated-byte format is
-changed.
+Previously correct inputs retain their decoded content and generated-byte
+format. Fixing an unterminated message changes the Huffman frequencies, so
+compressed bytes may change even for otherwise unchanged messages.
+
+Named controls in each selected source or included file must be defined;
+unmatched or nested brackets are rejected. The error identifies the source
+and message ID before either output is published. Comments are removed before
+splitting messages: line comments begin with `//` at the start of a source
+line, and `/* ... */` comments may span lines. Brackets inside comments are
+ignored. Removing a comment cannot create a directive, and comment markers
+inside quoted include paths remain literal. A `//` elsewhere in a message is
+literal text. Cyclic includes are rejected with their path chain. This syntax
+check does not by itself qualify control ordering, native references or
+storage capacity.
+Message IDs across the main source and its includes must be unique and dense
+from zero; generated message definitions must also be unique and cannot use
+the header's reserved `MSG_H` or `MSG_COUNT` names. Declarations may appear out
+of order: output is ordered by numeric ID so `gMsgTable[id]` matches the
+declared message. Gaps, duplicates and reserved names are rejected before
+either output is published.
+Each encoded message must end with exactly one standalone zero symbol, the
+terminator consumed by the native Huffman decoder. A printable byte immediately
+before the terminator does not absorb it into a two-byte symbol. Control
+boundaries distinguish a UTF-8 `0x80` continuation or CP932 trail byte from an
+extended control, including glyph bytes supplied through named definitions.
+They also distinguish zero operands from the terminator. A face control
+consumes two operand bytes; extended subcodes 0–3 consume one additional byte.
+Representable zero operands are retained, but consecutive zero bytes cannot be
+encoded by the native decoder and are rejected. Missing, embedded or
+control-consumed terminators and truncated controls are rejected before
+publication. This byte-level check does not qualify every consumer or establish
+that a control is semantically valid in a selected locale.
+If every message is empty, the generated Huffman tree still has a branch and
+each compressed stream contains a bit for the native decoder to consume.
+The default and archival Make recipes both track the producer and its
+Huffman module through separate input-freshness stamps. Identical regeneration
+keeps output mtimes, while changed output invalidates its Make consumers;
+missing outputs or stamps are restored without repeatedly invoking the producer.
+Normal builds make a lightweight output probe even on a no-op, so Make sees
+changes caused by `-W` as well as filesystem timestamps. `make -q` reports
+actual freshness, but `make -n` may conservatively list downstream work that a
+real no-op build skips. Variable overrides or option ordering can hide Make's
+actual mode from the recipe graph. When the query flag is not visible in
+Make's internal flags or the first `MAKEFLAGS` word, the probe stays enabled,
+so `make -q` conservatively reports stale rather than risking a stale consumer.
+An assigned `MFLAGS` value is not treated as an actual execution mode. In
+bundled short options, an option argument (such as an `-I` path containing
+`q`) is not mistaken for a question flag.
 
 This is **per-file atomicity**, not a multi-file transaction. A replace failure
 after the header was committed can leave a complete new header and complete
@@ -49,6 +96,7 @@ texttools codec suite:
 
 ```bash
 python3 -m unittest scripts.texttools.tests.test_textprocess_publication -v
+python3 -m unittest scripts.localization.game_catalog.tests.test_modern_english_bundle.SelectedSourceCompatibilityTests -v
 ```
 
 It is not hidden in the `test_multilang_codec*.py` pattern and does not
@@ -85,7 +133,33 @@ patch publication remain unchanged.
    Pre-publication failures retain both prior outputs. A later replacement
    failure preserves complete already-published or competing-writer outputs;
    no cross-file rollback is expected. Cleanup failures are explicit and never
-   justify deleting another invocation's staging.
+   justify deleting another invocation's staging. For #374, exercise unknown
+   and malformed named controls in direct and included inputs under both
+   encodings; the actual CLI must reject them with source and message ID while
+   preserving the previous pair. Line and multiline block comments must not
+   conceal later controls or create message directives. Decode generated CP932
+   with the independent decoder and check literal characters plus controls.
+   The old producer silently published unknown controls, including after a
+   line comment; dropping CP932 literals must fail the decode assertion.
+   Also reject missing or duplicate message IDs and duplicate definitions
+   across direct and included inputs. Independently decode the generated table
+   after reordered declarations and verify each message remains at its ID.
+   The selected-source compatibility case also compares native and localized
+   payloads for literal `//`, commented-out directives, reordered IDs and
+   includes; both paths reject invalid controls, IDs, names and include cycles,
+   and translation-queue text follows the same parsed message.
+   Decode odd-length UTF-8 literals, named and split UTF-8 glyphs, CP932
+   trail bytes, both face-operand byte positions and zero extended-control
+   operands; each representable stream must retain its bytes and final
+   terminator.
+   Missing, embedded, control-consumed and unencodable terminators reject
+   without publication. Before the fix, the independent decoder read beyond
+   compressed odd-length messages and malformed inputs were published. A
+   catalog of empty messages must decode correctly instead of emitting zero-byte
+   compressed arrays. The real Make regression uses isolated outputs and
+   consumers to check producer/Huffman changes, content-stable no-ops,
+   changed inputs, `-W` and `-q`, missing outputs/stamps and failed generation
+   for both lanes.
 5. The same regression command also runs a deliberately direct-to-final
    buffered writer using the current serial renderers. Its ordinary buffered
    line writes must expose partial header/C bytes and real compiler-reader

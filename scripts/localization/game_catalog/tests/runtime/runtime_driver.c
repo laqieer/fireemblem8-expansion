@@ -5,6 +5,7 @@
 
 #include "bmitem.h"
 #include "localized_game_text.h"
+#include "text_utf8.h"
 
 char *GetStringFromIndex(int index);
 char *GetStringFromIndexInBufferWithLimit(int index, char *buffer, u32 bufferCapacity);
@@ -656,7 +657,7 @@ static void TestInvalidIndicesDoNotReadEnglishTable(void)
     const char *result;
 
     ResetHarness(EXPANSION_LOCALE_EN);
-    result = GetStringFromIndex(19);
+    result = GetStringFromIndex(FE8_LOCALIZED_GAME_TEXT_TARGET_CAPACITY);
     CHECK(strcmp(result, LOCALIZED_GAME_TEXT_MARKER_INVALID) == 0);
     CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_DECODE_INVALID);
     CHECK(sArmDecompCalls == 0);
@@ -667,7 +668,8 @@ static void TestInvalidIndicesDoNotReadEnglishTable(void)
     CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_DECODE_INVALID);
     CHECK(sArmDecompCalls == 0);
 
-    result = GetStringFromIndexInBuffer(19, local);
+    result = GetStringFromIndexInBuffer(
+        FE8_LOCALIZED_GAME_TEXT_TARGET_CAPACITY, local);
     CHECK(strcmp(result, LOCALIZED_GAME_TEXT_MARKER_UNBOUNDED) == 0);
     CHECK(
         LocalizedGameText_GetLastStatus()
@@ -684,6 +686,95 @@ static void TestUtf8ContinuationTailIsBounded(void)
     CHECK(strcmp(result, "\xE3\x80\x80") == 0);
     CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
     CHECK(sArmDecompCalls == 0);
+}
+
+static void TestControlOperandZerosAndFallback(void)
+{
+    static const u8 localized[] = {
+        0x10, 0x00, 0x01, 0xE7, 0x8C, 0xAB, 0x80, 0x01, 0x00, 'A', 0
+    };
+    static const u8 english[] = {
+        0x10, 0x01, 0x00, 'H', 'e', 'l', 'l', 'o', 0
+    };
+    static const u8 fallback[] = {
+        0x80, 0x01, 0x00, 'f', 'a', 'l', 'l', 'b', 'a', 'c', 'k', 0
+    };
+    const char *result;
+    const char *next;
+    struct TextUtf8Token token;
+
+    ResetHarness(EXPANSION_LOCALE_JA);
+    result = GetStringFromIndex(19);
+    CHECK(memcmp(result, localized, sizeof(localized)) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
+    next = TextUtf8_Next(result, &token);
+    CHECK(token.kind == TEXT_UTF8_TOKEN_CONTROL);
+    CHECK(token.argument == 0x0100 && next == result + 3);
+    next = TextUtf8_Next(next, &token);
+    CHECK(token.kind == TEXT_UTF8_TOKEN_SCALAR && token.scalar == 0x732B);
+    next = TextUtf8_Next(next, &token);
+    CHECK(token.kind == TEXT_UTF8_TOKEN_EXTENDED_CONTROL);
+    CHECK(token.payload == 1 && token.argument == 0);
+    CHECK(*next == 'A');
+
+    result = GetStringFromIndex(20);
+    CHECK(memcmp(result, "\x10\x01\x00" "A\x00", 5) == 0);
+    result = GetStringFromIndex(21);
+    CHECK(memcmp(result, "\x10\x00\x00" "A\x00", 5) == 0);
+
+    result = GetStringFromIndex(26);
+    CHECK(memcmp(result, fallback, sizeof(fallback)) == 0);
+    CHECK(
+        LocalizedGameText_GetLastStatus()
+        == LOCALIZED_GAME_TEXT_STATUS_ENGLISH_FALLBACK_ABSENT);
+
+    ResetHarness(EXPANSION_LOCALE_ZH_HANS);
+    result = GetStringFromIndex(26);
+    CHECK(memcmp(result, fallback, sizeof(fallback)) == 0);
+    CHECK(
+        LocalizedGameText_GetLastStatus()
+        == LOCALIZED_GAME_TEXT_STATUS_ENGLISH_FALLBACK_UNPOPULATED);
+
+    ResetHarness(EXPANSION_LOCALE_EN);
+    result = GetStringFromIndex(19);
+    CHECK(memcmp(result, english, sizeof(english)) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_ENGLISH_DEFAULT);
+    ResetHarness(EXPANSION_LOCALE_QPS_PLOC);
+    result = GetStringFromIndex(19);
+    CHECK(memcmp(result, english, sizeof(english)) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_ENGLISH_DEFAULT);
+}
+
+static void TestMalformedFramedStreamsFailVisibly(void)
+{
+    const char *result;
+    int index;
+
+    ResetHarness(EXPANSION_LOCALE_JA);
+    for (index = 22; index <= 24; index++)
+    {
+        result = GetStringFromIndex(index);
+        CHECK(strcmp(result, LOCALIZED_GAME_TEXT_MARKER_CORRUPT) == 0);
+        CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT);
+    }
+
+    result = GetStringFromIndex(27);
+    CHECK(strcmp(result, LOCALIZED_GAME_TEXT_MARKER_CORRUPT) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_DECODE_CORRUPT);
+}
+
+static void TestTransformationPreservesControlOperandZeros(void)
+{
+    static const u8 expected[] = {
+        0x10, 0x00, 0x01, 0xE8, 0xBB, 0x8D, 0xE5, 0xB8, 0xAB, 'Z', 0
+    };
+    const char *result;
+
+    ResetHarness(EXPANSION_LOCALE_JA);
+    GetStringFromIndex(25);
+    result = StrInsertTact();
+    CHECK(memcmp(result, expected, sizeof(expected)) == 0);
+    CHECK(LocalizedGameText_GetLastStatus() == LOCALIZED_GAME_TEXT_STATUS_OK);
 }
 
 int main(void)
@@ -714,6 +805,9 @@ int main(void)
     TestDefaultEnglishBehavior();
     TestInvalidIndicesDoNotReadEnglishTable();
     TestUtf8ContinuationTailIsBounded();
+    TestControlOperandZerosAndFallback();
+    TestMalformedFramedStreamsFailVisibly();
+    TestTransformationPreservesControlOperandZeros();
 
     if (failures == 0)
     {

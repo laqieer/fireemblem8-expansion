@@ -51,8 +51,10 @@ resolve through `texts/locales/authored/catalog.{ja,zh-Hans}.json` by default;
 those catalogs are byte-identical deterministic merges of queue/hash-pinned
 reviewed shards. The English
 parser handles explicit `#` IDs, `##` macro IDs, relative includes, named
-controls/FIDs, and source comments deterministically. It encodes literal text
-as UTF-8 while preserving engine control payload bytes. Legacy printable
+controls/FIDs, and source comments using the native generator's parser and
+ID/name checks. It encodes literal text as UTF-8 while preserving engine
+control payload bytes; the translation queue uses that same parsed message
+while retaining the original source text as metadata. Legacy printable
 tokens are normalized during generation: `DashedLine` to `-`, `TAB` to UTF-8
 U+3000, `LQuote`/`RQuote` to `"`, and `AccentedE` to `e`. An unknown high-byte
 printable token is rejected rather than emitted as invalid UTF-8.
@@ -87,14 +89,17 @@ Outputs are generated under `build/game-localization/generated/`:
   confusable/artifact audit with exact scope/locale/target approvals.
 
 Every present message is strict UTF-8 plus canonical engine control bytes and
-one trailing NUL. Each descriptor records both compressed byte length and
-exact meaningful bit length; the standalone NUL is the final Huffman symbol at
-that bit boundary. Generation rejects unknown controls, embedded NUL bytes,
-unresolved mapping decisions, and codec round-trip mismatches. A bounded final
-stream tokenizer also rejects truncated extended controls and FIDs, FIDs that
-do not match the FE8U English target context, unmatched consecutive newlines,
-and localized `BreakTalk` counts incompatible with the statically modeled
-event `TEXTCONT` sequence.
+one semantic trailing NUL. Zero bytes are allowed inside complete `LoadFace`
+and extended-control operands, not as literal text or premature terminators.
+Each descriptor records compressed byte length, exact meaningful bit length
+and a decoded-size bound. Game catalogs use bit-framed decoding, then validate
+the entire decoded control stream; the separate generic codec retains its
+original NUL-terminated contract. Generation rejects unknown controls,
+misplaced NUL bytes, unresolved mapping decisions, and codec round-trip
+mismatches. A bounded final stream tokenizer also rejects truncated extended
+controls and FIDs, FIDs that do not match the FE8U English target context,
+unmatched consecutive newlines, and localized `BreakTalk` counts incompatible
+with the statically modeled event `TEXTCONT` sequence.
 
 ## Runtime and build gating
 

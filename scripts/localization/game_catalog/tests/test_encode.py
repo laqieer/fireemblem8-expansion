@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_catalog.build import encode_canonical_text
+from scripts.localization.game_catalog.english_source import encode_english_source_text
 from scripts.localization.game_catalog.model import GameCatalogError
 
 
@@ -53,6 +54,43 @@ class EncodeCanonicalTextTests(unittest.TestCase):
             encode_canonical_text("[CTRL:0000]")
         with self.assertRaisesRegex(GameCatalogError, "embedded NUL"):
             encode_canonical_text("[CTRL:0100]")
+
+    def test_zero_bytes_are_allowed_only_inside_complete_control_operands(self):
+        samples = (
+            ("[CTRL:0010][CTRL:0100]A", b"\x10\x00\x01A\x00"),
+            (
+                "[CTRL:0010][CTRL:0001][CTRL:0000]A",
+                b"\x10\x01\x00A\x00",
+            ),
+            (
+                "[CTRL:0010][CTRL:0000][CTRL:0000]A",
+                b"\x10\x00\x00A\x00",
+            ),
+            (
+                "[CTRL:0080][CTRL:0001][CTRL:0000]B",
+                b"\x80\x01\x00B\x00",
+            ),
+        )
+        for text, expected in samples:
+            with self.subTest(text=text):
+                self.assertEqual(encode_canonical_text(text), expected)
+
+        definitions = {
+            "X": (0,),
+            "LoadFace": (0x10,),
+            "FID_Zero": (0, 1),
+        }
+        self.assertEqual(
+            encode_english_source_text(
+                "[LoadFace][FID_Zero]A[X]", definitions, source_name="fixture"
+            ),
+            b"\x10\x00\x01A\x00",
+        )
+
+        for text in ("[CTRL:0010][CTRL:0000]", "[CTRL:0080][CTRL:0001]"):
+            with self.subTest(truncated=text):
+                with self.assertRaises(GameCatalogError):
+                    encode_canonical_text(text)
 
 
 if __name__ == "__main__":

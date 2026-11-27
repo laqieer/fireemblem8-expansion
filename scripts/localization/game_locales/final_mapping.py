@@ -18,6 +18,7 @@ from scripts.localization.game_catalog.english_source import (
     load_english_definitions,
     load_english_source_entries,
 )
+from scripts.localization.game_catalog.model import EnglishSourceEntry
 
 from .crosswalk import build_crosswalk_coverage_report, canonical_json_bytes
 from .ending_metrics import EndingLayoutError, build_ending_layout_metrics
@@ -44,7 +45,6 @@ AUDIT_CORRECTIONS_PATH = Path(
 )
 
 _TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
-_C_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
 _IDENTIFIER_RE = re.compile(r"[^a-z0-9]+")
 _PLACEHOLDER_TOKENS = frozenset(("G", "Item", "SetName", "Tact"))
 _PRINTABLE_TOKENS = {
@@ -1839,10 +1839,10 @@ def _authored_source(
     return source
 
 
-def _canonical_english(entry: Any, definitions: Mapping[str, Sequence[int]]) -> Dict[str, Any]:
-    source = _C_COMMENT_RE.sub("", entry.source_text).replace("\r", "").replace(
-        "\n", ""
-    )
+def _canonical_english(
+    entry: EnglishSourceEntry, definitions: Mapping[str, Sequence[int]]
+) -> Dict[str, Any]:
+    source = entry.message_text
     text_parts: List[str] = []
     controls = []
     placeholders = []
