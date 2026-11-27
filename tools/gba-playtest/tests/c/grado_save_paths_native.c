@@ -157,6 +157,8 @@ struct GradoNativeLoadRefusalProbe
     u32 corruptBlockMenuRefused;
     u32 corruptBlockMenuPreserved;
     u32 corruptBlockMenuMessage;
+    u32 debugPortraitGraphicsPreserved;
+    u32 debugPortraitPalettesPreserved;
 };
 
 static union
@@ -185,6 +187,8 @@ static ProcPtr sPopupParent;
 static ProcPtr sBrokenProc;
 static struct SaveMenu8A20068Proc sSaveMenuPopupProc;
 static u8 sLinkArenaTacticianGfxBefore[0x1800];
+static u8 sDebugPortraitGfxBefore[0x2000];
+static u16 sDebugPortraitPalettesBefore[32];
 static u32 sRestartGameCalls;
 static u32 sLinkArenaInitCalls;
 static void (*sUnwrappedReadSramFast)(void const *, void *, u32);
@@ -248,12 +252,13 @@ static int CompleteManagedRefusalPopup(
     int expectedMessage,
     u32 startCallsBefore,
     u32 helpBoxCallsBefore,
-    int linkArenaContext)
+    int popupContext)
 {
-    void * expectedGfxDest = linkArenaContext
+    void * expectedGfxDest = popupContext == 1
         ? OBJ_VRAM0 + 0x300 * TILE_SIZE_4BPP
-        : OBJ_VRAM0 + OBJCHR_SAVEMENU_SLOTSEL_HELPBOX * TILE_SIZE_4BPP;
-    int expectedPalette = linkArenaContext
+        : OBJ_VRAM0 + (popupContext == 2 ? 0x180 : OBJCHR_SAVEMENU_SLOTSEL_HELPBOX)
+            * TILE_SIZE_4BPP;
+    int expectedPalette = popupContext == 1
         ? 6
         : OBJPAL_SAVEMENU_SLOTSEL_HELPBOX;
     u32 helpBoxGfxLoadsBefore = sHelpBoxGfxLoads;
@@ -267,7 +272,7 @@ static int CompleteManagedRefusalPopup(
         || sHelpBoxCalls != helpBoxCallsBefore)
         return 0;
 
-    if (linkArenaContext)
+    if (popupContext == 1)
     {
         Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
         memcpy(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
@@ -299,7 +304,7 @@ static int CompleteManagedRefusalPopup(
     }
 
     SaveMenuPopupHelpBox_Init(&sSaveMenuPopupProc);
-    if (linkArenaContext)
+    if (popupContext == 1)
         gGradoNativeLoadRefusalProbe.linkArenaPopupDestinationCorrect =
             sHelpBoxGfxDest == expectedGfxDest;
     if (sHelpBoxCalls != helpBoxCallsBefore + 1
@@ -309,7 +314,7 @@ static int CompleteManagedRefusalPopup(
         || sHelpBoxGfxLoadsAtStart != sHelpBoxGfxLoads)
         return 0;
 
-    if (linkArenaContext)
+    if (popupContext == 1)
     {
         linkArenaTilesPreserved =
             memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
@@ -322,7 +327,7 @@ static int CompleteManagedRefusalPopup(
     sBrokenProc = NULL;
     SaveMenuPopupHelpBox_WaitInput(&sSaveMenuPopupProc);
 
-    if (linkArenaContext)
+    if (popupContext == 1)
     {
         linkArenaTilesPreserved = linkArenaTilesPreserved
             && memcmp(sLinkArenaTacticianGfxBefore, OBJ_CHR_ADDR(0x240),
@@ -395,7 +400,7 @@ void LoadHelpBoxGfx(void * dest, int pal)
     sHelpBoxGfxDest = dest;
     sHelpBoxPalette = pal;
     sHelpBoxGfxLoads++;
-    if (pal == 6)
+    if (pal == 6 || pal == OBJPAL_SAVEMENU_SLOTSEL_HELPBOX)
         GradoState_LoadProductionHelpBoxGfx(dest, pal);
 }
 
@@ -1364,8 +1369,15 @@ static void ProbeNativeLoadRefusal(void)
     memset(&menuItem, 0, sizeof(menuItem));
     menuItem.availability = MENU_ENABLED;
     debugCallerRefused = 1;
+    probe->debugPortraitGraphicsPreserved = 1;
+    probe->debugPortraitPalettesPreserved = 1;
     for (attempt = 0; attempt < 2; ++attempt)
     {
+        Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x280));
+        memcpy(sDebugPortraitGfxBefore, OBJ_CHR_ADDR(0x280),
+            sizeof(sDebugPortraitGfxBefore));
+        memcpy(sDebugPortraitPalettesBefore, &gPaletteBuffer[0x160],
+            sizeof(sDebugPortraitPalettesBefore));
         helpBoxCallsBeforeMenu = sHelpBoxCalls;
         popupStartCallsBeforeMenu = sPopupStartCalls;
         sRestartGameCalls = 0;
@@ -1374,8 +1386,14 @@ static void ProbeNativeLoadRefusal(void)
             debugCallerRefused = 0;
         if (!CompleteManagedRefusalPopup(
                 &debugMenuProc, probe->expectedMessage,
-                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 0))
+                popupStartCallsBeforeMenu, helpBoxCallsBeforeMenu, 2))
             popupLifecyclesCorrect = 0;
+        if (memcmp(sDebugPortraitGfxBefore, OBJ_CHR_ADDR(0x280),
+                sizeof(sDebugPortraitGfxBefore)) != 0)
+            probe->debugPortraitGraphicsPreserved = 0;
+        if (memcmp(sDebugPortraitPalettesBefore, &gPaletteBuffer[0x160],
+                sizeof(sDebugPortraitPalettesBefore)) != 0)
+            probe->debugPortraitPalettesPreserved = 0;
     }
     probe->suspendCallerRefused = debugCallerRefused;
     probe->suspendRestartCount = sRestartGameCalls;

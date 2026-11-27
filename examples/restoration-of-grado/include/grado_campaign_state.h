@@ -98,6 +98,8 @@ enum GradoStateLoadResult GradoState_LoadNativeSave(
 
 int GradoState_TryLoadNativeSaveFromProc(
     enum GradoStateLoadRoute route, int slot, ProcPtr parentProc);
+int GradoState_TryLoadDebugSaveFromProc(
+    enum GradoStateLoadRoute route, int slot, ProcPtr parentProc);
 int GradoState_TryLoadLinkArenaNativeSaveFromProc(
     enum GradoStateLoadRoute route, int slot, ProcPtr parentProc);
 void GradoState_ReportNativeLoadRefusal(

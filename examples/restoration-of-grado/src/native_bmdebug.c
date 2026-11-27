@@ -7,7 +7,7 @@
     do { \
         if ((slot) == SAVE_ID_SUSPEND) \
         { \
-            if (!GradoState_TryLoadNativeSaveFromProc( \
+            if (!GradoState_TryLoadDebugSaveFromProc( \
                     GRADO_LOAD_SUSPEND, SAVE_ID_SUSPEND, menuProc)) \
                 return MENU_ACT_SND6B; \
         } \

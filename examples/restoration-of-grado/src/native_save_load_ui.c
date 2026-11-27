@@ -6,11 +6,20 @@
 
 #include "constants/msg.h"
 
+enum GradoLoadUiContext
+{
+    GRADO_LOAD_UI_SAVE_MENU,
+    GRADO_LOAD_UI_LINK_ARENA,
+    GRADO_LOAD_UI_DEBUG,
+};
+
+static int GetNativeLoadRefusalMessage(enum GradoStateLoadResult result);
+
 static int TryLoadNativeSave(
     enum GradoStateLoadRoute route,
     int slot,
     ProcPtr parentProc,
-    int linkArenaContext)
+    enum GradoLoadUiContext context)
 {
     struct GradoStateLoadDiagnostic diagnostic;
     enum GradoStateLoadResult result;
@@ -19,8 +28,12 @@ static int TryLoadNativeSave(
     if (result == GRADO_STATE_LOAD_VALID || result == GRADO_STATE_LOAD_REOPEN)
         return 1;
 
-    if (linkArenaContext)
+    if (context == GRADO_LOAD_UI_LINK_ARENA)
         GradoState_ReportLinkArenaLoadRefusal(result, parentProc);
+    else if (context == GRADO_LOAD_UI_DEBUG)
+        StartPopupHelpBox(
+            0x30, 0x30, GetNativeLoadRefusalMessage(result), parentProc,
+            OBJ_VRAM0 + 0x180 * TILE_SIZE_4BPP, OBJPAL_SAVEMENU_SLOTSEL_HELPBOX);
     else
         GradoState_ReportNativeLoadRefusal(result, parentProc);
 
@@ -30,13 +43,19 @@ static int TryLoadNativeSave(
 int GradoState_TryLoadNativeSaveFromProc(
     enum GradoStateLoadRoute route, int slot, ProcPtr parentProc)
 {
-    return TryLoadNativeSave(route, slot, parentProc, 0);
+    return TryLoadNativeSave(route, slot, parentProc, GRADO_LOAD_UI_SAVE_MENU);
+}
+
+int GradoState_TryLoadDebugSaveFromProc(
+    enum GradoStateLoadRoute route, int slot, ProcPtr parentProc)
+{
+    return TryLoadNativeSave(route, slot, parentProc, GRADO_LOAD_UI_DEBUG);
 }
 
 int GradoState_TryLoadLinkArenaNativeSaveFromProc(
     enum GradoStateLoadRoute route, int slot, ProcPtr parentProc)
 {
-    return TryLoadNativeSave(route, slot, parentProc, 1);
+    return TryLoadNativeSave(route, slot, parentProc, GRADO_LOAD_UI_LINK_ARENA);
 }
 
 static int GetNativeLoadRefusalMessage(enum GradoStateLoadResult result)
