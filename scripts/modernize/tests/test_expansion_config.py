@@ -4950,12 +4950,15 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
             }
             snapshots = []
             for value in (0, 1):
+                flags_file = Path(temporary) / f"modern-cflags-{value}.txt"
                 result = subprocess.run(
                     [
                         "make",
                         "--no-print-directory",
+                        "-f", "Makefile",
+                        "-f", "-",
                         "NODEP=1",
-                        "print-MODERN_CFLAGS",
+                        "blue-config-test-flags",
                         str(make_generated / "compile_settings.txt"),
                         str(make_generated / "expansion_build_metadata.json"),
                         f"MODERN_BUILD_ROOT={make_root}",
@@ -4964,10 +4967,16 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                         f"MODERN_CC={compiler}",
                         "FE8_PROJECT=default",
                         f"EXPANSION_BLUE_PHASE_DELEGATE={value}",
-                        "MODERN_CONFIG_RESOLVE_GOALS=print-MODERN_CFLAGS",
+                        f"BLUE_TEST_FLAGS_FILE={flags_file}",
+                        "MODERN_CONFIG_RESOLVE_GOALS=blue-config-test-flags",
                     ],
                     cwd=ROOT,
                     env=environment,
+                    input=(
+                        ".PHONY: blue-config-test-flags\n"
+                        "blue-config-test-flags:\n"
+                        "\t$(file >$(BLUE_TEST_FLAGS_FILE),$(MODERN_CFLAGS))@:\n"
+                    ),
                     text=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -4975,19 +4984,13 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     timeout=60,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                match = re.search(
-                    r"^MODERN_CFLAGS is a \w+ variable set to \[(.*)\]$",
-                    result.stdout,
-                    re.MULTILINE,
-                )
-                self.assertIsNotNone(match, result.stdout)
                 compiled = subprocess.run(
                     [
                         compiler,
                         "-E",
                         "-x",
                         "c",
-                        *shlex.split(match.group(1)),
+                        *shlex.split(flags_file.read_text(encoding="utf-8")),
                         "-",
                     ],
                     cwd=ROOT,
