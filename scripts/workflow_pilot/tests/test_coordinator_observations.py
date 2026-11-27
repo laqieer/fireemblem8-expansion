@@ -281,6 +281,54 @@ class NativeObservationTests(unittest.TestCase):
         self.assertIn("owner-rss-unknown", verdict["rejection_codes"])
         self.assertEqual([item["state"] for item in f.entry["events"]], list(handoff.STATES))
 
+    def test_bound_native_owner_cannot_start_another_task(self):
+        for owner, call, error in (
+            ("owner-one", "other-call", "native owner task changed"),
+            ("owner-one", None, "native owner task changed"),
+            ("owner-one", {"id": "other-call"}, "native owner task changed"),
+            ("owner-one", "call-one", "duplicate native owner start"),
+            ("other-owner", "other-call", None),
+        ):
+            with self.subTest(owner=owner, call=call):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task",
+                                    toolCallId="call-one", arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one",
+                                    toolCallId="call-one", interactionId="interaction-one"),
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one",
+                                    toolName="bash", toolCallId="owner-call",
+                                    ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                before = copy.deepcopy(f.entry)
+                f.append(log, task_event("subagent.started", "another-start", owner=owner,
+                                         toolCallId=call, interactionId="other-interaction"))
+                if error is not None:
+                    with self.assertRaisesRegex(handoff.HandoffDataError, error):
+                        handoff.observe_cli(f.entry, log)
+                    self.assertEqual(f.entry, before)
+                    continue
+                handoff.observe_cli(f.entry, log)
+                self.assertGreater(f.entry["cursors"][0]["offset"], before["cursors"][0]["offset"])
+                revision = f.commit()
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": revision,
+                          "evidence_refs": ["raw-evidence"]}
+                f.append(log,
+                         task_event("assistant.message", "delivery", owner="owner-one",
+                                    interactionId="interaction-one",
+                                    content=json.dumps({"handoff_result": result})),
+                         native_event("tool.execution_complete", "task-terminal",
+                                      toolCallId="call-one", success=True))
+                handoff.observe_cli(f.entry, log)
+                self.assertEqual(f.entry["result"], result)
+                handoff.validate_state(f.state)
+
     def test_terminal_task_event_does_not_claim_logical_ownership_release(self):
         f = GitFixture(assign=False)
         self.addCleanup(f.close)
