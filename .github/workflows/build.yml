@@ -1453,7 +1453,7 @@ jobs:
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev
+        sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev gdb-multiarch mgba-sdl
         python3 -m pip install --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt
 
     - name: Build tools

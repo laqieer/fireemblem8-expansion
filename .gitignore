@@ -96,6 +96,8 @@ banim/*.bin
 graphics/map/layout/*.bin
 graphics/map/*TileConfiguration*.bin
 graphics/statscreen/*.bin
+graphics/cg/grado_funeral_omen_part_[0-9].bin
+graphics/cg/grado_title_part_[0-9].bin
 
 *.feimg*.bin
 *.fetsa*.bin

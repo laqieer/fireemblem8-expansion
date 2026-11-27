@@ -1806,6 +1806,41 @@ class ModernBuildTests(unittest.TestCase):
                 "prerequisite list",
             )
 
+    def test_fetsatool_lock_honors_converter_and_module_prerequisites(self):
+        for changed in ("converter", "module"):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as temporary:
+                root = self.make_fetsatool_lock_fixture(Path(temporary))
+                tool = root / "fake_fetsatool.sh"
+                module = root / "assets/converter-module"
+                module.write_bytes(b"old")
+                producer = (
+                    "#!/bin/sh\n"
+                    'cat "$1" assets/converter-module > "$2"\n'
+                    'cp "$2" "$3"\n'
+                )
+                tool.write_text(producer, encoding="ascii")
+                with (root / "Makefile").open("a", encoding="ascii") as makefile:
+                    makefile.write(
+                        "assets/fixture.feimg2.bin assets/fixture.fetsa2.bin: "
+                        "fake_fetsatool.sh assets/converter-module\n"
+                    )
+                result = self.make(root, "expansion-modern-clean", "-j4")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                outputs = [root / f"assets/fixture.{kind}2.bin" for kind in ("feimg", "fetsa")]
+                self.assertEqual([path.read_bytes() for path in outputs], [b"payloadold"] * 2)
+                if changed == "module":
+                    module.write_bytes(b"new")
+                    expected = b"payloadnew"
+                else:
+                    tool.write_text(
+                        producer.replace('cp "$2"', 'printf new >> "$2"\ncp "$2"'),
+                        encoding="ascii",
+                    )
+                    expected = b"payloadoldnew"
+                result = self.make(root, "expansion-modern-clean", "-j4")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertEqual([path.read_bytes() for path in outputs], [expected] * 2)
+
     def test_fetsatool_lock_dedups_single_invocation(self):
         # Tool-free baseline: even after the PID-liveness rewrite, a
         # normal parallel single invocation with no pre-existing lock must

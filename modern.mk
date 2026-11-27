@@ -1466,10 +1466,11 @@ $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre
 # ".lz" is ever reached later in the same combined prerequisite list.
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
   MODERN_FETSATOOL_REAL := $(FETSATOOL)
-  # $0 is "_"; $1 is the real tool path; $2.. are the tool's own args
+  # $0 is "_"; $1 is the tool; $2 is the recipe's normal prerequisites;
+  # $3.. are the tool's own args
   # (src, feimg-out, fetsa-out, then any recipe-specific extra flags).
   MODERN_FETSATOOL_LOCK := sh -c '\
-		real="$$1"; shift; \
+		real="$$1"; inputs="$$2"; shift 2; \
 		src="$$1"; out1="$$2"; out2="$$3"; \
 		lockdir="$$out1.fetsalock.d"; \
 		pidfile="$$lockdir/pid"; \
@@ -1503,13 +1504,21 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 		done; \
 		printf "%s\n" "$$$$" > "$$pidfile"; \
 		trap "rm -f \"$$pidfile\"; rmdir \"$$lockdir\" 2>/dev/null" EXIT INT TERM; \
-		if [ -e "$$out1" ] && [ -e "$$out2" ] && [ "$$out1" -nt "$$src" ] && [ "$$out2" -nt "$$src" ]; then \
+		fresh=1; \
+		set -f; \
+		for input in "$$src" $$inputs; do \
+			case "$$input" in "$$out1"|"$$out2") continue ;; esac; \
+			if [ ! -e "$$input" ] || [ ! "$$out1" -nt "$$input" ] || [ ! "$$out2" -nt "$$input" ]; then \
+				fresh=0; break; \
+			fi; \
+		done; \
+		if [ "$$fresh" = 1 ]; then \
 			exit 0; \
 		fi; \
 		"$$real" "$$@"; \
 		exit $$? \
 	' _
-  FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
+  FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL) "$(strip $^)"
 endif
 $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: $$(call modern_c_source,$$*.c) $$(call modern_tool_prerequisite,$$(MODERN_SCANINC))
 	@mkdir -p "$(@D)"
@@ -4945,6 +4954,7 @@ ifeq ($(MODERN_CONFIG),debug)
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_selected_font_binary_is_preprocessed_and_compiled_in_its_existing_slot \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionIdentityTests.test_modern_project_link_preparation_builds_real_shared_assembly \
 		scripts.modernize.tests.test_expansion_config.ProjectSelectionRomTests \
+		tools.gba-playtest.tests.test_grado_visuals_native \
 		scripts.localization.game_catalog.tests.runtime.initial_cache_native -v
 endif
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
