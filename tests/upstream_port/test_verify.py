@@ -2080,6 +2080,28 @@ class VerifyCliCwdTests(unittest.TestCase):
                         handle.write(changed)
                     self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
 
+            for spaces, valid in ((0, True), (4, True), (7, True), (8, False)):
+                with self.subTest(content_indent=7, leading_blank_indent=spaces):
+                    changed = seven_space.replace(first[1:], " " * spaces + "\n" + first[1:], 1)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    if valid:
+                        self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+                    else:
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+            for extra, valid in (("", True), ("        exit 73\n", False)):
+                with self.subTest(crlf_blank=True, extra_command=bool(extra)):
+                    changed = original.replace(command, command + "    \r\n" + extra, 1)
+                    with open(workflow_path, "w", encoding="utf-8", newline="") as handle:
+                        handle.write(changed)
+                    if valid:
+                        self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
+                    else:
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
             inline = (
                 "      run: python3 -m unittest discover -s scripts/texttools/tests "
                 "-p 'test_multilang_codec*.py' -v\n"

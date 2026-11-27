@@ -1664,8 +1664,10 @@ def _literal_run_script(lines, start, end, value, step_label):
         raise ValueError(f"{step_label} must use a literal run block")
     script = []
     content_indent = None
+    leading_blank_indent = 0
     ended = False
     for line in lines[start:end]:
+        line = line.removesuffix("\r")
         unindented = line.lstrip(" ")
         if unindented:
             indent = len(line) - len(unindented)
@@ -1681,12 +1683,16 @@ def _literal_run_script(lines, start, end, value, step_label):
                     continue
                 break
             if content_indent is None:
+                if leading_blank_indent > indent:
+                    raise ValueError(f"{step_label} has over-indented leading blank lines")
                 content_indent = indent
             elif indent < content_indent:
                 if unindented.startswith("#"):
                     ended = True
                     continue
                 raise ValueError(f"{step_label} uses insufficient literal block indentation")
+        elif content_indent is None:
+            leading_blank_indent = max(leading_blank_indent, len(line))
         if not ended:
             script.append(line)
     return "\n".join(line[content_indent or 8:] for line in script) + "\n"

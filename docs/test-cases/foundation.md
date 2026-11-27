@@ -119,7 +119,8 @@ literal blocks, but rejects tabs before the content indentation inferred from
 the first content line, including when that indentation exceeds eight spaces.
 Seven-space literal content and an initial tab at that indentation remain valid.
 Shallower trailing YAML comments remain valid; additional script content after
-such a comment is rejected.
+such a comment is rejected. CRLF blank lines retain subsequent commands, and
+leading blank lines cannot exceed the inferred content indentation.
 
 ### Negative control
 
