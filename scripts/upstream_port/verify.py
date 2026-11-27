@@ -1435,6 +1435,8 @@ def _parse_job_context(job_name, body):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
+        if indent < 4:
+            raise ValueError(f"job {job_name!r} uses unsupported indentation")
         if indent != 4 or line.startswith("    -"):
             continue
         match = re.fullmatch(
@@ -1499,7 +1501,11 @@ def _parse_job_context(job_name, body):
             "steps",
         ],
     }[job_name]
-    if names != expected_names:
+    if job_name in _COMBINED_JOBS:
+        names_match = set(names) == set(expected_names)
+    else:
+        names_match = names == expected_names
+    if not names_match:
         raise ValueError(
             f"job {job_name!r} direct mapping differs from reviewed keys"
         )
@@ -1606,7 +1612,7 @@ def _parse_job_context(job_name, body):
                     f"job {job_name!r} steps must use a block sequence"
                 )
             values[name] = None
-    return tuple((name, values[name]) for name in names)
+    return tuple((name, values[name]) for name in expected_names)
 
 
 def _parse_nested_mapping(lines, start, end, field, step_label):
@@ -1658,7 +1664,7 @@ def _literal_run_script(lines, start, end, value, step_label):
         raise ValueError(f"{step_label} must use a literal run block")
     script = []
     for line in lines[start:end]:
-        if line and not line.startswith("        "):
+        if line.strip() and not line.startswith("        "):
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
@@ -2135,6 +2141,19 @@ def _parse_job_steps(job_name, body, repository_root=None):
         raise ValueError(f"job {job_name!r} must have exactly one steps sequence")
     if not step_headers or step_headers[0] <= steps_lines[0]:
         raise ValueError(f"job {job_name!r} steps sequence is empty")
+    steps_end = next(
+        (
+            index
+            for index in range(steps_lines[0] + 1, len(lines))
+            if lines[index].strip()
+            and not lines[index].lstrip().startswith("#")
+            and len(lines[index]) - len(lines[index].lstrip(" ")) <= 4
+            and not lines[index].startswith("    -")
+        ),
+        len(lines),
+    )
+    if any(index >= steps_end for index in step_headers):
+        raise ValueError(f"job {job_name!r} contains a step outside its sequence")
     for line in lines[steps_lines[0] + 1 : step_headers[0]]:
         if line.strip() and not line.lstrip().startswith("#"):
             raise ValueError(
@@ -2146,7 +2165,7 @@ def _parse_job_steps(job_name, body, repository_root=None):
                 start :
                 step_headers[index + 1]
                 if index + 1 < len(step_headers)
-                else len(lines)
+                else steps_end
             ]
         )
         for index, start in enumerate(step_headers)
