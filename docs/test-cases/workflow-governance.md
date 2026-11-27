@@ -661,7 +661,8 @@ audio or human-approval criterion is added.
 
 - **Feature / issue:** `workflow-governance` /
   [#181](https://github.com/laqieer/fireemblem8-expansion/issues/181);
-  Git-fixture portability [#404](https://github.com/laqieer/fireemblem8-expansion/issues/404).
+  Git-fixture portability [#404](https://github.com/laqieer/fireemblem8-expansion/issues/404);
+  missing root-PR decision intake [#492](https://github.com/laqieer/fireemblem8-expansion/issues/492).
 - **Profile / prerequisites:** source checkout with the existing locked host
   Python, Git and local process controls. Local cases own Git repositories,
   real handoff processes and disposable HTTP responses below `build`.
@@ -769,6 +770,25 @@ audio or human-approval criterion is added.
    availability. An applicable incomplete or invalid delegated owner still
    blocks this alternative. No fixture commit, owner, receipt or LLM PID is
    manufactured to obtain local proof.
+   For #492, run the focused
+   `scripts.workflow_pilot.tests.test_live_pause.CurrentControlTests` cases.
+   From a clean disposable Git root PR whose valid decision collection omits
+   that PR, the actual route remains full and the coordinator registers and
+   captures native checks with mandatory independent pre-review. Before the
+   fix, that same candidate routes full but intake rejects its unknown
+   decision. Incomplete/malformed candidate or control authority, a changed PR,
+   an invalid or duplicate collection, an existing invalid entry, and a
+   non-default base do not become verified absence. Empty initial run history
+   permits only provisional registration, not scheduling or merge.
+   Present parent-child records must have consistent depths in either order;
+   cycles and conflicting depths reject. An absent sibling parent is not
+   treated as a fresh live-parent observation.
+   A stale base snapshot is accepted only when trusted Git history proves the
+   same unique candidate merge base against both the snapshot and current
+   default tip. The crisscross control has two bases at the current tip even
+   when GitHub reports the same single base for both comparisons; it, missing
+   local history, shallow repositories, and unavailable reviewed tools remain
+   unknown/full.
    If host stop settings are unknown, retain explicit nulls in a bounded
    `plan` with concrete recovery steps; never fabricate Boolean settings or
    use unknowns for `always-on`. Expired coverage and native interruption
@@ -843,6 +863,11 @@ audio or human-approval criterion is added.
     Validate every collection member and the actual repository/default
     ref/commit/regular blob; missing, malformed, truncated or moving data is
     unknown/broad, never unpause or admission authority.
+    For a missing root decision, advance the default branch while retaining
+    the PR's older base snapshot. Intake remains concurrent when the snapshot
+    is in the current default history and both comparisons return the same
+    candidate merge base. A divergent snapshot, changed merge base or missing
+    comparison remains unknown.
     Use controlled #176 incident fixtures and actual native reproductions to
     exercise `pause_pilot`, local `safety_publication` hold, ordinary non-default
     branch preparation, local bare branch publication/merge and confirmed
