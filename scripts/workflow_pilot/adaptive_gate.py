@@ -762,8 +762,14 @@ def fetch_decision(client, pr, changed_lines):
             require(entry["type"] == "blob" and entry["mode"] in {"100644", "100755"}
                     and entry["sha"] == oid, "candidate decision is not the selected regular blob")
             control = fetch_pilot_control(client, pr.repository, pr.repository_id)
-            require(pr.base_ref == control.default_ref and pr.base_sha == control.commit_sha,
+            require(pr.base_ref == control.default_ref,
                     "unrecorded candidate is not rooted in the current default branch")
+            if pr.base_sha != control.commit_sha:
+                require(frozen_base(client, replace(pr, head_sha=control.commit_sha)) == pr.base_sha,
+                        "unrecorded candidate base snapshot is not in the current default history")
+                require(frozen_base(client, pr) == frozen_base(
+                    client, replace(pr, base_sha=control.commit_sha)),
+                    "unrecorded candidate merge base changed")
             after, after_lines = fetch_candidate(client, pr.repository, pr.number)
             require(_candidate_authority_identity(after) == _candidate_authority_identity(pr)
                     and (after.base_sha, after_lines) == (pr.base_sha, changed_lines),
@@ -1189,8 +1195,8 @@ def begin_observed_candidate(client, state, number):
     require(_candidate_authority_identity(after) == _candidate_authority_identity(pr),
             "candidate changed during intake")
     if decision.reason == "verified-absent-root":
-        require(after.base_sha == decision.control.commit_sha and after_lines == lines,
-                "unrecorded candidate default base or size changed during intake")
+        require(after.base_sha == pr.base_sha and after_lines == lines,
+                "unrecorded candidate base snapshot or size changed during intake")
     require(frozen_base(client, after) == base, "candidate merge base changed during intake")
     require(fetch_pilot_control(client, pr.repository, pr.repository_id).identity == decision.control.identity,
             "pilot control changed during intake")

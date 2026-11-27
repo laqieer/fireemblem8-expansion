@@ -220,6 +220,9 @@ For a root PR with no decision entry, #492 permits coordinator intake only
 when the exact candidate's complete decision collection is valid and its
 regular Git-tree blob proves that the entry is absent. The actual default
 control and live root PR identity must remain stable during observation.
+If the PR's base snapshot predates the current default tip, both must yield
+the same candidate merge base and the snapshot must be an ancestor of that
+tip. Missing or contradictory comparisons remain unknown.
 Parent-child records present in the collection must have consistent depths;
 an absent parent record is not a fresh observation of that parent's state.
 This is a conservative concurrent decision with mandatory independent

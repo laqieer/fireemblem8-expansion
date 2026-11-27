@@ -857,6 +857,11 @@ audio or human-approval criterion is added.
     Validate every collection member and the actual repository/default
     ref/commit/regular blob; missing, malformed, truncated or moving data is
     unknown/broad, never unpause or admission authority.
+    For a missing root decision, advance the default branch while retaining
+    the PR's older base snapshot. Intake remains concurrent when the snapshot
+    is in the current default history and both comparisons return the same
+    candidate merge base. A divergent snapshot, changed merge base or missing
+    comparison remains unknown.
     Use controlled #176 incident fixtures and actual native reproductions to
     exercise `pause_pilot`, local `safety_publication` hold, ordinary non-default
     branch preparation, local bare branch publication/merge and confirmed

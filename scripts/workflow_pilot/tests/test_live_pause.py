@@ -300,10 +300,55 @@ class CurrentControlTests(unittest.TestCase):
         f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
         client, pr = f.client()
         client.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")]["base"]["sha"] = "f" * 40
+        client.routes[metadata._endpoint(f"compare/{'f' * 40}...{f.base}")] = ValueError(
+            "unknown base snapshot"
+        )
         candidate = api._parse_pull_request_payload(pr, metadata.REPOSITORY, metadata.PR_NUMBER)
         candidate = replace(candidate, base_sha="f" * 40)
         selected = gate.fetch_decision(client, candidate, 1)
         self.assertFalse(selected.known)
+
+    def test_missing_root_record_accepts_stale_snapshot_only_with_unchanged_merge_base(self):
+        f = self.fixture
+        raw = copy.deepcopy(f.raw)
+        raw["pull_requests"] = []
+        f.head = f.git.commit(json.dumps(raw), name=f.path.as_posix())
+        paused = copy.deepcopy(f.raw)
+        paused["pull_requests"][0]["pilot"]["disposition"] = "paused"
+        current = f.publish_control(paused)
+        for change in ("none", "different-merge-base", "diverged-snapshot", "missing-comparison"):
+            with self.subTest(change=change):
+                client, pr = f.client()
+                pr["base"]["sha"] = f.base
+                client.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")] = pr
+                history = metadata._endpoint(f"compare/{f.base}...{current}")
+                client.routes[history] = {
+                    "base_commit": {"sha": f.base}, "merge_base_commit": {"sha": f.base},
+                }
+                endpoint = metadata._endpoint(f"compare/{current}...{f.head}")
+                if change == "different-merge-base":
+                    client.routes[endpoint]["merge_base_commit"]["sha"] = current
+                elif change == "diverged-snapshot":
+                    client.routes[history]["merge_base_commit"]["sha"] = f.head
+                elif change == "missing-comparison":
+                    client.routes[endpoint] = ValueError("comparison unavailable")
+                candidate = api._parse_pull_request_payload(pr, metadata.REPOSITORY, metadata.PR_NUMBER)
+                selected = gate.fetch_decision(client, candidate, 1)
+                self.assertEqual(selected.known, change == "none", selected.reason)
+                if selected.known:
+                    self.assertEqual(selected.reason, "verified-absent-root")
+                    self.assertEqual(selected.mode, "concurrent")
+                    self.assertTrue(selected.paused)
+                    self.assertEqual(selected.control.commit_sha, current)
+                    state = handoff.new_state(metadata.REPOSITORY, "coordinator-one", {
+                        "mode": "plan", "observed_at": at_offset(-10),
+                        "valid_until": at_offset(300), "autostop_enabled": None,
+                        "stop_on_disconnect": None, "plan": "Bounded test-owned validation.",
+                    })
+                    with patch.object(api, "list_candidate_runs", return_value=()):
+                        record = gate.begin_observed_candidate(client, state, metadata.PR_NUMBER)
+                    self.assertEqual(record["base_sha"], f.base)
+                    self.assertEqual(record["mode"], "concurrent")
 
     def test_collection_parent_edges_are_consistent_without_inventing_live_parents(self):
         f = self.fixture
