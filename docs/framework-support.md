@@ -108,9 +108,9 @@ No custom UID, namespace, cgroup, supervisor, broker or capability platform is
 part of this contract. The retired isolation proposals are superseded, not
 claimed to have passed their tests.
 
-The modern `build` job, including master-only packaging, and both comprehensive
-host jobs retain 90-minute ceilings. The archival job retains 60 minutes;
-identity/router/classifier and summary retain 5 minutes.
+The modern `build` job, including master-only packaging, and `host-tests`
+retain 90-minute ceilings; `extended-host-tests` has 120 minutes. The archival
+job retains 60 minutes; identity/router/classifier and summary retain 5 minutes.
 The same validation jobs run on candidates and master; only packaging/upload
 steps are master-only.
 The host-runtime repair's candidate and automatic-master job annotations are

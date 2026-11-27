@@ -426,8 +426,9 @@ recommended download. No explicit prerequisite, check or deadline is removed.
 Gates26-29 run on the existing `legacy` CI worker before installing archival
 tools, with the original host-only dependencies and fresh owned environment.
 They remain independent of the reporter's worker and do not require agbcc.
-Both groups keep their original commands and the existing90/90/60-minute
-worker bounds; no job or correctness gate is added or omitted.
+Both groups keep their original commands. `host-tests` and `build` retain
+90-minute bounds, `extended-host-tests` has 120 minutes, and `legacy` retains
+60 minutes; no job or correctness gate is added or omitted.
 
 ### Standalone workflow check
 
