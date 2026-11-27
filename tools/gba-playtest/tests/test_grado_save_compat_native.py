@@ -81,6 +81,13 @@ class GradoSaveCompatNativeTests(unittest.TestCase):
                 "graphics/misc/gPal_WorldmapNodeRevealEffect.gbapal",
                 "graphics/misc/Img_GmapPath.4bpp.lz",
                 *(
+                    "graphics/misc/" + name + ".4bpp.lz" for name in (
+                        "gGfx_HelpTextBox", "gGfx_HelpTextBox2", "gGfx_HelpTextBox3",
+                        "gGfx_HelpTextBox4", "gGfx_HelpTextBox5", "Img_TacticianSelObj",
+                    )
+                ),
+                "graphics/misc/Pal_HelpBox.gbapal",
+                *(
                     "graphics/misc/" + name + ".4bpp" for name in (
                         "gUnknown_08A97FA4", "gUnknown_08A98104", "gUnknown_08A9819C",
                         "gUnknown_08A982D4", "gUnknown_08A985FC",

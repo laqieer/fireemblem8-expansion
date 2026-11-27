@@ -280,7 +280,8 @@ replacements, but does not assert rendered UI or campaign behavior.
 
 1. With the compatibility case's toolchain/emulator prerequisites, run
    `env -u GBA_PLAYTEST_HOST_ONLY python3 -B -m unittest discover -s tools/gba-playtest/tests -p test_grado_save_compat_native.py -v`.
-   The additional whole-save case must execute at epochs 2 and 256, not skip.
+   The additional whole-save case must execute at epochs 2 and 256, not skip;
+   it generates its required graphics inputs even in a clean worktree.
 2. In one current owned image, save valid native unit/play state in every
    normal slot 0..2. Use `permanent[i] = 0xA5 ^ (29*i) ^ (7*input)` and
    `chapter[i] = 0x5A ^ (17*i) ^ (7*input)`, reduced to eight bits. Give
