@@ -35,6 +35,11 @@ The fixed sheet grid is deliberately not inferred:
 Every component rectangle must remain a multiple of 8 pixels in both axes.
 Generated 4bpp data is emitted in GBA 8x8 tile order with the left pixel in
 each byte's low nibble; it is never serialized in image scanline order.
+The generated mouth component has six 32x16 slots: open, open, closed for
+smiling and the same three for non-smiling. The two authored frames are
+reused because this package format does not supply separate smile or
+intermediate-mouth artwork. This supplies every frame consumed by the native
+face renderer without changing existing-component aliases.
 
 The adapter rejects missing/multiple sheets, non-indexed/interlaced/wrong-size
 PNG data, palette violations, JASC disagreement, unsafe or untracked paths,
@@ -119,3 +124,6 @@ existing FaceData table, face VRAM/palette path, and resolver. Revert the
 manifest record, canonical registry migration, generated include surface, and
 documentation together to return to the prior hand-owned table without a save
 migration.
+
+The generated-mouth regression procedure is
+[`TC-PORTRAIT-GENERATED-MOUTH-001`](test-cases/asset-authoring.md#tc-portrait-generated-mouth-001-exercise-generated-mouth-slots).

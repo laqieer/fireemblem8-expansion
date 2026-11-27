@@ -81,3 +81,51 @@ target recreates only its named `build/banim-package-runtime/` root. Rolling
 back a downstream package removes its manifest/package sources and disposable
 outputs together. V1 does not support custom spells, unknown commands,
 runtime switching, or opaque editor binaries.
+
+## TC-PORTRAIT-GENERATED-MOUTH-001: Exercise generated mouth slots
+
+- **Feature / originating issue:** `formatted-portrait-package` /
+  [issue #499](https://github.com/laqieer/fireemblem8-expansion/issues/499).
+- **Supported configuration or artifact:** modern source checkout with Python 3
+  and a host C compiler; no ROM or saved state is needed for the host fixture.
+- **Prerequisites and clean starting state:** run from an isolated checkout
+  with no other test using `build/generated/assets/test-work`.
+
+### Actions
+
+1. Run `python3 -m unittest scripts.assets.tests.test_manifest.AssetManifestTests.test_generated_portrait_mouth_frames_follow_native_consumer`.
+2. Observe the generated synthetic mouth and the real face consumer invoked by
+   the host driver for stopped and talking states, both smile modes and all
+   animation phases.
+
+### Expected result
+
+Each 4x2 tile transfer is within the generated component and contains the
+authored closed frame when stopped or closed, and the authored open frame
+otherwise. The existing Eirika component alias generates no replacement data.
+
+### Negative control
+
+At the pre-fix generator, the stopped non-smiling transfer attempts bytes
+1280 through 1535 of a 512-byte component and the host driver fails.
+
+### Interactions and save compatibility
+
+The package depends on the existing asset manifest and native face renderer.
+It has no known profile conflicts and changes no save, configuration identity,
+localization IDs or legacy aliases. The generated component grows by 1024
+bytes per generated portrait; no persistent RAM is allocated.
+
+### Automation
+
+The named unittest generates distinct synthetic frames and links the actual
+`FaceMouth_Loop` into a host driver that checks each transfer's bounds and
+bytes. It does not replace target-ROM execution or visual acceptance of a
+project's artwork.
+
+### Cleanup and limitations
+
+The unittest removes its disposable test-work directory. The host driver
+stubs graphics transfers and does not prove target VRAM, on-screen rendering,
+or the quality of either authored expression. Archival byte identity is not
+claimed.
