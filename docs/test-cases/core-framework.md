@@ -260,6 +260,76 @@ It does not fix or qualify invalid-ID handling, English control/width safety,
 Huffman corpus coverage, production translations, glyphs or Grado gameplay.
 There is no material manual-only criterion.
 
+## TC-TEXT-NATIVE-TRANSFORM-001: Preserve native control operands and substitutions
+
+- **Bug / issue:** [#377](https://github.com/laqieer/fireemblem8-expansion/issues/377),
+  part of [#314](https://github.com/laqieer/fireemblem8-expansion/issues/314).
+- **Profiles and prerequisites:** modern ARM7TDMI Thumb/AAPCS English and
+  English/qps module ROMs, existing ARM GCC/binutils, Python and libmGBA; a
+  host C compiler for the localized-profile comparison. No base ROM, save,
+  GUI or new package is needed.
+- **Starting state:** preserve user work. The native harness generates its own
+  text and boots with cleared RAM; its temporary inputs and artifacts are
+  removed after each scenario.
+
+### Actions and expected result
+
+1. Run the native cases with host-only mode unset:
+
+   ```bash
+   env -u GBA_PLAYTEST_HOST_ONLY python3 -m unittest scripts.localization.game_catalog.tests.runtime.initial_cache_native.InitialMessageCacheNativeTests.test_native_transforms_preserve_control_operands_and_boundaries scripts.localization.game_catalog.tests.runtime.initial_cache_native.InitialMessageCacheNativeTests.test_native_transform_capacity_and_guard -v
+   ```
+
+   The actual generated ARM decoder yields `41 10 10 00 42 80 20 00`.
+   With tactician name `T`, both transforms yield
+   `41 10 10 00 42 54 00`; prefixing `P` to the corresponding face-containing
+   text yields `50 41 10 10 00 42 00`. Check the captured bytes and lengths
+   for face and color payloads, a trailing `0x1f` operand, ordinary text,
+   legacy glyph/spacing tokens, all four character slots, item and nested
+   substitutions, and controls whose operands resemble `[Tact]`.
+   Prefixes `50 80 01 00 51` and `50 10 10 00 51` retain the bytes
+   after their zero-valued operands as well as the following text.
+2. The same native cases use glyph/control collisions, such as
+   `c2 80 20` and `e9 93 80 20`: preserve the legacy glyph bytes and
+   expand the actual `[Tact]`. Check both transforms, prefix insertion and
+   terminator stripping when a zero-valued color argument follows a glyph.
+3. Check exact-fit and overflowing scratch/output cases. Overflow produces
+   `<!LOC_OVF!>`; a bounded unterminated control produces `<!LOC_BAD!>`.
+   The adjacent native output and linker-defined end-of-buffer guards remain
+   unchanged.
+4. Compare the localized profile:
+
+   ```bash
+   python3 -m unittest scripts.localization.game_catalog.tests.runtime.test_localized_game_text_runtime.LocalizedGameTextRuntimeTests.test_runtime_driver scripts.localization.game_catalog.tests.runtime.test_localized_game_text_runtime.LocalizedGameTextRuntimeTests.test_profile_compiles_and_layout_probes -v
+   ```
+
+   The same leading bytes `e9 93 80 20` are a UTF-8 scalar and a space
+   there; both transforms retain them and expand only the following actual
+   `[Tact]`. A prefix containing a zero-valued color argument and text
+   containing a zero-valued face byte are preserved together. All four
+   character IDs are read in order under bounds sanitization. The existing
+   CJK runtime/layout assertions continue to pass.
+
+### Negative control and interactions
+
+Before the fix, the real native decoder emits the complete face-containing
+stream but both transforms stop at the zero operand; prefix insertion loses
+the tail. A UTF-8-only iterator also mistakes native high-byte glyph/control
+combinations for Unicode scalars and misses substitutions. These are byte
+observations from the actual transform functions, not a phase marker. Before
+the review correction, a zero-valued operand in a native prefix truncated that
+prefix, and indexing the two-byte character array for slots 2 or 3 triggered
+the bounds sanitizer.
+
+No save field, configuration flag, locale, registry, generated-content format
+or archival behavior changes. English/qps uses native single-byte glyphs;
+localized profiles retain strict UTF-8. #374 owns input/reference and final
+storage admission, while #375 owns renderer/resource qualification. There
+is no additional feature conflict. The existing native decoder and the
+capacity-free public `InsertPrefix` caller ABI remain unbounded; this case
+does not qualify arbitrary inputs or a complete game. There is no
+material manual-only criterion.
+
 ## TC-CORE-001: Modern default build and archival split
 
 - **Feature / originating issue:** `modern-framework-build` /

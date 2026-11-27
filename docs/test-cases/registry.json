@@ -403,7 +403,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/197",
         "https://github.com/laqieer/fireemblem8-expansion/issues/236",
         "https://github.com/laqieer/fireemblem8-expansion/issues/365",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/363"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/363",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/377"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
@@ -412,7 +413,8 @@
         "TC-TEXT-NATIVE-METRICS-001",
         "TC-BUILD-HOST-DEPENDENCIES-001",
         "TC-BUILD-GCC14-MENU-RETURN-001",
-        "TC-TEXT-INITIAL-CACHE-001"
+        "TC-TEXT-INITIAL-CACHE-001",
+        "TC-TEXT-NATIVE-TRANSFORM-001"
       ]
     },
     {
@@ -841,6 +843,39 @@
     }
   ],
   "cases": [
+    {
+      "id": "TC-TEXT-NATIVE-TRANSFORM-001",
+      "title": "Preserve native control operands and substitutions",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/377"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-text-native-transform-001-preserve-native-control-operands-and-substitutions",
+      "profiles": [
+        "Modern ARM7TDMI Thumb/AAPCS English and English/qps module ROM under libmGBA",
+        "Modern localized UTF-8 host runtime"
+      ],
+      "purpose": "Preserve complete native message controls, substitutions and terminators across embedded zero-valued operands, without mistaking legacy glyphs for UTF-8.",
+      "prerequisites": "Existing ARM GCC/binutils, Python, libmGBA and a host C compiler; preserve work. No base ROM, save, GUI or additional package is needed.",
+      "actions": "Boot owned generated native fixtures, set a known tactician name, capture decoded and transformed bytes, exercise face/color controls, all character slots, nested item substitutions, native glyph/control collisions, prefix insertion, terminator stripping, capacity boundaries and guard bytes. Compare the localized UTF-8 runtime with identical ambiguous bytes.",
+      "expected_result": "Both transforms and prefix insertion retain bytes after zero-valued operands; native glyph/control combinations expand their substitutions, while localized UTF-8 scalars remain intact. Exact fits succeed, bounded overflow/corruption produces visible markers and guard bytes stay unchanged.",
+      "negative_control": "The original native functions truncate the generated face stream at a zero operand. An unqualified UTF-8 iterator instead swallows valid native glyph/control combinations and loses substitutions or trailing text.",
+      "interactions": "Uses existing native scratch buffers and profile-specific message grammars; localized UTF-8 and archival behavior remain separate. Input/reference and final storage admission are #374; renderer/resource qualification is #375. No new feature conflict or flag.",
+      "save_compatibility": "Transient transformations only; no save/config/epoch, serialized layout, locale or generated-content format changes.",
+      "cleanup": "The automation removes only its owned temporary input, object, ELF, ROM and capture files; preserve existing builds and user work.",
+      "limitations": "Module-native and localized host evidence, not full-game qualification. The existing native Huffman decoder, nested lookup and capacity-free arbitrary-caller prefix API remain unbounded. Native profiles do not claim arbitrary UTF-8 rendering; no manual-only criterion.",
+      "automation": [
+        {
+          "command": "env -u GBA_PLAYTEST_HOST_ONLY python3 -m unittest scripts.localization.game_catalog.tests.runtime.initial_cache_native.InitialMessageCacheNativeTests.test_native_transforms_preserve_control_operands_and_boundaries scripts.localization.game_catalog.tests.runtime.initial_cache_native.InitialMessageCacheNativeTests.test_native_transform_capacity_and_guard -v",
+          "evidence": "scripts/localization/game_catalog/tests/runtime/initial_cache_native.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.runtime.test_localized_game_text_runtime.LocalizedGameTextRuntimeTests.test_runtime_driver scripts.localization.game_catalog.tests.runtime.test_localized_game_text_runtime.LocalizedGameTextRuntimeTests.test_profile_compiles_and_layout_probes -v",
+          "evidence": "scripts/localization/game_catalog/tests/runtime/test_localized_game_text_runtime.py"
+        }
+      ]
+    },
     {
       "id": "TC-TEXT-INITIAL-CACHE-001",
       "title": "Decode the first modern English message-zero lookup",
