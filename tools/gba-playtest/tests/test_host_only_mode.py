@@ -19,7 +19,7 @@ What is proven here:
 * normal mode is unchanged: the same class still probes and still captures;
 * a hermetic staged worktree (TemporaryDirectory) holding stale, mismatched
   debug/release/legacy ROM-shaped, ELF and save artifacts at the exact paths
-  the suite looks at: host-only skips all nine live classes, exits 0, and
+  the suite looks at: host-only skips all registered live classes, exits 0, and
   leaves every staged file byte-, size- and mtime-identical (nothing deleted,
   nothing rewritten), while the same tree in normal mode really opens the
   stale ROM and fails loudly.
@@ -183,8 +183,43 @@ class _ArtifactDiscovery(ast.NodeVisitor):
             for candidate in ast.walk(node)
             if isinstance(candidate, (ast.Name, ast.Call))
         )
+    @staticmethod
+    def _is_file_relative_repository_root(node):
+        if not (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.slice, ast.Constant)
+            and node.slice.value == 3
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "parents"
+        ):
+            return False
+        resolved = node.value.value
+        if not (
+            isinstance(resolved, ast.Call)
+            and not resolved.args
+            and not resolved.keywords
+            and isinstance(resolved.func, ast.Attribute)
+            and resolved.func.attr == "resolve"
+        ):
+            return False
+        path = resolved.func.value
+        return (
+            isinstance(path, ast.Call)
+            and isinstance(path.func, ast.Name)
+            and path.func.id == "Path"
+            and not path.keywords
+            and len(path.args) == 1
+            and isinstance(path.args[0], ast.Name)
+            and path.args[0].id == "__file__"
+        )
     def _path_origin(self, node):
+        if self._is_file_relative_repository_root(node):
+            return (True, False, False, False)
+
         if isinstance(node, ast.Name):
+            key = self._origin_key(node)
+            if self.function_stack and key in self.path_origins:
+                return self.path_origins[key]
             if node.id == "REPO_ROOT":
                 return (True, False, False, False)
             host_symbol = self._host_mode_symbol(node)
@@ -192,7 +227,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
                 return (True, False, False, False)
             if host_symbol in _HOST_MODE_ARTIFACT_ATTRIBUTES:
                 return (True, True, False, False)
-            return self._origin_for_key(self._origin_key(node))
+            return self._origin_for_key(key)
 
         if isinstance(node, ast.Attribute):
             host_symbol = self._host_mode_symbol(node)
@@ -285,6 +320,11 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         if not isinstance(node, ast.Name):
             return None
         return self.helper_aliases.get(self._origin_key(node), ("<module>", node.id) if ("<module>", node.id) in self.module_helpers else None)
+    def _bind_parameters(self, node, key):
+        arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        arguments.extend(arg for arg in (node.args.vararg, node.args.kwarg) if arg)
+        for argument in arguments:
+            self.path_origins[(*key, argument.arg)] = (False, False, False, False)
     def visit_Module(self, node):
         self.module_helpers = {("<module>", statement.name) for statement in node.body if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))}
         for statement in node.body:
@@ -326,6 +366,7 @@ class _ArtifactDiscovery(ast.NodeVisitor):
         parameters = tuple(argument.arg for argument in (*node.args.posonlyargs, *node.args.args))
         self.function_parameters[key] = parameters[1:] if self.class_stack and parameters and parameters[0] == "self" else parameters
         self.function_stack.append(key)
+        self._bind_parameters(node, key)
         self.function_depth += 1
         self.generic_visit(node)
         self.function_depth -= 1
@@ -756,6 +797,43 @@ class HostOnlyClassificationTests(unittest.TestCase):
             "single contract owns every artifact-dependent test",
         )
 
+    def test_file_relative_repository_root_aliases_are_tracked(self):
+        for root_name in ("ROOT", "renamed_root"):
+            source = f"""
+from pathlib import Path
+import tempfile
+{root_name} = Path(__file__).resolve().parents[3]
+alias = {root_name}
+class Direct:
+    def run(self): (alias / "build" / "game.elf").is_file()
+class Temporary:
+    def run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / "game.elf").read_bytes()
+    def read(self, {root_name}): return ({root_name} / "game.elf").read_bytes()
+"""
+            with self.subTest(root_name=root_name):
+                discovery = _discover_artifacts(Path("fixture.py"), source)
+                self.assertIn("Direct", discovery.repository_owners)
+                self.assertNotIn("Temporary", discovery.repository_owners)
+                self.assertNotIn("Temporary", discovery.helper_owners)
+
+    def test_debug_elf_owner_requires_registration_and_guard(self):
+        key = ("test_debug_save_fixture", "DebugSaveFixtureLayoutEmissionTests")
+        discovery = _discover_artifacts(TESTS_DIR / "test_debug_save_fixture.py")
+        owners = set(discovery.repository_owners) | discovery.helper_owners
+        registered = set(host_mode.LIVE_TEST_CLASSES)
+        guarded = {
+            (module, name)
+            for module, name in registered
+            if getattr(importlib.import_module(module), name).is_live_artifact_testcase
+        }
+        self.assertIn(key, registered)
+        self.assertIn(key[1], owners)
+        self.assertEqual(_registered_owner_errors(key[0], owners, registered, guarded), [])
+        self.assertTrue(_registered_owner_errors(key[0], owners, registered - {key}, guarded))
+        self.assertTrue(_registered_owner_errors(key[0], owners, registered, guarded - {key}))
+
     def test_modules_using_repository_roms_are_registered_as_live(self):
         registered = set(host_mode.LIVE_TEST_CLASSES)
         guarded = set()
@@ -960,6 +1038,38 @@ class HostOnlyLiveClassArtifactTimingTests(unittest.TestCase):
         self.assertEqual(
             [reason for _t, reason in result.skipped if "host-only" in reason], []
         )
+
+    def test_debug_elf_class_skips_before_probe_and_runs_in_normal_mode(self):
+        module = importlib.import_module("test_debug_save_fixture")
+        test_class = module.DebugSaveFixtureLayoutEmissionTests
+        elf = self.tmp / "debug.elf"
+        elf.write_bytes(b"fixture")
+        with (
+            mock.patch.object(host_mode, "modern_elf", return_value=elf) as path,
+            mock.patch.object(module.run_debug_save_fixture_checks, "check_layout_anchor") as check,
+        ):
+            with _host_only(), mock.patch.object(Path, "is_file", side_effect=AssertionError("ELF probed")):
+                skipped = _run_case(test_class)
+            self.assertEqual(skipped.testsRun, 0)
+            self.assertTrue(skipped.skipped)
+            self.assertFalse(skipped.errors or skipped.failures)
+            path.assert_not_called()
+            check.assert_not_called()
+            with _normal_mode():
+                normal = _run_case(test_class)
+            self.assertEqual(normal.testsRun, 1)
+            self.assertTrue(normal.wasSuccessful(), (normal.errors, normal.failures))
+            path.assert_called_once_with("debug")
+            check.assert_called_once_with(elf)
+
+            with (
+                _host_only(),
+                mock.patch.object(test_class, "setUpClass", classmethod(lambda cls: None)),
+                mock.patch.object(Path, "is_file", side_effect=AssertionError("ELF probed")),
+            ):
+                unguarded = _run_case(test_class)
+            self.assertEqual(unguarded.testsRun, 1)
+            self.assertIn("ELF probed", str(unguarded.failures + unguarded.errors))
 
 
 class HostOnlyStagedWorktreeSubprocessTests(unittest.TestCase):

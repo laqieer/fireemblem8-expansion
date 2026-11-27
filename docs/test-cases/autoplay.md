@@ -104,7 +104,9 @@ village, chest, resource, strategy, objective, balance, or campaign behavior.
    compiler fails rather than silently skipping. The debug linker-check runs
    the two ARM-dependent configuration checks in the ARM-equipped Build job.
 2. Run
-   `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`.
+   `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
+   and
+   `python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation.MapMenuCompositionTests.test_nine_row_non_story_is_shifted_while_shorter_menus_stay_vanilla -v`.
 3. Run
    `make expansion-modern-blue-phase-delegate-check MODERN_CONFIG=debug MODERN_ABI=aapcs`.
 4. Run
@@ -167,6 +169,9 @@ epoch; reset/suspend-resume returns through issue #85's `PLAYER` reset.
   capacity, every localized label/help entry, shared AI eligibility, valid and
   invalid map states, current-phase routing, success/failure restoration, no
   static RAM, and disabled symbol absence.
+- `MapMenuCompositionTests.test_nine_row_non_story_is_shifted_while_shorter_menus_stay_vanilla`
+  in `tools/gba-playtest/tests/test_map_menu_presentation.py` checks live menu
+  capacity, Status/Records exclusion and bounded geometry.
 - `tools/gba-playtest/run_blue_phase_delegate_checks.py` drives the real
   Chapter 2 map menu and checked
   `autoplay-charge-modern-debug.json` fingerprint, then reuses the issue #85

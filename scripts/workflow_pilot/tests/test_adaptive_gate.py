@@ -24,6 +24,7 @@ from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import candidate_evidence
 from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import pr_metadata as github
+from scripts.workflow_pilot import raw_diff_check as raw
 from scripts.workflow_pilot import reporter, review_family as review
 from scripts.workflow_pilot import event_classifier
 from scripts.workflow_pilot.tests.review_support import Runtime
@@ -31,6 +32,11 @@ from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offse
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def git_commit_utc(root, revision):
+    seconds = int(git(root, "show", "-s", "--format=%ct", revision))
+    return datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
@@ -270,7 +276,7 @@ class OverrideScopeTests(unittest.TestCase):
             comparison["files"][-1]["status"] = "claimed-generated"
         elif fault == "wrong-count":
             comparison["files"][-1]["changes"] += 1
-        committed = git(root, "show", "-s", "--format=%cI", head).replace("+00:00", "Z")
+        committed = git_commit_utc(root, head)
         submitted = (reporter.parse_time(committed, "commit") + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
         if fault == "late":
             submitted = committed
@@ -325,9 +331,33 @@ class OverrideScopeTests(unittest.TestCase):
         result, selected, _ = gate.route_event(
             github.GitHubClient("/usr/bin/gh", runner=transport), event, payload, m.REPOSITORY)
         self.observed = {"category": category, "risk": risk, "fault": fault, "base": base, "head": head,
+                         "root": root, "committed": committed,
                          "files": files, "calls": calls, "decision": asdict(selected),
                          "classification": result.classification}
         return result, selected
+
+    def test_scope_route_uses_the_same_commit_instant_in_different_git_timezones(self):
+        git_environment = raw.git_environment
+        expected_epoch = 1704164645
+        for zone, offsets in (("UTC", ("Z", "+00:00")), ("UTC-8", ("+08:00",))):
+            with self.subTest(zone=zone), patch.object(
+                raw, "git_environment", side_effect=lambda: {
+                    **git_environment(), "TZ": zone,
+                    "GIT_AUTHOR_DATE": f"@{expected_epoch}",
+                    "GIT_COMMITTER_DATE": f"@{expected_epoch}",
+                }
+            ):
+                result, selected = self.route("docs", risk="security")
+                self.assertEqual((selected.reason, result.classification), ("named-risk", "review-first"))
+                root, head = self.observed["root"], self.observed["head"]
+                native = git(root, "show", "-s", "--format=%cI", head)
+                epoch = int(git(root, "show", "-s", "--format=%ct", head))
+                self.assertTrue(native.endswith(offsets), native)
+                self.assertEqual(epoch, expected_epoch)
+                self.assertEqual(
+                    reporter.parse_time(self.observed["committed"], "commit").timestamp(),
+                    epoch,
+                )
 
     def test_only_actual_eligible_categories_honor_a_timely_override(self):
         for category, fault in (("generated", None), ("localization", None), ("docs", None),
@@ -424,7 +454,7 @@ class GateTests(unittest.TestCase):
         jobs = []
         for index, job_id in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS)):
             name = classifier if job_id == "event-classifier" else job_id
-            verdict = ("skipped" if mode == "review-first" and job_id in {"legacy", "extended-host-tests"}
+            verdict = ("skipped" if mode == "review-first" and job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS
                        else "failure" if mode == "review-first" and job_id == "summary" else "success")
             jobs.append(github.JobState(
                 index + 1, run_id, name, "completed", verdict,
@@ -513,6 +543,173 @@ class GateTests(unittest.TestCase):
         self.assertEqual(body.count(github.EVIDENCE_MARKER), 1)
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
+
+    def test_latest_full_requires_the_current_shape(self):
+        def historical(run_id):
+            run = self.workflow_run(run_id)
+            jobs = tuple(job for job in run.jobs
+                         if job.name not in candidate_evidence.NEW_WORKER_JOB_IDS)
+            self.assertEqual(
+                github._run_mode(jobs, run_id=run_id, status="completed"), "historical-full")
+            return replace(run, mode="historical-full", jobs=jobs)
+
+        old = historical(10)
+        self.runs.append(old)
+        old_only = self.assess()
+        self.assertFalse(old_only["merge_eligible"])
+        self.assertTrue(old_only["dispatchable"])
+
+        self.dispatched()
+        self.runs[-1] = self.workflow_run(20)
+        preflight, _, current = self.runs
+        self.assertTrue(self.assess()["merge_eligible"])
+        self.assertTrue(self.assess(runs=(current, old, preflight))["merge_eligible"])
+
+        newer = historical(30)
+        result = self.assess(runs=(preflight, newer, old, current))
+        self.assertFalse(result["merge_eligible"], result)
+        self.assertIn("newer-historical-full", result["missing"])
+        self.assertFalse(self.assess(runs=(
+            preflight, old, current, replace(newer, run_number=current.run_number)))["merge_eligible"])
+        self.assertFalse(self.assess(runs=(
+            preflight, old, current, replace(newer, candidate_binding=None)))["merge_eligible"])
+        self.assertTrue(self.assess(runs=(
+            preflight, old, current, replace(newer, head_branch="another-branch")))["merge_eligible"])
+        self.assertTrue(self.assess(runs=(
+            preflight, old, current, replace(newer, candidate_base_ref="another-base")))["merge_eligible"])
+        self.assertTrue(self.assess(runs=(
+            preflight, old, current,
+            replace(newer, candidate_binding=(self.pr.number, self.pr.head_sha, "b" * 40))))["merge_eligible"])
+        self.assertFalse(self.assess(runs=(
+            preflight, old, current, self.workflow_run(40)))["merge_eligible"])
+
+    def test_historical_preflight_preserves_lane_without_current_authority(self):
+        run = self.workflow_run(10, "review-first")
+        jobs = tuple(job for job in run.jobs
+                     if job.name not in candidate_evidence.NEW_WORKER_JOB_IDS)
+        self.assertEqual(
+            github._run_mode(jobs, run_id=run.run_id, status="completed"),
+            "historical-review-first")
+        old = replace(run, mode="historical-review-first", jobs=jobs)
+        current_pr_full = self.workflow_run(20, event="pull_request")
+        with self.assertRaises(ValueError):
+            gate._history_lane(self.pr, self.fixture.parent, (old, current_pr_full))
+        self.assertEqual(gate._history_lane(self.pr, self.fixture.parent, (old,)), "review-first")
+        skipped_publisher = replace(
+            old.jobs[0], job_id=1000, name="patch-release", conclusion="skipped",
+            runner_name=None, started_at=None)
+        old_with_publisher = replace(old, jobs=(*old.jobs, skipped_publisher))
+        self.assertEqual(gate._history_lane(
+            self.pr, self.fixture.parent, (old_with_publisher,)), "review-first")
+        with self.assertRaises(ValueError):
+            gate._history_lane(self.pr, self.fixture.parent, (
+                replace(old_with_publisher, jobs=(*old.jobs, replace(
+                    skipped_publisher, conclusion="success"))), current_pr_full))
+        for worker in candidate_evidence.NEW_WORKER_JOB_IDS:
+            with self.subTest(unexpected_worker=worker):
+                extra = next(job for job in run.jobs if job.name == worker)
+                with self.assertRaises(ValueError):
+                    gate._history_lane(
+                        self.pr, self.fixture.parent,
+                        (replace(old, jobs=(*old.jobs, extra)), current_pr_full))
+        old_only = self.assess(runs=(old,))
+        self.assertFalse(old_only["dispatchable"])
+        self.assertFalse(old_only["merge_eligible"])
+        self.assertIn("exact-preflight", old_only["missing"])
+
+        current_preflight = self.runs[0]
+        self.assertEqual(
+            gate._history_lane(self.pr, self.fixture.parent, (old, current_preflight)),
+            "review-first")
+        self.assertTrue(self.assess(runs=(old, current_preflight))["dispatchable"])
+
+        for preflight in (
+            old,
+            replace(old, candidate_binding=None),
+            replace(old, jobs=tuple(replace(job, conclusion="failure")
+                                    if job.name == "event-identity" else job
+                                    for job in old.jobs)),
+            replace(old, jobs=tuple(replace(job, conclusion="success")
+                                    if job.name == "summary" else job
+                                    for job in old.jobs)),
+            replace(current_preflight, jobs=tuple(replace(job, conclusion="failure")
+                                                  if job.name == "event-router" else job
+                                                  for job in current_preflight.jobs)),
+            replace(current_preflight, mode="active-review-first", status="in_progress"),
+        ):
+            with self.subTest(mode=preflight.mode, binding=preflight.candidate_binding):
+                with self.assertRaises(ValueError):
+                    gate._history_lane(self.pr, self.fixture.parent, (preflight, current_pr_full))
+                result = self.assess(runs=(preflight, current_pr_full))
+                self.assertFalse(result["merge_eligible"], result)
+
+        self.runs = [old, current_preflight]
+        self.dispatched()
+        self.runs[-1] = self.workflow_run(20)
+        self.assertTrue(self.assess()["merge_eligible"])
+
+    def test_failed_preflight_history_does_not_block_a_successful_retry(self):
+        for mode in ("review-first", "historical-review-first"):
+            for worker in candidate_evidence.METADATA_ADAPTER_JOB_IDS:
+                for conclusion in ("failure", "cancelled", "timed_out"):
+                    with self.subTest(mode=mode, worker=worker, conclusion=conclusion):
+                        failed = self.workflow_run(10, "review-first")
+                        jobs = tuple(
+                            replace(job, conclusion=conclusion) if job.name == worker else job
+                            for job in failed.jobs
+                            if mode == "review-first"
+                            or job.name not in candidate_evidence.NEW_WORKER_JOB_IDS)
+                        failed = replace(failed, mode=mode, jobs=jobs)
+                        retry = self.workflow_run(20, "review-first")
+                        for runs in ((failed, retry), (retry, failed)):
+                            self.assertEqual(
+                                gate._history_lane(self.pr, self.fixture.parent, runs), "review-first")
+                            result = self.assess(runs=runs)
+                            self.assertTrue(result["dispatchable"], result)
+                            self.assertFalse(result["merge_eligible"])
+                        with self.assertRaises(ValueError):
+                            gate._history_lane(self.pr, self.fixture.parent, (failed,))
+                        with self.assertRaises(ValueError):
+                            gate._history_lane(self.pr, self.fixture.parent, (
+                                failed, self.workflow_run(30, event="pull_request")))
+
+        self.runs = [failed, retry]
+        self.dispatched()
+        self.runs[-1] = self.workflow_run(30)
+        self.assertTrue(self.assess()["merge_eligible"])
+
+    def test_failed_preflight_retry_still_rejects_unproven_history(self):
+        run = self.workflow_run(10, "review-first")
+        failed = replace(run, jobs=tuple(
+            replace(job, conclusion="failure") if job.name == "host-tests" else job
+            for job in run.jobs))
+        retry = self.workflow_run(20, "review-first")
+        variants = (
+            replace(failed, candidate_binding=None),
+            replace(failed, candidate_base_ref=None),
+            replace(failed, mode="active-review-first", status="in_progress"),
+            replace(failed, status="in_progress"),
+            replace(failed, conclusion="success"),
+            replace(failed, event="workflow_dispatch"),
+            replace(failed, jobs=(*failed.jobs, failed.jobs[0])),
+            replace(failed, jobs=tuple(
+                replace(job, conclusion="failure") if job.name == "event-identity" else job
+                for job in failed.jobs)),
+            replace(failed, jobs=tuple(
+                replace(job, conclusion="success") if job.name == "summary" else job
+                for job in failed.jobs)),
+            replace(failed, jobs=tuple(
+                replace(job, conclusion="skipped") if job.name == "host-tests" else job
+                for job in failed.jobs)),
+        )
+        for invalid in variants:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    gate._history_lane(self.pr, self.fixture.parent, (invalid, retry))
+                self.assertFalse(self.assess(runs=(invalid, retry))["dispatchable"])
+        with self.assertRaises(ValueError):
+            gate._history_lane(self.pr, self.fixture.parent, (
+                failed, retry, self.workflow_run(30, event="pull_request")))
 
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
         self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
@@ -1278,8 +1475,7 @@ class AdapterTests(unittest.TestCase):
                             "sha": hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest(),
                             "content": base64.b64encode(content).decode(),
                         })
-                    committed = fixtures.git_run(
-                        root, "show", "-s", "--format=%cI", revision).stdout.decode().strip().replace("+00:00", "Z")
+                    committed = git_commit_utc(root, revision)
                     client.add("GET", m._endpoint(f"git/commits/{revision}"),
                                {"sha": revision, "committer": {"date": committed}})
                 for anchor in {base, first["commit_sha"]}:
