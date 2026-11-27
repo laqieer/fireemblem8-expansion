@@ -6574,7 +6574,11 @@ policy is unchanged. Unsupported compiler platforms/modes fail closed.
    distinct. Spliced, missing, stale, reversed or reused observations must not
    advance; unknown process-backed owner exit/RSS still prevents a ready handoff. The
    separate-session control rejects the different-ID receipt, as the pre-fix
-   reader did. Repeat an exact receipt with the same or another event ID or
+   reader did. A second start for a bound owner with a different, missing or
+   opaque dispatch rejects without advancing the cursor, while an unrelated
+   owner/task start is ignored and the original owner can complete. The
+   pre-fix reader silently consumes the contradictory start. Repeat an exact
+   receipt with the same or another event ID or
    conflicting receipt: reject. After receipt, any same-root owner follow-up
    that changes the bound parent task rejects even if its interaction ID also
    changes; a distinct same-parent follow-up remains valid and participates

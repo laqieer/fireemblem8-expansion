@@ -1397,8 +1397,11 @@ def observe_native_task(entry, log_path):
             _event(entry, "assignment_sent", event["id"], event["timestamp"])
             a["dispatch_id"] = data["toolCallId"]
             continue
-        if (kind == "subagent.started" and a["dispatch_id"] is not None
-                and data.get("toolCallId") == a["dispatch_id"]):
+        if (kind == "subagent.started"
+                and (is_owner_event or (a["dispatch_id"] is not None
+                                        and data.get("toolCallId") == a["dispatch_id"]))):
+            require(a["dispatch_id"] is not None and data.get("toolCallId") == a["dispatch_id"],
+                    "native owner task changed")
             require(a["owner_id"] is None, "duplicate native owner start")
             text(event.get("agentId"), maximum=128, pattern=ID_RE)
             text(data.get("interactionId"), maximum=128, pattern=ID_RE)

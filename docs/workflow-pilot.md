@@ -2851,6 +2851,9 @@ root log session, is the `Copilot-Session` trailer identity. Two owners may
 share a root log and interaction, but cannot reuse owner, owner session,
 dispatch, receipt-task or lifecycle source identities. Missing, opaque,
 contradictory, duplicate or wrong observations remain incomplete or reject.
+Once an owner is bound, another start naming that owner with a different or
+missing dispatch rejects without advancing the native cursor; an unrelated
+owner and dispatch remain independent.
 Once bound, an explicitly present owner session on any correlated owner event
 must match; event types that omit the field remain supported.
 
