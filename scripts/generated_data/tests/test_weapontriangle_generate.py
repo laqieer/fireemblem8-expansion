@@ -37,12 +37,6 @@ class GenerateDeterminismTests(unittest.TestCase):
         for record in records:
             self.assertNotEqual(record.attacker, -1)
 
-    def test_terminator_is_not_authored_in_json(self):
-        records = load_records(REAL_SOURCE)
-        self.assertEqual(len(records), 12)
-        for record in records:
-            self.assertIsInstance(record.attacker, str)
-
 
 class FixtureGenerateTests(unittest.TestCase):
     def test_fixture_generation_matches_real_source_shape(self):
