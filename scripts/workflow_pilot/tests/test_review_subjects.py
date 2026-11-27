@@ -329,9 +329,16 @@ def _parse_job_steps(job_name, body, repository_root=None):
         for path in (self.tools.subjects.BUILD_TOPOLOGY, self.tools.subjects.BUILD_VERIFY):
             with self.subTest(path=path):
                 original = (self.repo.root / path).read_text()
-                broken = original.replace(
-                    'if line.strip() and not line.startswith("        "):',
-                    'if line and not line.startswith("        "):', 1)
+                if path == self.tools.subjects.BUILD_VERIFY:
+                    broken = original.replace(
+                        '        unindented = line.lstrip(" ")\n',
+                        '        if line and not line.startswith("        "):\n'
+                        '            break\n'
+                        '        unindented = line.lstrip(" ")\n', 1)
+                else:
+                    broken = original.replace(
+                        'if line.strip() and not line.startswith("        "):',
+                        'if line and not line.startswith("        "):', 1)
                 self.assertNotEqual(original, broken)
                 before = self.repo.commit({path: broken})
                 after = self.repo.commit({path: original}, parent=before)
@@ -340,6 +347,25 @@ def _parse_job_steps(job_name, body, repository_root=None):
                 prior = self.selected_observations(members, before, name)[0]
                 self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1))
                 self.assert_satisfied(self.selected_observations(members, after, name))
+
+    def test_literal_and_adapter_findings_use_actual_review_origins(self):
+        cases = (
+            ("1dc5f099a437d23be8733613822606914f796ae6", "replay:host-tests"),
+            ("a041839e0b6e91febceb6ef5abdccbccf8f2ee0b", "replay:host-tests"),
+            ("7f86a19872fcbe384a00995cad0e868ce9707731", "validators:source-test-adapter"),
+        )
+        for revision, name in cases:
+            with self.subTest(revision=revision, member=name):
+                before = self.repo.commit(self.historical_sources(revision))
+                prior_members = self.selected(
+                    self.tools.members(self.build_scope(before, before)), name)
+                prior = self.selected_observations(prior_members, before, name)[0]
+                self.assertEqual((prior.verdict, prior.checks), ("contract-violation", 1), prior.detail)
+                current_members = self.selected(self.tools.members(self.build_scope()), name)
+                self.assert_satisfied(self.selected_observations(current_members, self.repo.base, name))
+                if revision != cases[-1][0]:
+                    with self.assertRaisesRegex(ValueError, "added/deleted members"):
+                        self.tools.members(self.build_scope(), (before,))
 
     def test_model_preserves_step_sequence_and_rejects_ambiguous_source(self):
         subjects = self.tools.subjects

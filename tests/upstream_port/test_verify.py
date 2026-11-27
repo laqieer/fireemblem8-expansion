@@ -1643,6 +1643,20 @@ class VerifyCliCwdTests(unittest.TestCase):
                 if topology_tests._step_name(step) ==
                 "Attest metadata-only branch-protection continuity"
             )
+            equivalent_crlf = self.replace_in_job(
+                original,
+                "host-tests",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<'PY'\r\n",
+            )
+            self.assertEqual(
+                verify_mod._parse_workflow_structure_text(equivalent_crlf),
+                verify_mod._parse_workflow_structure_text(original),
+            )
+            expected = verify_mod.run_gates(target_root, dry_run=True)
+            with open(workflow_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(equivalent_crlf)
+            self.assertEqual(verify_mod.run_gates(target_root, dry_run=True), expected)
             mutations = {
                 "extra-python-command": self.replace_in_job(
                     original,
@@ -1784,12 +1798,6 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "host-tests",
                     "        /usr/bin/python3 -I - <<'PY'\n",
                     "        /usr/bin/python3 -I - <<'PY'\u2029\n",
-                ),
-                "carriage-return": self.replace_in_job(
-                    original,
-                    "host-tests",
-                    "        /usr/bin/python3 -I - <<'PY'\n",
-                    "        /usr/bin/python3 -I - <<'PY'\r\n",
                 ),
                 "ascii-tab": self.replace_in_job(
                     original,

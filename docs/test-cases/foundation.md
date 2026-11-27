@@ -86,6 +86,7 @@ and its fail-closed all-current-feature coverage assertion.
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_order_regressions_accept_reordered_workflow \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_worker_mapping_order_preserves_target_gate_equivalence \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_literal_blocks_reject_shallow_tabs \
      tests.upstream_port.test_verify.VerifyCliCwdTests.test_target_rejects_misindented_job_fields_at_each_boundary
    ```
@@ -122,7 +123,13 @@ Shallower trailing YAML comments remain valid; additional script content after
 such a comment is rejected. CRLF blank lines retain subsequent commands, and
 leading blank lines cannot exceed the inferred content indentation. Dedented
 nonbreaking-space content is rejected, and repeated CR line breaks cannot
-hide a subsequent command.
+hide a subsequent command. Equivalent CRLF in the workflow metadata adapter
+retains its parsed contract; invalid adapter lexical and extra-command
+mutations still reject. External Bash helpers retain their raw lexical checks.
+The source-backed family runs the literal controls and actual adapter test
+against their respective review origins and the candidate. Added Build jobs
+between older origins and the candidate remain a cross-model family hold until
+their origin and candidate obligations are reconciled.
 
 ### Negative control
 
@@ -134,6 +141,8 @@ semantic parser rather than a raw phrase search is enforcing the contract.
 Before the #481 fix, the worker-order regressions reject equivalent mappings.
 Before the #496 fix, malformed shallow tab-only lines are accepted by the
 target verifier.
+Before the adapter-test correction, its CRLF subcase incorrectly rejects a
+workflow whose normalized input is identical to the accepted baseline.
 Before the regression-test correction, moving `host-tests.steps` first makes
 both worker-order test cases fail even though both validators accept the
 equivalent workflow.
