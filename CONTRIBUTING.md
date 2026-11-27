@@ -179,22 +179,25 @@ required Build CI and Copilot review running concurrently. When those
 candidate gates are clean, merge directly; the merge automatically starts the
 expanded Build CI on `master`.
 
-Both PR and master Build runs execute `host-tests`, `build`,
-`extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in
-parallel. Master additionally packages the already-built release ROM in
-master-only steps of `build`. Artifact, documentation, generated-data, localization, crosswalk,
-raw-closure, and modern debug/release runtime evidence run only in their
-existing Build owners; no duplicate Matrix path or manual dispatch exists. The
-expected combined-gate wall clock is approximately 35–40 minutes because the
-jobs run in parallel; that operational range is not a duration assertion.
+Both PR and master Build runs execute `host-tests`, `workflow-pilot-tests`,
+`build`, `extended-host-tests`, `ownership-probe-tests`,
+`game-localization-tests`, and `legacy` in parallel, joined by the
+seconds-only fail-closed `summary`. Master additionally packages the
+already-built release ROM in master-only steps of `build`. Artifact,
+documentation, generated-data, localization, crosswalk, raw-closure, and
+modern debug/release runtime evidence each run in their designated Build
+owner; no duplicate Matrix path exists. Full review-first candidates use the
+documented manual dispatch. The elapsed time depends on the slowest worker
+and runner availability; use exact-run durations as delivery evidence.
 Repository branch protection or rulesets should require this workflow's
 canonical `host-tests`, `build`, and `summary` contexts, while leaving
 independent security/review contexts unchanged. Metadata-only PR edits keep
 those existing required names green by running only the trusted no-checkout
-continuity attestation in `host-tests`/`build`; `extended-host-tests` and
-`legacy` stay platform-skipped, the required `summary` context advances to the
-later metadata continuity run, and candidate eligibility still remains bound
-to the newest prior complete full Build CI run.
+continuity attestation in `host-tests`/`build`; the other five workers stay
+platform-skipped, the required `summary` context advances to the later
+metadata continuity run, and candidate eligibility remains bound to the
+newest prior complete full Build CI run with all current workers. A historical
+pre-split full run cannot authorize continuity.
 
 If post-merge Build fails, fix forward or revert the affected `master` change.
 That failure blocks the affected issue's closure and

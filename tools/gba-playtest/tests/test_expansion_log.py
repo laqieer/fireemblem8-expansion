@@ -1,10 +1,17 @@
 """Host behavior and ARM object-boundary tests for issue #68's log transport."""
 
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+if __package__:
+    from . import modern_mk_query as mmq
+else:
+    import modern_mk_query as mmq
 
 ROOT = Path(__file__).resolve().parents[3]
 INCLUDES = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
@@ -25,6 +32,25 @@ def temporary_directory():
     root = ROOT / "build"
     root.mkdir(parents=True, exist_ok=True)
     return tempfile.TemporaryDirectory(dir=root)
+
+
+class ExpansionLogImportTests(unittest.TestCase):
+    def test_package_import_without_test_directory_on_pythonpath(self):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import importlib; importlib.import_module("
+                "'tools.gba-playtest.tests.test_expansion_log')",
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 class ExpansionLogHostTests(unittest.TestCase):
@@ -131,8 +157,13 @@ class ExpansionLogArmTests(unittest.TestCase):
             self.assertIn("04fff700", disassembly)
 
     def test_archival_lane_cfile_list_excludes_logging_backend(self):
-        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        self.assertIn("$(filter-out src/expansion_log.c,$(CFILES))", makefile)
+        database = mmq.query_make_database("debug")
+        sources = mmq.variable_value(database, "CFILES").split()
+        objects = mmq.variable_value(database, "ALL_OBJECTS").split()
+        self.assertIn("src/bmphase.c", sources)
+        self.assertIn("src/bmphase.o", objects)
+        self.assertNotIn("src/expansion_log.c", sources)
+        self.assertNotIn("src/expansion_log.o", objects)
 
     def test_shared_public_sources_keep_c89_comment_style(self):
         for path in (SOURCE, ROOT / "include" / "expansion_log.h"):
