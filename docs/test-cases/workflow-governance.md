@@ -2418,13 +2418,16 @@ and does not grant push credentials.
    resulting master commit. Record their job durations, queue time and total
    runner-minutes, including retries.
 
-### Expected result and negative control
+### Expected result
 
 Both workflow consumers accept exactly 120 minutes for `extended-host-tests`
 and reject 90 or 121; other job deadlines and suite ownership remain
 unchanged. A missing, failed or skipped worker still fails the full summary.
-The old 90-minute workflow is the pre-fix negative control. Both live Builds
-must complete successfully; a timeout is not a pass.
+Both live Builds must complete successfully; a timeout is not a pass.
+
+### Negative control
+
+The old 90-minute workflow is the pre-fix negative control.
 
 ### Interactions and save compatibility
 
@@ -2433,14 +2436,17 @@ with issue #390's independent worker split without dropping any required job.
 There is no game, save, configuration, generated-data, localization content,
 ROM/RAM, debug/release or archival behavior change.
 
-### Automation, cleanup and limitations
+### Automation
 
 The focused tests exercise the parsed workflow and actual summary evaluator,
-including empty, failed, cancelled and skipped results for each full worker;
-unittest cleans its disposable fixtures. The 120-minute allowance is a
-temporary mitigation, not a guarantee that future runs finish. A timed-out job
-may consume 30 more runner-minutes; compare actual elapsed time and total cost.
-No manual game judgment applies.
+including empty, failed, cancelled and skipped results for each full worker.
+
+### Cleanup and limitations
+
+Unittest cleans its disposable fixtures. The 120-minute allowance is a temporary
+mitigation, not a guarantee that future runs finish. A timed-out job may consume
+30 more runner-minutes; compare actual elapsed time and total cost. No manual
+game judgment applies.
 
 ## TC-WORKFLOW-LEGACY-BUILD-BOUNDED-001: Keep legacy Build within its 60-minute budget
 

@@ -1198,6 +1198,22 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-CI-DEADLINE-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest tests.workflows.test_build_ci_topology."
+                            "ConsolidatedBuildTopologyTests."
+                            "test_extended_host_deadline_is_enforced_by_both_consumers -v",
+                            "python3 -m unittest tests.workflows.test_build_ci_topology."
+                            "ConsolidatedBuildTopologyTests."
+                            "test_parsed_job_timeout_map_is_exact_and_closed "
+                            "tests.workflows.test_build_ci_topology."
+                            "ConsolidatedBuildTopologyTests."
+                            "test_summary_runtime_rejects_missing_stale_and_failed_identity -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests.test_target_execution_context_is_closed_before_dry_run -v",
+                        },
+                    },
                     "TC-WORKFLOW-ISSUE-PR-UNIQUENESS-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
