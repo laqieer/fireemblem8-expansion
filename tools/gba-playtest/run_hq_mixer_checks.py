@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import gba_playtest
-from probe_bindings import ElfSymbolResolver, ProbeBindingError, resolve_elf_symbol
+from probe_bindings import ElfSymbolResolver, ProbeBindingError, find_elf_symbol
 from scripts.linker_report import budget
 
 HQ_NO_REVERB_CODE_BYTES = 0xAC0
@@ -102,11 +102,8 @@ def require_symbol(resolver: ElfSymbolResolver, symbol: str) -> tuple[int, int]:
 
 
 def require_absent_symbol(elf: Path, symbol: str, nm: str) -> None:
-    try:
-        resolve_elf_symbol(elf, symbol, nm)
-    except ProbeBindingError:
-        return
-    fail(f"{symbol} must be absent from disabled ELF {elf}")
+    if find_elf_symbol(elf, symbol, nm) is not None:
+        fail(f"{symbol} must be absent from disabled ELF {elf}")
 
 
 def validate_player_ranges(
