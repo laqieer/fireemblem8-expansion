@@ -2,16 +2,22 @@
 
 import copy
 import json
+import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 from jsonschema import Draft202012Validator
 
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
-from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset
+from scripts.workflow_pilot.tests.test_agent_handoff import (
+    GitFixture, SESSION, at_offset, gh_stub_environment, git, native_event, write_json,
+)
 from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
+from scripts.workflow_pilot.tests.test_coordinator_observations import complete_logical_task, reserve_task, task_event
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -79,6 +85,332 @@ class CoordinatorLocalTests(unittest.TestCase):
                          self.head)
         self.assertIsNone(self.record["full_run_id"])
         self.assertIsNone(self.record["dispatch_requested_at"])
+
+    def test_accepted_logical_handoff_uses_released_validation_worktree(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        result = complete_logical_task(f)
+        pr = SimpleNamespace(
+            repository=f.state["repository"], repository_id=1, number=191,
+            head_sha=result["result_sha"], head_ref=f.assignment["expected_branch"],
+            base_sha=f.parent, base_ref="master")
+        decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
+                                    decision_oid="a" * 40, changed_lines=1)
+        record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+        validation_worktree = f.home / "validation"
+        fake_bin = Path(gh_stub_environment(
+            f.home, {"name": pr.head_ref, "commit": {"sha": pr.head_sha}},
+        )["PATH"].split(os.pathsep)[0])
+        with mock.patch.dict(os.environ, {"PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation_worktree)
+            verdict = handoff.validate_handoff(f.state, result, worktree=validation_worktree)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        self.assertFalse(f.worktree.exists())
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        tracked = validation_worktree / "docs/change.txt"
+        original = tracked.read_bytes()
+        tracked.write_bytes(b"modified after validation\n")
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        tracked.write_bytes(original)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        temporarily_missing = f.home / "validation-missing"
+        validation_worktree.rename(temporarily_missing)
+        try:
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            temporarily_missing.rename(validation_worktree)
+
+        log = Path(f.entry["cursors"][0]["path"])
+        f.append(log, task_event("assistant.turn_start", "unrelated-turn", owner="other-owner",
+                                 parentToolCallId="other-call", interactionId="other-interaction"))
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        handoff.observe_cli(f.entry, log)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        log.rename(f.home / "missing-log")
+        try:
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            (f.home / "missing-log").rename(log)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        original_log = log.read_bytes()
+        log.write_bytes(original_log[:-1])
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        log.write_bytes(original_log)
+        log.rename(f.home / "original-log")
+        try:
+            log.write_bytes(original_log)
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            log.unlink()
+            (f.home / "original-log").rename(log)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        with log.open("ab") as output:
+            output.write(b'{"id":')
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        with log.open("r+b") as output:
+            output.truncate(f.entry["cursors"][0]["offset"])
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+
+        coordinator = f.home / "coordinator"
+        git(f.repository, "worktree", "add", str(coordinator), f.assignment["expected_branch"])
+        gate.register_local_validation(f.state, record, pr, coordinator, CHECKS)
+        gate.capture_local_check(f.state, record, pr, "raw")
+
+        def executor(context, head):
+            check = raw.run_process(
+                ["/usr/bin/python3", "-I", "-c",
+                 "from pathlib import Path; assert Path('docs/change.txt').read_text() == 'change\\n'"],
+                cwd=Path(context["allowed_worktree"]), env=raw.git_environment())
+            measurements = dict.fromkeys(handoff.METRICS, 0)
+            return check, measurements
+
+        gate.capture_local_check(f.state, record, pr, "config", executor)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        tracked.write_bytes(b"modified after coordinator validation\n")
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        self.assertFalse(gate.coordinator_local_ready(f.state, record, pr))
+        tracked.write_bytes(original)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        git(validation_worktree, "checkout", "--detach", f.parent)
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        git(validation_worktree, "checkout", "--detach", result["result_sha"])
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        validation_worktree.rename(temporarily_missing)
+        try:
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            temporarily_missing.rename(validation_worktree)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        replacement = f.home / "replacement-validation"
+        git(f.repository, "worktree", "add", "--detach", str(replacement), result["result_sha"])
+        validation_worktree.rename(temporarily_missing)
+        replacement.rename(validation_worktree)
+        try:
+            current = handoff.observe_git({"allowed_worktree": str(validation_worktree)})
+            self.assertEqual(current["head"], result["result_sha"])
+            self.assertFalse(current["dirty_paths"])
+            self.assertNotEqual(current["identity"], f.entry["worktree_release"]["validation_identity"])
+            self.assertFalse(gate._local_ready(f.state, pr, record))
+        finally:
+            validation_worktree.rename(replacement)
+            temporarily_missing.rename(validation_worktree)
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        f.append(log, task_event("assistant.turn_start", "late-owner", owner=f.assignment["owner_id"],
+                                 parentToolCallId=f.assignment["dispatch_id"],
+                                 interactionId="interaction-one"))
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner"):
+            handoff.observe_cli(f.entry, log)
+
+    def test_review_successor_cannot_hide_unread_predecessor_activity(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        first_result = complete_logical_task(f)
+        first_entry = f.entry
+        log = Path(first_entry["cursors"][0]["path"])
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": first_result["result_sha"]}},
+        )
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+            self.assertTrue(handoff.validate_handoff(
+                f.state, first_result, worktree=validation)["handoff_ready"])
+
+        successor_worktree = f.home / "successor"
+        git(f.repository, "worktree", "add", str(successor_worktree), f.assignment["expected_branch"])
+        successor = copy.deepcopy(f.assignment)
+        del successor["native"]
+        successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                         dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                         assigned_parent_sha=first_result["result_sha"], allowed_worktree=str(successor_worktree))
+        f.entry = handoff.assign(f.state, successor)
+        f.assignment, f.worktree, f.parent = successor, successor_worktree, first_result["result_sha"]
+        f.parent_log, f.owner_log = f.home / "successor-parent.jsonl", f.home / "successor-owner.jsonl"
+        with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", successor["session_id"]):
+            result = f.complete(content="successor change\n")
+        verdict = f.validate(result)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        pr = SimpleNamespace(
+            repository=f.state["repository"], repository_id=1, number=191,
+            head_sha=result["result_sha"], head_ref=successor["expected_branch"],
+            base_sha=first_result["assigned_parent_sha"], base_ref="master")
+        decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
+                                    decision_oid="a" * 40, changed_lines=1)
+        record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        (validation / "docs/change.txt").write_text("modified predecessor after successor\n")
+        self.assertTrue(gate._local_ready(f.state, pr, record))
+        f.append(log, task_event("assistant.turn_start", "late-predecessor", owner="owner-one",
+                                 parentToolCallId="call-one", interactionId="interaction-one"))
+        self.assertFalse(gate._local_ready(f.state, pr, record))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "closed native owner"):
+            handoff.observe_cli(first_entry, log)
+
+    def test_successor_preserves_predecessor_verdict_on_revalidation(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        first_result = complete_logical_task(f)
+        first_entry = f.entry
+        validation = f.home / "validation"
+        environment = gh_stub_environment(
+            f.home, {"name": f.assignment["expected_branch"],
+                     "commit": {"sha": first_result["result_sha"]}},
+        )
+        with mock.patch.dict(os.environ, {"PATH": environment["PATH"]}):
+            handoff.release_logical_worktree(f.state, f.assignment["id"], f.repository, validation)
+            self.assertTrue(handoff.validate_handoff(
+                f.state, first_result, worktree=validation)["handoff_ready"])
+        accepted = copy.deepcopy(first_entry["validation"])
+        successor_worktree = f.home / "successor"
+        git(f.repository, "worktree", "add", str(successor_worktree), f.assignment["expected_branch"])
+        successor = copy.deepcopy(f.assignment)
+        del successor["native"]
+        successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                         dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                         assigned_parent_sha=first_result["result_sha"], allowed_worktree=str(successor_worktree))
+        f.entry = handoff.assign(f.state, successor)
+        f.assignment, f.worktree, f.parent = successor, successor_worktree, first_result["result_sha"]
+        f.parent_log, f.owner_log = f.home / "successor-parent.jsonl", f.home / "successor-owner.jsonl"
+
+        def reject_predecessor():
+            before = copy.deepcopy(f.state)
+            with self.assertRaisesRegex(handoff.HandoffDataError, "successor"):
+                handoff.validate_handoff(f.state, first_result, worktree=validation)
+            self.assertEqual(f.state, before)
+            self.assertEqual(first_entry["validation"], accepted)
+            handoff.validate_state(f.state)
+
+        reject_predecessor()
+        with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", successor["session_id"]):
+            result = f.complete(content="successor change\n")
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        missing = f.home / "missing-validation"
+        validation.rename(missing)
+        try:
+            reject_predecessor()
+        finally:
+            missing.rename(validation)
+        (validation / "docs/change.txt").write_text("modified retired predecessor\n")
+        reject_predecessor()
+
+        state_path, result_path = f.home / "state.json", f.home / "result.json"
+        write_json(state_path, f.state)
+        write_json(result_path, first_result)
+        before = state_path.read_bytes()
+        cli = raw.run_process(
+            [sys.executable, "-I", str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"),
+             "agent-handoff", "validate", "--state", str(state_path),
+             "--result", str(result_path), "--worktree", str(validation)],
+            cwd=ROOT, env=environment,
+        )
+        self.assertEqual(cli.returncode, 2, cli.stderr.decode())
+        self.assertIn(b"successor", cli.stderr)
+        self.assertEqual(state_path.read_bytes(), before)
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        (successor_worktree / "docs/change.txt").write_text("dirty current candidate\n")
+        self.assertFalse(f.validate(result, run_checks=False)["handoff_ready"])
+
+        other_worktree = f.home / "other"
+        git(f.repository, "worktree", "add", "-b", "agent/other", str(other_worktree),
+            first_result["assigned_parent_sha"])
+        other = copy.deepcopy(successor)
+        other.update(id="other-one", issue=179, pull_request=None, owner_id="other-owner",
+                     session_id="other-session", dispatch_id="other-dispatch", kind="initial",
+                     predecessor_id=None, assigned_parent_sha=first_result["assigned_parent_sha"],
+                     expected_branch="agent/other", allowed_worktree=str(other_worktree))
+        f.entry = handoff.assign(f.state, other)
+        f.assignment, f.worktree, f.parent = other, other_worktree, other["assigned_parent_sha"]
+        f.parent_log, f.owner_log = f.home / "other-parent.jsonl", f.home / "other-owner.jsonl"
+        with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", other["session_id"]):
+            other_result = f.complete(content="independent change\n")
+        self.assertTrue(f.validate(other_result)["handoff_ready"])
+        self.assertEqual(first_entry["validation"], accepted)
+
+    def test_delayed_process_completion_cannot_attribute_successor_head(self):
+        for success in (True, False):
+            with self.subTest(success=success):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                log, root, prompt = reserve_task(f)
+                f.append(log,
+                         task_event("tool.execution_start", "dispatch", toolName="task", toolCallId="call-one",
+                                    arguments={"prompt": prompt}),
+                         task_event("subagent.started", "started", owner="owner-one", toolCallId="call-one",
+                                    interactionId="interaction-one"))
+                handoff.observe_cli(f.entry, log)
+                process = f.waiting_process()
+                handoff.bind_process(f.entry, process.pid)
+                f.append(log,
+                         task_event("user.message", "receipt", owner="owner-one", content=prompt,
+                                    source=f"agent-{root}", interactionId="interaction-one",
+                                    parentAgentTaskId="receipt-task"),
+                         task_event("tool.execution_start", "progress", owner="owner-one", toolName="bash",
+                                    toolCallId="edit", ownerNativeSessionId=SESSION))
+                handoff.observe_cli(f.entry, log)
+                revision = f.commit()
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": revision,
+                          "evidence_refs": ["raw-evidence"]}
+                f.append(log, task_event("assistant.message", "delivery", owner="owner-one",
+                                         interactionId="interaction-one",
+                                         content=json.dumps({"handoff_result": result})))
+                handoff.observe_cli(f.entry, log)
+                handoff.capture_check(f.entry, "raw", revision)
+                f.finish_owner(process)
+                late_completion = native_event("tool.execution_complete", "task-terminal",
+                                               toolCallId="call-one", success=success)
+                verdict = handoff.validate_handoff(f.state, result, worktree=f.worktree, run_checks=False)
+                self.assertTrue(verdict["handoff_ready"], verdict)
+                self.assertLess(handoff.timestamp(late_completion["timestamp"]),
+                                handoff.timestamp(verdict["observed_at"]))
+                first_entry, first_parent, closed_at = f.entry, f.parent, f.entry["closed_at"]
+
+                successor = copy.deepcopy(f.assignment)
+                del successor["native"]
+                successor.update(id="review-two", owner_id="review-owner", session_id="review-session",
+                                 dispatch_id="review-dispatch", kind="review", predecessor_id=f.assignment["id"],
+                                 assigned_parent_sha=revision)
+                f.entry = handoff.assign(f.state, successor)
+                f.assignment, f.parent = successor, revision
+                f.parent_log, f.owner_log = f.home / "successor-parent.jsonl", f.home / "successor-owner.jsonl"
+                with mock.patch("scripts.workflow_pilot.tests.test_agent_handoff.SESSION", successor["session_id"]):
+                    successor_result = f.complete(content="successor change\n")
+                verdict = f.validate(successor_result)
+                self.assertTrue(verdict["handoff_ready"], verdict)
+                pr = SimpleNamespace(
+                    repository=f.state["repository"], repository_id=1, number=191,
+                    head_sha=successor_result["result_sha"], head_ref=successor["expected_branch"],
+                    base_sha=first_parent, base_ref="master")
+                decision = gate.select_mode(decisions(), number=pr.number, head_sha=pr.head_sha,
+                                            decision_oid="a" * 40, changed_lines=1)
+                record = gate.begin_candidate(f.state, pr, pr.base_sha, model_control(decision, pr), runs=())
+                self.assertTrue(gate._local_ready(f.state, pr, record))
+                f.append(log, late_completion)
+                self.assertFalse(gate._local_ready(f.state, pr, record))
+                state_path = f.home / "coordinator.json"
+                state_path.write_bytes(observations.json_bytes(f.state))
+                with observations.locked_state(state_path) as persisted:
+                    handoff.observe_cli(handoff.find_entry(persisted, first_entry["assignment"]["id"]), log)
+                    handoff.validate_state(persisted)
+                persisted = observations.load_json(state_path)
+                first_entry = handoff.find_entry(persisted, first_entry["assignment"]["id"])
+                record = persisted["candidates"][0]
+                handoff.validate_state(persisted)
+                validator = Draft202012Validator(json.loads(
+                    (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+                self.assertTrue(validator.is_valid(persisted))
+                self.assertEqual(first_entry["closed_at"], closed_at)
+                self.assertEqual(first_entry["terminal_task"]["success"], success)
+                self.assertNotIn("head_sha", first_entry["terminal_task"])
+                self.assertEqual(gate._local_ready(persisted, pr, record), success)
+                if not success:
+                    summary = handoff.summarize_handoffs(persisted)
+                    self.assertEqual(summary["rejected"], 1)
+                    self.assertIn("owner-task-failed", summary["rejection_codes"])
+                handoff.observe_cli(first_entry, log)
+                self.assertEqual(gate._local_ready(persisted, pr, record), success)
 
     def test_raw_only_and_candidate_success_or_commands_are_not_registration(self):
         for definitions in (
@@ -167,7 +499,8 @@ class CoordinatorLocalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
         entry["closed_at"] = observations.utc_now()
-        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
+        with self.assertRaisesRegex(handoff.HandoffDataError, "logical ownership release is unavailable"):
+            gate._local_ready(self.state, self.pr, self.record)
         with self.assertRaises(ValueError):
             gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
 

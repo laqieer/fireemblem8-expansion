@@ -76,8 +76,9 @@ not imported or executed by that verifier; comments/formatting remain neutral.
 Raw pre-checkout identity/bootstrap and closed no-checkout metadata/security/
 summary adapters stay at their existing workflow authority boundary. Moving
 them into checkout helpers would change that contract and is outside this
-extraction. The eight Build jobs, 31 mirrored validation commands and existing
-master-only build-once patch publisher remain unchanged.
+extraction. Its eight Build jobs, 31 mirrored validation commands and
+master-only build-once patch publisher were unchanged at delivery. Issue #390
+subsequently splits three host groups into independent workers.
 
 Dependencies: delivered workflow, upstream CLI/constants, existing verifier
 and patch publisher. No ownership/SDK prerequisite, extra platform, policy
@@ -266,9 +267,9 @@ The diagnostic classifier can select this path with `--adaptive --repository
 owner/repo`; the Build workflow enables it only when its trusted base contains
 the implementation. A base predating deployment retains the full bootstrap.
 
-There is still **one Build workflow and eight jobs**. A review-first PR event
+There is still **one Build workflow and eleven jobs**. A review-first PR event
 runs identity/router/classifier plus tiny `host-tests`/`build` continuity
-checks; `extended-host-tests` and `legacy` are platform-skipped. Its classifier
+checks; the other five workers are platform-skipped. Its classifier
 is `review-first-classifier`, not full evidence. The canonical `summary`
 deliberately fails with a waiting-for-full explanation until the full run
 replaces it: green preflight is never merge permission. Concurrent candidates
@@ -277,7 +278,7 @@ requested/observed concurrently by the existing delivery coordinator, not a
 new reviewer service.
 
 After accepted clean review and security, the coordinator uses one input-free
-`workflow_dispatch` on the actual candidate branch. All eight jobs run.
+`workflow_dispatch` on the actual candidate branch. All eleven jobs run.
 Before checkout, `event-identity` uses bounded authenticated GitHub metadata
 to resolve one open same-repository PR at that exact branch/head and selects
 its integration-base SHA, even when the default branch predates this feature.
@@ -492,10 +493,64 @@ self-review rejects before task launch. Read-only actions, exact task/head/scope
 completion, time/file bounds and overlapping-session checks remain unchanged.
 Do not manufacture another implementation identity to obtain independent review.
 
-The provider's separate dispatch-tool and `parentAgentTaskId` namespaces, shared
-native log session, and unavailable LLM-owner OS exit/RSS remain unresolved for
-genuine delegated callers. This direct route does not manufacture their equality
-or substitute a check process for a delegated owner.
+The native task route below binds the provider's separate dispatch-tool and
+`parentAgentTaskId` namespaces without confusing the shared root log with an
+owner session. Reservation validates every complete record in a captured
+pre-dispatch log snapshot, rejecting a changed root session; a partial record
+and records appended after the snapshot remain for later observation.
+Bound owner tool completions participate in producer chronology but do not
+establish task termination or OS-process exit.
+Process-backed delegated callers still require actual owner
+process exit and complete RSS. A logical task terminal observation records
+completion but is not itself write revocation. For a successful logical task,
+the coordinator's `release-worktree` operation requires the exact published
+branch head, a clean linked owner worktree with no untracked or ignored data,
+and a separate coordinator worktree. An initialized submodule in the assigned
+worktree is rejected before creating the validation worktree; the operation
+never deinitializes submodules or uses force. It creates a fresh detached
+worktree at the exact candidate, removes the assigned worktree using normal
+`git worktree remove` (never force), and verifies the old path is absent and
+unregistered and the recorded owner Git administrative directory is absent.
+Registration checks use Git's NUL-delimited inventory so embedded newlines
+and other path bytes cannot be mistaken for record boundaries. Git path
+outputs retain trailing whitespace. For a worktree path ending in a newline,
+the submodule check invokes Git's native status helper because the public
+shell wrapper strips that newline; an unavailable helper fails the release
+closed. Git administrative paths can contain embedded CR or LF; metadata
+prefix, size, NUL, nofollow and private/shared safety checks still apply.
+If removal fails while the assigned worktree remains registered,
+the unchanged validation worktree is removed normally so retry can start clean.
+If Git removes the owner path but leaves its registration, the operation fails
+closed and retains the validation worktree; it never globally prunes Git
+registrations. Errors during candidate setup roll back only the new, reverified
+candidate worktree. The removed owner worktree path remains reserved to that
+assignment: later assignments cannot reuse it or any ancestor/descendant path.
+The fresh validation worktree remains reserved until that assignment closes.
+Final candidate validation runs in the fresh worktree, not the removed owner
+worktree. Candidate readiness rechecks that worktree's recorded Git identity,
+clean detached head and merge base, including when coordinator-owned checks
+are registered for the same candidate. A review successor rechecks the released
+predecessor before assignment; after an independently validated successor
+advances the candidate, its own exact-head evidence applies and the native
+predecessor cursor chain remains current. Once a successor is assigned,
+`validate` rejects attempts to revalidate its predecessor before changing
+observations or checks; a review predecessor's accepted verdict remains
+historical. Validate the current leaf instead; observing predecessor events
+remains separate and late activity or failure still blocks current readiness.
+New release records are bound by their assignment ID; existing records with a
+release ID are accepted only when that ID matches the previously derived value.
+Removing the owner worktree prevents
+subsequent path-based
+writes from altering the validated candidate under the cooperative task/tool
+threat model; it does not prove OS process exit or RSS and is not hostile
+same-UID isolation.
+A terminal event, clean snapshot, or `closed_at` value alone never authorizes
+release. If removal succeeds but the final observation or state persistence
+fails, a retry may finalize only after observing the owner path absent and
+unregistered, the recorded owner Git administrative directory absent, and the
+already-created candidate worktree valid again. A moved owner worktree does not
+count as removal.
+This direct route does not substitute a check process for a delegated owner.
 
 ### Pilot measurement and rollback
 
@@ -1355,7 +1410,7 @@ is required. See
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
 adds a no-checkout `event-identity` validator, parsed fail-closed
-`event-router`, and mode-specific classifier check ahead of the four expensive
+`event-router`, and mode-specific classifier check ahead of the expensive
 workers. For pull requests with complete identity,
 the router checks out
 the exact current `pull_request.base.sha` with the pinned checkout action, no
@@ -1377,18 +1432,18 @@ common setup only. Every normalized full or metadata run must contain exactly
 one successful identity context and one successful router setup context;
 missing, failed, skipped, renamed, duplicate, or
 unknown setup contexts are invalid. Full candidate runs
-expose `event-classifier`, `host-tests`, `build`,
-`extended-host-tests`, `legacy`, and `summary`. The running `summary` context
+expose `event-classifier`, `host-tests`, `workflow-pilot-tests`, `build`,
+`extended-host-tests`, `ownership-probe-tests`, `game-localization-tests`,
+`legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
-classifier and all four workers succeed. Metadata-only runs expose the running
-`metadata-classifier` plus the same canonical worker checks `host-tests`,
-`build`, `extended-host-tests`, `legacy`, and `summary`.
+classifier and all seven workers succeed. Metadata-only runs expose the running
+`metadata-classifier` plus the same canonical worker checks and `summary`.
 Metadata-only mode requires runner-backed `success` for `host-tests`/`build`
 because those jobs run only the trusted continuity adapters, which
 independently revalidate the raw edited pull-request event and exact
 body/title-only `changes` payload from the runner-owned file-backed
 `GITHUB_EVENT_PATH` before succeeding, and exact `skipped` for
-`extended-host-tests`/`legacy`. Those adapters accept only a same-owner
+the other five workers. Those adapters accept only a same-owner
 regular event file up to 1 MiB, read at most one additional EOF byte, and do
 not env-copy large body/title/changes JSON. Repository branch protection
 therefore keeps the live canonical `host-tests`, `build`, and `summary`
@@ -1405,7 +1460,9 @@ skips only conclusively metadata-shaped runs, and confirms the newest
 conclusively full Build CI run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA
 completed successfully. A newer failed, cancelled, in-progress, or malformed
-full run blocks older successes.
+full run blocks older successes. Pre-split eight-job runs are recognized as
+history, but a pre-split full run cannot authorize continuity: a fresh complete
+eleven-job full run is required. Partial current job shapes fail closed.
 `candidate_evidence.evaluate_candidate_runs()` still derives eligibility only
 from a matching full run, so a metadata-only run remains ineligible by itself
 even when the adapters and canonical `summary` succeed.
@@ -1432,8 +1489,8 @@ nonzero values that underflow to zero are rejected, including huge exponents;
 normal finite values, representable subnormals, and signed zero remain valid.
 The parsed tree receives a recursive finite-number check before
 classification, so an unused overflowing field cannot accompany an otherwise
-metadata-only event. An `edited` event suppresses `host-tests`, `build`,
-`extended-host-tests`, and `legacy` only when:
+metadata-only event. An `edited` event suppresses the seven workers' full
+commands only when:
 
 - the event has a complete pull-request base and exact head identity;
 - the event head/base equal the direct event identities used by every
@@ -1464,18 +1521,18 @@ DEL, space, `~`, `^`, `:`, `?`, `*`, `[`, backslash, `..`, `@{`,
 leading/trailing/repeated slash, leading-dot or `.lock` components, and a
 trailing dot are invalid. Git-valid slash, dash, and dot forms remain valid.
 An invalid base ref is incomplete base identity: a validated head runs all
-four workers at that exact head and summary fails; an invalid head runs none.
+seven workers at that exact head and summary fails; an invalid head runs none.
 
 Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
 parser/runtime failure (including malformed, duplicate-key, or non-finite
-JSON) on a PR with a validated authoritative PR head also runs all four
+JSON) on a PR with a validated authoritative PR head also runs all seven
 workers at that exact `pull_request.head.sha` under canonical worker names; it
 never uses merge `github.sha`. Summary verifies that every fallback worker
 succeeded, then summary still fails to
 surface the classifier defect. On a `master` push, classifier failure with a
-validated authoritative `github.sha` similarly runs all four workers and the
+validated authoritative `github.sha` similarly runs all seven workers and the
 master-only publisher at that exact push SHA, audits success, then fails
 summary. A classifier failure with no validated PR/push fallback SHA or another
 unsupported result starts no worker/publisher and fails summary. Missing
@@ -1487,7 +1544,7 @@ metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, `host-tests`/`build` succeed through the no-checkout continuity
-adapters, `extended-host-tests`/`legacy` are exactly
+adapters, the other five workers are exactly
 `skipped`, and a trusted no-checkout Actions API query classifies exact prior
 runs newest-first so only the newest conclusively full run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA can
@@ -1502,7 +1559,7 @@ evidence by itself. On a full event, normal workers check out the classifier's
 exact nonempty head output. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
 PR head sets `head_valid=true`, `identity_valid=false`, and
-`full_fallback=true`. All four workers run at that exact head, then normal
+`full_fallback=true`. All seven workers run at that exact head, then normal
 `summary` audits them and fails because full base identity is unavailable or
 incoherent. A syntactically valid direct base SHA remains in
 `expected_base` for diagnostics even when another base component is invalid;
@@ -1554,8 +1611,8 @@ claimed to have passed their tests.
 Build workflow preserves the live branch-protection contract directly: metadata
 body/title edits run the distinct `metadata-classifier` attestation plus
 canonical `host-tests`/`build` continuity adapters and a canonical continuity
-`summary` that do not checkout or execute candidate code, while
-`extended-host-tests` and `legacy` remain platform-skipped. The adapters
+`summary` that do not checkout or execute candidate code, while the other five
+workers remain platform-skipped. The adapters
 independently reject missing, base-retarget, unknown, empty, duplicate, or
 unchanged raw `changes` payloads. The canonical metadata `summary` succeeds
 only after a trusted no-checkout Actions API proof confirms one prior
@@ -1566,7 +1623,7 @@ names, while metadata-only runs still remain ineligible candidate evidence by
 themselves even when those continuity attestations succeed.
 The current Build workflow also supports the input-free full
 `workflow_dispatch` described in [adaptive candidate gating](#adaptive-review-first-candidate-gates).
-That dispatch retains all eight jobs; preflight alone or an early/unbound run
+That dispatch retains all eleven jobs; preflight alone or an early/unbound run
 is not full candidate evidence, and publication remains master-push-only.
 
 A live metadata exercise must use a disposable validation-only PR whose base
@@ -1583,7 +1640,7 @@ created/event/branch/head fields before each exact-ID watcher, and installs
 idempotent compare-and-swap cleanup before remote mutation. The evaluator
 scans all raw REST jobs before normalization: metadata workers are admissible
 only when `host-tests`/`build` report runner-backed `success` from the trusted
-continuity adapters and `extended-host-tests`/`legacy` report `skipped` with
+continuity adapters and the other five workers report `skipped` with
 no assigned runner, including the documented platform-only `started_at`
 timestamp quirk for the skipped jobs.
 
@@ -2226,9 +2283,10 @@ safety, and override references. A fixture-authored SHA, parent, timestamp, or
 message cannot replace Git authority. The fixture, decision, and expected
 paths must resolve to the committed baseline inputs, including
 `.github/workflow-pilot-decisions.json` in that tree. Build CI passes
-`"$GITHUB_WORKSPACE"` explicitly, runs both the reporter/schema suite and the
-baseline/expected invocation in its required `host-tests` job, and the parsed
-workflow topology regression requires both pilot commands exactly. Appended
+`"$GITHUB_WORKSPACE"` explicitly, runs the reporter/schema suite in
+`workflow-pilot-tests` and the baseline/expected invocation in `host-tests`,
+and the parsed workflow topology regression requires both pilot commands
+exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
 either command into advisory evidence.
 
@@ -2250,7 +2308,8 @@ The reporter remains offline and fails closed when any fixture commit object
 is absent. The development object database used to freeze the fixture already
 supplies this authority. A clean Actions
 exact-candidate checkout can omit older force-pushed commits, so the
-`host-tests` job runs one CI-only helper before reporter tests. The helper
+`host-tests` and `workflow-pilot-tests` jobs each run the CI-only helper
+before their respective baseline and reporter checks. The helper
 reads only the committed strict baseline fixture, derives its unique commit
 IDs and minimal maximal-tip set, and requires fixed `origin` to expose exactly
 the corresponding lightweight
@@ -2663,10 +2722,16 @@ exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
 
-Assignment, owner, session and actual dispatch IDs are each unique across the
-retained state, including closed history. A successor or independent assignment
-needs a fresh dispatch identity; changing other IDs cannot reuse an old task
-correlation.
+Assignment, observed owner, owner session, dispatch and receipt-task IDs are
+each unique across the retained state, including closed history. The native
+task route may reserve an assignment before the runtime supplies those IDs.
+A successor or independent assignment needs a fresh dispatch identity;
+changing other IDs cannot reuse an old task correlation.
+For a bound native owner, every observed event is checked against retained
+lifecycle source IDs before it can advance the state or cursor. Reusing one
+rejects regardless of event type. After the owner is closed, a later event
+matching its owner or bound owner-session identity also rejects without
+advancing the cursor; unrelated owners remain independent.
 
 Reusable text and path fields accept Unicode scalar values, including
 supplementary characters and valid JSON escapes. Escaped lone UTF-16
@@ -2787,25 +2852,64 @@ before creating a replacement assignment or PR.
 
 `assign` reserves ownership before dispatch; it does not launch agents.
 `observe` reads the existing native JSONL producer incrementally with no-follow
-file identity/cursors. Pass the coordinator dispatch log, then the matching
-owner session log (repeat `observe` as actual runtime notifications arrive).
-Include `[handoff:review-178-1]` in the actual assigned prompt. `dispatch_id`
-correlates the coordinator's task/write-agent/shell tool call and must equal
-the native receipt's `data.parentAgentTaskId`; `session_id` and `owner_id`
-identify the actual assigned session/runtime. A correlation marker alone is
-not receipt evidence. Missing, opaque or wrong task identity stays incomplete.
-Each event uses the session context established before it, starting from the
-previous cursor; a later `session.start` cannot retroactively attach earlier
-receipt, progress or delivery to that session. Incremental and bounded batches
-retain this context without storing another event history. An old session
-start may establish resumed context, but events predating the assignment do
-not acknowledge or count its work. Future-dated events reject.
+file identity/cursors. Include `[handoff:review-178-1]` in the actual assigned
+prompt. For the shared-root `task` producer, set `owner_id`, `session_id` and
+`dispatch_id` to `null` in the pre-dispatch assignment and add this object,
+using the actual root session, root event file and exact prompt:
+
+```json
+{
+  "native": {
+    "root_session_id": "actual-coordinator-session",
+    "events_path": "/absolute/path/to/events.jsonl",
+    "prompt": "[handoff:review-178-1] The complete assigned prompt"
+  }
+}
+```
+
+`assign` checks the root `session.start` and reserves a cursor after existing
+complete records, retaining an incomplete trailing record. It rejects a
+pre-bound native owner, owner session or dispatch. Pass that same root log to
+`observe` as actual events arrive. A matching root task call and exact prompt bind the
+generated dispatch ID; its `subagent.started` binds the actual owner and
+interaction. Only the matching owner's explicit message, root source,
+interaction and exact prompt bind receipt and its separate
+`parentAgentTaskId`. The owner's subsequent tool start binds the distinct
+`ownerNativeSessionId` as `session_id`. That observed owner session, not the
+root log session, is the `Copilot-Session` trailer identity. Two owners may
+share a root log and interaction, but cannot reuse owner, owner session,
+dispatch, receipt-task or lifecycle source identities. Missing, opaque,
+contradictory, duplicate or wrong observations remain incomplete or reject.
+Once an owner is bound, another start naming that owner with a different or
+missing dispatch rejects without advancing the native cursor; an unrelated
+owner and dispatch remain independent.
+Once bound, an explicitly present owner session on any correlated owner event
+must match; event types that omit the field remain supported.
+
+Existing separate-session v3 records keep their original dispatch/receipt
+correlation; their session and dispatch IDs must be known at reservation.
+A marker alone is never receipt evidence. Each event uses the session context
+established before it, starting from the previous cursor; a later
+`session.start` cannot retroactively attach earlier receipt, progress or
+delivery. Bounded batches retain this context without another event history.
+Events predating the assignment do not acknowledge or count its work;
+future-dated or reversed native task events reject. A repeated exact receipt
+rejects; matching follow-ups preserve the received parent task and advance the
+native chronology. Progress needs a complete tool name and call ID distinct
+from the dispatch.
+Shared-root validation consumes one bounded batch and refuses readiness or
+closure with `native-log-unread` while complete or partial bytes remain.
+Observe or validate again until caught up; contradictory records still reject.
+Candidate readiness and review-successor assignment recheck the native cursors
+through the accepted review-predecessor chain, even after a later handoff.
+Unread, missing, replaced or truncated logs block admission; observe unrelated
+events before retrying. An interrupted replacement starts a new accepted chain.
 
 | State | Actual observation |
 | --- | --- |
-| `assignment_sent` | Matching native `tool.execution_start` dispatch |
-| `assignment_received` | Matching session's native `user.message` with the assignment marker and matching `parentAgentTaskId` |
-| `progressing` | A separate post-receipt `tool.execution_start` |
+| `assignment_sent` | Matching native `tool.execution_start` dispatch; shared-root tasks also require the exact reserved prompt |
+| `assignment_received` | Explicit owner `user.message` bound to the dispatch; shared-root tasks use the started owner, root source, interaction, exact prompt and distinct observed `parentAgentTaskId` |
+| `progressing` | A separate post-receipt owner `tool.execution_start`; shared-root tasks also bind `ownerNativeSessionId` |
 | `committed` | Git observes the delivered SHA as real worktree HEAD |
 | `handed_off` | Native `assistant.message` delivers `{"handoff_result": ...}` after the commit observation |
 
@@ -2881,20 +2985,38 @@ not another `initial` assignment that bypasses retained-worktree recovery.
 Independent issue/PR roots remain separate. Only one coordinator manages the
 canonical state.
 
-Accepted completion requires a genuinely observed zero owner exit and complete
-owned RSS, not merely an exited process. Unknown exit evidence stays incomplete.
-An observed nonzero or signal exit after delivery uses the existing interruption
-preservation path before closing the owner; it is never accepted completion.
-The same eligibility check guards optional accepted reporting. Honest abnormal
-exit observations remain valid state. A committed WIP checkpoint is retained and
-may still be published immediately by the existing #207 coordinator workflow;
-WIP publication and accepted handoff completion are separate decisions.
+An OS-process-backed owner requires the runtime-owned process identity, an
+actually observed zero exit, and complete owned RSS; an exited process with
+unknown status or incomplete RSS remains ineligible. A native task's
+`tool.execution_complete` records its correlated task, owner, session,
+producer timestamp, recording time and actual success, not a Git snapshot.
+The delivered head is observed at delivery; logical release independently
+verifies the clean published candidate and worktree before removal. A legacy
+terminal record with its Git snapshot remains strictly validated.
 
-One pure owner-acceptance predicate covers zero completion, assignment-to-close
-wall-clock lifetime, process age and RSS in both live validation and reporting.
-A small process age cannot override an exceeded wall-clock limit. Validation
-rechecks eligibility after focused checks and records a new close and verdict
-at the same observation instant, so time spent checking cannot evade the limit.
+The terminal event alone does not revoke write access or prove background
+writers have stopped. A successful logical owner remains ineligible until the
+coordinator performs and verifies the worktree release described above.
+Do not set `closed_at` from task completion or a clean Git snapshot. A failed
+logical task remains rejected and open. Do not infer release from self-report.
+Process-backed completion does not wait for a task-terminal event, but a
+subsequently observed failed event invalidates current readiness, including
+review successors; the historical accepted verdict is not rewritten.
+
+Logical-task lifetime is measured through the trusted terminal-task timestamp,
+not the later coordinator validation time; validation delay does not consume
+the owner's execution budget. This lifetime observation does not establish
+write release. A process-backed owner remains governed by its actual process
+exit, age and complete owned RSS evidence; a task terminal event does not
+replace those observations. The logical record stores per-owner RSS as
+unavailable because the runtime does not expose it; no RSS value or
+process-budget compliance is inferred.
+WIP publication remains separate from accepted handoff completion.
+
+Process-backed ownership enforces the assignment-to-retirement wall-clock
+lifetime and also checks process age and available RSS. Validation rechecks
+eligibility after focused checks and records its verdict at the observation
+instant; this does not extend the logical task's execution lifetime.
 Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
 time. Closed history uses its captured interval without requiring its worktree;
 an open report whose recorded clock predates assignment is incomplete rather

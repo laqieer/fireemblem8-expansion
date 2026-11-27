@@ -55,6 +55,9 @@ METADATA_JOB_NAMES = (
 ) | {candidate_evidence.METADATA_CLASSIFIER}
 PREFLIGHT_JOB_NAMES = (FULL_JOB_NAMES - {candidate_evidence.FULL_CLASSIFIER}) | {
     candidate_evidence.PREFLIGHT_CLASSIFIER}
+HISTORICAL_FULL_JOB_NAMES = FULL_JOB_NAMES - set(candidate_evidence.NEW_WORKER_JOB_IDS)
+HISTORICAL_METADATA_JOB_NAMES = METADATA_JOB_NAMES - set(candidate_evidence.NEW_WORKER_JOB_IDS)
+HISTORICAL_PREFLIGHT_JOB_NAMES = PREFLIGHT_JOB_NAMES - set(candidate_evidence.NEW_WORKER_JOB_IDS)
 FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES
 ACTIVE_RUN_STATUSES = frozenset(
     {"pending", "queued", "requested", "in_progress", "waiting"}
@@ -2697,6 +2700,12 @@ def _run_mode(
             return "metadata-only"
         if names == PREFLIGHT_JOB_NAMES:
             return "review-first"
+        if names == HISTORICAL_FULL_JOB_NAMES:
+            return "historical-full"
+        if names == HISTORICAL_METADATA_JOB_NAMES:
+            return "historical-metadata-only"
+        if names == HISTORICAL_PREFLIGHT_JOB_NAMES:
+            return "historical-review-first"
         raise MetadataEditError(
             f"completed Build run {run_id} has an unknown or mixed job shape"
         )
@@ -2918,7 +2927,7 @@ def _parse_run(
         raise MetadataEditError("Build run has contradictory candidate base refs")
     candidate_base_ref = next(iter(base_refs), None)
     mode = _run_mode(jobs, run_id=run_id, status=status)
-    if mode not in {"metadata-only", "active-metadata-only"}:
+    if mode not in {"metadata-only", "historical-metadata-only", "active-metadata-only"}:
         binding = "unbound"
     if candidate_binding is not None:
         from .adaptive_gate import frozen_base
@@ -3097,7 +3106,7 @@ def require_metadata_success(run: RunState) -> None:
             raise MetadataEditError(
                 f"metadata continuity job {name} is not runner-backed success"
             )
-    for name in ("extended-host-tests", "legacy"):
+    for name in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
         job = jobs[name]
         if (
             job.status != "completed"
@@ -3136,7 +3145,7 @@ def require_metadata_failure(run: RunState) -> None:
             raise MetadataEditError(
                 f"failed metadata continuity job {name} is not canonical success"
             )
-    for name in ("extended-host-tests", "legacy"):
+    for name in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
         job = jobs[name]
         if (
             job.status != "completed"
@@ -3162,7 +3171,7 @@ def _latest_full(runs: tuple[RunState, ...]) -> RunState | None:
     for run in runs:
         if run.binding == "unbound":
             return None
-        if run.binding == "explicit-same" and run.mode == "full":
+        if run.binding == "explicit-same" and run.mode in {"full", "historical-full"}:
             return run if run.candidate_binding is not None and run.candidate_base_ref is not None else None
     return None
 
@@ -3188,7 +3197,9 @@ def _pre_full_preparation(runs: tuple[RunState, ...]) -> bool:
         and run.candidate_base_ref is not None
         and run.status == "completed"
         and all(job.status == "completed" and job.conclusion is not None for job in run.jobs)
-        and run.mode in {"review-first", "metadata-only"}
+        and run.mode in {
+            "review-first", "metadata-only", "historical-review-first", "historical-metadata-only",
+        }
         for run in relevant
     )
 
@@ -4132,7 +4143,9 @@ def _current_full_authorization(
         if run.binding == "unbound"
         or (
             run.binding == "explicit-same"
-            and run.mode in {"active-full", "active-unknown", "full"}
+            and run.mode in {
+                "active-full", "active-unknown", "full", "historical-full",
+            }
         )
     ]
     if not relevant:
