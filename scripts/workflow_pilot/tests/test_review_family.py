@@ -1650,6 +1650,72 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 self.assertIsNone(session.report)
                 session.abort(runtime)
 
+    def test_partial_failed_completion_and_contradictory_message_cannot_disappear(self):
+        for kind in ("tool.execution_complete", "assistant.message"):
+            with self.subTest(kind=kind), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                session.begin(runtime, reviewer)
+                observed = next(copy.deepcopy(record) for record in events
+                                if record[1].get("type") == kind
+                                and record[1].get("agentId") == reviewer)
+                if kind == "tool.execution_complete":
+                    observed[1]["data"]["success"] = False
+                else:
+                    observed[1]["data"]["interactionId"] = "contradictory-interaction"
+                session.observe_cli_events([observed])
+                with self.assertRaisesRegex(model.ReviewError, "missing from terminal snapshot"):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                session.abort(runtime)
+
+    def test_partial_duplicate_completion_cannot_disappear(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            completion = next(record for record in events
+                              if record[1].get("type") == "tool.execution_complete"
+                              and record[1].get("agentId") == reviewer)
+            session.observe_cli_events([completion, completion])
+            with self.assertRaisesRegex(model.ReviewError, "missing from terminal snapshot"):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+            session.abort(runtime)
+
+    def test_partial_activity_survives_ownership_validation_error(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            completion = next(copy.deepcopy(record) for record in events
+                              if record[1].get("type") == "tool.execution_complete"
+                              and record[1].get("agentId") == reviewer)
+            completion[1]["data"]["success"] = False
+            with patch.object(session.owners, "validate_session",
+                              side_effect=model.ReviewError("ownership failure")):
+                with self.assertRaisesRegex(model.ReviewError, "ownership failure"):
+                    session.observe_cli_events([completion])
+            with self.assertRaisesRegex(model.ReviewError, "missing from terminal snapshot"):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+            session.abort(runtime)
+
+    def test_partial_activity_budget_cannot_be_forgotten(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            message = next(record for record in events
+                           if record[1].get("type") == "assistant.message"
+                           and record[1].get("agentId") == reviewer)
+            messages = [copy.deepcopy(message) for _ in range(3)]
+            for index, (_, event) in enumerate(messages):
+                event["data"]["content"] = f"distinct observation {index}"
+            with patch.object(model, "MAX_REQUEST_BYTES", 64):
+                with self.assertRaisesRegex(model.ReviewError, "budget exceeded"):
+                    session.observe_cli_events(messages)
+            with self.assertRaisesRegex(model.ReviewError, "budget exceeded"):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+            session.abort(runtime)
+
     def test_partial_allowed_start_budget_is_bounded_per_batch(self):
         with snapshot() as root:
             _, runtime, session, _, times, reviewer, interaction = self.native_runtime(root)
@@ -1662,12 +1728,12 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 },
             }) for index in range(20)]
             session.observe_cli_events(starts[:5])
-            retained = set(session.observed_cli_starts)
+            retained = set(session.observed_cli_activity)
             session.observe_cli_events(starts[:5])
             with self.assertRaisesRegex(model.ReviewError, "budget exceeded"):
                 session.observe_cli_events(starts[5:])
-            self.assertLessEqual(len(session.observed_cli_starts), session.lease.max_files + 1)
-            self.assertEqual(session.observed_cli_starts, retained)
+            self.assertLessEqual(len(session.observed_cli_activity), session.lease.max_files + 1)
+            self.assertEqual(set(session.observed_cli_activity), retained)
             with self.assertRaisesRegex(model.ReviewError, "budget exceeded"):
                 session.finish(runtime)
             session.abort(runtime)

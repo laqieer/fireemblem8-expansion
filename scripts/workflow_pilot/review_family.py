@@ -1773,7 +1773,8 @@ class ReviewSession:
         self.cli_lifecycle = None
         self.cli_lifecycle_conflict = False
         self.cli_activity_violation = None
-        self.observed_cli_starts = set()
+        self.observed_cli_activity = {}
+        self.observed_cli_start_count = 0
         self.latest_cli_events = ()
         self._ownership_key = object()
         self.begin_failed = False
@@ -1990,16 +1991,19 @@ class ReviewSession:
                                 for kind, event_key in self.cli_lifecycle.items()),
                         "review assignment records changed before terminal retirement")
                 if not terminal:
-                    starts = {
-                        _cli_event_key(record) for record in runtime.events
-                        if isinstance(record, (tuple, list)) and len(record) == 2
-                        and record[0] == self.dispatch_namespace
-                        and isinstance(record[1], dict)
-                        and record[1].get("agentId") == lease.owner
-                        and record[1].get("type") == "tool.execution_start"
-                    }
-                    require(self.observed_cli_starts <= starts,
-                            "observed reviewer tool start is missing from terminal snapshot")
+                    activity = {}
+                    for record in runtime.events:
+                        if (isinstance(record, (tuple, list)) and len(record) == 2
+                                and record[0] == self.dispatch_namespace
+                                and isinstance(record[1], dict)
+                                and record[1].get("agentId") == lease.owner
+                                and is_review_activity(record[1])):
+                            event_key = _cli_event_key(record)
+                            if event_key in self.observed_cli_activity:
+                                activity[event_key] = activity.get(event_key, 0) + 1
+                    require(all(activity.get(key, 0) >= count
+                                for key, count in self.observed_cli_activity.items()),
+                            "observed reviewer activity is missing from terminal snapshot")
             observed = runtime.read_terminal(lease.task)
             require(observed.task == lease.task and observed.owner == lease.owner
                     and observed.role == "code-review" and observed.head == lease.head
@@ -2218,22 +2222,21 @@ class ReviewSession:
             self._observe_cli_lifecycle(events, self.lease.task)
         if complete:
             self.latest_cli_events = copy.deepcopy(tuple(events))
-        if self.owners is not None:
-            self.owners.validate_closed_events(
-                events, snapshot_namespace=self.dispatch_namespace if complete else None,
-                snapshot_owner=self if complete else None)
-            self.owners.validate_session(self)
         if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
+            batch_counts = {}
             for record in events:
                 if not isinstance(record, (tuple, list)) or len(record) != 2:
                     continue
                 event_session, event = record
                 if (event_session != self.dispatch_namespace or not isinstance(event, dict)
                         or event.get("agentId") != self.lease.owner
-                        or event.get("type") != "tool.execution_start"):
+                        or not is_review_activity(event)):
                     continue
                 data = event.get("data")
-                if not isinstance(data, dict) or data.get("toolName") not in {"view", "skill"}:
+                kind = event.get("type")
+                if (not isinstance(data, dict)
+                        or kind == "tool.execution_start"
+                        and data.get("toolName") not in {"view", "skill"}):
                     self.cli_activity_violation = (
                         self.cli_activity_violation or
                         "observed prohibited or malformed reviewer operation")
@@ -2244,13 +2247,32 @@ class ReviewSession:
                         self.cli_activity_violation = (
                             self.cli_activity_violation or "observed malformed reviewer operation")
                     else:
-                        if event_key not in self.observed_cli_starts:
-                            if len(self.observed_cli_starts) >= self.lease.max_files + 1:
+                        if (event_key not in batch_counts
+                                and len(batch_counts) >= MAX_REQUEST_BYTES // 32):
+                            self.cli_activity_violation = (
+                                self.cli_activity_violation or
+                                "observed reviewer operation budget exceeded")
+                            continue
+                        batch_counts[event_key] = batch_counts.get(event_key, 0) + 1
+                        if batch_counts[event_key] > self.observed_cli_activity.get(event_key, 0):
+                            if ((len(self.observed_cli_activity) >= MAX_REQUEST_BYTES // 32
+                                 and event_key not in self.observed_cli_activity)
+                                    or (kind == "tool.execution_start"
+                                        and self.observed_cli_start_count
+                                        >= self.lease.max_files + 1)):
                                 self.cli_activity_violation = (
                                     self.cli_activity_violation or
                                     "observed reviewer operation budget exceeded")
                             else:
-                                self.observed_cli_starts.add(event_key)
+                                self.observed_cli_activity[event_key] = batch_counts[event_key]
+                                if kind == "tool.execution_start":
+                                    self.observed_cli_start_count += 1
+        if self.owners is not None:
+            self.owners.validate_closed_events(
+                events, snapshot_namespace=self.dispatch_namespace if complete else None,
+                snapshot_owner=self if complete else None)
+            self.owners.validate_session(self)
+        if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
             require(self.cli_activity_violation is None,
                     self.cli_activity_violation or "review activity was invalidated")
 
