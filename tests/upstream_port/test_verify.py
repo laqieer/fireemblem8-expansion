@@ -555,6 +555,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "artifact-guard-tests",
                 "artifact-guard",
                 "codeql-alerts-test",
+                "codeql-make-sequencing-test",
                 "default-lane-check",
                 "archival-dependencies-check",
                 "quickstart-legacy-check",

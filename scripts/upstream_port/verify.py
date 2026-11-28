@@ -2531,6 +2531,11 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="codeql-make-sequencing-test",
+            command=["python3", "tests/codeql/test_make_sequencing.py", "-v"],
+            applicable_note="issue #471 real-compiler harness sequencing regression",
+        ),
+        Gate(
             name="default-lane-check",
             command=[
                 "python3",

@@ -11,7 +11,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MAKEFILE = ROOT / "Makefile"
 
 FAKE_COMPILER = """#!/usr/bin/env python3
 import json
@@ -78,10 +77,7 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                 json.loads(line)
                 for line in log.read_text(encoding="utf-8").splitlines()
             ]
-            outputs = {
-                path.name
-                for path in output_dir.glob("*_analyzer.o")
-            }
+            outputs = {path.name for path in output_dir.glob("*_analyzer.o")}
             return result, invocations, outputs
 
     def test_supported_analyzer_runs_every_check(self):
@@ -116,27 +112,6 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
         self.assertIn("analyzer support is required", result.stdout)
         self.assertEqual(len(invocations), 1)
         self.assertEqual(outputs, set())
-
-    def test_runtime_harnesses_precede_the_optional_analyzer_gate(self):
-        text = MAKEFILE.read_text(encoding="utf-8")
-        recipe = text.split("codeql-alerts-test:\n", 1)[1].split(
-            "\ncodeql-fanalyzer-test:",
-            1,
-        )[0]
-        analyzer_gate = recipe.index("codeql-fanalyzer-test")
-
-        for harness in (
-            "$(CODEQL_TEST_DIR)/sio_protocol_host_test",
-            "$(CODEQL_TEST_DIR)/runtime_bounds_host_test",
-            "$(CODEQL_TEST_DIR)/png_bounds_host_test",
-        ):
-            with self.subTest(harness=harness):
-                self.assertLess(recipe.index(harness), analyzer_gate)
-
-        self.assertNotRegex(
-            recipe,
-            r"\$\(HOST_CC\)[^\n]*\s-fanalyzer(?:\s|\\)",
-        )
 
 
 if __name__ == "__main__":
