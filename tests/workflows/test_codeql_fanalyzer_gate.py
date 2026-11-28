@@ -22,10 +22,41 @@ UBSAN_CHECKS = frozenset({
     "bool", "enum", "vptr", "pointer-overflow", "builtin",
 })
 
+COMPILER_VALUE_OPTIONS = (
+    "-o", "-I", "-isystem", "-iquote", "-idirafter", "-include", "-imacros",
+    "-iprefix", "-iwithprefix", "-iwithprefixbefore", "-isysroot", "--sysroot",
+    "-MF", "-MT", "-MQ", "-x", "-D", "-U", "-B", "-L",
+)
+
+
+def compiler_arguments(arguments):
+    inputs = []
+    options = []
+    skip_value = False
+    for argument in arguments:
+        if skip_value:
+            skip_value = False
+        elif argument in COMPILER_VALUE_OPTIONS:
+            options.append(argument)
+            skip_value = True
+        elif argument.startswith("-"):
+            options.append(argument)
+        else:
+            inputs.append(argument)
+    return inputs, options
+
+
+def compiler_inputs(arguments):
+    return compiler_arguments(arguments)[0]
+
+
+def compiler_options(arguments):
+    return compiler_arguments(arguments)[1]
+
 
 def sanitizer_flags_enabled(arguments):
     enabled = set()
-    for argument in arguments:
+    for argument in compiler_options(arguments):
         if argument.startswith("-fsanitize="):
             add = True
             names = argument.removeprefix("-fsanitize=").split(",")
@@ -55,32 +86,12 @@ def sanitizer_flags_enabled(arguments):
 
 def analyzer_enabled(arguments):
     enabled = False
-    for argument in arguments:
+    for argument in compiler_options(arguments):
         if argument == "-fanalyzer":
             enabled = True
         elif argument == "-fno-analyzer":
             enabled = False
     return enabled
-
-
-COMPILER_VALUE_OPTIONS = (
-    "-o", "-I", "-isystem", "-iquote", "-idirafter", "-include", "-imacros",
-    "-iprefix", "-iwithprefix", "-iwithprefixbefore", "-isysroot", "--sysroot",
-    "-MF", "-MT", "-MQ", "-x", "-D", "-U", "-B", "-L",
-)
-
-
-def compiler_inputs(arguments):
-    inputs = []
-    skip_value = False
-    for argument in arguments:
-        if skip_value:
-            skip_value = False
-        elif argument in COMPILER_VALUE_OPTIONS:
-            skip_value = True
-        elif not argument.startswith("-"):
-            inputs.append(argument)
-    return inputs
 
 
 FAKE_COMPILER = """#!/usr/bin/env python3
@@ -91,14 +102,25 @@ import sys
 
 arguments = sys.argv[1:]
 inputs = []
+options = []
 skip_value = False
+output_value = False
+output = None
 for arg in arguments:
     if skip_value:
+        if output_value:
+            output = pathlib.Path(arg)
         skip_value = False
     elif arg in __COMPILER_VALUE_OPTIONS__:
+        options.append(arg)
         skip_value = True
-    elif not arg.startswith("-"):
+        output_value = arg == "-o"
+    elif arg.startswith("-"):
+        options.append(arg)
+    else:
         inputs.append(arg)
+if skip_value:
+    raise SystemExit(2)
 with open(os.environ["FAKE_CC_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps(arguments) + "\\n")
 
@@ -118,17 +140,16 @@ if "FAKE_HARNESS_LOG" in os.environ:
         stream.write(json.dumps({"event": "compiler", "arguments": arguments,
                                  "harnesses": sources}) + "\\n")
 
-if "-fanalyzer" in arguments and os.environ["FAKE_ANALYZER_SUPPORTED"] != "1":
+if "-fanalyzer" in options and os.environ["FAKE_ANALYZER_SUPPORTED"] != "1":
     sys.exit(2)
 
-if "-o" in arguments:
-    output = pathlib.Path(arguments[arguments.index("-o") + 1])
+if output is not None:
     output.parent.mkdir(parents=True, exist_ok=True)
     if "FAKE_HARNESS_LOG" not in os.environ:
         output.touch()
-    elif "-fsyntax-only" in arguments:
+    elif "-fsyntax-only" in options:
         pass
-    elif any(flag in arguments for flag in ("-c", "-E", "-S")):
+    elif any(flag in options for flag in ("-c", "-E", "-S")):
         output.touch()
         outputs[str(output.resolve())] = sources
         state.write_text(json.dumps(outputs))
@@ -476,6 +497,26 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                     event = json.loads(log.read_text().splitlines()[-1])
                     self.assertEqual(event["harnesses"], [])
 
+    def test_fake_compiler_does_not_interpret_option_operands_as_flags(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiler = root / "fake-cc"
+            compiler.write_text(FAKE_COMPILER, encoding="utf-8")
+            compiler.chmod(0o755)
+            environment = dict(os.environ, FAKE_CC_LOG=str(root / "compiler.jsonl"),
+                               FAKE_ANALYZER_SUPPORTED="0")
+            environment.pop("FAKE_HARNESS_LOG", None)
+            for operand in ("-fanalyzer", "-o"):
+                with self.subTest(operand=operand):
+                    output = root / "output.o"
+                    output.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [str(compiler), "-I", operand, "-c", "input.c", "-o", str(output)],
+                        cwd=root, env=environment, capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue(output.exists())
+
     def test_analyzer_bypass_modes_are_rejected(self):
         original = self.run_runtime_gate
         for mode in ("-E", "-M", "-MM", "-fsyntax-only",
@@ -502,6 +543,29 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                 with mock.patch.object(self, "run_runtime_gate", side_effect=bypass):
                     with self.assertRaises(AssertionError):
                         self.test_runtime_harnesses_precede_the_optional_analyzer_gate()
+
+    def test_compiler_option_operands_are_not_enabled_flags(self):
+        original = self.run_runtime_gate
+        for flag in ("-fanalyzer", "-fsanitize=address,undefined", "-c"):
+            with self.subTest(flag=flag):
+                def bypass(**kwargs):
+                    result, invocations, events = original(**kwargs)
+                    for event in events:
+                        if event["event"] != "compiler":
+                            continue
+                        arguments = event["arguments"]
+                        arguments[:] = [
+                            part for argument in arguments
+                            for part in (["-I", argument] if argument == flag else [argument])
+                        ]
+                    return result, invocations, events
+
+                case = type(self)("test_runtime_harnesses_precede_the_optional_analyzer_gate")
+                with mock.patch.object(case, "run_runtime_gate", side_effect=bypass):
+                    result = unittest.TestResult()
+                    case.run(result)
+                self.assertFalse(result.wasSuccessful())
+                self.assertFalse(result.errors)
 
     def test_runtime_harnesses_precede_the_optional_analyzer_gate(self):
         harnesses = {
@@ -543,8 +607,10 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
         self.assertTrue(analyzer_compiles)
         analyzed_sources = {
             (ROOT / arg).resolve()
-            for index, args in analyzer_compiles if index > analyzers[0] and "-c" in args
-            and not any(mode in args for mode in ("-E", "-M", "-MM", "-fsyntax-only"))
+            for index, args in analyzer_compiles
+            if index > analyzers[0] and "-c" in compiler_options(args)
+            and not any(mode in compiler_options(args)
+                        for mode in ("-E", "-M", "-MM", "-fsyntax-only"))
             for arg in compiler_inputs(args) if Path(arg).suffix == ".c"
         }
         self.assertTrue({
