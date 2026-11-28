@@ -1586,6 +1586,125 @@ class CliReviewRuntimeTests(unittest.TestCase):
         )
         return fixture, runtime, session, events, times, reviewer, interaction
 
+    def test_partial_prohibited_action_survives_stale_terminal_snapshot(self):
+        for action in ("bash", "apply_patch", None):
+            with self.subTest(action=action), snapshot() as root:
+                _, runtime, session, _, times, reviewer, interaction = self.native_runtime(root)
+                session.begin(runtime, reviewer)
+                event = ("root-session", {
+                    "type": "tool.execution_start",
+                    "timestamp": times["view_end"],
+                    "agentId": reviewer,
+                    "data": {
+                        "interactionId": interaction,
+                        "turnId": "turn-0",
+                        "toolCallId": "forbidden-action",
+                        "toolName": action,
+                    },
+                })
+                with self.assertRaisesRegex(model.ReviewError, "prohibited"):
+                    session.observe_cli_events([event])
+                with self.assertRaisesRegex(model.ReviewError, "prohibited"):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_partial_unrelated_action_does_not_invalidate_review(self):
+        with snapshot() as root:
+            _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.observe_cli_events([("root-session", {
+                "type": "tool.execution_start",
+                "timestamp": times["view_end"],
+                "agentId": "other-reviewer",
+                "data": {"toolCallId": "other-action", "toolName": "bash"},
+            }), ("other-root", {
+                "type": "tool.execution_start",
+                "timestamp": times["view_end"],
+                "agentId": reviewer,
+                "data": {"toolCallId": "other-root-action", "toolName": "bash"},
+            })])
+            observed_view = next(item for item in events
+                                 if item[1].get("type") == "tool.execution_start"
+                                 and item[1].get("agentId") == reviewer
+                                 and item[1].get("data", {}).get("toolName") == "view")
+            session.observe_cli_events([observed_view])
+            report = session.finish(runtime)
+            self.assertTrue(session.owners.owns_completed_report(session, report))
+
+    def test_partial_allowed_starts_cannot_disappear_before_terminal(self):
+        for action in ("view", "skill"):
+            with self.subTest(action=action), snapshot() as root:
+                _, runtime, session, _, times, reviewer, interaction = self.native_runtime(root)
+                session.begin(runtime, reviewer)
+                session.observe_cli_events([("root-session", {
+                    "type": "tool.execution_start",
+                    "timestamp": times["view_end"],
+                    "agentId": reviewer,
+                    "data": {"interactionId": interaction, "turnId": "turn-0",
+                             "toolCallId": "unvalidated-action", "toolName": action},
+                })])
+                with self.assertRaisesRegex(model.ReviewError, "missing from terminal snapshot"):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                session.abort(runtime)
+
+    def test_partial_allowed_start_budget_is_bounded_per_batch(self):
+        with snapshot() as root:
+            _, runtime, session, _, times, reviewer, interaction = self.native_runtime(root)
+            session.begin(runtime, reviewer, max_files=4)
+            starts = [("root-session", {
+                "type": "tool.execution_start", "timestamp": times["view_end"],
+                "agentId": reviewer, "data": {
+                    "interactionId": interaction, "turnId": "turn-0",
+                    "toolCallId": f"extra-{index}", "toolName": "view",
+                },
+            }) for index in range(20)]
+            session.observe_cli_events(starts[:5])
+            retained = set(session.observed_cli_starts)
+            session.observe_cli_events(starts[:5])
+            with self.assertRaisesRegex(model.ReviewError, "budget exceeded"):
+                session.observe_cli_events(starts[5:])
+            self.assertLessEqual(len(session.observed_cli_starts), session.lease.max_files + 1)
+            self.assertEqual(session.observed_cli_starts, retained)
+            with self.assertRaisesRegex(model.ReviewError, "budget exceeded"):
+                session.finish(runtime)
+            session.abort(runtime)
+
+    def test_partial_activity_failure_still_propagates_late_sibling_activity(self):
+        with snapshot() as root:
+            _, first_runtime, first, _, _, first_reviewer, _ = self.native_runtime(
+                root, root_session_id="root-first")
+            first.begin(first_runtime, first_reviewer)
+            first.finish(first_runtime)
+            self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+            _, runtime, second, events, times, reviewer, _ = self.native_runtime(
+                root, root_session_id="root-second")
+            events = [
+                (session_id, {**event, "timestamp": event["timestamp"].replace(
+                    "T00:00:", "T00:01:")})
+                for session_id, event in events]
+            runtime.events = tuple(events)
+            second.owners = first.owners
+            second.begin(runtime, reviewer)
+            prohibited = ("root-second", {
+                "type": "tool.execution_start", "timestamp": times["view_end"],
+                "agentId": reviewer, "data": {"toolCallId": "bad", "toolName": "bash"},
+            })
+            with self.assertRaisesRegex(model.ReviewError, "prohibited"):
+                second.observe_cli_events((prohibited,))
+            late = ("root-first", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:02:00Z",
+                "agentId": first_reviewer, "data": {"turnId": "late"},
+            })
+            runtime.events = tuple(events) + (late,)
+            with self.assertRaisesRegex(model.ReviewError, "prohibited"):
+                second.finish(runtime)
+            with self.assertRaisesRegex(model.ReviewError, "event after logical closure"):
+                first.review_state((), (), pre_review_required=True)
+            second.abort(runtime)
+
     def test_started_cli_failure_keeps_reservation_until_terminal_abort(self):
         with snapshot() as root, tempfile.TemporaryDirectory() as directory:
             fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)

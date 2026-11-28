@@ -971,7 +971,17 @@ any activity enters this baseline. Supply an owning complete snapshot through
 `observe_cli_events(events, complete=True)`, or
 `review_state(..., cli_events=events, cli_events_complete=True)`. It compares
 captured records against the validated closure snapshot; ordinary observations
-are incremental and cannot establish that a record is missing. An
+are incremental and cannot establish that a record is missing. A prohibited or
+malformed tool start attributed to an active CLI reviewer is retained when
+observed and prevents report admission even if a later runtime snapshot omits
+it. Other observed reviewer tool starts must appear unchanged in the terminal
+snapshot so the existing action and read validation can evaluate them.
+Repeated starts do not consume additional observation budget; distinct starts
+above the file budget plus one invalidate the report without growing the
+retained set further. A failed admission still propagates newly supplied
+activity to sibling reviews.
+Terminal-only abort may still retire the task without admitting a report.
+An
 older sibling snapshot cannot establish that a newer review lost records.
 The session freezes its latest complete snapshot instead of retaining and
 replaying caller-owned mutable event sources. To assess later changes, supply

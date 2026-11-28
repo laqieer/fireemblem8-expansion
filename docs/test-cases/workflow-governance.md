@@ -1324,6 +1324,24 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    to reject the changed evidence. After closure, reuse the dispatch ID in the same
    root with a different reviewer; the original report must be invalidated.
    The same ID in a different root does not invalidate it.
+   Before closure, observe a reviewer-attributed `bash`, `apply_patch`, or
+   malformed tool start, then finish with an older runtime snapshot. Each must
+   reject the observation and later report admission, while terminal-only abort
+   remains possible. Also observe a `view` or `skill` start absent from the
+   terminal snapshot; report admission must reject rather than forget it.
+   An unrelated reviewer's tool start or an event in another
+   root must not block an otherwise valid review. Repeated observed starts
+   consume no extra budget; a batch of distinct excess starts must reject
+   without retaining more than the file budget plus one. An invalidated
+   review's finish must still propagate newly supplied late sibling activity.
+   Run
+   `CliReviewRuntimeTests.test_partial_prohibited_action_survives_stale_terminal_snapshot`
+   `CliReviewRuntimeTests.test_partial_allowed_starts_cannot_disappear_before_terminal`,
+   `CliReviewRuntimeTests.test_partial_unrelated_action_does_not_invalidate_review`,
+   `CliReviewRuntimeTests.test_partial_allowed_start_budget_is_bounded_per_batch`, and
+   `CliReviewRuntimeTests.test_partial_activity_failure_still_propagates_late_sibling_activity`;
+   the missing-action negatives fail on the previous candidate, and the final
+   two controls fail against the initial incremental-observation patch.
    Drop the last external reference to an active or completed session and
    collect it. The ownership index must not retain that session or its event
    sources; an orphaned active reservation remains blocked and a closed owner

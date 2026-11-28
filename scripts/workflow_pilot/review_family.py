@@ -1772,6 +1772,8 @@ class ReviewSession:
         self.assignment_received_at = None
         self.cli_lifecycle = None
         self.cli_lifecycle_conflict = False
+        self.cli_activity_violation = None
+        self.observed_cli_starts = set()
         self.latest_cli_events = ()
         self._ownership_key = object()
         self.begin_failed = False
@@ -1979,12 +1981,25 @@ class ReviewSession:
             if self.owners is not None:
                 self.owners.validate_closed_events(
                     runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
+            require(terminal or self.cli_activity_violation is None,
+                    self.cli_activity_violation or "review activity was invalidated")
             if self.cli_lifecycle is not None:
                 lifecycle = self._observe_cli_lifecycle(runtime.events, lease.task)
                 require(not self.cli_lifecycle_conflict
                         and all(lifecycle.get(kind) == event_key
                                 for kind, event_key in self.cli_lifecycle.items()),
                         "review assignment records changed before terminal retirement")
+                if not terminal:
+                    starts = {
+                        _cli_event_key(record) for record in runtime.events
+                        if isinstance(record, (tuple, list)) and len(record) == 2
+                        and record[0] == self.dispatch_namespace
+                        and isinstance(record[1], dict)
+                        and record[1].get("agentId") == lease.owner
+                        and record[1].get("type") == "tool.execution_start"
+                    }
+                    require(self.observed_cli_starts <= starts,
+                            "observed reviewer tool start is missing from terminal snapshot")
             observed = runtime.read_terminal(lease.task)
             require(observed.task == lease.task and observed.owner == lease.owner
                     and observed.role == "code-review" and observed.head == lease.head
@@ -2208,6 +2223,36 @@ class ReviewSession:
                 events, snapshot_namespace=self.dispatch_namespace if complete else None,
                 snapshot_owner=self if complete else None)
             self.owners.validate_session(self)
+        if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
+            for record in events:
+                if not isinstance(record, (tuple, list)) or len(record) != 2:
+                    continue
+                event_session, event = record
+                if (event_session != self.dispatch_namespace or not isinstance(event, dict)
+                        or event.get("agentId") != self.lease.owner
+                        or event.get("type") != "tool.execution_start"):
+                    continue
+                data = event.get("data")
+                if not isinstance(data, dict) or data.get("toolName") not in {"view", "skill"}:
+                    self.cli_activity_violation = (
+                        self.cli_activity_violation or
+                        "observed prohibited or malformed reviewer operation")
+                else:
+                    try:
+                        event_key = _cli_event_key(record)
+                    except ReviewError:
+                        self.cli_activity_violation = (
+                            self.cli_activity_violation or "observed malformed reviewer operation")
+                    else:
+                        if event_key not in self.observed_cli_starts:
+                            if len(self.observed_cli_starts) >= self.lease.max_files + 1:
+                                self.cli_activity_violation = (
+                                    self.cli_activity_violation or
+                                    "observed reviewer operation budget exceeded")
+                            else:
+                                self.observed_cli_starts.add(event_key)
+            require(self.cli_activity_violation is None,
+                    self.cli_activity_violation or "review activity was invalidated")
 
     def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
         require(self.report is not None and finding_id in self.local_findings
