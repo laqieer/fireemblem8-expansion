@@ -859,6 +859,7 @@ class _OwnedReview:
     dispatch: str | None = None
     state: str = "reserved"
     interaction: str | None = None
+    started_at: str | None = None
     completed_at: str | None = None
     admitted_event_keys: frozenset[str] = frozenset()
     event_sessions: frozenset[str] = frozenset()
@@ -924,7 +925,7 @@ class ReviewOwnership:
     def release_before_dispatch(self, session):
         self.records.pop(session._ownership_key, None)
 
-    def finish(self, session, task, owner, interaction, completed_at,
+    def finish(self, session, task, owner, interaction, started_at, completed_at,
                dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=(),
                event_source=(), report=None):
         owner_key = dispatch_namespace, owner
@@ -934,7 +935,17 @@ class ReviewOwnership:
                 "review owner or dispatch changed before logical closure")
         identifier(owner, NAME_PATTERN, "reviewer identity")
         identifier(interaction, NAME_PATTERN, "review interaction")
-        timestamp(completed_at)
+        start = timestamp(started_at)
+        end = timestamp(completed_at)
+        require(start <= end, "review task chronology is invalid")
+        if report is not None:
+            require(not any(
+                other is not record and other.state == "terminal"
+                and (other.identity[:2] == record.identity[:2] or other.head == record.head)
+                and start <= timestamp(other.completed_at)
+                and timestamp(other.started_at) <= end
+                for other in self.records.values()),
+                "overlapping review task observations")
         require(isinstance(admitted_event_keys, (tuple, list, set, frozenset))
                 and all(isinstance(item, str) for item in admitted_event_keys),
                 "invalid admitted CLI event keys")
@@ -953,6 +964,7 @@ class ReviewOwnership:
             "review event session was already logically closed")
         record.state = "terminal"
         record.interaction = interaction
+        record.started_at = started_at
         record.completed_at = completed_at
         record.admitted_event_keys = frozenset(admitted_event_keys)
         record.event_sessions = sessions
@@ -1632,6 +1644,13 @@ class ReviewSession:
             if self.owners is not None:
                 self.owners.reserve(self)
                 reserved = True
+            if isinstance(runtime, CliReviewRuntime):
+                dispatched = True
+                runtime.assigned_owner = owner
+                runtime.assigned_candidate = self.head
+                runtime.assigned_subjects = tuple(sorted(self.scope))
+                if self.owners is not None:
+                    self.owners.bind_dispatch(self, runtime.dispatch_id)
             assigned_reads = json.dumps(
                 [[path, side, target["tool_path"], target["encoding"]]
                  for (path, side), target in sorted(runtime.required_reads.items())]
@@ -1639,8 +1658,6 @@ class ReviewSession:
                 ensure_ascii=True, separators=(",", ":"))
             if isinstance(runtime, CliReviewRuntime):
                 require(runtime.required_reads, "review assignment has no candidate paths")
-                if self.owners is not None:
-                    self.owners.bind_dispatch(self, runtime.dispatch_id)
                 require(candidate_reader is not None
                         and candidate_tree_binding(runtime.candidate_reader) == binding,
                         "review runtime candidate binding differs from the assigned reader")
@@ -1766,7 +1783,7 @@ class ReviewSession:
         if self.owners is not None:
             self.owners.finish(
                 self, self.lease.task, self.lease.owner,
-                    getattr(result, "interaction_id", ""), result.completed_at,
+                    getattr(result, "interaction_id", ""), result.started_at, result.completed_at,
                     self.dispatch_namespace, admitted_event_keys, admitted_event_sessions,
                     getattr(result, "cli_events", ()),
                     report if outcome == "completed" else None)

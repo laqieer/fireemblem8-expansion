@@ -489,7 +489,8 @@ or LLM process measurements.
 
 When the coordinator also implements the candidate, pass that same actual owner
 to both `ReviewSession` roles. The reviewer must still differ from both roles;
-self-review rejects before task launch. Read-only actions, exact task/head/scope,
+the dispatching runtime rejects self-review before task launch, while the
+retrospective CLI adapter can only reject admission. Read-only actions, exact task/head/scope,
 completion, time/file bounds and overlapping-session checks remain unchanged.
 Do not manufacture another implementation identity to obtain independent review.
 
@@ -681,10 +682,14 @@ reviewer's response is findings data, not an authentication token. Keep its
 owner distinct from implementation and coordination. Those latter roles may
 be the same actual owner for coordinator-authored work; no aliases or invented
 delegation are permitted. `ReviewSession` accepts that real ownership, while
-`begin` still rejects either owner as reviewer before task launch.
-Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
-another active reviewer for the same repository/PR or the same candidate head,
-regardless of scope, before another task can start.
+`begin` rejects either owner as reviewer. Share one `ReviewOwnership` index
+across the coordinator's sessions; it rejects another active registration for
+the same repository/PR or candidate head, regardless of scope, and rejects
+completed reports whose observed task intervals overlap recorded tasks for
+either identity. Terminal-only abort remains available without admitting a
+report. The retrospective CLI adapter observes an already dispatched task and
+cannot prevent a task start; the coordinator must schedule future reviews
+without overlap. Missing task observations do not prove non-overlap.
 
 `ReviewSession.begin` binds the exact head, scope, reviewer identity and
 instructions to the existing `task` tool dispatch. `finish` verifies the
@@ -741,8 +746,9 @@ substituted with coordinator-side rereads.
 `ReviewOwnership` logically closes the completed reviewer turn after the
 coordinator accepts its evidence. Each assigned task has one shared record for
 its frozen assignment, dispatch, terminal state, event baseline, report and
-invalidation. A failed start after possible dispatch retains an unknown
-reservation; a missing receipt cannot release it or admit a report. A
+invalidation. After registration, a failed start after possible dispatch
+retains an unknown reservation; a missing receipt cannot release it or admit
+a report. Failures before registration cannot reserve an already-started task. A
 terminal-only abort may retire it without admission only when the exact root,
 dispatch, reviewer start and completion are independently observed. Reviewer identity is scoped by the
 coordinator's root CLI session and reviewer agent ID; dispatch is scoped by

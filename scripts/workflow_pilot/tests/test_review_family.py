@@ -1121,6 +1121,12 @@ class RoleTests(unittest.TestCase):
             "coordinator", "implementer", self.scope, "b" * 40,
             clock=lambda: self.time, readers={"read-candidate": lambda: self.effects.append("read")})
 
+    def following_runtime(self, head, scope):
+        runtime = Runtime(head, scope)
+        runtime.result.started_at = "2026-01-01T00:01:00Z"
+        runtime.result.completed_at = "2026-01-01T00:01:01Z"
+        return runtime
+
     def test_coordinator_implemented_candidate_requires_independent_reviewer(self):
         owners = model.ReviewOwnership()
         session = model.ReviewSession(
@@ -1139,6 +1145,23 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(session.lease.outcome, "completed")
         self.assertTrue(owners.owns_completed_report(session, report))
         self.assertEqual([call[0] for call in self.runtime.calls], ["start", "read"])
+
+    def test_pre_dispatch_failure_releases_reservation(self):
+        owners = model.ReviewOwnership()
+        identity = ("owner/repo", 1, "a" * 40)
+        first = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "b" * 40,
+            identity=identity, owners=owners)
+        with patch.object(model, "_review_instructions", side_effect=model.ReviewError("invalid")):
+            with self.assertRaisesRegex(model.ReviewError, "invalid"):
+                first.begin(self.runtime, "reviewer")
+        self.assertEqual(self.runtime.calls, [])
+        self.assertIsNone(owners.record_for(first))
+        second = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "b" * 40,
+            identity=identity, owners=owners)
+        second.begin(self.runtime, "reviewer")
+        second.finish(self.runtime)
 
     def test_existing_runtime_task_and_read_tool_boundary(self):
         self.session.begin(self.runtime, "reviewer", duration=30)
@@ -1233,7 +1256,7 @@ class RoleTests(unittest.TestCase):
                 fresh = model.ReviewSession(
                     "coordinator", "next-implementer", self.scope, session.head,
                     identity=identity, owners=owners)
-                replacement = Runtime(fresh.head, fresh.scope)
+                replacement = self.following_runtime(fresh.head, fresh.scope)
                 with self.assertRaisesRegex(model.ReviewError, "overlapping"):
                     fresh.begin(replacement, "reviewer-next")
 
@@ -1312,7 +1335,7 @@ class RoleTests(unittest.TestCase):
                     report.findings.append(finding)
                 with self.assertRaises(FrozenInstanceError):
                     report.findings[0].id = "changed"
-                replacement = Runtime(fresh.head, fresh.scope)
+                replacement = self.following_runtime(fresh.head, fresh.scope)
                 fresh.begin(replacement, "reviewer-next")
                 fresh.finish(replacement)
 
@@ -1349,7 +1372,7 @@ class RoleTests(unittest.TestCase):
                 session.advance("c" * 40)
                 self.assertEqual(session.head, "c" * 40)
                 self.assertEqual(session.lease.head, old_head)
-                replacement = Runtime(fresh.head, fresh.scope)
+                replacement = self.following_runtime(fresh.head, fresh.scope)
                 fresh.begin(replacement, "reviewer-next")
                 fresh.finish(replacement)
 
@@ -1374,7 +1397,7 @@ class RoleTests(unittest.TestCase):
                     session.abort(runtime)
                     self.assertEqual(session.lease.outcome, "aborted")
                     self.assertIsNone(session.report)
-                    replacement = Runtime(session.head, self.scope)
+                    replacement = self.following_runtime(session.head, self.scope)
                     fresh.begin(replacement, "reviewer-next")
                     fresh.finish(replacement)
 
@@ -1395,7 +1418,7 @@ class RoleTests(unittest.TestCase):
         self.assertIsNone(session.report)
         self.assertEqual(session.local_findings, {})
         self.assertEqual([row[0] for row in runtime.calls], ["start", "read", "read"])
-        replacement = Runtime(session.head, self.scope)
+        replacement = self.following_runtime(session.head, self.scope)
         fresh.begin(replacement, "reviewer-next")
         fresh.finish(replacement)
         self.assertEqual(fresh.lease.outcome, "completed")
@@ -1562,6 +1585,110 @@ class CliReviewRuntimeTests(unittest.TestCase):
             readers={"read-candidate": reader},
         )
         return fixture, runtime, session, events, times, reviewer, interaction
+
+    def test_started_cli_failure_keeps_reservation_until_terminal_abort(self):
+        with snapshot() as root, tempfile.TemporaryDirectory() as directory:
+            fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+            runtime.events = tuple((session, event) for session, event in events
+                                   if event.get("type") != "subagent.completed")
+            clone = Path(directory) / "clone"
+            subprocess.run(
+                ["git", "clone", "--shared", "--no-checkout", str(root.root), str(clone)],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=support.ENV)
+            alternate = gate.ReviewTools(
+                gate.GitTree(clone, fixture["head"]), clone
+            ).candidate_reader(fixture["base"], fixture["head"])
+            first.readers["read-candidate"] = alternate
+            with self.assertRaisesRegex(model.ReviewError, "binding differs"):
+                first.begin(runtime, reviewer)
+            self.assertIsNotNone(first.owners.record_for(first))
+
+            other_events = tuple(
+                (session.replace("root-session", "other-root"),
+                 json.loads(json.dumps(event).replace("root-session", "other-root")
+                            .replace("reviewer-1", "reviewer-2")
+                            .replace("dispatch-1", "dispatch-2")
+                            .replace("T00:00:", "T00:01:")))
+                for session, event in events)
+            other_runtime = model.CliReviewRuntime(
+                other_events, dispatch_id="dispatch-2", root_session_id="other-root",
+                candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+            second = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture["head"],
+                identity=first.identity, owners=first.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            with self.assertRaisesRegex(model.ReviewError, "overlapping review ownership"):
+                second.begin(other_runtime, "reviewer-2")
+            runtime.events = tuple(events)
+            first.abort(runtime)
+            self.assertEqual(first.lease.outcome, "aborted")
+            second.begin(other_runtime, "reviewer-2")
+            self.assertIsNotNone(second.finish(other_runtime))
+
+    def test_cli_completed_reports_reject_observed_overlap(self):
+        with snapshot() as root:
+            fixture, runtime, original, events, _, _, _ = self.native_runtime(root)
+            tree = git(root.root, "rev-parse", fixture["head"] + "^{tree}")
+            other_head = git(root.root, "commit-tree", tree, "-p", fixture["head"],
+                             "-m", "different candidate identity")
+            other_reader = gate.ReviewTools(
+                gate.GitTree(root.root, other_head), root.root
+            ).candidate_reader(fixture["base"], other_head)
+            for case, same_pr, same_head, sequential, should_accept in (
+                ("same-pr-head", True, True, False, False),
+                ("same-pr", True, False, False, False),
+                ("same-head", False, True, False, False),
+                ("sequential", True, True, True, True),
+                ("unrelated", False, False, False, True),
+            ):
+                with self.subTest(case=case):
+                    owners = model.ReviewOwnership()
+                    first_runtime = model.CliReviewRuntime(
+                        events, dispatch_id="dispatch-1", root_session_id="root-session",
+                        candidate_reader=runtime.candidate_reader,
+                        required_reads=runtime.required_reads)
+                    first = model.ReviewSession(
+                        "coordinator", "implementer", original.scope, fixture["head"],
+                        identity=original.identity, owners=owners,
+                        readers={"read-candidate": runtime.candidate_reader})
+                    first.begin(first_runtime, "reviewer-1")
+                    first.finish(first_runtime)
+
+                    head = fixture["head"] if same_head else other_head
+                    reader = runtime.candidate_reader if same_head else other_reader
+                    targets = {
+                        key: {**target, "summary": reader.describe(*key)}
+                        for key, target in runtime.required_reads.items()
+                    }
+                    other_events = []
+                    for session, event in events:
+                        raw = (json.dumps(event)
+                               .replace("root-session", "other-root")
+                               .replace("reviewer-1", "reviewer-2")
+                               .replace("dispatch-1", "dispatch-2")
+                               .replace(fixture["head"], head))
+                        if sequential:
+                            raw = raw.replace("T00:00:", "T00:01:")
+                        other_events.append((session.replace("root-session", "other-root"),
+                                             json.loads(raw)))
+                    second_runtime = model.CliReviewRuntime(
+                        tuple(other_events), dispatch_id="dispatch-2",
+                        root_session_id="other-root", candidate_reader=reader,
+                        required_reads=targets)
+                    second = model.ReviewSession(
+                        "coordinator", "implementer", original.scope, head,
+                        identity=("owner/repo", 1 if same_pr else 2, fixture["base"]),
+                        owners=owners, readers={"read-candidate": reader})
+                    second.begin(second_runtime, "reviewer-2")
+                    if should_accept:
+                        self.assertIsNotNone(second.finish(second_runtime))
+                    else:
+                        with self.assertRaisesRegex(model.ReviewError, "overlapping review"):
+                            second.finish(second_runtime)
+                        self.assertIsNone(second.report)
+                        second.abort(second_runtime)
+                        self.assertEqual(second.lease.outcome, "aborted")
 
     def test_request_scope_and_cli_findings_accept_long_valid_joined_keys(self):
         for case_id, subject in (
@@ -1802,7 +1929,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
             first.finish(first_runtime)
             second_events = json.loads(
                 json.dumps(events).replace("dispatch-1", "dispatch-2")
-                .replace("reviewer-1", "reviewer-2").replace("interaction-1", "interaction-2"))
+                .replace("reviewer-1", "reviewer-2").replace("interaction-1", "interaction-2")
+                .replace("T00:00:", "T00:01:"))
             second_runtime = model.CliReviewRuntime(
                 tuple(events) + tuple(second_events), dispatch_id="dispatch-2",
                 root_session_id="root-session", candidate_reader=first_runtime.candidate_reader,
@@ -2467,8 +2595,12 @@ class CliReviewRuntimeTests(unittest.TestCase):
             first.begin(first_runtime, reviewer)
             first.finish(first_runtime)
 
-            _, second_runtime, second, _, _, second_reviewer, _ = self.native_runtime(
+            _, second_runtime, second, second_events, _, second_reviewer, _ = self.native_runtime(
                 root, root_session_id="root-session-2")
+            second_runtime.events = tuple(
+                (session_id, {**event, "timestamp": event["timestamp"].replace(
+                    "T00:00:", "T00:01:")})
+                for session_id, event in second_events)
             second.owners = owners
             second.begin(second_runtime, second_reviewer)
             second.finish(second_runtime)
@@ -2481,7 +2613,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
 
             late_event = ("root-session-2", {
                 "type": "assistant.turn_start",
-                "timestamp": "2026-01-01T00:01:00Z",
+                "timestamp": "2026-01-01T00:02:00Z",
                 "agentId": second_reviewer,
                 "data": {"turnId": "late-turn"},
             })
@@ -2573,7 +2705,10 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 readers={"read-candidate": runtime.candidate_reader})
             other.begin(other_runtime, reviewer)
             self.assertEqual(other_runtime.reviewer_session_id, "root-session-2")
-            other.finish(other_runtime)
+            self.assertTrue(other_runtime.read(runtime.dispatch_id).completed)
+            with self.assertRaisesRegex(model.ReviewError, "overlapping review"):
+                other.finish(other_runtime)
+            other.abort(other_runtime)
 
             for source in ("missing-receipt", None, "agent-root-session-2"):
                 with self.subTest(source=source):
@@ -2700,6 +2835,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 identity=session.identity, owners=session.owners,
                 readers={"read-candidate": runtime.candidate_reader})
             other_runtime = Runtime(session.head, session.scope)
+            other_runtime.result.started_at = "2026-01-01T00:01:00Z"
+            other_runtime.result.completed_at = "2026-01-01T00:01:01Z"
             other_reads = tuple(
                 target["summary"] for target in runtime.required_reads.values())
             other_runtime.result.files = len(other_reads)
@@ -3103,7 +3240,7 @@ class RemainingRoleTests(RoleTests):
                 second = model.ReviewSession(
                     "coordinator", "other-implementer", disjoint, head,
                     identity=next_identity, owners=owners)
-                next_runtime = Runtime(head, disjoint)
+                next_runtime = self.following_runtime(head, disjoint)
                 with self.assertRaises(model.ReviewError):
                     second.begin(next_runtime, "reviewer")
                 self.assertEqual(next_runtime.calls, [])

@@ -762,7 +762,8 @@ audio or human-approval criterion is added.
    their real native results, and require all checks before local readiness.
    Use actual config/baseline/document validators for the excluded fixture.
    Use the same actual coordinator/implementation owner in `ReviewSession`
-   when applicable. Self-review must reject before task launch; a distinct
+   when applicable. A dispatching runtime rejects self-review before launch;
+   the retrospective CLI adapter rejects its admission after dispatch. A distinct
    read-only reviewer must still satisfy task/head/scope and completion bounds.
    Reject raw-only/pass-label registration, incomplete/failed captures,
    changed definitions/check sets, head/base/worktree drift and stale native
@@ -1347,8 +1348,16 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    immutable summaries and local finding triage; a coordinator-side read alone
    cannot establish coverage. Bound duration, file and finding counts with
    strict integers and exercise their negative controls. Check that overlap
-   exclusion still blocks a second active reviewer for one PR or head while
-   logically closed reviewers cannot be reused.
+   exclusion still blocks a second active registration for one PR or head while
+   logically closed reviewers cannot be reused. For recorded task intervals,
+   reject overlapping completed reports for the same PR or head, admit ordered
+   or unrelated tasks, and allow terminal-only abort after a rejected report.
+   After an already-started CLI task's candidate-reader mismatch, retain its
+   reservation until an observed terminal abort; a new registration must fail
+   while it remains active. Run
+   `CliReviewRuntimeTests.test_started_cli_failure_keeps_reservation_until_terminal_abort`
+   and `CliReviewRuntimeTests.test_cli_completed_reports_reject_observed_overlap`.
+   These controls cannot prevent a task that was already dispatched.
    Include assigned unchanged regular blobs on both frozen sides as supporting
    context and report a finding against the observed head blob. Missing changed
    paths, unavailable supporting sides, or altered supporting bytes must reject.
