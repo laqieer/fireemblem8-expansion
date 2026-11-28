@@ -268,7 +268,12 @@ data, EWRAM/IWRAM allocation, or archival-lane behavior changes.
 - `python3 -m unittest tools.gba-playtest.tests.test_map_menu_presentation -v`
   — semantic compiled-table order/composition, all-locale resolver and pixel
   bounds, help IDs/content/sizing, nine-row skirmish/dungeon availability and
-  bounded frame/text geometry, plus shorter/story negative controls.
+  bounded frame/text geometry, shorter/story negative controls, and the
+  documented fixture's non-executing Make cleanup plan. The cleanup check
+  recognizes literal `rm` commands and fails closed on unsupported shell
+  syntax; it does not run cleanup recipes or prove actual deletion. Make still
+  evaluates configuration while parsing, including its existing shell commands;
+  this probe does not isolate untrusted Makefiles.
 - `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
   — the exact typed Charge visibility predicate, eligible/ineligible unit
   matrix, menu capacity, and enabled/disabled linkage.

@@ -2,16 +2,21 @@
 
 import contextlib
 import copy
+import getopt
 import io
 import json
+import os
 import re
 import runpy
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unicodedata
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.localization.generate import _c_string_literal, generate
 from scripts.localization.game_locales.ending_metrics import (
@@ -19,7 +24,6 @@ from scripts.localization.game_locales.ending_metrics import (
     _cjk_widths,
     _line_width,
 )
-
 
 ROOT = Path(__file__).resolve().parents[3]
 BUILD = ROOT / "build"
@@ -30,6 +34,7 @@ LABEL_KEYS = ("danger_overlay.label", "autoplay.charge.label")
 HELP_KEYS = ("danger_overlay.help", "autoplay.charge.help")
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_map_menu_presentation_checks.py"
 TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
+TEST_CASE_DOCUMENT = ROOT / "docs" / "test-cases" / "optional-gameplay.md"
 RUNTIME_FINGERPRINT = (
     ROOT
     / "tools"
@@ -517,6 +522,154 @@ class MapMenuHelpSizingTests(unittest.TestCase):
         self.assertIn("MAP_MENU_HELP_SIZING_ARCHIVAL: PASS", output)
 
 
+def _cleanup_commands(plan):
+    commands = []
+    command = []
+    quote = None
+    comment = False
+    in_word = False
+    index = 0
+    while index < len(plan):
+        character = plan[index]
+        if comment:
+            if character == "\n":
+                commands.append("".join(command))
+                command = []
+                comment = False
+                in_word = False
+            else:
+                command.append(character)
+        elif character == "\\" and quote != "'":
+            if index + 1 == len(plan):
+                raise ValueError("invalid cleanup shell syntax: trailing backslash")
+            following = plan[index + 1]
+            if following != "\n":
+                command.extend((character, following))
+                in_word = True
+            index += 1
+        elif character == quote:
+            quote = None
+            command.append(character)
+        elif quote:
+            command.append(character)
+        elif character in "'\"":
+            quote = character
+            command.append(character)
+            in_word = True
+        elif character == "#":
+            if in_word:
+                raise ValueError("unsupported cleanup shell syntax: embedded #")
+            comment = True
+            command.append(character)
+        elif character == "\n":
+            commands.append("".join(command))
+            command = []
+            in_word = False
+        else:
+            command.append(character)
+            in_word = not character.isspace()
+        index += 1
+    if quote:
+        raise ValueError("invalid cleanup shell syntax: unclosed quote")
+    commands.append("".join(command))
+    return commands
+
+
+def _cleanup_plan_removes_fixture(plan, fixture):
+    expected_rm = shutil.which("rm")
+    if not expected_rm:
+        raise ValueError("cleanup rm executable is unavailable")
+    for line in _cleanup_commands(plan):
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()<>")
+        lexer.whitespace_split = True
+        arguments = list(lexer)
+        if not arguments:
+            continue
+        if any(
+            any(character in argument for character in ";&|()<>$`")
+            for argument in arguments
+        ):
+            raise ValueError(f"unsupported cleanup shell syntax: {line}")
+        if (
+            arguments[0] == "printf"
+            and len(arguments) == 2
+            and not any(character in arguments[1] for character in "%\\")
+        ):
+            continue
+        executable = arguments[0]
+        if "/" in executable and not os.path.isabs(executable):
+            executable = str(ROOT / executable)
+        actual_rm = shutil.which(executable)
+        if not actual_rm or Path(actual_rm).resolve() != Path(expected_rm).resolve():
+            raise ValueError(f"unsupported cleanup command: {arguments[0]}")
+        for argument in arguments[1:]:
+            if argument == "--":
+                break
+            if argument.startswith("--") and argument not in (
+                "--force", "--recursive", "--verbose"
+            ):
+                raise ValueError(f"unsupported cleanup rm option: {argument}")
+        try:
+            parse_options = getopt.getopt if "POSIXLY_CORRECT" in os.environ else getopt.gnu_getopt
+            options, paths = parse_options(
+                arguments[1:], "frRv", ("force", "recursive", "verbose")
+            )
+        except getopt.GetoptError as error:
+            raise ValueError(f"unsupported cleanup rm option: {error.opt}") from error
+        recursive = any(option in ("-r", "-R", "--recursive") for option, _ in options)
+        force = any(option in ("-f", "--force") for option, _ in options)
+        if not paths and not force:
+            raise ValueError("cleanup rm without operands would fail")
+        for path in paths:
+            final_component = path.rstrip("/").rsplit("/", 1)[-1]
+            if not final_component or final_component in (".", ".."):
+                continue
+            if recursive and any(character in path for character in "*?[]~"):
+                raise ValueError(f"unsupported cleanup shell syntax: {line}")
+            target = ROOT / path
+            current = Path(target.anchor)
+            for part in target.parts[1:]:
+                if part == ".." and not current.is_dir():
+                    break
+                current /= part
+            else:
+                if (
+                    recursive
+                    and not target.is_symlink()
+                    and target.resolve() != fixture.resolve()
+                    and target.resolve() != Path(target.anchor)
+                    and fixture.resolve().is_relative_to(target.resolve())
+                ):
+                    return True
+    return False
+
+
+def _documented_paths(cleanup):
+    return re.findall(r"(?<![\w./+-])/?[\w.+-]+(?:/[\w.+-]+)+(?![\w/+-])", cleanup)
+
+
+def _documented_fixture(cleanup, fixture):
+    return (ROOT / fixture).resolve() in {
+        (ROOT / path.rstrip(".")).resolve() for path in _documented_paths(cleanup)
+    }
+
+
+def _case_cleanup_document(document):
+    case = re.search(
+        r"^## TC-MAP-MENU-168:[^\n]*\n(.*?)(?=^## |\Z)",
+        document, re.MULTILINE | re.DOTALL,
+    )
+    if not case:
+        raise ValueError("map-menu tester case is missing")
+    cleanup = re.search(
+        r"^### Cleanup and limitations[ \t]*\n(.*?)(?=^### |^## |\Z)",
+        case.group(1), re.MULTILINE | re.DOTALL,
+    )
+    if not cleanup:
+        raise ValueError("map-menu tester cleanup section is missing")
+    return cleanup.group(1)
+
+
 class MapMenuRuntimeContractTests(unittest.TestCase):
     def _runtime_module_and_capture(self):
         module = runpy.run_path(str(RUNTIME_RUNNER))
@@ -675,18 +828,353 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             )
         )
 
-    def test_case_registry_owns_disposable_nine_row_sram_cleanup(self):
+    def test_documented_nine_row_sram_is_in_clean_fast_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            includes = {
+                name: Path(temporary) / f"{name}.mk"
+                for name in (
+                    "ASSET_DISCOVERY_MK",
+                    "ASSET_OUTPUT_MK",
+                    "GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE",
+                    "GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE",
+                    "GENERATED_DATA_CH2_EVENTLISTS_DEPFILE",
+                )
+            }
+            command = ["make", "-f", "Makefile", "-f", "-"]
+            for name, path in includes.items():
+                path.touch()
+                command.extend(("-o", str(path), f"{name}={path}"))
+            command.extend(
+                (
+                    "-n", "NODEP=1", "MAKECMDGOALS_NOSCANINC=clean_fast",
+                    "MODERN_CONFIG=debug", "MODERN_ABI=aapcs",
+                    "FE8_PROJECT=default", f"TOOLCHAIN={temporary}", "clean_fast",
+                )
+            )
+            # Make can remake includes and execute '+' recipes even with -n.
+            completed = subprocess.run(
+                command,
+                cwd=ROOT,
+                input=(
+                    "clean_fast: SHELL := /bin/sh\n"
+                    "clean_fast: .SHELLFLAGS := -c :\n"
+                    "$(info __MAP_MENU_CLEANUP_FIXTURE=$(MODERN_MAP_MENU_NINE_ROW_SRAM))\n"
+                ),
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        marker = "__MAP_MENU_CLEANUP_FIXTURE="
+        lines = completed.stdout.splitlines(keepends=True)
+        fixtures = [line[len(marker):].strip() for line in lines if line.startswith(marker)]
+        self.assertEqual(len(fixtures), 1, "Make did not emit one fixture marker")
+        fixture = fixtures[0]
+        self.assertTrue(fixture, "Make did not resolve the nine-row SRAM fixture")
+        plan = "".join(line for line in lines if not line.startswith(marker))
+
         registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
         case = next(
             entry
             for entry in registry["cases"]
             if entry["id"] == "TC-MAP-MENU-168"
         )
-        cleanup = case["cleanup"]
-        self.assertIn("debugtools-current.sav", cleanup)
-        self.assertIn("disposable ignored build output", cleanup)
-        self.assertIn("make clean_fast removes it", cleanup)
-        self.assertNotIn("no save or savestate is created", cleanup)
+        self.assertTrue(
+            _documented_fixture(case["cleanup"], fixture),
+            f"cleanup documentation does not name {fixture}",
+        )
+        self.assertTrue(
+            _documented_fixture(
+                _case_cleanup_document(TEST_CASE_DOCUMENT.read_text(encoding="utf-8")),
+                fixture,
+            ),
+            f"Markdown cleanup documentation does not name {fixture}",
+        )
+
+        fixture_path = ROOT / fixture
+        self.assertTrue(
+            _cleanup_plan_removes_fixture(plan, fixture_path),
+            f"clean_fast does not plan to remove {fixture}",
+        )
+
+    def test_cleanup_plan_respects_shell_boundaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "directory with spaces" / "fixture.sav"
+            directory = shlex.quote(str(fixture.parent))
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(
+                    f'printf "# GNU Make"\nrm -rf {directory}', fixture
+                )
+            )
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf \\\n {directory}", fixture)
+            )
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -rf unrelated # {directory}", fixture)
+            )
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf {directory} # cleanup", fixture)
+            )
+            with mock.patch.dict(os.environ):
+                os.environ.pop("POSIXLY_CORRECT", None)
+                self.assertTrue(
+                    _cleanup_plan_removes_fixture(f"rm {directory} -rf", fixture)
+                )
+                self.assertFalse(
+                    _cleanup_plan_removes_fixture(f"rm {directory} -- -rf", fixture)
+                )
+            for value in ("", "1"):
+                with self.subTest(POSIXLY_CORRECT=value):
+                    with mock.patch.dict(os.environ, {"POSIXLY_CORRECT": value}):
+                        self.assertFalse(
+                            _cleanup_plan_removes_fixture(f"rm {directory} -rf", fixture)
+                        )
+            hyphen_directory = f"-{Path(temporary).name}"
+            hyphen_fixture = ROOT / hyphen_directory / "fixture.sav"
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf -- {hyphen_directory}", hyphen_fixture)
+            )
+            for path in (
+                '""',
+                shlex.quote(f"{fixture.parent}/."),
+                shlex.quote(f"{fixture.parent}/.."),
+                shlex.quote(str(fixture)),
+            ):
+                with self.subTest(path=path):
+                    self.assertFalse(_cleanup_plan_removes_fixture(f"rm -rf {path}", fixture))
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -f {shlex.quote(str(fixture))}", fixture)
+            )
+            with self.assertRaisesRegex(ValueError, "unsupported cleanup shell syntax"):
+                _cleanup_plan_removes_fixture(f"rm -rf unrelated && echo {directory}", fixture)
+            for command in (
+                f"rm -rf {directory}#retained",
+                f"rm -rf {directory} `",
+                f"rm -rf {directory}$(printf retained)",
+            ):
+                with self.subTest(command=command):
+                    with self.assertRaisesRegex(ValueError, "cleanup shell syntax"):
+                        _cleanup_plan_removes_fixture(command, fixture)
+            for option in ("--help", "--interactive=always", "-i", "--v", "--ver"):
+                with self.subTest(option=option):
+                    with self.assertRaisesRegex(ValueError, "unsupported cleanup rm option"):
+                        _cleanup_plan_removes_fixture(f"rm -rf {option} {directory}", fixture)
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -rf '{fixture.parent}\\\n'", fixture)
+            )
+            for command in (
+                f"/nonexistent/rm -rf {directory}",
+                f"false\nrm -rf {directory}",
+            ):
+                with self.subTest(command=command):
+                    with self.assertRaisesRegex(ValueError, "unsupported cleanup command"):
+                        _cleanup_plan_removes_fixture(command, fixture)
+            with self.assertRaisesRegex(ValueError, "cleanup rm without operands"):
+                _cleanup_plan_removes_fixture(f"rm -r\nrm -rf {directory}", fixture)
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -f\nrm -rf {directory}", fixture)
+            )
+            missing = Path(temporary) / "missing"
+            via_missing = shlex.quote(str(missing / ".." / fixture.parent.name))
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -rf {via_missing}", fixture)
+            )
+            missing.mkdir()
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -rf {via_missing}", fixture)
+            )
+            elsewhere = Path(temporary) / "elsewhere"
+            elsewhere.mkdir()
+            link = Path(temporary) / "link"
+            link.symlink_to(elsewhere, target_is_directory=True)
+            symlink_fixture = link / ".." / "fixture.sav"
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -rf {shlex.quote(str(link))}", symlink_fixture)
+            )
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(
+                    f"rm -rf {shlex.quote(str(elsewhere.parent))}", symlink_fixture
+                )
+            )
+
+    def test_cleanup_fixture_documentation_accepts_markdown_wrapping(self):
+        fixture = "build/example/debug/fixture.sav"
+        for cleanup in (
+            f"Remove {fixture}.",
+            f"Remove `{fixture}`.",
+            f"Remove **{fixture}**.",
+            f"Remove [{fixture}](cleanup.md).",
+            "Remove build/./example/debug/fixture.sav.",
+        ):
+            with self.subTest(cleanup=cleanup):
+                self.assertTrue(_documented_fixture(cleanup, fixture))
+        for cleanup in (
+            "Remove build/example/debug/other.sav.",
+            f"Remove {fixture}.backup.",
+        ):
+            with self.subTest(cleanup=cleanup):
+                self.assertFalse(_documented_fixture(cleanup, fixture))
+
+    def test_cleanup_plan_handles_make_marker_text_without_running_recipes(self):
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as temporary:
+            canary = Path(temporary) / "must-not-exist"
+            expansion_canary = Path(temporary) / "expansion-must-not-exist"
+
+            def invoke_with_canary(*args, **kwargs):
+                kwargs["input"] += (
+                    "clean_fast: __map_menu_cleanup_canary\n"
+                    "__map_menu_cleanup_canary:\n"
+                    f"\t+printf '# GNU Make' > {shlex.quote(str(canary))}\n"
+                    f"\t+$(shell touch {shlex.quote(str(expansion_canary))})\n"
+                )
+                completed = real_run(*args, **kwargs)
+                completed.stdout = 'printf "# GNU Make"\n' + completed.stdout
+                return completed
+
+            with mock.patch.object(subprocess, "run", side_effect=invoke_with_canary):
+                self.test_documented_nine_row_sram_is_in_clean_fast_plan()
+            self.assertFalse(canary.exists())
+            self.assertFalse(expansion_canary.exists())
+
+    def _document_with_fixture(self, document, registry_cleanup, fixture):
+        cleanup = _case_cleanup_document(document)
+        originals = [
+            path for path in _documented_paths(cleanup)
+            if _documented_fixture(registry_cleanup, path.rstrip("."))
+        ]
+        self.assertEqual(len(originals), 1)
+        return document.replace(cleanup, cleanup.replace(originals[0], str(fixture)), 1)
+
+    def test_cleanup_fixture_location_resolves_symlinks_before_parent_segments(self):
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            actual = root / "actual"
+            source.mkdir()
+            actual.mkdir()
+            (actual / "nested").mkdir()
+            (source / "link").symlink_to(actual / "nested", target_is_directory=True)
+            fixture = source / "link" / ".." / "fixture.sav"
+            registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
+            case = next(
+                entry for entry in registry["cases"] if entry["id"] == "TC-MAP-MENU-168"
+            )
+            original_cleanup = case["cleanup"]
+            case["cleanup"] = f"The disposable fixture is {fixture}."
+            registry_path = root / "registry.json"
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+            document = TEST_CASE_DOCUMENT.read_text(encoding="utf-8")
+            document_path = root / "optional-gameplay.md"
+            document_path.write_text(
+                self._document_with_fixture(document, original_cleanup, fixture),
+                encoding="utf-8",
+            )
+
+            def invoke_with_root(cleaned_root):
+                def invoke(command, **kwargs):
+                    command = list(command)
+                    command[-1:-1] = [
+                        f"MODERN_MAP_MENU_NINE_ROW_SRAM={fixture}",
+                        f"CLEAN_DIRS={cleaned_root}",
+                    ]
+                    return real_run(command, **kwargs)
+
+                with mock.patch.object(subprocess, "run", side_effect=invoke), \
+                        mock.patch.object(
+                            sys.modules[__name__], "TEST_CASE_REGISTRY", registry_path
+                        ), \
+                        mock.patch.object(
+                            sys.modules[__name__], "TEST_CASE_DOCUMENT", document_path
+                        ):
+                    self.test_documented_nine_row_sram_is_in_clean_fast_plan()
+
+            with self.assertRaisesRegex(ValueError, "unsupported cleanup shell syntax"):
+                invoke_with_root(source)
+            invoke_with_root(actual)
+
+    def test_cleanup_plan_rejects_real_make_and_documentation_mutations(self):
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary)
+            makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+            rule = re.search(r"^clean_fast[ \t]*:([^\n#]*)", makefile, re.MULTILINE)
+            self.assertIsNotNone(rule, "clean_fast rule is missing")
+            prerequisites = rule.group(1).split()
+            self.assertEqual(prerequisites.count("clean_common"), 1)
+            prerequisites.remove("clean_common")
+            disconnected = temporary / "Makefile"
+            disconnected.write_text(
+                makefile[:rule.start(1)]
+                + " " + " ".join(prerequisites)
+                + makefile[rule.end(1):],
+                encoding="utf-8",
+            )
+            equivalent = temporary / "Makefile-equivalent"
+            equivalent.write_text(
+                makefile[:rule.start()] + "clean_fast :   __map_menu_noop clean_common"
+                + (" " + " ".join(prerequisites) if prerequisites else "")
+                + makefile[rule.end():]
+                + "\n.PHONY: __map_menu_noop\n__map_menu_noop:\n",
+                encoding="utf-8",
+            )
+            registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
+            case = next(
+                entry for entry in registry["cases"] if entry["id"] == "TC-MAP-MENU-168"
+            )
+            original_cleanup = case["cleanup"]
+            relocated = "outside-build-tree/debugtools-current.sav"
+            case["cleanup"] = f"The disposable fixture is {relocated}."
+            relocated_registry = temporary / "registry.json"
+            relocated_registry.write_text(json.dumps(registry), encoding="utf-8")
+            document = TEST_CASE_DOCUMENT.read_text(encoding="utf-8")
+            stale_document = temporary / "optional-gameplay.md"
+            stale_document.write_text(
+                self._document_with_fixture(document, original_cleanup, relocated),
+                encoding="utf-8",
+            )
+
+            def invoke_equivalent(command, **kwargs):
+                command = list(command)
+                command[command.index("Makefile")] = str(equivalent)
+                return real_run(command, **kwargs)
+
+            with mock.patch.object(subprocess, "run", side_effect=invoke_equivalent):
+                self.test_documented_nine_row_sram_is_in_clean_fast_plan()
+
+            for mutation in (
+                "removed-root", "disconnected", "relocated", "stale-doc", "stale-markdown"
+            ):
+                with self.subTest(mutation=mutation):
+                    def invoke_mutated(command, **kwargs):
+                        command = list(command)
+                        if mutation == "disconnected":
+                            command[command.index("Makefile")] = str(disconnected)
+                        elif mutation == "removed-root":
+                            command.insert(-1, "CLEAN_DIRS=unrelated")
+                        elif mutation != "stale-markdown":
+                            command.insert(-1, f"MODERN_MAP_MENU_NINE_ROW_SRAM={relocated}")
+                        return real_run(command, **kwargs)
+
+                    path = relocated_registry if mutation == "relocated" else TEST_CASE_REGISTRY
+                    with mock.patch.object(subprocess, "run", side_effect=invoke_mutated), \
+                            mock.patch.object(sys.modules[__name__], "TEST_CASE_REGISTRY", path), \
+                            mock.patch.object(
+                                sys.modules[__name__], "TEST_CASE_DOCUMENT",
+                                stale_document if mutation in ("relocated", "stale-markdown")
+                                else TEST_CASE_DOCUMENT,
+                            ):
+                        if mutation in ("stale-doc", "stale-markdown"):
+                            with self.assertRaisesRegex(
+                                AssertionError, "cleanup documentation does not name"
+                            ):
+                                self.test_documented_nine_row_sram_is_in_clean_fast_plan()
+                        else:
+                            with self.assertRaisesRegex(
+                                ValueError, "unsupported cleanup shell syntax"
+                            ):
+                                self.test_documented_nine_row_sram_is_in_clean_fast_plan()
 
 
 if __name__ == "__main__":

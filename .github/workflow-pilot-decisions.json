@@ -2,15 +2,14 @@
   "schema_version": 1,
   "pull_requests": [
     {
-      "pull_request": 427,
+      "pull_request": 439,
       "risk_boundaries": [
-        "runtime"
+        "none"
       ],
       "threshold": {
         "triggers": [
           "changed-files",
-          "changed-lines",
-          "risk-boundary"
+          "changed-lines"
         ],
         "override_history": []
       },
@@ -299,6 +298,30 @@
         "override_history": []
       },
       "gate_mode": "review-first",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
+      "pull_request": 427,
+      "risk_boundaries": [
+        "runtime"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
       "stack": {
         "depth": 0,
         "parent_pr": null,
