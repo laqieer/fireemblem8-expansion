@@ -1066,23 +1066,18 @@ class ReviewOwnership:
                                    and start_event.get("agentId") == observed.owner
                                    and data.get("toolCallId") == observed.dispatch
                                    and data.get("agentType") == "code-review")
-                interval_owner = observed.owner if start_event is None else start_event.get("agentId")
-                paired_start = (valid_start or (
-                    isinstance(interval_owner, str) and bool(interval_owner)
-                    and isinstance(data, dict) and data.get("toolCallId") == observed.dispatch
-                    and data.get("agentType") == "code-review"))
                 if (observed.state != "terminal" and valid_start and start is not None
                         and observed.started_at is None):
                     observed.started_at = start_event["timestamp"]
                     observed.interaction = data.get("interactionId")
                 end = None
                 previous_end = (
-                    timestamp(observed.completed_at)
-                    if valid_start and start is not None and observed.state == "terminal"
+                    observed.interval_end
+                    if valid_start and start is not None and observed.started_at is not None
                     and start == timestamp(observed.started_at) else None)
                 if previous_end is not None and len(starts) == 1 and not completions:
                     end = previous_end
-                elif (paired_start and start is not None and len(starts) == len(completions) == 1
+                elif (valid_start and start is not None and len(starts) == len(completions) == 1
                       and (len(dispatches) == 1
                            or not dispatches and (start_event is None
                                                   or previous_end is not None))):
@@ -1097,7 +1092,7 @@ class ReviewOwnership:
                     else:
                         if (isinstance(interaction, str)
                                 and re.fullmatch(NAME_PATTERN, interaction) is not None
-                                and completion_event.get("agentId") == interval_owner
+                                and completion_event.get("agentId") == observed.owner
                                 and isinstance(completion_event.get("data"), dict)
                                 and completion_event["data"].get("toolCallId") == observed.dispatch
                                 and completion_event["data"].get("interactionId") in (None, interaction)

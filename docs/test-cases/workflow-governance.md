@@ -1372,8 +1372,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    An already-started competing task rejected at reservation must still affect
    overlapping reports and remain reserved until terminal-only abort, including
    a dispatch-attributed start with a contradictory reviewer. An active changed
-   start without a terminal remains possibly open. A proven sequential interval
-   in either order remains valid, including unchanged partial observations. Run
+   start without a terminal remains possibly open, as does a conflicting
+   start/completion pair for another reviewer. A proven sequential interval in
+   either order remains valid, including unchanged partial observations. Run
    `CliReviewRuntimeTests.test_competing_start_with_unknown_terminal_invalidates_only_possible_overlap`,
    `CliReviewRuntimeTests.test_earlier_competing_review_requires_a_consistent_terminal`,
    `CliReviewRuntimeTests.test_contradictory_competing_start_cannot_hide_possible_overlap`,
@@ -1384,13 +1385,16 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    `CliReviewRuntimeTests.test_rejected_started_competitor_with_proven_earlier_end_is_sequential`,
    `CliReviewRuntimeTests.test_contradictory_duplicate_terminal_does_not_release_ownership`,
    `CliReviewRuntimeTests.test_partial_unchanged_interval_keeps_proven_sequential_review`,
+   `CliReviewRuntimeTests.test_partial_unchanged_active_interval_keeps_proven_sequential_review`,
+   `CliReviewRuntimeTests.test_contradictory_owner_pair_remains_uncertain_after_abort`,
    `CliReviewRuntimeTests.test_changed_active_start_without_terminal_invalidates_later_report`,
    `CliReviewRuntimeTests.test_rejected_competitor_with_contradictory_owner_remains_observed`,
    and `CliReviewRuntimeTests.test_submitted_snapshot_is_frozen_until_an_explicit_new_observation`.
    Admit ordered or unrelated
    tasks, and allow terminal-only abort
    after a rejected report. A rejected reused dispatch must not leave a new
-   reservation, and a fresh sequential dispatch must remain usable. Reusing an
+   reservation; an uncontradicted fresh sequential dispatch remains usable.
+   Reusing an
    active dispatch for another PR/head must not change its original runtime
    assignment; its owner can still finish.
    After an already-started CLI task's candidate-reader root or head mismatch, retain its

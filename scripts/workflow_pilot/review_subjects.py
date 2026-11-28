@@ -2696,6 +2696,30 @@ def _session_probe(probe: str) -> dict:
                   "partial unchanged interval blocked a sequential reviewer")
 
             owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            prior.observe_cli_events(partial)
+            prior.abort(prior_runtime)
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(not rejects(lambda: later.finish(later_runtime)),
+                  "partial unchanged active interval blocked a sequential reviewer")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            conflicting = json.loads(json.dumps(events))
+            for _, event in conflicting:
+                if event.get("type") in {"subagent.started", "subagent.completed"}:
+                    event["agentId"] = "unexpected-reviewer"
+            prior.observe_cli_events(conflicting)
+            prior.abort(prior_runtime)
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(rejects(lambda: later.finish(later_runtime)),
+                  "contradictory owner pair lost terminal uncertainty")
+
+            owners = module.ReviewOwnership()
             later, later_runtime = native_session(
                 owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
             later.finish(later_runtime)

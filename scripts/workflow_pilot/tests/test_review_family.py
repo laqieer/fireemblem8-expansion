@@ -1998,6 +1998,60 @@ class CliReviewRuntimeTests(unittest.TestCase):
             other.begin(other_runtime, "reviewer-2")
             self.assertIsNotNone(other.finish(other_runtime))
 
+    def test_partial_unchanged_active_interval_keeps_proven_sequential_review(self):
+        with snapshot() as root:
+            fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+            first.begin(runtime, reviewer)
+            partial = [item for item in events if item[1].get("type") in {
+                "subagent.started", "subagent.completed"}]
+            first.observe_cli_events(partial)
+            first.abort(runtime)
+            later = [
+                (event_session.replace("root-session", "other-root"),
+                 json.loads(json.dumps(event).replace("root-session", "other-root")
+                            .replace("reviewer-1", "reviewer-2")
+                            .replace("dispatch-1", "dispatch-2")
+                            .replace("T00:00:", "T00:01:")))
+                for event_session, event in events]
+            other_runtime = model.CliReviewRuntime(
+                later, dispatch_id="dispatch-2", root_session_id="other-root",
+                candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+            other = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture["head"],
+                identity=first.identity, owners=first.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            other.begin(other_runtime, "reviewer-2")
+            self.assertIsNotNone(other.finish(other_runtime))
+
+    def test_contradictory_owner_pair_remains_uncertain_after_abort(self):
+        with snapshot() as root:
+            fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+            first.begin(runtime, reviewer)
+            changed = copy.deepcopy(events)
+            for _, event in changed:
+                if event.get("type") in {"subagent.started", "subagent.completed"}:
+                    event["agentId"] = "unexpected-reviewer"
+            first.observe_cli_events(changed)
+            first.abort(runtime)
+            later = [
+                (event_session.replace("root-session", "other-root"),
+                 json.loads(json.dumps(event).replace("root-session", "other-root")
+                            .replace("reviewer-1", "reviewer-2")
+                            .replace("dispatch-1", "dispatch-2")
+                            .replace("T00:00:", "T00:01:")))
+                for event_session, event in events]
+            other_runtime = model.CliReviewRuntime(
+                later, dispatch_id="dispatch-2", root_session_id="other-root",
+                candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+            other = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture["head"],
+                identity=first.identity, owners=first.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            other.begin(other_runtime, "reviewer-2")
+            with self.assertRaises(model.ReviewError):
+                other.finish(other_runtime)
+            self.assertIsNone(other.report)
+
     def test_changed_active_start_without_terminal_invalidates_later_report(self):
         with snapshot() as root:
             fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
@@ -3109,7 +3163,9 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 identity=session.identity, owners=session.owners,
                 readers={"read-candidate": runtime.candidate_reader})
             next_session.begin(next_runtime, "reviewer-3")
-            self.assertIsNotNone(next_session.finish(next_runtime))
+            with self.assertRaisesRegex(model.ReviewError, "overlapping"):
+                next_session.finish(next_runtime)
+            next_session.abort(next_runtime)
 
     def test_duplicate_candidate_read_and_overlong_turn_are_rejected(self):
         for case in ("duplicate-read", "overlong"):
