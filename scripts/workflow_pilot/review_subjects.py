@@ -2740,6 +2740,33 @@ def _session_probe(probe: str) -> dict:
                 check(rejects(lambda: later.finish(later_runtime)),
                       "contradictory partial start lost terminal uncertainty")
 
+            for variant in ("unattributed", "partial", "changed-time", "attributed"):
+                owners = module.ReviewOwnership()
+                prior, prior_runtime = native_session(
+                    owners, events, "root-b", "reviewer-b", "dispatch-b")
+                changed = json.loads(json.dumps(events))
+                for _, event in changed:
+                    if event.get("type") == "subagent.started":
+                        if variant == "changed-time":
+                            event["timestamp"] = "2026-01-01T00:01:00Z"
+                        else:
+                            event["data"]["interactionId"] = "other-interaction"
+                    if event.get("type") == "subagent.completed":
+                        if variant == "changed-time":
+                            event["data"]["interactionId"] = "interaction-1"
+                        elif variant == "attributed":
+                            event["data"]["interactionId"] = "other-interaction"
+                if variant == "partial":
+                    changed = [item for item in changed
+                               if item[1].get("type") != "subagent.completed"]
+                prior.observe_cli_events(changed)
+                prior.abort(prior_runtime)
+                later, later_runtime = native_session(
+                    owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+                blocked = rejects(lambda: later.finish(later_runtime))
+                check(blocked == (variant != "attributed"),
+                      "conflicting start terminal attribution produced the wrong interval")
+
             for variant in ("interaction", "chronology", "early-completion"):
                 owners = module.ReviewOwnership()
                 active = [item for item in events if item[1].get("type") != "subagent.completed"]

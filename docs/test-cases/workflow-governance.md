@@ -1270,6 +1270,14 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    `CliReviewRuntimeTests.test_first_partial_cli_start_remains_bound_before_terminal`
    and `CliReviewRuntimeTests.test_ambiguous_initial_cli_start_cannot_be_replaced`.
    The pre-fix negative controls incorrectly release the reservations.
+   Observe a conflicting interaction both without a completion and with an
+   interaction-less completion, then retire the original on its unchanged
+   terminal evidence. A later possible overlap must still reject. A changed
+   start time for the same interaction also remains uncertain; an explicitly
+   matched terminal for a distinct interaction can instead prove its bound.
+   Run
+   `CliReviewRuntimeTests.test_conflicting_start_requires_attributable_terminal_for_bounded_interval`;
+   the pre-fix negative controls incorrectly admit the later review.
    The coordinator then logically closes the completed reviewer identity and
    dispatch, scoped to the root CLI session. A second admission reusing the
    same reviewer and dispatch in that root session must reject before another

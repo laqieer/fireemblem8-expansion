@@ -767,7 +767,11 @@ receipt validation fails; if a start was not yet observed, a later unique start
 may establish it. Replaced or missing bound records reject retirement, and an
 ambiguous initial duplicate does not establish a unique binding. Contradictory
 later observations remain possible overlap in the shared ownership index even
-when the original task can be retired on its original evidence. Reviewer identity is scoped by the
+when the original task can be retired on its original evidence. An
+interaction-less completion cannot prove a conflicting interaction ended, and
+a completion cannot disambiguate a changed start time for the same interaction.
+An explicitly matched completion for a distinct interaction can bound that
+observation. Reviewer identity is scoped by the
 coordinator's root CLI session and reviewer agent ID; dispatch is scoped by
 root session and tool-call ID. It rejects reuse of either identity within that
 session. A rootless generic adapter can retire a verified terminal without

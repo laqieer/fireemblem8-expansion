@@ -1104,9 +1104,13 @@ class ReviewOwnership:
                 if (observed.started_at is not None and start_event is not None
                         and (start != timestamp(observed.started_at)
                              or not isinstance(data, dict)
-                             or data.get("interactionId") != observed.interaction)
-                        and end is None):
-                    unknown_end = True
+                             or data.get("interactionId") != observed.interaction)):
+                    if (end is None or not isinstance(data, dict)
+                            or data.get("interactionId") == observed.interaction
+                            or not completions
+                            or completions[0].get("data", {}).get("interactionId")
+                            != data.get("interactionId")):
+                        unknown_end = True
                 self._remember_interval(observed, start, end,
                                         unknown_start=start is None, unknown_end=unknown_end)
                 for other in self.records.values():

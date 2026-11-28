@@ -2083,6 +2083,50 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 with self.assertRaises(model.ReviewError):
                     other.finish(other_runtime)
 
+    def test_conflicting_start_requires_attributable_terminal_for_bounded_interval(self):
+        for variant in ("unattributed", "partial", "changed-time", "attributed"):
+            with self.subTest(variant=variant), snapshot() as root:
+                fixture, runtime, first, events, times, reviewer, interaction = self.native_runtime(root)
+                first.begin(runtime, reviewer)
+                changed = copy.deepcopy(events)
+                for _, event in changed:
+                    if event.get("type") == "subagent.started":
+                        if variant == "changed-time":
+                            event["timestamp"] = times["dispatch"]
+                        else:
+                            event["data"]["interactionId"] = "other-interaction"
+                    if event.get("type") == "subagent.completed":
+                        if variant == "changed-time":
+                            event["data"]["interactionId"] = interaction
+                        elif variant == "attributed":
+                            event["data"]["interactionId"] = "other-interaction"
+                if variant == "partial":
+                    changed = [item for item in changed
+                               if item[1].get("type") != "subagent.completed"]
+                first.observe_cli_events(changed)
+                first.abort(runtime)
+                later = [
+                    (event_session.replace("root-session", "other-root"),
+                     json.loads(json.dumps(event).replace("root-session", "other-root")
+                                .replace("reviewer-1", "reviewer-2")
+                                .replace("dispatch-1", "dispatch-2")
+                                .replace("T00:00:", "T00:01:")))
+                    for event_session, event in events]
+                later_runtime = model.CliReviewRuntime(
+                    later, dispatch_id="dispatch-2", root_session_id="other-root",
+                    candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+                later_session = model.ReviewSession(
+                    "coordinator", "implementer", first.scope, fixture["head"],
+                    identity=first.identity, owners=first.owners,
+                    readers={"read-candidate": runtime.candidate_reader})
+                later_session.begin(later_runtime, "reviewer-2")
+                if variant == "attributed":
+                    self.assertIsNotNone(later_session.finish(later_runtime))
+                else:
+                    with self.assertRaises(model.ReviewError):
+                        later_session.finish(later_runtime)
+                    self.assertIsNone(later_session.report)
+
     def test_abort_rejects_replaced_bound_start(self):
         for variant in ("interaction", "chronology", "early-completion"):
             with self.subTest(variant=variant), snapshot() as root:
