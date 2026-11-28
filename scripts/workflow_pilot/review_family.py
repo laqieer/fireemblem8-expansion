@@ -27,6 +27,7 @@ READ_ACTIONS = frozenset({"read-candidate", "read-evidence", "emit-report"})
 SHA_PATTERN = r"[0-9a-f]{40}"
 NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}"
 CASE_PATTERN = r"TC-[A-Z0-9]+(?:-[A-Z0-9]+)+"
+SCOPE_PATTERN = rf"(?:{NAME_PATTERN}|{CASE_PATTERN}/{NAME_PATTERN})"
 MAX_SUBJECTS = 40
 MAX_FINDINGS = 50
 MAX_MEMBERS = 250
@@ -1478,7 +1479,7 @@ class CliReviewRuntime:
             keys(item, ("id", "subject", "family", "member", "source_path", "detail"),
                  "review finding")
             identifier(item["id"], NAME_PATTERN, "finding ID")
-            identifier(item["subject"], NAME_PATTERN, "finding subject")
+            identifier(item["subject"], SCOPE_PATTERN, "finding subject")
             identifier(item["family"], NAME_PATTERN, "finding family")
             identifier(item["member"], NAME_PATTERN, "finding member")
             require(item["subject"] in self._scope(), "finding is outside assigned review scope")
@@ -1543,7 +1544,7 @@ class ReviewSession:
                 and all(isinstance(item, str) and bool(item.strip()) for item in scope),
                 "invalid accepted review scope")
         for item in scope:
-            identifier(item, NAME_PATTERN, "review subject")
+            identifier(item, SCOPE_PATTERN, "review subject")
         if identity is not None:
             require(isinstance(identity, tuple) and len(identity) == 3,
                     "invalid frozen PR identity")

@@ -1404,7 +1404,7 @@ class RoleTests(unittest.TestCase):
 class CliReviewRuntimeTests(unittest.TestCase):
     def native_runtime(self, root, *, findings=None, both_sides=False, raw_summary=False,
                        binary_content=None, root_session_id="root-session",
-                       reviewer_session_id=None):
+                       reviewer_session_id=None, scope=None):
         fixture = candidate_fixture(root)
         if binary_content is not None:
             fixture["paths"]["binary"] = "candidate-review-paths/asset.bin"
@@ -1439,7 +1439,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
                     "summary": summary.__dict__ if raw_summary else summary,
                     "encoding": encoding,
                 }
-        scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
+        if scope is None:
+            scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
         assigned_reads = json.dumps(
             [[path, side, target["tool_path"], target["encoding"]]
              for (path, side), target in sorted(targets.items())],
@@ -1541,13 +1542,39 @@ class CliReviewRuntimeTests(unittest.TestCase):
             events, dispatch_id=dispatch_id, root_session_id=root_session_id,
             candidate_reader=reader, required_reads=targets)
         session = model.ReviewSession(
-            "coordinator", "implementer",
-            frozenset({model.subject_key(request()["subjects"][0])}),
+            "coordinator", "implementer", scope,
             fixture["head"], identity=("owner/repo", 1, fixture["base"]),
             owners=model.ReviewOwnership(),
             readers={"read-candidate": reader},
         )
         return fixture, runtime, session, events, times, reviewer, interaction
+
+    def test_request_scope_and_cli_findings_accept_long_valid_joined_keys(self):
+        for case_id, subject in (
+            ("TC-WORKFLOW-REVIEW-FAMILY-001", "x" * 160),
+            ("TC-" + "A" * 170 + "-001", "review-session"),
+        ):
+            for in_scope in (True, False):
+                with self.subTest(case_id=case_id, in_scope=in_scope), snapshot() as root:
+                    data = request(case=case_id, subject=subject)
+                    model.validate_request(data)
+                    key = model.subject_key(data["subjects"][0])
+                    self.assertGreater(len(key), 160)
+                    finding = {
+                        "id": "finding-1", "subject": key if in_scope else key + "x",
+                        "family": "wire", "member": "validators:review-session",
+                        "source_path": "candidate-review-paths/modify.txt",
+                        "detail": "The candidate path has an observable contract gap.",
+                    }
+                    _, runtime, session, _, _, reviewer, _ = self.native_runtime(
+                        root, findings=[finding], scope=frozenset({key}))
+                    session.begin(runtime, reviewer)
+                    if in_scope:
+                        self.assertEqual(session.finish(runtime).findings[0].subject, key)
+                    else:
+                        with self.assertRaises(model.ReviewError):
+                            session.finish(runtime)
+                        self.assertIsNone(session.report)
 
     def test_child_session_receipt_without_root_provenance_is_not_admitted(self):
         with snapshot() as root:

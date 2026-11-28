@@ -1286,6 +1286,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    unchanged original records admit, but altered assignment records reject.
    Use identical candidate Git objects from two checkout roots; a runtime and
    session bound to different roots must reject at begin or finish.
+   Submit a valid case ID and maximum-length subject whose joined key exceeds
+   160 characters: session creation and an in-scope CLI finding must accept it,
+   while an out-of-scope finding must reject.
    Submit an explicitly complete owning snapshot with a removed or re-owned
    admitted event, including for a rootless runtime: readiness must reject.
    An incremental observation does not
