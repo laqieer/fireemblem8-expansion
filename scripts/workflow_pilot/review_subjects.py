@@ -2432,11 +2432,12 @@ def _session_probe(probe: str) -> dict:
 
     def completed_session(owners, pull_request, owner, task, root_session, *,
                           interaction="interaction-1",
+                          started_at="2026-01-01T00:00:01Z",
+                          activity_at="2026-01-01T00:00:03Z",
                           completed_at="2026-01-01T00:00:05Z",
                           extra_events=(), finish=True):
         scope = frozenset({"case"})
         reader = CandidateReader()
-        started_at = "2026-01-01T00:00:01Z"
         candidate_read = reader.describe("case.txt")
         candidate_summary = module.CandidateReadSummary(
             candidate_read["path"], candidate_read["side"], candidate_read["revision"],
@@ -2447,7 +2448,7 @@ def _session_probe(probe: str) -> dict:
                 "data": {"toolCallId": task, "interactionId": interaction},
             }),
             (root_session + "-reviewer", {
-                "type": "assistant.message", "timestamp": "2026-01-01T00:00:03Z",
+                "type": "assistant.message", "timestamp": activity_at,
                 "agentId": owner,
                 "data": {"interactionId": interaction, "turnId": "turn-1"},
             }),
@@ -2646,7 +2647,9 @@ def _session_probe(probe: str) -> dict:
         try:
             second = completed_session(
                 owners, 2, second_owner, "dispatch-1", "root-b",
-                interaction="interaction-b", extra_events=(late_activity,))
+                interaction="interaction-b", started_at="2026-01-01T00:00:06Z",
+                activity_at="2026-01-01T00:00:08Z",
+                completed_at="2026-01-01T00:00:10Z", extra_events=(late_activity,))
         except module.ReviewError as error:
             raise ContractViolation(
                 "late activity from reviewer A invalidated reviewer B: " + str(error)) from error

@@ -1350,12 +1350,17 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    strict integers and exercise their negative controls. Check that overlap
    exclusion still blocks a second active registration for one PR or head while
    logically closed reviewers cannot be reused. For recorded task intervals,
-   reject overlapping completed reports for the same PR or head, admit ordered
-   or unrelated tasks, and allow terminal-only abort after a rejected report.
-   After an already-started CLI task's candidate-reader mismatch, retain its
+   reject overlapping completed reports for the same PR or head and invalidate
+   previously admitted overlapping reports, including when the later task is
+   aborted. Admit ordered or unrelated tasks, and allow terminal-only abort
+   after a rejected report. A rejected reused dispatch must not leave a new
+   reservation, and a fresh sequential dispatch must remain usable.
+   After an already-started CLI task's candidate-reader root or head mismatch, retain its
    reservation until an observed terminal abort; a new registration must fail
    while it remains active. Run
    `CliReviewRuntimeTests.test_started_cli_failure_keeps_reservation_until_terminal_abort`
+   `CliReviewRuntimeTests.test_started_cli_wrong_head_keeps_reservation_until_terminal_abort`,
+   `CliReviewRuntimeTests.test_closed_dispatch_cannot_be_reused_by_another_reviewer`,
    and `CliReviewRuntimeTests.test_cli_completed_reports_reject_observed_overlap`.
    These controls cannot prevent a task that was already dispatched.
    Include assigned unchanged regular blobs on both frozen sides as supporting

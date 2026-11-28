@@ -1635,12 +1635,13 @@ class CliReviewRuntimeTests(unittest.TestCase):
             other_reader = gate.ReviewTools(
                 gate.GitTree(root.root, other_head), root.root
             ).candidate_reader(fixture["base"], other_head)
-            for case, same_pr, same_head, sequential, should_accept in (
-                ("same-pr-head", True, True, False, False),
-                ("same-pr", True, False, False, False),
-                ("same-head", False, True, False, False),
-                ("sequential", True, True, True, True),
-                ("unrelated", False, False, False, True),
+            for case, same_pr, same_head, sequential, should_accept, abort_only in (
+                ("same-pr-head", True, True, False, False, False),
+                ("same-pr", True, False, False, False, False),
+                ("same-head", False, True, False, False, False),
+                ("aborted-overlap", True, True, False, False, True),
+                ("sequential", True, True, True, True, False),
+                ("unrelated", False, False, False, True, False),
             ):
                 with self.subTest(case=case):
                     owners = model.ReviewOwnership()
@@ -1683,12 +1684,40 @@ class CliReviewRuntimeTests(unittest.TestCase):
                     second.begin(second_runtime, "reviewer-2")
                     if should_accept:
                         self.assertIsNotNone(second.finish(second_runtime))
+                        self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
                     else:
-                        with self.assertRaisesRegex(model.ReviewError, "overlapping review"):
-                            second.finish(second_runtime)
-                        self.assertIsNone(second.report)
+                        if not abort_only:
+                            with self.assertRaisesRegex(model.ReviewError, "overlapping review"):
+                                second.finish(second_runtime)
+                            self.assertIsNone(second.report)
                         second.abort(second_runtime)
+                        with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                            first.review_state((), (), pre_review_required=True)
                         self.assertEqual(second.lease.outcome, "aborted")
+
+    def test_started_cli_wrong_head_keeps_reservation_until_terminal_abort(self):
+        with snapshot() as root:
+            fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+            tree = git(root.root, "rev-parse", fixture["head"] + "^{tree}")
+            wrong_head = git(root.root, "commit-tree", tree, "-p", fixture["head"],
+                             "-m", "wrong candidate")
+            first.readers["read-candidate"] = gate.ReviewTools(
+                gate.GitTree(root.root, wrong_head), root.root
+            ).candidate_reader(fixture["base"], wrong_head)
+            runtime.events = tuple((session, event) for session, event in events
+                                   if event.get("type") != "subagent.completed")
+            with self.assertRaisesRegex(model.ReviewError, "head differs"):
+                first.begin(runtime, reviewer)
+            self.assertIsNotNone(first.owners.record_for(first))
+            second = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture["head"],
+                identity=first.identity, owners=first.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            with self.assertRaisesRegex(model.ReviewError, "overlapping review ownership"):
+                second.begin(runtime, "reviewer-2")
+            runtime.events = tuple(events)
+            first.abort(runtime)
+            self.assertEqual(first.lease.outcome, "aborted")
 
     def test_request_scope_and_cli_findings_accept_long_valid_joined_keys(self):
         for case_id, subject in (
@@ -2491,6 +2520,23 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 identity=session.identity, owners=session.owners)
             with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
                 fresh.begin(fresh_runtime, "reviewer-2")
+            self.assertIsNone(session.owners.record_for(fresh))
+            replacement = tuple(
+                (session_id, json.loads(json.dumps(event)
+                    .replace("reviewer-1", "reviewer-3")
+                    .replace("dispatch-1", "dispatch-3")
+                    .replace("T00:00:", "T00:01:")))
+                for session_id, event in events)
+            next_runtime = model.CliReviewRuntime(
+                replacement, dispatch_id="dispatch-3", root_session_id="root-session",
+                candidate_reader=runtime.candidate_reader,
+                required_reads=runtime.required_reads)
+            next_session = model.ReviewSession(
+                "coordinator", "another-implementer", session.scope, session.head,
+                identity=session.identity, owners=session.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            next_session.begin(next_runtime, "reviewer-3")
+            self.assertIsNotNone(next_session.finish(next_runtime))
 
     def test_duplicate_candidate_read_and_overlong_turn_are_rejected(self):
         for case in ("duplicate-read", "overlong"):

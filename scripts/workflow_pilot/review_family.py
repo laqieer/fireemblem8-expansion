@@ -938,14 +938,6 @@ class ReviewOwnership:
         start = timestamp(started_at)
         end = timestamp(completed_at)
         require(start <= end, "review task chronology is invalid")
-        if report is not None:
-            require(not any(
-                other is not record and other.state == "terminal"
-                and (other.identity[:2] == record.identity[:2] or other.head == record.head)
-                and start <= timestamp(other.completed_at)
-                and timestamp(other.started_at) <= end
-                for other in self.records.values()),
-                "overlapping review task observations")
         require(isinstance(admitted_event_keys, (tuple, list, set, frozenset))
                 and all(isinstance(item, str) for item in admitted_event_keys),
                 "invalid admitted CLI event keys")
@@ -962,6 +954,17 @@ class ReviewOwnership:
                  or bool(sessions & other.event_sessions))
             for other in self.records.values()),
             "review event session was already logically closed")
+        overlaps = [
+            other for other in self.records.values()
+            if other is not record and other.state == "terminal"
+            and (other.identity[:2] == record.identity[:2] or other.head == record.head)
+            and start <= timestamp(other.completed_at)
+            and timestamp(other.started_at) <= end
+        ]
+        for other in overlaps:
+            if other.report is not None and other.invalidation_reason is None:
+                other.invalidation_reason = "overlapping review task observations"
+        require(report is None or not overlaps, "overlapping review task observations")
         record.state = "terminal"
         record.interaction = interaction
         record.started_at = started_at
@@ -1628,16 +1631,6 @@ class ReviewSession:
         require(type(duration) is int and 0 < duration <= MAX_REVIEW_SECONDS
                 and type(max_files) is int and 0 < max_files <= MAX_REVIEW_FILES,
                 "invalid review bounds")
-        candidate_reader = self._candidate_reader()
-        self.candidate_binding = None
-        if candidate_reader is not None:
-            _, _, _, binding = candidate_reader
-            require(binding.head == self.head,
-                    "trusted candidate reader head differs from the active review")
-            if self.identity is not None:
-                require(binding.base == self.identity[2],
-                        "trusted candidate reader base differs from the frozen review identity")
-            self.candidate_binding = binding
         reserved = False
         dispatched = False
         try:
@@ -1645,12 +1638,22 @@ class ReviewSession:
                 self.owners.reserve(self)
                 reserved = True
             if isinstance(runtime, CliReviewRuntime):
-                dispatched = True
                 runtime.assigned_owner = owner
                 runtime.assigned_candidate = self.head
                 runtime.assigned_subjects = tuple(sorted(self.scope))
                 if self.owners is not None:
                     self.owners.bind_dispatch(self, runtime.dispatch_id)
+                dispatched = True
+            candidate_reader = self._candidate_reader()
+            self.candidate_binding = None
+            if candidate_reader is not None:
+                _, _, _, binding = candidate_reader
+                require(binding.head == self.head,
+                        "trusted candidate reader head differs from the active review")
+                if self.identity is not None:
+                    require(binding.base == self.identity[2],
+                            "trusted candidate reader base differs from the frozen review identity")
+                self.candidate_binding = binding
             assigned_reads = json.dumps(
                 [[path, side, target["tool_path"], target["encoding"]]
                  for (path, side), target in sorted(runtime.required_reads.items())]

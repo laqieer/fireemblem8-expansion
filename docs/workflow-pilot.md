@@ -686,7 +686,9 @@ delegation are permitted. `ReviewSession` accepts that real ownership, while
 across the coordinator's sessions; it rejects another active registration for
 the same repository/PR or candidate head, regardless of scope, and rejects
 completed reports whose observed task intervals overlap recorded tasks for
-either identity. Terminal-only abort remains available without admitting a
+either identity. Observing an overlapping terminal task also invalidates any
+previously admitted overlapping report, including when the later task is
+aborted without admission. Terminal-only abort remains available without admitting a
 report. The retrospective CLI adapter observes an already dispatched task and
 cannot prevent a task start; the coordinator must schedule future reviews
 without overlap. Missing task observations do not prove non-overlap.
@@ -746,8 +748,11 @@ substituted with coordinator-side rereads.
 `ReviewOwnership` logically closes the completed reviewer turn after the
 coordinator accepts its evidence. Each assigned task has one shared record for
 its frozen assignment, dispatch, terminal state, event baseline, report and
-invalidation. After registration, a failed start after possible dispatch
-retains an unknown reservation; a missing receipt cannot release it or admit
+invalidation. For the retrospective CLI adapter, bind the observed dispatch
+before validating the candidate reader; after a successful binding, a setup
+failure retains the reservation. A rejected closed or already-owned dispatch
+does not leave a new reservation. After registration, a failed start after possible
+dispatch retains an unknown reservation; a missing receipt cannot release it or admit
 a report. Failures before registration cannot reserve an already-started task. A
 terminal-only abort may retire it without admission only when the exact root,
 dispatch, reviewer start and completion are independently observed. Reviewer identity is scoped by the
