@@ -1404,7 +1404,7 @@ class RoleTests(unittest.TestCase):
 class CliReviewRuntimeTests(unittest.TestCase):
     def native_runtime(self, root, *, findings=None, both_sides=False, raw_summary=False,
                        binary_content=None, root_session_id="root-session",
-                       reviewer_session_id=None, scope=None):
+                       reviewer_session_id=None, scope=None, support_sides=()):
         fixture = candidate_fixture(root)
         if binary_content is not None:
             fixture["paths"]["binary"] = "candidate-review-paths/asset.bin"
@@ -1439,6 +1439,20 @@ class CliReviewRuntimeTests(unittest.TestCase):
                     "summary": summary.__dict__ if raw_summary else summary,
                     "encoding": encoding,
                 }
+        support_path = "scripts/workflow_pilot/trusted_review_gate.py"
+        fixture["paths"]["unchanged"] = support_path
+        for side in support_sides:
+            summary = model.validate_candidate_read_summary(
+                reader.describe(support_path, side),
+                base_sha=fixture["base"], head_sha=fixture["head"])
+            blob = reader(support_path, side)["data"]
+            materialized = root.root / f"reviewer-support-{side}.txt"
+            materialized.write_bytes(blob)
+            targets[(support_path, side)] = {
+                "tool_path": str(materialized), "content": blob,
+                "summary": summary.__dict__ if raw_summary else summary,
+                "encoding": "utf-8",
+            }
         if scope is None:
             scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
         assigned_reads = json.dumps(
@@ -2111,27 +2125,93 @@ class CliReviewRuntimeTests(unittest.TestCase):
             self.assertIn((fixture["paths"]["modified"], "base"), reads)
             self.assertIn((fixture["paths"]["modified"], "head"), reads)
 
-    def test_candidate_reads_reject_unchanged_paths_and_normalize_summaries(self):
+    def test_candidate_reads_accept_unchanged_supporting_context(self):
         with snapshot() as root:
-            fixture, runtime, _, _, _, _, _ = self.native_runtime(root, raw_summary=True)
+            support_path = "scripts/workflow_pilot/trusted_review_gate.py"
+            os.symlink(support_path, root.root / "support-link")
+            git(root.root, "add", "--", "support-link")
+            git(root.root, "commit", "-qm", "Add supporting symlink")
+            root.base = git(root.root, "rev-parse", "HEAD")
+            findings = [{
+                "id": "support-finding",
+                "subject": "TC-WORKFLOW-REVIEW-FAMILY-001/review-session",
+                "family": "wire",
+                "member": "validators:review-session",
+                "source_path": support_path,
+                "detail": "The caller needs to be considered.",
+            }]
+            fixture, runtime, session, _, _, reviewer, _ = self.native_runtime(
+                root, raw_summary=True, support_sides=("base", "head"), findings=findings)
             self.assertTrue(all(isinstance(target["summary"], model.CandidateReadSummary)
                                 for target in runtime.required_reads.values()))
-            unchanged = next(
-                path for path, entry in runtime.candidate_reader.base_tree.entries.items()
-                if runtime.candidate_reader.head_tree.entries.get(path) == entry)
-            summary = model.validate_candidate_read_summary(
-                runtime.candidate_reader.describe(unchanged, "head"),
-                base_sha=fixture["base"], head_sha=fixture["head"])
-            content = runtime.candidate_reader(unchanged, "head")["data"]
-            invalid_reads = dict(runtime.required_reads)
-            invalid_reads[(unchanged, "head")] = {
-                "tool_path": "/tmp/unchanged-input.txt", "content": content,
-                "summary": summary, "encoding": "utf-8",
-            }
-            with self.assertRaisesRegex(model.ReviewError, "changed candidate path"):
+            self.assertEqual(runtime.candidate_reader.base_tree.entries[support_path],
+                             runtime.candidate_reader.head_tree.entries[support_path])
+            session.begin(runtime, reviewer)
+            report = session.finish(runtime)
+            reads = {(item.path, item.side) for item in report.candidate_reads}
+            self.assertTrue({(support_path, "base"), (support_path, "head")} <= reads)
+            self.assertEqual(report.findings[0].source_path, support_path)
+
+            missing = dict(runtime.required_reads)
+            missing.pop((fixture["paths"]["added"], "head"))
+            with self.assertRaisesRegex(model.ReviewError, "complete candidate diff"):
                 model.CliReviewRuntime(
                     runtime.events, dispatch_id="dispatch-1", root_session_id="root-session",
-                    candidate_reader=runtime.candidate_reader, required_reads=invalid_reads)
+                    candidate_reader=runtime.candidate_reader, required_reads=missing)
+
+            absent = dict(runtime.required_reads)
+            absent[(fixture["paths"]["deleted"], "head")] = absent[(support_path, "head")]
+            with self.assertRaisesRegex(model.ReviewError, "available regular Git blob"):
+                model.CliReviewRuntime(
+                    runtime.events, dispatch_id="dispatch-1", root_session_id="root-session",
+                    candidate_reader=runtime.candidate_reader, required_reads=absent)
+
+            symlink = dict(runtime.required_reads)
+            symlink[("support-link", "head")] = symlink[(support_path, "head")]
+            with self.assertRaisesRegex(model.ReviewError, "available regular Git blob"):
+                model.CliReviewRuntime(
+                    runtime.events, dispatch_id="dispatch-1", root_session_id="root-session",
+                    candidate_reader=runtime.candidate_reader, required_reads=symlink)
+
+            altered = dict(runtime.required_reads)
+            key = (support_path, "head")
+            altered[key] = {**altered[key], "content": b"not the Git blob"}
+            with self.assertRaisesRegex(model.ReviewError, "immutable Git object"):
+                model.CliReviewRuntime(
+                    runtime.events, dispatch_id="dispatch-1", root_session_id="root-session",
+                    candidate_reader=runtime.candidate_reader, required_reads=altered)
+
+            support_call = next(
+                event["data"]["toolCallId"] for _, event in runtime.events
+                if event.get("type") == "tool.execution_start"
+                and event["data"].get("arguments", {}).get("path")
+                == runtime.required_reads[key]["tool_path"])
+            for case, message in (("missing", "every required candidate path"),
+                                  ("altered", "observed bytes differ")):
+                with self.subTest(case=case):
+                    events = copy.deepcopy(runtime.events)
+                    if case == "missing":
+                        events = tuple(
+                            (session_id, event) for session_id, event in events
+                            if event.get("data", {}).get("toolCallId") != support_call)
+                    else:
+                        completion = next(
+                            event for _, event in events
+                            if event.get("type") == "tool.execution_complete"
+                            and event.get("data", {}).get("toolCallId") == support_call)
+                        completion["data"]["result"]["content"] += "\nchanged\n"
+                    invalid = model.CliReviewRuntime(
+                        events, dispatch_id="dispatch-1", root_session_id="root-session",
+                        candidate_reader=runtime.candidate_reader,
+                        required_reads=runtime.required_reads)
+                    fresh = model.ReviewSession(
+                        "coordinator", "implementer", session.scope, fixture["head"],
+                        identity=("owner/repo", 1, fixture["base"]),
+                        owners=model.ReviewOwnership(),
+                        readers={"read-candidate": runtime.candidate_reader})
+                    fresh.begin(invalid, reviewer)
+                    with self.assertRaisesRegex(model.ReviewError, message):
+                        fresh.finish(invalid)
 
     def test_non_utf8_candidate_blobs_use_exact_canonical_base64(self):
         with snapshot() as root:

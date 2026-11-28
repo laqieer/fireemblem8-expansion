@@ -1338,8 +1338,8 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    prohibited operation, missing or contradictory tool interaction identity,
    failed/partial/unassigned/duplicate file reads,
    wrong blob bytes, noncanonical base64 or decoded binary mismatch, omitted
-   required paths/sides, unavailable additional sides, unchanged-path reads,
-   malformed report/finding,
+   required paths/sides, unavailable additional sides, malformed
+   report/finding,
    duplicate task/reviewer or closed-dispatch reuse, late activity including
    same-interaction events at the completion timestamp, missing or failed
    dispatch receipts, and invalid chronology. Require actual parsed report
@@ -1349,6 +1349,10 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    strict integers and exercise their negative controls. Check that overlap
    exclusion still blocks a second active reviewer for one PR or head while
    logically closed reviewers cannot be reused.
+   Include assigned unchanged regular blobs on both frozen sides as supporting
+   context and report a finding against the observed head blob. Missing changed
+   paths, unavailable supporting sides, or altered supporting bytes must reject.
+   Run `CliReviewRuntimeTests.test_candidate_reads_accept_unchanged_supporting_context`.
    Run the focused `CliReviewRuntimeTests` and role/ownership tests. Synthetic
    fixtures cover parser/reducer negatives only; they do not replace the
    genuine CLI task observation above. Tool availability and event visibility

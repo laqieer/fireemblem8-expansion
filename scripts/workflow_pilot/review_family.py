@@ -1094,7 +1094,6 @@ class CliReviewRuntime:
             if base_entries.get(path) != head_entries.get(path)
         }
         required_keys = set()
-        supported_keys = set()
         for path in changed_paths:
             base_entry = base_entries.get(path)
             head_entry = head_entries.get(path)
@@ -1110,17 +1109,17 @@ class CliReviewRuntime:
                 None if head_entry is None else head_entry[2],
             )
             required_keys.update((path, side) for side in change.required_reads())
-            supported_keys.update((path, side) for side in REVIEW_SIDES
-                                  if change._supports_blob_read(side))
         require(required_keys <= set(supplied_reads),
                 "review reads do not cover the complete candidate diff")
-        require(set(supplied_reads) <= supported_keys,
-                "review read is not an available side of a changed candidate path")
         for key, target in supplied_reads.items():
             require(isinstance(key, tuple) and len(key) == 2,
                     "invalid candidate read identity")
             path = repo_path(key[0], "candidate read path")
             side = review_side(key[1])
+            entries = base_entries if side == "base" else head_entries
+            entry = entries.get(path)
+            require(entry is not None and entry[0] in REVIEW_BLOB_MODES and entry[1] == "blob",
+                    "review read is not an available regular Git blob")
             keys(target, ("tool_path", "content", "summary", "encoding"),
                  "candidate read target")
             require(isinstance(target["tool_path"], str) and target["tool_path"]

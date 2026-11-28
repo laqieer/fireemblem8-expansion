@@ -714,8 +714,9 @@ Admission binds the assigned reviewer and dispatch to the candidate SHA and
 scope, every observed full-file `view` start and successful completion, and the
 reviewer's final structured report. The observed paths and returned bytes must
 match the immutable candidate blobs from `CandidateReader`; every required
-candidate path and side must be present. Additional base/head sides are
-permitted only for changed paths when each side is an available regular blob.
+candidate path and side must be present. Additional assigned base/head reads,
+including unchanged supporting context, must each be available regular blobs
+in the corresponding immutable tree.
 The assigned-read JSON maps each candidate path and side to the exact supplied
 file path and its `utf-8` or `base64` encoding. Invalid UTF-8 blobs use
 canonical base64 materializations; the observed base64 is decoded and compared
