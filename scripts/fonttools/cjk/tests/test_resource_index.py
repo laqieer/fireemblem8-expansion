@@ -529,7 +529,16 @@ class ResourceIndexTests(unittest.TestCase):
                             valid_inventory = inventory_path.read_bytes()
                             stale_inventory = json.loads(valid_inventory)
                             stale_inventory["outputs"][relative] = plain_record
-                            inventory_path.write_bytes(encode_index(stale_inventory))
+                            stale_inventory_bytes = encode_index(stale_inventory)
+                            inventory_path.write_bytes(stale_inventory_bytes)
+                            manifest_path = root / "graphics/fonts/cjk/manifest.json"
+                            valid_manifest = manifest_path.read_bytes()
+                            stale_manifest = json.loads(valid_manifest)
+                            stale_manifest["sources"]["inventory"]["sha256"] = hashlib.sha256(
+                                stale_inventory_bytes
+                            ).hexdigest()
+                            manifest_path.write_bytes(encode_index(stale_manifest))
+                            check_compact_assets(root)
                             owned_outputs = set(stale_inventory["outputs"]) | {
                                 "fonts/cjk/inventory.json",
                                 "graphics/fonts/cjk/manifest.json", FEHRR_SOURCES,
@@ -537,22 +546,33 @@ class ResourceIndexTests(unittest.TestCase):
                             unchanged = {
                                 path: (root / path).read_bytes() for path in owned_outputs
                             }
-                            with self.assertRaises(CjkFontError):
-                                check_generated_files(root)
+                            result = subprocess.run(
+                                [
+                                    sys.executable, "-B", "-m", "scripts.fonttools.cjk",
+                                    "--root", str(root), "repack-index",
+                                    "--index", "runtime-usage", "--format", "plain",
+                                ],
+                                cwd=ROOT, capture_output=True, text=True, timeout=180,
+                            )
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertIn("error:", result.stderr)
                             self.assertEqual(
                                 {path: (root / path).read_bytes() for path in owned_outputs},
                                 unchanged,
                             )
                             inventory_path.write_bytes(valid_inventory)
+                            manifest_path.write_bytes(valid_manifest)
                         after_assets = check_compact_assets(root)
                         for path, data in before_assets.items():
                             if path not in (FEHRR_SOURCES, "graphics/fonts/cjk/manifest.json"):
                                 self.assertEqual(after_assets[path], data)
-                        generated = check_generated_files(root)
-                        self.assertEqual(
-                            generated["fonts/cjk/runtime_usage.json"],
-                            (root / "fonts/cjk/runtime_usage.json").read_bytes(),
-                        )
+                        # The next runtime-usage repack checks the final FEHRR state.
+                        if index != "fehrr" or representation != formats[-1]:
+                            generated = check_generated_files(root)
+                            self.assertEqual(
+                                generated["fonts/cjk/runtime_usage.json"],
+                                (root / "fonts/cjk/runtime_usage.json").read_bytes(),
+                            )
             for relative in (FEHRR_SOURCES, "fonts/cjk/runtime_usage.json"):
                 packed = json.loads(originals[relative]).get("kind") == ENVELOPE_KIND
                 self.assertEqual(
