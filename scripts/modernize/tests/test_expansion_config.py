@@ -36,6 +36,65 @@ from host_mode import host_only_enabled  # noqa: E402
 from scripts.modernize.tests.make_database import make_database_variable
 
 
+def find_modern_compiler():
+    selected = os.environ.get("MODERN_CC")
+    compiler = shutil.which(selected or "arm-none-eabi-gcc")
+    if selected and compiler is None:
+        raise FileNotFoundError(f"MODERN_CC is not executable: {selected}")
+    return compiler
+
+
+def preprocess_expansion_header(header, *defines, source=""):
+    if os.environ.get("MODERN_CC"):
+        compiler = find_modern_compiler()
+        driver_args = ["-E"]
+    else:
+        compiler = shutil.which("arm-none-eabi-cpp")
+        driver_args = []
+        if compiler is None:
+            compiler = find_modern_compiler()
+            driver_args = ["-E"]
+    if compiler is None:
+        raise unittest.SkipTest("arm-none-eabi-cpp/-gcc is not available")
+    return subprocess.run(
+        [
+            compiler,
+            *driver_args,
+            "-dM",
+            "-I",
+            str(ROOT / "include"),
+            *(f"-D{definition}" for definition in defines),
+            "-x",
+            "c",
+            "-",
+        ],
+        input=f'#include "{header}"\n{source}',
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def macro_value_assertion(macro, value):
+    return (
+        f"#if !defined({macro})\n"
+        f"#error {macro} is not defined\n"
+        f"#elif ({macro}) != ({value})\n"
+        f"#error {macro} has the wrong value\n"
+        "#endif\n"
+    )
+
+
+def compile_settings_fields(text):
+    return dict(
+        (key.strip(), value.strip())
+        for line in text.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+        for key, value in [line.split("=", 1)]
+    )
+
+
 def assert_rejects_wrong_length(test_case, validator, values):
     for value in values:
         with test_case.subTest(value=value):
@@ -4818,6 +4877,15 @@ class FeatureFlagCliTests(unittest.TestCase):
 
 
 class BluePhaseDelegateFlagTests(unittest.TestCase):
+    def test_compile_settings_fields_ignore_non_record_lines(self):
+        fields = compile_settings_fields(
+            "Build settings\n\n# blue_phase_delegate=wrong\n"
+            "blue_phase_delegate = 1 \nconfig_fingerprint=actual\n"
+        )
+        self.assertEqual(fields["blue_phase_delegate"], "1")
+        self.assertEqual(fields["config_fingerprint"], "actual")
+        self.assertNotIn("save_compat_epoch", fields)
+
     def _identity(self, **kwargs):
         params = dict(
             config_mk_path=ROOT / "config.mk",
@@ -4847,28 +4915,164 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
         self.assertNotEqual(disabled.config_fingerprint, enabled.config_fingerprint)
         self.assertEqual(disabled.save_compat_epoch, enabled.save_compat_epoch)
 
-    def test_c_and_make_contracts_are_wired(self):
-        header = (ROOT / "include" / "expansion_config.h").read_text(
-            encoding="utf-8"
+    def test_c_macro_defaults_and_validates_profiles(self):
+        macro = "FE8_EXPANSION_BLUE_PHASE_DELEGATE"
+        result = preprocess_expansion_header(
+            "expansion_config.h", source=macro_value_assertion(macro, 0)
         )
-        modern_mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn("#define FE8_EXPANSION_BLUE_PHASE_DELEGATE 0", header)
-        self.assertIn(
-            "FE8_EXPANSION_BLUE_PHASE_DELEGATE must be 0 or 1", header
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        for value in ("0", "1"):
+            with self.subTest(value=value):
+                result = preprocess_expansion_header(
+                    "expansion_config.h",
+                    "FE8_EXPANSION_MODERN_BUILD=1",
+                    f"{macro}={value}",
+                    source=macro_value_assertion(macro, value),
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+        for value in ("-1", "2"):
+            with self.subTest(value=value):
+                result = preprocess_expansion_header(
+                    "expansion_config.h",
+                    "FE8_EXPANSION_MODERN_BUILD=1",
+                    f"{macro}={value}",
+                )
+                self.assertNotEqual(result.returncode, 0)
+
+        result = preprocess_expansion_header(
+            "expansion_config.h",
+            "FE8_EXPANSION_MODERN_BUILD=0",
+            f"{macro}=1",
         )
-        self.assertIn(
-            "requires the modern issue #85 blue controller", header
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_make_choice_supports_environment_dependent_compiler_wrapper(self):
+        compiler = shutil.which("arm-none-eabi-gcc")
+        if compiler is None:
+            self.skipTest("arm-none-eabi-gcc is not available")
+        with tempfile.TemporaryDirectory() as temporary:
+            wrapper = Path(temporary) / "gcc-wrapper"
+            wrapper.write_text(
+                '#!/bin/sh\n'
+                '[ "$BLUE_CONFIG_WRAPPER_TOKEN" = yes ] || exit 29\n'
+                f'exec "{compiler}" "$@"\n',
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            with mock.patch.dict(os.environ, {
+                "MODERN_CC": str(wrapper),
+                "BLUE_CONFIG_WRAPPER_TOKEN": "yes",
+            }):
+                self.test_make_choice_reaches_compiler_metadata_and_stamp()
+
+    def test_make_choice_reaches_compiler_metadata_and_stamp(self):
+        compiler = find_modern_compiler()
+        if compiler is None:
+            self.skipTest("arm-none-eabi-gcc is not available")
+
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="blue-config-", dir=ROOT / "build") as temporary:
+            build_root = Path(temporary) / "modern"
+            generated = build_root / "debug" / "aapcs" / "generated"
+            make_root = build_root.relative_to(ROOT)
+            make_generated = make_root / "debug" / "aapcs" / "generated"
+            environment = {
+                **os.environ,
+                "HOME": temporary,
+                "LC_ALL": "C",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TMPDIR": temporary,
+            }
+            snapshots = []
+            for value, valid in ((0, True), (1, True), (-1, False), (2, False), ("yes", False)):
+                flags_file = Path(temporary) / f"modern-cflags-{value}.txt"
+                result = subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-f", "Makefile",
+                        "-f", "-",
+                        "NODEP=1",
+                        "blue-config-test-flags",
+                        str(make_generated / "compile_settings.txt"),
+                        str(make_generated / "expansion_build_metadata.json"),
+                        f"MODERN_BUILD_ROOT={make_root}",
+                        "MODERN_CONFIG=debug",
+                        "MODERN_ABI=aapcs",
+                        f"MODERN_CC={compiler}",
+                        "FE8_PROJECT=default",
+                        f"EXPANSION_BLUE_PHASE_DELEGATE={value}",
+                        f"BLUE_TEST_FLAGS_FILE={flags_file}",
+                        "MODERN_CONFIG_RESOLVE_GOALS=blue-config-test-flags",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    input=(
+                        ".PHONY: blue-config-test-flags\n"
+                        "blue-config-test-flags:\n"
+                        "\t$(file >$(BLUE_TEST_FLAGS_FILE),$(MODERN_CFLAGS))@:\n"
+                    ),
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    timeout=60,
+                )
+                if not valid:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(
+                        "EXPANSION_BLUE_PHASE_DELEGATE", result.stdout + result.stderr
+                    )
+                    continue
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                compiled = subprocess.run(
+                    [
+                        compiler,
+                        "-E",
+                        "-x",
+                        "c",
+                        *shlex.split(flags_file.read_text(encoding="utf-8")),
+                        "-",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    input=(
+                        '#include "expansion_config.h"\n'
+                        + macro_value_assertion(
+                            "FE8_EXPANSION_BLUE_PHASE_DELEGATE", value
+                        )
+                    ),
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    timeout=60,
+                )
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                settings = compile_settings_fields(
+                    (generated / "compile_settings.txt").read_text(encoding="utf-8")
+                )
+                metadata = json.loads(
+                    (generated / "expansion_build_metadata.json")
+                    .read_text(encoding="utf-8")
+                )
+                self.assertEqual(settings["blue_phase_delegate"], str(value))
+                self.assertEqual(metadata["blue_phase_delegate"], value)
+                self.assertEqual(
+                    settings["config_fingerprint"], metadata["config_fingerprint"]
+                )
+                self.assertEqual(
+                    int(settings["save_compat_epoch"]), metadata["save_compat_epoch"]
+                )
+                snapshots.append(metadata)
+
+        self.assertNotEqual(
+            snapshots[0]["config_fingerprint"], snapshots[1]["config_fingerprint"]
         )
-        self.assertIn(
-            "-DFE8_EXPANSION_BLUE_PHASE_DELEGATE=$(EXPANSION_BLUE_PHASE_DELEGATE)",
-            modern_mk,
-        )
-        self.assertIn(
-            '--blue-phase-delegate "$(EXPANSION_BLUE_PHASE_DELEGATE)"',
-            modern_mk,
-        )
-        self.assertIn(
-            "blue_phase_delegate=$(EXPANSION_BLUE_PHASE_DELEGATE)", modern_mk
+        self.assertEqual(
+            snapshots[0]["save_compat_epoch"], snapshots[1]["save_compat_epoch"]
         )
 
 
@@ -4990,34 +5194,20 @@ class StarterContentFlagTests(unittest.TestCase):
 class StarterContentCompileTimeContractTests(unittest.TestCase):
     """The same two dependencies must also be hard C compile errors."""
 
-    @staticmethod
-    def preprocess(header, *defines):
-        compiler = shutil.which("arm-none-eabi-cpp")
-        driver_args = []
-        if compiler is None:
-            compiler = shutil.which("arm-none-eabi-gcc")
-            driver_args = ["-E"]
-        if compiler is None:
-            raise unittest.SkipTest("arm-none-eabi-cpp/-gcc is not available")
-        return subprocess.run(
-            [
-                compiler,
-                *driver_args,
-                "-dM",
-                "-I",
-                str(ROOT / "include"),
-                *(f"-D{definition}" for definition in defines),
-                "-x",
-                "c",
-                "-",
-            ],
-            input=f'#include "{header}"\n',
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
+    preprocess = staticmethod(preprocess_expansion_header)
 
+    @staticmethod
+    def macros(output):
+        values = {}
+        for line in output.splitlines():
+            if not line.startswith("#define "):
+                continue
+            definition = line[len("#define "):].split(maxsplit=1)
+            name = definition[0]
+            values[name] = definition[1] if len(definition) == 2 else ""
+        return values
+
+    @mock.patch.dict(os.environ, {"MODERN_CC": ""})
     @mock.patch("subprocess.run")
     @mock.patch("shutil.which")
     def test_preprocess_falls_back_to_gcc_driver(self, which, run):
@@ -5041,16 +5231,24 @@ class StarterContentCompileTimeContractTests(unittest.TestCase):
         self.assertIn("-E", command)
         self.assertIn("-dM", command)
 
-    @staticmethod
-    def macros(output):
-        values = {}
-        for line in output.splitlines():
-            if not line.startswith("#define "):
-                continue
-            definition = line[len("#define "):].split(maxsplit=1)
-            name = definition[0]
-            values[name] = definition[1] if len(definition) == 2 else ""
-        return values
+    @mock.patch.dict(os.environ, {"MODERN_CC": "/custom/arm-gcc"})
+    @mock.patch("subprocess.run")
+    @mock.patch("shutil.which", return_value="/custom/arm-gcc")
+    def test_preprocess_uses_selected_compiler(self, which, run):
+        self.preprocess("expansion_config.h")
+
+        which.assert_called_once_with("/custom/arm-gcc")
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "/custom/arm-gcc")
+        self.assertIn("-E", command)
+        self.assertIn("-dM", command)
+
+    @mock.patch.dict(os.environ, {"MODERN_CC": "/missing/arm-gcc"})
+    @mock.patch("shutil.which", return_value=None)
+    def test_missing_selected_compiler_is_an_error(self, which):
+        with self.assertRaisesRegex(FileNotFoundError, "MODERN_CC"):
+            self.preprocess("expansion_config.h")
+        which.assert_called_once_with("/missing/arm-gcc")
 
     def test_macros_accepts_valued_and_value_less_definitions(self):
         fixture = "\n".join(

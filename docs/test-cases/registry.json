@@ -3572,7 +3572,8 @@
       "title": "One-phase Charge delegation",
       "feature_id": "one-phase-blue-delegation",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/87"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/87",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/409"
       ],
       "document": "docs/test-cases/autoplay.md",
       "anchor": "tc-autoplay-charge-001-one-phase-charge-delegation",
@@ -3582,15 +3583,19 @@
         "Every authored expansion locale catalog"
       ],
       "purpose": "Prove current-phase eligible-only blue delegation, bounded legal AI actions, exact one-phase completion, localized menu/help, and PLAYER restoration.",
-      "prerequisites": "Repository root with libmGBA; clean Chapter 2 positive plus the host fixture with one already-moved and two eligible blue units.",
-      "actions": "Run the Charge host suite, map-menu geometry case, and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
-      "expected_result": "Only remaining eligible units act through the existing AI, the current blue phase completes once, failure evidence is retained, and the next blue phase is interactive PLAYER.",
-      "negative_control": "Feature-disabled debug/release builds add no row or symbol, preserve the 8-definition base table with at most seven live rows and idle PLAYER behavior, and record zero blue AI actions.",
+      "prerequisites": "Repository root with GNU Make, modern ARM GCC and libmGBA; clean Chapter 2 positive plus the host fixture with one already-moved and two eligible blue units.",
+      "actions": "Run the configuration and Charge host suites, map-menu geometry case, and debug/release expansion-modern-blue-phase-delegate-check targets; manually open R-help and select Charge on the documented fixture.",
+      "expected_result": "The default-off C choice reaches the compiler, generated metadata, and compile-settings stamp; its fingerprint changes without changing the save epoch. Only remaining eligible units act through the existing AI, the current blue phase completes once, failure evidence is retained, and the next blue phase is interactive PLAYER.",
+      "negative_control": "Invalid C choices, nonmodern enablement, missing defaults, or lost Make output propagation fail the configuration check. Feature-disabled debug/release builds add no row or symbol, preserve the 8-definition base table with at most seven live rows and idle PLAYER behavior, and record zero blue AI actions.",
       "interactions": "Depends only on issue #85; composing with Danger produces 10 static definitions but at most nine simultaneously visible rows because Status is hidden whenever dungeon-only Records can appear, even when Guide and Retreat coexist; downstream extra rows require an explicit capacity/order/geometry choice.",
       "save_compatibility": "No field, preference, epoch, migration, or serialized controller; reset/suspend-resume restores PLAYER through issue #85.",
       "cleanup": "Use make clean_fast only to remove build artifacts.",
       "limitations": "One phase only; no NOBODY, persistent ownership, strategy/objective/campaign logic, fast-forward, or arbitrary chapter-completion claim.",
       "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_expansion_config.BluePhaseDelegateFlagTests -v",
+          "evidence": "scripts/modernize/tests/test_expansion_config.py"
+        },
         {
           "command": "python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v",
           "evidence": "tools/gba-playtest/tests/test_expansion_blue_phase_delegate.py"
