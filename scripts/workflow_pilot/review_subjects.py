@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, replace
+import hashlib
 import io
 import json
 import os
@@ -733,7 +734,7 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
             "entries": "ReviewSession.begin", "preservation": "RoundState.observe",
             "resets": "RoundState.observe", "terminals": "RoundState.dispose",
             "producers": "parse_json", "consumers": "validate_request",
-            "validators": "validate_request", "replay": "RoundState.observe",
+            "validators": "validate_reviewer_activity", "replay": "RoundState.observe",
             "stale-bindings": "assess_handoff",
         }
         for family in ("lifecycle", "wire"):
@@ -2390,6 +2391,95 @@ def _session_probe(probe: str) -> dict:
             return True
         return False
 
+    class CandidateReader:
+        review_candidate_reader = True
+
+        def __init__(self):
+            self.root = Path.cwd().resolve()
+            self.base = a
+            self.head = b
+            base_data, head_data = b"base source", b"candidate source"
+            self.base_tree = self._tree(a, base_data)
+            self.head_tree = self._tree(b, head_data)
+            self.candidate_binding = {
+                "resolved_root": str(self.root), "base": a, "head": b,
+            }
+
+        @staticmethod
+        def _tree(revision, data):
+            oid = hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
+            return types.SimpleNamespace(
+                root=Path.cwd().resolve(), revision=revision,
+                entries={"case.txt": ("100644", "blob", oid)}, data=data, oid=oid,
+            )
+
+        def preview(self, path, side="head"):
+            return {
+                "path": path, "side": side,
+                "revision": self.base if side == "base" else self.head,
+            }
+
+        def describe(self, path, side="head"):
+            tree = self.base_tree if side == "base" else self.head_tree
+            return {
+                **self.preview(path, side), "present": True, "mode": "100644",
+                "kind": "blob", "oid": tree.oid,
+            }
+
+        def __call__(self, path, side="head"):
+            return {**self.describe(path, side),
+                    "data": (self.base_tree if side == "base" else self.head_tree).data}
+
+    def completed_session(owners, pull_request, owner, task, root_session, *,
+                          interaction="interaction-1",
+                          started_at="2026-01-01T00:00:01Z",
+                          activity_at="2026-01-01T00:00:03Z",
+                          completed_at="2026-01-01T00:00:05Z",
+                          extra_events=(), finish=True):
+        scope = frozenset({"case"})
+        reader = CandidateReader()
+        candidate_read = reader.describe("case.txt")
+        candidate_summary = module.CandidateReadSummary(
+            candidate_read["path"], candidate_read["side"], candidate_read["revision"],
+            candidate_read["present"], candidate_read["mode"], candidate_read["oid"])
+        events = (
+            (root_session, {
+                "type": "subagent.started", "timestamp": started_at, "agentId": owner,
+                "data": {"toolCallId": task, "interactionId": interaction,
+                         "agentType": "code-review"},
+            }),
+            (root_session + "-reviewer", {
+                "type": "assistant.message", "timestamp": activity_at,
+                "agentId": owner,
+                "data": {"interactionId": interaction, "turnId": "turn-1"},
+            }),
+            *extra_events,
+        )
+        report = json.dumps({
+            "candidate_sha": b, "scope": sorted(scope), "findings": [],
+        })
+        result = types.SimpleNamespace(
+            task=task, owner=owner, role="code-review", head=b,
+            subjects=tuple(sorted(scope)), completed=True,
+            actions=("view",), files=1, findings=(), candidate_reads=(candidate_summary,),
+            started_at=started_at, completed_at=completed_at,
+            interaction_id=interaction,
+            instruction_commitment=module.CliReviewRuntime.COMMITMENT,
+            logical_closed=False, cli_events=events, report=report,
+        )
+        runtime = types.SimpleNamespace(
+            root_session_id=root_session,
+            start=lambda **kw: task, read=lambda observed_task: result)
+        session = module.ReviewSession(
+            "coordinator", "implementer", scope, b,
+            identity=("owner/repo", pull_request, a), owners=owners,
+            readers={"read-candidate": reader})
+        session.begin(runtime, owner)
+        if finish:
+            session.finish(runtime)
+            return session
+        return session, runtime
+
     state = module.RoundState()
     if probe in {"lifecycle:preservation", "lifecycle:terminals", "wire:replay"}:
         for number in (1, 2, 3):
@@ -2406,6 +2496,366 @@ def _session_probe(probe: str) -> dict:
             state.dispose(module.Disposition("3", a, "coordinator", "redesign", "new model"),
                           "coordinator")
             check(state.hold is None, "valid architecture disposition did not resume")
+            owners = module.ReviewOwnership()
+            first = completed_session(owners, 1, "reviewer-a", "dispatch-a", "root-a")
+            reader = CandidateReader()
+            scope = frozenset({"case"})
+            targets = {}
+            for side in ("base", "head"):
+                targets[("case.txt", side)] = {
+                    "tool_path": str(Path.cwd() / ("review-" + side + ".txt")),
+                    "content": reader("case.txt", side)["data"],
+                    "summary": reader.describe("case.txt", side),
+                    "encoding": "utf-8",
+                }
+            assigned = json.dumps(
+                [[path, side, target["tool_path"], target["encoding"]]
+                 for (path, side), target in sorted(targets.items())],
+                ensure_ascii=True, separators=(",", ":"))
+            prompt = review._review_instructions(b, scope, assigned)
+
+            def native_event(kind, second, agent, data):
+                return ("root-b", {
+                    "type": kind, "timestamp": f"2026-01-01T00:01:{second:02d}Z",
+                    "agentId": agent, "data": data,
+                })
+
+            events = [
+                native_event("tool.execution_start", 0, "coordinator", {
+                    "toolCallId": "dispatch-b", "toolName": "task",
+                    "arguments": {"prompt": prompt, "agent_type": "code-review"},
+                }),
+                native_event("subagent.started", 1, "reviewer-b", {
+                    "toolCallId": "dispatch-b", "interactionId": "interaction-1",
+                    "agentType": "code-review",
+                }),
+                native_event("user.message", 2, "reviewer-b", {
+                    "source": "agent-root-b", "interactionId": "interaction-1",
+                    "turnId": "turn-0", "transformedContent": prompt,
+                }),
+                native_event("assistant.message", 3, "reviewer-b", {
+                    "interactionId": "interaction-1", "turnId": "turn-0",
+                    "phase": "commentary", "content": module.CliReviewRuntime.COMMITMENT,
+                }),
+            ]
+            for index, (_, target) in enumerate(sorted(targets.items())):
+                call_id = f"view-{index}"
+                events.extend((
+                    native_event("tool.execution_start", 4 + index * 2, "reviewer-b", {
+                        "turnId": "turn-0", "toolCallId": call_id, "toolName": "view",
+                        "arguments": {"path": target["tool_path"]},
+                    }),
+                    native_event("tool.execution_complete", 5 + index * 2, "reviewer-b", {
+                        "interactionId": "interaction-1", "turnId": "turn-0",
+                        "toolCallId": call_id, "success": True,
+                        "result": {"content": target["content"].decode("utf-8")},
+                    }),
+                ))
+            events.extend((
+                native_event("assistant.message", 8, "reviewer-b", {
+                    "interactionId": "interaction-1", "turnId": "turn-1",
+                    "phase": "final_answer",
+                    "content": json.dumps({"candidate_sha": b, "scope": sorted(scope),
+                                           "findings": []}),
+                }),
+                native_event("subagent.completed", 9, "reviewer-b", {
+                    "toolCallId": "dispatch-b",
+                }),
+                native_event("tool.execution_complete", 3, "coordinator", {
+                    "toolCallId": "dispatch-b", "success": True,
+                }),
+            ))
+            baseline_runtime = module.CliReviewRuntime(
+                events, dispatch_id="dispatch-b", root_session_id="root-b",
+                candidate_reader=reader, required_reads=targets)
+            baseline = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 2, a), owners=module.ReviewOwnership(),
+                readers={"read-candidate": reader})
+            baseline.begin(baseline_runtime, "reviewer-b")
+            check(not rejects(lambda: baseline.finish(baseline_runtime)),
+                  "valid CLI terminal did not admit its report")
+            check(baseline.report is not None and baseline.report.head == b,
+                  "valid CLI terminal published the wrong report")
+            native = module.CliReviewRuntime(
+                events, dispatch_id="dispatch-b", root_session_id="root-b",
+                candidate_reader=reader, required_reads=targets)
+            second = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 2, a), owners=owners,
+                readers={"read-candidate": reader})
+            second.begin(native, "reviewer-b")
+            check(len(native.read("dispatch-b").candidate_reads) == 2,
+                  "valid terminal baseline was not readable")
+            check(first.review_state((), (), pre_review_required=True)[0],
+                  "first review was invalidated before the late observation")
+            late_a = ("root-a-reviewer", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:02:00Z",
+                "agentId": "reviewer-a", "data": {"turnId": "late"},
+            })
+            late_b = ("root-b", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:02:00Z",
+                "agentId": "reviewer-b", "data": {"turnId": "late"},
+            })
+            native.events = tuple(events) + (late_b,)
+            check(rejects(lambda: native.read("dispatch-b")),
+                  "late reviewer activity was admitted")
+            native.events = first.latest_cli_events + tuple(events) + (late_a, late_b)
+            check(rejects(lambda: second.finish(native)),
+                  "late reviewer activity was admitted at terminal")
+            check(rejects(lambda: first.review_state(
+                (), (), pre_review_required=True)),
+                "failed terminal read lost another closed reviewer's late activity")
+            second.abort(native)
+            check(second.lease.outcome == "aborted" and second.report is None,
+                  "observed completion could not abort invalid review")
+            owners = module.ReviewOwnership()
+            prior = completed_session(owners, 1, "reviewer-a", "dispatch-a", "root-a")
+            overlapping = json.loads(json.dumps(events).replace("T00:01:", "T00:00:"))
+            for _, event in overlapping:
+                if event.get("type") == "subagent.completed":
+                    event["data"]["toolCallId"] = "contradictory-task"
+            uncertain_runtime = module.CliReviewRuntime(
+                overlapping, dispatch_id="dispatch-b", root_session_id="root-b",
+                candidate_reader=reader, required_reads=targets)
+            uncertain = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 1, a), owners=owners,
+                readers={"read-candidate": reader})
+            uncertain.begin(uncertain_runtime, "reviewer-b")
+            check(rejects(lambda: uncertain.finish(uncertain_runtime)),
+                  "contradictory terminal admitted a review")
+            check(rejects(lambda: prior.review_state((), (), pre_review_required=True)),
+                  "observed possible overlap did not invalidate the prior report")
+            check(rejects(lambda: uncertain.abort(uncertain_runtime))
+                  and not uncertain.lease.finished,
+                  "contradictory terminal released ownership")
+
+            def alternate_events(source, *, minute="02"):
+                return json.loads(json.dumps(source)
+                    .replace("root-b", "root-c")
+                    .replace("reviewer-b", "reviewer-c")
+                    .replace("dispatch-b", "dispatch-c")
+                    .replace("T00:01:", f"T00:{minute}:"))
+
+            def native_session(owners, source, root, reviewer, dispatch):
+                runtime = module.CliReviewRuntime(
+                    source, dispatch_id=dispatch, root_session_id=root,
+                    candidate_reader=reader, required_reads=targets)
+                session = module.ReviewSession(
+                    "coordinator", "implementer", scope, b,
+                    identity=("owner/repo", 1, a), owners=owners,
+                    readers={"read-candidate": reader})
+                session.begin(runtime, reviewer)
+                return session, runtime
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            prior.finish(prior_runtime)
+            changed_completion = json.loads(json.dumps(next(
+                item for item in events if item[1].get("type") == "subagent.completed")))
+            changed_completion[1]["timestamp"] = "2026-01-01T00:02:05Z"
+            check(rejects(lambda: prior.observe_cli_events((changed_completion,))),
+                  "changed terminal did not invalidate its original report")
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(rejects(lambda: later.finish(later_runtime)),
+                  "changed terminal interval was forgotten for a later review")
+
+            owners = module.ReviewOwnership()
+            original = json.loads(json.dumps(events))
+            for _, event in original:
+                if event.get("type") == "subagent.completed":
+                    event["timestamp"] = "2026-01-01T00:01:30Z"
+            prior, prior_runtime = native_session(
+                owners, original, "root-b", "reviewer-b", "dispatch-b")
+            changed_start = json.loads(json.dumps(original))
+            for _, event in changed_start:
+                if event.get("type") == "subagent.started":
+                    event["timestamp"] = "2026-01-01T00:01:20Z"
+            prior_runtime.events = tuple(changed_start)
+            check(rejects(lambda: prior.finish(prior_runtime)),
+                  "changed assignment admitted a review")
+            check(rejects(lambda: prior.abort(prior_runtime)),
+                  "changed assignment retired the original review")
+            prior_runtime.events = tuple(original)
+            prior.abort(prior_runtime)
+            later, later_runtime = native_session(
+                owners, alternate_events(events, minute="01"),
+                "root-c", "reviewer-c", "dispatch-c")
+            check(rejects(lambda: later.finish(later_runtime)),
+                  "terminal-only abort forgot the originally observed start")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            prior.finish(prior_runtime)
+            partial = [item for item in events if item[1].get("type") in {
+                "subagent.started", "subagent.completed"}]
+            prior.observe_cli_events(partial)
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(not rejects(lambda: later.finish(later_runtime)),
+                  "partial unchanged interval blocked a sequential reviewer")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            prior.observe_cli_events(partial)
+            prior.abort(prior_runtime)
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(not rejects(lambda: later.finish(later_runtime)),
+                  "partial unchanged active interval blocked a sequential reviewer")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            conflicting = json.loads(json.dumps(events))
+            for _, event in conflicting:
+                if event.get("type") in {"subagent.started", "subagent.completed"}:
+                    event["agentId"] = "unexpected-reviewer"
+            prior.observe_cli_events(conflicting)
+            prior.abort(prior_runtime)
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(rejects(lambda: later.finish(later_runtime)),
+                  "contradictory owner pair lost terminal uncertainty")
+
+            for field in ("agent", "role"):
+                owners = module.ReviewOwnership()
+                prior, prior_runtime = native_session(
+                    owners, events, "root-b", "reviewer-b", "dispatch-b")
+                start = json.loads(json.dumps(next(
+                    item for item in events if item[1].get("type") == "subagent.started")))
+                if field == "agent":
+                    start[1]["agentId"] = "unexpected-reviewer"
+                else:
+                    start[1]["data"]["agentType"] = "other-role"
+                prior.observe_cli_events((start,))
+                prior.abort(prior_runtime)
+                later, later_runtime = native_session(
+                    owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+                check(rejects(lambda: later.finish(later_runtime)),
+                      "contradictory partial start lost terminal uncertainty")
+
+            for variant in ("unattributed", "partial", "changed-time", "attributed"):
+                owners = module.ReviewOwnership()
+                prior, prior_runtime = native_session(
+                    owners, events, "root-b", "reviewer-b", "dispatch-b")
+                changed = json.loads(json.dumps(events))
+                for _, event in changed:
+                    if event.get("type") == "subagent.started":
+                        if variant == "changed-time":
+                            event["timestamp"] = "2026-01-01T00:01:00Z"
+                        else:
+                            event["data"]["interactionId"] = "other-interaction"
+                    if event.get("type") == "subagent.completed":
+                        if variant == "changed-time":
+                            event["data"]["interactionId"] = "interaction-1"
+                        elif variant == "attributed":
+                            event["data"]["interactionId"] = "other-interaction"
+                if variant == "partial":
+                    changed = [item for item in changed
+                               if item[1].get("type") != "subagent.completed"]
+                prior.observe_cli_events(changed)
+                prior.abort(prior_runtime)
+                later, later_runtime = native_session(
+                    owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+                blocked = rejects(lambda: later.finish(later_runtime))
+                check(blocked == (variant != "attributed"),
+                      "conflicting start terminal attribution produced the wrong interval")
+
+            for variant in ("interaction", "chronology", "early-completion"):
+                owners = module.ReviewOwnership()
+                active = [item for item in events if item[1].get("type") != "subagent.completed"]
+                prior, prior_runtime = native_session(
+                    owners, active, "root-b", "reviewer-b", "dispatch-b")
+                changed = json.loads(json.dumps(events))
+                for _, event in changed:
+                    if variant == "interaction" and event.get("type") == "subagent.started":
+                        event["data"]["interactionId"] = "other-interaction"
+                    if variant == "chronology" and event.get("type") == "subagent.started":
+                        event["timestamp"] = "2026-01-01T00:01:00Z"
+                    if variant in ("chronology", "early-completion") \
+                            and event.get("type") == "subagent.completed":
+                        event["timestamp"] = "2026-01-01T00:01:01Z"
+                prior_runtime.events = tuple(changed)
+                check(rejects(lambda: prior.abort(prior_runtime))
+                      and not prior.lease.finished,
+                      "replaced or chronologically invalid assignment retired the review")
+                prior_runtime.events = tuple(events)
+                prior.abort(prior_runtime)
+                check(prior.lease.outcome == "aborted",
+                      "valid original terminal did not retire the review")
+
+            for failed_start in (False, True):
+                initial = [item for item in events if item[1].get("type") != "subagent.completed"
+                           and (not failed_start or item[1].get("type") != "user.message")]
+                native = module.CliReviewRuntime(
+                    initial, dispatch_id="dispatch-b", root_session_id="root-b",
+                    candidate_reader=reader, required_reads=targets)
+                prior = module.ReviewSession(
+                    "coordinator", "implementer", scope, b,
+                    identity=("owner/repo", 1, a), owners=module.ReviewOwnership(),
+                    readers={"read-candidate": reader})
+                if failed_start:
+                    check(rejects(lambda: prior.begin(native, "reviewer-b")),
+                          "missing receipt admitted a reviewer")
+                else:
+                    prior.begin(native, "reviewer-b")
+                changed = json.loads(json.dumps(events))
+                next(event for _, event in changed
+                     if event.get("type") == "subagent.started")["data"]["interactionId"] = "changed"
+                native.events = tuple(changed)
+                check(rejects(lambda: prior.abort(native)) and not prior.lease.finished,
+                      "changed failed-start assignment retired the review")
+                native.events = tuple(events)
+                terminal = native.read_terminal("dispatch-b")
+                generic = types.SimpleNamespace(
+                    root_session_id="root-b", read=lambda task: terminal)
+                check(rejects(lambda: prior.abort(generic)) and not prior.lease.finished,
+                      "generic runtime retired the CLI assignment")
+                prior.abort(native)
+                check(prior.lease.outcome == "aborted",
+                      "original CLI terminal did not retire the review")
+
+            owners = module.ReviewOwnership()
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            later.finish(later_runtime)
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            changed_start = json.loads(json.dumps(next(
+                item for item in events if item[1].get("type") == "subagent.started")))
+            changed_start[1]["timestamp"] = "2026-01-01T00:02:05Z"
+            check(rejects(lambda: prior.observe_cli_events((changed_start,))),
+                  "changed active start was not considered")
+            check(rejects(lambda: later.review_state((), (), pre_review_required=True)),
+                  "changed active start did not invalidate a possible overlap")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            competitor_events = alternate_events(events, minute="01")
+            for _, event in competitor_events:
+                if event.get("type") == "subagent.started":
+                    event["agentId"] = "unexpected-reviewer"
+            competitor_runtime = module.CliReviewRuntime(
+                competitor_events, dispatch_id="dispatch-c", root_session_id="root-c",
+                candidate_reader=reader, required_reads=targets)
+            competitor = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 1, a), owners=owners,
+                readers={"read-candidate": reader})
+            check(rejects(lambda: competitor.begin(competitor_runtime, "reviewer-c")),
+                  "overlapping contradictory owner was admitted")
+            check(rejects(lambda: prior.finish(prior_runtime)),
+                  "contradictory competing start was discarded")
+            check(rejects(lambda: competitor.abort(competitor_runtime))
+                  and not competitor.lease.finished,
+                  "contradictory competing start was retired")
     elif probe == "lifecycle:resets":
         state.observe(decision(1))
         state.observe(decision(2, "clean"))
@@ -2424,6 +2874,40 @@ def _session_probe(probe: str) -> dict:
         check(rejects(lambda: session.read_action("push", lambda: calls.append("push"))),
               "reviewer mutation dispatched")
         check(len(calls) == 1, "denied action reached runtime")
+        owners = module.ReviewOwnership()
+        first_owner = "reviewer-a"
+        first = completed_session(owners, 1, first_owner, "dispatch-1", "root-a",
+                                  interaction="interaction-a")
+        check(first.report is not None, "first completed review did not publish a report")
+        same_root_calls = []
+        reused = module.ReviewSession(
+            "coordinator", "implementer", frozenset({"case"}), b,
+            identity=("owner/repo", 1, a), owners=owners)
+        same_root = types.SimpleNamespace(
+            root_session_id="root-a",
+            start=lambda **kw: same_root_calls.append(kw) or "dispatch-2")
+        check(rejects(lambda: reused.begin(same_root, first_owner)),
+              "reviewer identity was reused in its root session")
+        check(not same_root_calls, "closed reviewer was dispatched again")
+        second_owner = "reviewer-b"
+        late_activity = ("root-a", {
+            "type": "assistant.turn_start", "timestamp": "2026-01-01T00:00:20Z",
+            "agentId": first_owner, "data": {"turnId": "late"},
+        })
+        try:
+            second = completed_session(
+                owners, 2, second_owner, "dispatch-1", "root-b",
+                interaction="interaction-b", started_at="2026-01-01T00:00:06Z",
+                activity_at="2026-01-01T00:00:08Z",
+                completed_at="2026-01-01T00:00:10Z", extra_events=(late_activity,))
+        except module.ReviewError as error:
+            raise ContractViolation(
+                "late activity from reviewer A invalidated reviewer B: " + str(error)) from error
+        check(second.report is not None, "second completed review did not publish a report")
+        check(second.review_state((), (), pre_review_required=False)[0],
+              "unrelated reviewer report lost readiness")
+        check(rejects(lambda: first.review_state((), (), pre_review_required=True)),
+              "late activity in another review's snapshot did not invalidate its owner")
     else:
         raw = {"schema_version": 1, "repository": "owner/repo", "pull_request": 1,
                "base_sha": a, "candidate_sha": b,
@@ -2437,8 +2921,61 @@ def _session_probe(probe: str) -> dict:
             raw["pass"] = True
             check(rejects(lambda: module.validate_request(raw)), "success label admitted")
         elif probe == "wire:validators":
-            raw["candidate_sha"] = "HEAD"
-            check(rejects(lambda: module.validate_request(raw)), "non-exact head admitted")
+            validator = getattr(module, "validate_reviewer_activity", None)
+            owner, dispatch, interaction = "reviewer", "dispatch-1", "interaction-1"
+            started_at, completed_at = "2026-01-01T00:00:01Z", "2026-01-01T00:00:05Z"
+            if callable(validator):
+                valid = (
+                    ("root-session", {
+                        "type": "subagent.started", "timestamp": started_at, "agentId": owner,
+                        "data": {"toolCallId": dispatch, "interactionId": interaction},
+                    }),
+                    ("review-session", {
+                        "type": "assistant.message", "timestamp": "2026-01-01T00:00:03Z",
+                        "agentId": owner,
+                        "data": {"interactionId": interaction, "turnId": "turn-1"},
+                    }),
+                )
+                accepted = validator(
+                    valid, owner=owner, dispatch=dispatch, interaction=interaction,
+                    started_at=started_at, completed_at=completed_at)
+                check(len(accepted) == 2, "valid assigned reviewer activity was rejected")
+                contradictory_message = ("review-session", {
+                    "type": "assistant.message", "timestamp": "2026-01-01T00:00:04Z",
+                    "agentId": owner,
+                    "data": {"interactionId": "other-interaction", "turnId": "turn-2"},
+                })
+                check(rejects(lambda: validator(
+                    valid + (contradictory_message,), owner=owner, dispatch=dispatch,
+                    interaction=interaction, started_at=started_at, completed_at=completed_at)),
+                    "contradictory initial interaction was admitted")
+                additional_dispatch = ("root-session", {
+                    "type": "subagent.started", "timestamp": "2026-01-01T00:00:04Z",
+                    "agentId": owner,
+                    "data": {"toolCallId": "dispatch-2", "interactionId": "other-interaction"},
+                })
+                check(rejects(lambda: validator(
+                    valid + (additional_dispatch,), owner=owner, dispatch=dispatch,
+                    interaction=interaction, started_at=started_at, completed_at=completed_at)),
+                    "additional initial dispatch was admitted")
+            owners = module.ReviewOwnership()
+            session = completed_session(
+                owners, 2, owner, dispatch, "root-session", interaction=interaction,
+                completed_at=completed_at)
+            late_prohibited_event = ("root-session-reviewer", {
+                "type": "tool.execution_start", "timestamp": completed_at,
+                "agentId": owner,
+                "data": {
+                    "interactionId": interaction, "turnId": "turn-1",
+                    "toolCallId": "late-bash", "toolName": "bash",
+                    "arguments": {"command": "not permitted"},
+                },
+            })
+            check(rejects(lambda: session.observe_cli_events((late_prohibited_event,))),
+                  "late in-turn prohibited activity remained valid")
+            check(rejects(lambda: session.review_state(
+                (), (), pre_review_required=True)),
+                "late in-turn prohibited activity did not invalidate readiness")
         elif probe == "wire:stale-bindings":
             key = module.subject_key(raw["subjects"][0])
             members = tuple(module.Obligation(
@@ -2456,6 +2993,20 @@ def _session_probe(probe: str) -> dict:
             session.advance(a)
             check(rejects(lambda: module.assess_handoff(
                 raw, members, observations, session, **arguments)), "stale session head admitted")
+            for operation in ("finish", "abort"):
+                first, first_runtime = completed_session(
+                    module.ReviewOwnership(), 1, "reviewer", "dispatch", "root-a", finish=False)
+                second, second_runtime = completed_session(
+                    module.ReviewOwnership(), 2, "reviewer", "dispatch", "root-b", finish=False)
+                check(rejects(lambda: getattr(first, operation)(second_runtime)),
+                      "other root runtime was accepted for " + operation)
+                check(not first.lease.finished and first.report is None,
+                      "wrong root changed the assigned review")
+                first.finish(first_runtime)
+                second.finish(second_runtime)
+                check(first.review_state((), (), pre_review_required=True)[0]
+                      and second.review_state((), (), pre_review_required=True)[0],
+                      "matching root reviews did not remain valid")
         else:
             raise review.ReviewError("unknown review-session probe")
     return {"kind": "host", "checks": 2, "detail": "registered production reducer executed"}

@@ -132,14 +132,18 @@ commit the candidate, and hand it off.
 
 ## Sibling-family review convergence
 
-For a high-risk or large change, use one fresh bounded read-only reviewer
-before the first remote review. The reviewer must differ from coordinator and
-implementer; those two may be one actual owner for coordinator-authored work.
-Do not create aliases or pretend delegation. Use the existing task/tool interfaces, not another agent
-backend. The reviewer can read the exact candidate and supplied evidence and
-return its report; it cannot edit, push, comment, request review, dispatch CI
-or merge. Enforce those actions at dispatch, not by accepting a claimed
-permission list from candidate JSON.
+For a high-risk or large change, use one fresh bounded reviewer before the
+first remote review. The reviewer must differ from coordinator and implementer;
+those two may be one actual owner for coordinator-authored work. Do not create
+aliases or pretend delegation. Use the existing task/tool interfaces, not
+another agent backend. The original task instructions require an explicit
+read-only commitment before any operation, complete direct reads of the
+assigned candidate, and a structured findings report. Admission checks actual
+events and rejects observed edits, commands, unassigned/partial reads or
+mutations. The completed turn is logically closed by the coordinator, which
+rejects reviewer reuse and later contradictory events. This is the accepted
+instruction-based trust model; it does not claim technically enforced
+permissions or task termination.
 
 For review-family convergence, follow the complete
 [executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
@@ -157,7 +161,7 @@ comments is not approval; local audits never replace exact-head
 Copilot/security/Build or exact-master completion. Read-only roles and minimal
 environments are operational controls, not hostile same-UID OS isolation.
 
-- **Reviewer:** distinct-from-coordinator, distinct-from-implementer, read-only, bounded
+- **Reviewer:** distinct-from-coordinator, distinct-from-implementer, instruction-committed, bounded
 - **Coordinator implementation:** same-actual-owner-permitted, no-aliases
 - **Delegated local proof:** terminal-owner-handoff, descendant-and-trailers, assigned-scope-and-resources
 - **Coordinator local proof:** exact-git-and-worktree, registered-complete-native-checks,

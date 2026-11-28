@@ -239,7 +239,9 @@ PUBLICATION_PROTOCOL_FIELDS = {
     "Push failure": {"explicit-blocker-no-success-claim"},
 }
 REVIEW_OWNERSHIP_FIELDS = {
-    "Reviewer": {"distinct-from-coordinator", "distinct-from-implementer", "read-only", "bounded"},
+    "Reviewer": {
+        "distinct-from-coordinator", "distinct-from-implementer", "instruction-committed", "bounded",
+    },
     "Coordinator implementation": {"same-actual-owner-permitted", "no-aliases"},
     "Delegated local proof": {"terminal-owner-handoff", "descendant-and-trailers", "assigned-scope-and-resources"},
     "Coordinator local proof": {
@@ -2790,7 +2792,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 else:
                     session.begin(runtime, reviewer, duration=1, max_files=3)
                     report = session.finish(runtime)
-                    self.assertTrue(report.read_only)
+                    self.assertEqual(
+                        report.instruction_commitment,
+                        review_family.CliReviewRuntime.COMMITMENT)
+                    self.assertTrue(report.logical_closed)
                     self.assertEqual(report.owner, reviewer)
                     self.assertEqual(session.lease.outcome, "completed")
 

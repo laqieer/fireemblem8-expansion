@@ -762,7 +762,8 @@ audio or human-approval criterion is added.
    their real native results, and require all checks before local readiness.
    Use actual config/baseline/document validators for the excluded fixture.
    Use the same actual coordinator/implementation owner in `ReviewSession`
-   when applicable. Self-review must reject before task launch; a distinct
+   when applicable. A dispatching runtime rejects self-review before launch;
+   the retrospective CLI adapter rejects its admission after dispatch. A distinct
    read-only reviewer must still satisfy task/head/scope and completion bounds.
    Reject raw-only/pass-label registration, incomplete/failed captures,
    changed definitions/check sets, head/base/worktree drift and stale native
@@ -1230,57 +1231,249 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    wrong and malformed records reject rather than being relabeled.
    Genuine executor failures retain their kind, while a worker exiting before
    any result has `kind: null`; unavailable rows always have zero checks.
-7. Exercise the existing task adapter's bounded read-only role and actual
-   returned task metadata. Make `runtime.start` return None, empty/whitespace
-   strings, Booleans, numbers, bytes and containers. Each must reject before
-   lease creation without retaining its reservation or admitting a local
-   finding. Retry with a valid opaque string ID: preserve it unchanged,
-   complete the review and allow subsequent acquisition.
-   Denied mutation operations never reach the bound
-   tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
-   excessive duration reject. This proves the operational interface, not
-   same-UID OS containment or that a synthetic test launched a live agent.
-   Disjoint scopes cannot create a second active reviewer for the same
-   repository/PR even at a different head, or for the same candidate head even
-   on another PR. Work with both a different repository/PR identity and a
-   different head remains independent, even with overlapping scope. Completed
-   sessions release both exclusions; denied starts never reach the runtime.
-   Attempt head advance during the lease, including after expiration or
-   a nonterminal stop acknowledgment: the session/head binding must remain
-   unchanged. Only actual completed/aborted/timed-out terminal release permits
-   normal head advance, while retaining the report's old origin.
-   Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
-   false, truthy strings/numbers, containers and missing fields. Request a
-   completed report with empty/partial allowed actions: both `read-candidate`
-   and `emit-report` must have been observed. Their pair passes with or without
-   optional `read-evidence`; any subset missing either required action rejects.
-   A rejected but truly terminal task may still be explicitly aborted without
-   admitting its report. Request a
-   ten-file lease, return ten files, then eleven; only the first completes.
-   Repeat requested/returned bounds with Boolean, fractional/integral float,
-   string, negative and over-global-cap values. Only strict integer counts
-   within the requested bound (at most 200) pass. Malformed adjacent runtime
-   fields leave ownership active; a subsequent valid result can finish it.
-   Expire a lease while the runtime still reports it running: observe the
-   status, reject completion and keep fresh-reviewer admission blocked.
-   Then supply actual terminal completion; reject the late report but close
-   the lease as `timed-out` and allow a fresh reviewer. Repeat with the
-   deadline passing during the runtime read; no late report is admitted.
-   Exercise explicit abort through the runtime's existing stop capability.
-   A stop acknowledgment without terminal status, read/stop failure, unknown
-   status, missing capability, wrong identity or malformed terminal chronology
-   must not release ownership. Once terminal evidence is observed, close as
-   `aborted` without accepting a report; an already completed failed report
-   needs no second stop. Normal completion retains `outcome: completed`.
-   Every returned typed finding needs explicit accepted/rejected local triage
-   with a reason. Omission rejects even on repaired source; acceptance enters
-   the existing sibling sweep, and rejection never silently accepts a finding.
-   Mutate the runtime's timestamps, actions, scope, findings, bounds and
-   completion flags after finish, and during the ownership-release callback.
-   The returned internal report must retain its validated immutable values,
-   including nested collections and typed findings. A timely review remains
-   timely; changing a recorded late completion to an earlier time cannot
-   admit pre-review eligibility.
+7. Launch a genuine fresh `code-review` task for the exact candidate and
+   assigned scope. Its original prompt must bind the full candidate SHA, scope,
+   direct-read paths/sides and each exact supplied file path and `utf-8` or
+   `base64` encoding, structured report format and exact standalone read-only
+   commitment. Verify the dispatch ID, assigned reviewer identity, original
+   received instructions, and exact commitment message before the first candidate
+   read, complete `view` start/completion events, successful results equal to
+   each required immutable Git blob, exact final report, and
+   completed-turn event chronology before the first submitted remote review. A successful
+   task-call completion is only a dispatch receipt and may precede the
+   reviewer's `subagent.completed` event; require both, and use the latter as
+   the turn-completion boundary. Do not substitute
+   coordinator rereads for reviewer observations. This is the owner-approved instruction-based
+   trust model: it does not claim technically enforced permissions or task
+   termination.
+   The dispatch start and receipt must agree on their observed `agentId`,
+   including native root events where both omit it. Reject mismatched or
+   one-sided agent attribution while retaining terminal-only abort.
+   Run `CliReviewRuntimeTests.test_dispatch_receipt_preserves_observed_agent_ownership`.
+   Replay both the original three-field UTF-8 assignment and the current
+   four-field assignment using their actual dispatched prompts and receipts.
+   Reject missing, duplicated, mixed, unsupported or contradictory path/side
+   mappings and wrong read bytes. Remove a receipt and completion after a
+   possible dispatch: another reviewer for the PR/head must remain blocked.
+   A completion from another root cannot retire the reservation; the matching
+   dispatch, reviewer start and terminal event can retire it without admitting
+   a report. After a missing receipt or failed candidate-reader setup, replace
+   the already-observed start interaction, timestamp or dispatch: each terminal
+   must reject until the original binding is supplied. A generic runtime cannot
+   retire a CLI assignment, whether begin succeeded or failed. If no start was
+   observed at begin, a later unique start may bind; a duplicate initial start
+   cannot establish a unique binding. Run
+   `CliReviewRuntimeTests.test_failed_cli_start_retains_observed_lifecycle_for_terminal`,
+   `CliReviewRuntimeTests.test_cli_assignment_cannot_retire_using_generic_runtime`,
+   `CliReviewRuntimeTests.test_cli_setup_failure_keeps_observed_start_binding`,
+   `CliReviewRuntimeTests.test_failed_cli_start_without_observed_start_can_retire_later`,
+   `CliReviewRuntimeTests.test_first_partial_cli_start_remains_bound_before_terminal`
+   and `CliReviewRuntimeTests.test_ambiguous_initial_cli_start_cannot_be_replaced`.
+   The pre-fix negative controls incorrectly release the reservations.
+   Observe a conflicting interaction both without a completion and with an
+   interaction-less completion, then retire the original on its unchanged
+   terminal evidence. A later possible overlap must still reject. A changed
+   start time for the same interaction also remains uncertain; an explicitly
+   matched terminal for a distinct interaction can instead prove its bound.
+   Run
+   `CliReviewRuntimeTests.test_conflicting_start_requires_attributable_terminal_for_bounded_interval`;
+   the pre-fix negative controls incorrectly admit the later review.
+   The coordinator then logically closes the completed reviewer identity and
+   dispatch, scoped to the root CLI session. A second admission reusing the
+   same reviewer and dispatch in that root session must reject before another
+   task starts. Repeat across two distinct root CLI sessions that deliberately
+   reuse the same reviewer and dispatch identifiers: both independent tasks
+   must admit. Aggregate both histories with identical reviewer, interaction
+   and dispatch IDs but distinct task intervals; each report must bind only
+   the instruction receipt inside its own interval. Repeat with overlapping
+   intervals and otherwise identical instructions; each must use the receipt
+   whose native source names its own root. Remove that receipt or its source,
+   or replace its source with the other root, while retaining the second's
+   matching receipt; the first task must reject instead of borrowing it.
+   The native runtime may load the `code-review` skill once before the
+   commitment. Require the exact skill arguments and a successful completion
+   before the commitment; reject another skill, additional arguments, a failed
+   or missing result, and every other non-`view` operation.
+   The supported CLI snapshot has the receipt and reviewer events in its
+   dispatch's root session; a distinct child-session receipt fails rather
+   than assuming that child's untagged records are exclusive to the reviewer.
+   In a shared root, unrelated untagged activity, including a reused turn or
+   interaction ID, must not invalidate the review. Such IDs alone do not prove
+   ownership; the instruction commitment does not prove that unobserved
+   prohibited activity was prevented.
+   Complete two different reviewers in one root, then reassess them using
+   their own snapshots in either order. The older snapshot must not invalidate
+   the newer report, while altering a captured record still invalidates its
+   owner. The pre-fix negative control invalidates the newer report.
+   Change the dispatch prompt, reviewer start timestamp, or receipt source
+   after `begin`: each must reject admission. A changed dispatch or start
+   also rejects terminal-only abort until the original terminal evidence is
+   supplied. A completion before the bound instruction receipt cannot retire
+   the assignment. Repeat with a separately initialized runtime: unchanged
+   original records admit, but altered assignment records reject.
+   Use identical candidate Git objects from two checkout roots; a runtime and
+   session bound to different roots must reject at begin or finish.
+   Submit a valid case ID and maximum-length subject whose joined key exceeds
+   160 characters: session creation and an in-scope CLI finding must accept it,
+   while an out-of-scope finding must reject.
+   Submit an explicitly complete owning snapshot with a removed or re-owned
+   admitted event, including for a rootless runtime: readiness must reject.
+   An incremental observation does not
+   claim snapshot completeness. Mutating a previously supplied event collection
+   cannot change the frozen snapshot; submit the changed complete collection
+   to reject the changed evidence. After closure, reuse the dispatch ID in the same
+   root with a different reviewer; the original report must be invalidated.
+   The same ID in a different root does not invalidate it.
+   Before closure, observe a reviewer-attributed `bash`, `apply_patch`, or
+   malformed tool start, then finish with an older runtime snapshot. Each must
+   reject the observation and later report admission, while terminal-only abort
+   remains possible. Also observe a `view` or `skill` start absent from the
+   terminal snapshot; report admission must reject rather than forget it.
+   An unrelated reviewer's tool start or an event in another
+   root must not block an otherwise valid review. Repeated observed starts
+   consume no extra budget; a batch of distinct excess starts must reject
+   without retaining more than the file budget plus one. An invalidated
+   review's finish must still propagate newly supplied late sibling activity.
+   Run
+   `CliReviewRuntimeTests.test_partial_prohibited_action_survives_stale_terminal_snapshot`
+   `CliReviewRuntimeTests.test_partial_allowed_starts_cannot_disappear_before_terminal`,
+   `CliReviewRuntimeTests.test_partial_unrelated_action_does_not_invalidate_review`,
+   `CliReviewRuntimeTests.test_partial_allowed_start_budget_is_bounded_per_batch`, and
+   `CliReviewRuntimeTests.test_partial_activity_failure_still_propagates_late_sibling_activity`;
+   the missing-action negatives fail on the previous candidate, and the final
+   two controls fail against the initial incremental-observation patch.
+   Drop the last external reference to an active or completed session and
+   collect it. The ownership index must not retain that session or its event
+   sources; an orphaned active reservation remains blocked and a closed owner
+   cannot be reused. Compact closure metadata is retained and is not globally
+   bounded.
+   A late assistant turn-start in
+   the second reviewer's event session must invalidate only the second report.
+   Include that late event in the first reviewer's aggregate snapshot; the
+   first report must remain ready.
+   Also append a previously unseen in-turn
+   `tool.execution_start` for `bash` with the original interaction and a
+   timestamp equal to completion; it must invalidate the closed report even
+   though ordinary timestamp and interaction checks would pass. Confirm that
+   invalid observations never publish a report.
+   After an unchanged closed report passes readiness, mutate one captured
+   reviewer commentary event. The first readiness assessment that detects
+   the altered event must reject, as must every subsequent assessment; the
+   pre-fix negative control incorrectly grants readiness once.
+   Start two independent root-bound tasks with the same dispatch, reviewer,
+   candidate and scope. Finishing or aborting the first using the second
+   runtime must reject without releasing it; each matching runtime must still
+   finish. For shared ownership, include late activity for an already closed
+   reviewer A and active reviewer B in B's aggregate snapshot. B's failed
+   finish must invalidate A immediately, even when B's candidate binding is
+   mismatched. Use sequential, nonoverlapping task intervals so overlap alone
+   cannot invalidate A; suppressing late-event propagation must make the
+   control fail. B's observed completed turn must
+   permit abort without publishing a report. A missing B completion must keep
+   its lease and overlapping-review exclusion active. The pre-fix negative
+   controls accept the other runtime and lose A's invalidation while B is stuck.
+   The terminal family probe must admit an otherwise valid CLI finish and
+   reject a mutation that makes all CLI finishes fail after event propagation.
+   Its shared-late-activity scenario also uses nonoverlapping task intervals;
+   suppressing propagation from the second snapshot must fail the terminal
+   member rather than be masked by overlap invalidation.
+   Before closure, include a reviewer message with a contradictory interaction
+   and a second `subagent.started` event for another dispatch in the original
+   snapshot. Each must reject admission and leave the report unpublished;
+   the unchanged assigned interaction and single dispatch remain a positive
+   control. Run
+   `CliReviewRuntimeTests.test_initial_reviewer_activity_must_match_assigned_dispatch`
+   as part of the focused host suite.
+   A completed-turn event is not evidence that the CLI terminated the agent.
+   In source-backed event tests, reject missing/mismatched dispatch or
+   assignment, wrong candidate/scope, missing or late commitment, an observed
+   prohibited operation, missing or contradictory tool interaction identity,
+   failed/partial/unassigned/duplicate file reads,
+   wrong blob bytes, noncanonical base64 or decoded binary mismatch, omitted
+   required paths/sides, unavailable additional sides, malformed
+   report/finding,
+   duplicate task/reviewer or closed-dispatch reuse, late activity including
+   same-interaction events at the completion timestamp, missing or failed
+   dispatch receipts, and invalid chronology. Require actual parsed report
+   findings, candidate binding,
+   immutable summaries and local finding triage; a coordinator-side read alone
+   cannot establish coverage. Bound duration, file and finding counts with
+   strict integers and exercise their negative controls. Check that overlap
+   exclusion still blocks a second active registration for one PR or head while
+   logically closed reviewers cannot be reused. For recorded task intervals,
+   reject overlapping completed reports for the same PR or head and invalidate
+   previously admitted overlapping reports before parsing a malformed later
+   report, including when the later task is aborted. A competing start with
+   a missing or contradictory terminal, a conflicting reviewer/role, or a
+   changed start time invalidates a potentially overlapping prior report;
+   contradictory terminal identity cannot retire ownership. Check that a
+   changed completion still affects a reviewer observed afterward, and that
+   terminal-only abort retains the original possible start for later reviews.
+   An already-started competing task rejected at reservation must still affect
+   overlapping reports and remain reserved until terminal-only abort, including
+   a dispatch-attributed start with a contradictory reviewer. An active changed
+   start without a terminal remains possibly open, as does a conflicting
+   start/completion pair for another reviewer. A contradictory owner or role
+   in a partial start remains possibly open even at the original timestamp.
+   A proven sequential interval in
+   either order remains valid, including unchanged partial observations. Run
+   `CliReviewRuntimeTests.test_competing_start_with_unknown_terminal_invalidates_only_possible_overlap`,
+   `CliReviewRuntimeTests.test_earlier_competing_review_requires_a_consistent_terminal`,
+   `CliReviewRuntimeTests.test_contradictory_competing_start_cannot_hide_possible_overlap`,
+   `CliReviewRuntimeTests.test_changed_competing_start_invalidates_potentially_overlapping_report`,
+   `CliReviewRuntimeTests.test_changed_completion_remains_relevant_to_later_observed_review`,
+   `CliReviewRuntimeTests.test_abort_preserves_original_observed_interval_for_later_review`,
+   `CliReviewRuntimeTests.test_rejected_started_competitor_is_observed_and_retained`,
+   `CliReviewRuntimeTests.test_rejected_started_competitor_with_proven_earlier_end_is_sequential`,
+   `CliReviewRuntimeTests.test_contradictory_duplicate_terminal_does_not_release_ownership`,
+   `CliReviewRuntimeTests.test_partial_unchanged_interval_keeps_proven_sequential_review`,
+   `CliReviewRuntimeTests.test_partial_unchanged_active_interval_keeps_proven_sequential_review`,
+   `CliReviewRuntimeTests.test_contradictory_owner_pair_remains_uncertain_after_abort`,
+   `CliReviewRuntimeTests.test_partial_contradictory_start_remains_uncertain_after_abort`,
+   `CliReviewRuntimeTests.test_abort_rejects_replaced_bound_start`,
+   `CliReviewRuntimeTests.test_timeout_does_not_retire_replaced_start_without_ownership_index`,
+   `CliReviewRuntimeTests.test_changed_active_start_without_terminal_invalidates_later_report`,
+   `CliReviewRuntimeTests.test_rejected_competitor_with_contradictory_owner_remains_observed`,
+   and `CliReviewRuntimeTests.test_submitted_snapshot_is_frozen_until_an_explicit_new_observation`.
+   Admit ordered or unrelated
+   tasks, and allow terminal-only abort
+   after a rejected report. A rejected reused dispatch must not leave a new
+   reservation; an uncontradicted fresh sequential dispatch remains usable.
+   Reusing an
+   active dispatch for another PR/head must not change its original runtime
+   assignment; its owner can still finish.
+   After an already-started CLI task's candidate-reader root or head mismatch, retain its
+   reservation until an observed terminal abort; a new registration must fail
+   while it remains active. Run
+   `CliReviewRuntimeTests.test_started_cli_failure_keeps_reservation_until_terminal_abort`
+   `CliReviewRuntimeTests.test_started_cli_wrong_head_keeps_reservation_until_terminal_abort`,
+   `CliReviewRuntimeTests.test_closed_dispatch_cannot_be_reused_by_another_reviewer`,
+   `CliReviewRuntimeTests.test_cli_completed_reports_reject_observed_overlap`,
+   `CliReviewRuntimeTests.test_invalid_overlapping_cli_report_invalidates_previous_report`,
+   and `CliReviewRuntimeTests.test_rejected_active_dispatch_reuse_preserves_original_runtime`.
+   Admit an exact instruction receipt or its observed native datetime envelope;
+   reject extra preceding or appended permissions and malformed envelopes using
+   `CliReviewRuntimeTests.test_instruction_receipt_rejects_unassigned_permissions`.
+   A completed overlong CLI task retires as timed out without admitting its
+   report; a missing terminal remains reserved. Exercise
+   `CliReviewRuntimeTests.test_completed_overlong_cli_review_releases_as_timeout`.
+   A rootless generic adapter with a verified terminal but no interaction must
+   reject report admission and permit abort or timeout and a new reviewer; a
+   malformed non-null interaction and an interaction missing from a root-bound
+   terminal still reject. Exercise
+   `RemainingRoleTests.test_abort_retires_generic_terminal_without_an_interaction`,
+   `RemainingRoleTests.test_timeout_retires_generic_terminal_without_an_interaction`,
+   and `RemainingRoleTests.test_absent_interaction_does_not_release_root_bound_terminal`.
+   These controls cannot prevent a task that was already dispatched.
+   Include assigned unchanged regular blobs on both frozen sides as supporting
+   context and report a finding against the observed head blob. Missing changed
+   paths, unavailable supporting sides, or altered supporting bytes must reject.
+   Run `CliReviewRuntimeTests.test_candidate_reads_accept_unchanged_supporting_context`.
+   Run the focused `CliReviewRuntimeTests` and role/ownership tests. Synthetic
+   fixtures cover parser/reducer negatives only; they do not replace the
+   genuine CLI task observation above. Tool availability and event visibility
+   are not permission enforcement, same-UID OS isolation or proof of
+   unobserved task termination.
 8. Exercise exact GitHub actor/head/content collection and complete coordinator
    triage. COMMENTED, approval phrases and zero inline findings remain
    untriaged until that decision. Change content or the head and require

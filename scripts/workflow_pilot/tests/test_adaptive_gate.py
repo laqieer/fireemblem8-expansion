@@ -544,6 +544,16 @@ class GateTests(unittest.TestCase):
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
 
+    def test_review_report_must_match_the_closed_ownership_record(self):
+        original = self.session.report
+        self.assertTrue(self.assess()["dispatchable"])
+        self.session.report = replace(original, owner="different-reviewer")
+        report = self.assess()
+        self.assertFalse(report["dispatchable"])
+        self.assertFalse(report["merge_eligible"])
+        self.session.report = original
+        self.assertTrue(self.assess()["dispatchable"])
+
     def test_latest_full_requires_the_current_shape(self):
         def historical(run_id):
             run = self.workflow_run(run_id)

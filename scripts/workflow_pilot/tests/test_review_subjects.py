@@ -1285,6 +1285,60 @@ class SubjectTests(SubjectTestCase):
         self.assertEqual((unknown["verdict"], unknown["kind"], unknown["checks"]),
                          ("unavailable", None, 0))
 
+    def test_session_terminal_subject_checks_valid_and_late_activity(self):
+        members = self.tools.members(self.scope("session"))
+        lifecycle = tuple(item for item in members if item.family == "lifecycle")
+        observed = self.run_members(lifecycle, self.repo.base)
+        terminal = tuple(item for item in observed if item.obligation.probe == "lifecycle:terminals")
+        self.assertEqual(len(terminal), 1)
+        self.assert_satisfied(terminal)
+
+    def test_terminal_subject_accepts_equivalent_source_without_prompt_helper(self):
+        path = "scripts/workflow_pilot/review_family.py"
+        source = (self.repo.root / path).read_text()
+        renamed = source.replace("_review_instructions", "_legacy_review_instructions")
+        self.assertNotEqual(source, renamed)
+        revision = self.repo.commit({path: renamed})
+        members = self.tools.members(self.scope("session", revision))
+        lifecycle = tuple(item for item in members if item.family == "lifecycle")
+        observed = self.run_members(lifecycle, revision)
+        terminal = tuple(item for item in observed if item.obligation.probe == "lifecycle:terminals")
+        self.assertEqual(len(terminal), 1)
+        self.assert_satisfied(terminal)
+
+    def test_terminal_subject_rejects_broken_valid_cli_finish(self):
+        path = "scripts/workflow_pilot/review_family.py"
+        source = (self.repo.root / path).read_text()
+        original = ("    def finish(self, runtime) -> _ReviewReport:\n"
+                    "        result = self._read_task(runtime)\n")
+        broken = source.replace(
+            original, original + '        if isinstance(runtime, CliReviewRuntime):\n'
+            '            raise ReviewError("valid CLI finish broken")\n')
+        self.assertNotEqual(source, broken)
+        revision = self.repo.commit({path: broken})
+        lifecycle = tuple(item for item in self.tools.members(self.scope("session", revision))
+                          if item.family == "lifecycle")
+        observed = self.run_members(lifecycle, revision)
+        terminal = tuple(item for item in observed if item.obligation.probe == "lifecycle:terminals")
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0].verdict, "contract-violation", terminal[0].detail)
+
+    def test_terminal_subject_rejects_lost_shared_late_activity(self):
+        path = "scripts/workflow_pilot/review_family.py"
+        source = (self.repo.root / path).read_text()
+        original = "    def validate_closed_events(self, events, *, snapshot_namespace=None, snapshot_owner=None):\n"
+        broken = source.replace(
+            original, original + '        if snapshot_namespace == "root-b":\n'
+            '            return\n')
+        self.assertNotEqual(source, broken)
+        revision = self.repo.commit({path: broken})
+        lifecycle = tuple(item for item in self.tools.members(self.scope("session", revision))
+                          if item.family == "lifecycle")
+        observed = self.run_members(lifecycle, revision)
+        terminal = tuple(item for item in observed if item.obligation.probe == "lifecycle:terminals")
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0].verdict, "contract-violation", terminal[0].detail)
+
     def test_immutable_git_bytes_not_reopened_worktree_and_no_fsmonitor(self):
         tree = GitTree(self.repo.root, self.repo.base)
         path = "scripts/workflow_pilot/review_family.py"

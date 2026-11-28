@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
@@ -10,6 +13,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import time
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -24,6 +28,7 @@ READ_ACTIONS = frozenset({"read-candidate", "read-evidence", "emit-report"})
 SHA_PATTERN = r"[0-9a-f]{40}"
 NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}"
 CASE_PATTERN = r"TC-[A-Z0-9]+(?:-[A-Z0-9]+)+"
+SCOPE_PATTERN = rf"(?:{NAME_PATTERN}|{CASE_PATTERN}/{NAME_PATTERN})"
 MAX_SUBJECTS = 40
 MAX_FINDINGS = 50
 MAX_MEMBERS = 250
@@ -134,6 +139,13 @@ def timestamp(value):
         return datetime.fromisoformat(value[:-1] + "+00:00")
     except ValueError as error:
         raise ReviewError("invalid UTC timestamp") from error
+
+
+def is_review_activity(event):
+    kind = event.get("type")
+    return kind in {"user.message", "assistant.message", "assistant.turn_start"} or (
+        isinstance(kind, str) and kind.startswith(("tool.", "subagent."))
+    )
 
 
 def parse_json(raw: bytes) -> Any:
@@ -432,7 +444,8 @@ def validate_candidate_change(value: Any) -> CandidatePathChange:
 
 def candidate_coverage(report) -> CandidateCoverage | None:
     require(type(report) is _ReviewReport, "actual immutable review report required")
-    require(report.completed is True and report.read_only is True and report.role == "code-review",
+    require(report.completed is True and report.logical_closed is True
+            and bool(report.instruction_commitment.strip()) and report.role == "code-review",
             "review report is not a completed immutable review")
     root = report.candidate_root
     base = report.candidate_base
@@ -586,6 +599,7 @@ class Finding:
     origin: str
     source_path: str
     review_id: str
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -645,19 +659,21 @@ class Disposition:
 
 @dataclass(frozen=True)
 class _ReviewReport:
-    """Validated local values, not a runtime-owned record or signed receipt."""
+    """Validated coordinator observations, not a runtime-owned record or receipt."""
     task: str
     owner: str
     role: str
     head: str
     subjects: frozenset[str]
     completed: bool
-    read_only: bool
     actions: frozenset[str]
     files: int
     findings: tuple[Finding, ...]
     started_at: str
     completed_at: str
+    instruction_commitment: str
+    logical_closed: bool
+    content: str
     candidate_root: str | None = None
     candidate_base: str | None = None
     candidate_reads: tuple[CandidateReadSummary, ...] = ()
@@ -754,29 +770,960 @@ class ReviewLease:
     outcome: str | None = None
 
 
+def _cli_event_key(record):
+    require(isinstance(record, (tuple, list)) and len(record) == 2,
+            "invalid CLI event record")
+    session, event = record
+    require(isinstance(session, str) and isinstance(event, dict),
+            "invalid CLI event record")
+    try:
+        serialized = json.dumps(
+            (session, event), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(serialized.encode("ascii")).hexdigest()
+    except (TypeError, ValueError) as error:
+        raise ReviewError("CLI event record is not serializable") from error
+
+
+def validate_reviewer_activity(events, *, owner, dispatch, interaction,
+                               started_at, completed_at):
+    require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
+    start_time = timestamp(started_at)
+    completion_time = timestamp(completed_at)
+    require(start_time <= completion_time, "review task chronology is invalid")
+    activity = tuple(
+        record for record in events
+        if isinstance(record, (tuple, list)) and len(record) == 2
+        and isinstance(record[1], dict) and record[1].get("agentId") == owner
+        and is_review_activity(record[1]))
+    turn_ids = {
+        event.get("data", {}).get("turnId")
+        for _, event in activity
+        if isinstance(event.get("data"), dict)
+        and event["data"].get("interactionId") == interaction
+        and isinstance(event["data"].get("turnId"), str)
+    }
+    for record in activity:
+        _, event = record
+        kind = event.get("type")
+        data = event.get("data")
+        require(isinstance(data, dict), "reviewer event data is malformed")
+        event_time = timestamp(event.get("timestamp"))
+        require(start_time <= event_time <= completion_time,
+                "reviewer activity is outside its assigned task")
+        event_interaction = data.get("interactionId")
+        if kind in {"subagent.configured", "subagent.selected"}:
+            require(data.get("toolCallId") in (None, dispatch)
+                    and event_interaction in (None, interaction)
+                    and (kind != "subagent.selected"
+                         or data.get("agentName") == "code-review"),
+                    "reviewer configuration contradicts its assignment")
+        elif isinstance(kind, str) and kind.startswith("subagent."):
+            require(kind in {"subagent.started", "subagent.completed"}
+                    and data.get("toolCallId") == dispatch,
+                    "reviewer activity belongs to another dispatch")
+            if kind == "subagent.started":
+                require(event_interaction == interaction,
+                        "reviewer dispatch has a contradictory interaction")
+            elif event_interaction is not None:
+                require(event_interaction == interaction,
+                        "reviewer dispatch has a contradictory interaction")
+        elif kind in {"user.message", "assistant.message"}:
+            require(event_interaction == interaction,
+                    "reviewer message has a contradictory interaction")
+        elif kind == "assistant.turn_start":
+            if event_interaction is not None:
+                require(event_interaction == interaction,
+                        "reviewer turn has a contradictory interaction")
+            else:
+                require(data.get("turnId") in turn_ids,
+                        "reviewer turn has no verifiable interaction")
+        elif isinstance(kind, str) and kind.startswith("tool."):
+            require(kind in {"tool.execution_start", "tool.execution_complete"},
+                    "reviewer tool event type is unsupported")
+            if event_interaction is not None:
+                require(event_interaction == interaction,
+                        "reviewer tool event has a contradictory interaction")
+            else:
+                require(kind == "tool.execution_start"
+                        and data.get("turnId") in turn_ids,
+                        "reviewer tool event has no verifiable interaction")
+    return frozenset(_cli_event_key(record) for record in activity)
+
+
+@dataclass
+class _OwnedReview:
+    identity: tuple
+    head: str
+    scope: frozenset[str]
+    owner: str
+    namespace: str | None
+    dispatch: str | None = None
+    state: str = "reserved"
+    interaction: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    interval_start: datetime | None = None
+    interval_end: datetime | None = None
+    unknown_start: bool = False
+    unknown_end: bool = False
+    admitted_event_keys: frozenset[str] = frozenset()
+    event_sessions: frozenset[str] = frozenset()
+    report: _ReviewReport | None = None
+    invalidation_reason: str | None = None
+
+
 class ReviewOwnership:
     """Small in-process index owned/shared by the existing coordinator."""
 
+    @staticmethod
+    def _same_owner_scope(left, right):
+        return left[1] == right[1] and (
+            left[0] is None or right[0] is None or left[0] == right[0])
+
     def __init__(self):
-        self.records = {}
+        self.records: dict[object, _OwnedReview] = {}
+
+    def record_for(self, session):
+        return None if session is None else self.records.get(session._ownership_key)
+
+    def _has_closed_owner(self, owner_key):
+        return any(
+            record.state == "terminal"
+            and self._same_owner_scope(owner_key, (record.namespace, record.owner))
+            for record in self.records.values())
+
+    def _has_closed_dispatch(self, dispatch_namespace, task):
+        return dispatch_namespace is not None and any(
+            record.state == "terminal" and record.namespace == dispatch_namespace
+            and record.dispatch == task for record in self.records.values())
+
+    def is_closed(self, dispatch_namespace, task, owner):
+        return (self._has_closed_dispatch(dispatch_namespace, task)
+                or self._has_closed_owner((dispatch_namespace, owner)))
 
     def reserve(self, session):
         require(session.identity is not None, "ownership requires frozen PR identity")
-        for identity, head, scope, active in self.records.values():
-            require(not (active and
-                         (identity[:2] == session.identity[:2] or head == session.head)),
+        owner_key = session.dispatch_namespace, session.owner
+        require(not self._has_closed_owner(owner_key),
+                "reviewer task owner was already logically closed")
+        for record in self.records.values():
+            require(not (record.state != "terminal" and
+                         (record.identity[:2] == session.identity[:2] or record.head == session.head
+                          or self._same_owner_scope((record.namespace, record.owner), owner_key))),
                     "duplicate/overlapping review ownership")
-        self.records[id(session)] = session.identity, session.head, session.scope, True
+        self.records[session._ownership_key] = _OwnedReview(
+            session.identity, session.head, session.scope, session.owner,
+            session.dispatch_namespace)
 
-    def finish(self, session):
-        identity, head, scope, _ = self.records[id(session)]
-        self.records[id(session)] = identity, head, scope, False
+    def retain_rejected_start(self, session, runtime):
+        if (session.identity is None
+                or self.is_closed(session.dispatch_namespace, runtime.dispatch_id, session.owner)
+                or any(record.namespace == session.dispatch_namespace
+                       and (record.dispatch == runtime.dispatch_id or record.owner == session.owner)
+                       for record in self.records.values())):
+            return False
+        starts = [event for event_session, event in runtime.events
+                  if event_session == session.dispatch_namespace
+                  and isinstance(event, dict) and event.get("type") == "subagent.started"
+                  and (event.get("agentId") == session.owner
+                       or isinstance(event.get("data"), dict)
+                       and event["data"].get("toolCallId") == runtime.dispatch_id)]
+        if not starts:
+            return False
+        self.records[session._ownership_key] = _OwnedReview(
+            session.identity, session.head, session.scope, session.owner,
+            session.dispatch_namespace, dispatch=runtime.dispatch_id)
+        return True
+
+    def bind_dispatch(self, session, task):
+        record = self.records[session._ownership_key]
+        require(record.dispatch is None or record.dispatch == task,
+                "review dispatch identity changed after binding")
+        require(not self.is_closed(record.namespace, task, record.owner),
+                "review task was already logically closed")
+        require(record.namespace is None or not any(
+            other is not record and other.namespace == record.namespace
+            and other.dispatch == task for other in self.records.values()),
+                "review dispatch already has an owner")
+        record.dispatch = task
+
+    def release_before_dispatch(self, session):
+        self.records.pop(session._ownership_key, None)
+
+    @staticmethod
+    def _remember_interval(record, start, end, *, unknown_start=False, unknown_end=False):
+        if start is not None:
+            record.interval_start = min(record.interval_start, start) if record.interval_start else start
+        if end is not None:
+            record.interval_end = max(record.interval_end, end) if record.interval_end else end
+        record.unknown_start |= unknown_start
+        record.unknown_end |= unknown_end
+
+    @staticmethod
+    def _overlaps(left, right):
+        left_start = None if left.unknown_start else left.interval_start
+        left_end = None if left.unknown_end else left.interval_end
+        right_start = None if right.unknown_start else right.interval_start
+        right_end = None if right.unknown_end else right.interval_end
+        return ((left_start is None or right_end is None or left_start <= right_end)
+                and (left_end is None or right_start is None or right_start <= left_end))
+
+    def observe_terminal(self, session, started_at, completed_at):
+        record = self.records[session._ownership_key]
+        start = timestamp(started_at)
+        end = timestamp(completed_at)
+        require(start <= end, "review task chronology is invalid")
+        self._remember_interval(record, start, end)
+        overlaps = [
+            other for other in self.records.values()
+            if other is not record and other.state == "terminal"
+            and (other.identity[:2] == record.identity[:2] or other.head == record.head)
+            and self._overlaps(record, other)
+        ]
+        for other in overlaps:
+            if other.report is not None and other.invalidation_reason is None:
+                other.invalidation_reason = "overlapping review task observations"
+        return overlaps
+
+    def finish(self, session, task, owner, interaction, started_at, completed_at,
+               dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=(),
+               report=None):
+        owner_key = dispatch_namespace, owner
+        record = self.records[session._ownership_key]
+        require(record.state != "terminal" and record.dispatch == task
+                and (record.namespace, record.owner) == owner_key,
+                "review owner or dispatch changed before logical closure")
+        identifier(owner, NAME_PATTERN, "reviewer identity")
+        if interaction is not None or report is not None or dispatch_namespace is not None:
+            identifier(interaction, NAME_PATTERN, "review interaction")
+        require(timestamp(started_at) <= timestamp(completed_at),
+                "review task chronology is invalid")
+        require(isinstance(admitted_event_keys, (tuple, list, set, frozenset))
+                and all(isinstance(item, str) for item in admitted_event_keys),
+                "invalid admitted CLI event keys")
+        require(isinstance(admitted_event_sessions, (tuple, list, set, frozenset))
+                and all(isinstance(item, str) and bool(item.strip())
+                        for item in admitted_event_sessions),
+                "invalid admitted CLI event sessions")
+        for event_session in admitted_event_sessions:
+            identifier(event_session, NAME_PATTERN, "review event session")
+        sessions = frozenset(admitted_event_sessions)
+        require(not any(
+            other is not record and other.state == "terminal" and other.owner == owner
+            and (dispatch_namespace is None or other.namespace is None
+                 or bool(sessions & other.event_sessions))
+            for other in self.records.values()),
+            "review event session was already logically closed")
+        overlaps = self.observe_terminal(session, started_at, completed_at)
+        require(report is None or not overlaps, "overlapping review task observations")
+        record.state = "terminal"
+        record.interaction = interaction
+        record.started_at = started_at
+        record.completed_at = completed_at
+        record.admitted_event_keys = frozenset(admitted_event_keys)
+        record.event_sessions = sessions
+        record.report = report
+
+    def observe_intervals(self, events):
+        for observed in self.records.values():
+            if observed.namespace is None or observed.dispatch is None:
+                continue
+            own = [event for item in events
+                   if isinstance(item, (tuple, list)) and len(item) == 2
+                   for event in (item[1],)
+                   if item[0] == observed.namespace and isinstance(event, dict)]
+            starts = [event for event in own
+                      if event.get("type") == "subagent.started"
+                      and (event.get("agentId") == observed.owner
+                           or isinstance(event.get("data"), dict)
+                           and event["data"].get("toolCallId") == observed.dispatch)]
+            completions = [event for event in own
+                           if event.get("type") == "subagent.completed"
+                           and (event.get("agentId") == observed.owner
+                                or isinstance(event.get("data"), dict)
+                                and event["data"].get("toolCallId") == observed.dispatch)]
+            dispatches = [event for event in own
+                          if event.get("type") == "tool.execution_start"
+                          and isinstance(event.get("data"), dict)
+                          and event["data"].get("toolCallId") == observed.dispatch
+                          and event["data"].get("toolName") == "task"]
+            if not starts:
+                if observed.started_at is None or not completions:
+                    continue
+                starts = [None]
+            for start_event in starts:
+                if start_event is None:
+                    start = timestamp(observed.started_at)
+                    data = {"interactionId": observed.interaction}
+                    valid_start = True
+                else:
+                    try:
+                        start = timestamp(start_event.get("timestamp"))
+                    except ReviewError:
+                        start = None
+                    data = start_event.get("data")
+                    valid_start = (isinstance(data, dict)
+                                   and start_event.get("agentId") == observed.owner
+                                   and data.get("toolCallId") == observed.dispatch
+                                   and data.get("agentType") == "code-review"
+                                   and isinstance(data.get("interactionId"), str)
+                                   and re.fullmatch(NAME_PATTERN, data["interactionId"]) is not None)
+                if (observed.state != "terminal" and valid_start and start is not None
+                        and observed.started_at is None):
+                    observed.started_at = start_event["timestamp"]
+                    observed.interaction = data.get("interactionId")
+                end = None
+                previous_end = (
+                    observed.interval_end
+                    if valid_start and start is not None and observed.started_at is not None
+                    and start == timestamp(observed.started_at) else None)
+                if previous_end is not None and len(starts) == 1 and not completions:
+                    end = previous_end
+                elif (valid_start and start is not None and len(starts) == len(completions) == 1
+                      and (len(dispatches) == 1
+                           or not dispatches and (start_event is None
+                                                  or previous_end is not None))):
+                    completion_event = completions[0]
+                    interaction = data.get("interactionId")
+                    try:
+                        dispatch = (timestamp(dispatches[0].get("timestamp"))
+                                    if dispatches else start)
+                        completion = timestamp(completion_event.get("timestamp"))
+                    except ReviewError:
+                        pass
+                    else:
+                        if (isinstance(interaction, str)
+                                and re.fullmatch(NAME_PATTERN, interaction) is not None
+                                and completion_event.get("agentId") == observed.owner
+                                and isinstance(completion_event.get("data"), dict)
+                                and completion_event["data"].get("toolCallId") == observed.dispatch
+                                and completion_event["data"].get("interactionId") in (None, interaction)
+                                and dispatch <= start <= completion):
+                            end = max(completion, previous_end) if previous_end else completion
+                unknown_end = not valid_start or bool(completions and end is None)
+                if (observed.started_at is not None and start_event is not None
+                        and (start != timestamp(observed.started_at)
+                             or not isinstance(data, dict)
+                             or data.get("interactionId") != observed.interaction)):
+                    if (end is None or not isinstance(data, dict)
+                            or data.get("interactionId") == observed.interaction
+                            or not completions
+                            or completions[0].get("data", {}).get("interactionId")
+                            != data.get("interactionId")):
+                        unknown_end = True
+                self._remember_interval(observed, start, end,
+                                        unknown_start=start is None, unknown_end=unknown_end)
+                for other in self.records.values():
+                    if (other is observed
+                            or other.interval_start is None and not other.unknown_start
+                            or not (other.identity[:2] == observed.identity[:2]
+                                    or other.head == observed.head)):
+                        continue
+                    if self._overlaps(observed, other):
+                        if other.invalidation_reason is None:
+                            other.invalidation_reason = "overlapping review task observations"
+                        if observed.invalidation_reason is None:
+                            observed.invalidation_reason = "overlapping review task observations"
+
+    def validate_closed_events(self, events, *, snapshot_namespace=None, snapshot_owner=None):
+        require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
+        require(snapshot_namespace is None
+                or isinstance(snapshot_namespace, str) and bool(snapshot_namespace.strip()),
+                "invalid CLI event snapshot namespace")
+        self.observe_intervals(events)
+        if snapshot_owner is not None:
+            snapshot_keys = {}
+            for record in events:
+                if (not isinstance(record, (tuple, list)) or len(record) != 2
+                        or not isinstance(record[0], str) or not isinstance(record[1], dict)):
+                    continue
+                try:
+                    event_key = _cli_event_key(record)
+                except ReviewError:
+                    continue
+                snapshot_keys.setdefault(record[0], set()).add(event_key)
+            for closed in self.records.values():
+                if (closed.state != "terminal" or closed.namespace != snapshot_namespace
+                        or closed is not self.record_for(snapshot_owner)
+                        or not closed.admitted_event_keys
+                        or closed.invalidation_reason is not None):
+                    continue
+                present = set()
+                for session in closed.event_sessions:
+                    present.update(snapshot_keys.get(session, set()))
+                if not closed.admitted_event_keys <= present:
+                    closed.invalidation_reason = (
+                        "an admitted review event was changed or removed after logical closure")
+        for record in events:
+            if not isinstance(record, (tuple, list)) or len(record) != 2:
+                continue
+            event_session, event = record
+            if not isinstance(event, dict):
+                continue
+            if not is_review_activity(event):
+                continue
+            agent = event.get("agentId")
+            data = event.get("data")
+            for closed in self.records.values():
+                dispatch_event = (
+                    closed.namespace is not None and event_session == closed.namespace
+                    and isinstance(data, dict) and data.get("toolCallId") == closed.dispatch
+                    and event.get("type") in {"tool.execution_start", "tool.execution_complete",
+                                               "subagent.started", "subagent.completed"})
+                if (closed.state != "terminal" or (closed.owner != agent and not dispatch_event)
+                        or (isinstance(event_session, str) and closed.namespace is not None
+                            and event_session not in closed.event_sessions)):
+                    continue
+                try:
+                    event_key = _cli_event_key(record)
+                except ReviewError:
+                    message = "review task emitted an unrecognized event record"
+                else:
+                    if event_key in closed.admitted_event_keys:
+                        continue
+                    try:
+                        event_time = timestamp(event.get("timestamp"))
+                    except ReviewError:
+                        message = "review task emitted an event with invalid chronology"
+                    else:
+                        message = None
+                    data = event.get("data")
+                    if message is not None:
+                        pass
+                    elif not isinstance(data, dict):
+                        message = "review task emitted an event with invalid data"
+                    elif event_time > timestamp(closed.completed_at):
+                        message = "review task emitted an event after logical closure"
+                    elif data.get("interactionId") not in (None, closed.interaction):
+                        message = "review task emitted a contradictory interaction"
+                    else:
+                        message = "new review activity was observed after logical closure"
+                if closed.invalidation_reason is None:
+                    closed.invalidation_reason = message
+
+    def validate_session(self, session):
+        record = self.record_for(session)
+        if record is not None:
+            self.validate_closed_events(
+                session.latest_cli_events, snapshot_namespace=session.dispatch_namespace,
+                snapshot_owner=session)
+            require(record.invalidation_reason is None,
+                    f"review task evidence was invalidated: {record.invalidation_reason}")
+
+    def owns_completed_report(self, session, report):
+        self.validate_session(session)
+        record = self.record_for(session)
+        return bool(record is not None and record.state == "terminal"
+                    and record.report is report and record.identity == session.identity
+                    and record.head == report.head and record.scope == report.subjects
+                    and record.owner == report.owner and record.dispatch == report.task)
+
+
+def _review_instructions(candidate, subjects, assigned_reads, *, historical=False):
+    encoding = ("" if historical else
+                " and encoding. Base64 materializations must be decoded before review")
+    return (
+        "Review only the bound candidate and supplied evidence. Do not edit files, "
+        "run commands, push, comment, request review, dispatch CI, merge, or perform "
+        "other mutations. Before reading, state exactly: "
+        f"{CliReviewRuntime.COMMITMENT} Candidate SHA: {candidate}. "
+        f"Review scope: {', '.join(sorted(subjects))}. "
+        f"Assigned candidate reads (JSON): {assigned_reads}. "
+        "Each entry maps a candidate path and side to its exact supplied file path"
+        f"{encoding}. Use complete direct file reads of every mapped file; for a file too large for "
+        "the default view limit, request a full read with forceReadLargeFiles and do not "
+        "use ranges. Return only JSON with keys "
+        "candidate_sha, scope, findings. Bind candidate_sha to the assigned SHA, "
+        "scope to the exact assigned scope array, and findings to an array of objects "
+        "with keys id, subject, family, member, source_path, detail. Use an empty "
+        "findings array when no findings are present."
+    )
+
+
+def _matches_instruction_receipt(content, prompt):
+    if content == prompt:
+        return True
+    if not isinstance(content, str) or not content.endswith(prompt):
+        return False
+    prefix = content[:-len(prompt)]
+    match = re.fullmatch(
+        r"<current_datetime>([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:"
+        r"[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2}))</current_datetime>\n\n",
+        prefix)
+    if match is None:
+        return False
+    try:
+        datetime.fromisoformat(match.group(1).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+class CliReviewRuntime:
+    """Read-only adapter over actual CLI event records for one completed task."""
+
+    COMMITMENT = "I will follow the read-only restrictions and only inspect the assigned files."
+
+    def __init__(self, events, *, dispatch_id, root_session_id, candidate_reader,
+                 required_reads):
+        self.events = tuple(events)
+        self.dispatch_id = identifier(dispatch_id, NAME_PATTERN, "task dispatch identity")
+        self.root_session_id = identifier(root_session_id, NAME_PATTERN, "coordinator session")
+        self.candidate_reader = candidate_reader
+        require(isinstance(required_reads, dict) and bool(required_reads),
+                "exact candidate read requirements are missing")
+        supplied_reads = dict(required_reads)
+        self.required_reads = {}
+        base_entries = candidate_reader.base_tree.entries
+        head_entries = candidate_reader.head_tree.entries
+        changed_paths = {
+            path for path in set(base_entries) | set(head_entries)
+            if base_entries.get(path) != head_entries.get(path)
+        }
+        required_keys = set()
+        for path in changed_paths:
+            base_entry = base_entries.get(path)
+            head_entry = head_entries.get(path)
+            change = CandidatePathChange(
+                path,
+                base_entry is not None,
+                None if base_entry is None else base_entry[0],
+                None if base_entry is None else base_entry[1],
+                None if base_entry is None else base_entry[2],
+                head_entry is not None,
+                None if head_entry is None else head_entry[0],
+                None if head_entry is None else head_entry[1],
+                None if head_entry is None else head_entry[2],
+            )
+            required_keys.update((path, side) for side in change.required_reads())
+        require(required_keys <= set(supplied_reads),
+                "review reads do not cover the complete candidate diff")
+        for key, target in supplied_reads.items():
+            require(isinstance(key, tuple) and len(key) == 2,
+                    "invalid candidate read identity")
+            path = repo_path(key[0], "candidate read path")
+            side = review_side(key[1])
+            entries = base_entries if side == "base" else head_entries
+            entry = entries.get(path)
+            require(entry is not None and entry[0] in REVIEW_BLOB_MODES and entry[1] == "blob",
+                    "review read is not an available regular Git blob")
+            keys(target, ("tool_path", "content", "summary", "encoding"),
+                 "candidate read target")
+            require(isinstance(target["tool_path"], str) and target["tool_path"]
+                    and isinstance(target["content"], bytes)
+                    and isinstance(target["encoding"], str)
+                    and target["encoding"] in {"utf-8", "base64"},
+                    "invalid candidate read materialization")
+            try:
+                target["content"].decode("utf-8")
+                encoding = "utf-8"
+            except UnicodeDecodeError:
+                encoding = "base64"
+            require(target["encoding"] == encoding,
+                    "candidate read encoding does not match its Git blob")
+            summary = validate_candidate_read_summary(
+                target["summary"], base_sha=candidate_reader.base,
+                head_sha=candidate_reader.head)
+            require((summary.path, summary.side) == (path, side),
+                    "candidate read target is bound to another path or side")
+            described = validate_candidate_read_summary(
+                candidate_reader.describe(path, side), base_sha=candidate_reader.base,
+                head_sha=candidate_reader.head)
+            observed = validate_candidate_read(
+                candidate_reader(path, side), base_sha=candidate_reader.base,
+                head_sha=candidate_reader.head)
+            require(summary == described == observed.summary()
+                    and target["content"] == observed.data,
+                    "candidate read materialization differs from the immutable Git object")
+            self.required_reads[(path, side)] = {
+                "tool_path": target["tool_path"], "content": target["content"],
+                "summary": summary, "encoding": encoding,
+            }
+        unique([target["tool_path"] for target in self.required_reads.values()],
+               "candidate materialization paths")
+        self.reviewer = None
+        self.interaction = None
+        self.prompt = None
+        self.dispatch_started_at = None
+        self.dispatch_agent = None
+        self.started_at = None
+        self.completed_at = None
+        self.requested_duration = None
+        self.assigned_candidate = None
+        self.assigned_subjects = None
+        self.reviewer_session_id = None
+        self.received_prompt = None
+        self.received_at = None
+        self.result = None
+        self.validated_event_keys = frozenset()
+        self.validated_event_sessions = frozenset()
+        self.assignment_event_keys = None
+
+    def start(self, **expected):
+        self.assigned_candidate = expected.get("candidate")
+        self.assigned_subjects = tuple(sorted(expected.get("subjects", ())))
+        self.requested_duration = expected.get("duration")
+        self.assigned_owner = expected.get("owner")
+        dispatches = [(session, event) for session, event in self.events
+                      if session == self.root_session_id
+                      and event.get("type") == "tool.execution_start"
+                      and event.get("data", {}).get("toolCallId") == self.dispatch_id]
+        require(len(dispatches) == 1, "review task dispatch event is missing or duplicated")
+        dispatch = dispatches[0][1]
+        data = dispatch["data"]
+        self.dispatch_started_at = dispatch["timestamp"]
+        self.dispatch_agent = dispatch.get("agentId")
+        require(data.get("toolName") == "task", "review dispatch is not a task operation")
+        arguments = data.get("arguments")
+        require(isinstance(arguments, dict), "review task arguments are missing")
+        prompt = arguments.get("prompt")
+        require(isinstance(prompt, str) and prompt.strip(), "review task prompt is missing")
+        self.prompt = prompt
+        starts = [(session, event) for session, event in self.events
+                  if session == self.root_session_id
+                  and event.get("type") == "subagent.started"
+                  and event.get("data", {}).get("toolCallId") == self.dispatch_id]
+        require(len(starts) == 1, "review task identity is missing or duplicated")
+        started = starts[0][1]
+        self.started_at = started["timestamp"]
+        require(timestamp(dispatch["timestamp"]) <= timestamp(started["timestamp"]),
+                "reviewer started before the assigned task dispatch")
+        self.reviewer = identifier(started.get("agentId"), NAME_PATTERN, "reviewer identity")
+        self.interaction = identifier(started["data"].get("interactionId"),
+                                      NAME_PATTERN, "review interaction")
+        require(started["data"].get("agentType") == "code-review",
+                "review task role is unsupported")
+        completions = [(session, event) for session, event in self.events
+                       if session == self.root_session_id
+                       and event.get("type") == "subagent.completed"
+                       and event.get("agentId") == self.reviewer
+                       and event.get("data", {}).get("toolCallId") == self.dispatch_id]
+        require(len(completions) <= 1, "review task completion is duplicated")
+        if completions:
+            self.completed_at = timestamp(completions[0][1].get("timestamp"))
+            require(timestamp(self.started_at) <= self.completed_at,
+                    "review task completion predates its assigned start")
+        received = [(session, event) for session, event in self.events
+                    if event.get("agentId") == self.reviewer
+                    and event.get("type") == "user.message"
+                    and event.get("data", {}).get("source") == "agent-" + self.root_session_id
+                    and event.get("data", {}).get("interactionId") == self.interaction
+                    and isinstance(event.get("data", {}).get("transformedContent"), str)
+                    and prompt in event["data"]["transformedContent"]
+                    and timestamp(self.started_at) <= timestamp(event.get("timestamp"))
+                    and (self.completed_at is None
+                         or timestamp(event.get("timestamp")) <= self.completed_at)]
+        require(len(received) == 1, "original reviewer instructions are missing or repeated")
+        self.reviewer_session_id = identifier(
+            received[0][0], NAME_PATTERN, "reviewer session")
+        require(self.reviewer_session_id == self.root_session_id,
+                "reviewer receipt must be in the root session; child session provenance is unsupported")
+        received_prompt = received[0][1]["data"].get("transformedContent")
+        require(_matches_instruction_receipt(received_prompt, prompt),
+                "received review instructions differ from the dispatched prompt")
+        self.received_prompt = received_prompt
+        self.received_at = timestamp(received[0][1].get("timestamp"))
+        require(timestamp(started["timestamp"]) <= timestamp(received[0][1]["timestamp"]),
+                "reviewer instructions predate the assigned task")
+        self._validate_prompt(prompt)
+        require(expected.get("owner") == self.reviewer,
+                "observed reviewer identity differs from the coordinator assignment")
+        self.assignment_event_keys = frozenset(
+            _cli_event_key(record) for record in (dispatches[0], starts[0], received[0]))
+        return self.dispatch_id
+
+    def _validate_prompt(self, prompt):
+        marker = "Assigned candidate reads (JSON): "
+        require(prompt.count(marker) == 1, "assigned candidate reads are missing or ambiguous")
+        tail = prompt.split(marker, 1)[1]
+        try:
+            entries, end = json.JSONDecoder().raw_decode(tail)
+        except (ValueError, TypeError) as error:
+            raise ReviewError("assigned candidate reads are malformed") from error
+        raw = tail[:end]
+        require(isinstance(entries, list) and bool(entries)
+                and all(isinstance(item, list) and len(item) in (3, 4)
+                        and all(isinstance(value, str) for value in item)
+                        for item in entries),
+                "assigned candidate reads have an unsupported format")
+        widths = {len(item) for item in entries}
+        require(len(widths) == 1, "assigned candidate reads mix instruction formats")
+        historical = widths == {3}
+        require(prompt == _review_instructions(
+            self.assigned_candidate, self.assigned_subjects, raw, historical=historical),
+            "dispatched prompt omits or contradicts accepted reviewer instructions")
+        assigned = {}
+        for item in entries:
+            path, side, tool_path = item[:3]
+            key = repo_path(path, "candidate read path"), review_side(side)
+            require(key not in assigned, "duplicate assigned candidate read")
+            assigned[key] = (tool_path, "utf-8" if historical else item[3])
+        require(assigned == {
+            key: (target["tool_path"], target["encoding"])
+            for key, target in self.required_reads.items()
+        }, "dispatched candidate reads differ from the exact assignment")
+
+    def _review_activity_records(self):
+        return [(session, event) for session, event in self.events
+                if session == self.root_session_id and event.get("agentId") == self.reviewer]
+
+    def read_terminal(self, task):
+        require(task == self.dispatch_id, "review task identity differs from its dispatch")
+        dispatch = [event for session, event in self.events
+                    if session == self.root_session_id
+                    and event.get("type") == "tool.execution_start"
+                    and event.get("data", {}).get("toolCallId") == task]
+        starts = [event for session, event in self.events
+                  if session == self.root_session_id
+                  and event.get("type") == "subagent.started"
+                  and event.get("data", {}).get("toolCallId") == task]
+        require(len(dispatch) == len(starts) == 1
+                and dispatch[0].get("data", {}).get("toolName") == "task"
+                and starts[0].get("data", {}).get("agentType") == "code-review"
+                and starts[0].get("agentId") == self.assigned_owner,
+                "review dispatch and reviewer start are missing or contradictory")
+        reviewer = identifier(starts[0].get("agentId"), NAME_PATTERN, "reviewer identity")
+        interaction = identifier(starts[0]["data"].get("interactionId"),
+                                 NAME_PATTERN, "review interaction")
+        started_at = starts[0].get("timestamp")
+        completion = [event for session, event in self.events
+                      if session == self.root_session_id
+                      and event.get("type") == "subagent.completed"
+                      and (event.get("agentId") == reviewer
+                           or isinstance(event.get("data"), dict)
+                           and event["data"].get("toolCallId") == self.dispatch_id)]
+        require(len(completion) == 1, "reviewer completion event is missing")
+        require(completion[0].get("agentId") == reviewer
+                and isinstance(completion[0].get("data"), dict)
+                and completion[0]["data"].get("toolCallId") == self.dispatch_id,
+                "reviewer completion identity is contradictory")
+        require(completion[0]["data"].get("interactionId") in (None, interaction),
+                "reviewer completion interaction is contradictory")
+        completed_at = completion[0].get("timestamp")
+        require(timestamp(dispatch[0].get("timestamp")) <= timestamp(started_at)
+                <= timestamp(completed_at), "review task chronology is invalid")
+        return SimpleNamespace(
+            task=self.dispatch_id, owner=reviewer, role="code-review",
+            head=self.assigned_candidate, subjects=self.assigned_subjects,
+            completed=True, started_at=started_at, completed_at=completed_at,
+            interaction_id=interaction, cli_events=self.events,
+        )
+
+    def _validate_dispatch_receipt(self):
+        root_completions = [event for session, event in self.events
+                            if session == self.root_session_id
+                            and event.get("type") == "tool.execution_complete"
+                            and event.get("data", {}).get("toolCallId") == self.dispatch_id]
+        require(len(root_completions) == 1
+                and root_completions[0]["data"].get("success") is True
+                and root_completions[0].get("agentId") == self.dispatch_agent
+                and timestamp(self.dispatch_started_at)
+                <= timestamp(root_completions[0]["timestamp"]),
+                "task dispatch completion is missing or failed")
+        return self.root_session_id, root_completions[0]
+
+    def read(self, task):
+        terminal = self.read_terminal(task)
+        require(self.assignment_event_keys is not None,
+                "review assignment was not validated")
+        assignment_keys = frozenset(
+            _cli_event_key((session, event)) for session, event in self.events
+            if session == self.root_session_id and (
+                (event.get("type") in {"tool.execution_start", "subagent.started"}
+                 and event.get("data", {}).get("toolCallId") == self.dispatch_id)
+                or (event.get("type") == "user.message" and event.get("agentId") == self.reviewer
+                    and event.get("data", {}).get("interactionId") == self.interaction)))
+        require(self.assignment_event_keys <= assignment_keys,
+                "review assignment records changed after validation")
+        dispatch_receipt = self._validate_dispatch_receipt()
+        completed_at = terminal.completed_at
+        child = self._review_activity_records()
+        self.validated_event_keys = validate_reviewer_activity(
+            child, owner=self.reviewer, dispatch=self.dispatch_id,
+            interaction=self.interaction, started_at=self.started_at,
+            completed_at=completed_at) | self.assignment_event_keys | {_cli_event_key(dispatch_receipt)}
+        self.validated_event_sessions = frozenset(
+            session for session, event in child if is_review_activity(event))
+        turn_ids = {
+            event.get("data", {}).get("turnId")
+            for _, event in child
+            if event.get("data", {}).get("interactionId") == self.interaction
+            and isinstance(event.get("data", {}).get("turnId"), str)
+        }
+        turn_event_records = [
+            (session, event) for session, event in child
+            if (event.get("data", {}).get("interactionId") == self.interaction
+                or (event.get("type") == "tool.execution_start"
+                    and event.get("data", {}).get("interactionId") is None
+                    and event.get("data", {}).get("turnId") in turn_ids))
+        ]
+        turn_events = [event for _, event in turn_event_records]
+        received = [event for event in turn_events if event.get("type") == "user.message"]
+        require(len(received) == 1
+                and received[0].get("data", {}).get("transformedContent")
+                == self.received_prompt,
+                "original reviewer instructions differ from the bound receipt")
+        messages = [event for event in turn_events if event.get("type") == "assistant.message"]
+        require(all(timestamp(received[0]["timestamp"]) <= timestamp(event["timestamp"])
+                    for event in messages),
+                "reviewer message predates the assigned instructions")
+        commitments = [event for event in messages
+                       if event.get("data", {}).get("phase") == "commentary"
+                       and event.get("data", {}).get("content", "").strip()
+                       == self.COMMITMENT]
+        tool_starts = [event for event in turn_events if event.get("type") == "tool.execution_start"]
+        skill_starts = [event for event in tool_starts
+                        if event.get("data", {}).get("toolName") == "skill"]
+        require(len(skill_starts) <= 1, "reviewer skill load is duplicated")
+        skill_id = None
+        if skill_starts:
+            skill = skill_starts[0]
+            skill_id = identifier(skill["data"].get("toolCallId"), NAME_PATTERN,
+                                  "review skill identity")
+            require(skill["data"].get("arguments") == {"skill": "code-review"},
+                    "reviewer skill load is unsupported")
+            skill_results = [event for event in turn_events
+                             if event.get("type") == "tool.execution_complete"
+                             and event.get("data", {}).get("toolCallId") == skill_id]
+            require(len(skill_results) == 1
+                    and skill_results[0]["data"].get("success") is True
+                    and timestamp(received[0]["timestamp"]) <= timestamp(skill["timestamp"])
+                    <= timestamp(skill_results[0]["timestamp"])
+                    and len(commitments) == 1
+                    and timestamp(skill_results[0]["timestamp"])
+                    < timestamp(commitments[0]["timestamp"]),
+                    "reviewer skill load is incomplete or outside its allowed interval")
+        tool_starts = [event for event in tool_starts if event not in skill_starts]
+        require(len(commitments) == 1
+                and timestamp(commitments[0]["timestamp"])
+                < min((timestamp(event["timestamp"]) for event in tool_starts),
+                      default=timestamp(completed_at)),
+                "explicit read-only commitment must precede reviewer reads")
+        starts = {}
+        reads = {}
+        seen_reads = set()
+        for event in tool_starts:
+            data = event["data"]
+            require(data.get("toolName") == "view", "reviewer used a prohibited or unverified operation")
+            call_id = identifier(data.get("toolCallId"), NAME_PATTERN, "review tool identity")
+            require(call_id not in starts and call_id != skill_id, "duplicate reviewer tool call")
+            args = data.get("arguments")
+            require(isinstance(args, dict) and "view_range" not in args,
+                    "partial or malformed candidate view")
+            path = args.get("path")
+            match = next((key for key, target in self.required_reads.items()
+                          if target["tool_path"] == path), None)
+            require(match is not None and match not in seen_reads,
+                    "reviewer read an unassigned or duplicate candidate path")
+            seen_reads.add(match)
+            starts[call_id] = match, event
+        results = {}
+        for event in turn_events:
+            if event.get("type") != "tool.execution_complete":
+                continue
+            data = event["data"]
+            call_id = data.get("toolCallId")
+            if skill_id is not None and call_id == skill_id:
+                continue
+            require(call_id in starts, "reviewer tool completion has no matching operation")
+            if call_id in starts:
+                require(call_id not in results and data.get("success") is True,
+                        "reviewer file read failed or has contradictory results")
+                result = data.get("result")
+                require(isinstance(result, dict) and isinstance(result.get("content"), str),
+                        "reviewer file result is incomplete")
+                key, start = starts[call_id]
+                expected = self.required_reads[key]
+                if expected["encoding"] == "utf-8":
+                    content = result["content"].encode("utf-8")
+                else:
+                    try:
+                        content = base64.b64decode(result["content"], validate=True)
+                    except (ValueError, binascii.Error) as error:
+                        raise ReviewError("reviewer binary read is not valid base64") from error
+                    require(base64.b64encode(content).decode("ascii") == result["content"],
+                            "reviewer binary read is not canonical base64")
+                require(content == expected["content"],
+                        "reviewer observed bytes differ from the exact candidate Git blob")
+                require(timestamp(start["timestamp"]) <= timestamp(event["timestamp"]),
+                        "reviewer file read completed before it started")
+                reads[key] = expected["summary"]
+                results[call_id] = event
+        require(set(results) == set(starts), "reviewer file-read completion is missing")
+        require(set(reads) == set(self.required_reads),
+                "reviewer did not observe every required candidate path and side")
+        finals = [event for event in messages if event.get("data", {}).get("phase") == "final_answer"]
+        require(len(finals) == 1 and timestamp(finals[0]["timestamp"]) < timestamp(completed_at),
+                "reviewer final report is missing or outside the completed turn")
+        final_time = timestamp(finals[0]["timestamp"])
+        require(all(timestamp(start["timestamp"]) < final_time for _, start in starts.values())
+                and all(timestamp(event["timestamp"]) < final_time for event in results.values()),
+                "reviewer reported before completing all candidate reads")
+        report_text = finals[0]["data"].get("content")
+        require(isinstance(report_text, str) and report_text.strip(),
+                "reviewer report content is missing")
+        report_data = parse_json(report_text.encode("utf-8"))
+        keys(report_data, ("candidate_sha", "scope", "findings"), "reviewer report")
+        require(report_data["candidate_sha"] == self.candidate_reader.head
+                and report_data["scope"] == list(sorted(self._scope())),
+                "reviewer report is not bound to the assigned candidate and scope")
+        report_findings = report_data["findings"]
+        require(isinstance(report_findings, list) and len(report_findings) <= MAX_FINDINGS,
+                "review finding bound exceeded")
+        findings = []
+        for item in report_findings:
+            keys(item, ("id", "subject", "family", "member", "source_path", "detail"),
+                 "review finding")
+            identifier(item["id"], NAME_PATTERN, "finding ID")
+            identifier(item["subject"], SCOPE_PATTERN, "finding subject")
+            identifier(item["family"], NAME_PATTERN, "finding family")
+            identifier(item["member"], NAME_PATTERN, "finding member")
+            require(item["subject"] in self._scope(), "finding is outside assigned review scope")
+            require(item["family"] in FAMILIES and ":" in item["member"]
+                    and item["member"].split(":", 1)[0] in FAMILIES[item["family"]],
+                    "finding is outside the accepted sibling family")
+            path = repo_path(item["source_path"], "finding source path")
+            require(isinstance(item["detail"], str) and item["detail"].strip()
+                    and len(item["detail"]) <= MAX_DETAIL, "invalid finding detail")
+            require(any(
+                summary.path == path
+                and (summary.side == "head"
+                     or (summary.side == "base"
+                         and path not in self.candidate_reader.head_tree.entries))
+                for summary in reads.values()),
+                    "finding source was not observed by the reviewer")
+            findings.append(Finding(item["id"], item["subject"], item["family"], item["member"],
+                                    self.candidate_reader.head, path,
+                                    "local:" + self.dispatch_id, item["detail"]))
+        unique([item.id for item in findings], "review findings")
+        duration = (timestamp(completed_at) - timestamp(terminal.started_at)).total_seconds()
+        require(0 <= duration <= MAX_REVIEW_SECONDS
+                and type(self.requested_duration) is int
+                and duration <= self.requested_duration,
+                "review task exceeded its duration bound")
+        self.result = SimpleNamespace(
+            task=self.dispatch_id, owner=self.reviewer, role="code-review",
+            head=self.candidate_reader.head, subjects=tuple(sorted(self._scope())),
+            completed=True, actions=(("view", "skill") if skill_id else ("view",)),
+            files=len(reads), findings=tuple(findings),
+            started_at=terminal.started_at, completed_at=completed_at,
+            interaction_id=self.interaction, instruction_commitment=self.COMMITMENT,
+            logical_closed=False,
+            candidate_reads=tuple(reads[key] for key in sorted(reads)),
+            report=report_text, cli_events=self.events,
+        )
+        return self.result
+
+    def _scope(self):
+        require(isinstance(self.received_prompt, str), "bound reviewer instructions are missing")
+        return self.assigned_subjects
 
 
 class ReviewSession:
     """Adapter around the coordinator's existing task/tool calls, not a backend.
 
-    runtime.start/read/stop are the actual CLI task operations.
+    runtime.start/read/stop are coordinator adapters over the actual CLI task
+    observations.
     They are supplied by trusted orchestration code, never by request JSON.
     There is no polling: finish is called after the task-completion event.
     Coordinator-authored work can have one actual coordinator/implementer.
@@ -792,6 +1739,8 @@ class ReviewSession:
         require(isinstance(scope, (set, frozenset)) and 0 < len(scope) <= MAX_SUBJECTS
                 and all(isinstance(item, str) and bool(item.strip()) for item in scope),
                 "invalid accepted review scope")
+        for item in scope:
+            identifier(item, SCOPE_PATTERN, "review subject")
         if identity is not None:
             require(isinstance(identity, tuple) and len(identity) == 3,
                     "invalid frozen PR identity")
@@ -805,6 +1754,7 @@ class ReviewSession:
         self.identity = identity
         self.owners = owners
         self.clock = clock
+        self.owner = None
         self.readers = dict(readers or {})
         require(set(self.readers) <= READ_ACTIONS, "unapproved reviewer tool binding")
         self.lease = None
@@ -816,6 +1766,81 @@ class ReviewSession:
         self.attempted_candidate_paths: set[str] = set()
         self.candidate_reads: dict[tuple[str, str], CandidateReadSummary] = {}
         self.candidate_binding: CandidateBinding | None = None
+        self.task: str | None = None
+        self.dispatch_namespace: str | None = None
+        self.assignment_event_keys = None
+        self.assignment_received_at = None
+        self.cli_lifecycle = None
+        self.cli_lifecycle_conflict = False
+        self.cli_activity_violation = None
+        self.observed_cli_activity = {}
+        self.observed_cli_start_count = 0
+        self.observed_cli_ids = {}
+        self.latest_cli_events = ()
+        self._ownership_key = object()
+        self.begin_failed = False
+
+    def _observe_cli_lifecycle(self, events, task):
+        observed = {}
+        for record in events:
+            if not isinstance(record, (tuple, list)) or len(record) != 2:
+                continue
+            event_session, event = record
+            if (event_session != self.dispatch_namespace or not isinstance(event, dict)
+                    or event.get("type") not in {"tool.execution_start", "subagent.started"}
+                    or not isinstance(event.get("data"), dict)
+                    or event["data"].get("toolCallId") != task):
+                continue
+            kind = event["type"]
+            try:
+                event_key = _cli_event_key((event_session, event))
+            except ReviewError:
+                self.cli_lifecycle_conflict = True
+                raise
+            if kind in observed and kind not in self.cli_lifecycle:
+                self.cli_lifecycle_conflict = True
+            if kind in self.cli_lifecycle and self.cli_lifecycle[kind] != event_key:
+                self.cli_activity_violation = (
+                    self.cli_activity_violation or
+                    "observed reviewer assignment changed")
+            self._observe_cli_identity(record, retain=True)
+            observed[kind] = event_key
+        if not self.cli_lifecycle_conflict:
+            for kind, event_key in observed.items():
+                self.cli_lifecycle.setdefault(kind, event_key)
+        return observed
+
+    def _observe_cli_identity(self, record, *, retain):
+        session, event = record
+        event_id = event.get("id")
+        if event_id is None:
+            return
+        if not isinstance(event_id, str) or not event_id:
+            if retain:
+                self.cli_activity_violation = (
+                    self.cli_activity_violation or "observed malformed CLI event identity")
+            return
+        identity = hashlib.sha256(json.dumps(
+            (session, event_id), ensure_ascii=True, separators=(",", ":")
+        ).encode("ascii")).digest()
+        previous = self.observed_cli_ids.get(identity)
+        if previous is None and not retain:
+            return
+        try:
+            event_key = _cli_event_key(record)
+        except ReviewError:
+            self.cli_activity_violation = (
+                self.cli_activity_violation or "observed malformed reviewer operation")
+            return
+        if previous is not None and previous != event_key:
+            self.cli_activity_violation = (
+                self.cli_activity_violation or "observed CLI event identity changed")
+        elif previous is None:
+            if len(self.observed_cli_ids) >= MAX_REQUEST_BYTES // 32:
+                self.cli_activity_violation = (
+                    self.cli_activity_violation or "observed reviewer operation budget exceeded")
+            else:
+                self.observed_cli_ids[identity] = event_key
 
     def _candidate_reader(self):
         reader = self.readers.get("read-candidate")
@@ -849,36 +1874,105 @@ class ReviewSession:
         require(isinstance(owner, str) and bool(owner.strip())
                 and owner not in {self.coordinator, self.implementer},
                 "reviewer ownership overlaps")
+        self.owner = owner
+        self.dispatch_namespace = getattr(runtime, "root_session_id", None)
+        if self.dispatch_namespace is not None:
+            identifier(self.dispatch_namespace, NAME_PATTERN, "coordinator session")
         require(type(duration) is int and 0 < duration <= MAX_REVIEW_SECONDS
                 and type(max_files) is int and 0 < max_files <= MAX_REVIEW_FILES,
                 "invalid review bounds")
-        candidate_reader = self._candidate_reader()
-        self.candidate_binding = None
-        if candidate_reader is not None:
-            _, _, _, binding = candidate_reader
-            require(binding.head == self.head,
-                    "trusted candidate reader head differs from the active review")
-            if self.identity is not None:
-                require(binding.base == self.identity[2],
-                        "trusted candidate reader base differs from the frozen review identity")
-            self.candidate_binding = binding
-        if self.owners is not None:
-            self.owners.reserve(self)
+        reserved = False
+        dispatched = False
         try:
+            if self.owners is not None:
+                if isinstance(runtime, CliReviewRuntime):
+                    self.owners.validate_closed_events(runtime.events)
+                try:
+                    self.owners.reserve(self)
+                except ReviewError:
+                    if isinstance(runtime, CliReviewRuntime) and self.owners.retain_rejected_start(self, runtime):
+                        reserved = True
+                        dispatched = True
+                        runtime.assigned_owner = owner
+                        runtime.assigned_candidate = self.head
+                        runtime.assigned_subjects = tuple(sorted(self.scope))
+                        self.owners.validate_closed_events(runtime.events)
+                    raise
+                reserved = True
+            if isinstance(runtime, CliReviewRuntime):
+                if self.owners is not None:
+                    self.owners.bind_dispatch(self, runtime.dispatch_id)
+                runtime.assigned_owner = owner
+                runtime.assigned_candidate = self.head
+                runtime.assigned_subjects = tuple(sorted(self.scope))
+                dispatched = True
+                self.cli_lifecycle = {}
+                self._observe_cli_lifecycle(runtime.events, runtime.dispatch_id)
+                if self.owners is not None:
+                    self.owners.validate_closed_events(runtime.events)
+            candidate_reader = self._candidate_reader()
+            self.candidate_binding = None
+            if candidate_reader is not None:
+                _, _, _, binding = candidate_reader
+                require(binding.head == self.head,
+                        "trusted candidate reader head differs from the active review")
+                if self.identity is not None:
+                    require(binding.base == self.identity[2],
+                            "trusted candidate reader base differs from the frozen review identity")
+                self.candidate_binding = binding
+            assigned_reads = json.dumps(
+                [[path, side, target["tool_path"], target["encoding"]]
+                 for (path, side), target in sorted(runtime.required_reads.items())]
+                if isinstance(runtime, CliReviewRuntime) else [],
+                ensure_ascii=True, separators=(",", ":"))
+            if isinstance(runtime, CliReviewRuntime):
+                require(runtime.required_reads, "review assignment has no candidate paths")
+                require(candidate_reader is not None
+                        and candidate_tree_binding(runtime.candidate_reader) == binding,
+                        "review runtime candidate binding differs from the assigned reader")
+            instructions = _review_instructions(self.head, self.scope, assigned_reads)
+            dispatched = True
             task = runtime.start(
                 role="code-review", owner=owner, candidate=self.head,
-                subjects=tuple(sorted(self.scope)), actions=tuple(sorted(READ_ACTIONS)),
+                subjects=tuple(sorted(self.scope)),
+                instructions=instructions,
                 duration=duration, max_files=max_files, max_findings=MAX_FINDINGS,
             )
             require(isinstance(task, str) and bool(task.strip()),
                     "runtime task identity must be a nonblank string")
-        except Exception:
+            if isinstance(runtime, CliReviewRuntime):
+                self.assignment_event_keys = runtime.assignment_event_keys
+                self.assignment_received_at = runtime.received_at
+                for record in runtime.events:
+                    event_session, event = record
+                    if (event_session == self.dispatch_namespace
+                            and event.get("type") == "user.message"
+                            and event.get("agentId") == owner
+                            and event.get("data", {}).get("interactionId") == runtime.interaction):
+                        self._observe_cli_identity(record, retain=True)
             if self.owners is not None:
-                self.owners.records.pop(id(self), None)
+                self.owners.bind_dispatch(self, task)
+        except Exception:
+            if reserved and not dispatched:
+                self.owners.release_before_dispatch(self)
+            if dispatched:
+                self.begin_failed = True
+                if isinstance(runtime, CliReviewRuntime):
+                    started = self.clock()
+                    self.task = runtime.dispatch_id
+                    self.lease = ReviewLease(runtime.dispatch_id, owner, self.head, self.scope,
+                                             started, started + duration, max_files)
+                    if self.cli_lifecycle is None:
+                        self.cli_lifecycle = {}
+                        self._observe_cli_lifecycle(runtime.events, runtime.dispatch_id)
+            else:
+                self.dispatch_namespace = None
+                self.owner = None
             raise
         started = self.clock()
         self.lease = ReviewLease(task, owner, self.head, self.scope,
                                  started, started + duration, max_files)
+        self.task = task
         return task
 
     def read_action(self, action: str, *args, **kwargs):
@@ -919,10 +2013,84 @@ class ReviewSession:
         self.candidate_reads[key] = summary
         return observed
 
-    def _read_task(self, runtime):
+    def _read_task(self, runtime, *, terminal=False):
         lease = self.lease
         require(lease is not None and not lease.finished, "no active review task")
-        result = runtime.read(lease.task)
+        require(terminal or not self.begin_failed,
+                "failed review start may only be retired without admission")
+        require(getattr(runtime, "root_session_id", None) == self.dispatch_namespace,
+                "review runtime root session differs from the assigned task")
+        if self.cli_lifecycle is not None:
+            require(isinstance(runtime, CliReviewRuntime),
+                    "review runtime no longer supplies the assigned CLI observations")
+        if isinstance(runtime, CliReviewRuntime):
+            for record in runtime.events:
+                if (isinstance(record, (tuple, list)) and len(record) == 2
+                        and record[0] == self.dispatch_namespace and isinstance(record[1], dict)):
+                    self._observe_cli_identity(record, retain=False)
+            if self.owners is not None:
+                self.owners.validate_closed_events(
+                    runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
+            require(terminal or self.cli_activity_violation is None,
+                    self.cli_activity_violation or "review activity was invalidated")
+            if self.cli_lifecycle is not None:
+                lifecycle = self._observe_cli_lifecycle(runtime.events, lease.task)
+                require(not self.cli_lifecycle_conflict
+                        and all(lifecycle.get(kind) == event_key
+                                for kind, event_key in self.cli_lifecycle.items()),
+                        "review assignment records changed before terminal retirement")
+                if not terminal:
+                    activity = {}
+                    for record in runtime.events:
+                        if (isinstance(record, (tuple, list)) and len(record) == 2
+                                and record[0] == self.dispatch_namespace
+                                and isinstance(record[1], dict)
+                                and record[1].get("agentId") == lease.owner
+                                and is_review_activity(record[1])):
+                            event_key = _cli_event_key(record)
+                            if event_key in self.observed_cli_activity:
+                                activity[event_key] = activity.get(event_key, 0) + 1
+                    require(all(activity.get(key, 0) >= count
+                                for key, count in self.observed_cli_activity.items()),
+                            "observed reviewer activity is missing from terminal snapshot")
+            observed = runtime.read_terminal(lease.task)
+            require(observed.task == lease.task and observed.owner == lease.owner
+                    and observed.role == "code-review" and observed.head == lease.head
+                    and frozenset(observed.subjects) == lease.scope and observed.completed is True,
+                    "wrong or stale runtime task observation")
+            if self.assignment_event_keys is not None:
+                lifecycle = frozenset(
+                    _cli_event_key((event_session, event))
+                    for event_session, event in runtime.events
+                    if event_session == self.dispatch_namespace
+                    and event.get("type") in {"tool.execution_start", "subagent.started"}
+                    and event.get("data", {}).get("toolCallId") == lease.task)
+                require(len(lifecycle) == 2 and lifecycle <= self.assignment_event_keys,
+                        "review assignment records changed before terminal retirement")
+                require(self.assignment_received_at is not None
+                        and self.assignment_received_at <= timestamp(observed.completed_at),
+                        "review completion predates the assigned instructions")
+            if self.owners is not None:
+                self.owners.observe_terminal(self, observed.started_at, observed.completed_at)
+            duration = (timestamp(observed.completed_at)
+                        - timestamp(observed.started_at)).total_seconds()
+            if not terminal and (self.clock() > lease.deadline
+                                 or duration > lease.deadline - lease.started):
+                self._retire(observed, "timed-out")
+                raise ReviewError("review exceeded duration bound")
+        if isinstance(runtime, CliReviewRuntime) and not terminal:
+            require(self.candidate_binding is not None
+                    and candidate_tree_binding(runtime.candidate_reader) == self.candidate_binding,
+                    "review runtime candidate binding differs from the assigned reader")
+        reader = getattr(runtime, "read_terminal", None) if terminal else None
+        result = reader(lease.task) if callable(reader) else runtime.read(lease.task)
+        if isinstance(runtime, CliReviewRuntime) and not terminal:
+            require(self.assignment_event_keys is not None
+                    and runtime.assignment_event_keys == self.assignment_event_keys,
+                    "review assignment differs from the original validated records")
+        if self.owners is not None and hasattr(result, "cli_events"):
+            self.owners.validate_closed_events(
+                result.cli_events, snapshot_namespace=self.dispatch_namespace, snapshot_owner=self)
         require(all(hasattr(result, field) for field in (
             "task", "owner", "role", "head", "subjects", "completed")),
             "incomplete runtime review record")
@@ -936,44 +2104,63 @@ class ReviewSession:
                 and type(result.completed) is bool, "wrong or stale runtime task observation")
         return result
 
-    def _retire(self, result, outcome):
-        require(result.completed is True, "runtime task is not terminal")
+    def _retire(self, result, outcome, *, admitted_event_keys=(),
+                admitted_event_sessions=(), report=None):
+        require(result.completed is True, "review turn is incomplete")
         require(timestamp(getattr(result, "started_at", None))
                 <= timestamp(getattr(result, "completed_at", None)),
                 "review task chronology is invalid")
         if outcome == "completed" and self.clock() > self.lease.deadline:
             outcome = "timed-out"
         if self.owners is not None:
-            self.owners.finish(self)
+            self.owners.finish(
+                self, self.lease.task, self.lease.owner,
+                    getattr(result, "interaction_id", None), result.started_at, result.completed_at,
+                    self.dispatch_namespace, admitted_event_keys, admitted_event_sessions,
+                    report if outcome == "completed" else None)
         self.lease.finished = True
         self.lease.outcome = outcome
         return outcome
 
     def abort(self, runtime):
-        result = self._read_task(runtime)
+        result = self._read_task(runtime, terminal=True)
         if not result.completed:
             stop = getattr(runtime, "stop", None)
             require(callable(stop), "runtime stop capability is unavailable")
             stop(self.lease.task)
-            result = self._read_task(runtime)
+            result = self._read_task(runtime, terminal=True)
         return self._retire(result, "aborted")
 
     def finish(self, runtime) -> _ReviewReport:
         result = self._read_task(runtime)
         lease = self.lease
-        require(result.completed is True, "runtime task is not terminal")
+        require(result.completed is True, "review turn is incomplete")
+        require(hasattr(result, "started_at") and hasattr(result, "completed_at"),
+                "review execution chronology is missing")
         if self.clock() > lease.deadline:
             self._retire(result, "timed-out")
             raise ReviewError("review exceeded duration bound")
+        recorded_duration = (timestamp(result.completed_at)
+                             - timestamp(result.started_at)).total_seconds()
+        if recorded_duration < 0 or recorded_duration > lease.deadline - lease.started:
+            self._retire(result, "timed-out")
+            raise ReviewError("review exceeded duration bound")
         require(all(hasattr(result, field) for field in (
-            "read_only", "actions", "files", "findings")),
+            "actions", "files", "findings", "instruction_commitment",
+            "logical_closed", "candidate_reads", "report")),
             "incomplete runtime review record")
-        require(result.read_only is True, "writable task result")
+        require(isinstance(result.instruction_commitment, str)
+                and result.instruction_commitment == CliReviewRuntime.COMMITMENT,
+                "reviewer instruction commitment is missing")
+        require(type(result.logical_closed) is bool and result.logical_closed is False,
+                "runtime cannot assert coordinator logical closure")
         require(isinstance(result.actions, (tuple, list, set, frozenset))
-                and all(isinstance(action, str) and action in READ_ACTIONS
+                and all(isinstance(action, str)
+                        and action in ({"view", "skill"} if isinstance(runtime, CliReviewRuntime)
+                                       else {"view"})
                         for action in result.actions)
-                and {"read-candidate", "emit-report"} <= set(result.actions)
-                and type(result.files) is int and 0 <= result.files <= lease.max_files <= MAX_REVIEW_FILES
+                and "view" in result.actions
+                and type(result.files) is int and 0 < result.files <= lease.max_files <= MAX_REVIEW_FILES
                 and isinstance(result.findings, (tuple, list))
                 and len(result.findings) <= MAX_FINDINGS, "review action/budget violation")
         findings = tuple(result.findings)
@@ -982,6 +2169,8 @@ class ReviewSession:
                     and all(isinstance(value, str) and bool(value.strip()) for value in (
                         finding.id, finding.subject, finding.family, finding.member,
                         finding.origin, finding.source_path, finding.review_id))
+                    and isinstance(finding.detail, str)
+                    and len(finding.detail) <= MAX_DETAIL
                     and finding.subject in self.scope
                     and finding.family in FAMILIES and finding.origin == lease.head
                     and finding.review_id == "local:" + str(lease.task),
@@ -989,19 +2178,155 @@ class ReviewSession:
         unique([finding.id for finding in findings], "local report findings")
         candidate_reader = self._candidate_reader()
         binding = self.candidate_binding if candidate_reader is not None else None
+        observed_reads = getattr(result, "candidate_reads", ())
+        require(isinstance(observed_reads, (tuple, list)),
+                "candidate read observations must be a collection")
+        external_reads = {}
+        if binding is not None:
+            _, _, describe, _ = candidate_reader
+            for value in observed_reads:
+                summary = validate_candidate_read_summary(
+                    value, base_sha=binding.base, head_sha=binding.head)
+                expected = validate_candidate_read_summary(
+                    describe(summary.path, summary.side),
+                    base_sha=binding.base, head_sha=binding.head)
+                require(summary == expected,
+                        "reviewer candidate read differs from the immutable Git object")
+                key = (summary.path, summary.side)
+                require(key not in external_reads, "duplicate reviewer candidate read")
+                external_reads[key] = summary
+        else:
+            require(not observed_reads, "candidate reads require a trusted Git-tree binding")
+        for key, summary in self.candidate_reads.items():
+            require(key not in external_reads or external_reads[key] == summary,
+                    "candidate read observations conflict")
+            external_reads[key] = summary
+        if hasattr(result, "cli_events"):
+            require(isinstance(result.cli_events, (tuple, list)),
+                    "native CLI event observations must be a collection")
+            require(result.files == len(observed_reads),
+                    "review file count differs from native read observations")
+            require(isinstance(result.interaction_id, str) and result.interaction_id,
+                    "review interaction identity is missing")
+            require(all(item.detail.strip() for item in findings),
+                    "native review findings require observed detail")
+        require(isinstance(result.report, str) and result.report.strip(),
+                "review report content is missing")
+        report_data = parse_json(result.report.encode("utf-8"))
+        keys(report_data, ("candidate_sha", "scope", "findings"), "reviewer report")
+        require(report_data["candidate_sha"] == lease.head
+                and report_data["scope"] == list(sorted(lease.scope)),
+                "reviewer report is not bound to the assigned candidate and scope")
+        expected_findings = [{
+            "id": item.id, "subject": item.subject, "family": item.family,
+            "member": item.member, "source_path": item.source_path, "detail": item.detail,
+        } for item in findings]
+        require(report_data["findings"] == expected_findings,
+                "parsed findings differ from the original reviewer report")
         report = _ReviewReport(
-            str(lease.task), lease.owner, "code-review", lease.head, lease.scope, True, True,
+            str(lease.task), lease.owner, "code-review", lease.head, lease.scope, True,
             frozenset(result.actions), result.files,
             tuple(Finding(item.id, item.subject, item.family, item.member,
-                          item.origin, item.source_path, item.review_id) for item in findings),
+                          item.origin, item.source_path, item.review_id, item.detail)
+                  for item in findings),
             getattr(result, "started_at", None), getattr(result, "completed_at", None),
+            result.instruction_commitment, True, result.report,
             None if binding is None else binding.resolved_root,
             None if binding is None else binding.base,
-            tuple(self.candidate_reads[key] for key in sorted(self.candidate_reads)))
-        require(self._retire(report, "completed") == "completed", "review exceeded duration bound")
+            tuple(external_reads[key] for key in sorted(external_reads)))
+        cli_events = tuple(getattr(result, "cli_events", ()))
+        if isinstance(runtime, CliReviewRuntime):
+            admitted_event_keys = runtime.validated_event_keys
+            admitted_event_sessions = runtime.validated_event_sessions
+        elif hasattr(result, "cli_events"):
+            admitted_event_keys = validate_reviewer_activity(
+                cli_events, owner=lease.owner, dispatch=lease.task,
+                interaction=result.interaction_id, started_at=result.started_at,
+                completed_at=result.completed_at)
+            admitted_event_sessions = frozenset(
+                session for session, event in cli_events
+                if isinstance(session, str) and isinstance(event, dict)
+                and event.get("agentId") == lease.owner and is_review_activity(event))
+        else:
+            admitted_event_keys = frozenset()
+            admitted_event_sessions = frozenset()
+        require(self._retire(
+            result, "completed", admitted_event_keys=admitted_event_keys,
+            admitted_event_sessions=admitted_event_sessions, report=report) == "completed",
+                "review exceeded duration bound")
+        self.latest_cli_events = copy.deepcopy(cli_events)
+        if self.owners is not None:
+            self.owners.validate_closed_events(
+                self.latest_cli_events, snapshot_namespace=self.dispatch_namespace,
+                snapshot_owner=self)
+            self.owners.validate_session(self)
         self.local_findings = {finding.id: finding for finding in report.findings}
         self.report = report
         return report
+
+    def observe_cli_events(self, events, *, complete=False) -> None:
+        require(isinstance(events, (tuple, list)), "CLI event observations must be a collection")
+        require(type(complete) is bool, "CLI snapshot completeness must be explicit")
+        if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
+            self._observe_cli_lifecycle(events, self.lease.task)
+        if complete:
+            self.latest_cli_events = copy.deepcopy(tuple(events))
+        if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
+            batch_counts = {}
+            for record in events:
+                if not isinstance(record, (tuple, list)) or len(record) != 2:
+                    continue
+                event_session, event = record
+                if event_session == self.dispatch_namespace and isinstance(event, dict):
+                    self._observe_cli_identity(record, retain=False)
+                if (event_session != self.dispatch_namespace or not isinstance(event, dict)
+                        or event.get("agentId") != self.lease.owner
+                        or not is_review_activity(event)):
+                    continue
+                self._observe_cli_identity(record, retain=True)
+                data = event.get("data")
+                kind = event.get("type")
+                if (not isinstance(data, dict)
+                        or kind == "tool.execution_start"
+                        and data.get("toolName") not in {"view", "skill"}):
+                    self.cli_activity_violation = (
+                        self.cli_activity_violation or
+                        "observed prohibited or malformed reviewer operation")
+                else:
+                    try:
+                        event_key = _cli_event_key(record)
+                    except ReviewError:
+                        self.cli_activity_violation = (
+                            self.cli_activity_violation or "observed malformed reviewer operation")
+                    else:
+                        if (event_key not in batch_counts
+                                and len(batch_counts) >= MAX_REQUEST_BYTES // 32):
+                            self.cli_activity_violation = (
+                                self.cli_activity_violation or
+                                "observed reviewer operation budget exceeded")
+                            continue
+                        batch_counts[event_key] = batch_counts.get(event_key, 0) + 1
+                        if batch_counts[event_key] > self.observed_cli_activity.get(event_key, 0):
+                            if ((len(self.observed_cli_activity) >= MAX_REQUEST_BYTES // 32
+                                 and event_key not in self.observed_cli_activity)
+                                    or (kind == "tool.execution_start"
+                                        and self.observed_cli_start_count
+                                        >= self.lease.max_files + 1)):
+                                self.cli_activity_violation = (
+                                    self.cli_activity_violation or
+                                    "observed reviewer operation budget exceeded")
+                            else:
+                                self.observed_cli_activity[event_key] = batch_counts[event_key]
+                                if kind == "tool.execution_start":
+                                    self.observed_cli_start_count += 1
+        if self.owners is not None:
+            self.owners.validate_closed_events(
+                events, snapshot_namespace=self.dispatch_namespace if complete else None,
+                snapshot_owner=self if complete else None)
+            self.owners.validate_session(self)
+        if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
+            require(self.cli_activity_violation is None,
+                    self.cli_activity_violation or "review activity was invalidated")
 
     def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
         require(self.report is not None and finding_id in self.local_findings
@@ -1064,7 +2389,13 @@ class ReviewSession:
             if fact.id in current and current[fact.id] != fact:
                 self.triage(Triage(fact, "untriaged"))
 
-    def review_state(self, facts, triage, *, pre_review_required):
+    def review_state(self, facts, triage, *, pre_review_required, cli_events=(),
+                     cli_events_complete=False):
+        require(type(cli_events_complete) is bool, "CLI snapshot completeness must be explicit")
+        if cli_events or cli_events_complete:
+            self.observe_cli_events(cli_events, complete=cli_events_complete)
+        if pre_review_required and self.owners is not None:
+            self.owners.validate_session(self)
         require(len({fact.id for fact in facts}) == len(facts), "duplicate remote review")
         self.refresh_reviews(facts)
         self.validate_local_triage()
@@ -1077,7 +2408,15 @@ class ReviewSession:
             require(self.report is not None and self.lease.finished
                     and self.lease.outcome == "completed",
                     "actual independent task observation required")
+            require(self.report.logical_closed is True
+                    and bool(self.report.instruction_commitment.strip()),
+                    "review turn lacks instruction commitment or logical closure")
             require(self.owners is not None, "coordinator review ownership index required")
+            self.owners.validate_closed_events(
+                getattr(self, "latest_cli_events", ()),
+                snapshot_namespace=self.dispatch_namespace, snapshot_owner=self)
+            require(self.owners.owns_completed_report(self, self.report),
+                    "review report differs from the coordinator ownership record")
             if facts:
                 require(timestamp(self.report.completed_at) < min(
                     timestamp(item.submitted_at) for item in facts),

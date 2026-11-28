@@ -489,7 +489,8 @@ or LLM process measurements.
 
 When the coordinator also implements the candidate, pass that same actual owner
 to both `ReviewSession` roles. The reviewer must still differ from both roles;
-self-review rejects before task launch. Read-only actions, exact task/head/scope,
+the dispatching runtime rejects self-review before task launch, while the
+retrospective CLI adapter can only reject admission. Read-only actions, exact task/head/scope,
 completion, time/file bounds and overlapping-session checks remain unchanged.
 Do not manufacture another implementation identity to obtain independent review.
 
@@ -675,65 +676,132 @@ remains the acceptance contract.
 
 The coordinator freezes repository/PR/base/head, accepted cases, findings and
 risk classification. A high-risk or large candidate gets one fresh bounded
-read-only review before its first remote review. The existing task runtime
+read-only review completed before its first submitted remote review. The existing task runtime
 owns task identity, owner, role, completion and observed tool actions. The
 reviewer's response is findings data, not an authentication token. Keep its
 owner distinct from implementation and coordination. Those latter roles may
 be the same actual owner for coordinator-authored work; no aliases or invented
 delegation are permitted. `ReviewSession` accepts that real ownership, while
-`begin` still rejects either owner as reviewer before task launch.
-Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
-another active reviewer for the same repository/PR or the same candidate head,
-regardless of scope, before another task can start.
+`begin` rejects either owner as reviewer. Share one `ReviewOwnership` index
+across the coordinator's sessions; it rejects another active registration for
+the same repository/PR or candidate head, regardless of scope, and rejects
+completed reports whose observed task intervals overlap recorded tasks for
+either identity. Observing an overlapping terminal task also invalidates any
+previously admitted overlapping report, even when the later report is malformed
+or the task is aborted without admission. The CLI adapter checks observed
+terminal identity and chronology before parsing the report. Terminal-only abort
+remains available without admitting a
+report. The retrospective CLI adapter observes an already dispatched task and
+cannot prevent a task start; the coordinator must schedule future reviews
+without overlap. Missing task observations do not prove non-overlap.
 
-`ReviewSession.begin` forwards the closed `code-review` role, exact head/scope,
-allowed read/report actions and duration/file/finding bounds to the
-coordinator's existing task adapter. It returns immediately. After the
-existing task-completion notification, `finish` reads that task's actual
-result. There is no polling, new agent backend or JSON-selected runtime.
-The adapter's result exposes the actual `task`, `owner`, `role`, `head`,
-`subjects`, `completed`, `read_only`, `actions`, `files`, `findings`, `started_at` and
-`completed_at`; these are runtime metadata, not fields copied from the
-reviewer's prose. Both `completed` and `read_only` must be Boolean `True`
-for report admission; truthy strings/numbers or missing fields cannot admit
-a completed review. Requested
-duration (1–3,600 seconds) and files (1–200, default 200) are strict Python
-integers. The lease retains its requested file bound; returned `files` must
-be an integer from zero through that bound, never a Boolean, float or string.
-Scope/actions must be collections of strings and findings a list/tuple of
-typed records. Malformed or over-budget reports do not grant review evidence
-or silently release ownership.
-Every admitted completed report must include actual runtime observations for
-both `read-candidate` and `emit-report`; `read-evidence` is optional.
-An empty or partial subset of the allowed actions is not sufficient.
-Bound read tools through the coordinator's `readers` map.
-`read_action` rejects mutation/arbitrary-command operations before dispatch.
-Ordinary test execution is a separate coordinator-owned test role, not a
-second overlapping reviewer.
+`ReviewSession.begin` binds the exact head, scope, reviewer identity and
+instructions to the existing `task` tool dispatch. `finish` verifies the
+successful task-call completion as a dispatch receipt, and the matching
+`subagent.started` and reviewer instruction message. The native receipt's
+`source` must equal `agent-` followed by the assigned root session ID; a
+missing or different source cannot bind the receipt. The instruction receipt
+must match the assigned prompt exactly, optionally preceded only by the native
+`<current_datetime>` timestamp envelope and two newlines, and occur after the
+reviewer start. Other prefix or suffix instructions are rejected. The
+dispatched prompt itself must match the generated review instruction template;
+free-form additions are unsupported because they may contradict the assignment.
+If the matching completion event is already observed, use that dispatch interval to
+select the receipt; otherwise defer its upper-bound check until `finish`.
+Retain the selected receipt and use it for scope extraction rather than
+searching unrelated event sessions again. The dispatch receipt may arrive
+before the reviewer finishes: only the reviewer's `subagent.completed` event
+proves its turn is complete. After that completed-turn notification,
+`finish` validates the reviewer's observations and report. It returns
+immediately and does not poll. This is the owner-approved
+instruction-based trust model: the reviewer must state the exact read-only
+commitment as a standalone commentary message before any candidate read; extra
+text in that message does not satisfy the commitment. The native CLI may first
+load the `code-review` skill once with exact arguments and a successful
+completion; no other skill or operation is admitted. This does **not** claim that the CLI has
+technically terminated the reviewer or enforced read-only permissions.
 
-Lease retirement is distinct from report admission. `finish` reads actual
-task status even after the deadline. A still-running or unknown task retains
-ownership; a verified late terminal result closes the lease with
-`outcome: timed-out`, releases ownership and rejects the report. The deadline
-is checked after reading and again before admission, so completion observed
-across the deadline cannot supply review evidence.
+Admission binds the assigned reviewer and dispatch to the candidate SHA and
+scope, every observed full-file `view` start and successful completion, and the
+reviewer's final structured report. The observed paths and returned bytes must
+match the immutable candidate blobs from `CandidateReader`; every required
+candidate path and side must be present. Additional assigned base/head reads,
+including unchanged supporting context, must each be available regular blobs
+in the corresponding immutable tree.
+The assigned-read JSON maps each candidate path and side to the exact supplied
+file path and its `utf-8` or `base64` encoding. Invalid UTF-8 blobs use
+canonical base64 materializations; the observed base64 is decoded and compared
+byte-for-byte with the immutable Git object. The original three-field
+instruction format is also accepted for UTF-8 materializations: its dispatched
+prompt and receipt must contain the complete exact path/side mapping, and its
+observed bytes are validated in the same way. Unsupported, mixed or
+contradictory formats reject. Candidate read summaries are
+normalized typed values after validation. Any observed operation other than a
+direct full-file `view`, a failed or partial read, an unassigned path, missing
+dispatch receipt or reviewer completion, or malformed report rejects
+admission. Every reviewer tool event must bind to the assigned interaction;
+when a CLI tool-start event omits `interactionId`, its `turnId` must match a
+turn observed within that interaction. Missing or contradictory identities
+reject admission. These are checks of actual observations, not dispatch-level
+permission controls. Findings are parsed from
+the original report, joined to the assigned subject and sibling family, and
+bound to a source path the reviewer actually read. The final report must bind
+the exact candidate SHA and complete scope. Missing observations cannot be
+substituted with coordinator-side rereads.
 
-The explicit `session.abort(runtime)` operation uses the coordinator's
-optional existing `runtime.stop(task)` capability when the task is still
-running. It verifies the exact task/owner/role/head/scope, Boolean terminal
-`completed` state and terminal timestamp chronology. A stop request or
-acknowledgment alone never closes the lease: the operation reads the actual
-task again. Stop/read failure, missing stop capability, unknown status or
-malformed terminal metadata retains ownership until real terminal evidence
-is available. An already completed failed report can be abandoned without
-being accepted or stopping it again.
+`ReviewOwnership` logically closes the completed reviewer turn after the
+coordinator accepts its evidence. Each assigned task has one shared record for
+its frozen assignment, dispatch, terminal state, event baseline, report and
+invalidation. For the retrospective CLI adapter, bind the observed dispatch
+before changing runtime assignment fields or validating the candidate reader;
+after a successful binding, a setup failure retains the reservation. A rejected
+closed or already-owned dispatch does not leave a new reservation or overwrite
+the existing runtime's assignment. After registration, a failed start after possible
+dispatch retains an unknown reservation; a missing receipt cannot release it or admit
+a report. A rejected registration can nevertheless retain a distinct competitor
+already observed to have started; do not retry as though that reservation were
+absent. A terminal-only abort may retire a CLI assignment without admission only
+through CLI observations of the exact root, dispatch, reviewer start and
+completion. The first observed dispatch and start stay bound even when setup or
+receipt validation fails; if a start was not yet observed, a later unique start
+may establish it. Replaced or missing bound records reject retirement, and an
+ambiguous initial duplicate does not establish a unique binding. Contradictory
+later observations remain possible overlap in the shared ownership index even
+when the original task can be retired on its original evidence. An
+interaction-less completion cannot prove a conflicting interaction ended, and
+a completion cannot disambiguate a changed start time for the same interaction.
+An explicitly matched completion for a distinct interaction can bound that
+observation. Reviewer identity is scoped by the
+coordinator's root CLI session and reviewer agent ID; dispatch is scoped by
+root session and tool-call ID. It rejects reuse of either identity within that
+session. A rootless generic adapter can retire a verified terminal without
+admitting its report when its interaction identity is absent; a malformed
+non-null interaction still rejects. Admitted activity records retain their event-session association, so
+later user, assistant (including turn-start), tool and subagent events
+invalidate only the report they belong to; identical agent IDs in unrelated
+root sessions cannot invalidate or block one another. A violation is retained
+in the shared ownership index and invalidates only its owning
+`(root session, task, owner)` report; report fields are published only after
+all observations validate. Before that closure snapshot is captured, every
+reviewer activity record in the initial event snapshot must match the assigned
+interaction and dispatch and fall within the task chronology. A contradictory
+message or additional dispatch in that snapshot rejects admission instead of
+being absorbed as previously admitted activity. Logical closure is separate
+from technical task termination. A later event invalidates admission when
+observed, including in the same readiness assessment that detects it; the
+record does not claim that no unobserved event can occur. Exact
+reviewer identity, candidate binding, complete read coverage and original
+chronology remain mandatory. The reviewer must be distinct from implementation
+and coordination; those latter roles may be the same actual owner for
+coordinator-authored work.
 
-Both paths use the same retirement helper. `finished` means the lease is
-closed, while `outcome` distinguishes an admitted `completed` review from
-`timed-out` or `aborted` work. Timeout/abort retains no report or local finding
-evidence and cannot satisfy independent pre-review admission. Completion
-releases the existing index for a fresh session; no polling loop, new task
-backend or cleanup service is added.
+Requested duration (1–3,600 seconds), file count (1–200, default 200) and
+finding count (at most 50) are strict bounds. The measured completed-turn
+interval and actual successful `view` count must fit those bounds. Scope,
+actions and findings are validated collections; malformed or over-budget
+evidence cannot admit a report. There is no new task-retirement service,
+permission platform, polling loop, agent backend or generic event
+infrastructure.
 
 The coordinator and reviewed validator/test tools are trusted. Candidate
 requests are data and cannot choose Python programs, imports, commands,
@@ -830,18 +898,60 @@ exclusion independently, even for disjoint scopes. A new head does not permit
 a second active reviewer on the same PR; another PR does not permit duplicate
 active review of the same candidate head. Only work with both a different
 repository/PR identity and a different head remains independent. Completion
-releases both exclusions for a subsequent bounded session.
+releases those active-review exclusions, but the coordinator permanently
+rejects reuse of the completed `(root session, reviewer)` identity or
+`(root session, task dispatch)` for review admission. Event invalidation uses
+the observed event-session plus reviewer identity, preventing identical agent
+IDs in unrelated sessions from cross-attributing activity.
+The CLI adapter accepts reviewer receipts and activity from the dispatch's
+shared root session only. A receipt in a distinct child session is unsupported
+and fails admission: the aggregate input does not establish that the child's
+untagged events belong exclusively to that reviewer. In the shared root,
+untagged activity is not attributed by turn or interaction ID, which can also
+identify coordinator activity. The adapter cannot prove ownership of untagged
+activity from this stream. Under the accepted instruction-based model, the
+reviewer's commitment is required, but unobserved prohibited activity cannot
+be ruled out and technical dispatch-time restrictions are not claimed.
 `begin` requires `runtime.start` to return a nonblank string task identity,
 preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
 reservation before any lease or local report can be created; a later valid
 acquisition remains possible.
-`advance` rejects while a lease is active, including after its deadline or
-a stop acknowledgment without terminal evidence. The existing observed
-completion/timeout/abort path must release it first. Subsequent head changes
-preserve the old report's origin rather than rebinding it to the new head.
+`advance` rejects while a review lease is active. The coordinator closes the
+lease after observing a completed turn and rejects a late result when its
+bounded duration is exceeded; it makes no task-termination claim. Subsequent
+head changes preserve the old report's origin rather than rebinding it to the
+new head. Every finish or abort must use the root session bound at `begin`.
+Before a CLI runtime attempts either read, its observed aggregate events are
+applied to the shared ownership index, even if report validation then fails.
+An observed completed turn permits aborting an invalid review without
+admitting it; missing or contradictory completion keeps the lease active.
+An attributed competing start for the same PR or head is considered even
+when its terminal record is missing or contradictory. If it could overlap a
+closed report, that report is invalidated; a proven earlier completion or a
+start after the closed interval preserves sequential reviews. The index retains
+the earliest observed possible start and latest possible completion across
+explicit observations, including after invalidation or terminal-only abort;
+an unparseable or contradictory bound remains unbounded for that index.
+Changed timestamps do not prove which timeline occurred. If an already-started
+CLI task is rejected because another owner is active, its observed dispatch
+remains reserved for terminal-only retirement and participates in overlap
+checks; it cannot later be admitted as that assignment. This only accounts for
+supplied events and cannot prevent an unobserved task.
+Later activity
+still rejects admission and never proves technical task termination.
+The dispatched instructions, start and receipt must also match the records
+validated at `begin`, including when the coordinator supplies a replacement
+runtime. Its Git reader must match the session's frozen root, base and head.
+A changed snapshot cannot admit a report. For an assignment validated at
+`begin`, terminal-only abort and timeout also require the original dispatch and
+start records and a completion no earlier than the bound instruction receipt.
+A same-time contradictory owner or role without a completion leaves the
+possible end unbounded. A newly observed
+dispatch or lifecycle event reusing a closed dispatch in its root invalidates
+that report even if it names a different reviewer.
 
-`ReviewSession.finish` snapshots validated runtime fields into an internal
-frozen report before releasing ownership. Scope/actions are immutable sets,
+`ReviewSession.finish` validates every observation before publishing an
+internal frozen report and releasing ownership. Scope/actions are immutable sets,
 findings are a tuple of frozen typed values, and timestamps and bounds are
 copied values. Later runtime-record mutations cannot change the accepted
 report or its pre-review chronology. This is a value snapshot, not a receipt,
@@ -853,6 +963,43 @@ rejected records retain a nonblank coordinator reason. Omitted, duplicate,
 wrong-task or contradictory dispositions cannot establish eligibility, even
 after a later candidate passes its probes. This is coordinator-owned triage,
 not authenticated provenance from a JSON author.
+
+At logical closure, the shared ownership index captures the exact review
+activity records validated for that task. The initial reviewer snapshot is
+checked against the assigned interaction, dispatch and task interval before
+any activity enters this baseline. Supply an owning complete snapshot through
+`observe_cli_events(events, complete=True)`, or
+`review_state(..., cli_events=events, cli_events_complete=True)`. It compares
+captured records against the validated closure snapshot; ordinary observations
+are incremental and cannot establish that a record is missing. A prohibited or
+malformed tool start attributed to an active CLI reviewer is retained when
+observed and prevents report admission even if a later runtime snapshot omits
+it. Other observed reviewer tool starts must appear unchanged in the terminal
+snapshot so the existing action and read validation can evaluate them.
+Repeated starts do not consume additional observation budget; distinct starts
+above the file budget plus one invalidate the report without growing the
+retained set further. A failed admission still propagates newly supplied
+activity to sibling reviews.
+Terminal-only abort may still retire the task without admitting a report.
+An
+older sibling snapshot cannot establish that a newer review lost records.
+The session freezes its latest complete snapshot instead of retaining and
+replaying caller-owned mutable event sources. To assess later changes, supply
+the new observation explicitly; mutating an already submitted input does not
+silently rewrite the accepted snapshot or monitor the source log.
+Later aggregate observations still propagate attributable new activity to
+the owning review. Previously unseen review
+activity invalidates only its owning `(task, owner)`, including an in-turn
+event with the same interaction and a timestamp equal to completion; unrelated
+sessions carrying the event do not fail. Each session checks its own task's
+invalidation after lease retirement, so another review can complete while the
+affected report loses eligibility. An unchanged previously admitted event is
+not treated as late activity.
+The index retains compact event digests and closure/ownership metadata, not
+the `ReviewSession` object or its aggregate event sources. Dropping a session
+does not release an active reservation or permit reuse of a closed owner or
+dispatch. Closure metadata still grows with the number of reviews; this is
+not a claim of a fixed memory bound.
 
 For diagnostic planning/checking, use the closed launcher mode:
 
