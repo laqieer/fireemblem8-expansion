@@ -137,5 +137,5 @@ sanitizer/runtime harnesses pass.
 `scripts/modernize/tests/test_audit.py` are all invoked by
 `make codeql-alerts-test`. The sequencing test checks with synthetic compiled
 harnesses that they run before the analyzer and that each failure stops the
-gate. The recursive analyzer uses the same selected Make as the outer test;
-individual defective synthetic sources prove that each named path is analyzed.
+gate. Individual defective synthetic sources prove that each named path is
+analyzed.

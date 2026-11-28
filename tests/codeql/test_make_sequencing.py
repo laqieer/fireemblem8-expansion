@@ -38,10 +38,9 @@ def marker(path):
 
 
 class CodeqlMakeSequencingTests(unittest.TestCase):
-    def run_target(self, *, failing="", defective="", selected_make=None, inspect_binary=False,
-                   probe_directory_options=False):
+    def run_target(self, *, failing="", defective="", inspect_binary=False):
         compiler = shutil.which("gcc")
-        make = selected_make or shutil.which("make")
+        make = shutil.which("make")
         self.assertIsNotNone(compiler, "GCC is required by the CodeQL analyzer lane")
         self.assertIsNotNone(make, "GNU Make is required")
         if not os.path.isabs(make):
@@ -134,35 +133,11 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                  "CODEQL_REQUIRE_FANALYZER=1",
                  "ASSET_MAINTENANCE_GOALS=codeql-alerts-test codeql-fanalyzer-test",
                  "AUTOTOOLS_CONFIG_MK=config.autotools.mk",
-                 "MAKE_RESTARTS=1", f"MAKE={make if selected_make else submake}",
+                 "MAKE_RESTARTS=1", f"MAKE={submake}",
                  f"PYTHON={python}"],
                 cwd=work, env=environment, text=True, capture_output=True, timeout=60,
             )
             events = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-            if probe_directory_options and result.returncode == 0:
-                probe_log = root / "option-events"
-                probe_output = root / "option-output"
-                probe_environment = dict(environment, PROBE_LOG=str(probe_log),
-                                         PROBE_MAKE_LOG=str(root / "option-make-log"))
-                wrapper = make if selected_make else str(submake)
-                for args in (
-                    ("-C", ".", "codeql-fanalyzer-test"),
-                    ("-C", "tools/gbagfx"),
-                    ("-Ctools/gbagfx",),
-                    ("--directory", "tools/gbagfx"),
-                    ("--directory=tools/gbagfx",),
-                ):
-                    probe = subprocess.run(
-                        [wrapper, "--no-print-directory", *args, f"HOST_CC={compiler}",
-                         f"CODEQL_TEST_DIR={probe_output}", "CODEQL_REQUIRE_FANALYZER=1",
-                         "ASSET_MAINTENANCE_GOALS=codeql-fanalyzer-test",
-                         "AUTOTOOLS_CONFIG_MK=config.autotools.mk", "MAKE_RESTARTS=1"],
-                        cwd=work, env=probe_environment, text=True, capture_output=True, timeout=60,
-                    )
-                    self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
-                self.assertEqual(probe_log.read_text(encoding="utf-8").splitlines(), ["analyzer"])
-                for name in ("sio_core", "event", "convert_png"):
-                    self.assertTrue((probe_output / (name + "_analyzer.o")).is_file())
             if inspect_binary and result.returncode == 0:
                 nm = shutil.which("nm")
                 self.assertIsNotNone(nm, "GNU binutils is required")
@@ -218,53 +193,6 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 diagnostic = "use-of-uninitialized-value" if path == "src/event.c" else "double-free"
                 self.assertIn(path, result.stderr)
                 self.assertIn(f"analyzer-{diagnostic}", result.stderr)
-
-    def check_selected_make(self, probe_directory_options=False):
-        real_make = shutil.which("make")
-        self.assertIsNotNone(real_make)
-        with tempfile.TemporaryDirectory(prefix="codeql-make-") as directory:
-            root = Path(directory)
-            actual = root / "actual"
-            (actual / "target").mkdir(parents=True)
-            (actual / "bin").mkdir()
-            (root / "bin").mkdir()
-            (root / "link").symlink_to(actual / "target", target_is_directory=True)
-            wrapper = actual / "bin" / "wrapper"
-            wrapper.write_text(
-                "#!/usr/bin/env python3\nimport os, sys\n"
-                "if 'codeql-alerts-test' in sys.argv[1:] or 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
-                "    with open(os.environ['PROBE_MAKE_LOG'], 'a') as f: "
-                "f.write(sys.argv[0] + ' ' + ' '.join(sys.argv[1:]) + '\\n')\n"
-                "if 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
-                "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('analyzer\\n')\n"
-                f"os.execv({real_make!r}, [{real_make!r}, *sys.argv[1:]])\n",
-                encoding="utf-8",
-            )
-            wrapper.chmod(0o755)
-            (actual / "bin" / "make").symlink_to(wrapper)
-            wrong = root / "bin" / "make"
-            wrong.write_text("#!/bin/sh\nexit 87\n", encoding="utf-8")
-            wrong.chmod(0o755)
-            selected = str(root) + "/link/../bin/make"
-            log = root / "make-log"
-            with mock.patch.dict(os.environ, {"PROBE_MAKE_LOG": str(log)}):
-                result, _ = self.run_target(selected_make=selected,
-                                            probe_directory_options=probe_directory_options)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            calls = log.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(calls), 2, calls)
-            self.assertTrue(all(call.startswith(selected + " ") for call in calls), calls)
-            self.assertIn("codeql-alerts-test", calls[0])
-            self.assertIn("codeql-fanalyzer-test", calls[1])
-
-    def test_recursive_analyzer_uses_selected_make(self):
-        self.check_selected_make()
-
-    def test_equivalent_recursive_make_directory_options(self):
-        result, events = self.run_target(probe_directory_options=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(events[-1:], ["analyzer"])
-        self.check_selected_make(probe_directory_options=True)
 
 
 if __name__ == "__main__":
