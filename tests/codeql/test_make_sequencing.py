@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,7 +39,8 @@ def marker(path):
 
 
 class CodeqlMakeSequencingTests(unittest.TestCase):
-    def run_target(self, *, failing="", defective="", inspect_binary=False, analyzer_alias=False):
+    def run_target(self, *, failing="", defective="", diagnose_all=False,
+                   inspect_binary=False, analyzer_alias=False):
         compiler = shutil.which("gcc")
         make = shutil.which("make")
         self.assertIsNotNone(compiler, "GCC is required by the CodeQL analyzer lane")
@@ -73,7 +75,11 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
 
             for path in {source for sources in SOURCES.values() for source in sources}:
                 body = f"int {marker(path)}(void) {{ return 1; }}\n"
-                if path == defective:
+                if diagnose_all and path in ANALYZED:
+                    body += ('#pragma GCC diagnostic warning "-Wanalyzer-double-free"\n'
+                             '#pragma GCC diagnostic warning "-Wanalyzer-use-of-uninitialized-value"\n'
+                             '#pragma GCC diagnostic warning "-Wanalyzer-malloc-leak"\n')
+                if path == defective or (diagnose_all and path in ANALYZED):
                     if path == "src/event.c":
                         body += "int sentinel(int x) { int i; if (x) i = 1; return i; }\n"
                     else:
@@ -146,7 +152,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             output = root / "output"
             environment = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"],
                                PROBE_LOG=str(log), PROBE_FAIL=failing, PROBE_MAKE=make,
-                               PROBE_CC=compiler)
+                               PROBE_CC=compiler, LC_ALL="C")
             for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES", "MAKELEVEL"):
                 environment.pop(name, None)
             result = subprocess.run(
@@ -175,9 +181,17 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             return result, events
 
     def test_all_harnesses_run_before_real_analyzer(self):
-        result, events = self.run_target(inspect_binary=True)
+        result, events = self.run_target(inspect_binary=True, diagnose_all=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_harnesses_before_analyzer(events)
+        for path in ANALYZED:
+            with self.subTest(source=path):
+                diagnostic = "use-of-uninitialized-value" if path == "src/event.c" else "double-free"
+                self.assertRegex(
+                    result.stderr,
+                    rf"(?m)^(?:.*/)?{re.escape(path)}:\d+:\d+: warning: .* "
+                    rf"\[-Wanalyzer-{diagnostic}\]$",
+                )
 
     def assert_harnesses_before_analyzer(self, events):
         expected = {f"harness {name} detect_leaks=0 halt_on_error=1" for name in HARNESSES}
