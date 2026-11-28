@@ -63,14 +63,21 @@ def analyzer_enabled(arguments):
     return enabled
 
 
+COMPILER_VALUE_OPTIONS = (
+    "-o", "-I", "-isystem", "-iquote", "-idirafter", "-include", "-imacros",
+    "-iprefix", "-iwithprefix", "-iwithprefixbefore", "-isysroot", "--sysroot",
+    "-MF", "-MT", "-MQ", "-x", "-D", "-U", "-B", "-L",
+)
+
+
 def compiler_inputs(arguments):
     inputs = []
-    skip_output = False
+    skip_value = False
     for argument in arguments:
-        if skip_output:
-            skip_output = False
-        elif argument == "-o":
-            skip_output = True
+        if skip_value:
+            skip_value = False
+        elif argument in COMPILER_VALUE_OPTIONS:
+            skip_value = True
         elif not argument.startswith("-"):
             inputs.append(argument)
     return inputs
@@ -84,12 +91,12 @@ import sys
 
 arguments = sys.argv[1:]
 inputs = []
-skip_output = False
+skip_value = False
 for arg in arguments:
-    if skip_output:
-        skip_output = False
-    elif arg == "-o":
-        skip_output = True
+    if skip_value:
+        skip_value = False
+    elif arg in __COMPILER_VALUE_OPTIONS__:
+        skip_value = True
     elif not arg.startswith("-"):
         inputs.append(arg)
 with open(os.environ["FAKE_CC_LOG"], "a", encoding="utf-8") as stream:
@@ -139,7 +146,7 @@ if "-o" in arguments:
             "    raise SystemExit(17)\\n"
         )
         output.chmod(0o755)
-"""
+""".replace("__COMPILER_VALUE_OPTIONS__", repr(COMPILER_VALUE_OPTIONS))
 
 FAKE_SUBMAKE = """#!/usr/bin/env python3
 import json
@@ -446,9 +453,33 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
             events = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertEqual(events[-1]["name"], "runtime_bounds_host_test")
 
+    def test_compiler_option_operands_do_not_claim_harness_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiler = root / "fake-cc"
+            compiler.write_text(FAKE_COMPILER, encoding="utf-8")
+            compiler.chmod(0o755)
+            log = root / "events.jsonl"
+            environment = dict(os.environ, FAKE_REPOSITORY=str(ROOT),
+                               FAKE_CC_LOG=str(root / "compiler.jsonl"),
+                               FAKE_CC_OUTPUTS=str(root / "outputs.json"),
+                               FAKE_HARNESS_LOG=str(log),
+                               FAKE_ANALYZER_SUPPORTED="1")
+            source = ROOT / "tests/codeql/sio_protocol_host_test.c"
+            for option in ("-I", "-MF", "-x"):
+                with self.subTest(option=option):
+                    subprocess.run(
+                        [str(compiler), "-c", option, str(source), "other.c",
+                         "-o", str(root / "output.o")],
+                        env=environment, check=True,
+                    )
+                    event = json.loads(log.read_text().splitlines()[-1])
+                    self.assertEqual(event["harnesses"], [])
+
     def test_analyzer_bypass_modes_are_rejected(self):
         original = self.run_runtime_gate
-        for mode in ("-E", "-M", "-MM", "-fsyntax-only", "output-only"):
+        for mode in ("-E", "-M", "-MM", "-fsyntax-only",
+                     "output-only", "-I", "-MF", "-x"):
             with self.subTest(mode=mode):
                 def bypass(**kwargs):
                     result, invocations, events = original(**kwargs)
@@ -456,11 +487,13 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
                         if (event["event"] == "compiler"
                                 and "-fanalyzer" in event["arguments"]
                                 and "-c" in event["arguments"]):
-                            if mode == "output-only":
+                            if mode in ("output-only", "-I", "-MF", "-x"):
                                 arguments = event["arguments"]
                                 for index, argument in enumerate(arguments):
                                     if Path(argument).suffix == ".c":
-                                        arguments[index:index + 1] = ["-o", argument]
+                                        arguments[index:index + 1] = [
+                                            "-o" if mode == "output-only" else mode, argument,
+                                        ]
                                         break
                             else:
                                 event["arguments"].append(mode)
