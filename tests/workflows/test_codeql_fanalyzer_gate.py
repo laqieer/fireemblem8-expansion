@@ -63,6 +63,19 @@ def analyzer_enabled(arguments):
     return enabled
 
 
+def compiler_inputs(arguments):
+    inputs = []
+    skip_output = False
+    for argument in arguments:
+        if skip_output:
+            skip_output = False
+        elif argument == "-o":
+            skip_output = True
+        elif not argument.startswith("-"):
+            inputs.append(argument)
+    return inputs
+
+
 FAKE_COMPILER = """#!/usr/bin/env python3
 import json
 import os
@@ -70,6 +83,15 @@ import pathlib
 import sys
 
 arguments = sys.argv[1:]
+inputs = []
+skip_output = False
+for arg in arguments:
+    if skip_output:
+        skip_output = False
+    elif arg == "-o":
+        skip_output = True
+    elif not arg.startswith("-"):
+        inputs.append(arg)
 with open(os.environ["FAKE_CC_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps(arguments) + "\\n")
 
@@ -78,13 +100,12 @@ if "FAKE_HARNESS_LOG" in os.environ:
     harnesses = {str((repository / "tests" / "codeql" / (name + ".c")).resolve()): name
                  for name in ("sio_protocol_host_test", "runtime_bounds_host_test",
                               "png_bounds_host_test")}
-    sources = [harnesses[str(pathlib.Path(arg).resolve())] for arg in arguments
-               if not arg.startswith("-") and str(pathlib.Path(arg).resolve()) in harnesses]
+    sources = [harnesses[str(pathlib.Path(arg).resolve())] for arg in inputs
+               if str(pathlib.Path(arg).resolve()) in harnesses]
     state = pathlib.Path(os.environ["FAKE_CC_OUTPUTS"])
     outputs = json.loads(state.read_text()) if state.exists() else {}
-    for arg in arguments:
-        if not arg.startswith("-"):
-            sources.extend(outputs.get(str(pathlib.Path(arg).resolve()), []))
+    for arg in inputs:
+        sources.extend(outputs.get(str(pathlib.Path(arg).resolve()), []))
     sources = sorted(set(sources))
     with open(os.environ["FAKE_HARNESS_LOG"], "a", encoding="utf-8") as stream:
         stream.write(json.dumps({"event": "compiler", "arguments": arguments,
@@ -399,6 +420,56 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
             self.assertTrue(any("codeql-alerts-test" in call for call in calls))
             self.assertTrue(any("codeql-fanalyzer-test" in call for call in calls))
 
+    def test_reused_object_path_replaces_harness_provenance(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiler = root / "fake-cc"
+            compiler.write_text(FAKE_COMPILER, encoding="utf-8")
+            compiler.chmod(0o755)
+            log = root / "events.jsonl"
+            environment = dict(os.environ, FAKE_REPOSITORY=str(ROOT),
+                               FAKE_CC_LOG=str(root / "compiler.jsonl"),
+                               FAKE_CC_OUTPUTS=str(root / "outputs.json"),
+                               FAKE_HARNESS_LOG=str(log),
+                               FAKE_ANALYZER_SUPPORTED="1")
+            obj = root / "shared.o"
+            for name in ("sio_protocol_host_test", "runtime_bounds_host_test"):
+                subprocess.run(
+                    [str(compiler), "-c", str(ROOT / "tests/codeql" / f"{name}.c"),
+                     "-o", str(obj)],
+                    env=environment, check=True,
+                )
+            executable = root / "harness"
+            subprocess.run([str(compiler), str(obj), "-o", str(executable)],
+                           env=environment, check=True)
+            subprocess.run([str(executable)], env=environment, check=True)
+            events = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual(events[-1]["name"], "runtime_bounds_host_test")
+
+    def test_analyzer_bypass_modes_are_rejected(self):
+        original = self.run_runtime_gate
+        for mode in ("-E", "-M", "-MM", "-fsyntax-only", "output-only"):
+            with self.subTest(mode=mode):
+                def bypass(**kwargs):
+                    result, invocations, events = original(**kwargs)
+                    for event in events:
+                        if (event["event"] == "compiler"
+                                and "-fanalyzer" in event["arguments"]
+                                and "-c" in event["arguments"]):
+                            if mode == "output-only":
+                                arguments = event["arguments"]
+                                for index, argument in enumerate(arguments):
+                                    if Path(argument).suffix == ".c":
+                                        arguments[index:index + 1] = ["-o", argument]
+                                        break
+                            else:
+                                event["arguments"].append(mode)
+                    return result, invocations, events
+
+                with mock.patch.object(self, "run_runtime_gate", side_effect=bypass):
+                    with self.assertRaises(AssertionError):
+                        self.test_runtime_harnesses_precede_the_optional_analyzer_gate()
+
     def test_runtime_harnesses_precede_the_optional_analyzer_gate(self):
         harnesses = {
             "sio_protocol_host_test",
@@ -416,7 +487,7 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
             for args in invocations
             for harness, source in sources.items()
             if any((ROOT / arg).resolve() == source
-                   for arg in args if Path(arg).suffix == ".c")
+                   for arg in compiler_inputs(args) if Path(arg).suffix == ".c")
         ]
         self.assertEqual(len(runtime_compiles), len(harnesses))
         self.assertEqual({harness for harness, _ in runtime_compiles}, harnesses)
@@ -440,7 +511,8 @@ class CodeqlFanalyzerGateTests(unittest.TestCase):
         analyzed_sources = {
             (ROOT / arg).resolve()
             for index, args in analyzer_compiles if index > analyzers[0] and "-c" in args
-            for arg in args if Path(arg).suffix == ".c"
+            and not any(mode in args for mode in ("-E", "-M", "-MM", "-fsyntax-only"))
+            for arg in compiler_inputs(args) if Path(arg).suffix == ".c"
         }
         self.assertTrue({
             (ROOT / "src/sio_core.c").resolve(),
