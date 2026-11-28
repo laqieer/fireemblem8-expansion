@@ -4354,6 +4354,10 @@
         {
           "command": "python3 -m unittest tests.workflows.test_codeql_fanalyzer_gate -v",
           "evidence": "tests/workflows/test_codeql_fanalyzer_gate.py"
+        },
+        {
+          "command": "python3 tests/codeql/test_make_sequencing.py -v",
+          "evidence": "tests/codeql/test_make_sequencing.py"
         }
       ]
     },
@@ -4386,6 +4390,10 @@
         {
           "command": "python3 -m unittest tests.workflows.test_codeql_fanalyzer_gate -v",
           "evidence": "tests/workflows/test_codeql_fanalyzer_gate.py"
+        },
+        {
+          "command": "python3 tests/codeql/test_make_sequencing.py -v",
+          "evidence": "tests/codeql/test_make_sequencing.py"
         },
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_audit -v",
