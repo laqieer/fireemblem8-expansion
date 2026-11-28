@@ -1257,7 +1257,19 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    possible dispatch: another reviewer for the PR/head must remain blocked.
    A completion from another root cannot retire the reservation; the matching
    dispatch, reviewer start and terminal event can retire it without admitting
-   a report. The pre-fix negative control incorrectly releases the reservation.
+   a report. After a missing receipt or failed candidate-reader setup, replace
+   the already-observed start interaction, timestamp or dispatch: each terminal
+   must reject until the original binding is supplied. A generic runtime cannot
+   retire a CLI assignment, whether begin succeeded or failed. If no start was
+   observed at begin, a later unique start may bind; a duplicate initial start
+   cannot establish a unique binding. Run
+   `CliReviewRuntimeTests.test_failed_cli_start_retains_observed_lifecycle_for_terminal`,
+   `CliReviewRuntimeTests.test_cli_assignment_cannot_retire_using_generic_runtime`,
+   `CliReviewRuntimeTests.test_cli_setup_failure_keeps_observed_start_binding`,
+   `CliReviewRuntimeTests.test_failed_cli_start_without_observed_start_can_retire_later`,
+   `CliReviewRuntimeTests.test_first_partial_cli_start_remains_bound_before_terminal`
+   and `CliReviewRuntimeTests.test_ambiguous_initial_cli_start_cannot_be_replaced`.
+   The pre-fix negative controls incorrectly release the reservations.
    The coordinator then logically closes the completed reviewer identity and
    dispatch, scoped to the root CLI session. A second admission reusing the
    same reviewer and dispatch in that root session must reject before another

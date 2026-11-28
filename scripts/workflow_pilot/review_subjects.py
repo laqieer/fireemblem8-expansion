@@ -2763,6 +2763,37 @@ def _session_probe(probe: str) -> dict:
                 check(prior.lease.outcome == "aborted",
                       "valid original terminal did not retire the review")
 
+            for failed_start in (False, True):
+                initial = [item for item in events if item[1].get("type") != "subagent.completed"
+                           and (not failed_start or item[1].get("type") != "user.message")]
+                native = module.CliReviewRuntime(
+                    initial, dispatch_id="dispatch-b", root_session_id="root-b",
+                    candidate_reader=reader, required_reads=targets)
+                prior = module.ReviewSession(
+                    "coordinator", "implementer", scope, b,
+                    identity=("owner/repo", 1, a), owners=module.ReviewOwnership(),
+                    readers={"read-candidate": reader})
+                if failed_start:
+                    check(rejects(lambda: prior.begin(native, "reviewer-b")),
+                          "missing receipt admitted a reviewer")
+                else:
+                    prior.begin(native, "reviewer-b")
+                changed = json.loads(json.dumps(events))
+                next(event for _, event in changed
+                     if event.get("type") == "subagent.started")["data"]["interactionId"] = "changed"
+                native.events = tuple(changed)
+                check(rejects(lambda: prior.abort(native)) and not prior.lease.finished,
+                      "changed failed-start assignment retired the review")
+                native.events = tuple(events)
+                terminal = native.read_terminal("dispatch-b")
+                generic = types.SimpleNamespace(
+                    root_session_id="root-b", read=lambda task: terminal)
+                check(rejects(lambda: prior.abort(generic)) and not prior.lease.finished,
+                      "generic runtime retired the CLI assignment")
+                prior.abort(native)
+                check(prior.lease.outcome == "aborted",
+                      "original CLI terminal did not retire the review")
+
             owners = module.ReviewOwnership()
             later, later_runtime = native_session(
                 owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")

@@ -758,9 +758,16 @@ after a successful binding, a setup failure retains the reservation. A rejected
 closed or already-owned dispatch does not leave a new reservation or overwrite
 the existing runtime's assignment. After registration, a failed start after possible
 dispatch retains an unknown reservation; a missing receipt cannot release it or admit
-a report. Failures before registration cannot reserve an already-started task. A
-terminal-only abort may retire it without admission only when the exact root,
-dispatch, reviewer start and completion are independently observed. Reviewer identity is scoped by the
+a report. A rejected registration can nevertheless retain a distinct competitor
+already observed to have started; do not retry as though that reservation were
+absent. A terminal-only abort may retire a CLI assignment without admission only
+through CLI observations of the exact root, dispatch, reviewer start and
+completion. The first observed dispatch and start stay bound even when setup or
+receipt validation fails; if a start was not yet observed, a later unique start
+may establish it. Replaced or missing bound records reject retirement, and an
+ambiguous initial duplicate does not establish a unique binding. Contradictory
+later observations remain possible overlap in the shared ownership index even
+when the original task can be retired on its original evidence. Reviewer identity is scoped by the
 coordinator's root CLI session and reviewer agent ID; dispatch is scoped by
 root session and tool-call ID. It rejects reuse of either identity within that
 session. A rootless generic adapter can retire a verified terminal without

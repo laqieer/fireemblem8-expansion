@@ -1766,9 +1766,36 @@ class ReviewSession:
         self.dispatch_namespace: str | None = None
         self.assignment_event_keys = None
         self.assignment_received_at = None
+        self.cli_lifecycle = None
+        self.cli_lifecycle_conflict = False
         self.latest_cli_events = ()
         self._ownership_key = object()
         self.begin_failed = False
+
+    def _observe_cli_lifecycle(self, events, task):
+        observed = {}
+        for record in events:
+            if not isinstance(record, (tuple, list)) or len(record) != 2:
+                continue
+            event_session, event = record
+            if (event_session != self.dispatch_namespace or not isinstance(event, dict)
+                    or event.get("type") not in {"tool.execution_start", "subagent.started"}
+                    or not isinstance(event.get("data"), dict)
+                    or event["data"].get("toolCallId") != task):
+                continue
+            kind = event["type"]
+            try:
+                event_key = _cli_event_key((event_session, event))
+            except ReviewError:
+                self.cli_lifecycle_conflict = True
+                raise
+            if kind in observed and kind not in self.cli_lifecycle:
+                self.cli_lifecycle_conflict = True
+            observed[kind] = event_key
+        if not self.cli_lifecycle_conflict:
+            for kind, event_key in observed.items():
+                self.cli_lifecycle.setdefault(kind, event_key)
+        return observed
 
     def _candidate_reader(self):
         reader = self.readers.get("read-candidate")
@@ -1834,6 +1861,8 @@ class ReviewSession:
                 runtime.assigned_candidate = self.head
                 runtime.assigned_subjects = tuple(sorted(self.scope))
                 dispatched = True
+                self.cli_lifecycle = {}
+                self._observe_cli_lifecycle(runtime.events, runtime.dispatch_id)
                 if self.owners is not None:
                     self.owners.validate_closed_events(runtime.events)
             candidate_reader = self._candidate_reader()
@@ -1881,6 +1910,9 @@ class ReviewSession:
                     self.task = runtime.dispatch_id
                     self.lease = ReviewLease(runtime.dispatch_id, owner, self.head, self.scope,
                                              started, started + duration, max_files)
+                    if self.cli_lifecycle is None:
+                        self.cli_lifecycle = {}
+                        self._observe_cli_lifecycle(runtime.events, runtime.dispatch_id)
             else:
                 self.dispatch_namespace = None
                 self.owner = None
@@ -1936,13 +1968,19 @@ class ReviewSession:
                 "failed review start may only be retired without admission")
         require(getattr(runtime, "root_session_id", None) == self.dispatch_namespace,
                 "review runtime root session differs from the assigned task")
-        if self.assignment_event_keys is not None and not terminal:
+        if self.cli_lifecycle is not None:
             require(isinstance(runtime, CliReviewRuntime),
                     "review runtime no longer supplies the assigned CLI observations")
         if isinstance(runtime, CliReviewRuntime):
             if self.owners is not None:
                 self.owners.validate_closed_events(
                     runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
+            if self.cli_lifecycle is not None:
+                lifecycle = self._observe_cli_lifecycle(runtime.events, lease.task)
+                require(not self.cli_lifecycle_conflict
+                        and all(lifecycle.get(kind) == event_key
+                                for kind, event_key in self.cli_lifecycle.items()),
+                        "review assignment records changed before terminal retirement")
             observed = runtime.read_terminal(lease.task)
             require(observed.task == lease.task and observed.owner == lease.owner
                     and observed.role == "code-review" and observed.head == lease.head
@@ -2157,6 +2195,8 @@ class ReviewSession:
     def observe_cli_events(self, events, *, complete=False) -> None:
         require(isinstance(events, (tuple, list)), "CLI event observations must be a collection")
         require(type(complete) is bool, "CLI snapshot completeness must be explicit")
+        if self.cli_lifecycle is not None and self.lease is not None and not self.lease.finished:
+            self._observe_cli_lifecycle(events, self.lease.task)
         if complete:
             self.latest_cli_events = copy.deepcopy(tuple(events))
         if self.owners is not None:

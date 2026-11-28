@@ -2855,6 +2855,120 @@ class CliReviewRuntimeTests(unittest.TestCase):
             session.begin(runtime, reviewer)
             self.assertTrue(session.finish(runtime).logical_closed)
 
+    def test_failed_cli_start_retains_observed_lifecycle_for_terminal(self):
+        for field in ("interaction", "start-time", "dispatch", "missing-start"):
+            with self.subTest(field=field), snapshot() as root:
+                _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+                incomplete = [item for item in events
+                              if item[1]["type"] not in {"user.message", "subagent.completed"}]
+                runtime.events = tuple(incomplete)
+                with self.assertRaisesRegex(model.ReviewError, "instructions"):
+                    session.begin(runtime, reviewer)
+                changed = copy.deepcopy(incomplete)
+                for _, event in changed:
+                    if field == "interaction" and event["type"] == "subagent.started":
+                        event["data"]["interactionId"] = "replacement-interaction"
+                    if field == "start-time" and event["type"] == "subagent.started":
+                        event["timestamp"] = times["dispatch"]
+                    if field == "dispatch" and event["type"] == "tool.execution_start" \
+                            and event["data"]["toolCallId"] == runtime.dispatch_id:
+                        event["data"]["arguments"]["prompt"] += " changed"
+                if field == "missing-start":
+                    changed = [item for item in changed if item[1]["type"] != "subagent.started"]
+                changed.append(next(item for item in events if item[1]["type"] == "subagent.completed"))
+                runtime.events = tuple(changed)
+                with self.assertRaises(model.ReviewError):
+                    session.abort(runtime)
+                self.assertFalse(session.lease.finished)
+                runtime.events = tuple(incomplete + [changed[-1]])
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_cli_assignment_cannot_retire_using_generic_runtime(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                runtime.events = tuple(item for item in events
+                                       if item[1]["type"] != "subagent.completed"
+                                       and (not failed or item[1]["type"] != "user.message"))
+                if failed:
+                    with self.assertRaisesRegex(model.ReviewError, "instructions"):
+                        session.begin(runtime, reviewer)
+                else:
+                    session.begin(runtime, reviewer)
+                generic = Runtime(session.head, session.scope)
+                generic.root_session_id = runtime.root_session_id
+                generic.result.task = runtime.dispatch_id
+                generic.result.owner = reviewer
+                with self.assertRaises(model.ReviewError):
+                    session.abort(generic)
+                self.assertFalse(session.lease.finished)
+                runtime.events += (next(item for item in events
+                                        if item[1]["type"] == "subagent.completed"),)
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_failed_cli_start_without_observed_start_can_retire_later(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            runtime.events = tuple(item for item in events
+                                   if item[1]["type"] not in {"subagent.started", "subagent.completed"})
+            with self.assertRaisesRegex(model.ReviewError, "identity is missing"):
+                session.begin(runtime, reviewer)
+            runtime.events = tuple(events)
+            session.abort(runtime)
+            self.assertEqual(session.lease.outcome, "aborted")
+            self.assertIsNone(session.report)
+
+    def test_cli_setup_failure_keeps_observed_start_binding(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session.readers["read-candidate"] = lambda: None
+            with self.assertRaisesRegex(model.ReviewError, "candidate binding"):
+                session.begin(runtime, reviewer)
+            changed = copy.deepcopy(events)
+            next(event for _, event in changed
+                 if event["type"] == "subagent.started")["data"]["interactionId"] = "replacement"
+            runtime.events = tuple(changed)
+            with self.assertRaises(model.ReviewError):
+                session.abort(runtime)
+            self.assertFalse(session.lease.finished)
+            runtime.events = tuple(events)
+            session.abort(runtime)
+            self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_ambiguous_initial_cli_start_cannot_be_replaced(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            start = next(item for item in events if item[1]["type"] == "subagent.started")
+            runtime.events = tuple(events + [copy.deepcopy(start)])
+            with self.assertRaisesRegex(model.ReviewError, "identity is missing or duplicated"):
+                session.begin(runtime, reviewer)
+            runtime.events = tuple(events)
+            with self.assertRaises(model.ReviewError):
+                session.abort(runtime)
+            self.assertFalse(session.lease.finished)
+
+    def test_first_partial_cli_start_remains_bound_before_terminal(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            runtime.events = tuple(item for item in events
+                                   if item[1]["type"] not in {"subagent.started", "subagent.completed"})
+            with self.assertRaisesRegex(model.ReviewError, "identity is missing"):
+                session.begin(runtime, reviewer)
+            start = next(item for item in events if item[1]["type"] == "subagent.started")
+            session.observe_cli_events((None, ("incomplete",), start))
+            changed = copy.deepcopy(events)
+            next(event for _, event in changed
+                 if event["type"] == "subagent.started")["data"]["interactionId"] = "replacement"
+            runtime.events = tuple(changed)
+            with self.assertRaises(model.ReviewError):
+                session.abort(runtime)
+            self.assertFalse(session.lease.finished)
+            runtime.events = tuple(events)
+            session.abort(runtime)
+            self.assertEqual(session.lease.outcome, "aborted")
+
     def test_missing_receipt_retains_reservation_until_exact_terminal_is_observed(self):
         with snapshot() as root:
             _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
