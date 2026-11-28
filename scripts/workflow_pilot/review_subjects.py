@@ -11,8 +11,12 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import sys
+import tempfile
 import types
+import unittest
+from unittest import mock
 
 from scripts.workflow_pilot import review_family as review
 from scripts.workflow_pilot.raw_diff_check import ProcessCleanupError, run_process
@@ -33,9 +37,11 @@ BINDINGS = (
     SubjectSpec("TC-GAMEPLAY-006", "aoe-item-dispatch", "aoe"),
     SubjectSpec("TC-CORE-004", "generated-eventlists", "eventlists"),
     SubjectSpec("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session", "review-session"),
+    SubjectSpec("TC-WORKFLOW-BUILD-CI-SPLIT-001", "ci-lane-history", "ci-lane-history"),
     SubjectSpec("TC-CJK-RESOURCE-STORAGE-001", "cjk-resource-index", "cjk-resource"),
     SubjectSpec("TC-LOCALIZATION-AUTHORED-SCOPE-001", "authored-scope-case", "authored-case"),
     SubjectSpec("TC-PROJECT-SELECTION-001", "project-selection", "project-selection"),
+    SubjectSpec("TC-TEST-QUALITY-001", "build-workflow-topology", "build-topology"),
 )
 AOE_CORE = "src/expansion_aoe.c"
 AOE_HEADER = "include/expansion_aoe.h"
@@ -43,6 +49,18 @@ AOE_REFERENCE = "src/expansion_aoe_reference.c"
 AOE_DRIVER = "tools/gba-playtest/tests/c/expansion_aoe_driver.c"
 AOE_DISABLED = "tools/gba-playtest/tests/c/expansion_aoe_disabled_driver.c"
 REVIEW_SOURCE = "scripts/workflow_pilot/review_family.py"
+STAGED_TOOL_PATHS = (
+    "scripts/workflow_pilot/__init__.py",
+    "scripts/workflow_pilot/raw_diff_check.py",
+    REVIEW_SOURCE,
+    "scripts/workflow_pilot/review_subjects.py",
+    AOE_DRIVER,
+    AOE_DISABLED,
+)
+CI_ADAPTIVE = "scripts/workflow_pilot/adaptive_gate.py"
+CI_METADATA = "scripts/workflow_pilot/pr_metadata.py"
+CI_EVIDENCE = "scripts/workflow_pilot/candidate_evidence.py"
+CI_HISTORY_SOURCES = (CI_ADAPTIVE, CI_METADATA, CI_EVIDENCE)
 EVENT_SCHEMA = "scripts/generated_data/eventlists/schema.py"
 EVENT_SOURCE = "src/data/ch2_eventlists.json"
 PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
@@ -68,6 +86,11 @@ CASE_SECTIONS = frozenset({
     "Interactions and save compatibility", "Automation", "Cleanup and limitations",
 })
 PROJECT_DECLARATION = "project_selection.mk"
+BUILD_WORKFLOW = ".github/workflows/build.yml"
+BUILD_TOPOLOGY = "tests/workflows/test_build_ci_topology.py"
+BUILD_VERIFY = "scripts/upstream_port/verify.py"
+BUILD_UPSTREAM_TEST = "tests/upstream_port/test_verify.py"
+BUILD_ARCHIVAL_HELPER = "scripts/ci/install_archival_compilers.sh"
 PROJECT_CONFIG = "scripts/modernize/expansion_config.py"
 PROJECT_REGISTRY = "scripts/generated_data/registry.py"
 PROJECT_SCHEMA_INPUTS = "scripts/generated_data/schema.py"
@@ -210,6 +233,97 @@ def local_python_inputs(tree, roots):
     return tuple(sorted(captured))
 
 
+def build_job_blocks(text):
+    review.require(text.count("\njobs:\n") == 1, "missing or ambiguous Build jobs")
+    jobs = text.split("\njobs:\n", 1)[1]
+    starts = list(re.finditer(r"^  ([A-Za-z][A-Za-z0-9_-]*):\n", jobs, re.M))
+    review.require(starts, "missing Build job declarations")
+    review.unique([match.group(1) for match in starts], "Build jobs")
+    return {
+        match.group(1): jobs[
+            match.end():starts[index + 1].start() if index + 1 < len(starts) else len(jobs)
+        ]
+        for index, match in enumerate(starts)
+    }
+
+
+def build_step_blocks(job):
+    fields = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.M))
+    steps = [index for index, item in enumerate(fields) if item.group(1) == "steps"]
+    review.require(len(steps) == 1, "missing or ambiguous Build steps")
+    start = steps[0]
+    section = job[fields[start].end():fields[start + 1].start()
+                  if start + 1 < len(fields) else len(job)]
+    starts = list(re.finditer(r"^    -(?:[ \t]|\Z)", section, re.M))
+    review.require(starts, "empty or unsupported Build step sequence")
+    return tuple(section[
+        match.start():starts[index + 1].start() if index + 1 < len(starts) else len(section)
+    ] for index, match in enumerate(starts))
+
+
+def build_source_model(workflow, topology, verifier):
+    def values(source, names):
+        declarations = {}
+        for item in ast.parse(source).body:
+            if isinstance(item, ast.Assign) and len(item.targets) == 1:
+                target = item.targets[0]
+                if isinstance(target, ast.Name):
+                    declarations.setdefault(target.id, []).append(item.value)
+
+        def evaluate(node, seen):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return node.value
+            if isinstance(node, ast.Tuple):
+                return tuple(evaluate(value, seen) for value in node.elts)
+            if isinstance(node, ast.Name):
+                review.require(len(declarations.get(node.id, ())) == 1 and node.id not in seen,
+                               "unknown Build source declaration")
+                return evaluate(declarations[node.id][0], seen | {node.id})
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                return evaluate(node.left, seen) + evaluate(node.right, seen)
+            raise review.ReviewError("unsupported Build source declaration")
+
+        review.require(all(len(declarations.get(name, ())) == 1 for name in names),
+                       "missing or ambiguous Build source declaration")
+        return tuple(evaluate(declarations[name][0], {name}) for name in names)
+
+    workers, = values(topology, ("COMBINED_WORKERS",))
+    mirrored, expected = values(verifier, ("_COMBINED_JOBS", "_EXPECTED_JOBS"))
+    review.require(isinstance(workers, tuple) and workers == mirrored and workers,
+                   "Build worker declarations disagree")
+    jobs = build_job_blocks(workflow)
+    review.require(isinstance(expected, tuple) and set(jobs) == set(expected)
+                   and len(jobs) == len(expected) and set(workers) <= set(jobs),
+                   "Build job declarations disagree")
+    model = {}
+    for name, job in jobs.items():
+        selectors = []
+        for step in build_step_blocks(job):
+            match = re.match(r"^    -[ \t]+(name|uses):[ \t]*(.+)$", step.split("\n", 1)[0])
+            review.require(match is not None, "unsupported Build step identity")
+            value = re.sub(r"[ \t]+#.*$", "", match.group(2)).strip()
+            review.require(value and not value.startswith(("'", '"', "|", ">")),
+                           "unsupported Build step scalar")
+            selectors.append((match.group(1), value, "\n      run: |\n" in step))
+        review.unique([(kind, value) for kind, value, _ in selectors],
+                      "Build step identities within job")
+        model[name] = selectors
+    return workers, model
+
+
+def build_reorder_field(job, field):
+    matches = list(re.finditer(r"^    ([A-Za-z_][A-Za-z0-9_-]*):", job, re.M))
+    selected = [index for index, item in enumerate(matches) if item.group(1) == field]
+    review.require(len(selected) == 1, "missing or ambiguous Build job field")
+    blocks = [job[item.start():matches[index + 1].start()
+                  if index + 1 < len(matches) else len(job)]
+              for index, item in enumerate(matches)]
+    index = selected[0]
+    ordered = blocks[1:] + blocks[:1] if index == 0 else (
+        blocks[index:index + 1] + blocks[:index] + blocks[index + 1:])
+    return job[:matches[0].start()] + "".join(ordered)
+
+
 def authored_case_declaration(raw):
     catalog = json.loads(raw)
     features = [item for item in catalog["features"] if item["id"] == AUTHORED_FEATURE]
@@ -330,10 +444,12 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
     result = []
 
     def add(family, role, name, producer, consumer, representation, revalidation,
-            probe, inputs, *, kind="host", profile="host", evidence=("positive", "adversarial")):
+            probe, inputs, *, kind="host", profile="host", evidence=("positive", "adversarial"),
+            execution_inputs=()):
         result.append(review.Obligation(
             spec.key, family, role + ":" + name, role, producer, consumer,
-            representation, revalidation, probe, profile, evidence, tuple(sorted(inputs)), kind))
+            representation, revalidation, probe, profile, evidence, tuple(sorted(inputs)), kind,
+            tuple(sorted(execution_inputs))))
 
     if spec.model == "aoe":
         header = tree.read(AOE_HEADER)
@@ -371,6 +487,74 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                 "ELF symbols/sections", "disabled callback/probe omission",
                 "aoe-arm:" + role, resources, kind="arm-object", profile="aapcs-" + role,
                 evidence=("compile", "default") if role == "disabled" else ("compile",))
+    elif spec.model == "build-topology":
+        workers, jobs = build_source_model(
+            tree.read(BUILD_WORKFLOW).decode(), tree.read(BUILD_TOPOLOGY),
+            tree.read(BUILD_VERIFY))
+        closure = set(local_python_inputs(
+            head, (BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_UPSTREAM_TEST)))
+        closure.update({
+            BUILD_WORKFLOW, BUILD_ARCHIVAL_HELPER, "tests/workflows/__init__.py",
+        })
+        closure.difference_update({
+            "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/raw_diff_check.py",
+            REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
+        })
+        for job, selectors in jobs.items():
+            representation = json.dumps(selectors, separators=(",", ":"))
+            add("wire", "validators", "boundary-" + job, BUILD_WORKFLOW,
+                BUILD_TOPOLOGY + ":_step_blocks", representation,
+                "shallow and Unicode blanks cannot hide step fields",
+                "build-topology:boundary:" + job, {BUILD_WORKFLOW, BUILD_TOPOLOGY},
+                evidence=("positive", "adversarial"))
+            add("wire", "validators", "target-boundary-" + job, BUILD_WORKFLOW,
+                BUILD_VERIFY + ":run_gates", representation,
+                "misindented job fields reject at each target boundary",
+                "build-topology:target-boundary:" + job,
+                {BUILD_WORKFLOW, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER},
+                evidence=("positive", "adversarial"))
+            if any(literal for _, _, literal in selectors):
+                add("wire", "replay", job, BUILD_WORKFLOW,
+                    BUILD_TOPOLOGY + ":_literal_run_script and " + BUILD_VERIFY,
+                    representation, "literal scripts retain commands across shallow blanks",
+                    "build-topology:literal:" + job,
+                    {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+        for job in workers:
+            representation = json.dumps(jobs[job], separators=(",", ":"))
+            add("wire", "producers", job, BUILD_WORKFLOW, BUILD_TOPOLOGY + ":_errors",
+                representation, "equivalent worker mappings preserve topology and sequence",
+                "build-topology:producer:" + job,
+                {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+            add("wire", "consumers", job, BUILD_WORKFLOW, BUILD_VERIFY + ":run_gates",
+                representation, "target gates accept equivalent and reject unsafe mappings",
+                "build-topology:consumer:" + job,
+                {BUILD_WORKFLOW, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER})
+            for name, source in (
+                ("topology-order", BUILD_TOPOLOGY + ":_errors"),
+                ("upstream-order", BUILD_VERIFY + ":_parse_workflow_structure_text"),
+            ):
+                add("wire", "validators", name + "-" + job, BUILD_WORKFLOW, source,
+                    representation, "source parser accepts equivalent reordered workflow",
+                    "build-topology:" + name + ":" + job,
+                    {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY})
+        for name, test_path, test_class, test_method in (
+            ("topology-order", BUILD_TOPOLOGY, "ConsolidatedBuildTopologyTests",
+             "test_worker_blocks_can_precede_other_job_fields"),
+            ("upstream-order", BUILD_UPSTREAM_TEST, "VerifyCliCwdTests",
+             "test_worker_mapping_order_preserves_target_gate_equivalence"),
+        ):
+            add("wire", "validators", "source-test-" + name, BUILD_WORKFLOW,
+                f"{test_path}:{test_class}.{test_method}", json.dumps(sorted(workers)),
+                "actual source-revision regression test covers worker field permutations",
+                "build-topology:source-test:" + name,
+                {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_UPSTREAM_TEST})
+        add("wire", "stale-bindings", "width-script", BUILD_WORKFLOW,
+            BUILD_VERIFY + ":run_gates", "target literal width-gate script",
+            "target command after shallow blank cannot be ignored",
+            "build-topology:stale:width-script",
+            {BUILD_WORKFLOW, BUILD_TOPOLOGY, BUILD_VERIFY, BUILD_ARCHIVAL_HELPER})
+        result = [replace(item, execution_inputs=tuple(sorted(set(item.inputs) | closure)))
+                  for item in result]
     elif spec.model == "eventlists":
         defaults, dependencies = schema_declaration(tree.read(EVENT_SCHEMA))
         review.require(defaults.get("default_source") == EVENT_SOURCE,
@@ -558,6 +742,47 @@ def _members(spec: SubjectSpec, tree, head) -> tuple[review.Obligation, ...]:
                     "trusted coordinator", "typed requests/rounds/task observations",
                     "exact scope/head/round and sticky hold", family + ":" + role,
                     (REVIEW_SOURCE,))
+    elif spec.model == "ci-lane-history":
+        closure = set(local_python_inputs(tree, CI_HISTORY_SOURCES)) - set(STAGED_TOOL_PATHS)
+        predicates = {
+            ("lifecycle", "entries"): (CI_METADATA + ":_run_mode", CI_ADAPTIVE + ":_history_lane",
+                                       CI_HISTORY_SOURCES),
+            ("lifecycle", "preservation"): (CI_ADAPTIVE + ":_history_lane",
+                                            CI_ADAPTIVE + ":_reserved_dispatch",
+                                            CI_HISTORY_SOURCES),
+            ("lifecycle", "resets"): (CI_ADAPTIVE + ":_history_lane",
+                                      CI_ADAPTIVE + ":_history_lane",
+                                      CI_HISTORY_SOURCES),
+            ("lifecycle", "terminals"): (CI_METADATA + ":_pre_full_preparation",
+                                         CI_ADAPTIVE + ":_reserved_dispatch",
+                                         CI_HISTORY_SOURCES),
+            ("wire", "producers"): (CI_METADATA + ":_run_mode", CI_METADATA + ":_run_mode",
+                                    (CI_METADATA, CI_EVIDENCE)),
+            ("wire", "consumers"): (CI_ADAPTIVE + ":_history_lane",
+                                    CI_ADAPTIVE + ":_finalize_intake",
+                                    CI_HISTORY_SOURCES),
+            ("wire", "validators"): (CI_EVIDENCE + ":preflight_success",
+                                     CI_ADAPTIVE + ":_history_lane", CI_HISTORY_SOURCES),
+            ("wire", "replay"): (CI_ADAPTIVE + ":_history_lane", CI_ADAPTIVE + ":_history_lane",
+                                 CI_HISTORY_SOURCES),
+            ("wire", "stale-bindings"): (CI_ADAPTIVE + ":_history_lane",
+                                         CI_ADAPTIVE + ":_reserved_dispatch",
+                                         CI_HISTORY_SOURCES),
+        }
+        for path, names in (
+            (CI_ADAPTIVE, {"_history_lane", "_finalize_intake", "_reserved_dispatch"}),
+            (CI_METADATA, {"_run_mode", "_pre_full_preparation", "_current_full_authorization"}),
+            (CI_EVIDENCE, {"preflight_success"}),
+        ):
+            functions = [item.name for item in ast.parse(tree.read(path)).body
+                         if isinstance(item, ast.FunctionDef)]
+            review.require(all(functions.count(name) == 1 for name in names),
+                           "CI history predicate needs a reviewed finite model")
+        for (family, role), (producer, consumer, paths) in predicates.items():
+            add(family, role, "ci-lane-history", producer, consumer,
+                "bound historical/current Build jobs and candidate identity",
+                "exact lane, retry, metadata and dispatch authority",
+                "ci-history:" + family + ":" + role, paths, execution_inputs=closure)
     else:
         raise review.ReviewError("unknown finite source model")
     for path in {path for member in result for path in member.inputs}:
@@ -2236,6 +2461,549 @@ def _session_probe(probe: str) -> dict:
     return {"kind": "host", "checks": 2, "detail": "registered production reducer executed"}
 
 
+@probe_result("host")
+def _ci_history(probe: str) -> dict:
+    from datetime import datetime, timedelta, timezone
+    from itertools import combinations
+    from scripts.workflow_pilot import adaptive_gate, candidate_evidence, pr_metadata
+
+    checks = 0
+
+    def equal(action, expected, label):
+        nonlocal checks
+        try:
+            actual = action()
+        except ValueError as error:
+            raise ContractViolation(f"{label}: {error}") from error
+        check(actual == expected, label)
+        checks += 1
+
+    def rejects(action, label):
+        nonlocal checks
+        try:
+            action()
+        except ValueError:
+            checks += 1
+            return
+        raise ContractViolation(label)
+
+    def changed(value, **updates):
+        return replace(value, **updates)
+
+    def job(name, conclusion, number, index):
+        classifier = name in {"event-classifier", "metadata-classifier",
+                              "review-first-classifier"}
+        offset = (2 if name == "event-identity" else 4 if name == "event-router"
+                  else 6 if classifier else 10 if name in {"summary", "patch-release"} else 8)
+        created = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(
+            minutes=number * 3, seconds=offset)
+        return pr_metadata.JobState(
+            job_id=number * 100 + index + 1, run_id=number, name=name,
+            status="completed", conclusion=conclusion,
+            runner_name=None if conclusion == "skipped" else "runner",
+            created_at=created, started_at=created,
+            completed_at=created if conclusion == "skipped" else created + timedelta(seconds=1),
+            candidate_binding=binding if classifier else None,
+            candidate_base_ref=pr.base_ref if classifier else None)
+
+    head, base = "a" * 40, "b" * 40
+    pr = pr_metadata.PullRequestState(
+        repository="owner/repo", repository_id=123, repository_owner_id=456,
+        pull_request_id=789, pull_request_node_id="PR_fixture", number=42,
+        head_sha=head, head_ref="topic", base_sha=base, base_ref="master",
+        title="fixture", body="", updated_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
+    binding = (pr.number, head, base)
+    workers = (
+        "host-tests", "workflow-pilot-tests", "build", "extended-host-tests",
+        "ownership-probe-tests", "game-localization-tests", "legacy",
+    )
+    new_workers = ("workflow-pilot-tests", "ownership-probe-tests", "game-localization-tests")
+
+    def run(kind, number, *, historical=False, event="pull_request"):
+        classifier = {
+            "preflight": "review-first-classifier",
+            "metadata": "metadata-classifier",
+            "full": "event-classifier",
+        }[kind]
+        definitions = [("event-identity", "success"), ("event-router", "success"),
+                       (classifier, "success")]
+        for name in workers:
+            if historical and name in new_workers:
+                continue
+            conclusion = (
+                "success" if kind == "full" or name in {"host-tests", "build"} else "skipped")
+            definitions.append((name, conclusion))
+        definitions.append(("summary", "failure" if kind == "preflight" else "success"))
+        jobs = tuple(job(name, conclusion, number, index)
+                     for index, (name, conclusion) in enumerate(definitions))
+        mode = {"preflight": "review-first", "metadata": "metadata-only", "full": "full"}[kind]
+        if historical:
+            mode = "historical-" + mode
+        created = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=number * 3)
+        return pr_metadata.RunState(
+            run_id=number, run_attempt=1, run_number=number, workflow_id=7,
+            head_sha=head, head_branch=pr.head_ref, created_at=created,
+            run_started_at=created + timedelta(seconds=1),
+            updated_at=created + timedelta(seconds=30),
+            candidate_binding=binding, candidate_base_ref=pr.base_ref,
+            binding="explicit-same", mode=mode, event=event, status="completed",
+            conclusion="failure" if kind == "preflight" else "success", jobs=jobs)
+
+    def edit_job(value, name, **updates):
+        return changed(value, jobs=tuple(
+            changed(item, **updates) if item.name == name else item for item in value.jobs))
+
+    def statuses(value):
+        return {item.name: (item.status, item.conclusion) for item in value.jobs}
+
+    def lane(*runs, pull_request=pr):
+        return adaptive_gate._history_lane(pull_request, base, runs)
+
+    def classified(value):
+        return changed(value, mode=pr_metadata._run_mode(
+            value.jobs, run_id=value.run_id, status=value.status))
+
+    old = run("preflight", 1, historical=True)
+    current = run("preflight", 2)
+    dispatch = run("full", 3, event="workflow_dispatch")
+    concurrent = run("full", 3)
+    old_metadata = run("metadata", 4, historical=True)
+    record = {
+        "pr_number": pr.number, "head_sha": head, "base_sha": base, "base_ref": pr.base_ref,
+        "watermark": 2, "dispatch_requested_at": "2026-01-01T00:08:00Z",
+        "full_run_id": None, "full_attempt": None,
+    }
+
+    if probe == "ci-history:lifecycle:entries":
+        equal(lambda: lane(), None, "empty history should have no initial lane")
+        equal(lambda: lane(classified(old)), "review-first", "historical preflight lost its lane")
+        equal(lambda: lane(classified(current)), "review-first", "current preflight lost its lane")
+        equal(lambda: lane(classified(old), classified(current)), "review-first",
+              "compatible preflights disagree")
+        equal(lambda: pr_metadata._run_mode(
+            old_metadata.jobs, run_id=old_metadata.run_id, status=old_metadata.status),
+              "historical-metadata-only", "historical metadata misclassified")
+        rejects(lambda: lane(classified(old_metadata)),
+                "metadata alone established an initial lane")
+        rejects(lambda: lane(changed(old, event="workflow_dispatch")),
+                "non-pull-request event established an initial lane")
+        rejects(lambda: lane(changed(old, status="in_progress")),
+                "active preflight established an initial lane")
+        rejects(lambda: lane(changed(old, conclusion="success")),
+                "successful preflight established an initial lane")
+        rejects(lambda: lane(changed(current, mode="active-review-first", status="in_progress")),
+                "active review-first run established an initial lane")
+    elif probe == "ci-history:lifecycle:preservation":
+        equal(lambda: lane(old, dispatch), "review-first", "historical provenance was discarded")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, dispatch, (old, dispatch)),
+              False, "old preflight authorized a current dispatch")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, dispatch, (current, dispatch)),
+              True, "current preflight failed to authorize its reserved dispatch")
+        rejects(lambda: pr_metadata._current_full_authorization((old, current)),
+                "preflight history authorized a full Build")
+    elif probe == "ci-history:lifecycle:resets":
+        retry = run("preflight", 5)
+        for first in (old, current):
+            for adapter in ("host-tests", "build"):
+                for conclusion in ("failure", "cancelled", "timed_out"):
+                    failed = edit_job(first, adapter, conclusion=conclusion)
+                    equal(lambda: lane(failed, retry), "review-first", "valid retry lost its lane")
+                    rejects(lambda: lane(failed), "failed preflight alone established a lane")
+    elif probe == "ci-history:lifecycle:terminals":
+        equal(lambda: pr_metadata._pre_full_preparation((old, current, old_metadata)),
+              True, "current preflight with historical metadata was refused")
+        equal(lambda: pr_metadata._pre_full_preparation((old,)), False,
+              "old preflight alone authorized metadata preparation")
+        equal(lambda: pr_metadata._pre_full_preparation((old, current, concurrent)), False,
+              "full run allowed pre-full preparation")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, dispatch, (current, dispatch)),
+              True, "bound current dispatch was refused")
+        wrong_workflow = changed(dispatch, workflow_id=8)
+        equal(lambda: adaptive_gate._reserved_dispatch(record, pr, wrong_workflow,
+                                                       (current, wrong_workflow)),
+              False, "different workflow authorized a dispatch")
+        rejects(lambda: pr_metadata._current_full_authorization((old, current)),
+                "preflight became full-Build authority")
+    elif probe == "ci-history:wire:producers":
+        metadata = run("metadata", 6)
+        historical_full = run("full", 7, historical=True)
+        for value, expected in (
+            (old, "historical-review-first"), (current, "review-first"),
+            (old_metadata, "historical-metadata-only"), (metadata, "metadata-only"),
+            (historical_full, "historical-full"), (dispatch, "full"),
+        ):
+            equal(lambda: pr_metadata._run_mode(
+                value.jobs, run_id=value.run_id, status=value.status),
+                  expected, f"{expected} shape misclassified")
+        equal(lambda: pr_metadata._run_mode(
+            tuple(reversed(current.jobs)), run_id=current.run_id, status="completed"),
+              "review-first", "job ordering changed classification")
+        for value in (current, metadata, dispatch):
+            for count in (1, 2):
+                for kept in combinations(new_workers, count):
+                    partial = tuple(item for item in value.jobs
+                                    if item.name not in new_workers or item.name in kept)
+                    rejects(lambda: pr_metadata._run_mode(
+                        partial, run_id=value.run_id, status=value.status),
+                            "partial current job shape accepted")
+        publisher = job("patch-release", "skipped", old.run_id, len(old.jobs))
+        equal(lambda: pr_metadata._run_mode(
+            (*old.jobs, publisher), run_id=old.run_id, status="completed"),
+              "historical-review-first", "skipped historical publisher rejected")
+        rejects(lambda: pr_metadata._run_mode(
+            (*old.jobs, changed(publisher, conclusion="success", runner_name="runner")),
+            run_id=old.run_id, status="completed"), "active historical publisher accepted")
+    elif probe == "ci-history:wire:consumers":
+        equal(lambda: lane(old, dispatch), "review-first",
+              "historical preflight plus current full dispatch lost its initial lane")
+        equal(lambda: lane(old, current), "review-first", "current and historical lanes disagree")
+        rejects(lambda: lane(old, concurrent), "contradictory pull-request full run accepted")
+        equal(lambda: pr_metadata._pre_full_preparation((old, current, old_metadata)),
+              True, "historical metadata blocked valid current preparation")
+        provisional = {
+            "base_sha": base, "mode": "concurrent", "full_run_id": None,
+            "dispatch_requested_at": None, "abandoned_reason": None,
+            "intake_control": {"repository": pr.repository, "repository_id": pr.repository_id},
+        }
+        equal(lambda: (adaptive_gate._finalize_intake(provisional, pr, (old, dispatch)),
+                       provisional["mode"], "intake_control" in provisional),
+              (None, "review-first", False), "historical lane was not finalized")
+        rejects(lambda: adaptive_gate._finalize_intake(
+            {"base_sha": base, "mode": "concurrent"}, pr, (old, dispatch)),
+            "contradictory finalized intake accepted")
+    elif probe == "ci-history:wire:validators":
+        import inspect
+        try:
+            inspect.signature(candidate_evidence.preflight_success).bind(
+                statuses(old), historical=True)
+        except TypeError:
+            historical_arg = {}
+        else:
+            historical_arg = {"historical": True}
+        equal(lambda: candidate_evidence.preflight_success(statuses(old), **historical_arg), True,
+              "valid historical preflight rejected")
+        equal(lambda: candidate_evidence.preflight_success(statuses(current)), True,
+              "valid current preflight rejected")
+        for value, kwargs in ((old, historical_arg), (current, {})):
+            for name in (
+                "event-identity", "event-router", "review-first-classifier",
+                "host-tests", "build", "extended-host-tests", "legacy", "summary",
+            ):
+                missing = statuses(value)
+                del missing[name]
+                equal(lambda: candidate_evidence.preflight_success(missing, **kwargs), False,
+                      f"missing {name} accepted")
+                incorrect = dict(statuses(value))
+                conclusion = incorrect[name][1]
+                incorrect[name] = ("completed", "failure" if conclusion == "success" else "success")
+                equal(lambda: candidate_evidence.preflight_success(incorrect, **kwargs), False,
+                      f"incorrect {name} accepted")
+                incorrect[name] = ("in_progress", None)
+                equal(lambda: candidate_evidence.preflight_success(incorrect, **kwargs), False,
+                      f"active {name} accepted")
+        for name in new_workers:
+            incomplete = statuses(current)
+            del incomplete[name]
+            equal(lambda: candidate_evidence.preflight_success(incomplete), False,
+                  "missing current worker accepted")
+            incorrect = dict(statuses(current))
+            incorrect[name] = ("completed", "success")
+            equal(lambda: candidate_evidence.preflight_success(incorrect), False,
+                  "active current worker accepted")
+            unexpected = dict(statuses(old))
+            unexpected[name] = ("completed", "skipped")
+            equal(lambda: candidate_evidence.preflight_success(unexpected, **historical_arg), False,
+                  "partial historical worker shape accepted")
+        publisher = {**statuses(old), "patch-release": ("completed", "skipped")}
+        equal(lambda: candidate_evidence.preflight_success(publisher, **historical_arg), True,
+              "skipped historical publisher rejected")
+        publisher["patch-release"] = ("completed", "success")
+        equal(lambda: candidate_evidence.preflight_success(publisher, **historical_arg), False,
+              "active historical publisher accepted")
+        retry = run("preflight", 5)
+
+        def reject_with_retry(malformed, label):
+            rejects(lambda: lane(malformed, retry), label)
+            for adapter in ("host-tests", "build"):
+                for conclusion in ("failure", "cancelled", "timed_out"):
+                    failed = edit_job(malformed, adapter, conclusion=conclusion)
+                    rejects(lambda: lane(failed, retry), label + " with failed " + adapter)
+
+        for value in (old, current):
+            for name in ("event-identity", "event-router", "review-first-classifier",
+                         "extended-host-tests", "legacy", "summary"):
+                conclusion = "failure" if name in {
+                    "event-identity", "event-router", "review-first-classifier",
+                } else "success"
+                malformed = edit_job(value, name, conclusion=conclusion, runner_name="runner")
+                reject_with_retry(malformed, f"malformed {name} accepted with a valid retry")
+            if value is current:
+                for name in new_workers:
+                    malformed = edit_job(value, name, conclusion="success", runner_name="runner")
+                    reject_with_retry(malformed, f"malformed {name} accepted with a valid retry")
+        duplicate = changed(current, jobs=(*current.jobs, current.jobs[0]))
+        rejects(lambda: lane(duplicate), "duplicate job identity accepted")
+    elif probe == "ci-history:wire:replay":
+        failed = edit_job(old, "host-tests", conclusion="failure")
+        retry = run("preflight", 5)
+        equal(lambda: lane(failed, retry), "review-first", "successful retry was blocked")
+        equal(lambda: lane(retry, failed), "review-first", "retry depended on observation order")
+        rejects(lambda: lane(failed), "failed attempt alone established authority")
+        rejects(lambda: lane(failed, retry, concurrent), "contradictory replay accepted")
+    elif probe == "ci-history:wire:stale-bindings":
+        foreign = (
+            changed(concurrent, head_sha="c" * 40),
+            changed(concurrent, head_branch="other"),
+            changed(concurrent, candidate_binding=(pr.number, head, "c" * 40)),
+            changed(concurrent, candidate_base_ref="other"),
+        )
+        for unrelated in foreign:
+            equal(lambda: lane(current, unrelated), "review-first",
+                  "unrelated run changed the lane")
+        advanced = changed(pr, base_sha="c" * 40)
+        equal(lambda: lane(old, current, pull_request=advanced), "review-first",
+              "unrelated live base advance changed the frozen initial lane")
+        equal(lambda: adaptive_gate._reserved_dispatch(record, advanced, dispatch,
+                                                       (current, dispatch)),
+              True, "unrelated live base advance invalidated a bound dispatch")
+        for unbound in (changed(old, candidate_binding=None),
+                        changed(old, candidate_base_ref=None)):
+            rejects(lambda: lane(unbound, current), "unbound historical preflight accepted")
+        equal(lambda: pr_metadata._pre_full_preparation(
+            (current, changed(old, binding="unbound", candidate_binding=None))),
+              False, "unbound history authorized metadata preparation")
+        pinned = {**record, "full_run_id": dispatch.run_id, "full_attempt": dispatch.run_attempt}
+        equal(lambda: adaptive_gate._reserved_dispatch(pinned, pr, dispatch, (current, dispatch)),
+              True, "exact pinned dispatch was rejected")
+        for field in ("full_run_id", "full_attempt"):
+            stale = {**pinned, field: pinned[field] + 1}
+            equal(lambda: adaptive_gate._reserved_dispatch(
+                stale, pr, dispatch, (current, dispatch)),
+                False, f"stale dispatch {field} accepted")
+    else:
+        raise review.ReviewError("unknown CI history probe")
+    return {
+        "kind": "host", "checks": checks,
+        "detail": "selected production history predicates executed",
+    }
+
+
+@probe_result("host")
+def _build_topology(probe):
+    from scripts.upstream_port import verify
+    from tests.workflows import test_build_ci_topology as topology
+    from tests.upstream_port import test_verify as upstream_tests
+
+    workers, model = build_source_model(
+        Path(BUILD_WORKFLOW).read_text(), Path(BUILD_TOPOLOGY).read_bytes(),
+        Path(BUILD_VERIFY).read_bytes())
+    parts = probe.split(":")
+    review.require(len(parts) == 3 and parts[0] == "build-topology",
+                   "unknown Build topology probe")
+    role, name = parts[1:]
+    review.require(
+        (role in {"boundary", "target-boundary", "literal"} and name in model)
+        or (role in {"producer", "consumer", "topology-order", "upstream-order"}
+            and name in workers)
+        or (role == "source-test" and name in {"topology-order", "upstream-order"})
+        or (role == "stale" and name == "width-script"),
+        "unregistered Build topology member")
+    if role == "source-test":
+        if name == "topology-order":
+            test_class = topology.ConsolidatedBuildTopologyTests
+            test_name = "test_worker_blocks_can_precede_other_job_fields"
+            module = topology
+            attribute = "WORKFLOW"
+        else:
+            test_class = upstream_tests.VerifyCliCwdTests
+            test_name = "test_worker_mapping_order_preserves_target_gate_equivalence"
+            module = upstream_tests
+            attribute = "BUILD_WORKFLOW_PATH"
+        original = Path(BUILD_WORKFLOW).read_text()
+        job = topology._job_blocks(original)["host-tests"]
+        changed = original.replace(job, build_reorder_field(job, "steps"), 1)
+        review.require(changed != original, "worker order control did not change the workflow")
+        with tempfile.TemporaryDirectory(prefix="build-worker-order-") as directory:
+            path = Path(directory) / "build.yml"
+            path.write_text(changed)
+            workflow = path if module is topology else str(path)
+            with mock.patch.object(module, attribute, workflow):
+                result = unittest.TextTestRunner(stream=io.StringIO()).run(
+                    unittest.TestSuite([test_class(test_name)]))
+        if result.errors:
+            return {"kind": "host", "verdict": "unavailable", "checks": 0,
+                    "detail": (result.errors[0][1] or "source test errored")[-review.MAX_DETAIL:]}
+        for outcome, records in (
+            ("skipped", result.skipped),
+            ("expected-failure", result.expectedFailures),
+            ("unexpected-success", result.unexpectedSuccesses),
+        ):
+            if records:
+                return {"kind": "host", "verdict": "unavailable", "checks": 0,
+                        "detail": f"source test outcome is non-evidentiary: {outcome}"}
+        if result.failures:
+            return {"kind": "host", "verdict": "contract-violation", "checks": 1,
+                    "detail": (result.failures[0][1] or "source test failed")[-review.MAX_DETAIL:]}
+        review.require(result.testsRun == 1, "source test did not run exactly once")
+        return {"kind": "host", "checks": 1,
+                "detail": "actual source-revision test passed on steps-first worker mapping"}
+    text = Path(BUILD_WORKFLOW).read_text()
+    jobs = build_job_blocks(text)
+    checks = 0
+
+    def observe(condition, message):
+        nonlocal checks
+        checks += 1
+        check(condition, message)
+
+    def target(directory):
+        root = Path(directory) / "target"
+        root.mkdir()
+        command(["/usr/bin/git", "init", "-q", str(root)])
+        workflow = root / BUILD_WORKFLOW
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(text)
+        helper = root / BUILD_ARCHIVAL_HELPER
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(BUILD_ARCHIVAL_HELPER, helper)
+        return root, workflow
+
+    def rejected(root, workflow, changed):
+        workflow.write_text(changed)
+        try:
+            verify.run_gates(str(root), dry_run=True)
+        except ValueError:
+            return True
+        return False
+
+    def width_step():
+        found = [step for job in jobs.values() for step in build_step_blocks(job)
+                 if step.startswith(
+                     "    - name: Run full-game localization width contract (issue #18)\n")]
+        review.require(len(found) == 1, "missing or ambiguous width gate")
+        return found[0]
+
+    if role == "boundary":
+        job = jobs[name]
+        steps = build_step_blocks(job)
+        for index, step in enumerate(steps):
+            for blank in ("", "    ", "    \r", "    \t", "        ",
+                          "    \u0085", "    \u2028", "    \u2029"):
+                changed = step.replace(
+                    "\n", "\n" + blank + "\n      continue-on-error: true\n", 1)
+                parsed = topology._step_blocks(job.replace(step, changed, 1))
+                observe(index < len(parsed) and "      continue-on-error: true" in parsed[index],
+                        f"{name} step {index} lost a field after {blank!r}")
+        width = width_step()
+        if width in steps:
+            for blank in ("    ", "    \u0085", "    \u2028", "    \u2029"):
+                changed = text.replace(width, width + blank + "\n      continue-on-error: true\n", 1)
+                observe(bool(topology._errors(changed, False)), "width gate admitted hidden failure")
+    elif role == "target-boundary":
+        job = jobs[name]
+        review.require(text.count(job) == 1 and job.count("    steps:\n") == 1,
+                       "ambiguous target job or steps")
+        with tempfile.TemporaryDirectory(prefix="build-target-boundary-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()) and all(not item.ran for item in baseline),
+                    f"{name} baseline dry-run failed")
+            for position in ("after-header", "before-steps", "after-steps"):
+                for indent in (1, 2, 3, 4):
+                    field = " " * indent + "permissions: write-all\n"
+                    if position == "after-header":
+                        changed_job = field + job
+                    elif position == "before-steps":
+                        changed_job = job.replace("    steps:\n", field + "    steps:\n", 1)
+                    else:
+                        changed_job = job + field
+                    changed = text.replace(job, changed_job, 1)
+                    observe(rejected(root, workflow, changed),
+                            f"{name} accepted {indent}-space field {position}")
+    elif role == "literal":
+        steps = [step for step in build_step_blocks(jobs[name]) if "\n      run: |\n" in step]
+        review.require(steps, "literal member has no source scripts")
+        for index, step in enumerate(steps):
+            script = topology._literal_run_script(step)
+            commands = topology._run_block_commands(step)
+            for blank in ("    ", "", " ", "      ", "        ", "        \t", "    \r"):
+                changed = step.replace("      run: |\n", "      run: |\n" + blank + "\n", 1)
+                expected = blank[8:] + "\n" + script
+                observe(topology._literal_run_script(changed) == expected,
+                        f"{name} literal {index} lost script after {blank!r}")
+                observe(topology._run_block_commands(changed) == commands,
+                        f"{name} literal {index} changed commands after {blank!r}")
+                lines = changed.split("\n")
+                start = lines.index("      run: |") + 1
+                observe(verify._literal_run_script(lines, start, len(lines), "|", name) == expected,
+                        f"{name} target literal {index} lost script after {blank!r}")
+    elif role == "producer":
+        baseline = verify._parse_workflow_structure_text(text)
+        observe(not topology._errors(text, False), "baseline topology rejected")
+        for field in ("steps", "env"):
+            changed = text.replace(jobs[name], build_reorder_field(jobs[name], field), 1)
+            observe(changed != text, f"{name} {field} did not move")
+            observe(not topology._errors(changed, False), f"{name} {field} rejected")
+            observe(verify._parse_workflow_structure_text(changed) == baseline,
+                    f"{name} {field} changed parsed workflow")
+    elif role in {"topology-order", "upstream-order"}:
+        baseline = verify._parse_workflow_structure_text(text)
+        fields = ("steps", "env") if role == "topology-order" else ("steps",)
+        for field in fields:
+            reordered = build_reorder_field(jobs[name], field)
+            changed = text.replace(jobs[name], reordered, 1)
+            observe(changed != text, f"{name} {field} did not move")
+            if role == "topology-order":
+                observe(not topology._errors(changed, False),
+                        f"{name} topology validator rejected equivalent reordered {field}")
+            try:
+                parsed = verify._parse_workflow_structure_text(changed)
+            except ValueError as error:
+                observe(False, f"{name} verifier rejected equivalent reordered {field}: {error}")
+            else:
+                observe(parsed == baseline,
+                        f"{name} reordered {field} changed the parsed workflow")
+    elif role == "consumer":
+        with tempfile.TemporaryDirectory(prefix="build-target-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()) and all(not item.ran for item in baseline),
+                    "baseline dry-run did not describe all gates")
+            for field in ("steps", "env"):
+                changed = text.replace(jobs[name], build_reorder_field(jobs[name], field), 1)
+                review.require(changed != text, f"{name} {field} did not move")
+                workflow.write_text(changed)
+                try:
+                    result = verify.run_gates(str(root), dry_run=True)
+                except ValueError as error:
+                    observe(False, f"{name} rejected equivalent reordered {field}: {error}")
+                else:
+                    observe(len(result) == len(baseline)
+                            and all(not item.ran for item in result),
+                            f"{name} reordered {field} changed selected gates")
+            for before, after in (
+                ("    runs-on: ubuntu-24.04", "    runs-on: self-hosted"),
+                ("    steps:\n", "    container: ubuntu:latest\n    steps:\n"),
+            ):
+                changed_job = jobs[name].replace(before, after, 1)
+                review.require(changed_job != jobs[name], "missing unsafe mutation location")
+                changed = text.replace(jobs[name], changed_job, 1)
+                observe(rejected(root, workflow, changed), f"{name} unsafe target admitted")
+    else:
+        width = width_step()
+        commands = topology._run_block_commands(width)
+        review.require(commands, "width gate has no commands")
+        last = "        " + commands[-1] + "\n"
+        review.require(width.count(last) == 1, "ambiguous width command")
+        changed = text.replace(width, width.replace(last, last + "    \n        exit 73\n", 1), 1)
+        with tempfile.TemporaryDirectory(prefix="build-stale-") as directory:
+            root, workflow = target(directory)
+            baseline = verify.run_gates(str(root), dry_run=True)
+            observe(len(baseline) == len(verify.gates()), "baseline target rejected")
+            observe(rejected(root, workflow, changed), "target ignored command after shallow blank")
+    return {"kind": "host", "checks": checks, "detail": "selected Build source behavior exercised"}
+
+
 def run_probe(probe: str) -> dict:
     allowed = {
         *(f"aoe-phase:{phase}" for phase in PHASES),
@@ -2246,6 +3014,8 @@ def run_probe(probe: str) -> dict:
         *("cjk-resource:" + family + ":" + role for family in ("generated", "wire", "resource")
           for role in review.FAMILIES[family]),
         *("authored-case:" + role for role in review.FAMILIES["generated"]),
+        *(f"ci-history:{family}:{role}" for family in ("lifecycle", "wire")
+          for role in review.FAMILIES[family]),
         *("project:" + role for role in review.FAMILIES["action"]),
         *("project-life:" + role for role in review.FAMILIES["lifecycle"]),
         *("project-wire:" + role for role in review.FAMILIES["wire"]),
@@ -2253,6 +3023,8 @@ def run_probe(probe: str) -> dict:
         *("project-resource:" + role for role in review.FAMILIES["resource"]),
         *(f"{family}:{role}" for family in ("lifecycle", "wire") for role in review.FAMILIES[family]),
     }
+    if probe.startswith("build-topology:"):
+        return _build_topology(probe)
     if probe.startswith("generated-owner:"):
         from scripts.generated_data import registry
         review.require(probe.partition(":")[2] in registry.REGISTRY.all_names(),
@@ -2269,6 +3041,8 @@ def run_probe(probe: str) -> dict:
         return _cjk_resource(probe)
     if probe.startswith("authored-case:"):
         return _authored_case(probe)
+    if probe.startswith("ci-history:"):
+        return _ci_history(probe)
     if probe.startswith(("project:", "project-life:", "project-wire:", "project-generated:",
                          "project-resource:")):
         kind = "arm-object" if probe.startswith("project-resource:") else "host"
