@@ -130,7 +130,8 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                  f"HOST_CC={compiler}", f"CODEQL_TEST_DIR={output}",
                  "CODEQL_REQUIRE_FANALYZER=1",
                  "ASSET_MAINTENANCE_GOALS=codeql-alerts-test codeql-fanalyzer-test",
-                 "MAKE_RESTARTS=1", f"MAKE={submake}", f"PYTHON={python}"],
+                 "MAKE_RESTARTS=1", f"MAKE={make if selected_make else submake}",
+                 f"PYTHON={python}"],
                 cwd=work, env=environment, text=True, capture_output=True, timeout=60,
             )
             events = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
@@ -189,6 +190,9 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 "#!/usr/bin/env python3\nimport os, sys\n"
                 "with open(os.environ['PROBE_MAKE_LOG'], 'a') as f: "
                 "f.write(sys.argv[0] + ' ' + ' '.join(sys.argv[1:]) + '\\n')\n"
+                "if 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
+                "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('analyzer\\n')\n"
+                "if '-C' in sys.argv[1:]: raise SystemExit(0)\n"
                 f"os.execv({real_make!r}, [{real_make!r}, *sys.argv[1:]])\n",
                 encoding="utf-8",
             )
@@ -203,7 +207,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 result, _ = self.run_target(selected_make=selected)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             calls = log.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(calls), 2, calls)
+            self.assertEqual(len(calls), 4, calls)
             self.assertTrue(all(call.startswith(selected + " ") for call in calls), calls)
             self.assertIn("codeql-alerts-test", calls[0])
             self.assertIn("codeql-fanalyzer-test", calls[1])
