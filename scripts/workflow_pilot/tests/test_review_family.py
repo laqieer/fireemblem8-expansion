@@ -1668,6 +1668,49 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 self.assertIsNone(session.report)
                 session.abort(runtime)
 
+    def test_partial_changed_dispatch_cannot_be_forgotten(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            dispatch = next(record for record in events
+                            if record[1].get("type") == "tool.execution_start"
+                            and record[1].get("agentId") == "coordinator")
+            dispatch[1]["id"] = "dispatch-event"
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            changed = copy.deepcopy(dispatch)
+            changed[1]["data"]["arguments"]["prompt"] += " changed"
+            with self.assertRaisesRegex(model.ReviewError, "changed"):
+                session.observe_cli_events([changed])
+            with self.assertRaisesRegex(model.ReviewError, "changed"):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+            session.abort(runtime)
+
+    def test_partial_changed_event_identity_cannot_be_forgotten(self):
+        for observation in ("batch", "terminal"):
+            with self.subTest(observation=observation), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                message = next(record for record in events
+                               if record[1].get("type") == "assistant.message"
+                               and record[1].get("agentId") == reviewer)
+                message[1]["id"] = "reviewer-message"
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                session.observe_cli_events([message])
+                changed = copy.deepcopy(message)
+                changed[1]["agentId"] = "another-reviewer"
+                if observation == "batch":
+                    with self.assertRaisesRegex(model.ReviewError, "identity changed"):
+                        session.observe_cli_events([changed])
+                else:
+                    runtime.events = tuple(changed if record is message else record
+                                           for record in events)
+                with self.assertRaisesRegex(model.ReviewError, "identity changed"):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                runtime.events = tuple(events)
+                session.abort(runtime)
+
     def test_partial_duplicate_completion_cannot_disappear(self):
         with snapshot() as root:
             _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)

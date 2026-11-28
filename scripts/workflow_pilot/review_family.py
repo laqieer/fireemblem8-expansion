@@ -1775,6 +1775,7 @@ class ReviewSession:
         self.cli_activity_violation = None
         self.observed_cli_activity = {}
         self.observed_cli_start_count = 0
+        self.observed_cli_ids = {}
         self.latest_cli_events = ()
         self._ownership_key = object()
         self.begin_failed = False
@@ -1798,11 +1799,48 @@ class ReviewSession:
                 raise
             if kind in observed and kind not in self.cli_lifecycle:
                 self.cli_lifecycle_conflict = True
+            if kind in self.cli_lifecycle and self.cli_lifecycle[kind] != event_key:
+                self.cli_activity_violation = (
+                    self.cli_activity_violation or
+                    "observed reviewer assignment changed")
+            self._observe_cli_identity(record, retain=True)
             observed[kind] = event_key
         if not self.cli_lifecycle_conflict:
             for kind, event_key in observed.items():
                 self.cli_lifecycle.setdefault(kind, event_key)
         return observed
+
+    def _observe_cli_identity(self, record, *, retain):
+        session, event = record
+        event_id = event.get("id")
+        if event_id is None:
+            return
+        if not isinstance(event_id, str) or not event_id:
+            if retain:
+                self.cli_activity_violation = (
+                    self.cli_activity_violation or "observed malformed CLI event identity")
+            return
+        identity = hashlib.sha256(json.dumps(
+            (session, event_id), ensure_ascii=True, separators=(",", ":")
+        ).encode("ascii")).digest()
+        previous = self.observed_cli_ids.get(identity)
+        if previous is None and not retain:
+            return
+        try:
+            event_key = _cli_event_key(record)
+        except ReviewError:
+            self.cli_activity_violation = (
+                self.cli_activity_violation or "observed malformed reviewer operation")
+            return
+        if previous is not None and previous != event_key:
+            self.cli_activity_violation = (
+                self.cli_activity_violation or "observed CLI event identity changed")
+        elif previous is None:
+            if len(self.observed_cli_ids) >= MAX_REQUEST_BYTES // 32:
+                self.cli_activity_violation = (
+                    self.cli_activity_violation or "observed reviewer operation budget exceeded")
+            else:
+                self.observed_cli_ids[identity] = event_key
 
     def _candidate_reader(self):
         reader = self.readers.get("read-candidate")
@@ -1905,6 +1943,13 @@ class ReviewSession:
             if isinstance(runtime, CliReviewRuntime):
                 self.assignment_event_keys = runtime.assignment_event_keys
                 self.assignment_received_at = runtime.received_at
+                for record in runtime.events:
+                    event_session, event = record
+                    if (event_session == self.dispatch_namespace
+                            and event.get("type") == "user.message"
+                            and event.get("agentId") == owner
+                            and event.get("data", {}).get("interactionId") == runtime.interaction):
+                        self._observe_cli_identity(record, retain=True)
             if self.owners is not None:
                 self.owners.bind_dispatch(self, task)
         except Exception:
@@ -1979,6 +2024,10 @@ class ReviewSession:
             require(isinstance(runtime, CliReviewRuntime),
                     "review runtime no longer supplies the assigned CLI observations")
         if isinstance(runtime, CliReviewRuntime):
+            for record in runtime.events:
+                if (isinstance(record, (tuple, list)) and len(record) == 2
+                        and record[0] == self.dispatch_namespace and isinstance(record[1], dict)):
+                    self._observe_cli_identity(record, retain=False)
             if self.owners is not None:
                 self.owners.validate_closed_events(
                     runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
@@ -2228,10 +2277,13 @@ class ReviewSession:
                 if not isinstance(record, (tuple, list)) or len(record) != 2:
                     continue
                 event_session, event = record
+                if event_session == self.dispatch_namespace and isinstance(event, dict):
+                    self._observe_cli_identity(record, retain=False)
                 if (event_session != self.dispatch_namespace or not isinstance(event, dict)
                         or event.get("agentId") != self.lease.owner
                         or not is_review_activity(event)):
                     continue
+                self._observe_cli_identity(record, retain=True)
                 data = event.get("data")
                 kind = event.get("type")
                 if (not isinstance(data, dict)
