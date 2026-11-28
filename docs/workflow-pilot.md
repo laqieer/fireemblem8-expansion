@@ -917,9 +917,15 @@ admitting it; missing or contradictory completion keeps the lease active.
 An attributed competing start for the same PR or head is considered even
 when its terminal record is missing or contradictory. If it could overlap a
 closed report, that report is invalidated; a proven earlier completion or a
-start after the closed interval preserves sequential reviews. Changed start
-times are considered as possible observations, not proof of which occurred.
-This only accounts for supplied events and cannot prevent an unobserved task.
+start after the closed interval preserves sequential reviews. The index retains
+the earliest observed possible start and latest possible completion across
+explicit observations, including after invalidation or terminal-only abort;
+an unparseable or contradictory bound remains unbounded for that index.
+Changed timestamps do not prove which timeline occurred. If an already-started
+CLI task is rejected because another owner is active, its observed dispatch
+remains reserved for terminal-only retirement and participates in overlap
+checks; it cannot later be admitted as that assignment. This only accounts for
+supplied events and cannot prevent an unobserved task.
 Later activity
 still rejects admission and never proves technical task termination.
 The dispatched instructions, start and receipt must also match the records

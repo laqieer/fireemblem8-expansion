@@ -2629,6 +2629,107 @@ def _session_probe(probe: str) -> dict:
             check(rejects(lambda: uncertain.abort(uncertain_runtime))
                   and not uncertain.lease.finished,
                   "contradictory terminal released ownership")
+
+            def alternate_events(source, *, minute="02"):
+                return json.loads(json.dumps(source)
+                    .replace("root-b", "root-c")
+                    .replace("reviewer-b", "reviewer-c")
+                    .replace("dispatch-b", "dispatch-c")
+                    .replace("T00:01:", f"T00:{minute}:"))
+
+            def native_session(owners, source, root, reviewer, dispatch):
+                runtime = module.CliReviewRuntime(
+                    source, dispatch_id=dispatch, root_session_id=root,
+                    candidate_reader=reader, required_reads=targets)
+                session = module.ReviewSession(
+                    "coordinator", "implementer", scope, b,
+                    identity=("owner/repo", 1, a), owners=owners,
+                    readers={"read-candidate": reader})
+                session.begin(runtime, reviewer)
+                return session, runtime
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            prior.finish(prior_runtime)
+            changed_completion = json.loads(json.dumps(next(
+                item for item in events if item[1].get("type") == "subagent.completed")))
+            changed_completion[1]["timestamp"] = "2026-01-01T00:02:05Z"
+            check(rejects(lambda: prior.observe_cli_events((changed_completion,))),
+                  "changed terminal did not invalidate its original report")
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(rejects(lambda: later.finish(later_runtime)),
+                  "changed terminal interval was forgotten for a later review")
+
+            owners = module.ReviewOwnership()
+            original = json.loads(json.dumps(events))
+            for _, event in original:
+                if event.get("type") == "subagent.completed":
+                    event["timestamp"] = "2026-01-01T00:01:30Z"
+            prior, prior_runtime = native_session(
+                owners, original, "root-b", "reviewer-b", "dispatch-b")
+            changed_start = json.loads(json.dumps(original))
+            for _, event in changed_start:
+                if event.get("type") == "subagent.started":
+                    event["timestamp"] = "2026-01-01T00:01:20Z"
+            prior_runtime.events = tuple(changed_start)
+            check(rejects(lambda: prior.finish(prior_runtime)),
+                  "changed assignment admitted a review")
+            prior.abort(prior_runtime)
+            later, later_runtime = native_session(
+                owners, alternate_events(events, minute="01"),
+                "root-c", "reviewer-c", "dispatch-c")
+            check(rejects(lambda: later.finish(later_runtime)),
+                  "terminal-only abort forgot the originally observed start")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            prior.finish(prior_runtime)
+            partial = [item for item in events if item[1].get("type") in {
+                "subagent.started", "subagent.completed"}]
+            prior.observe_cli_events(partial)
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            check(not rejects(lambda: later.finish(later_runtime)),
+                  "partial unchanged interval blocked a sequential reviewer")
+
+            owners = module.ReviewOwnership()
+            later, later_runtime = native_session(
+                owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+            later.finish(later_runtime)
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            changed_start = json.loads(json.dumps(next(
+                item for item in events if item[1].get("type") == "subagent.started")))
+            changed_start[1]["timestamp"] = "2026-01-01T00:02:05Z"
+            check(rejects(lambda: prior.observe_cli_events((changed_start,))),
+                  "changed active start was not considered")
+            check(rejects(lambda: later.review_state((), (), pre_review_required=True)),
+                  "changed active start did not invalidate a possible overlap")
+
+            owners = module.ReviewOwnership()
+            prior, prior_runtime = native_session(
+                owners, events, "root-b", "reviewer-b", "dispatch-b")
+            competitor_events = alternate_events(events, minute="01")
+            for _, event in competitor_events:
+                if event.get("type") == "subagent.started":
+                    event["agentId"] = "unexpected-reviewer"
+            competitor_runtime = module.CliReviewRuntime(
+                competitor_events, dispatch_id="dispatch-c", root_session_id="root-c",
+                candidate_reader=reader, required_reads=targets)
+            competitor = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 1, a), owners=owners,
+                readers={"read-candidate": reader})
+            check(rejects(lambda: competitor.begin(competitor_runtime, "reviewer-c")),
+                  "overlapping contradictory owner was admitted")
+            check(rejects(lambda: prior.finish(prior_runtime)),
+                  "contradictory competing start was discarded")
+            check(rejects(lambda: competitor.abort(competitor_runtime))
+                  and not competitor.lease.finished,
+                  "contradictory competing start was retired")
     elif probe == "lifecycle:resets":
         state.observe(decision(1))
         state.observe(decision(2, "clean"))

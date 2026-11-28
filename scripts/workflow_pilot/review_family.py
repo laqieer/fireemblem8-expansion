@@ -862,6 +862,10 @@ class _OwnedReview:
     interaction: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
+    interval_start: datetime | None = None
+    interval_end: datetime | None = None
+    unknown_start: bool = False
+    unknown_end: bool = False
     admitted_event_keys: frozenset[str] = frozenset()
     event_sessions: frozenset[str] = frozenset()
     report: _ReviewReport | None = None
@@ -911,6 +915,26 @@ class ReviewOwnership:
             session.identity, session.head, session.scope, session.owner,
             session.dispatch_namespace)
 
+    def retain_rejected_start(self, session, runtime):
+        if (session.identity is None
+                or self.is_closed(session.dispatch_namespace, runtime.dispatch_id, session.owner)
+                or any(record.namespace == session.dispatch_namespace
+                       and (record.dispatch == runtime.dispatch_id or record.owner == session.owner)
+                       for record in self.records.values())):
+            return False
+        starts = [event for event_session, event in runtime.events
+                  if event_session == session.dispatch_namespace
+                  and isinstance(event, dict) and event.get("type") == "subagent.started"
+                  and (event.get("agentId") == session.owner
+                       or isinstance(event.get("data"), dict)
+                       and event["data"].get("toolCallId") == runtime.dispatch_id)]
+        if not starts:
+            return False
+        self.records[session._ownership_key] = _OwnedReview(
+            session.identity, session.head, session.scope, session.owner,
+            session.dispatch_namespace, dispatch=runtime.dispatch_id)
+        return True
+
     def bind_dispatch(self, session, task):
         record = self.records[session._ownership_key]
         require(record.dispatch is None or record.dispatch == task,
@@ -926,17 +950,35 @@ class ReviewOwnership:
     def release_before_dispatch(self, session):
         self.records.pop(session._ownership_key, None)
 
+    @staticmethod
+    def _remember_interval(record, start, end, *, unknown_start=False, unknown_end=False):
+        if start is not None:
+            record.interval_start = min(record.interval_start, start) if record.interval_start else start
+        if end is not None:
+            record.interval_end = max(record.interval_end, end) if record.interval_end else end
+        record.unknown_start |= unknown_start
+        record.unknown_end |= unknown_end
+
+    @staticmethod
+    def _overlaps(left, right):
+        left_start = None if left.unknown_start else left.interval_start
+        left_end = None if left.unknown_end else left.interval_end
+        right_start = None if right.unknown_start else right.interval_start
+        right_end = None if right.unknown_end else right.interval_end
+        return ((left_start is None or right_end is None or left_start <= right_end)
+                and (left_end is None or right_start is None or right_start <= left_end))
+
     def observe_terminal(self, session, started_at, completed_at):
         record = self.records[session._ownership_key]
         start = timestamp(started_at)
         end = timestamp(completed_at)
         require(start <= end, "review task chronology is invalid")
+        self._remember_interval(record, start, end)
         overlaps = [
             other for other in self.records.values()
             if other is not record and other.state == "terminal"
             and (other.identity[:2] == record.identity[:2] or other.head == record.head)
-            and start <= timestamp(other.completed_at)
-            and timestamp(other.started_at) <= end
+            and self._overlaps(record, other)
         ]
         for other in overlaps:
             if other.report is not None and other.invalidation_reason is None:
@@ -995,60 +1037,89 @@ class ReviewOwnership:
                       and (event.get("agentId") == observed.owner
                            or isinstance(event.get("data"), dict)
                            and event["data"].get("toolCallId") == observed.dispatch)]
-            if not starts:
-                continue
             completions = [event for event in own
                            if event.get("type") == "subagent.completed"
-                           and isinstance(event.get("data"), dict)
                            and (event.get("agentId") == observed.owner
-                                or event["data"].get("toolCallId") == observed.dispatch)]
+                                or isinstance(event.get("data"), dict)
+                                and event["data"].get("toolCallId") == observed.dispatch)]
             dispatches = [event for event in own
                           if event.get("type") == "tool.execution_start"
                           and isinstance(event.get("data"), dict)
                           and event["data"].get("toolCallId") == observed.dispatch
                           and event["data"].get("toolName") == "task"]
+            if not starts:
+                if observed.started_at is None or not completions:
+                    continue
+                starts = [None]
             for start_event in starts:
-                try:
-                    start = timestamp(start_event.get("timestamp"))
-                except ReviewError:
-                    start = None
+                if start_event is None:
+                    start = timestamp(observed.started_at)
+                    data = {"interactionId": observed.interaction}
+                    valid_start = True
+                else:
+                    try:
+                        start = timestamp(start_event.get("timestamp"))
+                    except ReviewError:
+                        start = None
+                    data = start_event.get("data")
+                    valid_start = (isinstance(data, dict)
+                                   and start_event.get("agentId") == observed.owner
+                                   and data.get("toolCallId") == observed.dispatch
+                                   and data.get("agentType") == "code-review")
+                interval_owner = observed.owner if start_event is None else start_event.get("agentId")
+                paired_start = (valid_start or (
+                    isinstance(interval_owner, str) and bool(interval_owner)
+                    and isinstance(data, dict) and data.get("toolCallId") == observed.dispatch
+                    and data.get("agentType") == "code-review"))
+                if (observed.state != "terminal" and valid_start and start is not None
+                        and observed.started_at is None):
+                    observed.started_at = start_event["timestamp"]
+                    observed.interaction = data.get("interactionId")
                 end = None
-                data = start_event.get("data")
-                valid_start = (isinstance(data, dict)
-                               and start_event.get("agentId") == observed.owner
-                               and data.get("toolCallId") == observed.dispatch
-                               and data.get("agentType") == "code-review")
                 previous_end = (
                     timestamp(observed.completed_at)
                     if valid_start and start is not None and observed.state == "terminal"
                     and start == timestamp(observed.started_at) else None)
                 if previous_end is not None and len(starts) == 1 and not completions:
                     end = previous_end
-                elif valid_start and start is not None and len(starts) == len(completions) == len(dispatches) == 1:
+                elif (paired_start and start is not None and len(starts) == len(completions) == 1
+                      and (len(dispatches) == 1
+                           or not dispatches and (start_event is None
+                                                  or previous_end is not None))):
                     completion_event = completions[0]
                     interaction = data.get("interactionId")
                     try:
-                        dispatch = timestamp(dispatches[0].get("timestamp"))
+                        dispatch = (timestamp(dispatches[0].get("timestamp"))
+                                    if dispatches else start)
                         completion = timestamp(completion_event.get("timestamp"))
                     except ReviewError:
                         pass
                     else:
                         if (isinstance(interaction, str)
                                 and re.fullmatch(NAME_PATTERN, interaction) is not None
-                                and completion_event.get("agentId") == observed.owner
+                                and completion_event.get("agentId") == interval_owner
+                                and isinstance(completion_event.get("data"), dict)
                                 and completion_event["data"].get("toolCallId") == observed.dispatch
                                 and completion_event["data"].get("interactionId") in (None, interaction)
                                 and dispatch <= start <= completion):
                             end = max(completion, previous_end) if previous_end else completion
+                unknown_end = bool(completions and end is None)
+                if (observed.started_at is not None and start_event is not None
+                        and start != timestamp(observed.started_at) and end is None):
+                    unknown_end = True
+                self._remember_interval(observed, start, end,
+                                        unknown_start=start is None, unknown_end=unknown_end)
                 for other in self.records.values():
-                    if (other is observed or other.state != "terminal"
-                            or other.report is None or other.invalidation_reason is not None
+                    if (other is observed
+                            or other.interval_start is None and not other.unknown_start
                             or not (other.identity[:2] == observed.identity[:2]
                                     or other.head == observed.head)):
                         continue
-                    if ((start is None or start <= timestamp(other.completed_at))
-                            and (end is None or timestamp(other.started_at) <= end)):
-                        other.invalidation_reason = "overlapping review task observations"
+                    if self._overlaps(observed, other):
+                        if other.invalidation_reason is None:
+                            other.invalidation_reason = "overlapping review task observations"
+                        if observed.invalidation_reason is None:
+                            observed.invalidation_reason = "overlapping review task observations"
 
     def validate_closed_events(self, events, *, snapshot_namespace=None, snapshot_owner=None):
         require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
@@ -1413,10 +1484,15 @@ class CliReviewRuntime:
         started_at = starts[0].get("timestamp")
         completion = [event for session, event in self.events
                       if session == self.root_session_id
-                      and event.get("agentId") == reviewer
                       and event.get("type") == "subagent.completed"
-                      and event.get("data", {}).get("toolCallId") == self.dispatch_id]
+                      and (event.get("agentId") == reviewer
+                           or isinstance(event.get("data"), dict)
+                           and event["data"].get("toolCallId") == self.dispatch_id)]
         require(len(completion) == 1, "reviewer completion event is missing")
+        require(completion[0].get("agentId") == reviewer
+                and isinstance(completion[0].get("data"), dict)
+                and completion[0]["data"].get("toolCallId") == self.dispatch_id,
+                "reviewer completion identity is contradictory")
         require(completion[0]["data"].get("interactionId") in (None, interaction),
                 "reviewer completion interaction is contradictory")
         completed_at = completion[0].get("timestamp")
@@ -1736,7 +1812,19 @@ class ReviewSession:
         dispatched = False
         try:
             if self.owners is not None:
-                self.owners.reserve(self)
+                if isinstance(runtime, CliReviewRuntime):
+                    self.owners.validate_closed_events(runtime.events)
+                try:
+                    self.owners.reserve(self)
+                except ReviewError:
+                    if isinstance(runtime, CliReviewRuntime) and self.owners.retain_rejected_start(self, runtime):
+                        reserved = True
+                        dispatched = True
+                        runtime.assigned_owner = owner
+                        runtime.assigned_candidate = self.head
+                        runtime.assigned_subjects = tuple(sorted(self.scope))
+                        self.owners.validate_closed_events(runtime.events)
+                    raise
                 reserved = True
             if isinstance(runtime, CliReviewRuntime):
                 if self.owners is not None:
