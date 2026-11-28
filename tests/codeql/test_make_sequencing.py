@@ -188,11 +188,11 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             wrapper = actual / "bin" / "wrapper"
             wrapper.write_text(
                 "#!/usr/bin/env python3\nimport os, sys\n"
+                "if '-C' in sys.argv[1:]: raise SystemExit(0)\n"
                 "with open(os.environ['PROBE_MAKE_LOG'], 'a') as f: "
                 "f.write(sys.argv[0] + ' ' + ' '.join(sys.argv[1:]) + '\\n')\n"
                 "if 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
                 "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('analyzer\\n')\n"
-                "if '-C' in sys.argv[1:]: raise SystemExit(0)\n"
                 f"os.execv({real_make!r}, [{real_make!r}, *sys.argv[1:]])\n",
                 encoding="utf-8",
             )
@@ -207,7 +207,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 result, _ = self.run_target(selected_make=selected)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             calls = log.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(calls), 4, calls)
+            self.assertEqual(len(calls), 2, calls)
             self.assertTrue(all(call.startswith(selected + " ") for call in calls), calls)
             self.assertIn("codeql-alerts-test", calls[0])
             self.assertIn("codeql-fanalyzer-test", calls[1])
