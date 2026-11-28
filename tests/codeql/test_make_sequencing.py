@@ -38,7 +38,7 @@ def marker(path):
 
 
 class CodeqlMakeSequencingTests(unittest.TestCase):
-    def run_target(self, *, failing="", defective="", inspect_binary=False):
+    def run_target(self, *, failing="", defective="", inspect_binary=False, analyzer_alias=False):
         compiler = shutil.which("gcc")
         make = shutil.which("make")
         self.assertIsNotNone(compiler, "GCC is required by the CodeQL analyzer lane")
@@ -50,7 +50,15 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             root = Path(directory)
             work = root / "work"
             excluded = {"src", "tests", "tools", "build", "GNUmakefile", "config.autotools.mk"}
+            if analyzer_alias:
+                excluded.add("Makefile")
             overlay(ROOT, work, excluded)
+            if analyzer_alias:
+                (work / "Makefile").write_text(
+                    (ROOT / "Makefile").read_text(encoding="utf-8")
+                    + "\n.PHONY: analyzer-alias\nanalyzer-alias: codeql-fanalyzer-test\n",
+                    encoding="utf-8",
+                )
             (work / "build").mkdir()
             overlay(ROOT / "src", work / "src",
                     {"sio_core.c", "bmtrick.c", "event.c", "eventscr.c"})
@@ -103,15 +111,28 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             pkg = bindir / "pkg-config"
             pkg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             pkg.chmod(0o755)
-            submake = bindir / "submake"
-            submake.write_text(
+            observed_cc = bindir / "gcc-observer"
+            observed_cc.write_text(
                 "#!/usr/bin/env python3\nimport os, sys\n"
-                "if 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
+                "if '-fanalyzer' in sys.argv[1:]:\n"
                 "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('analyzer\\n')\n"
-                "os.execv(os.environ['PROBE_MAKE'], [os.environ['PROBE_MAKE'], *sys.argv[1:]])\n",
+                "os.execv(os.environ['PROBE_CC'], [os.environ['PROBE_CC'], *sys.argv[1:]])\n",
                 encoding="utf-8",
             )
-            submake.chmod(0o755)
+            observed_cc.chmod(0o755)
+            submake = make
+            if analyzer_alias:
+                submake = bindir / "submake"
+                submake.write_text(
+                    "#!/usr/bin/env python3\nimport os, sys\n"
+                    "args = ['analyzer-alias' if a == 'codeql-fanalyzer-test' else a "
+                    "for a in sys.argv[1:]]\n"
+                    "if args != sys.argv[1:]:\n"
+                    "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('alias\\n')\n"
+                    "os.execv(os.environ['PROBE_MAKE'], [os.environ['PROBE_MAKE'], *args])\n",
+                    encoding="utf-8",
+                )
+                submake.chmod(0o755)
             python = bindir / "python"
             python.write_text(
                 "#!/usr/bin/env python3\nimport os, sys\n"
@@ -124,12 +145,13 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             log = root / "events"
             output = root / "output"
             environment = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"],
-                               PROBE_LOG=str(log), PROBE_FAIL=failing, PROBE_MAKE=make)
+                               PROBE_LOG=str(log), PROBE_FAIL=failing, PROBE_MAKE=make,
+                               PROBE_CC=compiler)
             for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES", "MAKELEVEL"):
                 environment.pop(name, None)
             result = subprocess.run(
                 [make, "--no-print-directory", "codeql-alerts-test",
-                 f"HOST_CC={compiler}", f"CODEQL_TEST_DIR={output}",
+                 f"HOST_CC={observed_cc}", f"CODEQL_TEST_DIR={output}",
                  "CODEQL_REQUIRE_FANALYZER=1",
                  "ASSET_MAINTENANCE_GOALS=codeql-alerts-test codeql-fanalyzer-test",
                  "AUTOTOOLS_CONFIG_MK=config.autotools.mk",
@@ -155,10 +177,24 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
     def test_all_harnesses_run_before_real_analyzer(self):
         result, events = self.run_target(inspect_binary=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_harnesses_before_analyzer(events)
+
+    def assert_harnesses_before_analyzer(self, events):
         expected = {f"harness {name} detect_leaks=0 halt_on_error=1" for name in HARNESSES}
-        self.assertEqual(len(events), 4, events)
-        self.assertEqual(set(events[:-1]), expected)
-        self.assertEqual(events[-1], "analyzer")
+        self.assertIn("analyzer", events)
+        first = events.index("analyzer")
+        self.assertEqual(first, len(HARNESSES), events)
+        self.assertEqual(set(events[:first]), expected)
+        self.assertTrue(all(event == "analyzer" for event in events[first:]), events)
+
+    def test_equivalent_analyzer_alias_runs_after_harnesses(self):
+        result, events = self.run_target(analyzer_alias=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_harnesses_before_analyzer([event for event in events if event != "alias"])
+        if "alias" not in events:
+            self.skipTest("the recipe does not invoke the recursive analyzer goal")
+        self.assertEqual(events.count("alias"), 1, events)
+        self.assertLess(events.index("alias"), events.index("analyzer"))
 
     def test_configured_source_uses_fixture_makefile(self):
         with tempfile.TemporaryDirectory(prefix="codeql-configured-source-") as directory:
@@ -173,8 +209,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             with mock.patch.dict(globals(), ROOT=source):
                 result, events = self.run_target()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(events), 4, events)
-        self.assertEqual(events[-1], "analyzer")
+        self.assert_harnesses_before_analyzer(events)
 
     def test_each_harness_failure_stops_before_analyzer(self):
         for name in HARNESSES:

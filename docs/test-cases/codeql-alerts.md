@@ -7,7 +7,9 @@ profiles remain compatible.
 
 For both cases, a temporary source overlay uses real GCC and GNU Make to check
 harness execution order, failure propagation, selected sanitizer symbols and
-analyzer diagnostics. It uses synthetic sources at the three analyzed paths,
+analyzer diagnostics. The compiler observer records actual GCC `-fanalyzer`
+invocations, including when a recursive Make alias selects the analyzer.
+It uses synthetic sources at the three analyzed paths,
 not the production sources. It does not replace the real
 `make codeql-alerts-test` or ROM gates, or prove complete sanitizer
 instrumentation. The overlay stubs pkg-config, unrelated tool builds, and the
