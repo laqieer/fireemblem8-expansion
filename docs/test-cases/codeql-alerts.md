@@ -11,8 +11,10 @@ analyzer diagnostics. It uses synthetic sources at the three analyzed paths,
 not the production sources. It does not replace the real
 `make codeql-alerts-test` or ROM gates, or prove complete sanitizer
 instrumentation. The overlay stubs pkg-config, unrelated tool builds, and the
-modernization unittest. The stdlib-only workflow test separately checks
-supported and unsupported analyzer capability decisions.
+modernization unittest, and excludes generated Autoconf Make files so a
+configured checkout cannot redirect the fixtures. Recursive GNU Make itself
+runs against disposable no-op tool Makefiles. The stdlib-only workflow test
+separately checks supported and unsupported analyzer capability decisions.
 
 ## TC-SIO-084: bounded Link Arena transfer
 

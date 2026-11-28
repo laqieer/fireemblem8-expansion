@@ -38,7 +38,8 @@ def marker(path):
 
 
 class CodeqlMakeSequencingTests(unittest.TestCase):
-    def run_target(self, *, failing="", defective="", selected_make=None, inspect_binary=False):
+    def run_target(self, *, failing="", defective="", selected_make=None, inspect_binary=False,
+                   makefile_transform=None):
         compiler = shutil.which("gcc")
         make = selected_make or shutil.which("make")
         self.assertIsNotNone(compiler, "GCC is required by the CodeQL analyzer lane")
@@ -49,15 +50,26 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="codeql-sequencing-") as directory:
             root = Path(directory)
             work = root / "work"
-            overlay(ROOT, work, {"src", "tests", "tools", "build"})
+            excluded = {"src", "tests", "tools", "build", "GNUmakefile", "config.autotools.mk"}
+            if makefile_transform is not None:
+                excluded.add("Makefile")
+            overlay(ROOT, work, excluded)
+            if makefile_transform is not None:
+                (work / "Makefile").write_text(
+                    makefile_transform((ROOT / "Makefile").read_text(encoding="utf-8")),
+                    encoding="utf-8",
+                )
             (work / "build").mkdir()
             overlay(ROOT / "src", work / "src",
                     {"sio_core.c", "bmtrick.c", "event.c", "eventscr.c"})
             overlay(ROOT / "tests", work / "tests", {"codeql"})
             (work / "tests" / "codeql").mkdir()
-            overlay(ROOT / "tools", work / "tools", {"gbagfx"})
-            overlay(ROOT / "tools" / "gbagfx", work / "tools" / "gbagfx",
-                    {"convert_png.c"})
+            (work / "tools").mkdir()
+            for path in (ROOT / "tools").iterdir():
+                if path.is_dir():
+                    tool = work / "tools" / path.name
+                    tool.mkdir()
+                    (tool / "Makefile").write_text("all:\n\t@:\n%:\n\t@:\n", encoding="utf-8")
 
             for path in {source for sources in SOURCES.values() for source in sources}:
                 body = f"int {marker(path)}(void) {{ return 1; }}\n"
@@ -104,9 +116,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 "#!/usr/bin/env python3\nimport os, sys\n"
                 "if 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
                 "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('analyzer\\n')\n"
-                "    os.execv(os.environ['PROBE_MAKE'], [os.environ['PROBE_MAKE'], *sys.argv[1:]])\n"
-                "if '-C' in sys.argv[1:]: raise SystemExit(0)\n"
-                "raise SystemExit('unexpected recursive make')\n",
+                "os.execv(os.environ['PROBE_MAKE'], [os.environ['PROBE_MAKE'], *sys.argv[1:]])\n",
                 encoding="utf-8",
             )
             submake.chmod(0o755)
@@ -130,6 +140,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                  f"HOST_CC={compiler}", f"CODEQL_TEST_DIR={output}",
                  "CODEQL_REQUIRE_FANALYZER=1",
                  "ASSET_MAINTENANCE_GOALS=codeql-alerts-test codeql-fanalyzer-test",
+                 "AUTOTOOLS_CONFIG_MK=config.autotools.mk",
                  "MAKE_RESTARTS=1", f"MAKE={make if selected_make else submake}",
                  f"PYTHON={python}"],
                 cwd=work, env=environment, text=True, capture_output=True, timeout=60,
@@ -157,6 +168,22 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
         self.assertEqual(set(events[:-1]), expected)
         self.assertEqual(events[-1], "analyzer")
 
+    def test_configured_source_uses_fixture_makefile(self):
+        with tempfile.TemporaryDirectory(prefix="codeql-configured-source-") as directory:
+            source = Path(directory) / "source"
+            overlay(ROOT, source, {"GNUmakefile", "config.autotools.mk"})
+            (source / "GNUmakefile").write_text(
+                "%:\n\t$(MAKE) -C nonexistent $@\n", encoding="utf-8"
+            )
+            (source / "config.autotools.mk").write_text(
+                "$(error configured-source fragment reached the fixture)\n", encoding="utf-8"
+            )
+            with mock.patch.dict(globals(), ROOT=source):
+                result, events = self.run_target()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(events), 4, events)
+        self.assertEqual(events[-1], "analyzer")
+
     def test_each_harness_failure_stops_before_analyzer(self):
         for name in HARNESSES:
             with self.subTest(harness=name):
@@ -175,7 +202,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 self.assertIn(path, result.stderr)
                 self.assertIn(f"analyzer-{diagnostic}", result.stderr)
 
-    def test_recursive_analyzer_uses_selected_make(self):
+    def check_selected_make(self, makefile_transform=None):
         real_make = shutil.which("make")
         self.assertIsNotNone(real_make)
         with tempfile.TemporaryDirectory(prefix="codeql-make-") as directory:
@@ -188,8 +215,8 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             wrapper = actual / "bin" / "wrapper"
             wrapper.write_text(
                 "#!/usr/bin/env python3\nimport os, sys\n"
-                "if '-C' in sys.argv[1:]: raise SystemExit(0)\n"
-                "with open(os.environ['PROBE_MAKE_LOG'], 'a') as f: "
+                "if 'codeql-alerts-test' in sys.argv[1:] or 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
+                "    with open(os.environ['PROBE_MAKE_LOG'], 'a') as f: "
                 "f.write(sys.argv[0] + ' ' + ' '.join(sys.argv[1:]) + '\\n')\n"
                 "if 'codeql-fanalyzer-test' in sys.argv[1:]:\n"
                 "    with open(os.environ['PROBE_LOG'], 'a') as f: f.write('analyzer\\n')\n"
@@ -204,13 +231,34 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             selected = str(root) + "/link/../bin/make"
             log = root / "make-log"
             with mock.patch.dict(os.environ, {"PROBE_MAKE_LOG": str(log)}):
-                result, _ = self.run_target(selected_make=selected)
+                result, _ = self.run_target(selected_make=selected,
+                                            makefile_transform=makefile_transform)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             calls = log.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(calls), 2, calls)
             self.assertTrue(all(call.startswith(selected + " ") for call in calls), calls)
             self.assertIn("codeql-alerts-test", calls[0])
             self.assertIn("codeql-fanalyzer-test", calls[1])
+
+    def test_recursive_analyzer_uses_selected_make(self):
+        self.check_selected_make()
+
+    def test_equivalent_recursive_make_directory_options(self):
+        def transformed(directory_option):
+            def transform(content):
+                analyzer = "$(MAKE) --no-print-directory codeql-fanalyzer-test"
+                tool = "$(MAKE) -C tools/gbagfx"
+                self.assertIn(analyzer, content)
+                self.assertIn(tool, content)
+                return content.replace(
+                    analyzer, "$(MAKE) -C . --no-print-directory codeql-fanalyzer-test"
+                ).replace(tool, "$(MAKE) " + directory_option)
+            return transform
+
+        result, events = self.run_target(makefile_transform=transformed("-Ctools/gbagfx"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(events[-1:], ["analyzer"])
+        self.check_selected_make(makefile_transform=transformed("--directory=tools/gbagfx"))
 
 
 if __name__ == "__main__":
