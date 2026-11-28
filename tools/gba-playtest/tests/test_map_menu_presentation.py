@@ -644,10 +644,13 @@ def _cleanup_plan_removes_fixture(plan, fixture):
     return False
 
 
+def _documented_paths(cleanup):
+    return re.findall(r"(?<![\w./+-])/?[\w.+-]+(?:/[\w.+-]+)+(?![\w/+-])", cleanup)
+
+
 def _documented_fixture(cleanup, fixture):
-    paths = re.findall(r"(?<![\w./+-])/?[\w.+-]+(?:/[\w.+-]+)+(?![\w/+-])", cleanup)
     return (ROOT / fixture).resolve() in {
-        (ROOT / path.rstrip(".")).resolve() for path in paths
+        (ROOT / path.rstrip(".")).resolve() for path in _documented_paths(cleanup)
     }
 
 
@@ -1034,6 +1037,15 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             self.assertFalse(canary.exists())
             self.assertFalse(expansion_canary.exists())
 
+    def _document_with_fixture(self, document, registry_cleanup, fixture):
+        cleanup = _case_cleanup_document(document)
+        originals = [
+            path for path in _documented_paths(cleanup)
+            if _documented_fixture(registry_cleanup, path.rstrip("."))
+        ]
+        self.assertEqual(len(originals), 1)
+        return document.replace(cleanup, cleanup.replace(originals[0], str(fixture)), 1)
+
     def test_cleanup_fixture_location_resolves_symlinks_before_parent_segments(self):
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as temporary:
@@ -1049,16 +1061,16 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             case = next(
                 entry for entry in registry["cases"] if entry["id"] == "TC-MAP-MENU-168"
             )
+            original_cleanup = case["cleanup"]
             case["cleanup"] = f"The disposable fixture is {fixture}."
             registry_path = root / "registry.json"
             registry_path.write_text(json.dumps(registry), encoding="utf-8")
             document = TEST_CASE_DOCUMENT.read_text(encoding="utf-8")
-            original = (
-                "build/expansion-modern-map-menu-nine-row/debug/aapcs/"
-                "map-menu-presentation-check/debugtools-current.sav"
-            )
             document_path = root / "optional-gameplay.md"
-            document_path.write_text(document.replace(original, str(fixture)), encoding="utf-8")
+            document_path.write_text(
+                self._document_with_fixture(document, original_cleanup, fixture),
+                encoding="utf-8",
+            )
 
             def invoke_with_root(cleaned_root):
                 def invoke(command, **kwargs):
@@ -1111,18 +1123,17 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             case = next(
                 entry for entry in registry["cases"] if entry["id"] == "TC-MAP-MENU-168"
             )
+            original_cleanup = case["cleanup"]
             relocated = "outside-build-tree/debugtools-current.sav"
             case["cleanup"] = f"The disposable fixture is {relocated}."
             relocated_registry = temporary / "registry.json"
             relocated_registry.write_text(json.dumps(registry), encoding="utf-8")
             document = TEST_CASE_DOCUMENT.read_text(encoding="utf-8")
-            original = (
-                "build/expansion-modern-map-menu-nine-row/debug/aapcs/"
-                "map-menu-presentation-check/debugtools-current.sav"
-            )
-            self.assertEqual(document.count(original), 1)
             stale_document = temporary / "optional-gameplay.md"
-            stale_document.write_text(document.replace(original, relocated), encoding="utf-8")
+            stale_document.write_text(
+                self._document_with_fixture(document, original_cleanup, relocated),
+                encoding="utf-8",
+            )
 
             def invoke_equivalent(command, **kwargs):
                 command = list(command)
