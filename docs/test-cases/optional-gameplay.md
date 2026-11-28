@@ -269,7 +269,9 @@ data, EWRAM/IWRAM allocation, or archival-lane behavior changes.
   — semantic compiled-table order/composition, all-locale resolver and pixel
   bounds, help IDs/content/sizing, nine-row skirmish/dungeon availability and
   bounded frame/text geometry, shorter/story negative controls, and the
-  documented fixture's Make cleanup plan.
+  documented fixture's non-executing Make cleanup plan. The cleanup check
+  recognizes literal `rm` commands and fails closed on unsupported shell
+  syntax; it does not execute cleanup or prove actual deletion.
 - `python3 -m unittest tools.gba-playtest.tests.test_expansion_blue_phase_delegate -v`
   — the exact typed Charge visibility predicate, eligible/ineligible unit
   matrix, menu capacity, and enabled/disabled linkage.
