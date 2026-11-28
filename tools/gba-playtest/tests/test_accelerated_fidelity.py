@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,23 @@ def temporary_directory(prefix: str):
     build_root = ROOT / "build"
     build_root.mkdir(exist_ok=True)
     return tempfile.TemporaryDirectory(prefix=prefix, dir=build_root)
+
+
+def benchmark_arguments(output: Path, samples: int) -> list[str]:
+    return [
+        "--rom",
+        str(output / "fixture.gba"),
+        "--elf",
+        str(output / "fixture.elf"),
+        "--out-dir",
+        str(output),
+        "--rom-commit",
+        "0" * 40,
+        "--configuration",
+        "test",
+        "--samples",
+        str(samples),
+    ]
 
 
 def profile_data(name: str) -> dict:
@@ -574,6 +592,94 @@ class AcceleratedFidelityBackendTests(unittest.TestCase):
             {"x": 0, "y": 0, "value": "0x000000"}
         ]
         gba_playtest.validate_fingerprint(normal, "<normal-visual-evidence>", policy="behavior")
+
+    def test_invalid_benchmark_samples_clear_stale_output(self):
+        with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
+            root = Path(temporary)
+            for samples in (0, 21):
+                with self.subTest(samples=samples):
+                    output = root / str(samples)
+                    output.mkdir()
+                    benchmark = output / "accelerated-fidelity-benchmark.json"
+                    unrelated = output / "unrelated.json"
+                    benchmark.write_text('{"stale": true}\n', encoding="utf-8")
+                    unrelated.write_text('{"keep": true}\n', encoding="utf-8")
+                    with (
+                        mock.patch.object(gba_playtest, "build_backend") as backend,
+                        mock.patch.object(sys, "stderr") as error,
+                    ):
+                        result = accelerated_fidelity_checks.main(
+                            benchmark_arguments(output, samples)
+                        )
+                    self.assertEqual(result, 1)
+                    self.assertFalse(benchmark.exists())
+                    self.assertEqual(unrelated.read_text(encoding="utf-8"), '{"keep": true}\n')
+                    self.assertIn(
+                        "--samples", "".join(call.args[0] for call in error.write.call_args_list)
+                    )
+                    backend.assert_not_called()
+
+                    missing = root / f"missing-{samples}"
+                    with (
+                        mock.patch.object(gba_playtest, "build_backend") as backend,
+                        mock.patch.object(sys, "stderr") as error,
+                    ):
+                        result = accelerated_fidelity_checks.main(
+                            benchmark_arguments(missing, samples)
+                        )
+                    self.assertEqual(result, 1)
+                    self.assertFalse(missing.exists())
+                    self.assertIn(
+                        "--samples", "".join(call.args[0] for call in error.write.call_args_list)
+                    )
+                    backend.assert_not_called()
+
+    def test_benchmark_cleanup_failure_is_reported_before_running(self):
+        with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
+            output = Path(temporary)
+            benchmark = output / "accelerated-fidelity-benchmark.json"
+            benchmark.write_text('{"stale": true}\n', encoding="utf-8")
+            for samples in (0, 1):
+                with self.subTest(samples=samples):
+                    with (
+                        mock.patch.object(
+                            Path, "unlink", side_effect=PermissionError("cleanup denied")
+                        ),
+                        mock.patch.object(gba_playtest, "build_backend") as backend,
+                        mock.patch.object(sys, "stderr") as error,
+                    ):
+                        result = accelerated_fidelity_checks.main(
+                            benchmark_arguments(output, samples)
+                        )
+                    self.assertEqual(result, 1)
+                    self.assertIn(
+                        "cleanup denied",
+                        "".join(call.args[0] for call in error.write.call_args_list),
+                    )
+                    self.assertEqual(benchmark.read_text(encoding="utf-8"), '{"stale": true}\n')
+                    backend.assert_not_called()
+
+    def test_valid_benchmark_samples_create_output_before_capture(self):
+        with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:
+            root = Path(temporary)
+            output = root / "new-output"
+            with (
+                mock.patch.dict(os.environ, {"TMPDIR": str(root / "tmp")}),
+                mock.patch.object(
+                    gba_playtest,
+                    "build_backend",
+                    side_effect=accelerated_fidelity_checks.CheckError("capture stopped"),
+                ) as backend,
+                mock.patch.object(sys, "stderr") as error,
+            ):
+                result = accelerated_fidelity_checks.main(benchmark_arguments(output, 1))
+            self.assertEqual(result, 1)
+            self.assertTrue(output.is_dir())
+            self.assertFalse((output / "accelerated-fidelity-benchmark.json").exists())
+            self.assertIn(
+                "capture stopped", "".join(call.args[0] for call in error.write.call_args_list)
+            )
+            backend.assert_called_once_with(output / "gba-playtest-accelerated-fidelity-backend")
 
     def test_benchmark_failure_clears_stale_output_before_capture(self):
         with temporary_directory("gba-accelerated-fidelity-benchmark-") as temporary:

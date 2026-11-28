@@ -636,7 +636,8 @@ The generated ROM, ELF, and adapter are removed with their random directory unde
 ## TC-AUTOPLAY-ACCEL-001: Accelerated-fidelity equivalence
 
 - **Feature / originating issue:** `accelerated-fidelity-harness` /
-  [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88).
+  [#88](https://github.com/laqieer/fireemblem8-expansion/issues/88), with
+  benchmark cleanup regression [#424](https://github.com/laqieer/fireemblem8-expansion/issues/424).
 - **Dependencies, dependents, and conflicts:** depends on
   [#85](https://github.com/laqieer/fireemblem8-expansion/issues/85) telemetry,
   [#86](https://github.com/laqieer/fireemblem8-expansion/issues/86) bounded
@@ -663,8 +664,11 @@ The generated ROM, ELF, and adapter are removed with their random directory unde
    `build/expansion-modern/debug/aapcs/autoplay-accelerated-fidelity-check/accelerated-fidelity-benchmark.json`
    for the reported libmGBA version, host/runner identity, ROM provenance,
    source commit, profile names, and three non-gating wall-clock samples. This
-   success-only artifact is removed before each invocation and atomically
-   replaced only after all semantic and frame checks pass.
+   runner removes any prior success-only artifact once arguments parse
+   successfully, before sample-count validation; a removal failure is
+   reported. A new artifact is atomically published only after all semantic
+   and frame checks pass. An argument-parsing failure before a usable output
+   path is known does not clear a prior artifact.
 
 Both profiles execute every frame through `core->runFrame()` and use the same
 clean Chapter 2 route and debug-only COMPUTER activation. The accelerated
@@ -704,8 +708,12 @@ frames, an event-telemetry overflow, or a non-OFF cached presentation policy
 also fail. ROM, VRAM, palette, OAM, SRAM, or ignored-write configuration
 bindings also fail before any success-shaped profile record is emitted. A
 faster divergent action/event/RNG/flag route is therefore never
-accepted. Normal visual, audio, and presentation-timing scenarios remain on
-their existing normal-fidelity paths and fingerprints.
+accepted. The host test also starts with a stale benchmark and checks that
+sample counts 0 and 21 fail, remove it without launching the backend, and
+leave unrelated files alone; a missing output directory is not created and
+an unlink failure is reported. The unfixed runner leaves the stale artifact.
+Normal visual, audio, and presentation-timing scenarios remain on their
+existing normal-fidelity paths and fingerprints.
 
 ### Interactions and save compatibility
 

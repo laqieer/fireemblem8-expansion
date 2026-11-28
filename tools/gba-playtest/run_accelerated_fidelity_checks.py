@@ -511,14 +511,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.samples < 1 or args.samples > 20:
-            raise CheckError("--samples must be between 1 and 20")
-        args.out_dir.mkdir(parents=True, exist_ok=True)
         benchmark_path = args.out_dir / "accelerated-fidelity-benchmark.json"
         try:
             benchmark_path.unlink()
         except FileNotFoundError:
             pass
+        if args.samples < 1 or args.samples > 20:
+            raise CheckError("--samples must be between 1 and 20")
+        args.out_dir.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("TMPDIR", str(args.out_dir / "tmp"))
         Path(os.environ["TMPDIR"]).mkdir(parents=True, exist_ok=True)
         backend = args.out_dir / "gba-playtest-accelerated-fidelity-backend"
