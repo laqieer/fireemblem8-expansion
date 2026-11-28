@@ -896,7 +896,9 @@ An observed completed turn permits aborting an invalid review without
 admitting it; missing completion keeps the lease active. Later activity
 still rejects admission and never proves technical task termination.
 The dispatched instructions, start and receipt must also match the records
-validated at `begin`; a changed snapshot cannot admit a report. A newly observed
+validated at `begin`, including when the coordinator supplies a replacement
+runtime. Its Git reader must match the session's frozen root, base and head.
+A changed snapshot cannot admit a report. A newly observed
 dispatch or lifecycle event reusing a closed dispatch in its root invalidates
 that report even if it names a different reviewer.
 
@@ -917,8 +919,11 @@ not authenticated provenance from a JSON author.
 At logical closure, the shared ownership index captures the exact review
 activity records validated for that task. The initial reviewer snapshot is
 checked against the assigned interaction, dispatch and task interval before
-any activity enters this baseline. Each review's own complete snapshots
-compare its captured event records with that validated closure snapshot; an
+any activity enters this baseline. Supply an owning complete snapshot through
+`observe_cli_events(events, complete=True)`, or
+`review_state(..., cli_events=events, cli_events_complete=True)`. It compares
+captured records against the validated closure snapshot; ordinary observations
+are incremental and cannot establish that a record is missing. An
 older sibling snapshot cannot establish that a newer review lost records.
 Later aggregate observations still propagate attributable new activity to
 the owning review. Previously unseen review

@@ -1587,6 +1587,72 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 self.assertIsNone(session.report)
                 session.abort(runtime)
 
+    def test_replacement_runtime_keeps_original_assignment(self):
+        for changed in (False, True):
+            with self.subTest(changed=changed), snapshot() as root:
+                fixture, original, session, events, _, reviewer, _ = self.native_runtime(root)
+                session.begin(original, reviewer)
+                replacement_events = copy.deepcopy(events)
+                if changed:
+                    replacement_events[0][1]["timestamp"] = "2026-01-01T00:00:00.500Z"
+                replacement = model.CliReviewRuntime(
+                    replacement_events, dispatch_id=original.dispatch_id,
+                    root_session_id=original.root_session_id,
+                    candidate_reader=original.candidate_reader,
+                    required_reads=original.required_reads)
+                replacement.start(owner=reviewer, candidate=fixture["head"],
+                                  subjects=session.scope, duration=1200)
+                if changed:
+                    with self.assertRaisesRegex(model.ReviewError, "original validated records"):
+                        session.finish(replacement)
+                    session.abort(original)
+                else:
+                    self.assertEqual(session.finish(replacement).head, fixture["head"])
+
+    def test_complete_snapshot_compares_the_original_records(self):
+        for change in ("none", "removed", "different-owner"):
+            with self.subTest(change=change), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                session.begin(runtime, reviewer)
+                session.finish(runtime)
+                refreshed = copy.deepcopy(events)
+                if change == "removed":
+                    del refreshed[3]
+                elif change == "different-owner":
+                    refreshed[3][1]["agentId"] = "another-reviewer"
+                if change == "none":
+                    session.observe_cli_events(refreshed, complete=True)
+                    session.observe_cli_events(())
+                    self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+                else:
+                    with self.assertRaisesRegex(model.ReviewError, "changed or removed"):
+                        session.review_state(
+                            (), (), pre_review_required=True, cli_events=refreshed,
+                            cli_events_complete=True)
+
+    def test_cli_runtime_and_session_must_use_the_same_candidate_root(self):
+        for changed_at in ("begin", "finish"):
+            with self.subTest(changed_at=changed_at), snapshot() as root, \
+                    tempfile.TemporaryDirectory(dir=root.root.parent) as temporary:
+                fixture, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+                other = Path(temporary) / "other-checkout"
+                subprocess.run(
+                    ["/usr/bin/git", "clone", "--quiet", "--shared", str(root.root), str(other)],
+                    env=support.ENV, check=True)
+                tools = gate.ReviewTools(gate.GitTree(other, fixture["head"]), other)
+                other_reader = tools.candidate_reader(fixture["base"], fixture["head"])
+                if changed_at == "begin":
+                    session.readers["read-candidate"] = other_reader
+                    with self.assertRaisesRegex(model.ReviewError, "candidate binding"):
+                        session.begin(runtime, reviewer)
+                else:
+                    session.begin(runtime, reviewer)
+                    runtime.candidate_reader = other_reader
+                    with self.assertRaisesRegex(model.ReviewError, "candidate binding"):
+                        session.finish(runtime)
+                    session.abort(runtime)
+                self.assertIsNone(session.report)
+
     def test_observed_dispatch_reuse_invalidates_only_its_original_review(self):
         with snapshot() as root:
             _, runtime, session, events, times, reviewer, interaction = self.native_runtime(root)

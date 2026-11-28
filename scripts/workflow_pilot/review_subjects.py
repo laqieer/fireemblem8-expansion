@@ -2510,7 +2510,7 @@ def _session_probe(probe: str) -> dict:
                 [[path, side, target["tool_path"], target["encoding"]]
                  for (path, side), target in sorted(targets.items())],
                 ensure_ascii=True, separators=(",", ":"))
-            prompt = module._review_instructions(b, scope, assigned)
+            prompt = review._review_instructions(b, scope, assigned)
 
             def native_event(kind, second, agent, data):
                 return ("root-b", {
@@ -2581,14 +2581,12 @@ def _session_probe(probe: str) -> dict:
                 "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
                 "agentId": "reviewer-b", "data": {"turnId": "late"},
             })
+            native.events = tuple(events) + (late_b,)
+            check(rejects(lambda: native.read("dispatch-b")),
+                  "late reviewer activity was admitted")
             native.events = first.latest_cli_events + tuple(events) + (late_a, late_b)
-            try:
-                second.finish(native)
-            except module.ReviewError as error:
-                check("outside its assigned task" in str(error),
-                      "terminal rejection was not caused by late reviewer activity")
-            else:
-                raise ContractViolation("late reviewer activity was admitted")
+            check(rejects(lambda: second.finish(native)),
+                  "late reviewer activity was admitted at terminal")
             check(rejects(lambda: first.review_state(
                 (), (), pre_review_required=True)),
                 "failed terminal read lost another closed reviewer's late activity")

@@ -1571,6 +1571,7 @@ class ReviewSession:
         self.candidate_binding: CandidateBinding | None = None
         self.task: str | None = None
         self.dispatch_namespace: str | None = None
+        self.assignment_event_keys = None
         self.latest_cli_events = ()
         self.event_sources = []
         self._ownership_key = object()
@@ -1640,6 +1641,9 @@ class ReviewSession:
                 require(runtime.required_reads, "review assignment has no candidate paths")
                 if self.owners is not None:
                     self.owners.bind_dispatch(self, runtime.dispatch_id)
+                require(candidate_reader is not None
+                        and candidate_tree_binding(runtime.candidate_reader) == binding,
+                        "review runtime candidate binding differs from the assigned reader")
             instructions = _review_instructions(self.head, self.scope, assigned_reads)
             dispatched = True
             task = runtime.start(
@@ -1650,6 +1654,8 @@ class ReviewSession:
             )
             require(isinstance(task, str) and bool(task.strip()),
                     "runtime task identity must be a nonblank string")
+            if isinstance(runtime, CliReviewRuntime):
+                self.assignment_event_keys = runtime.assignment_event_keys
             if self.owners is not None:
                 self.owners.bind_dispatch(self, task)
         except Exception:
@@ -1717,11 +1723,22 @@ class ReviewSession:
                 "failed review start may only be retired without admission")
         require(getattr(runtime, "root_session_id", None) == self.dispatch_namespace,
                 "review runtime root session differs from the assigned task")
+        if self.assignment_event_keys is not None and not terminal:
+            require(isinstance(runtime, CliReviewRuntime),
+                    "review runtime no longer supplies the assigned CLI observations")
+        if isinstance(runtime, CliReviewRuntime) and not terminal:
+            require(self.candidate_binding is not None
+                    and candidate_tree_binding(runtime.candidate_reader) == self.candidate_binding,
+                    "review runtime candidate binding differs from the assigned reader")
         if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
             self.owners.validate_closed_events(
                 runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
         reader = getattr(runtime, "read_terminal", None) if terminal else None
         result = reader(lease.task) if callable(reader) else runtime.read(lease.task)
+        if isinstance(runtime, CliReviewRuntime) and not terminal:
+            require(self.assignment_event_keys is not None
+                    and runtime.assignment_event_keys == self.assignment_event_keys,
+                    "review assignment differs from the original validated records")
         if self.owners is not None and hasattr(result, "cli_events"):
             self.owners.validate_closed_events(
                 result.cli_events, snapshot_namespace=self.dispatch_namespace, snapshot_owner=self)
@@ -1899,16 +1916,18 @@ class ReviewSession:
         self.report = report
         return report
 
-    def observe_cli_events(self, events) -> None:
+    def observe_cli_events(self, events, *, complete=False) -> None:
         require(isinstance(events, (tuple, list)), "CLI event observations must be a collection")
-        self.latest_cli_events = self.latest_cli_events + tuple(events)
+        require(type(complete) is bool, "CLI snapshot completeness must be explicit")
+        if complete:
+            self.latest_cli_events = tuple(events)
         if self.owners is not None:
             record = self.owners.record_for(self)
             if record is not None and record.state == "terminal":
                 self.event_sources.append(events)
             self.owners.validate_closed_events(
-                self.latest_cli_events, snapshot_namespace=self.dispatch_namespace,
-                snapshot_owner=self)
+                events, snapshot_namespace=self.dispatch_namespace if complete else None,
+                snapshot_owner=self if complete else None)
             self.owners.validate_session(self)
 
     def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
@@ -1972,9 +1991,11 @@ class ReviewSession:
             if fact.id in current and current[fact.id] != fact:
                 self.triage(Triage(fact, "untriaged"))
 
-    def review_state(self, facts, triage, *, pre_review_required, cli_events=()):
-        if cli_events:
-            self.observe_cli_events(cli_events)
+    def review_state(self, facts, triage, *, pre_review_required, cli_events=(),
+                     cli_events_complete=False):
+        require(type(cli_events_complete) is bool, "CLI snapshot completeness must be explicit")
+        if cli_events or cli_events_complete:
+            self.observe_cli_events(cli_events, complete=cli_events_complete)
         if pre_review_required and self.owners is not None:
             self.owners.validate_session(self)
         require(len({fact.id for fact in facts}) == len(facts), "duplicate remote review")

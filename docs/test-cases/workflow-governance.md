@@ -1281,7 +1281,13 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    owner. The pre-fix negative control invalidates the newer report.
    Change the dispatch prompt, reviewer start timestamp, or receipt source
    after `begin`: each must reject admission, while terminal-only abort still
-   retires the observed task. After closure, reuse the dispatch ID in the same
+   retires the observed task. Repeat with a separately initialized runtime:
+   unchanged original records admit, but altered assignment records reject.
+   Use identical candidate Git objects from two checkout roots; a runtime and
+   session bound to different roots must reject at begin or finish.
+   Submit an explicitly complete owning snapshot with a removed or re-owned
+   admitted event: readiness must reject. An incremental observation does not
+   claim snapshot completeness. After closure, reuse the dispatch ID in the same
    root with a different reviewer; the original report must be invalidated.
    The same ID in a different root does not invalidate it.
    Drop the last external reference to an active or completed session and
