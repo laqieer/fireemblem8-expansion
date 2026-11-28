@@ -1772,15 +1772,23 @@ class ReviewSession:
         if self.assignment_event_keys is not None and not terminal:
             require(isinstance(runtime, CliReviewRuntime),
                     "review runtime no longer supplies the assigned CLI observations")
-        if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
-            self.owners.validate_closed_events(
-                runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
+        if isinstance(runtime, CliReviewRuntime):
+            if self.owners is not None:
+                self.owners.validate_closed_events(
+                    runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
             observed = runtime.read_terminal(lease.task)
             require(observed.task == lease.task and observed.owner == lease.owner
                     and observed.role == "code-review" and observed.head == lease.head
                     and frozenset(observed.subjects) == lease.scope and observed.completed is True,
                     "wrong or stale runtime task observation")
-            self.owners.observe_terminal(self, observed.started_at, observed.completed_at)
+            if self.owners is not None:
+                self.owners.observe_terminal(self, observed.started_at, observed.completed_at)
+            duration = (timestamp(observed.completed_at)
+                        - timestamp(observed.started_at)).total_seconds()
+            if not terminal and (self.clock() > lease.deadline
+                                 or duration > lease.deadline - lease.started):
+                self._retire(observed, "timed-out")
+                raise ReviewError("review exceeded duration bound")
         if isinstance(runtime, CliReviewRuntime) and not terminal:
             require(self.candidate_binding is not None
                     and candidate_tree_binding(runtime.candidate_reader) == self.candidate_binding,

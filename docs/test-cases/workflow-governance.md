@@ -1370,6 +1370,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    Admit an exact instruction receipt or its observed native datetime envelope;
    reject extra preceding or appended permissions and malformed envelopes using
    `CliReviewRuntimeTests.test_instruction_receipt_rejects_unassigned_permissions`.
+   A completed overlong CLI task retires as timed out without admitting its
+   report; a missing terminal remains reserved. Exercise
+   `CliReviewRuntimeTests.test_completed_overlong_cli_review_releases_as_timeout`.
    These controls cannot prevent a task that was already dispatched.
    Include assigned unchanged regular blobs on both frozen sides as supporting
    context and report a finding against the observed head blob. Missing changed

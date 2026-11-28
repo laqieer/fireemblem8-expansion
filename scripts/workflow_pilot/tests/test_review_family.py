@@ -1791,6 +1791,16 @@ class CliReviewRuntimeTests(unittest.TestCase):
                         session.begin(runtime, reviewer)
                     session.abort(runtime)
 
+    def test_completed_overlong_cli_review_releases_as_timeout(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer, duration=5)
+            with self.assertRaisesRegex(model.ReviewError, "duration bound"):
+                session.finish(runtime)
+            self.assertTrue(session.lease.finished)
+            self.assertEqual(session.lease.outcome, "timed-out")
+            self.assertIsNone(session.report)
+
     def test_request_scope_and_cli_findings_accept_long_valid_joined_keys(self):
         for case_id, subject in (
             ("TC-WORKFLOW-REVIEW-FAMILY-001", "x" * 160),
@@ -2628,8 +2638,11 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 session.begin(runtime, reviewer, duration=5 if case == "overlong" else 1200)
                 with self.assertRaisesRegex(model.ReviewError, "duplicate|duration"):
                     session.finish(runtime)
-                session.abort(runtime)
-                self.assertEqual(session.lease.outcome, "aborted")
+                if case == "overlong":
+                    self.assertEqual(session.lease.outcome, "timed-out")
+                else:
+                    session.abort(runtime)
+                    self.assertEqual(session.lease.outcome, "aborted")
 
     def test_deleted_path_finding_can_bind_to_observed_base_side(self):
         with snapshot() as root:
