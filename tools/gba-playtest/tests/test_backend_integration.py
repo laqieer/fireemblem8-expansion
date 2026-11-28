@@ -23,23 +23,17 @@ def fixture_scenario():
             "frames": [{"start": 2, "end": 2, "keys": ["A"]}],
             "checkpoints": [
                 {
-                    "name": "released",
-                    "frame": 1,
+                    "name": name,
+                    "frame": frame,
                     "framebuffer": True,
                     "probes": [{"address": "0x02000000", "size": 4}],
-                },
-                {
-                    "name": "a-held",
-                    "frame": 2,
-                    "framebuffer": True,
-                    "probes": [{"address": "0x02000000", "size": 4}],
-                },
-                {
-                    "name": "released-again",
-                    "frame": 3,
-                    "framebuffer": True,
-                    "probes": [{"address": "0x02000000", "size": 4}],
-                },
+                    "regions": [
+                        {"name": "changed", "x": 0, "y": 0, "width": 2, "height": 2},
+                        {"name": "unchanged", "x": 10, "y": 10, "width": 2, "height": 2},
+                    ],
+                    "pixel_probes": [{"x": 0, "y": 0}],
+                }
+                for name, frame in (("released", 1), ("a-held", 2), ("released-again", 3))
             ],
         }
     )
@@ -95,6 +89,24 @@ class BackendIntegrationTests(unittest.TestCase):
             self.assertEqual(released["probes"][0]["value"], "0x000003ff")
             self.assertEqual(held["probes"][0]["value"], "0x000003fe")
             self.assertEqual(released_again["probes"][0]["value"], "0x000003ff")
+
+            region_hashes = [
+                {region["name"]: region["hash"] for region in checkpoint["regions"]}
+                for checkpoint in (released, held, released_again)
+            ]
+            self.assertNotEqual(region_hashes[0]["changed"], region_hashes[1]["changed"])
+            self.assertEqual(region_hashes[0]["changed"], region_hashes[2]["changed"])
+            self.assertEqual(
+                [hashes["unchanged"] for hashes in region_hashes],
+                [region_hashes[0]["unchanged"]] * 3,
+            )
+            self.assertEqual(
+                [
+                    checkpoint["pixel_probes"][0]["value"]
+                    for checkpoint in (released, held, released_again)
+                ],
+                ["0x0000ff", "0xff0000", "0x0000ff"],
+            )
 
             self.assertEqual(
                 gba_playtest.compare_fingerprints(first, second, "exact-rom"), []
@@ -155,6 +167,20 @@ class BackendIntegrationTests(unittest.TestCase):
                                 "size": probe.size,
                             }
                             for probe in checkpoint.probes
+                        ],
+                        "regions": [
+                            {
+                                "name": region.name,
+                                "x": region.x,
+                                "y": region.y,
+                                "width": region.width,
+                                "height": region.height,
+                            }
+                            for region in checkpoint.regions
+                        ],
+                        "pixel_probes": [
+                            {"x": pixel.x, "y": pixel.y}
+                            for pixel in checkpoint.pixel_probes
                         ],
                     }
                     for checkpoint in scenario.checkpoints
