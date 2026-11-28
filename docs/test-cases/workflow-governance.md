@@ -1332,6 +1332,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    controls accept the other runtime and lose A's invalidation while B is stuck.
    The terminal family probe must admit an otherwise valid CLI finish and
    reject a mutation that makes all CLI finishes fail after event propagation.
+   Its shared-late-activity scenario also uses nonoverlapping task intervals;
+   suppressing propagation from the second snapshot must fail the terminal
+   member rather than be masked by overlap invalidation.
    Before closure, include a reviewer message with a contradictory interaction
    and a second `subagent.started` event for another dispatch in the original
    snapshot. Each must reject admission and leave the report unpublished;

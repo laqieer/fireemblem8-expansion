@@ -2515,7 +2515,7 @@ def _session_probe(probe: str) -> dict:
 
             def native_event(kind, second, agent, data):
                 return ("root-b", {
-                    "type": kind, "timestamp": f"2026-01-01T00:00:{second:02d}Z",
+                    "type": kind, "timestamp": f"2026-01-01T00:01:{second:02d}Z",
                     "agentId": agent, "data": data,
                 })
 
@@ -2586,12 +2586,14 @@ def _session_probe(probe: str) -> dict:
             second.begin(native, "reviewer-b")
             check(len(native.read("dispatch-b").candidate_reads) == 2,
                   "valid terminal baseline was not readable")
+            check(first.review_state((), (), pre_review_required=True)[0],
+                  "first review was invalidated before the late observation")
             late_a = ("root-a-reviewer", {
-                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:02:00Z",
                 "agentId": "reviewer-a", "data": {"turnId": "late"},
             })
             late_b = ("root-b", {
-                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:02:00Z",
                 "agentId": "reviewer-b", "data": {"turnId": "late"},
             })
             native.events = tuple(events) + (late_b,)

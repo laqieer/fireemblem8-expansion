@@ -1323,6 +1323,22 @@ class SubjectTests(SubjectTestCase):
         self.assertEqual(len(terminal), 1)
         self.assertEqual(terminal[0].verdict, "contract-violation", terminal[0].detail)
 
+    def test_terminal_subject_rejects_lost_shared_late_activity(self):
+        path = "scripts/workflow_pilot/review_family.py"
+        source = (self.repo.root / path).read_text()
+        original = "    def validate_closed_events(self, events, *, snapshot_namespace=None, snapshot_owner=None):\n"
+        broken = source.replace(
+            original, original + '        if snapshot_namespace == "root-b":\n'
+            '            return\n')
+        self.assertNotEqual(source, broken)
+        revision = self.repo.commit({path: broken})
+        lifecycle = tuple(item for item in self.tools.members(self.scope("session", revision))
+                          if item.family == "lifecycle")
+        observed = self.run_members(lifecycle, revision)
+        terminal = tuple(item for item in observed if item.obligation.probe == "lifecycle:terminals")
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0].verdict, "contract-violation", terminal[0].detail)
+
     def test_immutable_git_bytes_not_reopened_worktree_and_no_fsmonitor(self):
         tree = GitTree(self.repo.root, self.repo.base)
         path = "scripts/workflow_pilot/review_family.py"
