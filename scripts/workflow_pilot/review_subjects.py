@@ -2563,6 +2563,18 @@ def _session_probe(probe: str) -> dict:
                     "toolCallId": "dispatch-b", "success": True,
                 }),
             ))
+            baseline_runtime = module.CliReviewRuntime(
+                events, dispatch_id="dispatch-b", root_session_id="root-b",
+                candidate_reader=reader, required_reads=targets)
+            baseline = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 2, a), owners=module.ReviewOwnership(),
+                readers={"read-candidate": reader})
+            baseline.begin(baseline_runtime, "reviewer-b")
+            check(not rejects(lambda: baseline.finish(baseline_runtime)),
+                  "valid CLI terminal did not admit its report")
+            check(baseline.report is not None and baseline.report.head == b,
+                  "valid CLI terminal published the wrong report")
             native = module.CliReviewRuntime(
                 events, dispatch_id="dispatch-b", root_session_id="root-b",
                 candidate_reader=reader, required_reads=targets)

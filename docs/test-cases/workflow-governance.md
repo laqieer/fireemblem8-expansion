@@ -1286,7 +1286,8 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    Use identical candidate Git objects from two checkout roots; a runtime and
    session bound to different roots must reject at begin or finish.
    Submit an explicitly complete owning snapshot with a removed or re-owned
-   admitted event: readiness must reject. An incremental observation does not
+   admitted event, including for a rootless runtime: readiness must reject.
+   An incremental observation does not
    claim snapshot completeness. After closure, reuse the dispatch ID in the same
    root with a different reviewer; the original report must be invalidated.
    The same ID in a different root does not invalidate it.
@@ -1313,10 +1314,13 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    runtime must reject without releasing it; each matching runtime must still
    finish. For shared ownership, include late activity for an already closed
    reviewer A and active reviewer B in B's aggregate snapshot. B's failed
-   finish must invalidate A immediately, and B's observed completed turn must
+   finish must invalidate A immediately, even when B's candidate binding is
+   mismatched, and B's observed completed turn must
    permit abort without publishing a report. A missing B completion must keep
    its lease and overlapping-review exclusion active. The pre-fix negative
    controls accept the other runtime and lose A's invalidation while B is stuck.
+   The terminal family probe must admit an otherwise valid CLI finish and
+   reject a mutation that makes all CLI finishes fail after event propagation.
    Before closure, include a reviewer message with a contradictory interaction
    and a second `subagent.started` event for another dispatch in the original
    snapshot. Each must reject admission and leave the report unpublished;

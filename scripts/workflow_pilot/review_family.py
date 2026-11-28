@@ -963,7 +963,7 @@ class ReviewOwnership:
         require(snapshot_namespace is None
                 or isinstance(snapshot_namespace, str) and bool(snapshot_namespace.strip()),
                 "invalid CLI event snapshot namespace")
-        if snapshot_namespace is not None:
+        if snapshot_owner is not None:
             snapshot_keys = {}
             for record in events:
                 if (not isinstance(record, (tuple, list)) or len(record) != 2
@@ -1726,13 +1726,13 @@ class ReviewSession:
         if self.assignment_event_keys is not None and not terminal:
             require(isinstance(runtime, CliReviewRuntime),
                     "review runtime no longer supplies the assigned CLI observations")
+        if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
+            self.owners.validate_closed_events(
+                runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
         if isinstance(runtime, CliReviewRuntime) and not terminal:
             require(self.candidate_binding is not None
                     and candidate_tree_binding(runtime.candidate_reader) == self.candidate_binding,
                     "review runtime candidate binding differs from the assigned reader")
-        if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
-            self.owners.validate_closed_events(
-                runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
         reader = getattr(runtime, "read_terminal", None) if terminal else None
         result = reader(lease.task) if callable(reader) else runtime.read(lease.task)
         if isinstance(runtime, CliReviewRuntime) and not terminal:

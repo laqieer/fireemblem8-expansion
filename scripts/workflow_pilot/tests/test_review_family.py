@@ -1630,6 +1630,30 @@ class CliReviewRuntimeTests(unittest.TestCase):
                             (), (), pre_review_required=True, cli_events=refreshed,
                             cli_events_complete=True)
 
+    def test_rootless_complete_snapshot_detects_removed_admitted_event(self):
+        with snapshot() as root:
+            fixture, native, _, _, _, _, _ = self.native_runtime(root)
+            session = model.ReviewSession(
+                "coordinator", "implementer", frozenset({model.subject_key(request()["subjects"][0])}),
+                fixture["head"], identity=("owner/repo", 1, fixture["base"]),
+                owners=model.ReviewOwnership(), readers={"read-candidate": native.candidate_reader})
+            runtime = Runtime(session.head, session.scope)
+            reads = tuple(target["summary"] for target in native.required_reads.values())
+            runtime.result.files = len(reads)
+            runtime.result.candidate_reads = reads
+            event = ("reviewer-session", {
+                "type": "assistant.message", "timestamp": "2026-01-01T00:00:00Z",
+                "agentId": "reviewer", "data": {"interactionId": "interaction-1",
+                                                "turnId": "turn-0"},
+            })
+            runtime.result.cli_events = (event,)
+            session.begin(runtime, "reviewer")
+            session.finish(runtime)
+            session.observe_cli_events((event,), complete=True)
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            with self.assertRaisesRegex(model.ReviewError, "changed or removed"):
+                session.observe_cli_events((), complete=True)
+
     def test_cli_runtime_and_session_must_use_the_same_candidate_root(self):
         for changed_at in ("begin", "finish"):
             with self.subTest(changed_at=changed_at), snapshot() as root, \
@@ -1652,6 +1676,35 @@ class CliReviewRuntimeTests(unittest.TestCase):
                         session.finish(runtime)
                     session.abort(runtime)
                 self.assertIsNone(session.report)
+
+    def test_candidate_binding_failure_still_propagates_late_sibling_activity(self):
+        with snapshot() as root, tempfile.TemporaryDirectory(dir=root.root.parent) as temporary:
+            owners = model.ReviewOwnership()
+            fixture, first_runtime, first, _, _, reviewer, _ = self.native_runtime(
+                root, root_session_id="root-first")
+            first.owners = owners
+            first.begin(first_runtime, reviewer)
+            first.finish(first_runtime)
+            _, runtime, second, events, _, reviewer, _ = self.native_runtime(
+                root, root_session_id="root-second")
+            second.owners = owners
+            second.begin(runtime, reviewer)
+            other = Path(temporary) / "other-checkout"
+            subprocess.run(
+                ["/usr/bin/git", "clone", "--quiet", "--shared", str(root.root), str(other)],
+                env=support.ENV, check=True)
+            tools = gate.ReviewTools(gate.GitTree(other, fixture["head"]), other)
+            runtime.candidate_reader = tools.candidate_reader(fixture["base"], fixture["head"])
+            late = ("root-first", {
+                "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                "agentId": reviewer, "data": {"turnId": "late"},
+            })
+            runtime.events = tuple(events) + (late,)
+            with self.assertRaisesRegex(model.ReviewError, "candidate binding"):
+                second.finish(runtime)
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                first.review_state((), (), pre_review_required=True)
+            second.abort(runtime)
 
     def test_observed_dispatch_reuse_invalidates_only_its_original_review(self):
         with snapshot() as root:
