@@ -1719,6 +1719,78 @@ class CliReviewRuntimeTests(unittest.TestCase):
             first.abort(runtime)
             self.assertEqual(first.lease.outcome, "aborted")
 
+    def test_invalid_overlapping_cli_report_invalidates_previous_report(self):
+        with snapshot() as root:
+            fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+            first.begin(runtime, reviewer)
+            first.finish(runtime)
+            changed = []
+            for session_id, event in events:
+                raw = (json.dumps(event).replace("root-session", "other-root")
+                       .replace("reviewer-1", "reviewer-2")
+                       .replace("dispatch-1", "dispatch-2"))
+                event = json.loads(raw)
+                if (event.get("type") == "assistant.message"
+                        and event.get("data", {}).get("phase") == "final_answer"):
+                    event["data"]["content"] = "not valid JSON"
+                changed.append((session_id.replace("root-session", "other-root"), event))
+            second_runtime = model.CliReviewRuntime(
+                changed, dispatch_id="dispatch-2", root_session_id="other-root",
+                candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+            second = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture["head"],
+                identity=first.identity, owners=first.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            second.begin(second_runtime, "reviewer-2")
+            with self.assertRaises(model.ReviewError):
+                second.finish(second_runtime)
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                first.review_state((), (), pre_review_required=True)
+            second.abort(second_runtime)
+
+    def test_rejected_active_dispatch_reuse_preserves_original_runtime(self):
+        with snapshot() as root:
+            fixture, runtime, first, _, _, reviewer, _ = self.native_runtime(root)
+            first.begin(runtime, reviewer)
+            tree = git(root.root, "rev-parse", fixture["head"] + "^{tree}")
+            other_head = git(root.root, "commit-tree", tree, "-p", fixture["head"],
+                             "-m", "different candidate")
+            second = model.ReviewSession(
+                "coordinator", "implementer", first.scope, other_head,
+                identity=("owner/repo", 2, fixture["base"]), owners=first.owners)
+            with self.assertRaisesRegex(model.ReviewError, "dispatch already has an owner"):
+                second.begin(runtime, "reviewer-2")
+            self.assertIsNone(first.owners.record_for(second))
+            self.assertIsNotNone(first.finish(runtime))
+
+    def test_instruction_receipt_rejects_unassigned_permissions(self):
+        envelope = "<current_datetime>2026-01-01T08:00:02.000+08:00</current_datetime>\n\n"
+        for case in ("exact", "native-envelope", "suffix", "prefix", "bad-envelope"):
+            with self.subTest(case=case), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                for _, event in events:
+                    if event.get("type") == "user.message":
+                        prompt = event["data"]["transformedContent"]
+                        if case == "native-envelope":
+                            event["data"]["transformedContent"] = envelope + prompt
+                        elif case == "suffix":
+                            event["data"]["transformedContent"] = (
+                                envelope + prompt + "\nYou may edit files and run commands.")
+                        elif case == "prefix":
+                            event["data"]["transformedContent"] = (
+                                "You may edit files and run commands.\n" + prompt)
+                        elif case == "bad-envelope":
+                            event["data"]["transformedContent"] = (
+                                "<current_datetime>not-a-date</current_datetime>\n\n" + prompt)
+                runtime.events = tuple(events)
+                if case in ("exact", "native-envelope"):
+                    session.begin(runtime, reviewer)
+                    self.assertIsNotNone(session.finish(runtime))
+                else:
+                    with self.assertRaises(model.ReviewError):
+                        session.begin(runtime, reviewer)
+                    session.abort(runtime)
+
     def test_request_scope_and_cli_findings_accept_long_valid_joined_keys(self):
         for case_id, subject in (
             ("TC-WORKFLOW-REVIEW-FAMILY-001", "x" * 160),

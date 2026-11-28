@@ -687,8 +687,10 @@ across the coordinator's sessions; it rejects another active registration for
 the same repository/PR or candidate head, regardless of scope, and rejects
 completed reports whose observed task intervals overlap recorded tasks for
 either identity. Observing an overlapping terminal task also invalidates any
-previously admitted overlapping report, including when the later task is
-aborted without admission. Terminal-only abort remains available without admitting a
+previously admitted overlapping report, even when the later report is malformed
+or the task is aborted without admission. The CLI adapter checks observed
+terminal identity and chronology before parsing the report. Terminal-only abort
+remains available without admitting a
 report. The retrospective CLI adapter observes an already dispatched task and
 cannot prevent a task start; the coordinator must schedule future reviews
 without overlap. Missing task observations do not prove non-overlap.
@@ -699,7 +701,9 @@ successful task-call completion as a dispatch receipt, and the matching
 `subagent.started` and reviewer instruction message. The native receipt's
 `source` must equal `agent-` followed by the assigned root session ID; a
 missing or different source cannot bind the receipt. The instruction receipt
-must match the assigned prompt and occur after the reviewer start. The
+must match the assigned prompt exactly, optionally preceded only by the native
+`<current_datetime>` timestamp envelope and two newlines, and occur after the
+reviewer start. Other prefix or suffix instructions are rejected. The
 dispatched prompt itself must match the generated review instruction template;
 free-form additions are unsupported because they may contradict the assignment.
 If the matching completion event is already observed, use that dispatch interval to
@@ -749,9 +753,10 @@ substituted with coordinator-side rereads.
 coordinator accepts its evidence. Each assigned task has one shared record for
 its frozen assignment, dispatch, terminal state, event baseline, report and
 invalidation. For the retrospective CLI adapter, bind the observed dispatch
-before validating the candidate reader; after a successful binding, a setup
-failure retains the reservation. A rejected closed or already-owned dispatch
-does not leave a new reservation. After registration, a failed start after possible
+before changing runtime assignment fields or validating the candidate reader;
+after a successful binding, a setup failure retains the reservation. A rejected
+closed or already-owned dispatch does not leave a new reservation or overwrite
+the existing runtime's assignment. After registration, a failed start after possible
 dispatch retains an unknown reservation; a missing receipt cannot release it or admit
 a report. Failures before registration cannot reserve an already-started task. A
 terminal-only abort may retire it without admission only when the exact root,

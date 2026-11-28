@@ -1351,17 +1351,25 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    exclusion still blocks a second active registration for one PR or head while
    logically closed reviewers cannot be reused. For recorded task intervals,
    reject overlapping completed reports for the same PR or head and invalidate
-   previously admitted overlapping reports, including when the later task is
-   aborted. Admit ordered or unrelated tasks, and allow terminal-only abort
+   previously admitted overlapping reports before parsing a malformed later
+   report, including when the later task is aborted. Admit ordered or unrelated
+   tasks, and allow terminal-only abort
    after a rejected report. A rejected reused dispatch must not leave a new
-   reservation, and a fresh sequential dispatch must remain usable.
+   reservation, and a fresh sequential dispatch must remain usable. Reusing an
+   active dispatch for another PR/head must not change its original runtime
+   assignment; its owner can still finish.
    After an already-started CLI task's candidate-reader root or head mismatch, retain its
    reservation until an observed terminal abort; a new registration must fail
    while it remains active. Run
    `CliReviewRuntimeTests.test_started_cli_failure_keeps_reservation_until_terminal_abort`
    `CliReviewRuntimeTests.test_started_cli_wrong_head_keeps_reservation_until_terminal_abort`,
    `CliReviewRuntimeTests.test_closed_dispatch_cannot_be_reused_by_another_reviewer`,
-   and `CliReviewRuntimeTests.test_cli_completed_reports_reject_observed_overlap`.
+   `CliReviewRuntimeTests.test_cli_completed_reports_reject_observed_overlap`,
+   `CliReviewRuntimeTests.test_invalid_overlapping_cli_report_invalidates_previous_report`,
+   and `CliReviewRuntimeTests.test_rejected_active_dispatch_reuse_preserves_original_runtime`.
+   Admit an exact instruction receipt or its observed native datetime envelope;
+   reject extra preceding or appended permissions and malformed envelopes using
+   `CliReviewRuntimeTests.test_instruction_receipt_rejects_unassigned_permissions`.
    These controls cannot prevent a task that was already dispatched.
    Include assigned unchanged regular blobs on both frozen sides as supporting
    context and report a finding against the observed head blob. Missing changed

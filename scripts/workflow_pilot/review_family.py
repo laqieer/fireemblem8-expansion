@@ -925,6 +925,23 @@ class ReviewOwnership:
     def release_before_dispatch(self, session):
         self.records.pop(session._ownership_key, None)
 
+    def observe_terminal(self, session, started_at, completed_at):
+        record = self.records[session._ownership_key]
+        start = timestamp(started_at)
+        end = timestamp(completed_at)
+        require(start <= end, "review task chronology is invalid")
+        overlaps = [
+            other for other in self.records.values()
+            if other is not record and other.state == "terminal"
+            and (other.identity[:2] == record.identity[:2] or other.head == record.head)
+            and start <= timestamp(other.completed_at)
+            and timestamp(other.started_at) <= end
+        ]
+        for other in overlaps:
+            if other.report is not None and other.invalidation_reason is None:
+                other.invalidation_reason = "overlapping review task observations"
+        return overlaps
+
     def finish(self, session, task, owner, interaction, started_at, completed_at,
                dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=(),
                event_source=(), report=None):
@@ -935,9 +952,8 @@ class ReviewOwnership:
                 "review owner or dispatch changed before logical closure")
         identifier(owner, NAME_PATTERN, "reviewer identity")
         identifier(interaction, NAME_PATTERN, "review interaction")
-        start = timestamp(started_at)
-        end = timestamp(completed_at)
-        require(start <= end, "review task chronology is invalid")
+        require(timestamp(started_at) <= timestamp(completed_at),
+                "review task chronology is invalid")
         require(isinstance(admitted_event_keys, (tuple, list, set, frozenset))
                 and all(isinstance(item, str) for item in admitted_event_keys),
                 "invalid admitted CLI event keys")
@@ -954,16 +970,7 @@ class ReviewOwnership:
                  or bool(sessions & other.event_sessions))
             for other in self.records.values()),
             "review event session was already logically closed")
-        overlaps = [
-            other for other in self.records.values()
-            if other is not record and other.state == "terminal"
-            and (other.identity[:2] == record.identity[:2] or other.head == record.head)
-            and start <= timestamp(other.completed_at)
-            and timestamp(other.started_at) <= end
-        ]
-        for other in overlaps:
-            if other.report is not None and other.invalidation_reason is None:
-                other.invalidation_reason = "overlapping review task observations"
+        overlaps = self.observe_terminal(session, started_at, completed_at)
         require(report is None or not overlaps, "overlapping review task observations")
         record.state = "terminal"
         record.interaction = interaction
@@ -1085,6 +1092,25 @@ def _review_instructions(candidate, subjects, assigned_reads, *, historical=Fals
         "with keys id, subject, family, member, source_path, detail. Use an empty "
         "findings array when no findings are present."
     )
+
+
+def _matches_instruction_receipt(content, prompt):
+    if content == prompt:
+        return True
+    if not isinstance(content, str) or not content.endswith(prompt):
+        return False
+    prefix = content[:-len(prompt)]
+    match = re.fullmatch(
+        r"<current_datetime>([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:"
+        r"[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2}))</current_datetime>\n\n",
+        prefix)
+    if match is None:
+        return False
+    try:
+        datetime.fromisoformat(match.group(1).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
 
 
 class CliReviewRuntime:
@@ -1245,7 +1271,7 @@ class CliReviewRuntime:
         require(self.reviewer_session_id == self.root_session_id,
                 "reviewer receipt must be in the root session; child session provenance is unsupported")
         received_prompt = received[0][1]["data"].get("transformedContent")
-        require(isinstance(received_prompt, str) and prompt in received_prompt,
+        require(_matches_instruction_receipt(received_prompt, prompt),
                 "received review instructions differ from the dispatched prompt")
         self.received_prompt = received_prompt
         self.received_at = timestamp(received[0][1].get("timestamp"))
@@ -1638,11 +1664,11 @@ class ReviewSession:
                 self.owners.reserve(self)
                 reserved = True
             if isinstance(runtime, CliReviewRuntime):
+                if self.owners is not None:
+                    self.owners.bind_dispatch(self, runtime.dispatch_id)
                 runtime.assigned_owner = owner
                 runtime.assigned_candidate = self.head
                 runtime.assigned_subjects = tuple(sorted(self.scope))
-                if self.owners is not None:
-                    self.owners.bind_dispatch(self, runtime.dispatch_id)
                 dispatched = True
             candidate_reader = self._candidate_reader()
             self.candidate_binding = None
@@ -1749,6 +1775,12 @@ class ReviewSession:
         if isinstance(runtime, CliReviewRuntime) and self.owners is not None:
             self.owners.validate_closed_events(
                 runtime.events, snapshot_namespace=runtime.root_session_id, snapshot_owner=self)
+            observed = runtime.read_terminal(lease.task)
+            require(observed.task == lease.task and observed.owner == lease.owner
+                    and observed.role == "code-review" and observed.head == lease.head
+                    and frozenset(observed.subjects) == lease.scope and observed.completed is True,
+                    "wrong or stale runtime task observation")
+            self.owners.observe_terminal(self, observed.started_at, observed.completed_at)
         if isinstance(runtime, CliReviewRuntime) and not terminal:
             require(self.candidate_binding is not None
                     and candidate_tree_binding(runtime.candidate_reader) == self.candidate_binding,
