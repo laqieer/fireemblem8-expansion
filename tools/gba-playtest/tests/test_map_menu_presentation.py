@@ -34,6 +34,7 @@ LABEL_KEYS = ("danger_overlay.label", "autoplay.charge.label")
 HELP_KEYS = ("danger_overlay.help", "autoplay.charge.help")
 RUNTIME_RUNNER = ROOT / "tools" / "gba-playtest" / "run_map_menu_presentation_checks.py"
 TEST_CASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
+TEST_CASE_DOCUMENT = ROOT / "docs" / "test-cases" / "optional-gameplay.md"
 RUNTIME_FINGERPRINT = (
     ROOT
     / "tools"
@@ -601,6 +602,13 @@ def _cleanup_plan_removes_fixture(plan, fixture):
         actual_rm = shutil.which(executable)
         if not actual_rm or Path(actual_rm).resolve() != Path(expected_rm).resolve():
             raise ValueError(f"unsupported cleanup command: {arguments[0]}")
+        for argument in arguments[1:]:
+            if argument == "--":
+                break
+            if argument.startswith("--") and argument not in (
+                "--force", "--recursive", "--verbose"
+            ):
+                raise ValueError(f"unsupported cleanup rm option: {argument}")
         try:
             parse_options = getopt.getopt if "POSIXLY_CORRECT" in os.environ else getopt.gnu_getopt
             options, paths = parse_options(
@@ -609,6 +617,9 @@ def _cleanup_plan_removes_fixture(plan, fixture):
         except getopt.GetoptError as error:
             raise ValueError(f"unsupported cleanup rm option: {error.opt}") from error
         recursive = any(option in ("-r", "-R", "--recursive") for option, _ in options)
+        force = any(option in ("-f", "--force") for option, _ in options)
+        if not paths and not force:
+            raise ValueError("cleanup rm without operands would fail")
         for path in paths:
             final_component = path.rstrip("/").rsplit("/", 1)[-1]
             if not final_component or final_component in (".", ".."):
@@ -634,10 +645,26 @@ def _cleanup_plan_removes_fixture(plan, fixture):
 
 
 def _documented_fixture(cleanup, fixture):
-    paths = re.findall(r"(?<![\w./+-])[\w.+-]+(?:/[\w.+-]+)+(?![\w/+-])", cleanup)
-    return os.path.normpath(fixture) in {
-        os.path.normpath(path.rstrip(".")) for path in paths
+    paths = re.findall(r"(?<![\w./+-])/?[\w.+-]+(?:/[\w.+-]+)+(?![\w/+-])", cleanup)
+    return (ROOT / fixture).resolve() in {
+        (ROOT / path.rstrip(".")).resolve() for path in paths
     }
+
+
+def _case_cleanup_document(document):
+    case = re.search(
+        r"^## TC-MAP-MENU-168:[^\n]*\n(.*?)(?=^## |\Z)",
+        document, re.MULTILINE | re.DOTALL,
+    )
+    if not case:
+        raise ValueError("map-menu tester case is missing")
+    cleanup = re.search(
+        r"^### Cleanup and limitations[ \t]*\n(.*?)(?=^### |^## |\Z)",
+        case.group(1), re.MULTILINE | re.DOTALL,
+    )
+    if not cleanup:
+        raise ValueError("map-menu tester cleanup section is missing")
+    return cleanup.group(1)
 
 
 class MapMenuRuntimeContractTests(unittest.TestCase):
@@ -853,8 +880,15 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             _documented_fixture(case["cleanup"], fixture),
             f"cleanup documentation does not name {fixture}",
         )
+        self.assertTrue(
+            _documented_fixture(
+                _case_cleanup_document(TEST_CASE_DOCUMENT.read_text(encoding="utf-8")),
+                fixture,
+            ),
+            f"Markdown cleanup documentation does not name {fixture}",
+        )
 
-        fixture_path = Path(os.path.abspath(ROOT / fixture))
+        fixture_path = ROOT / fixture
         self.assertTrue(
             _cleanup_plan_removes_fixture(plan, fixture_path),
             f"clean_fast does not plan to remove {fixture}",
@@ -918,7 +952,7 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
                 with self.subTest(command=command):
                     with self.assertRaisesRegex(ValueError, "cleanup shell syntax"):
                         _cleanup_plan_removes_fixture(command, fixture)
-            for option in ("--help", "--interactive=always", "-i"):
+            for option in ("--help", "--interactive=always", "-i", "--v", "--ver"):
                 with self.subTest(option=option):
                     with self.assertRaisesRegex(ValueError, "unsupported cleanup rm option"):
                         _cleanup_plan_removes_fixture(f"rm -rf {option} {directory}", fixture)
@@ -932,6 +966,11 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
                 with self.subTest(command=command):
                     with self.assertRaisesRegex(ValueError, "unsupported cleanup command"):
                         _cleanup_plan_removes_fixture(command, fixture)
+            with self.assertRaisesRegex(ValueError, "cleanup rm without operands"):
+                _cleanup_plan_removes_fixture(f"rm -r\nrm -rf {directory}", fixture)
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(f"rm -f\nrm -rf {directory}", fixture)
+            )
             missing = Path(temporary) / "missing"
             via_missing = shlex.quote(str(missing / ".." / fixture.parent.name))
             self.assertFalse(
@@ -940,6 +979,19 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             missing.mkdir()
             self.assertTrue(
                 _cleanup_plan_removes_fixture(f"rm -rf {via_missing}", fixture)
+            )
+            elsewhere = Path(temporary) / "elsewhere"
+            elsewhere.mkdir()
+            link = Path(temporary) / "link"
+            link.symlink_to(elsewhere, target_is_directory=True)
+            symlink_fixture = link / ".." / "fixture.sav"
+            self.assertFalse(
+                _cleanup_plan_removes_fixture(f"rm -rf {shlex.quote(str(link))}", symlink_fixture)
+            )
+            self.assertTrue(
+                _cleanup_plan_removes_fixture(
+                    f"rm -rf {shlex.quote(str(elsewhere.parent))}", symlink_fixture
+                )
             )
 
     def test_cleanup_fixture_documentation_accepts_markdown_wrapping(self):
@@ -982,15 +1034,77 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             self.assertFalse(canary.exists())
             self.assertFalse(expansion_canary.exists())
 
+    def test_cleanup_fixture_location_resolves_symlinks_before_parent_segments(self):
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            actual = root / "actual"
+            source.mkdir()
+            actual.mkdir()
+            (actual / "nested").mkdir()
+            (source / "link").symlink_to(actual / "nested", target_is_directory=True)
+            fixture = source / "link" / ".." / "fixture.sav"
+            registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
+            case = next(
+                entry for entry in registry["cases"] if entry["id"] == "TC-MAP-MENU-168"
+            )
+            case["cleanup"] = f"The disposable fixture is {fixture}."
+            registry_path = root / "registry.json"
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+            document = TEST_CASE_DOCUMENT.read_text(encoding="utf-8")
+            original = (
+                "build/expansion-modern-map-menu-nine-row/debug/aapcs/"
+                "map-menu-presentation-check/debugtools-current.sav"
+            )
+            document_path = root / "optional-gameplay.md"
+            document_path.write_text(document.replace(original, str(fixture)), encoding="utf-8")
+
+            def invoke_with_root(cleaned_root):
+                def invoke(command, **kwargs):
+                    command = list(command)
+                    command[-1:-1] = [
+                        f"MODERN_MAP_MENU_NINE_ROW_SRAM={fixture}",
+                        f"CLEAN_DIRS={cleaned_root}",
+                    ]
+                    return real_run(command, **kwargs)
+
+                with mock.patch.object(subprocess, "run", side_effect=invoke), \
+                        mock.patch.object(
+                            sys.modules[__name__], "TEST_CASE_REGISTRY", registry_path
+                        ), \
+                        mock.patch.object(
+                            sys.modules[__name__], "TEST_CASE_DOCUMENT", document_path
+                        ):
+                    self.test_documented_nine_row_sram_is_in_clean_fast_plan()
+
+            with self.assertRaisesRegex(ValueError, "unsupported cleanup shell syntax"):
+                invoke_with_root(source)
+            invoke_with_root(actual)
+
     def test_cleanup_plan_rejects_real_make_and_documentation_mutations(self):
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary)
             makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-            self.assertEqual(makefile.count("clean_fast: clean_common"), 1)
+            rule = re.search(r"^clean_fast[ \t]*:([^\n#]*)", makefile, re.MULTILINE)
+            self.assertIsNotNone(rule, "clean_fast rule is missing")
+            prerequisites = rule.group(1).split()
+            self.assertEqual(prerequisites.count("clean_common"), 1)
+            prerequisites.remove("clean_common")
             disconnected = temporary / "Makefile"
             disconnected.write_text(
-                makefile.replace("clean_fast: clean_common", "clean_fast:"),
+                makefile[:rule.start(1)]
+                + " " + " ".join(prerequisites)
+                + makefile[rule.end(1):],
+                encoding="utf-8",
+            )
+            equivalent = temporary / "Makefile-equivalent"
+            equivalent.write_text(
+                makefile[:rule.start()] + "clean_fast :   __map_menu_noop clean_common"
+                + (" " + " ".join(prerequisites) if prerequisites else "")
+                + makefile[rule.end():]
+                + "\n.PHONY: __map_menu_noop\n__map_menu_noop:\n",
                 encoding="utf-8",
             )
             registry = json.loads(TEST_CASE_REGISTRY.read_text(encoding="utf-8"))
@@ -1001,8 +1115,26 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
             case["cleanup"] = f"The disposable fixture is {relocated}."
             relocated_registry = temporary / "registry.json"
             relocated_registry.write_text(json.dumps(registry), encoding="utf-8")
+            document = TEST_CASE_DOCUMENT.read_text(encoding="utf-8")
+            original = (
+                "build/expansion-modern-map-menu-nine-row/debug/aapcs/"
+                "map-menu-presentation-check/debugtools-current.sav"
+            )
+            self.assertEqual(document.count(original), 1)
+            stale_document = temporary / "optional-gameplay.md"
+            stale_document.write_text(document.replace(original, relocated), encoding="utf-8")
 
-            for mutation in ("removed-root", "disconnected", "relocated", "stale-doc"):
+            def invoke_equivalent(command, **kwargs):
+                command = list(command)
+                command[command.index("Makefile")] = str(equivalent)
+                return real_run(command, **kwargs)
+
+            with mock.patch.object(subprocess, "run", side_effect=invoke_equivalent):
+                self.test_documented_nine_row_sram_is_in_clean_fast_plan()
+
+            for mutation in (
+                "removed-root", "disconnected", "relocated", "stale-doc", "stale-markdown"
+            ):
                 with self.subTest(mutation=mutation):
                     def invoke_mutated(command, **kwargs):
                         command = list(command)
@@ -1010,14 +1142,19 @@ class MapMenuRuntimeContractTests(unittest.TestCase):
                             command[command.index("Makefile")] = str(disconnected)
                         elif mutation == "removed-root":
                             command.insert(-1, "CLEAN_DIRS=unrelated")
-                        else:
+                        elif mutation != "stale-markdown":
                             command.insert(-1, f"MODERN_MAP_MENU_NINE_ROW_SRAM={relocated}")
                         return real_run(command, **kwargs)
 
                     path = relocated_registry if mutation == "relocated" else TEST_CASE_REGISTRY
                     with mock.patch.object(subprocess, "run", side_effect=invoke_mutated), \
-                            mock.patch.object(sys.modules[__name__], "TEST_CASE_REGISTRY", path):
-                        if mutation == "stale-doc":
+                            mock.patch.object(sys.modules[__name__], "TEST_CASE_REGISTRY", path), \
+                            mock.patch.object(
+                                sys.modules[__name__], "TEST_CASE_DOCUMENT",
+                                stale_document if mutation in ("relocated", "stale-markdown")
+                                else TEST_CASE_DOCUMENT,
+                            ):
+                        if mutation in ("stale-doc", "stale-markdown"):
                             with self.assertRaisesRegex(
                                 AssertionError, "cleanup documentation does not name"
                             ):
