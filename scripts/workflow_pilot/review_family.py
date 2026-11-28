@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
@@ -944,7 +945,7 @@ class ReviewOwnership:
 
     def finish(self, session, task, owner, interaction, started_at, completed_at,
                dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=(),
-               event_source=(), report=None):
+               report=None):
         owner_key = dispatch_namespace, owner
         record = self.records[session._ownership_key]
         require(record.state != "terminal" and record.dispatch == task
@@ -979,14 +980,82 @@ class ReviewOwnership:
         record.completed_at = completed_at
         record.admitted_event_keys = frozenset(admitted_event_keys)
         record.event_sessions = sessions
-        session.event_sources.append(event_source)
         record.report = report
+
+    def observe_intervals(self, events):
+        for observed in self.records.values():
+            if observed.namespace is None or observed.dispatch is None:
+                continue
+            own = [event for item in events
+                   if isinstance(item, (tuple, list)) and len(item) == 2
+                   for event in (item[1],)
+                   if item[0] == observed.namespace and isinstance(event, dict)]
+            starts = [event for event in own
+                      if event.get("type") == "subagent.started"
+                      and (event.get("agentId") == observed.owner
+                           or isinstance(event.get("data"), dict)
+                           and event["data"].get("toolCallId") == observed.dispatch)]
+            if not starts:
+                continue
+            completions = [event for event in own
+                           if event.get("type") == "subagent.completed"
+                           and isinstance(event.get("data"), dict)
+                           and (event.get("agentId") == observed.owner
+                                or event["data"].get("toolCallId") == observed.dispatch)]
+            dispatches = [event for event in own
+                          if event.get("type") == "tool.execution_start"
+                          and isinstance(event.get("data"), dict)
+                          and event["data"].get("toolCallId") == observed.dispatch
+                          and event["data"].get("toolName") == "task"]
+            for start_event in starts:
+                try:
+                    start = timestamp(start_event.get("timestamp"))
+                except ReviewError:
+                    start = None
+                end = None
+                data = start_event.get("data")
+                valid_start = (isinstance(data, dict)
+                               and start_event.get("agentId") == observed.owner
+                               and data.get("toolCallId") == observed.dispatch
+                               and data.get("agentType") == "code-review")
+                previous_end = (
+                    timestamp(observed.completed_at)
+                    if valid_start and start is not None and observed.state == "terminal"
+                    and start == timestamp(observed.started_at) else None)
+                if previous_end is not None and len(starts) == 1 and not completions:
+                    end = previous_end
+                elif valid_start and start is not None and len(starts) == len(completions) == len(dispatches) == 1:
+                    completion_event = completions[0]
+                    interaction = data.get("interactionId")
+                    try:
+                        dispatch = timestamp(dispatches[0].get("timestamp"))
+                        completion = timestamp(completion_event.get("timestamp"))
+                    except ReviewError:
+                        pass
+                    else:
+                        if (isinstance(interaction, str)
+                                and re.fullmatch(NAME_PATTERN, interaction) is not None
+                                and completion_event.get("agentId") == observed.owner
+                                and completion_event["data"].get("toolCallId") == observed.dispatch
+                                and completion_event["data"].get("interactionId") in (None, interaction)
+                                and dispatch <= start <= completion):
+                            end = max(completion, previous_end) if previous_end else completion
+                for other in self.records.values():
+                    if (other is observed or other.state != "terminal"
+                            or other.report is None or other.invalidation_reason is not None
+                            or not (other.identity[:2] == observed.identity[:2]
+                                    or other.head == observed.head)):
+                        continue
+                    if ((start is None or start <= timestamp(other.completed_at))
+                            and (end is None or timestamp(other.started_at) <= end)):
+                        other.invalidation_reason = "overlapping review task observations"
 
     def validate_closed_events(self, events, *, snapshot_namespace=None, snapshot_owner=None):
         require(isinstance(events, (tuple, list)), "invalid CLI event snapshot")
         require(snapshot_namespace is None
                 or isinstance(snapshot_namespace, str) and bool(snapshot_namespace.strip()),
                 "invalid CLI event snapshot namespace")
+        self.observe_intervals(events)
         if snapshot_owner is not None:
             snapshot_keys = {}
             for record in events:
@@ -1060,8 +1129,9 @@ class ReviewOwnership:
     def validate_session(self, session):
         record = self.record_for(session)
         if record is not None:
-            for source in session.event_sources:
-                self.validate_closed_events(source)
+            self.validate_closed_events(
+                session.latest_cli_events, snapshot_namespace=session.dispatch_namespace,
+                snapshot_owner=session)
             require(record.invalidation_reason is None,
                     f"review task evidence was invalidated: {record.invalidation_reason}")
 
@@ -1347,6 +1417,8 @@ class CliReviewRuntime:
                       and event.get("type") == "subagent.completed"
                       and event.get("data", {}).get("toolCallId") == self.dispatch_id]
         require(len(completion) == 1, "reviewer completion event is missing")
+        require(completion[0]["data"].get("interactionId") in (None, interaction),
+                "reviewer completion interaction is contradictory")
         completed_at = completion[0].get("timestamp")
         require(timestamp(dispatch[0].get("timestamp")) <= timestamp(started_at)
                 <= timestamp(completed_at), "review task chronology is invalid")
@@ -1618,7 +1690,6 @@ class ReviewSession:
         self.dispatch_namespace: str | None = None
         self.assignment_event_keys = None
         self.latest_cli_events = ()
-        self.event_sources = []
         self._ownership_key = object()
         self.begin_failed = False
 
@@ -1674,6 +1745,8 @@ class ReviewSession:
                 runtime.assigned_candidate = self.head
                 runtime.assigned_subjects = tuple(sorted(self.scope))
                 dispatched = True
+                if self.owners is not None:
+                    self.owners.validate_closed_events(runtime.events)
             candidate_reader = self._candidate_reader()
             self.candidate_binding = None
             if candidate_reader is not None:
@@ -1832,7 +1905,6 @@ class ReviewSession:
                 self, self.lease.task, self.lease.owner,
                     getattr(result, "interaction_id", None), result.started_at, result.completed_at,
                     self.dispatch_namespace, admitted_event_keys, admitted_event_sessions,
-                    getattr(result, "cli_events", ()),
                     report if outcome == "completed" else None)
         self.lease.finished = True
         self.lease.outcome = outcome
@@ -1970,7 +2042,7 @@ class ReviewSession:
             result, "completed", admitted_event_keys=admitted_event_keys,
             admitted_event_sessions=admitted_event_sessions, report=report) == "completed",
                 "review exceeded duration bound")
-        self.latest_cli_events = cli_events
+        self.latest_cli_events = copy.deepcopy(cli_events)
         if self.owners is not None:
             self.owners.validate_closed_events(
                 self.latest_cli_events, snapshot_namespace=self.dispatch_namespace,
@@ -1984,11 +2056,8 @@ class ReviewSession:
         require(isinstance(events, (tuple, list)), "CLI event observations must be a collection")
         require(type(complete) is bool, "CLI snapshot completeness must be explicit")
         if complete:
-            self.latest_cli_events = tuple(events)
+            self.latest_cli_events = copy.deepcopy(tuple(events))
         if self.owners is not None:
-            record = self.owners.record_for(self)
-            if record is not None and record.state == "terminal":
-                self.event_sources.append(events)
             self.owners.validate_closed_events(
                 events, snapshot_namespace=self.dispatch_namespace if complete else None,
                 snapshot_owner=self if complete else None)

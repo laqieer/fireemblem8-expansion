@@ -1748,6 +1748,149 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 first.review_state((), (), pre_review_required=True)
             second.abort(second_runtime)
 
+    def test_competing_start_with_unknown_terminal_invalidates_only_possible_overlap(self):
+        for sequential in (False, True):
+            with self.subTest(sequential=sequential), snapshot() as root:
+                fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+                first.begin(runtime, reviewer)
+                first.finish(runtime)
+                competing = []
+                for event_session, event in events:
+                    raw = (json.dumps(event).replace("root-session", "other-root")
+                           .replace("reviewer-1", "reviewer-2")
+                           .replace("dispatch-1", "dispatch-2"))
+                    if sequential:
+                        raw = raw.replace("T00:00:", "T00:01:")
+                    event = json.loads(raw)
+                    if event.get("type") == "subagent.completed":
+                        event["data"]["toolCallId"] = "contradictory-task"
+                    competing.append((event_session.replace("root-session", "other-root"), event))
+                other_runtime = model.CliReviewRuntime(
+                    competing, dispatch_id="dispatch-2", root_session_id="other-root",
+                    candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+                other = model.ReviewSession(
+                    "coordinator", "implementer", first.scope, fixture["head"],
+                    identity=first.identity, owners=first.owners,
+                    readers={"read-candidate": runtime.candidate_reader})
+                other.begin(other_runtime, "reviewer-2")
+                with self.assertRaisesRegex(model.ReviewError, "completion event is missing"):
+                    other.finish(other_runtime)
+                if sequential:
+                    self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+                else:
+                    with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                        first.review_state((), (), pre_review_required=True)
+                self.assertFalse(other.lease.finished)
+
+    def test_changed_competing_start_invalidates_potentially_overlapping_report(self):
+        with snapshot() as root:
+            fixture, runtime, first, events, times, reviewer, _ = self.native_runtime(root)
+            first.begin(runtime, reviewer)
+            first.finish(runtime)
+            later = [
+                (event_session.replace("root-session", "other-root"),
+                 json.loads(json.dumps(event).replace("root-session", "other-root")
+                            .replace("reviewer-1", "reviewer-2")
+                            .replace("dispatch-1", "dispatch-2")
+                            .replace("T00:00:", "T00:01:")))
+                for event_session, event in events]
+            other_runtime = model.CliReviewRuntime(
+                later, dispatch_id="dispatch-2", root_session_id="other-root",
+                candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+            other = model.ReviewSession(
+                "coordinator", "implementer", first.scope, fixture["head"],
+                identity=first.identity, owners=first.owners,
+                readers={"read-candidate": runtime.candidate_reader})
+            other.begin(other_runtime, "reviewer-2")
+            other.finish(other_runtime)
+            self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+            changed = copy.deepcopy(later)
+            for _, event in changed:
+                if event.get("type") == "subagent.started":
+                    event["timestamp"] = times["started"]
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                other.observe_cli_events(changed, complete=True)
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                first.review_state((), (), pre_review_required=True)
+
+    def test_earlier_competing_review_requires_a_consistent_terminal(self):
+        for contradictory in (False, True):
+            with self.subTest(contradictory=contradictory), snapshot() as root:
+                fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+                runtime.events = tuple(
+                    (event_session, {**event, "timestamp": event["timestamp"].replace(
+                        "T00:00:", "T00:01:")})
+                    for event_session, event in events)
+                first.begin(runtime, reviewer)
+                first.finish(runtime)
+                earlier = []
+                for event_session, event in events:
+                    event = json.loads(json.dumps(event).replace("root-session", "other-root")
+                                       .replace("reviewer-1", "reviewer-2")
+                                       .replace("dispatch-1", "dispatch-2"))
+                    if contradictory and event.get("type") == "subagent.completed":
+                        event["data"]["interactionId"] = "different-interaction"
+                    earlier.append((event_session.replace("root-session", "other-root"), event))
+                other_runtime = model.CliReviewRuntime(
+                    earlier, dispatch_id="dispatch-2", root_session_id="other-root",
+                    candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+                other = model.ReviewSession(
+                    "coordinator", "implementer", first.scope, fixture["head"],
+                    identity=first.identity, owners=first.owners,
+                    readers={"read-candidate": runtime.candidate_reader})
+                other.begin(other_runtime, "reviewer-2")
+                if contradictory:
+                    with self.assertRaises(model.ReviewError):
+                        other.finish(other_runtime)
+                    with self.assertRaises(model.ReviewError):
+                        other.abort(other_runtime)
+                    self.assertFalse(other.lease.finished)
+                    with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                        first.review_state((), (), pre_review_required=True)
+                else:
+                    other.finish(other_runtime)
+                    self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+
+    def test_contradictory_competing_start_cannot_hide_possible_overlap(self):
+        for field in ("agent", "role"):
+            with self.subTest(field=field), snapshot() as root:
+                fixture, runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+                first.begin(runtime, reviewer)
+                first.finish(runtime)
+                competing = [
+                    (event_session.replace("root-session", "other-root"),
+                     json.loads(json.dumps(event).replace("root-session", "other-root")
+                                .replace("reviewer-1", "reviewer-2")
+                                .replace("dispatch-1", "dispatch-2")))
+                    for event_session, event in events]
+                for _, event in competing:
+                    if event.get("type") == "subagent.started":
+                        if field == "agent":
+                            event["agentId"] = "unexpected-reviewer"
+                        else:
+                            event["data"]["agentType"] = "other-role"
+                other_runtime = model.CliReviewRuntime(
+                    competing, dispatch_id="dispatch-2", root_session_id="other-root",
+                    candidate_reader=runtime.candidate_reader, required_reads=runtime.required_reads)
+                other = model.ReviewSession(
+                    "coordinator", "implementer", first.scope, fixture["head"],
+                    identity=first.identity, owners=first.owners,
+                    readers={"read-candidate": runtime.candidate_reader})
+                with self.assertRaises(model.ReviewError):
+                    other.begin(other_runtime, "reviewer-2")
+                with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                    first.review_state((), (), pre_review_required=True)
+
+    def test_submitted_snapshot_is_frozen_until_an_explicit_new_observation(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            events[3][1]["data"]["content"] += " altered"
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.observe_cli_events(events, complete=True)
+
     def test_rejected_active_dispatch_reuse_preserves_original_runtime(self):
         with snapshot() as root:
             fixture, runtime, first, _, _, reviewer, _ = self.native_runtime(root)
@@ -2096,6 +2239,10 @@ class CliReviewRuntimeTests(unittest.TestCase):
             receipt = next(event for _, event in events
                            if event.get("type") == "tool.execution_complete"
                            and event["data"].get("toolCallId") == runtime.dispatch_id)
+            dispatch = next(event for _, event in events
+                            if event.get("type") == "tool.execution_start"
+                            and event["data"].get("toolCallId") == runtime.dispatch_id)
+            dispatch["agentId"] = None
             receipt["agentId"] = None
             receipt["data"]["interactionId"] = interaction
             runtime.events = tuple(events)
@@ -2104,7 +2251,8 @@ class CliReviewRuntimeTests(unittest.TestCase):
             self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
             receipt["data"]["success"] = False
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
-                session.review_state((), (), pre_review_required=True)
+                session.review_state((), (), pre_review_required=True, cli_events=events,
+                                     cli_events_complete=True)
 
     def test_untagged_shared_root_activity_is_not_attributed_by_interaction(self):
         for after_closure in (False, True):

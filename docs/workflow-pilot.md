@@ -913,7 +913,14 @@ new head. Every finish or abort must use the root session bound at `begin`.
 Before a CLI runtime attempts either read, its observed aggregate events are
 applied to the shared ownership index, even if report validation then fails.
 An observed completed turn permits aborting an invalid review without
-admitting it; missing completion keeps the lease active. Later activity
+admitting it; missing or contradictory completion keeps the lease active.
+An attributed competing start for the same PR or head is considered even
+when its terminal record is missing or contradictory. If it could overlap a
+closed report, that report is invalidated; a proven earlier completion or a
+start after the closed interval preserves sequential reviews. Changed start
+times are considered as possible observations, not proof of which occurred.
+This only accounts for supplied events and cannot prevent an unobserved task.
+Later activity
 still rejects admission and never proves technical task termination.
 The dispatched instructions, start and receipt must also match the records
 validated at `begin`, including when the coordinator supplies a replacement
@@ -945,6 +952,10 @@ any activity enters this baseline. Supply an owning complete snapshot through
 captured records against the validated closure snapshot; ordinary observations
 are incremental and cannot establish that a record is missing. An
 older sibling snapshot cannot establish that a newer review lost records.
+The session freezes its latest complete snapshot instead of retaining and
+replaying caller-owned mutable event sources. To assess later changes, supply
+the new observation explicitly; mutating an already submitted input does not
+silently rewrite the accepted snapshot or monitor the source log.
 Later aggregate observations still propagate attributable new activity to
 the owning review. Previously unseen review
 activity invalidates only its owning `(task, owner)`, including an in-turn

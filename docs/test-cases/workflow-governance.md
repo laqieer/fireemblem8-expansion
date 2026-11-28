@@ -1297,7 +1297,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    Submit an explicitly complete owning snapshot with a removed or re-owned
    admitted event, including for a rootless runtime: readiness must reject.
    An incremental observation does not
-   claim snapshot completeness. After closure, reuse the dispatch ID in the same
+   claim snapshot completeness. Mutating a previously supplied event collection
+   cannot change the frozen snapshot; submit the changed complete collection
+   to reject the changed evidence. After closure, reuse the dispatch ID in the same
    root with a different reviewer; the original report must be invalidated.
    The same ID in a different root does not invalidate it.
    Drop the last external reference to an active or completed session and
@@ -1361,7 +1363,17 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    logically closed reviewers cannot be reused. For recorded task intervals,
    reject overlapping completed reports for the same PR or head and invalidate
    previously admitted overlapping reports before parsing a malformed later
-   report, including when the later task is aborted. Admit ordered or unrelated
+   report, including when the later task is aborted. A competing start with
+   a missing or contradictory terminal, a conflicting reviewer/role, or a
+   changed start time invalidates a potentially overlapping prior report;
+   contradictory terminal identity cannot retire ownership. A proven
+   sequential interval in either order remains valid. Run
+   `CliReviewRuntimeTests.test_competing_start_with_unknown_terminal_invalidates_only_possible_overlap`,
+   `CliReviewRuntimeTests.test_earlier_competing_review_requires_a_consistent_terminal`,
+   `CliReviewRuntimeTests.test_contradictory_competing_start_cannot_hide_possible_overlap`,
+   `CliReviewRuntimeTests.test_changed_competing_start_invalidates_potentially_overlapping_report`,
+   and `CliReviewRuntimeTests.test_submitted_snapshot_is_frozen_until_an_explicit_new_observation`.
+   Admit ordered or unrelated
    tasks, and allow terminal-only abort
    after a rejected report. A rejected reused dispatch must not leave a new
    reservation, and a fresh sequential dispatch must remain usable. Reusing an

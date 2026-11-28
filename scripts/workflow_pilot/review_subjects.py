@@ -2608,6 +2608,27 @@ def _session_probe(probe: str) -> dict:
             second.abort(native)
             check(second.lease.outcome == "aborted" and second.report is None,
                   "observed completion could not abort invalid review")
+            owners = module.ReviewOwnership()
+            prior = completed_session(owners, 1, "reviewer-a", "dispatch-a", "root-a")
+            overlapping = json.loads(json.dumps(events).replace("T00:01:", "T00:00:"))
+            for _, event in overlapping:
+                if event.get("type") == "subagent.completed":
+                    event["data"]["toolCallId"] = "contradictory-task"
+            uncertain_runtime = module.CliReviewRuntime(
+                overlapping, dispatch_id="dispatch-b", root_session_id="root-b",
+                candidate_reader=reader, required_reads=targets)
+            uncertain = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 1, a), owners=owners,
+                readers={"read-candidate": reader})
+            uncertain.begin(uncertain_runtime, "reviewer-b")
+            check(rejects(lambda: uncertain.finish(uncertain_runtime)),
+                  "contradictory terminal admitted a review")
+            check(rejects(lambda: prior.review_state((), (), pre_review_required=True)),
+                  "observed possible overlap did not invalidate the prior report")
+            check(rejects(lambda: uncertain.abort(uncertain_runtime))
+                  and not uncertain.lease.finished,
+                  "contradictory terminal released ownership")
     elif probe == "lifecycle:resets":
         state.observe(decision(1))
         state.observe(decision(2, "clean"))
