@@ -3139,6 +3139,55 @@ class CliReviewRuntimeTests(unittest.TestCase):
 
 
 class RemainingRoleTests(RoleTests):
+    def test_abort_retires_generic_terminal_without_an_interaction(self):
+        for interaction in ("missing", "null", "malformed"):
+            with self.subTest(interaction=interaction):
+                session, runtime, fresh = self.owned_runtime(completed=True)
+                if interaction == "missing":
+                    del runtime.result.interaction_id
+                elif interaction == "null":
+                    runtime.result.interaction_id = None
+                else:
+                    runtime.result.interaction_id = []
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                if interaction == "malformed":
+                    with self.assertRaises(model.ReviewError):
+                        session.abort(runtime)
+                    self.assertFalse(session.lease.finished)
+                    runtime.result.interaction_id = "interaction-1"
+                session.abort(runtime)
+                self.assertEqual(session.lease.outcome, "aborted")
+                self.assertIsNone(session.report)
+                fresh.begin(self.following_runtime(fresh.head, fresh.scope), "reviewer-next")
+
+    def test_absent_interaction_does_not_release_root_bound_terminal(self):
+        owners = model.ReviewOwnership()
+        session = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "b" * 40,
+            identity=("owner/repo", 1, "a" * 40), owners=owners)
+        runtime = Runtime(session.head, session.scope)
+        runtime.root_session_id = "root-session"
+        runtime.result.interaction_id = None
+        session.begin(runtime, "reviewer")
+        with self.assertRaises(model.ReviewError):
+            session.abort(runtime)
+        self.assertFalse(session.lease.finished)
+        runtime.result.interaction_id = "interaction-1"
+        session.abort(runtime)
+        self.assertEqual(session.lease.outcome, "aborted")
+
+    def test_timeout_retires_generic_terminal_without_an_interaction(self):
+        session, runtime, fresh = self.owned_runtime(completed=True)
+        del runtime.result.interaction_id
+        self.time = 11
+        with self.assertRaisesRegex(model.ReviewError, "duration bound"):
+            session.finish(runtime)
+        self.assertEqual(session.lease.outcome, "timed-out")
+        self.assertIsNone(session.report)
+        fresh.begin(self.following_runtime(fresh.head, fresh.scope), "reviewer-next")
+
     def test_deadline_crossing_during_runtime_read_cannot_accept_a_report(self):
         session, runtime, _ = self.owned_runtime(completed=True)
         self.time = 9

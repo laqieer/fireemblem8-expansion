@@ -1382,6 +1382,13 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    A completed overlong CLI task retires as timed out without admitting its
    report; a missing terminal remains reserved. Exercise
    `CliReviewRuntimeTests.test_completed_overlong_cli_review_releases_as_timeout`.
+   A rootless generic adapter with a verified terminal but no interaction must
+   reject report admission and permit abort or timeout and a new reviewer; a
+   malformed non-null interaction and an interaction missing from a root-bound
+   terminal still reject. Exercise
+   `RemainingRoleTests.test_abort_retires_generic_terminal_without_an_interaction`,
+   `RemainingRoleTests.test_timeout_retires_generic_terminal_without_an_interaction`,
+   and `RemainingRoleTests.test_absent_interaction_does_not_release_root_bound_terminal`.
    These controls cannot prevent a task that was already dispatched.
    Include assigned unchanged regular blobs on both frozen sides as supporting
    context and report a finding against the observed head blob. Missing changed

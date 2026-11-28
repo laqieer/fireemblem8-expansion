@@ -951,7 +951,8 @@ class ReviewOwnership:
                 and (record.namespace, record.owner) == owner_key,
                 "review owner or dispatch changed before logical closure")
         identifier(owner, NAME_PATTERN, "reviewer identity")
-        identifier(interaction, NAME_PATTERN, "review interaction")
+        if interaction is not None or report is not None or dispatch_namespace is not None:
+            identifier(interaction, NAME_PATTERN, "review interaction")
         require(timestamp(started_at) <= timestamp(completed_at),
                 "review task chronology is invalid")
         require(isinstance(admitted_event_keys, (tuple, list, set, frozenset))
@@ -1829,7 +1830,7 @@ class ReviewSession:
         if self.owners is not None:
             self.owners.finish(
                 self, self.lease.task, self.lease.owner,
-                    getattr(result, "interaction_id", ""), result.started_at, result.completed_at,
+                    getattr(result, "interaction_id", None), result.started_at, result.completed_at,
                     self.dispatch_namespace, admitted_event_keys, admitted_event_sessions,
                     getattr(result, "cli_events", ()),
                     report if outcome == "completed" else None)

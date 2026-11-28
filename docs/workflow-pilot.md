@@ -763,7 +763,9 @@ terminal-only abort may retire it without admission only when the exact root,
 dispatch, reviewer start and completion are independently observed. Reviewer identity is scoped by the
 coordinator's root CLI session and reviewer agent ID; dispatch is scoped by
 root session and tool-call ID. It rejects reuse of either identity within that
-session. Admitted activity records retain their event-session association, so
+session. A rootless generic adapter can retire a verified terminal without
+admitting its report when its interaction identity is absent; a malformed
+non-null interaction still rejects. Admitted activity records retain their event-session association, so
 later user, assistant (including turn-start), tool and subagent events
 invalidate only the report they belong to; identical agent IDs in unrelated
 root sessions cannot invalidate or block one another. A violation is retained
