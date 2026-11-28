@@ -1320,7 +1320,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    finish. For shared ownership, include late activity for an already closed
    reviewer A and active reviewer B in B's aggregate snapshot. B's failed
    finish must invalidate A immediately, even when B's candidate binding is
-   mismatched, and B's observed completed turn must
+   mismatched. Use sequential, nonoverlapping task intervals so overlap alone
+   cannot invalidate A; suppressing late-event propagation must make the
+   control fail. B's observed completed turn must
    permit abort without publishing a report. A missing B completion must keep
    its lease and overlapping-review exclusion active. The pre-fix negative
    controls accept the other runtime and lose A's invalidation while B is stuck.

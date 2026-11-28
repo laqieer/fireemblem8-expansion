@@ -1964,8 +1964,14 @@ class CliReviewRuntimeTests(unittest.TestCase):
             first.owners = owners
             first.begin(first_runtime, reviewer)
             first.finish(first_runtime)
+            self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
             _, runtime, second, events, _, reviewer, _ = self.native_runtime(
                 root, root_session_id="root-second")
+            events = [
+                (session_id, {**event, "timestamp": event["timestamp"].replace(
+                    "T00:00:", "T00:01:")})
+                for session_id, event in events]
+            runtime.events = tuple(events)
             second.owners = owners
             second.begin(runtime, reviewer)
             other = Path(temporary) / "other-checkout"
@@ -1981,7 +1987,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
             runtime.events = tuple(events) + (late,)
             with self.assertRaisesRegex(model.ReviewError, "candidate binding"):
                 second.finish(runtime)
-            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+            with self.assertRaisesRegex(model.ReviewError, "event after logical closure"):
                 first.review_state((), (), pre_review_required=True)
             second.abort(runtime)
 
@@ -2909,12 +2915,16 @@ class CliReviewRuntimeTests(unittest.TestCase):
             self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
             _, second_runtime, second, second_events, _, second_reviewer, _ = self.native_runtime(
                 root, root_session_id="root-B")
+            second_events = [
+                (session_id, {**event, "timestamp": event["timestamp"].replace(
+                    "T00:00:", "T00:01:")})
+                for session_id, event in second_events]
             second.owners = first.owners
             second.identity = ("owner/repo", 2, second.identity[2])
 
             def late(event_session, reviewer):
                 return (event_session, {
-                    "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
+                    "type": "assistant.turn_start", "timestamp": "2026-01-01T00:02:00Z",
                     "agentId": reviewer, "data": {"turnId": "late-turn"},
                 })
 
@@ -2925,7 +2935,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaises(model.ReviewError):
                 second.finish(second_runtime)
             self.assertIsNone(second.report)
-            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+            with self.assertRaisesRegex(model.ReviewError, "event after logical closure"):
                 first.review_state((), (), pre_review_required=True)
             second.abort(second_runtime)
             self.assertEqual(second.lease.outcome, "aborted")
